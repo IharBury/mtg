@@ -593,9 +593,9 @@ separately, then applied to each permanent `who` names. -/
 def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower lastKnownToughness : Option Int)
-    (power toughness : TriggeredAbility.TriggerNumericAmount)
-    (who : TriggeredAbility.TriggerNumericWho) : Game :=
-  let shared (amount : TriggeredAbility.TriggerNumericAmount) : Option Int :=
+    (power toughness : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
+  let shared (amount : TriggeredAbility.NumberSelector) : Option Int :=
     match amount with
     | .fixed n => some n
     | .greatestPower => some (g.greatestPowerAmongCreatures controller)
@@ -664,8 +664,8 @@ the behavior of the constructor it replaced. -/
 def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int) (sourceName : String)
-    (amount : TriggeredAbility.TriggerNumericAmount)
-    (who : TriggeredAbility.TriggerNumericWho)
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.ObjectSelector)
     (note : TriggeredAbility.TriggerDamageNote) : Game :=
   match who, amount, note with
   | .blockers, .fixed n, _ =>
@@ -693,7 +693,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let amt := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
-  | .eachOpponent, .fixed n, .fromEquipped =>
+  | .player .eachOpponent, .fixed n, .fromEquipped =>
     let n := n.toNat
     let src :=
       match g.attachedHost? sourceId with
@@ -701,7 +701,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       | none => none
     g.forEachOpponent controller (fun g pid =>
       g.dealDamageToPlayer pid n (source := src))
-  | .eachOpponent, .fixed n, _ =>
+  | .player .eachOpponent, .fixed n, _ =>
     let n := n.toNat
     let src := sourceId.bind g.findObject?
     if ab.opts.untargeted || !ab.requiresTarget then
@@ -710,12 +710,12 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     else
       g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
         g.dealDamageToPlayer pid n (source := src))
-  | .eachOpponent, .subtypeCount subtype, _ =>
+  | .player .eachOpponent, .subtypeCount subtype, _ =>
     let amt := g.countSubtype controller subtype
     let src := sourceId.bind g.findObject?
     g.forEachOpponent controller (fun g pid =>
       g.dealDamageToPlayer pid amt (source := src))
-  | .eachOpponent, .discardedHand, _ =>
+  | .player .eachOpponent, .discardedHand, _ =>
     match g.handDiscardedThisWay with
     | none => { g with notedSourceThisWay := none }
     | some discarded =>
@@ -752,7 +752,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
             | none => false
           if marked then { g with permanentDealtDamageThisWay := some oid } else g
       | _ => g.logMsg "The target is no longer legal")
-  | .targetOpponent, .greatestArtifactMv, _ =>
+  | .player .targetOpponent, .greatestArtifactMv, _ =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid x)
@@ -761,7 +761,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
     g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
-  | .targetOpponent, .fixed n, _ =>
+  | .player .targetOpponent, .fixed n, _ =>
     let n := n.toNat
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid n)
@@ -1641,8 +1641,8 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (amount : TriggeredAbility.TriggerNumericAmount)
-    (who : TriggeredAbility.TriggerNumericWho) : Game :=
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match who, amount with
   | .enchantedController, _ =>
     g.drawForEnchantedController sourceId
@@ -2715,13 +2715,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
-  | .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent) =>
+  | .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent)) =>
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower .anotherHero
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
-        (some (.dealDamage (.fixed 1) .targetOpponent)) sequencedCardPower
+        (some (.dealDamage (.fixed 1) (.player .targetOpponent))) sequencedCardPower
     else
       g.logMsg "Human Torch's ability has no effect"
   | .«if» cond thenDo =>

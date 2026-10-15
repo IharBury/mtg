@@ -191,10 +191,35 @@ One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
   | attackPumpPerPlains
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
-`TriggerResolution.dealDamage` damages, and who `TriggerResolution.draw`
-draws for. `.source` is first so a default resolution pumps the source. -/
-inductive TriggerNumericWho where
+/-- Which player `ObjectSelector.player` names, and who
+`TriggerResolution.draw` draws for. -/
+inductive PlayerSelector where
+  /-- Each opponent, or the announced opponent when the ability targets.
+  `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
+  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`. -/
+  | eachOpponent
+  /-- The announced opponent.
+  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`. -/
+  | targetOpponent
+  /-- The controller of the ability.
+  That player draws `n` is `.draw (.fixed n)` (`.you`). -/
+  | you
+  /-- The targeted opponent may have the controller draw a card.
+  Declining mills X cards, where X is the influence counters on the source,
+  and that player loses life equal to the total mana value of those cards.
+  An earlier step must have recorded the offer.
+  `.draw (.fixed 1) .opponentHasYou`. -/
+  | opponentHasYou
+  /-- The controller of the creature the source enchants.
+  Nothing enchanted draws nothing.
+  `.draw (.fixed 1) .enchantedController`. -/
+  | enchantedController
+deriving Repr, Inhabited, BEq
+
+/-- Who `TriggerResolution.pump` gives +P/+T until end of turn and who
+`TriggerResolution.dealDamage` damages. `.source` is first so a default
+resolution pumps the source. A player is `.player`. -/
+inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
   `n` damage is `.dealDamage (.fixed n) .source`. -/
@@ -226,25 +251,13 @@ inductive TriggerNumericWho where
   | blockers
   /-- The announced permanent. -/
   | permanent
-  /-- Each opponent, or the announced opponent when the ability targets. -/
-  | eachOpponent
-  /-- The announced opponent. -/
-  | targetOpponent
   /-- Each creature that is not this subtype, and each opponent. -/
   | eachNonSubtypeAndOpponents (subtype : String)
-  /-- The controller of the ability.
-  That player draws `n` is `.draw (.fixed n)` (`.you`). -/
-  | you
-  /-- The targeted opponent may have the controller draw a card.
-  Declining mills X cards, where X is the influence counters on the source,
-  and that player loses life equal to the total mana value of those cards.
-  An earlier step must have recorded the offer.
-  `.draw (.fixed 1) .opponentHasYou`. -/
-  | opponentHasYou
-  /-- The controller of the creature the source enchants.
-  Nothing enchanted draws nothing.
-  `.draw (.fixed 1) .enchantedController`. -/
-  | enchantedController
+  /-- The player `who` names.
+  The controller is `.player .you`.
+  Each opponent is `.player .eachOpponent`.
+  The announced opponent is `.player .targetOpponent`. -/
+  | player (who : PlayerSelector)
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -252,7 +265,7 @@ where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, and how many cards `TriggerResolution.draw`
 draws. `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, and draw `n`. -/
-inductive TriggerNumericAmount where
+inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
   /-- One for each card looked at while scrying. -/
@@ -275,7 +288,7 @@ inductive TriggerNumericAmount where
   /-- How many permanents of this subtype the controller controls. -/
   | subtypeCount (subtype : String)
   /-- How many cards an earlier step discarded from the controller's hand.
-  Damage to each opponent is `.dealDamage .discardedHand .eachOpponent`.
+  Damage to each opponent is `.dealDamage .discardedHand (.player .eachOpponent)`.
   Drawing that many is `.draw .discardedHand`. -/
   | discardedHand
   /-- The greatest mana value among artifacts the controller controls. -/
@@ -1317,17 +1330,18 @@ inductive TriggerResolution where
   Doubling that permanent's power and toughness is `.pump .double .double .target`.
   +P/+T and trample is
   `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`. -/
-  | pump (power toughness : TriggerNumericAmount) (who : TriggerNumericWho)
+  | pump (power toughness : NumberSelector) (who : ObjectSelector)
   /-- Deal damage. `amount` is how much. `.fixed` carries that `n`.
   `who` is who is dealt it, and `note` records a later step.
-  Pump, damage, and draw share `TriggerNumericAmount` and `TriggerNumericWho`.
+  Pump and damage share `NumberSelector` and `ObjectSelector`.
+  Draw shares `NumberSelector`. Its player is a `PlayerSelector`.
   Each creature blocking the source is `.dealDamage (.fixed n) .blockers`.
   Last-known power to the announced creature is
   `.dealDamage .lastKnownPower .permanent`.
-  `n` damage to each opponent is `.dealDamage (.fixed n) .eachOpponent`.
+  `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
   When that ability targets, only the announced opponent is dealt damage.
   Damage equal to permanents of `subtype` you control, to each opponent, is
-  `.dealDamage (.subtypeCount subtype) .eachOpponent`.
+  `.dealDamage (.subtypeCount subtype) (.player .eachOpponent)`.
   Damage equal to Treasures you control, to the target, is
   `.dealDamage (.subtypeCount "Treasure") .target`.
   `n` damage to the target, remembering a marked permanent, is
@@ -1335,23 +1349,23 @@ inductive TriggerResolution where
   Last-known power, noting excess damage, is
   `.dealDamage .lastKnownPower .permanent .excess`.
   Damage to each opponent equal to the hand discarded by an earlier step is
-  `.dealDamage .discardedHand .eachOpponent`.
-  `n` damage to the announced opponent is `.dealDamage (.fixed n) .targetOpponent`.
+  `.dealDamage .discardedHand (.player .eachOpponent)`.
+  `n` damage to the announced opponent is `.dealDamage (.fixed n) (.player .targetOpponent)`.
   `n` damage to the announced target is `.dealDamage (.fixed n) .target`.
   `n` damage to each creature that is not `subtype`, and to each opponent, is
   `.dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype)`.
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
-  `.dealDamage .greatestArtifactMv .targetOpponent`.
+  `.dealDamage .greatestArtifactMv (.player .targetOpponent)`.
   Damage equal to the mana value of the spell that caused this, to the
   announced player or permanent, is `.dealDamage .spellManaValue .target`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
-  | dealDamage (amount : TriggerNumericAmount) (who : TriggerNumericWho)
+  | dealDamage (amount : NumberSelector) (who : ObjectSelector)
       (note : TriggerDamageNote := .none)
   /-- Scry, as `n` says. `.fixed` is that many cards.
   Scry 2 is `.scry (.fixed 2)`. Any other amount scries nothing. -/
-  | scry (n : TriggerNumericAmount)
+  | scry (n : NumberSelector)
   /-- `who` draws cards, as `amount` says. `.fixed` is that many cards.
   The controller is `.you`.
   The controller draws `n` is `.draw (.fixed n)`.
@@ -1370,7 +1384,7 @@ inductive TriggerResolution where
   `.draw (.upToHandSize 10)`. A hand that already has ten draws nothing.
   One card for each permanent of `ty` the controller controls is
   `.draw (.perControlled ty)`. -/
-  | draw (amount : TriggerNumericAmount) (who : TriggerNumericWho := .you)
+  | draw (amount : NumberSelector) (who : PlayerSelector := .you)
   /-- Search a library, then resolve `thenDo` for the card that was found.
   A Forest onto the battlefield is `.searchLibrary (.put .forest)`.
   A basic land into your hand is `.searchLibrary (.returnToHand .basicLand)`.
@@ -2299,7 +2313,7 @@ where
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  affectedWho : TriggerAffected → TriggerNumericWho
+  affectedWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
@@ -2491,7 +2505,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) }
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     { targeting := .of .opponent
-      resolution := .dealDamage .greatestArtifactMv .targetOpponent }
+      resolution := .dealDamage .greatestArtifactMv (.player .targetOpponent) }
   | .spell s =>
     { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
       resolution := TriggerResolution.ofSpell s.resolution }
@@ -2628,7 +2642,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) .eachOpponent }
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player .eachOpponent) }
   | .attachTo kind =>
     { targeting := .of kind, resolution := .attach .source .target }
   | .opponentSacrificesCreature =>
@@ -2747,7 +2761,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
          .gainLife 0 (amount := .forEachDestroyedThisWay)] }
   | .damageEqualSubtypeToEachOpponent subtype =>
-    { resolution := .dealDamage (.subtypeCount subtype) .eachOpponent }
+    { resolution := .dealDamage (.subtypeCount subtype) (.player .eachOpponent) }
   | .damageEqualTreasures =>
     { targeting := .of .playerOrCreature,
       resolution := .dealDamage (.subtypeCount "Treasure") .target }
@@ -2883,7 +2897,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand,
-         .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)] }
+         .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
   | .equippedAttackersGainDoubleStrike =>
@@ -2905,7 +2919,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] }
   | .damageTargetOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) .targetOpponent }
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player .targetOpponent) }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
@@ -3246,7 +3260,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.youTargetSomething], onceEachTurn := true, resolution := .draw (.fixed 1) }
   | .watch .villainOrArtifactDamage =>
     { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent,
-      resolution := .dealDamage (.fixed 1) .targetOpponent }
+      resolution := .dealDamage (.fixed 1) (.player .targetOpponent) }
   | .watch .villainConniveOnce =>
     { events := #[.anotherVillainEnters], optionalOnceEachTurn := true,
       resolution := .connive .enteringVillain }
@@ -3254,7 +3268,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.anotherVillainEnters], onceEachTurn := true,
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
-        .dealDamage (.fixed 2) .eachOpponent] }
+        .dealDamage (.fixed 2) (.player .eachOpponent)] }
   | .watch .villainAttachEquipment =>
     { events := #[.anotherVillainEnters]
       targeting := .of .upToOneEquipmentThenCreatureYouControl
@@ -3291,7 +3305,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .tap .target }
   | .watch .equippedTappedDamage =>
     { events := #[.equippedBecomesTapped],
-      resolution := .dealDamage (.fixed 1) .eachOpponent .fromEquipped }
+      resolution := .dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped }
   | .watch .heroesDamagePlusTwo =>
     { events := #[.heroesDealDamageToPlayer],
       resolution := .putCounters (.ofKind .plusOnePlusOne 2) .source }
@@ -3379,7 +3393,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent) }
+      resolution := .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent)) }
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
@@ -3518,7 +3532,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
-  .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent)
+  .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
   .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==

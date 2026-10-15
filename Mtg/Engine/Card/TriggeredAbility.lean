@@ -864,11 +864,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
     | .permanent, .lastKnownPower, _ =>
       s!"it deals damage equal to its power to {noun}"
-    | .eachOpponent, .subtypeCount subtype, _ =>
+    | .player .eachOpponent, .subtypeCount subtype, _ =>
       s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
-    | .eachOpponent, .discardedHand, _ =>
+    | .player .eachOpponent, .discardedHand, _ =>
       "this deals X damage to each opponent"
-    | .eachOpponent, .fixed n, _ =>
+    | .player .eachOpponent, .fixed n, _ =>
       s!"this creature deals {n} damage to each opponent"
     | .target, .subtypeCount subtype, _ =>
       s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
@@ -878,11 +878,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"this deals damage equal to that spell's mana value to {noun}"
     | .target, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
-    | .targetOpponent, .greatestArtifactMv, _ =>
+    | .player .targetOpponent, .greatestArtifactMv, _ =>
       s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
     | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
       s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
-    | .targetOpponent, .fixed n, _ =>
+    | .player .targetOpponent, .fixed n, _ =>
       s!"this deals {n} damage to {noun}"
     | .permanent, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
@@ -1052,7 +1052,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)] =>
+  | .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
@@ -1608,7 +1608,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "after this phase, there is an additional combat phase"
   | .«if» .youControlledDestroyed (.draw (.fixed 1)) =>
     "if you controlled that creature, draw a card"
-  | .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent) =>
+  | .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent)) =>
     "if you have an enduring story, this deals X damage to each opponent"
   | .becomeBear =>
     "it becomes a Bear in addition to its other types"

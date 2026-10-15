@@ -1507,7 +1507,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onDiesDealDamageEqualToPowerToOppCreature ==
   .dealDamage .lastKnownPower .permanent
 #guard TriggeredAbility.resolution (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
-  .dealDamage (.fixed 2) .eachOpponent
+  .dealDamage (.fixed 2) (.player .eachOpponent)
 #guard
   let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
@@ -1557,7 +1557,7 @@ end CardDef
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand,
-    .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]
+    .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
     .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]

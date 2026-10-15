@@ -782,7 +782,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand, .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]`. -/
+  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -1004,16 +1004,16 @@ inductive SharedTrigger where
   Two +1/+1 counters are `.putCounters (.ofKind .plusOnePlusOne 2) .source`.
   A counter that is not put after the source has left, then 2 damage to
   each opponent, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage (.fixed 2) .eachOpponent]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage (.fixed 2) (.player .eachOpponent)]`.
   +1/+0 and lifelink until end of turn is
   `.sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]`.
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
   `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]`.
-  1 damage to the announced opponent is `.dealDamage (.fixed 1) .targetOpponent`.
+  1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player .targetOpponent)`.
   1 damage from the equipped creature to each opponent is
-  `.dealDamage (.fixed 1) .eachOpponent .fromEquipped`.
+  `.dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped`.
   Tapping the announced creature is `.tap .target`.
   Untapping the creature that became tapped is `.untap .firstThisTurn`.
   Untapping the equipped creature, then scrying 1, is
@@ -1086,7 +1086,7 @@ inductive SharedTrigger where
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   If you control another Hero, 1 damage to the announced opponent is
-  `.«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent)`.
+  `.«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))`.
   Base power and toughness 6/6 and trample until end of turn is
   `.sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]`.
   A +1/+1 counter on the announced creature is

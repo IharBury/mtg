@@ -39,7 +39,7 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceDiscardExilePlay) ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent)
+  .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawBecome66) ==
   .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
