@@ -864,11 +864,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
     | .permanent, .lastKnownPower, _ =>
       s!"it deals damage equal to its power to {noun}"
-    | .eachOpponent, .subtypeCount subtype, _ =>
+    | .player .eachOpponent, .subtypeCount subtype, _ =>
       s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
-    | .eachOpponent, .discardedHand, _ =>
+    | .player .eachOpponent, .discardedHand, _ =>
       "this deals X damage to each opponent"
-    | .eachOpponent, .fixed n, _ =>
+    | .player .eachOpponent, .fixed n, _ =>
       s!"this creature deals {n} damage to each opponent"
     | .target, .subtypeCount subtype, _ =>
       s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
@@ -878,11 +878,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"this deals damage equal to that spell's mana value to {noun}"
     | .target, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
-    | .targetOpponent, .greatestArtifactMv, _ =>
+    | .player .targetOpponent, .greatestArtifactMv, _ =>
       s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
     | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
       s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
-    | .targetOpponent, .fixed n, _ =>
+    | .player .targetOpponent, .fixed n, _ =>
       s!"this deals {n} damage to {noun}"
     | .permanent, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
@@ -898,25 +898,25 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .scry _ => "scry"
   | .draw amount who =>
     match who, amount with
-    | .opponentHasYou, _ =>
+    | .player .opponentHasYou, _ =>
       "target opponent may have you draw a card"
-    | .you, .forEachTappedHuman =>
+    | .player .you, .forEachTappedHuman =>
       "draw a card for each Human tapped this way"
-    | .you, .perFatGraveyard =>
+    | .player .you, .perFatGraveyard =>
       "draw a card for each graveyard with seven or more cards in it"
-    | .you, .discardedHand =>
+    | .player .you, .discardedHand =>
       "draw X cards, where X is the number of cards discarded this way"
-    | .you, .equalToManaSpent =>
+    | .player .you, .equalToManaSpent =>
       "draw X cards, where X is the amount of mana spent to cast that spell"
-    | .you, .perControlled _ =>
+    | .player .you, .perControlled _ =>
       "draw a card for each permanent you control of that type"
-    | .you, .upToHandSize _ =>
+    | .player .you, .upToHandSize _ =>
       "if you have fewer than that many cards in hand, draw cards equal to the difference"
-    | .enchantedController, _ =>
+    | .player .enchantedController, _ =>
       "that player draws a card"
-    | .eachOpponent, .fixed n =>
+    | .player .eachOpponent, .fixed n =>
       s!"each opponent draws {cardPhrase n.toNat}"
-    | .you, .fixed n =>
+    | .player .you, .fixed n =>
       s!"draw {cardPhrase n.toNat}"
     | _, _ =>
       "draw cards"
@@ -976,7 +976,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may put an artifact card from your hand onto the battlefield"
     | .discard _ _ .hand =>
       "you may discard your hand"
-    | .draw _ .opponentHasYou =>
+    | .draw _ (.player .opponentHasYou) =>
       "target opponent may have you draw a card"
     | .put .landFromHand .tapped _ =>
       "you may put a land card from your hand onto the battlefield tapped"
@@ -1052,7 +1052,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)] =>
+  | .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
@@ -1078,7 +1078,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
       .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
+  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ (.player .opponentHasYou)) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive .copyMilled)] =>
@@ -1550,7 +1550,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .spellsCostLess _ n =>
     s!"spells you cast this turn cost \{{n}} less to cast"
-  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) (.player .eachOpponent)) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"
   | .connive .source => "it connives"
@@ -1608,7 +1608,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "after this phase, there is an additional combat phase"
   | .«if» .youControlledDestroyed (.draw (.fixed 1)) =>
     "if you controlled that creature, draw a card"
-  | .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent) =>
+  | .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent)) =>
     "if you have an enduring story, this deals X damage to each opponent"
   | .becomeBear =>
     "it becomes a Bear in addition to its other types"

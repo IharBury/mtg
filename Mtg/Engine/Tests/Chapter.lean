@@ -95,7 +95,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
   .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
-  .dealDamage .greatestArtifactMv .targetOpponent
+  .dealDamage .greatestArtifactMv (.player .targetOpponent)
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
@@ -118,7 +118,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
   .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))
 #guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
-  .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
+  .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .player .eachOpponent)) .ifYouDo
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
   .spellsCostLess (.cardType .artifact) 1
 #guard (timing (.spell {

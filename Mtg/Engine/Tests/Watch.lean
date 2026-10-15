@@ -50,13 +50,13 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
-  .dealDamage (.fixed 1) .targetOpponent
+  .dealDamage (.fixed 1) (.player .targetOpponent)
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainConniveOnce) ==
   .connive .enteringVillain
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneDamageOnce) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
-    .dealDamage (.fixed 2) .eachOpponent]
+    .dealDamage (.fixed 2) (.player .eachOpponent)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainAttachEquipment) ==
   .attach .announcedEquipment .announcedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
@@ -77,7 +77,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .sequence [.untap .equipped, .scry (.fixed 1)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksTap) == .tap .target
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedTappedDamage) ==
-  .dealDamage (.fixed 1) .eachOpponent .fromEquipped
+  .dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped
 #guard TriggeredAbility.resolution (onWatch Effect.watchHeroesDamagePlusTwo) ==
   .putCounters (.ofKind .plusOnePlusOne 2) .source
 #guard TriggeredAbility.resolution (onWatch Effect.watchMerfolkAttackDraw) == .draw (.fixed 1)
