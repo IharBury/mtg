@@ -641,7 +641,7 @@ inductive SharedTrigger where
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
-  `.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard n)]`.
+  `.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards n))]`.
   Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)
@@ -724,7 +724,7 @@ inductive SharedTrigger where
   /-- You may sacrifice another creature for +1/+1s equal to its power. -/
   | attackSacPlusOneEqualPower
   /-- Loot; a discarded land enters tapped. Resolves as
-  `.sequence [.draw (.fixed 1), .discard 1, .put .discardedLand (how := .tapped)]`. -/
+  `.sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. Resolves as
   `.mill 0 .thatPlayer .thatManyLost`. -/
@@ -782,7 +782,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]`. -/
+  `.sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -841,7 +841,7 @@ inductive SharedTrigger where
   `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`. -/
   | scryAndPlan (n : Nat)
   /-- Loot and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)]`. -/
   | lootAndPlan
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
