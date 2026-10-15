@@ -738,7 +738,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled .reflexiveCopyMilled]`. -/
+  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive .copyMilled)]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower

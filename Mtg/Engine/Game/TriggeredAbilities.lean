@@ -347,6 +347,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .sourceWasSacrificed =>
     let yes := g.sourceWasSacrificed
     ({ g with sourceWasSacrificed := false }, yes)
+  | .planWasSacrificed =>
+    let yes := g.planWasSacrificed
+    ({ g with planWasSacrificed := false }, yes)
   | .questAtLeast n =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The triggered ability's source is no longer in play", false)
@@ -2818,20 +2821,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyRevealLibrary controller sourceId targets how thenDo who
   | .fight who how =>
     g.applyFight controller sourceId targets who how
-  | .reflexiveCopyMilled =>
-    let mv :=
-      match g.fraCause? with
-      | some spell => g.objectManaValue spell
-      | none => (lastKnownPower.getD 0).toNat
-    g.putReflexiveTrigger controller sourceId {
-      targeting := .of (.filtered {
-        noun := s!"target enchantment, instant, or sorcery card with mana value {mv} or less from an opponent's graveyard"
-        zone := .anyGraveyard
-        types := #[.enchantment, .instant, .sorcery]
-        controller := .opponent
-        mvAtMost := some mv })
-      resolution := .fra .sarumanExileCopyMayCast
-      phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
   | .copySelfNonlegendary =>
     match sourceId.bind g.findObject? with
     | none => g
@@ -2865,8 +2854,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .attackPumpPerPlains =>
-    g.attackPumpPerPlains controller
   | .spellsCostLess which n =>
     match which with
     | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
@@ -2893,14 +2880,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           match g.villainConniveTarget? controller src.id targets lastKnownPower with
           | none => g.logMsg "The Villain does not connive"
           | some vid => g.beginMayHaveVillainConnive controller src.id vid
-  | .queueReflexiveIfSacrificed kind =>
-    let yes := g.planWasSacrificed
-    let g := { g with planWasSacrificed := false }
-    if yes then g.queueModeledReflexive controller sourceId kind else g
-  | .queuePlanDividedDamage _n =>
-    let yes := g.planWasSacrificed
-    let g := { g with planWasSacrificed := false }
-    if yes then g.queueModeledReflexive controller sourceId 10 else g
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
@@ -3110,6 +3089,28 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.putReflexiveTrigger controller sourceId
         { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
           phrase := s!"This deals {n} damage to any target" }
+    | .copyMilled =>
+      let mv :=
+        match g.fraCause? with
+        | some spell => g.objectManaValue spell
+        | none => (lastKnownPower.getD 0).toNat
+      g.putReflexiveTrigger controller sourceId {
+        targeting := .of (.filtered {
+          noun := s!"target enchantment, instant, or sorcery card with mana value {mv} or less from an opponent's graveyard"
+          zone := .anyGraveyard
+          types := #[.enchantment, .instant, .sorcery]
+          controller := .opponent
+          mvAtMost := some mv })
+        resolution := .fra .sarumanExileCopyMayCast
+        phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
+    | .dividedDamage amount =>
+      g.putReflexiveTrigger controller sourceId {
+        targeting := .of .playerOrCreature
+        dividedDamage := some (amount, 2)
+        resolution := .fra (.mshReflexive 10 0)
+        phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
+    | .attackPumpPerPlains =>
+      g.attackPumpPerPlains controller
   | .may _ _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve")
   | r =>

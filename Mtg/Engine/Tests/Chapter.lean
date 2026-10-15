@@ -77,7 +77,8 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
     .gainLife 2]
 #guard (timing .returnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile .owner
-#guard (timing .grantAttackPumpPerPlainsThisTurn).resolution == .attackPumpPerPlains
+#guard (timing .grantAttackPumpPerPlainsThisTurn).resolution ==
+  .queueReflexive .attackPumpPerPlains
 #guard (timing .blinkUntilEndStep).resolution == .exile .target .nextEndStep
 #guard (timing .treasureThenDragonIfFour).resolution ==
   .sequence [
