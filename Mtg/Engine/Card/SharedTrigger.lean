@@ -641,7 +641,7 @@ inductive SharedTrigger where
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
-  `.sequence [.draw .equalToManaSpent, .discard n (when := .ifManaSpent)]`.
+  `.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard n)]`.
   Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)

@@ -141,6 +141,9 @@ inductive TriggerIf where
   otherwise the recorded cause. A missing source is reported. No cause
   does not hold. The source itself does not hold. -/
   | causeGreaterPowerOrToughness
+  /-- Mana was spent to cast the triggering spell.
+  Spending none does not hold. -/
+  | manaSpent
 deriving Repr, Inhabited, BEq
 
 /-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
@@ -924,15 +927,6 @@ inductive TriggerDiscardWhat where
   | chosenNonland
 deriving Repr, Inhabited, BEq
 
-/-- When `TriggerResolution.discard` discards those cards. -/
-inductive TriggerDiscardWhen where
-  /-- As this step resolves. -/
-  | now
-  /-- When mana was spent to cast the triggering spell. An earlier step
-  that saw none skips this one. -/
-  | ifManaSpent
-deriving Repr, Inhabited, BEq
-
 /-- Who `TriggerResolution.fight` uses. -/
 inductive TriggerFightWho where
   /-- The source. -/
@@ -1398,12 +1392,11 @@ inductive TriggerResolution where
   Optional as `.may (.discard (what := .hand)) (.sequence [])`. Declining leaves the note
   empty so the following draw and damage steps do nothing.
   `n` cards when mana was spent to cast the triggering spell is
-  `.discard n (when := .ifManaSpent)`.
+  `.«if» .manaSpent (.discard n)`. Spending none discards nothing.
   The announced opponent reveals their hand and discards a nonland you
   choose with `.discard 1 (who := .target) (what := .chosenNonland)`. -/
   | discard (n : Nat := 1) (who : TriggerDiscardWho := .you)
       (what : TriggerDiscardWhat := .cards)
-      (when : TriggerDiscardWhen := .now)
   /-- Pay `symbols`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
   `.pay #[.generic 1, .colored .green, .colored .blue]`. -/
@@ -1653,7 +1646,7 @@ inductive TriggerResolution where
   A choice that already includes decline is that choice, so the player
   is not asked twice. You may draw X cards, where X is the mana spent to
   cast the triggering spell, then discard two, is
-  `.may (.sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]) (.sequence [])`.
+  `.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]) (.sequence [])`.
   You may tap any number of untapped Humans is `.may (.tap .humans) (.sequence [])`.
   You may sacrifice another creature is `.may (.sacrifice .you .another) (.sequence [])`.
   You may put an artifact from your hand onto the battlefield is
@@ -1958,7 +1951,9 @@ inductive TriggerResolution where
   its last-known power. Power below 4 is reported.
   Draining for the Equipment attached to the source is
   `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
-  No Equipment is reported. -/
+  No Equipment is reported.
+  Discarding `n` cards when mana was spent to cast the triggering spell is
+  `.«if» .manaSpent (.discard n)`. Spending none discards nothing. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -2719,7 +2714,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
     { resolution := .sequence
-        [.draw .equalToManaSpent, .discard n (when := .ifManaSpent)] }
+        [.draw .equalToManaSpent, .«if» .manaSpent (.discard n)] }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,

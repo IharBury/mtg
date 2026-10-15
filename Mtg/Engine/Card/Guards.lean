@@ -734,7 +734,7 @@ namespace CardDef
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
-  .may (.sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]) (.sequence [])
+  .may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]) (.sequence [])
 #guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
@@ -1615,7 +1615,7 @@ end CardDef
 #guard TriggeredAbility.toNotation .onYourBeginCombatIfDrawnTwoPumpFirstStrike ==
   "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
-  .sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]
+  .sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
