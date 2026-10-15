@@ -1642,35 +1642,35 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
 the behavior of the constructor it replaced. -/
 def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (amount : TriggeredAbility.NumberSelector)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match who, amount with
-  | .player .enchantedController, _ =>
+  | .enchantedController, _ =>
     g.drawForEnchantedController sourceId
-  | .player .you, .upToHandSize k =>
+  | .you, .upToHandSize k =>
     g.drawUpToHandSize controller k
-  | .player .opponentHasYou, _ =>
+  | .opponentHasYou, _ =>
     match g.palantirChoiceReady with
     | none => g
     | some (c, opp, sid) =>
       ({ g with palantirChoiceReady := none }).offerPalantirChoice c opp sid
-  | .player .you, .perControlled ty =>
+  | .you, .perControlled ty =>
     let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
     if n == 0 then g else g.draw controller n
-  | .player .eachOpponent, .fixed n =>
+  | .eachOpponent, .fixed n =>
     g.forEachOpponent controller (fun g pid => g.draw pid n.toNat)
-  | .player .you, .fixed n =>
+  | .you, .fixed n =>
     g.draw controller n.toNat
-  | .player .you, .forEachTappedHuman =>
+  | .you, .forEachTappedHuman =>
     let n := g.humansTappedThisWay
     let g := { g with humansTappedThisWay := 0 }
     if n == 0 then g else g.draw controller n
-  | .player .you, .perFatGraveyard =>
+  | .you, .perFatGraveyard =>
     g.drawPerSevenCardGraveyard controller
-  | .player .you, .discardedHand =>
+  | .you, .discardedHand =>
     match g.handDiscardedThisWay with
     | some n => if n == 0 then g else g.draw controller n
     | none => g
-  | .player .you, .equalToManaSpent =>
+  | .you, .equalToManaSpent =>
     let spent :=
       ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then
@@ -2850,8 +2850,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
   | .loseLife n who amount =>
     g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
-  | .may (.draw _ (.player .opponentHasYou)) _ =>
-    g.applyTriggerDraw controller sourceId (.fixed 1) (.player .opponentHasYou)
+  | .may (.draw _ .opponentHasYou) _ =>
+    g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
@@ -2964,7 +2964,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.copyCastTriggerSpell controller
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     g.offerMayExileDiscarded controller lastKnownPower
-  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) (.player .eachOpponent)) .ifYouDo =>
+  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     g.mayDrawPerArtifact controller ty
   | .may (.draw (.fixed 1) _) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"

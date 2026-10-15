@@ -99,14 +99,14 @@ the rest of the sequence. -/
   let g0 := addPermanent afterDraw pebble caster caster
   let sid := (pebbleOf g0).id
   let g := drawStep { g0 with palantirChoiceReady := some (caster, opponent, sid) }
-    (.draw (.fixed 1) (who := .player .opponentHasYou))
+    (.draw (.fixed 1) (who := .opponentHasYou))
   match g.pending with
   | .fraChoice p (.palantirMayDraw c id) =>
     p == opponent && c == caster && id == sid && g.palantirChoiceReady.isNone
   | _ => false
 
 #guard
-  let g := drawStep afterDraw (.may (.draw (.fixed 1) (who := .player .opponentHasYou)) (.sequence []))
+  let g := drawStep afterDraw (.may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence []))
   g.pending == .none && handSize g caster == handSize afterDraw caster
 
 /- You may draw X and discard two when mana was spent. -/

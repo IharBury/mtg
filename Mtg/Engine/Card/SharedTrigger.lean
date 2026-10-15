@@ -816,7 +816,7 @@ inductive SharedTrigger where
   `.sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .player .opponentHasYou)) (.sequence [])]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -952,7 +952,7 @@ inductive SharedTrigger where
   | enter (e : EnterLeftover)
   /-- Leftover step / upkeep / end-step / first-main effect.
   The enchanted creature's controller draws a card, as
-  `.draw (.fixed 1) (who := .player .enchantedController)`.
+  `.draw (.fixed 1) (who := .enchantedController)`.
   Drawing until you have ten cards is `.draw (.upToHandSize 10)`.
   Becoming a copy of an artifact, non-Aura enchantment, or land is
   `.becomeCopy .artifactEnchantmentOrLand`.

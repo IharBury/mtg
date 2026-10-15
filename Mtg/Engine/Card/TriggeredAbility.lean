@@ -898,25 +898,25 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .scry _ => "scry"
   | .draw amount who =>
     match who, amount with
-    | .player .opponentHasYou, _ =>
+    | .opponentHasYou, _ =>
       "target opponent may have you draw a card"
-    | .player .you, .forEachTappedHuman =>
+    | .you, .forEachTappedHuman =>
       "draw a card for each Human tapped this way"
-    | .player .you, .perFatGraveyard =>
+    | .you, .perFatGraveyard =>
       "draw a card for each graveyard with seven or more cards in it"
-    | .player .you, .discardedHand =>
+    | .you, .discardedHand =>
       "draw X cards, where X is the number of cards discarded this way"
-    | .player .you, .equalToManaSpent =>
+    | .you, .equalToManaSpent =>
       "draw X cards, where X is the amount of mana spent to cast that spell"
-    | .player .you, .perControlled _ =>
+    | .you, .perControlled _ =>
       "draw a card for each permanent you control of that type"
-    | .player .you, .upToHandSize _ =>
+    | .you, .upToHandSize _ =>
       "if you have fewer than that many cards in hand, draw cards equal to the difference"
-    | .player .enchantedController, _ =>
+    | .enchantedController, _ =>
       "that player draws a card"
-    | .player .eachOpponent, .fixed n =>
+    | .eachOpponent, .fixed n =>
       s!"each opponent draws {cardPhrase n.toNat}"
-    | .player .you, .fixed n =>
+    | .you, .fixed n =>
       s!"draw {cardPhrase n.toNat}"
     | _, _ =>
       "draw cards"
@@ -976,7 +976,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may put an artifact card from your hand onto the battlefield"
     | .discard _ _ .hand =>
       "you may discard your hand"
-    | .draw _ (.player .opponentHasYou) =>
+    | .draw _ .opponentHasYou =>
       "target opponent may have you draw a card"
     | .put .landFromHand .tapped _ =>
       "you may put a land card from your hand onto the battlefield tapped"
@@ -1078,7 +1078,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
       .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ (.player .opponentHasYou)) _] =>
+  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive .copyMilled)] =>
@@ -1550,7 +1550,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .spellsCostLess _ n =>
     s!"spells you cast this turn cost \{{n}} less to cast"
-  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) (.player .eachOpponent)) .ifYouDo =>
+  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"
   | .connive .source => "it connives"

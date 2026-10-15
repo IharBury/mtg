@@ -1569,7 +1569,7 @@ end CardDef
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
-    .may (.draw (.fixed 1) (who := .player .opponentHasYou)) (.sequence [])]
+    .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
