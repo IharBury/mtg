@@ -191,7 +191,7 @@ deriving Repr, Inhabited, BEq
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, and who
 `TriggerResolution.dealDamage` damages. `.source` is first so a default
 resolution pumps the source. -/
-inductive TriggerDamageWho where
+inductive TriggerNumericWho where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
   `n` damage is `.dealDamage (.fixed n) .source`. -/
@@ -235,7 +235,7 @@ deriving Repr, Inhabited, BEq
 where `TriggerResolution.dealDamage` reads its amount. `.greatestPower` is
 first so a default resolution uses it. `.fixed` is a fixed bonus, and it is
 also `n` damage. -/
-inductive TriggerDamageAmount where
+inductive TriggerNumericAmount where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
   /-- One for each card looked at while scrying. -/
@@ -1327,10 +1327,10 @@ inductive TriggerResolution where
   Doubling that permanent's power and toughness is `.pump .double .double .target`.
   +P/+T and trample is
   `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`. -/
-  | pump (power toughness : TriggerDamageAmount) (who : TriggerDamageWho)
+  | pump (power toughness : TriggerNumericAmount) (who : TriggerNumericWho)
   /-- Deal damage. `amount` is how much. `.fixed` carries that `n`.
   `who` is who is dealt it, and `note` records a later step.
-  Pump and damage share `TriggerDamageAmount` and `TriggerDamageWho`.
+  Pump and damage share `TriggerNumericAmount` and `TriggerNumericWho`.
   Each creature blocking the source is `.dealDamage (.fixed n) .blockers`.
   Last-known power to the announced creature is
   `.dealDamage .lastKnownPower .permanent`.
@@ -1357,7 +1357,7 @@ inductive TriggerResolution where
   announced player or permanent, is `.dealDamage .spellManaValue .target`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
-  | dealDamage (amount : TriggerDamageAmount) (who : TriggerDamageWho)
+  | dealDamage (amount : TriggerNumericAmount) (who : TriggerNumericWho)
       (note : TriggerDamageNote := .none)
   /-- Scry `n`. -/
   | scry (n : Nat)
@@ -2310,7 +2310,7 @@ where
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  affectedWho : TriggerAffected → TriggerDamageWho
+  affectedWho : TriggerAffected → TriggerNumericWho
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted

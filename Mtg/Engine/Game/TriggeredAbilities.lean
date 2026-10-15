@@ -589,9 +589,9 @@ separately, then applied to each permanent `who` names. -/
 def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower lastKnownToughness : Option Int)
-    (power toughness : TriggeredAbility.TriggerDamageAmount)
-    (who : TriggeredAbility.TriggerDamageWho) : Game :=
-  let shared (amount : TriggeredAbility.TriggerDamageAmount) : Option Int :=
+    (power toughness : TriggeredAbility.TriggerNumericAmount)
+    (who : TriggeredAbility.TriggerNumericWho) : Game :=
+  let shared (amount : TriggeredAbility.TriggerNumericAmount) : Option Int :=
     match amount with
     | .fixed n => some n
     | .greatestPower => some (g.greatestPowerAmongCreatures controller)
@@ -660,8 +660,8 @@ the behavior of the constructor it replaced. -/
 def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int) (sourceName : String)
-    (amount : TriggeredAbility.TriggerDamageAmount)
-    (who : TriggeredAbility.TriggerDamageWho)
+    (amount : TriggeredAbility.TriggerNumericAmount)
+    (who : TriggeredAbility.TriggerNumericWho)
     (note : TriggeredAbility.TriggerDamageNote) : Game :=
   match who, amount, note with
   | .blockers, .fixed n, _ =>
