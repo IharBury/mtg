@@ -816,7 +816,7 @@ inductive SharedTrigger where
   `.sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -838,7 +838,7 @@ inductive SharedTrigger where
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/
   | othersOfSubtypeGetEqualSourceToughness (subtype : String)
   /-- Scry `n` and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`. -/
   | scryAndPlan (n : Nat)
   /-- Loot and put a plan counter. Resolves as
   `.sequence [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1]`. -/
@@ -1017,7 +1017,7 @@ inductive SharedTrigger where
   Tapping the announced creature is `.tap .target`.
   Untapping the creature that became tapped is `.untap .firstThisTurn`.
   Untapping the equipped creature, then scrying 1, is
-  `.sequence [.untap .equipped, .scry 1]`.
+  `.sequence [.untap .equipped, .scry (.fixed 1)]`.
   A +1/+1 counter when the entering creature is greater is
   `.«if» .causeGreaterPowerOrToughness (.putCounters (.ofKind .plusOnePlusOne) .source)`.
   Putting a counter, untapping when attacking, and an Enrage combat is
@@ -1072,7 +1072,7 @@ inductive SharedTrigger where
   A +1/+1 counter on the source is
   `.putCounters (.ofKind .plusOnePlusOne) .source`.
   That counter, then scry 1, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)]`.
   Iron Fist's tap ability until end of turn is `.grant .ironFistTap .source`.
   Flying on the spell's creature targets is
   `.grant (.keywords Keyword.flying) .spellTargets`.

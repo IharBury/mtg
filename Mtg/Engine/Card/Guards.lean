@@ -724,7 +724,7 @@ namespace CardDef
   .may (.discard 1) (.draw 2) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
     (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
-  .may (.scry 1) (.gainLife 2) .ifYouDo
+  .may (.scry (.fixed 1)) (.gainLife 2) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
     (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetKind ==
   .creature
@@ -1281,7 +1281,7 @@ namespace CardDef
   .setBasePT 0 0 (amount := .equalSource)
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
-#guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
+#guard TriggeredAbility.resolution (.onEnterScry 2) == .scry (.fixed 2)
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil 2
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
@@ -1397,11 +1397,11 @@ namespace CardDef
   "Sneak {1}{B}{B}"
 #guard StaticAbility.toNotation .boast ==
   "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
-#guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
+#guard TriggeredAbility.resolution (.onAttackScry 1) == .scry (.fixed 1)
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
 #guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
-#guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
+#guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry (.fixed 1)
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest ==
   .searchLibrary (.put .forest)
@@ -1568,12 +1568,12 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
-  .sequence [.putCounters (.ofKind .influence) .source, .scry 2,
+  .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
     .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
-  .sequence [.putCounters (.ofKind .plan) .source, .scry 2]
+  .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed 2)]
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOneAndPlan ==
   .sequence [.putCounters (.ofKind .plan) .source,
     .putCounters (.ofKind .plusOnePlusOne) (.permanent true)]

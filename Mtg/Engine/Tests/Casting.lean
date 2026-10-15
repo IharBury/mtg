@@ -71,7 +71,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneThis) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneScry) ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)]
 #guard TriggeredAbility.resolution (casting Effect.castingIronFistTap) ==
   .grant .ironFistTap .source
 #guard TriggeredAbility.resolution (casting Effect.castingTargetsGainFlying) ==

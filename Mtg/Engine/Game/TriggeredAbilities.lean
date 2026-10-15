@@ -2518,8 +2518,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .dealDamage amount who note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       amount who note
-  | .scry n =>
-    g.beginScry controller n
+  | .scry (.fixed n) =>
+    g.beginScry controller n.toNat
+  | .scry _ => g
   | .draw n who amount =>
     g.applyTriggerDraw controller sourceId n who amount
   | .searchLibrary thenDo =>

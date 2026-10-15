@@ -97,7 +97,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
   .dealDamage .greatestArtifactMv .targetOpponent
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw 1
-#guard (timing (.spell { resolution := .scry 2 })).resolution == .scry 2
+#guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
   .createTokens .villain21menace 2 false
 #guard (timing (.spell { resolution := .createTokens .treasure 0 (qty := .perSubtype "Villain") })).resolution ==

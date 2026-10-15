@@ -894,7 +894,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"deals {n} damage to that creature"
     | _, _, _ =>
       "deal damage"
-  | .scry n => s!"scry {n}"
+  | .scry (.fixed n) => s!"scry {n}"
+  | .scry _ => "scry"
   | .draw n who amount =>
     match who, amount with
     | .opponentHasYou, _ =>
@@ -1077,14 +1078,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
       .mayCast .impulse .unlimited .withoutPaying .none] =>
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | .sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw _ .opponentHasYou _) _] =>
+  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou _) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive .copyMilled)] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
   | .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
-  | .sequence [.putCounters (.ofKind .plan) .source, .scry n] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] =>
     s!"scry {n} and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1] =>
     "draw a card, then discard a card and put a plan counter on this enchantment"
@@ -1185,7 +1186,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .sequence [.draw 1, .grant .basePowerEqualHand .source] =>
     "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)] =>
     "put a +1/+1 counter on this creature. Scry 1"
   | .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] =>
     "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
