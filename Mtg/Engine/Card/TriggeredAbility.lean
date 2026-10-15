@@ -922,7 +922,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "draw cards"
   | .searchLibrary (.put .forest .asPrinted .none) =>
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
-  | .searchLibrary (.returnToHand .basicLand .you .none) =>
+  | .searchLibrary (.returnToHand .basicLand .none) =>
     searchLibraryToHandPhrase "a basic land card"
   | .searchLibrary (.put .basicLandOnTop .asPrinted .none) =>
     "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
@@ -1028,7 +1028,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
-  | .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
+  | .sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
   | .sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes),
       .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] =>
@@ -1423,27 +1423,27 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose one that hasn't been chosen this turn — • This gains double strike until end of turn. • This gains indestructible until end of turn. • Draw a card"
     else
       "choose a mode"
-  | .returnToHand what whose note =>
-    match what, whose, note with
-    | .graveyardCard, .you, .none =>
+  | .returnToHand what note =>
+    match what, note with
+    | .graveyardCard, .none =>
       s!"return {noun} to your hand"
-    | .permanent, .owner, .returnedPermanent =>
+    | .permanent, .returnedPermanent =>
       s!"return up to one {noun} to its owner's hand"
-    | .graveyardPermanent, .you, .none =>
+    | .graveyardPermanent, .none =>
       s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
-    | .milledSubtype subtype, .you, .none =>
+    | .milledSubtype subtype, .none =>
       s!"put all {subtype} cards milled this way into your hand"
-    | .source, .owner, .none =>
+    | .source, .none =>
       "return this card from your graveyard to your hand"
-    | .revealed, .you, .none =>
+    | .revealed, .none =>
       "put it into your hand"
-    | .basicLand, .you, .none =>
+    | .basicLand, .none =>
       "put it into your hand"
-    | .linkedExile, .owner, .none =>
+    | .linkedExile, .none =>
       "put a card exiled with this Saga into its owner's hand"
-    | .cause, .owner, .none =>
+    | .cause, .none =>
       "return that card to its owner's hand"
-    | _, _, _ =>
+    | _, _ =>
       "return it to a hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
@@ -1503,7 +1503,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
     | .untilCreature,
       .ifElse .revealedManaValueAtMostLands
-        (.put .revealed .asPrinted .none) (.returnToHand .revealed .you .none),
+        (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
       .you =>
       s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
     | .untilSaga, .put .revealed .asPrinted .none, .you =>
@@ -1535,7 +1535,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "mill"
   | .may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .may (.pay (.mana symbols)) (.returnToHand .source .owner) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"

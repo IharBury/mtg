@@ -5,6 +5,7 @@ import Mtg.Engine.Fixture
 
 A graveyard card, a permanent to its owner's hand, a graveyard permanent
 card, milled cards of a subtype, and the source from its owner's graveyard.
+Which cards, and whose hand, are one `ObjectSelector`.
 -/
 
 namespace Mtg.Engine.ReturnToHandTests
@@ -100,7 +101,7 @@ noted. No target, or an illegal one, clears that note and moves nothing. -/
   let src := addPermanent g0 bear caster caster
   let g := step src .onEnterReturnOtherPlusOne (some (permanentId src "Grave Bear"))
     #[Target.permanent id]
-    (some (.returnToHand .permanent .owner .returnedPermanent))
+    (some (.returnToHand .permanent .returnedPermanent))
   !onBattlefield g "Grave Relic" && inHand g owner "Grave Relic" &&
     !inHand g caster "Grave Relic" && g.returnedPermanentThisWay &&
     logContains g "Grave Relic is returned to Nissa's hand"
@@ -109,7 +110,7 @@ noted. No target, or an illegal one, clears that note and moves nothing. -/
   let g0 := { addPermanent afterDraw relic caster caster with
     returnedPermanentThisWay := true }
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken)
-    (r := some (.returnToHand .permanent .owner .returnedPermanent))
+    (r := some (.returnToHand .permanent .returnedPermanent))
   onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
     !(logContains g "is returned")
 
@@ -118,7 +119,7 @@ noted. No target, or an illegal one, clears that note and moves nothing. -/
   let id := permanentId g0 "Grave Plot"
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none
     #[Target.permanent id]
-    (some (.returnToHand .permanent .owner .returnedPermanent))
+    (some (.returnToHand .permanent .returnedPermanent))
   onBattlefield g "Grave Plot" && !g.returnedPermanentThisWay &&
     logContains g "The target is no longer legal"
 
@@ -172,7 +173,7 @@ A source that has left, or no source, is reported. -/
   let g0 := putInGraveyard afterDraw relic owner
   let id := namedIn g0 (g0.player owner).graveyard "Grave Relic"
   let g := step g0 .onLandYouControlEntersPayReturnFromGy (some id)
-    (r := some (.returnToHand .source .owner))
+    (r := some (.returnToHand .source))
   inHand g owner "Grave Relic" && !inGraveyard g owner "Grave Relic" &&
     !inHand g caster "Grave Relic" &&
     logContains g "Grave Relic is returned to Nissa's hand"
@@ -181,20 +182,42 @@ A source that has left, or no source, is reported. -/
   let g0 := addPermanent afterDraw relic caster caster
   let id := permanentId g0 "Grave Relic"
   let g := step g0 .onLandYouControlEntersPayReturnFromGy (some id)
-    (r := some (.returnToHand .source .owner))
+    (r := some (.returnToHand .source))
   onBattlefield g "Grave Relic" &&
     logContains g "Grave Relic is no longer in the graveyard"
 
 #guard
   let g := step afterDraw .onLandYouControlEntersPayReturnFromGy
-    (r := some (.returnToHand .source .owner))
+    (r := some (.returnToHand .source))
   logContains g "The ability's source is no longer in the graveyard"
+
+/- A selector that is not a printed return does nothing. The announced
+permanent without the return note stays where it is. -/
+#guard
+  let g0 := putInGraveyard afterDraw bear caster
+  let id := namedIn g0 (g0.player caster).graveyard "Grave Bear"
+  let g := step g0 .onEnterReturnCreatureFromGyToHand none #[Target.card id]
+    (some (.returnToHand .hand))
+  inGraveyard g caster "Grave Bear" && !inHand g caster "Grave Bear" &&
+    !(logContains g "is returned")
+
+#guard
+  let g0 := addPermanent afterDraw relic owner caster
+  let id := permanentId g0 "Grave Relic"
+  let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none
+    #[Target.permanent id]
+    (some (.returnToHand .permanent))
+  onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
+    !(logContains g "is returned")
+
+#guard TriggeredAbility.resolutionPhrase { resolution := .returnToHand .hand } ==
+  "return it to a hand"
 
 #guard TriggeredAbility.resolution (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .returnToHand .graveyardPermanent
 
 #guard TriggeredAbility.resolution (.onEnter Effect.enterReturnNonlandNontoken) ==
-  .returnToHand .permanent .owner .returnedPermanent
+  .returnToHand .permanent .returnedPermanent
 
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   "When this permanent enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand."
