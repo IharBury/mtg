@@ -50,7 +50,8 @@ def stackEffect (g : Game) : Option Effect :=
   | some e => (g.findObject? e.objectId).bind (·.abilityEffect)
   | none => none
 
-def sacrificed (kind : Nat) : TriggeredAbility.TriggerResolution :=
+def sacrificed (kind : TriggeredAbility.TriggerReflexiveKind) :
+    TriggeredAbility.TriggerResolution :=
   .sequence [
     .sacrifice .you .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive (.modeled kind))]
@@ -58,13 +59,13 @@ def sacrificed (kind : Nat) : TriggeredAbility.TriggerResolution :=
 /- The Plan's reflexive abilities, the milled copy, and the attack pump
 use `queueReflexive`. -/
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
-  sacrificed 11
+  sacrificed .returnInstants
 #guard TriggeredAbility.resolution .onSeventhPlanControlOpponent ==
-  sacrificed 4
+  sacrificed .controlOpponent
 #guard TriggeredAbility.resolution .onFifthPlanExileTopCast ==
-  sacrificed 5
+  sacrificed .exileTopFive
 #guard TriggeredAbility.resolution .onFourthPlanIndestructible ==
-  sacrificed 3
+  sacrificed .indestructibleCounter
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [
     .sacrifice .you .plan .forReflexive,
@@ -76,8 +77,20 @@ use `queueReflexive`. -/
 #guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive .attackPumpPerPlains
 
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .trickArrows == 2
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .indestructibleCounter == 3
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .controlOpponent == 4
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .exileTopFive == 5
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .returnAttacking == 6
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .destroyOppNonland == 7
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .countersDamage == 8
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .hasteUnblockable == 9
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .returnInstants == 11
+#guard TriggeredAbility.TriggerReflexiveKind.toNat .plusOne == 12
+
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .planWasSacrificed (.queueReflexive (.modeled 11)) } ==
+    { resolution := .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants)) } ==
   "when you do, the reflexive ability triggers"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7)) } ==
@@ -102,8 +115,17 @@ use `queueReflexive`. -/
 #guard
   let g0 := planOnBoard
   let sid := planId g0
-  let g := step g0 (sacrificed 11) (some sid)
-  !g.planWasSacrificed && g.hasModeledReflexiveOnStack &&
+  let g := step g0 (sacrificed .returnInstants) (some sid)
+  let queued :=
+    match stackEffect g with
+    | some eff =>
+      match eff.resolution with
+      | .fra (.mshReflexive 11 _) =>
+        eff.phrase ==
+          "Return up to two target instant and/or sorcery cards from your graveyard to your hand"
+      | _ => false
+    | none => false
+  !g.planWasSacrificed && queued &&
     !(g.battlefield.any (·.id == sid)) &&
     logContains g "the Plan is completed" &&
     logContains g "reflexive ability is put on the stack"
@@ -112,8 +134,8 @@ use `queueReflexive`. -/
 #guard
   let g0 := planOnBoard
   let sid := planId g0
-  let g := step g0 (sacrificed 11) (some sid)
-  let again := step g (.«if» .planWasSacrificed (.queueReflexive (.modeled 11)))
+  let g := step g0 (sacrificed .returnInstants) (some sid)
+  let again := step g (.«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants)))
     (some sid)
   g.stack.size == again.stack.size && !again.planWasSacrificed
 
@@ -122,14 +144,14 @@ use `queueReflexive`. -/
   let g0 := planOnBoard
   let sid := planId g0
   let (gGone, _) := g0.move sid (.graveyard caster) none
-  let g := step gGone (sacrificed 3) (some sid)
+  let g := step gGone (sacrificed .indestructibleCounter) (some sid)
   g.stack.isEmpty && !g.planWasSacrificed &&
     logContains g "is no longer on the battlefield. The reflexive ability doesn't trigger."
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
   let g0 := { planOnBoard with planWasSacrificed := true }
-  let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.modeled 4)))
+  let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 
 /- Divided damage uses the printed total and the divided-damage reflexive. -/
