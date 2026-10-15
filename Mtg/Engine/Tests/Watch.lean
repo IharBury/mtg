@@ -44,19 +44,19 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchFirstTapUntap) ==
   .untap .firstThisTurn
 #guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
-  .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo
+  .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
   .sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw 1
 #guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw 1
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
-  .dealDamage 1 .targetOpponent
+  .dealDamage (.fixed 1) .targetOpponent
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainConniveOnce) ==
   .connive .enteringVillain
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneDamageOnce) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
-    .dealDamage 2 .eachOpponent]
+    .dealDamage (.fixed 2) .eachOpponent]
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainAttachEquipment) ==
   .attach .announcedEquipment .announcedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
@@ -77,7 +77,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .sequence [.untap .equipped, .scry 1]
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksTap) == .tap .target
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedTappedDamage) ==
-  .dealDamage 1 .eachOpponent .fixed .fromEquipped
+  .dealDamage (.fixed 1) .eachOpponent .fromEquipped
 #guard TriggeredAbility.resolution (onWatch Effect.watchHeroesDamagePlusTwo) ==
   .putCounters (.ofKind .plusOnePlusOne 2) .source
 #guard TriggeredAbility.resolution (onWatch Effect.watchMerfolkAttackDraw) == .draw 1
