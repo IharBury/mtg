@@ -930,22 +930,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .searchLibrary _ =>
     "search your library"
-  | .discard n who what =>
-    match who, what with
-    | .you, .cards =>
+  | .discard what =>
+    match what with
+    | .cards n .you =>
       s!"discard {cardPhrase n}"
-    | .you, .hand =>
+    | .hand =>
       "discard your hand"
-    | .each, .cards =>
+    | .cards n .eachOpponent =>
       if n == 1 then "each opponent discards a card"
       else s!"each opponent discards {cardPhrase n}"
-    | .target, .cards =>
+    | .cards n .targetOpponent =>
       s!"{noun} discards {cardPhrase n}"
-    | .target, .chosenNonland =>
+    | .chosenNonland =>
       s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
-    | _, _ =>
+    | _ =>
       "discard cards"
-  | .may (.discard 1) (.draw (.fixed n)) .ifYouDo =>
+  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
     s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
     "you may have this deal that much damage"
@@ -974,7 +974,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
     | .put .artifactFromHand _ .forAttach =>
       "you may put an artifact card from your hand onto the battlefield"
-    | .discard _ _ .hand =>
+    | .discard .hand =>
       "you may discard your hand"
     | .draw _ .opponentHasYou =>
       "target opponent may have you draw a card"
@@ -982,7 +982,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may put a land card from your hand onto the battlefield tapped"
     | .put (.creatureFromHand subtype maxMv) _ _ =>
       s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
-    | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)] =>
+    | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
       let disc := if n == 2 then "two cards" else cardPhrase n
       s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
     | _ => "you may do it"
@@ -1052,7 +1052,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
+  | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
@@ -1064,13 +1064,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» (.questAtLeast 6)
         (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)])] =>
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
-  | .sequence [.draw (.fixed 1), .discard 1, .put .discardedLand .tapped _] =>
+  | .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand .tapped _] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
   | .sequence [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
   | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
-  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)] =>
+  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
     s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
   | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
@@ -1087,7 +1087,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
   | .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] =>
     s!"scry {n} and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard 1] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] =>
     "draw a card, then discard a card and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
@@ -1544,7 +1544,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
     "the Ring tempts you"
-  | .may (.discard (what := .hand)) (.draw (.fixed n)) .ifYouDo =>
+  | .may (.discard .hand) (.draw (.fixed n)) .ifYouDo =>
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
   | .queueReflexive .attackPumpPerPlains =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
@@ -1592,7 +1592,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none =>
       "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-    | .onePlusCreatureCards, .discard 1 .target .cards =>
+    | .onePlusCreatureCards, .discard (.cards 1 .targetOpponent) =>
       s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
     | _, _ =>
       "reveal cards from their hand"
@@ -1699,7 +1699,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "pay that cost"
   | .queueReflexive _ =>
     "when you do, that ability triggers"
-  | .«if» .manaSpent (.discard n) =>
+  | .«if» .manaSpent (.discard (.cards n)) =>
     s!"discard {cardPhrase n}"
   | .«if» _ _ =>
     "if that is true"
