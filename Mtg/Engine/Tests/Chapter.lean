@@ -51,7 +51,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 
 /- Each printed chapter resolves as a constructor that does not store
 `ChapterResolution`. -/
-#guard (timing (.dealDamageToOppCreature 6)).resolution == .dealDamage 6 .target
+#guard (timing (.dealDamageToOppCreature 6)).resolution == .dealDamage (.fixed 6) .target
 #guard (timing .destroyOppArtifact).resolution == .destroy .target
 #guard (timing (.addMana (.colored .red))).resolution == .addMana #[.colored .red]
 #guard (timing .searchBasicLandToHand).resolution ==
@@ -93,9 +93,9 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)).resolution ==
   .gainControl .whileSourceRemains
 #guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
-  .dealDamage 2 (.eachNonSubtypeAndOpponents "Villain")
+  .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
-  .dealDamage 0 .targetOpponent .greatestArtifactMv
+  .dealDamage .greatestArtifactMv .targetOpponent
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw 1
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry 2
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==

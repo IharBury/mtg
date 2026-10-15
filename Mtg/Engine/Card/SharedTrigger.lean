@@ -682,7 +682,7 @@ inductive SharedTrigger where
   | damageEqualTreasures
   /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
   damage this way.
-  Resolves as `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`. -/
+  Resolves as `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`. -/
   | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature
@@ -757,7 +757,7 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another) (.sequence [])`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass 0 (amount := .notedExcess)]`. -/
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
   `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
@@ -765,7 +765,7 @@ inductive SharedTrigger where
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
   /-- Deal 1 then amass Orcs 1. Resolves as
-  `.sequence [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"]`. -/
+  `.sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
   Resolves as `.sequence [.untap .attackingCreatures, .additionalCombatPhase]`. -/
@@ -782,7 +782,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)]`. -/
+  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -1004,16 +1004,16 @@ inductive SharedTrigger where
   Two +1/+1 counters are `.putCounters (.ofKind .plusOnePlusOne 2) .source`.
   A counter that is not put after the source has left, then 2 damage to
   each opponent, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage 2 .eachOpponent]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent, .dealDamage (.fixed 2) .eachOpponent]`.
   +1/+0 and lifelink until end of turn is
   `.sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]`.
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
   `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]`.
-  1 damage to the announced opponent is `.dealDamage 1 .targetOpponent`.
+  1 damage to the announced opponent is `.dealDamage (.fixed 1) .targetOpponent`.
   1 damage from the equipped creature to each opponent is
-  `.dealDamage 1 .eachOpponent .fixed .fromEquipped`.
+  `.dealDamage (.fixed 1) .eachOpponent .fromEquipped`.
   Tapping the announced creature is `.tap .target`.
   Untapping the creature that became tapped is `.untap .firstThisTurn`.
   Untapping the equipped creature, then scrying 1, is
@@ -1038,7 +1038,7 @@ inductive SharedTrigger where
   Exiling until a nonland, then a counter or a cast, is
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   You may deal the damage that caused this is
-  `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
+  `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   You may pay {2} to copy the artifact that caused this is
   `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`. -/
   | watch (e : WatchLeftover)
@@ -1066,7 +1066,7 @@ inductive SharedTrigger where
   One unused Vision mode this turn is
   `.chooseModes TriggerResolution.visionModes .vision`.
   Damage equal to that spell's mana value is
-  `.dealDamage 0 .target .spellManaValue`.
+  `.dealDamage .spellManaValue .target`.
   Drawing a card, then base power equal to the cards in hand, is
   `.sequence [.draw 1, .grant .basePowerEqualHand .source]`.
   A +1/+1 counter on the source is
@@ -1086,7 +1086,7 @@ inductive SharedTrigger where
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   If you control another Hero, 1 damage to the announced opponent is
-  `.«if» .anotherHero (.dealDamage 1 .targetOpponent)`.
+  `.«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent)`.
   Base power and toughness 6/6 and trample until end of turn is
   `.sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]`.
   A +1/+1 counter on the announced creature is

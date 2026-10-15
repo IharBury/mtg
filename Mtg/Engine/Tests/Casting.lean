@@ -65,7 +65,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingVisionModes) ==
   .chooseModes TriggeredAbility.TriggerResolution.visionModes .vision
 #guard TriggeredAbility.resolution (casting Effect.castingDamageEqualMv) ==
-  .dealDamage 0 .target .spellManaValue
+  .dealDamage .spellManaValue .target
 #guard TriggeredAbility.resolution (casting Effect.castingDrawPowerEqualHand) ==
   .sequence [.draw 1, .grant .basePowerEqualHand .source]
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneThis) ==

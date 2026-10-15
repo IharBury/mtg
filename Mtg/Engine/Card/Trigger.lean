@@ -188,35 +188,71 @@ One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
   | attackPumpPerPlains
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.dealDamage` damages. -/
+/-- Who `TriggerResolution.pump` gives +P/+T until end of turn, and who
+`TriggerResolution.dealDamage` damages. `.source` is first so a default
+resolution pumps the source. -/
 inductive TriggerDamageWho where
-  /-- Each creature blocking the source. -/
-  | blockers
-  /-- The announced permanent. -/
-  | permanent
-  /-- The ability's source, if it is still on the battlefield. -/
+  /-- The ability's source, if it is still on the battlefield.
+  +P/+T is `.pump (.fixed p) (.fixed t) .source`.
+  `n` damage is `.dealDamage (.fixed n) .source`. -/
   | source
+  /-- The announced permanent for a pump. For damage, the announced target,
+  a player or a permanent. -/
+  | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent. -/
   | targetWhileSource
+  /-- The creature that caused the trigger. -/
+  | cause
+  /-- Each creature the controller controls. -/
+  | creaturesYouControl
+  /-- Each other creature the controller controls of these subtypes.
+  The source is not included. -/
+  | othersOfSubtypes (subtypes : Array String)
+  /-- Each other permanent the controller controls of this subtype.
+  The source is not included. -/
+  | othersOfSubtype (subtype : String)
+  /-- Each creature an opponent controls. -/
+  | opponentsCreatures
+  /-- Each creature the controller controls of this subtype. -/
+  | youControlSubtype (subtype : String)
+  /-- Each creature blocking the source. -/
+  | blockers
+  /-- The announced permanent. -/
+  | permanent
   /-- Each opponent, or the announced opponent when the ability targets. -/
   | eachOpponent
-  /-- The announced target, a player or a permanent. -/
-  | target
   /-- The announced opponent. -/
   | targetOpponent
   /-- Each creature that is not this subtype, and each opponent. -/
   | eachNonSubtypeAndOpponents (subtype : String)
 deriving Repr, Inhabited, BEq
 
-/-- Where `TriggerResolution.dealDamage` reads the amount. The `n` argument
-is used when this is `.fixed`. -/
+/-- Where one statistic of `TriggerResolution.pump` reads its bonus, and
+where `TriggerResolution.dealDamage` reads its amount. `.greatestPower` is
+first so a default resolution uses it. `.fixed` is a fixed bonus, and it is
+also `n` damage. -/
 inductive TriggerDamageAmount where
-  /-- The `n` argument. -/
-  | fixed
+  /-- The greatest power among creatures the controller controls. -/
+  | greatestPower
+  /-- One for each card looked at while scrying. -/
+  | perLookedAt
+  /-- One for each other creature the controller controls. -/
+  | perOtherCreature
+  /-- One for each Plains the controller controls. -/
+  | perPlains
+  /-- A fixed bonus of `n`, or `n` damage. -/
+  | fixed (n : Int)
+  /-- The source's toughness. -/
+  | equalSourceToughness
+  /-- The source's power. -/
+  | equalSourcePower
+  /-- This statistic's current value, which doubles it.
+  Doubling the announced permanent is `.pump .double .double .target`. -/
+  | double
   /-- The source's last-known power. -/
   | lastKnownPower
   /-- How many permanents of this subtype the controller controls. -/
@@ -336,35 +372,6 @@ inductive TriggerCounterWhat where
   trample, and vigilance that the announced creature has and the source
   does not. An illegal target or a missing source puts nothing. -/
   | missingKeywordsFromTarget
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.pump` gives +P/+T until end of turn. -/
-inductive TriggerPumpWho where
-  /-- The ability's source, if it is still on the battlefield.
-  +P/+T from the arguments is `.pump (.fixed p) (.fixed t) .source`. -/
-  | source
-  /-- The announced permanent. -/
-  | target
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- The creature that caused the trigger. -/
-  | cause
-  /-- Each creature the controller controls. -/
-  | creaturesYouControl
-  /-- Each other creature the controller controls of these subtypes.
-  The source is not included. -/
-  | othersOfSubtypes (subtypes : Array String)
-  /-- Each other permanent the controller controls of this subtype.
-  The source is not included. -/
-  | othersOfSubtype (subtype : String)
-  /-- Each creature an opponent controls. -/
-  | opponentsCreatures
-  /-- Each creature the controller controls of this subtype. -/
-  | youControlSubtype (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Which token `TriggerResolution.createTokens` creates.
@@ -600,28 +607,6 @@ inductive TriggerAttachTo where
   /-- The creature the source enchants. A missing creature leaves Equipment
   where it is. -/
   | enchantedCreature
-deriving Repr, Inhabited, BEq
-
-/-- Where one statistic of `TriggerResolution.pump` reads its bonus.
-`power` and `toughness` each use one. A fixed bonus is `.fixed n`. -/
-inductive TriggerPumpAmount where
-  /-- The greatest power among creatures the controller controls. -/
-  | greatestPower
-  /-- One for each card looked at while scrying. -/
-  | perLookedAt
-  /-- One for each other creature the controller controls. -/
-  | perOtherCreature
-  /-- One for each Plains the controller controls. -/
-  | perPlains
-  /-- A fixed bonus of `n`. -/
-  | fixed (n : Int)
-  /-- The source's toughness. -/
-  | equalSourceToughness
-  /-- The source's power. -/
-  | equalSourcePower
-  /-- This statistic's current value, which doubles it.
-  Doubling the announced permanent is `.pump .double .double .target`. -/
-  | double
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.amass` amasses for. -/
@@ -1342,36 +1327,37 @@ inductive TriggerResolution where
   Doubling that permanent's power and toughness is `.pump .double .double .target`.
   +P/+T and trample is
   `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`. -/
-  | pump (power toughness : TriggerPumpAmount) (who : TriggerPumpWho)
-  /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
-  Each creature blocking the source is `.dealDamage n .blockers`.
+  | pump (power toughness : TriggerDamageAmount) (who : TriggerDamageWho)
+  /-- Deal damage. `amount` is how much. `.fixed` carries that `n`.
+  `who` is who is dealt it, and `note` records a later step.
+  Pump and damage share `TriggerDamageAmount` and `TriggerDamageWho`.
+  Each creature blocking the source is `.dealDamage (.fixed n) .blockers`.
   Last-known power to the announced creature is
-  `.dealDamage 0 .permanent .lastKnownPower`.
-  `n` damage to each opponent is `.dealDamage n .eachOpponent`.
+  `.dealDamage .lastKnownPower .permanent`.
+  `n` damage to each opponent is `.dealDamage (.fixed n) .eachOpponent`.
   When that ability targets, only the announced opponent is dealt damage.
   Damage equal to permanents of `subtype` you control, to each opponent, is
-  `.dealDamage 0 .eachOpponent (.subtypeCount subtype)`.
+  `.dealDamage (.subtypeCount subtype) .eachOpponent`.
   Damage equal to Treasures you control, to the target, is
-  `.dealDamage 0 .target (.subtypeCount "Treasure")`.
+  `.dealDamage (.subtypeCount "Treasure") .target`.
   `n` damage to the target, remembering a marked permanent, is
-  `.dealDamage n .target .fixed .markedPermanent`.
+  `.dealDamage (.fixed n) .target .markedPermanent`.
   Last-known power, noting excess damage, is
-  `.dealDamage 0 .permanent .lastKnownPower .excess`.
+  `.dealDamage .lastKnownPower .permanent .excess`.
   Damage to each opponent equal to the hand discarded by an earlier step is
-  `.dealDamage 0 .eachOpponent .discardedHand`.
-  `n` damage to the announced opponent is `.dealDamage n .targetOpponent`.
-  `n` damage to the announced target is `.dealDamage n .target`.
+  `.dealDamage .discardedHand .eachOpponent`.
+  `n` damage to the announced opponent is `.dealDamage (.fixed n) .targetOpponent`.
+  `n` damage to the announced target is `.dealDamage (.fixed n) .target`.
   `n` damage to each creature that is not `subtype`, and to each opponent, is
-  `.dealDamage n (.eachNonSubtypeAndOpponents subtype)`.
+  `.dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype)`.
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
-  `.dealDamage 0 .targetOpponent .greatestArtifactMv`.
+  `.dealDamage .greatestArtifactMv .targetOpponent`.
   Damage equal to the mana value of the spell that caused this, to the
-  announced player or permanent, is `.dealDamage 0 .target .spellManaValue`.
+  announced player or permanent, is `.dealDamage .spellManaValue .target`.
   The trigger's last-known power to the announced player or permanent, offered
-  as a may, is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`. -/
-  | dealDamage (n : Nat) (who : TriggerDamageWho)
-      (amount : TriggerDamageAmount := .fixed)
+  as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
+  | dealDamage (amount : TriggerDamageAmount) (who : TriggerDamageWho)
       (note : TriggerDamageNote := .none)
   /-- Scry `n`. -/
   | scry (n : Nat)
@@ -1623,7 +1609,7 @@ inductive TriggerResolution where
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]`.
   Deal `n` damage to the target, then destroy it if that damage marked a
   permanent of this subtype, is
-  `.sequence [.dealDamage n .target .fixed .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
+  `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
   Destroy the announced creature, then its controller amasses that power, is
   `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
@@ -1638,7 +1624,7 @@ inductive TriggerResolution where
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
-  `.sequence [.dealDamage 0 .permanent .lastKnownPower .excess, .amass 0 (amount := .notedExcess)]`.
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`.
   Put a plan counter, then scry, is
   `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`.
   Put a trample counter on the target, then make it a Bear, is
@@ -1719,7 +1705,7 @@ inductive TriggerResolution where
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
-  target is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`.
+  target is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   The amount is the trigger's last-known power. Already used this turn does
   nothing. An illegal target is reported. The source need not still be on
   the battlefield.
@@ -2272,7 +2258,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .pumpAndTrample p t =>
     .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]
   | .destroy => .destroy .target
-  | .dealDamage n => .dealDamage n .target
+  | .dealDamage n => .dealDamage (.fixed n) .target
   | .grantKeywords k => .grant (.keywords k) .target
   | .tap => .tap .target
   | .untap => .untap
@@ -2295,11 +2281,11 @@ def ofPermanent : PermanentAction → TriggerResolution
 /-- What `action` does to `who`. `target` is the announced permanent. -/
 def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
-  | .pump p t => .pump (.fixed p) (.fixed t) (pumpWho who)
+  | .pump p t => .pump (.fixed p) (.fixed t) (affectedWho who)
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) (pumpWho who), .grant (.keywords Keyword.trample) (grantWho who)]
+    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (grantWho who)]
   | .destroy => .destroy (destroyWhat who)
-  | .dealDamage n => .dealDamage n (damageWho who)
+  | .dealDamage n => .dealDamage (.fixed n) (affectedWho who)
   | .grantKeywords k => .grant (.keywords k) (grantWho who)
   | .tap => .tap (tapWho who)
   | .untap => .untap (untapWho who)
@@ -2317,14 +2303,14 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .putOnTopOfLibrary => .putOnLibrary .top (.permanent who)
   | .putOnBottomOfLibrary => .putOnLibrary .bottom (.permanent who)
   | .exile => .exile (exileWhat who) .forLater
-  | .doublePowerAndToughness => .pump .double .double (pumpWho who)
+  | .doublePowerAndToughness => .pump .double .double (affectedWho who)
 where
   counterWho : TriggerAffected → TriggerCounterWho
     | .target => .permanent
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  pumpWho : TriggerAffected → TriggerPumpWho
+  affectedWho : TriggerAffected → TriggerDamageWho
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
@@ -2345,11 +2331,6 @@ where
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   destroyWhat : TriggerAffected → TriggerDestroyWhat
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  damageWho : TriggerAffected → TriggerDamageWho
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
@@ -2460,7 +2441,7 @@ of these `TriggerResolution` constructors. -/
 def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   match e with
   | .dealDamageToOppCreature n =>
-    { targeting := .of .oppCreature, resolution := .dealDamage n .target }
+    { targeting := .of .oppCreature, resolution := .dealDamage (.fixed n) .target }
   | .destroyOppArtifact =>
     { targeting := .of .oppArtifact, resolution := .destroy .target }
   | .addMana mana =>
@@ -2518,10 +2499,10 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { targeting := .of (.upToTwoCreaturesTotalMvAtMost n), allowsZeroTargets := true
       resolution := .gainControl .whileSourceRemains }
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    { resolution := .dealDamage n (.eachNonSubtypeAndOpponents subtype) }
+    { resolution := .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) }
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     { targeting := .of .opponent
-      resolution := .dealDamage 0 .targetOpponent .greatestArtifactMv }
+      resolution := .dealDamage .greatestArtifactMv .targetOpponent }
   | .spell s =>
     { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
       resolution := TriggerResolution.ofSpell s.resolution }
@@ -2658,7 +2639,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage n .eachOpponent }
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) .eachOpponent }
   | .attachTo kind =>
     { targeting := .of kind, resolution := .attach .source .target }
   | .opponentSacrificesCreature =>
@@ -2722,7 +2703,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpGreatestPower => { resolution := .pump .greatestPower (.fixed 0) .source }
   | .pumpForEachOtherCreature =>
     { resolution := .pump .perOtherCreature .perOtherCreature .source }
-  | .damageBlockers n => { resolution := .dealDamage n .blockers }
+  | .damageBlockers n => { resolution := .dealDamage (.fixed n) .blockers }
   | .returnLinkedExile => { resolution := .put .linkedExile }
   | .createThenAttach kind =>
     { resolution := .sequence [.createTokens kind 1 false, .attach .source .created] }
@@ -2755,7 +2736,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)] }
   | .damageFromLastKnownPower =>
     { targeting := .of .oppCreature,
-      resolution := .dealDamage 0 .permanent .lastKnownPower }
+      resolution := .dealDamage .lastKnownPower .permanent }
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
@@ -2777,14 +2758,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
          .gainLife 0 (amount := .forEachDestroyedThisWay)] }
   | .damageEqualSubtypeToEachOpponent subtype =>
-    { resolution := .dealDamage 0 .eachOpponent (.subtypeCount subtype) }
+    { resolution := .dealDamage (.subtypeCount subtype) .eachOpponent }
   | .damageEqualTreasures =>
     { targeting := .of .playerOrCreature,
-      resolution := .dealDamage 0 .target (.subtypeCount "Treasure") }
+      resolution := .dealDamage (.subtypeCount "Treasure") .target }
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage n .target .fixed .markedPermanent,
+        [.dealDamage (.fixed n) .target .markedPermanent,
          .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
   | .attachEquipmentToCreature =>
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
@@ -2882,7 +2863,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature,
       resolution := .sequence
-        [.dealDamage 0 .permanent .lastKnownPower .excess,
+        [.dealDamage .lastKnownPower .permanent .excess,
          .amass 0 (amount := .notedExcess)] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
@@ -2893,7 +2874,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage 1 .target .fixed .markedPermanent, .amass 1 "Orc"] }
+        [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
@@ -2913,7 +2894,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount),
-         .«if» .enduringStoryNoted (.dealDamage 0 .eachOpponent .discardedHand)] }
+         .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
   | .equippedAttackersGainDoubleStrike =>
@@ -2935,7 +2916,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] }
   | .damageTargetOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage n .targetOpponent }
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) .targetOpponent }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
@@ -3110,7 +3091,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .dealDamage n .target }
+      resolution := .dealDamage (.fixed n) .target }
   | .enter .fightUpToOne =>
     { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .fight }
@@ -3265,7 +3246,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
     { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
-      resolution := .may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo }
+      resolution := .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
       resolution := .sequence [
@@ -3276,7 +3257,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.youTargetSomething], onceEachTurn := true, resolution := .draw 1 }
   | .watch .villainOrArtifactDamage =>
     { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent,
-      resolution := .dealDamage 1 .targetOpponent }
+      resolution := .dealDamage (.fixed 1) .targetOpponent }
   | .watch .villainConniveOnce =>
     { events := #[.anotherVillainEnters], optionalOnceEachTurn := true,
       resolution := .connive .enteringVillain }
@@ -3284,7 +3265,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.anotherVillainEnters], onceEachTurn := true,
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
-        .dealDamage 2 .eachOpponent] }
+        .dealDamage (.fixed 2) .eachOpponent] }
   | .watch .villainAttachEquipment =>
     { events := #[.anotherVillainEnters]
       targeting := .of .upToOneEquipmentThenCreatureYouControl
@@ -3321,7 +3302,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .tap .target }
   | .watch .equippedTappedDamage =>
     { events := #[.equippedBecomesTapped],
-      resolution := .dealDamage 1 .eachOpponent .fixed .fromEquipped }
+      resolution := .dealDamage (.fixed 1) .eachOpponent .fromEquipped }
   | .watch .heroesDamagePlusTwo =>
     { events := #[.heroesDealDamageToPlayer],
       resolution := .putCounters (.ofKind .plusOnePlusOne 2) .source }
@@ -3378,7 +3359,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .chooseModes TriggeredAbility.TriggerResolution.visionModes .vision }
   | .casting .damageEqualMv =>
     { events := #[.youCastNoncreature], targeting := .of .playerOrCreature,
-      resolution := .dealDamage 0 .target .spellManaValue }
+      resolution := .dealDamage .spellManaValue .target }
   | .casting .drawPowerEqualHand =>
     { events := #[.youCastTargetingCreatureYouControl],
       resolution := .sequence [.draw 1, .grant .basePowerEqualHand .source] }
@@ -3409,7 +3390,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .«if» .anotherHero (.dealDamage 1 .targetOpponent) }
+      resolution := .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent) }
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
@@ -3548,7 +3529,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
-  .«if» .anotherHero (.dealDamage 1 .targetOpponent)
+  .«if» .anotherHero (.dealDamage (.fixed 1) .targetOpponent)
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
   .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
