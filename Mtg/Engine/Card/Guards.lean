@@ -859,7 +859,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
   .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 #guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
-  .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]
+  .sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]
 #guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
   "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==

@@ -87,7 +87,7 @@ inductive DeathLeftover where
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`. -/
   | villainReturnAsHero
   /-- Whenever an attacking creature you control dies, return that card to its
-  owner's hand. Resolves as `.returnToHand .cause .owner`. -/
+  owner's hand. Resolves as `.returnToHand .cause`. -/
   | attackingReturnHand
   /-- Whenever another creature you control with deathtouch dies, each opponent
   sacrifices a nontoken creature of their choice. Resolves as
@@ -690,7 +690,7 @@ inductive SharedTrigger where
   | defenderSacsLeastPower
   /-- Return up to one other permanent you control to its owner's hand.
   If you do, put a +1/+1 counter on this creature.
-  Resolves as `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`. -/
+  Resolves as `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`. -/
   | returnOtherPlusOne
   /-- Look at the top `n` cards; you may reveal one of these types. -/
   | lookAtTopRevealTypes (n : Nat) (types : Array String)
@@ -971,7 +971,7 @@ inductive SharedTrigger where
   counter, as
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
   The attacking creature that died returns to its owner's hand, as
-  `.returnToHand .cause .owner`.
+  `.returnToHand .cause`.
   Each opponent sacrifices a nontoken creature, as
   `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
   | death (e : DeathLeftover)

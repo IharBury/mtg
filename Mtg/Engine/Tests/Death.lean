@@ -45,7 +45,7 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
   .put (.cause (some "Villain")) .underOwner (.entering [
     .additionalSubtype "Hero", .counter .finality])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  .returnToHand .cause .owner
+  .returnToHand .cause
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
   .sacrifice .eachOpponent .chosenNontokenCreature
 

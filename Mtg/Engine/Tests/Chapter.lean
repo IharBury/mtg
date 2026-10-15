@@ -76,7 +76,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
     .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
     .gainLife 2]
 #guard (timing .returnLinkedExileToHand).resolution ==
-  .returnToHand .linkedExile .owner
+  .returnToHand .linkedExile
 #guard (timing .grantAttackPumpPerPlainsThisTurn).resolution ==
   .queueReflexive .attackPumpPerPlains
 #guard (timing .blinkUntilEndStep).resolution == .exile .target .nextEndStep

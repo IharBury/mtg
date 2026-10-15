@@ -1680,14 +1680,14 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
   | _, _ => g
 
 /-- Resolve `TriggerResolution.returnToHand`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector returns
+nothing. -/
 def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerReturnWhat)
-    (whose : TriggeredAbility.TriggerReturnWhose)
+    (what : TriggeredAbility.ObjectSelector)
     (note : TriggeredAbility.TriggerReturnNote) : Game :=
-  match what, whose, note with
-  | .graveyardCard, .you, .none =>
+  match what, note with
+  | .graveyardCard, .none =>
     g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
       match t with
       | Target.card oid =>
@@ -1698,18 +1698,18 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let (g, _) := g.move oid (.hand controller) none
           g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
       | _ => g.logMsg "The target is no longer legal"
-  | .permanent, .owner, .returnedPermanent =>
+  | .permanent, .returnedPermanent =>
     let g := { g with returnedPermanentThisWay := false }
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       let g := g.returnToHand o.id o.owner
       { g with returnedPermanentThisWay := true }) sourceId none
-  | .graveyardPermanent, .you, .none =>
+  | .graveyardPermanent, .none =>
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
       | Target.card id | Target.permanent id =>
         g.returnToHand id controller
       | _ => g) sourceId (some "The target is no longer legal")
-  | .milledSubtype subtype, .you, .none =>
+  | .milledSubtype subtype, .none =>
     let ids := g.milledIdsThisWay
     let g := { g with milledIdsThisWay := #[] }
     ids.foldl (fun acc id =>
@@ -1721,17 +1721,17 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
         else acc
       | none => acc) g
-  | .source, .owner, .none =>
+  | .source, .none =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
       else g.logMsg s!"{o.name} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
-  | .linkedExile, .owner, .none =>
+  | .linkedExile, .none =>
     g.returnLinkedExileToHand sourceId
-  | .cause, .owner, .none =>
+  | .cause, .none =>
     g.returnCauseToOwnerHand targets
-  | _, _, _ => g
+  | _, _ => g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2190,7 +2190,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
       | none => g.putRestOnBottomRandom controller ids
   | .untilCreature,
     .ifElse .revealedManaValueAtMostLands
-      (.put .revealed .asPrinted .none) (.returnToHand .revealed .you .none),
+      (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
     .you =>
     Id.run do
       let mut g := g
@@ -2345,7 +2345,7 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (thenDo : TriggeredAbility.TriggerResolution) : Game :=
   match thenDo with
   | .put .forest .asPrinted .none => g.resolveSearchForest controller
-  | .returnToHand .basicLand .you .none => g.resolveSearchBasicLandToHand controller
+  | .returnToHand .basicLand .none => g.resolveSearchBasicLandToHand controller
   | .put .basicLandOnTop .asPrinted .none =>
     g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
       (optional := true)
@@ -2809,8 +2809,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some r =>
         g.applyTriggeredAbility controller ab sourceId targets dividedDamage
           lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-  | .returnToHand what whose note =>
-    g.applyReturnToHand controller ab sourceId targets what whose note
+  | .returnToHand what note =>
+    g.applyReturnToHand controller ab sourceId targets what note
   | .may (.discard .hand) _ =>
     g.applyDiscard controller sourceId targets .hand
   | .becomeBear =>

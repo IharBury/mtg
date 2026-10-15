@@ -220,13 +220,17 @@ inductive PlayerSelector where
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
-`TriggerResolution.dealDamage` damages, and what `TriggerResolution.discard`
-discards. `.source` is first so a default resolution pumps the source.
-A player is `.player`. `n` cards from a hand are `.cards n`. -/
+`TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
+discards, and which cards `TriggerResolution.returnToHand` returns.
+`.source` is first so a default resolution pumps the source.
+A player is `.player`. `n` cards from a hand are `.cards n`.
+A returned card names both the card and whose hand. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
-  `n` damage is `.dealDamage (.fixed n) .source`. -/
+  `n` damage is `.dealDamage (.fixed n) .source`.
+  Returned from its owner's graveyard to their hand is
+  `.returnToHand .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent. -/
@@ -237,7 +241,9 @@ inductive ObjectSelector where
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent. -/
   | targetWhileSource
-  /-- The creature that caused the trigger. -/
+  /-- The creature that caused the trigger.
+  Returned to its owner's hand is `.returnToHand .cause`.
+  A token ceases to exist. -/
   | cause
   /-- Each creature the controller controls. -/
   | creaturesYouControl
@@ -253,7 +259,9 @@ inductive ObjectSelector where
   | youControlSubtype (subtype : String)
   /-- Each creature blocking the source. -/
   | blockers
-  /-- The announced permanent. -/
+  /-- The announced permanent.
+  Returned to its owner's hand, noting the return, is
+  `.returnToHand .permanent .returnedPermanent`. -/
   | permanent
   /-- Each creature that is not this subtype, and each opponent. -/
   | eachNonSubtypeAndOpponents (subtype : String)
@@ -275,6 +283,29 @@ inductive ObjectSelector where
   /-- A nonland card chosen from the announced player's revealed hand.
   `.discard .chosenNonland`. -/
   | chosenNonland
+  /-- The announced graveyard card, returned to the controller's hand.
+  A card that has left is reported.
+  `.returnToHand .graveyardCard`. -/
+  | graveyardCard
+  /-- The announced graveyard card, or that card as a permanent target,
+  returned to the controller's hand.
+  `.returnToHand .graveyardPermanent`. -/
+  | graveyardPermanent
+  /-- Cards an earlier step milled that have this subtype, put into the
+  controller's hand.
+  `.returnToHand (.milledSubtype subtype)`. -/
+  | milledSubtype (subtype : String)
+  /-- The card `revealLibrary .untilCreature` revealed, put into the
+  controller's hand on the hand branch.
+  Outside that resolution, `.returnToHand .revealed` does nothing. -/
+  | revealed
+  /-- A basic land card `searchLibrary` found, put into the controller's hand.
+  Outside that resolution, `.returnToHand .basicLand` does nothing. -/
+  | basicLand
+  /-- A card the source exiled, returned to its owner's hand.
+  A missing source, or nothing exiled, returns nothing.
+  `.returnToHand .linkedExile`. -/
+  | linkedExile
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -730,42 +761,6 @@ inductive TriggerCastNote where
   /-- An instant or sorcery cast this way is exiled instead of being put
   into your graveyard. -/
   | exileInstead
-deriving Repr, Inhabited, BEq
-
-/-- Which cards `TriggerResolution.returnToHand` returns. -/
-inductive TriggerReturnWhat where
-  /-- The announced graveyard card. A card that has left is reported. -/
-  | graveyardCard
-  /-- The announced permanent. -/
-  | permanent
-  /-- The announced graveyard card, or that card as a permanent target. -/
-  | graveyardPermanent
-  /-- Cards an earlier step milled that have this subtype. -/
-  | milledSubtype (subtype : String)
-  /-- The source, if it is still in its owner's graveyard. -/
-  | source
-  /-- The card `revealLibrary .untilCreature` revealed, on the hand branch.
-  Outside that resolution, `.returnToHand .revealed` does nothing. -/
-  | revealed
-  /-- A basic land card `searchLibrary` found. Outside that resolution,
-  `.returnToHand .basicLand` does nothing. -/
-  | basicLand
-  /-- A card the source exiled, returned to its owner's hand.
-  A missing source, or nothing exiled, returns nothing. -/
-  | linkedExile
-  /-- The card that caused this trigger, if it is still in its owner's
-  graveyard. An announced card or permanent is used when one was chosen.
-  Otherwise the recorded cause, or the last attacking creature that died.
-  A token ceases to exist. A card that has left is reported. -/
-  | cause
-deriving Repr, Inhabited, BEq
-
-/-- Whose hand `TriggerResolution.returnToHand` returns those cards to. -/
-inductive TriggerReturnWhose where
-  /-- The controller of the ability. -/
-  | you
-  /-- The card's owner. -/
-  | owner
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.returnToHand` can read. -/
@@ -1463,26 +1458,27 @@ inductive TriggerResolution where
   None, or zero life, puts counters on nothing. An illegal permanent is
   reported and skipped. Extra announced permanents are ignored. -/
   | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
-  /-- Return cards to a hand. `what` says which cards, `whose` says whose
-  hand, and `note` says what a later step can read.
+  /-- Return cards to a hand. `what` says which cards and whose hand.
+  `note` says what a later step can read.
   A creature card from your graveyard to your hand is
-  `.returnToHand .graveyardCard`.
+  `.returnToHand` (`.graveyardCard`).
   The targeted permanent to its owner's hand, noting the return, is
-  `.returnToHand .permanent .owner .returnedPermanent`.
+  `.returnToHand .permanent .returnedPermanent`.
   A graveyard permanent card to your hand is
   `.returnToHand .graveyardPermanent`.
   Milled cards of a subtype are `.returnToHand (.milledSubtype subtype)`.
   The source from its owner's graveyard to their hand is
-  `.returnToHand .source .owner`.
+  `.returnToHand .source`.
   The card revealed until a creature, when it does not enter, is
   `.returnToHand .revealed`. Outside that resolution, it does nothing.
   A basic land found by searching is `.returnToHand .basicLand`.
   Outside `searchLibrary`, it does nothing.
   A card the source exiled, to its owner's hand, is
-  `.returnToHand .linkedExile .owner`.
+  `.returnToHand .linkedExile`.
   The card that caused this trigger, to its owner's hand, is
-  `.returnToHand .cause .owner`. A token ceases to exist. -/
-  | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
+  `.returnToHand .cause`. A token ceases to exist.
+  Any other selector returns nothing. -/
+  | returnToHand (what : ObjectSelector := .graveyardCard)
       (note : TriggerReturnNote := .none)
   /-- Put later ability `followup` on the stack (“When you do”), or arm it
   for a later event.
@@ -1614,7 +1610,7 @@ inductive TriggerResolution where
   `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
-  `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
+  `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
   `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`.
@@ -1683,7 +1679,7 @@ inductive TriggerResolution where
   You may sacrifice another creature for +1/+1 counters equal to its power is
   `.may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
-  `.may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source .owner) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
   `.may (.pay .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo`.
   You may discard your hand to draw `n` is `.may (.discard .hand) (.draw (.fixed n)) .ifYouDo`.
@@ -2477,7 +2473,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
         .searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
         .gainLife life] }
   | .returnLinkedExileToHand =>
-    { resolution := .returnToHand .linkedExile .owner }
+    { resolution := .returnToHand .linkedExile }
   | .grantAttackPumpPerPlainsThisTurn =>
     { resolution := .queueReflexive .attackPumpPerPlains }
   | .blinkUntilEndStep =>
@@ -2722,7 +2718,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
   | .payReturnFromGy =>
     { resolution := .may
-        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source .owner) .ifYouDo }
+        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
@@ -2779,7 +2775,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
                                     controller := .you, another := true })
       allowsZeroTargets := true
       resolution := .sequence
-        [.returnToHand .permanent .owner .returnedPermanent,
+        [.returnToHand .permanent .returnedPermanent,
          .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .lookAtTopRevealTypes n types }
@@ -3099,7 +3095,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .fight }
   | .enter .returnNonlandNontoken =>
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
-      resolution := .returnToHand .permanent .owner .returnedPermanent }
+      resolution := .returnToHand .permanent .returnedPermanent }
   | .enter .createZabu =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .zabu }
   | .enter .oppCreatesTheVoid =>
@@ -3191,7 +3187,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .additionalSubtype "Hero", .counter .finality]) }
   | .death .attackingReturnHand =>
     { events := #[.attackingCreatureYouControlDies]
-      resolution := .returnToHand .cause .owner }
+      resolution := .returnToHand .cause }
   | .death .deathtouchOppSac =>
     { events := #[.creatureYouControlDies]
       resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
@@ -3469,7 +3465,7 @@ end SharedTrigger
   .put (.cause (some "Villain")) .underOwner (.entering [
     .additionalSubtype "Hero", .counter .finality])
 #guard (SharedTrigger.timing (.death .attackingReturnHand)).resolution ==
-  .returnToHand .cause .owner
+  .returnToHand .cause
 #guard (SharedTrigger.timing (.death .deathtouchOppSac)).resolution ==
   .sacrifice .eachOpponent .chosenNontokenCreature
 #guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==

@@ -83,7 +83,7 @@ def payPlusOne : TriggeredAbility.TriggerResolution :=
 
 def payReturn : TriggeredAbility.TriggerResolution :=
   .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue]))
-    (.returnToHand .source .owner) .ifYouDo
+    (.returnToHand .source) .ifYouDo
 
 def sacPower : TriggeredAbility.TriggerResolution :=
   .may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
