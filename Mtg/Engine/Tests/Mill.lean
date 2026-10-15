@@ -294,7 +294,7 @@ ability and clears the note. -/
   let g0 := onlyLibrary afterDraw opp [plot]
   let g := step g0 (.sequence [
     .mill 1 .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled .reflexiveCopyMilled])
+    .«if» .opponentsMilled (.queueReflexive .copyMilled)])
   inGraveyard g opp "Mill Plot" && !g.opponentsMilledThisWay &&
     logContains g "reflexive ability has no legal target and is removed"
 
@@ -302,7 +302,7 @@ ability and clears the note. -/
   let g0 := onlyLibrary afterDraw opp []
   let g := step g0 (.sequence [
     .mill 2 .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled .reflexiveCopyMilled])
+    .«if» .opponentsMilled (.queueReflexive .copyMilled)])
   !g.opponentsMilledThisWay && g.stack.isEmpty &&
     !(logContains g "reflexive ability")
 
@@ -337,7 +337,7 @@ ability and clears the note. -/
 #guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
   .sequence [
     .mill 2 .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled .reflexiveCopyMilled]
+    .«if» .opponentsMilled (.queueReflexive .copyMilled)]
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
   .ifElse (.creatureCardsInGraveyardAtLeast 2)
     (.createTokens .villain21menace 1 true) (.mill 2)

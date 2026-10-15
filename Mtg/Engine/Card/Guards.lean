@@ -1579,9 +1579,11 @@ end CardDef
 #guard TriggeredAbility.resolution .onFourthPlanDrawPlusOneEach ==
   .sequence [.sacrifice .you .plan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl]
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
-  .sequence [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 11]
+  .sequence [.sacrifice .you .plan .forReflexive,
+    .«if» .planWasSacrificed (.queueReflexive (.modeled 11))]
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
-  .sequence [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage 7]
+  .sequence [.sacrifice .you .plan .forReflexive,
+    .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7))]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw 1, .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==

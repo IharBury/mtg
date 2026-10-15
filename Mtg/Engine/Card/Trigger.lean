@@ -84,6 +84,9 @@ inductive TriggerIf where
   | controlsAtLeast (subtype : String) (n : Nat)
   /-- An earlier `.sacrifice .you .source .noted` sacrificed the source. -/
   | sourceWasSacrificed
+  /-- An earlier `.sacrifice .you .plan .forReflexive` sacrificed the Plan.
+  Checking this consumes that note. -/
+  | planWasSacrificed
   /-- The source has at least `n` quest counters. -/
   | questAtLeast (n : Nat)
   /-- An earlier step attached Equipment to a creature that is still in play. -/
@@ -154,8 +157,7 @@ inductive TriggerObjectCost where
   | artifactOrDiscardNonland
 deriving Repr, Inhabited, BEq
 
-/-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
-after the optional action of `.may _ _ .ifYouDo` (“When you do”). -/
+/-- A later ability queued by `TriggerResolution.queueReflexive`. -/
 inductive TriggerReflexive where
 /-- An MSH modeled reflexive. `0` grants indestructible. `2` chooses up to
 `times` Trick Arrows modes. `6` returns a graveyard creature tapped and
@@ -170,6 +172,20 @@ One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
   /-- Reflexive ability `kind`, dealing damage equal to the +1/+1 counters
   on the source. A source that has left queues nothing. -/
   | countersOnSource (kind : Nat)
+  /-- Exile target enchantment, instant, or sorcery card with mana value at
+  most the causing spell's from an opponent's graveyard. Copy it. You may
+  cast the copy without paying its mana cost.
+  The mana value is the causing spell's, or the trigger's last-known power
+  when no spell is recorded. No legal card removes the reflexive ability. -/
+  | copyMilled
+  /-- Deal `amount` damage divided as you choose among one or two targets.
+  The reflexive is the divided-damage ability. `amount` is that total. -/
+  | dividedDamage (amount : Nat)
+  /-- Whenever the controller attacks this turn, a creature they control
+  gets +1/+1 until end of turn for each Plains they control.
+  This arms that attack trigger. It does not put an ability on the stack
+  now. The source may already have left. -/
+  | attackPumpPerPlains
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.dealDamage` damages. -/
@@ -1473,7 +1489,23 @@ inductive TriggerResolution where
   `.returnToHand .cause .owner`. A token ceases to exist. -/
   | returnToHand (what : TriggerReturnWhat) (whose : TriggerReturnWhose := .you)
       (note : TriggerReturnNote := .none)
-  /-- Put reflexive ability `followup` on the stack (“When you do”). -/
+  /-- Put later ability `followup` on the stack (“When you do”), or arm it
+  for a later event.
+  An MSH modeled reflexive is `.queueReflexive (.modeled kind)`.
+  Damage to any target is `.queueReflexive (.damageAny n)`.
+  Damage equal to the source's +1/+1 counters is
+  `.queueReflexive (.countersOnSource kind)`.
+  Exile and copy a milled spell is `.queueReflexive .copyMilled`.
+  After opponents mill, that is
+  `.«if» .opponentsMilled (.queueReflexive .copyMilled)`.
+  Divided damage is `.queueReflexive (.dividedDamage amount)`.
+  After the Plan is sacrificed, that is
+  `.«if» .planWasSacrificed (.queueReflexive (.dividedDamage amount))`.
+  A modeled reflexive after that sacrifice is
+  `.«if» .planWasSacrificed (.queueReflexive (.modeled kind))`.
+  A Plan that was not sacrificed queues nothing.
+  Whenever you attack this turn, +1/+1 for each Plains, is
+  `.queueReflexive .attackPumpPerPlains`. -/
   | queueReflexive (followup : TriggerReflexive)
   /-- Sacrifice a permanent. `who` says who sacrifices, `what` says which
   permanent, and `note` says what a later step can read.
@@ -2071,9 +2103,6 @@ inductive TriggerResolution where
   | copySelfNonlegendary
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Whenever you attack this turn, a creature you control gets +1/+1
-  for each Plains you control. -/
-  | attackPumpPerPlains
   /-- Spells of `which` cost `{n}` less this turn.
   A card type is `.spellsCostLess (.cardType ty) n`.
   A supertype is `.spellsCostLess (.supertype s) n`. -/
@@ -2120,8 +2149,6 @@ inductive TriggerResolution where
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- Queue the reflexive exile-and-copy of a milled spell. -/
-  | reflexiveCopyMilled
   /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
   the amount when `amount` is `.fixed`. Losing 0 life does nothing.
   You lose `n` life is `.loseLife n`.
@@ -2137,10 +2164,6 @@ inductive TriggerResolution where
   Any other combination does nothing. -/
   | loseLife (n : Nat) (who : TriggerLifeLossWho := .you)
       (amount : TriggerLifeLossAmount := .fixed)
-  /-- Queue reflexive ability `kind` if the Plan was sacrificed this way. -/
-  | queueReflexiveIfSacrificed (kind : Nat)
-  /-- Queue the divided-damage reflexive. `amount` is the printed number. -/
-  | queuePlanDividedDamage (amount : Nat)
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- The tapped creature can't untap while you control the source. -/
@@ -2458,7 +2481,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .returnLinkedExileToHand =>
     { resolution := .returnToHand .linkedExile .owner }
   | .grantAttackPumpPerPlainsThisTurn =>
-    { resolution := .attackPumpPerPlains }
+    { resolution := .queueReflexive .attackPumpPerPlains }
   | .blinkUntilEndStep =>
     { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
       resolution := .exile .target .nextEndStep }
@@ -2818,7 +2841,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millThenCopy =>
     { resolution := .sequence
         [.mill 2 .eachOpponent (note := .opponentsMilled),
-         .«if» .opponentsMilled .reflexiveCopyMilled] }
+         .«if» .opponentsMilled (.queueReflexive .copyMilled)] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .pump 0 0 .target .equalSourcePower }
@@ -2961,22 +2984,27 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.sacrifice .you .plan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl] }
   | .planFinishReturnInstants =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 11] }
+        [.sacrifice .you .plan .forReflexive,
+         .«if» .planWasSacrificed (.queueReflexive (.modeled 11))] }
   | .planFinishControlOpponent =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 4] }
+        [.sacrifice .you .plan .forReflexive,
+         .«if» .planWasSacrificed (.queueReflexive (.modeled 4))] }
   | .planFinishExileTopCast =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 5] }
+        [.sacrifice .you .plan .forReflexive,
+         .«if» .planWasSacrificed (.queueReflexive (.modeled 5))] }
   | .planFinishCreateRobots n =>
     { resolution := .sequence
         [.sacrifice .you .plan, .createTokens .robotVillain22 n false] }
   | .planFinishDividedDamage n =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive, .queuePlanDividedDamage n] }
+        [.sacrifice .you .plan .forReflexive,
+         .«if» .planWasSacrificed (.queueReflexive (.dividedDamage n))] }
   | .planFinishIndestructibleOnTarget =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive, .queueReflexiveIfSacrificed 3] }
+        [.sacrifice .you .plan .forReflexive,
+         .«if» .planWasSacrificed (.queueReflexive (.modeled 3))] }
   | .surveil n => { resolution := .surveil n }
   | .empowerJace n => { resolution := .empowerJace n }
   | .prepareSource .ifNotPrepared =>

@@ -55,6 +55,7 @@ import Mtg.Engine.Tests.Watch
 import Mtg.Engine.Tests.YouAttack
 import Mtg.Engine.Tests.Casting
 import Mtg.Engine.Tests.Resource
+import Mtg.Engine.Tests.Reflexive
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -135,4 +136,5 @@ keep working.
 - `YouAttack`: “whenever you attack” triggers that used to resolve as `youAttacking`
 - `Casting`: “whenever you cast …” triggers that used to resolve as `casting`
 - `Resource`: draw, discard, life, and +1/+1-counter triggers that used to resolve as `resource`
+- `Reflexive`: a reflexive queued now, after the Plan is sacrificed, after a mill, and an attack pump armed for this turn
 -/
