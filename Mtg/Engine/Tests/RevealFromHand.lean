@@ -46,7 +46,7 @@ def exileUntil : TriggeredAbility.TriggerResolution :=
   .revealFromHand .hand (.exile .target .untilSourceLeaves)
 
 def countedDiscard : TriggeredAbility.TriggerResolution :=
-  .revealFromHand .onePlusCreatureCards (.discard 1 (who := .target))
+  .revealFromHand .onePlusCreatureCards (.discard (.fixed 1) .targetOpponent)
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -219,7 +219,7 @@ cards stay in hand. A missing player reveals nothing. -/
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
   let targets := #[Target.player opp, Target.permanent victim.id]
-  let crossed := step g0 (.revealFromHand .hand (.discard 1 (who := .target)))
+  let crossed := step g0 (.revealFromHand .hand (.discard (.fixed 1) .targetOpponent))
     (some src.id) targets
   let swapped := step g0
     (.revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves))
@@ -252,7 +252,7 @@ cards stay in hand. A missing player reveals nothing. -/
 #guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.enter .revealDiscardFromHand)) ==
   "target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealFromHand .hand (.discard 1 (who := .target)) } ==
+    { resolution := .revealFromHand .hand (.discard (.fixed 1) .targetOpponent) } ==
   "reveal cards from their hand"
 #guard TriggeredAbility.resolutionPhrase
     { resolution :=

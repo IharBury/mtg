@@ -215,7 +215,7 @@ structure Game where
   The object is the one from before it moved. -/
   notedCopyObject : Option GameObject := none
   notedHostId : Option ObjectId := none
-  /-- Cards discarded by accepting `.discard (what := .hand)`. `none` means declined. -/
+  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
   handDiscardedThisWay : Option Nat := none
   /-- Source of the Balin ability, for the damage step after the discard. -/
   notedSourceThisWay : Option ObjectId := none

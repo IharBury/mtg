@@ -1502,13 +1502,14 @@ def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.discard`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other combination
+discards nothing. -/
 def applyDiscard (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
-    (who : TriggeredAbility.TriggerDiscardWho)
-    (what : TriggeredAbility.TriggerDiscardWhat) : Game :=
-  match who, what with
-  | .you, .cards =>
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (amount : TriggeredAbility.TriggerNumericAmount)
+    (who : TriggeredAbility.TriggerNumericWho) : Game :=
+  match who, amount with
+  | .you, .fixed n =>
     if g.mayThenDrop > 0 && n == 1 then
       let drawN :=
         match g.mayThenConditional with
@@ -1518,17 +1519,17 @@ def applyDiscard (g : Game) (controller : PlayerId)
       if g.pending == .none then g.failMayThen else g
     else
       let g := { g with discardedCardThisWay := none }
-      g.beginDiscardCards #[controller] n
-  | .each, .cards =>
-    g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n
-  | .target, .chosenNonland =>
+      g.beginDiscardCards #[controller] n.toNat
+  | .eachOpponent, .fixed n =>
+    g.beginDiscardCards (g.apnapOrder.filter (· != controller)) n.toNat
+  | .targetOpponent, .chosenNonland =>
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
-  | .target, .cards =>
+  | .targetOpponent, .fixed n =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
-      | Target.player pid => g.beginDiscardCards #[pid] n
+      | Target.player pid => g.beginDiscardCards #[pid] n.toNat
       | _ => g) sourceId none
   | .you, .hand =>
     if g.mayThenDrop > 0 then
@@ -2322,7 +2323,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .onePlusCreatureCards, .discard 1 .target .cards =>
+  | .onePlusCreatureCards, .discard (.fixed 1) .targetOpponent =>
     match targets[0]? with
     | some (Target.player pid) =>
       let n :=
@@ -2526,8 +2527,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggerDraw controller sourceId amount who
   | .searchLibrary thenDo =>
     g.applySearchLibrary controller sourceId thenDo
-  | .discard n who what =>
-    g.applyDiscard controller sourceId targets n who what
+  | .discard amount who =>
+    g.applyDiscard controller sourceId targets amount who
   | .sacrifice who what note =>
     g.applySacrifice controller ab sourceId targets who what note
   | .lose what who =>
@@ -2811,8 +2812,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
   | .returnToHand what whose note =>
     g.applyReturnToHand controller ab sourceId targets what whose note
-  | .may (.discard n (what := .hand)) _ =>
-    g.applyDiscard controller sourceId targets n .you .hand
+  | .may (.discard .hand .you) _ =>
+    g.applyDiscard controller sourceId targets .hand .you
   | .becomeBear =>
     match targets[0]? with
     | some (Target.permanent oid) =>
@@ -2852,11 +2853,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
-  | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard n)]) _ =>
+  | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.fixed n) .you)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
     else
+      let n := n.toNat
       let disc := if n == 2 then "two" else toString n
       g.beginFraChoice controller (.mayDrawThenDiscard spent n)
         s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"

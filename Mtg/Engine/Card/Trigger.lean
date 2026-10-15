@@ -192,8 +192,9 @@ One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
-`TriggerResolution.dealDamage` damages, and who `TriggerResolution.draw`
-draws for. `.source` is first so a default resolution pumps the source. -/
+`TriggerResolution.dealDamage` damages, who `TriggerResolution.draw`
+draws for, and who `TriggerResolution.discard` asks to discard.
+`.source` is first so a default resolution pumps the source. -/
 inductive TriggerNumericWho where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -226,14 +227,19 @@ inductive TriggerNumericWho where
   | blockers
   /-- The announced permanent. -/
   | permanent
-  /-- Each opponent, or the announced opponent when the ability targets. -/
+  /-- Each opponent, or the announced opponent when the ability targets.
+  Each opponent discards one card is `.discard (.fixed 1) .eachOpponent`. -/
   | eachOpponent
-  /-- The announced opponent. -/
+  /-- The announced opponent.
+  That player discards `n` cards is `.discard (.fixed n) .targetOpponent`.
+  A nonland chosen from their revealed hand is
+  `.discard .chosenNonland .targetOpponent`. -/
   | targetOpponent
   /-- Each creature that is not this subtype, and each opponent. -/
   | eachNonSubtypeAndOpponents (subtype : String)
   /-- The controller of the ability.
-  That player draws `n` is `.draw (.fixed n)` (`.you`). -/
+  That player draws `n` is `.draw (.fixed n)` (`.you`).
+  That player discards `n` is `.discard (.fixed n)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -249,9 +255,10 @@ deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards
-`TriggerResolution.scry` looks at, and how many cards `TriggerResolution.draw`
-draws. `.greatestPower` is first so a default resolution uses it.
-`.fixed` is a fixed bonus, `n` damage, scry `n`, and draw `n`. -/
+`TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
+draws, and what `TriggerResolution.discard` discards.
+`.greatestPower` is first so a default resolution uses it.
+`.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, and discard `n`. -/
 inductive TriggerNumericAmount where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -261,7 +268,7 @@ inductive TriggerNumericAmount where
   | perOtherCreature
   /-- One for each Plains the controller controls. -/
   | perPlains
-  /-- A fixed bonus of `n`, `n` damage, scry `n`, or draw `n`. -/
+  /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, or discard `n`. -/
   | fixed (n : Int)
   /-- The source's toughness. -/
   | equalSourceToughness
@@ -302,6 +309,13 @@ inductive TriggerNumericAmount where
   A hand that already has `n` draws nothing.
   `.draw (.upToHandSize n)`. -/
   | upToHandSize (n : Nat)
+  /-- The controller's hand. The number discarded is noted for a later step.
+  Declining leaves the note empty.
+  `.discard .hand`. -/
+  | hand
+  /-- A nonland card chosen from the announced player's revealed hand.
+  `.discard .chosenNonland .targetOpponent`. -/
+  | chosenNonland
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -905,28 +919,6 @@ inductive TriggerDestroyNote where
   | chosenToken
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.discard` asks to discard. -/
-inductive TriggerDiscardWho where
-  /-- The controller. -/
-  | you
-  /-- Each opponent. -/
-  | each
-  /-- The announced opponent. -/
-  | target
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.discard` discards. The `n` argument is the
-count when this is `.cards`. -/
-inductive TriggerDiscardWhat where
-  /-- `n` cards. -/
-  | cards
-  /-- The controller's hand. The number discarded is noted for a later step.
-  Declining leaves the note empty. -/
-  | hand
-  /-- A nonland card from the announced player's revealed hand. -/
-  | chosenNonland
-deriving Repr, Inhabited, BEq
-
 /-- Who `TriggerResolution.fight` uses. -/
 inductive TriggerFightWho where
   /-- The source. -/
@@ -1320,7 +1312,7 @@ inductive TriggerResolution where
   | pump (power toughness : TriggerNumericAmount) (who : TriggerNumericWho)
   /-- Deal damage. `amount` is how much. `.fixed` carries that `n`.
   `who` is who is dealt it, and `note` records a later step.
-  Pump, damage, and draw share `TriggerNumericAmount` and `TriggerNumericWho`.
+  Pump, damage, draw, and discard share `TriggerNumericAmount` and `TriggerNumericWho`.
   Each creature blocking the source is `.dealDamage (.fixed n) .blockers`.
   Last-known power to the announced creature is
   `.dealDamage .lastKnownPower .permanent`.
@@ -1382,21 +1374,21 @@ inductive TriggerResolution where
   An empty hand and library still shuffles: nothing was eligible to choose.
   Any other resolution does nothing. `thenDo` does nothing on its own. -/
   | searchLibrary (thenDo : TriggerResolution)
-  /-- Discard cards. `n` is the count when `what` is `.cards`.
-  One card from the controller is `.discard`.
+  /-- `who` discards cards, as `amount` says. `.fixed` is that many cards.
+  The controller is `.you`.
+  One card from the controller is `.discard (.fixed 1)`.
   Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
-  Each opponent discards one is `.discard (who := .each)`.
-  The announced opponent discards `n` is `.discard n (who := .target)`.
-  The controller's hand, noting how many cards were discarded, is
-  `.discard (what := .hand)`.
-  Optional as `.may (.discard (what := .hand)) (.sequence [])`. Declining leaves the note
+  Each opponent discards one is `.discard (.fixed 1) .eachOpponent`.
+  The announced opponent discards `n` is `.discard (.fixed n) .targetOpponent`.
+  The controller's hand, noting how many cards were discarded, is `.discard .hand`.
+  Optional as `.may (.discard .hand) (.sequence [])`. Declining leaves the note
   empty so the following draw and damage steps do nothing.
   `n` cards when mana was spent to cast the triggering spell is
-  `.«if» .manaSpent (.discard n)`. Spending none discards nothing.
+  `.«if» .manaSpent (.discard (.fixed n))`. Spending none discards nothing.
   The announced opponent reveals their hand and discards a nonland you
-  choose with `.discard 1 (who := .target) (what := .chosenNonland)`. -/
-  | discard (n : Nat := 1) (who : TriggerDiscardWho := .you)
-      (what : TriggerDiscardWhat := .cards)
+  choose with `.discard .chosenNonland .targetOpponent`.
+  Any other combination discards nothing. -/
+  | discard (amount : TriggerNumericAmount) (who : TriggerNumericWho := .you)
   /-- Pay `symbols`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
   `.pay #[.generic 1, .colored .green, .colored .blue]`. -/
@@ -1617,7 +1609,7 @@ inductive TriggerResolution where
   Put a trample counter on the target, then make it a Bear, is
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear]`.
   Draw, discard, and a land discarded this way enters tapped, is
-  `.sequence [.draw (.fixed 1), .discard 1, .put .discardedLand (how := .tapped)]`.
+  `.sequence [.draw (.fixed 1), .discard (.fixed 1), .put .discardedLand (how := .tapped)]`.
   Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
   `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]`.
@@ -1646,12 +1638,12 @@ inductive TriggerResolution where
   A choice that already includes decline is that choice, so the player
   is not asked twice. You may draw X cards, where X is the mana spent to
   cast the triggering spell, then discard two, is
-  `.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard 2)]) (.sequence [])`.
+  `.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.fixed 2))]) (.sequence [])`.
   You may tap any number of untapped Humans is `.may (.tap .humans) (.sequence [])`.
   You may sacrifice another creature is `.may (.sacrifice .you .another) (.sequence [])`.
   You may put an artifact from your hand onto the battlefield is
   `.may (.put .artifactFromHand (note := .forAttach)) (.sequence [])`.
-  You may discard your hand is `.may (.discard (what := .hand)) (.sequence [])`.
+  You may discard your hand is `.may (.discard .hand) (.sequence [])`.
   The targeted opponent may have you draw a card is
   `.may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])`. Declining that offer mills and
   that player loses life; it does not skip.
@@ -1662,7 +1654,7 @@ inductive TriggerResolution where
   at most `maxMv` from your hand, draws a card with
   `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`.
   Declining with no other effect is `.may action (.sequence [])`.
-  You may discard a card to draw `n` is `.may (.discard 1) (.draw (.fixed n)) .ifYouDo`.
+  You may discard a card to draw `n` is `.may (.discard (.fixed 1)) (.draw (.fixed n)) .ifYouDo`.
   `SharedTrigger.mayTo a b` resolves as `.may` of each step's resolution, `.ifYouDo`.
   You may pay `{n}` to draw is `.may (.pay #[.generic n]) (.draw (.fixed 1)) .ifYouDo`.
   Paying `{n}` to put a +1/+1 counter on the source and draw is
@@ -1673,7 +1665,7 @@ inductive TriggerResolution where
   `.may (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) .ifYouDo`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
   `.may (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo`.
-  You may discard your hand to draw `n` is `.may (.discard (what := .hand)) (.draw (.fixed n)) .ifYouDo`.
+  You may discard your hand to draw `n` is `.may (.discard .hand) (.draw (.fixed n)) .ifYouDo`.
   You may draw for each permanent of a type, and each opponent draws if you do, is
   `.may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo`.
   You may sacrifice an artifact or discard a card to draw is
@@ -1953,7 +1945,7 @@ inductive TriggerResolution where
   `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
   No Equipment is reported.
   Discarding `n` cards when mana was spent to cast the triggering spell is
-  `.«if» .manaSpent (.discard n)`. Spending none discards nothing. -/
+  `.«if» .manaSpent (.discard (.fixed n))`. Spending none discards nothing. -/
   | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
@@ -2122,7 +2114,7 @@ inductive TriggerResolution where
   A source that has already left still reveals; nothing is exiled.
   The announced player reveals one card plus one for each creature card in
   your graveyard. You choose one of them and that player discards it, with
-  `.revealFromHand .onePlusCreatureCards (.discard 1 (who := .target))`.
+  `.revealFromHand .onePlusCreatureCards (.discard (.fixed 1) .targetOpponent)`.
   A smaller hand is revealed in full.
   Any other combination does nothing. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
@@ -2221,7 +2213,7 @@ def gollumModes : List TriggerResolution :=
 Destroy the announced token. Each player sacrifices the announced creature,
 which is already gone when an earlier mode destroyed it. -/
 def upToXModes : List TriggerResolution :=
-  [.sequence [.draw (.fixed 1), .discard 1],
+  [.sequence [.draw (.fixed 1), .discard (.fixed 1)],
    .loseLife 2 (who := .eachOpponent),
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayer .chosenCreature]
@@ -2353,7 +2345,7 @@ def ofSpell : SpellResolution → TriggerResolution
   | .sequence rs => .sequence (rs.map ofSpell)
   | .scry n => .scry (.fixed n)
   | .draw n .you => .draw (.fixed n)
-  | .discard n => .discard n
+  | .discard n => .discard (.fixed n)
   | .loseLife n .you => .loseLife n
   | .loseLife n .eachOpponent => .loseLife n (who := .eachOpponent)
   | .gainLife n .you => .gainLife n
@@ -2445,7 +2437,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
         .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
-      resolution := .discard 1 (who := .target) (what := .chosenNonland) }
+      resolution := .discard .chosenNonland .targetOpponent }
   | .amass n =>
     { resolution := .amass n }
   | .opponentLosesYouGain n =>
@@ -2640,7 +2632,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .onSource action =>
     { resolution := TriggeredAbility.TriggerResolution.ofSource action }
   | .exileTop => { resolution := .exile .top .playUntilNextTurn }
-  | .discard n => { resolution := .discard n }
+  | .discard n => { resolution := .discard (.fixed n) }
   | .mayTo can thenDo =>
     let left := timing can
     let right := timing thenDo
@@ -2659,9 +2651,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { inner with resolution := .may inner.resolution (.sequence []) }
   | .opponentDiscards n who =>
     match who with
-    | .each => { resolution := .discard n (who := .each) }
+    | .each => { resolution := .discard (.fixed n) .eachOpponent }
     | .target =>
-      { targeting := .of .opponent, resolution := .discard n (who := .target) }
+      { targeting := .of .opponent, resolution := .discard (.fixed n) .targetOpponent }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .mill n .target }
   | .investigate => { resolution := .investigate }
@@ -2687,7 +2679,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
-    { resolution := .may (.discard (what := .hand)) (.draw (.fixed n)) .ifYouDo }
+    { resolution := .may (.discard .hand) (.draw (.fixed n)) .ifYouDo }
   | .pumpByLookedAt => { resolution := .pump .perLookedAt .perLookedAt .source }
   | .pumpGreatestPower => { resolution := .pump .greatestPower (.fixed 0) .source }
   | .pumpForEachOtherCreature =>
@@ -2714,7 +2706,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
     { resolution := .sequence
-        [.draw .equalToManaSpent, .«if» .manaSpent (.discard n)] }
+        [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.fixed n))] }
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
@@ -2813,7 +2805,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
-        [.draw (.fixed 1), .discard 1, .put .discardedLand (how := .tapped)] }
+        [.draw (.fixed 1), .discard (.fixed 1), .put .discardedLand (how := .tapped)] }
   | .millThatManyLost =>
     { resolution := .mill 0 .thatPlayer .thatManyLost }
   | .drawPerFatGraveyard =>
@@ -2882,7 +2874,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .oneUnused }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
-        [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand,
+        [.may (.discard .hand) (.sequence []), .draw .discardedHand,
          .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)] }
   | .castFromGyArtifactInstantSorcery =>
     { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
@@ -2949,7 +2941,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] }
   | .lootAndPlan =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard 1] }
+        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.fixed 1)] }
   | .createVillainAndPlan =>
     { resolution := .sequence
         [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] }
@@ -3136,7 +3128,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
       resolution := .revealFromHand .onePlusCreatureCards
-        (.discard 1 (who := .target)) }
+        (.discard (.fixed 1) .targetOpponent) }
   | .enter .createRedwing =>
     { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
   | .step .enchantedControllerDraws =>
