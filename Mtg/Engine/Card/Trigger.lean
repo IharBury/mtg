@@ -231,10 +231,10 @@ inductive TriggerNumericWho where
   | eachNonSubtypeAndOpponents (subtype : String)
 deriving Repr, Inhabited, BEq
 
-/-- Where one statistic of `TriggerResolution.pump` reads its bonus, and
-where `TriggerResolution.dealDamage` reads its amount. `.greatestPower` is
-first so a default resolution uses it. `.fixed` is a fixed bonus, and it is
-also `n` damage. -/
+/-- Where one statistic of `TriggerResolution.pump` reads its bonus,
+where `TriggerResolution.dealDamage` reads its amount, and how many cards
+`TriggerResolution.scry` looks at. `.greatestPower` is first so a default
+resolution uses it. `.fixed` is a fixed bonus, `n` damage, and scry `n`. -/
 inductive TriggerNumericAmount where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -244,7 +244,7 @@ inductive TriggerNumericAmount where
   | perOtherCreature
   /-- One for each Plains the controller controls. -/
   | perPlains
-  /-- A fixed bonus of `n`, or `n` damage. -/
+  /-- A fixed bonus of `n`, `n` damage, or scry `n`. -/
   | fixed (n : Int)
   /-- The source's toughness. -/
   | equalSourceToughness
@@ -1359,8 +1359,9 @@ inductive TriggerResolution where
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
   | dealDamage (amount : TriggerNumericAmount) (who : TriggerNumericWho)
       (note : TriggerDamageNote := .none)
-  /-- Scry `n`. -/
-  | scry (n : Nat)
+  /-- Scry, as `n` says. `.fixed` is that many cards.
+  Scry 2 is `.scry (.fixed 2)`. Any other amount scries nothing. -/
+  | scry (n : TriggerNumericAmount)
   /-- `who` draws cards, as `amount` says. `n` is the count when `amount`
   is `.fixed`.
   The controller draws `n` is `.draw n`.
@@ -1626,14 +1627,14 @@ inductive TriggerResolution where
   (Bolg), is
   `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`.
   Put a plan counter, then scry, is
-  `.sequence [.putCounters (.ofKind .plan) .source, .scry n]`.
+  `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`.
   Put a trample counter on the target, then make it a Bear, is
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear]`.
   Draw, discard, and a land discarded this way enters tapped, is
   `.sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]`.
   Put an influence counter, scry 2, then offer the opponent's choice
   (Palantír of Orthanc), is
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry 2, .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`.
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
   `.sequence [.grant (.keywords k) .target, .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
@@ -2219,7 +2220,7 @@ Scry 2, then draw a card. -/
 def allianceModes : List TriggerResolution :=
   [.addMana #[.colored .green, .colored .green, .colored .green],
    .putCounters (.ofKind .plusOnePlusOne) .youControl,
-   .sequence [.scry 2, .draw 1]]
+   .sequence [.scry (.fixed 2), .draw 1]]
 
 /-- Put a +1/+1 counter on the source. Each opponent loses 2 life and you
 gain 2 life. Draw a card. -/
@@ -2362,7 +2363,7 @@ def ofTargetWhileSource : PermanentAction → TriggerResolution :=
 /-- A spell step as trigger steps. A shape this does not name does nothing. -/
 def ofSpell : SpellResolution → TriggerResolution
   | .sequence rs => .sequence (rs.map ofSpell)
-  | .scry n => .scry n
+  | .scry n => .scry (.fixed n)
   | .draw n .you => .draw n
   | .discard n => .discard n
   | .loseLife n .you => .loseLife n
@@ -2621,7 +2622,7 @@ namespace SharedTrigger
 
 /-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
 def timing : SharedTrigger → TriggeredAbility.TriggerTiming
-  | .scry n => { resolution := .scry n }
+  | .scry n => { resolution := .scry (.fixed n) }
   | .draw n => { resolution := .draw n }
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
   | .amass n subtype amount attachSource =>
@@ -2938,7 +2939,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .palantir =>
     { targeting := .of .opponent,
       resolution := .sequence
-        [.putCounters (.ofKind .influence) .source, .scry 2,
+        [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
          .may (.draw 1 (who := .opponentHasYou)) (.sequence [])] }
   | .treasuresEqualLastKnown =>
     { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
@@ -2957,7 +2958,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .pump .equalSourceToughness .equalSourceToughness
         (.othersOfSubtype subtype) }
   | .scryAndPlan n =>
-    { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry n] }
+    { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] }
   | .lootAndPlan =>
     { resolution := .sequence
         [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1] }
@@ -3296,7 +3297,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .attach .eachTargetEquipment .enchantedCreature }
   | .watch .equippedAttacksAloneUntapScry =>
     { events := #[.equippedAttacksAlone],
-      resolution := .sequence [.untap .equipped, .scry 1] }
+      resolution := .sequence [.untap .equipped, .scry (.fixed 1)] }
   | .watch .equippedAttacksTap =>
     { events := #[.equippedAttacks], targeting := .of .defendingPlayerCreature,
       resolution := .tap .target }
@@ -3368,7 +3369,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters (.ofKind .plusOnePlusOne) .source }
   | .casting .plusOneScry =>
     { events := #[.youCastTargetingCreatureYouControl],
-      resolution := .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1] }
+      resolution := .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)] }
   | .casting .ironFistTap =>
     { events := #[.youCastTargetingCreatureYouControl],
       resolution := .grant .ironFistTap .source }

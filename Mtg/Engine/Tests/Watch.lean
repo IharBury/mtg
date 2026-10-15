@@ -74,7 +74,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
   .attach .eachTargetEquipment .enchantedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==
-  .sequence [.untap .equipped, .scry 1]
+  .sequence [.untap .equipped, .scry (.fixed 1)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksTap) == .tap .target
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedTappedDamage) ==
   .dealDamage (.fixed 1) .eachOpponent .fromEquipped
