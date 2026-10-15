@@ -48,13 +48,13 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 #guard
   let before := handSize afterDraw caster
   let g := drawStep { afterDraw with humansTappedThisWay := 2 }
-    (.draw 0 (amount := .forEachTappedHuman))
+    (.draw .forEachTappedHuman)
   handSize g caster == before + 2 && g.humansTappedThisWay == 0
 
 #guard
   let before := handSize afterDraw caster
   let g := drawStep { afterDraw with humansTappedThisWay := 0 }
-    (.draw 0 (amount := .forEachTappedHuman))
+    (.draw .forEachTappedHuman)
   handSize g caster == before && g.humansTappedThisWay == 0
 
 /- One card for each graveyard with seven or more cards. -/
@@ -73,12 +73,12 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 #guard
   let before := handSize afterDraw caster
   let g := drawStep { afterDraw with handDiscardedThisWay := some 3 }
-    (.draw 0 (amount := .discardedHandCount))
+    (.draw .discardedHand)
   handSize g caster == before + 3
 
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep afterDraw (.draw 0 (amount := .discardedHandCount))
+  let g := drawStep afterDraw (.draw .discardedHand)
   handSize g caster == before
 
 /- Mana spent to cast the triggering spell is the draw count. None skips
@@ -86,11 +86,11 @@ the rest of the sequence. -/
 #guard
   let g0 := withSpent 4
   let before := handSize g0 caster
-  let g := drawStep g0 (.draw 0 (amount := .equalToManaSpent))
+  let g := drawStep g0 (.draw .equalToManaSpent)
   handSize g caster == before + 4 && !g.skipTriggerSequenceRest
 
 #guard
-  let g := drawStep (withSpent 0) (.draw 0 (amount := .equalToManaSpent))
+  let g := drawStep (withSpent 0) (.draw .equalToManaSpent)
   g.skipTriggerSequenceRest && logContains g "No mana was spent to cast that spell" &&
     handSize g caster == handSize (withSpent 0) caster
 
@@ -99,14 +99,14 @@ the rest of the sequence. -/
   let g0 := addPermanent afterDraw pebble caster caster
   let sid := (pebbleOf g0).id
   let g := drawStep { g0 with palantirChoiceReady := some (caster, opponent, sid) }
-    (.draw 1 (who := .opponentHasYou))
+    (.draw (.fixed 1) (who := .opponentHasYou))
   match g.pending with
   | .fraChoice p (.palantirMayDraw c id) =>
     p == opponent && c == caster && id == sid && g.palantirChoiceReady.isNone
   | _ => false
 
 #guard
-  let g := drawStep afterDraw (.may (.draw 1 (who := .opponentHasYou)) (.sequence []))
+  let g := drawStep afterDraw (.may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence []))
   g.pending == .none && handSize g caster == handSize afterDraw caster
 
 /- You may draw X and discard two when mana was spent. -/

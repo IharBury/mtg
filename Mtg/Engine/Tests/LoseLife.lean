@@ -204,7 +204,7 @@ the source is on the battlefield. -/
 #guard TriggeredAbility.resolution (.onVillainYouControlEntersDrainAndPlan 2) ==
   .sequence [.putCounters (.ofKind .plan) .source, eachOpp 2, .gainLife 2]
 #guard TriggeredAbility.resolution .onCreatureCardsToGyDrawLoseLifeAndPlan ==
-  .sequence [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1]
+  .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .loseLife 3 } ==
   "you lose 3 life"

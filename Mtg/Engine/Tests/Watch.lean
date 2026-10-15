@@ -47,8 +47,8 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
   .sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]
-#guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw 1
-#guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw 1
+#guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw (.fixed 1)
+#guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
   .dealDamage (.fixed 1) .targetOpponent
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainConniveOnce) ==
@@ -80,9 +80,9 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .dealDamage (.fixed 1) .eachOpponent .fromEquipped
 #guard TriggeredAbility.resolution (onWatch Effect.watchHeroesDamagePlusTwo) ==
   .putCounters (.ofKind .plusOnePlusOne 2) .source
-#guard TriggeredAbility.resolution (onWatch Effect.watchMerfolkAttackDraw) == .draw 1
+#guard TriggeredAbility.resolution (onWatch Effect.watchMerfolkAttackDraw) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
-  .may (.draw 1) (.sequence []) .ifYouDo
+  .may (.draw (.fixed 1)) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
   .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==

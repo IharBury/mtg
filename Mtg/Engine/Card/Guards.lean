@@ -721,7 +721,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
   .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
 #guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution ==
-  .may (.discard 1) (.draw 2) .ifYouDo
+  .may (.discard 1) (.draw (.fixed 2)) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
     (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
   .may (.scry (.fixed 1)) (.gainLife 2) .ifYouDo
@@ -734,7 +734,7 @@ namespace CardDef
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
-  .may (.sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]) (.sequence [])
+  .may (.sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]) (.sequence [])
 #guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
@@ -808,20 +808,20 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]
+  .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
-  .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1),
+  .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
     .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
   .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
-  .sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]
+  .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
@@ -1402,7 +1402,7 @@ namespace CardDef
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
 #guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry (.fixed 1)
-#guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
+#guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution .onEnterSearchForest ==
   .searchLibrary (.put .forest)
 #guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
@@ -1435,7 +1435,7 @@ namespace CardDef
   .prepareSource .ifThreeCreaturesDied
 #guard (TriggeredAbility.triggered .youScryOrSurveil
     (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
-  .may (.pay #[.generic 2]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]) .ifYouDo
+  .may (.pay #[.generic 2]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
 #guard TriggeredAbility.toNotation .onEnterCreateAxe ==
   "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
 #guard TriggeredAbility.toNotation .onEnterCreateAxeAttach ==
@@ -1540,7 +1540,7 @@ end CardDef
   .sequence [
     .noteResolveThisTurn 3,
     .«if» (.nthResolve 1) (.gainLife 1),
-    .«if» (.nthResolve 2) (.draw 1),
+    .«if» (.nthResolve 2) (.draw (.fixed 1)),
     .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
@@ -1554,22 +1554,22 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroy .target (note := .forAmass),
     .amass 0 (amount := .notedPower) (who := .notedController),
-    .«if» .youControlledDestroyed (.draw 1)]
+    .«if» .youControlledDestroyed (.draw (.fixed 1))]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
-  .sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount),
+  .sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand,
     .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
-    .«if» (.bearsAtLeast 3) (.draw 2)]
+    .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
-  .sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]
+  .sequence [.draw (.fixed 1), .discard 1, .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
   .sequence [.mill 4 (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
   .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
-    .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]
+    .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]
 #guard TriggeredAbility.resolution .onCombatDamageToYouSacRingTempts ==
   .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]
 #guard TriggeredAbility.resolution (.onCreatureYouControlEntersScryAndPlan 2) ==
@@ -1578,7 +1578,7 @@ end CardDef
   .sequence [.putCounters (.ofKind .plan) .source,
     .putCounters (.ofKind .plusOnePlusOne) (.permanent true)]
 #guard TriggeredAbility.resolution .onFourthPlanDrawPlusOneEach ==
-  .sequence [.sacrifice .you .plan, .draw 1, .putCounters (.ofKind .plusOnePlusOne) .youControl]
+  .sequence [.sacrifice .you .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl]
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
   .sequence [.sacrifice .you .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive (.modeled 11))]
@@ -1586,15 +1586,15 @@ end CardDef
   .sequence [.sacrifice .you .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7))]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
-  .sequence [.draw 1, .may (.put .landFromHand (how := .tapped)) (.sequence [])]
+  .sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
-  .sequence [.draw 1, .«if» .anotherHero (.gainLife 2)]
+  .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife 2)]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
   .sequence [.createTokens .treasure 1 false .alien (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
-  .sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
+  .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil 1]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
@@ -1615,9 +1615,9 @@ end CardDef
 #guard TriggeredAbility.toNotation .onYourBeginCombatIfDrawnTwoPumpFirstStrike ==
   "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
 #guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
-  .sequence [.draw 0 (amount := .equalToManaSpent), .discard 2 (when := .ifManaSpent)]
+  .sequence [.draw .equalToManaSpent, .discard 2 (when := .ifManaSpent)]
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
-  .draw 0 (amount := .perFatGraveyard)
+  .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
   .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
     .attach .created .source]

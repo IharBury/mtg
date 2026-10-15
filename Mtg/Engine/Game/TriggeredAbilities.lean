@@ -1509,7 +1509,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
     if g.mayThenDrop > 0 && n == 1 then
       let drawN :=
         match g.mayThenConditional with
-        | some (.draw k) => k
+        | some (.draw (.fixed k)) => k.toNat
         | _ => 1
       let g := g.beginMayDiscardDraw controller drawN
       if g.pending == .none then g.failMayThen else g
@@ -1533,7 +1533,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
     if g.mayThenDrop > 0 then
       let drawN :=
         match g.mayThenConditional with
-        | some (.draw k) => k
+        | some (.draw (.fixed k)) => k.toNat
         | _ => 0
       g.beginFraChoice controller (.mayDiscardHandDrawFixed drawN)
         s!"{(g.player controller).name} may discard their hand. If they do, they draw {drawN} cards"
@@ -1640,8 +1640,8 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (n : Nat) (who : TriggeredAbility.TriggerDrawWho)
-    (amount : TriggeredAbility.TriggerDrawAmount) : Game :=
+    (amount : TriggeredAbility.TriggerNumericAmount)
+    (who : TriggeredAbility.TriggerNumericWho) : Game :=
   match who, amount with
   | .enchantedController, _ =>
     g.drawForEnchantedController sourceId
@@ -1655,17 +1655,17 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
   | .you, .perControlled ty =>
     let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
     if n == 0 then g else g.draw controller n
-  | .eachOpponent, .fixed =>
-    g.forEachOpponent controller (fun g pid => g.draw pid n)
-  | .you, .fixed =>
-    g.draw controller n
+  | .eachOpponent, .fixed n =>
+    g.forEachOpponent controller (fun g pid => g.draw pid n.toNat)
+  | .you, .fixed n =>
+    g.draw controller n.toNat
   | .you, .forEachTappedHuman =>
     let n := g.humansTappedThisWay
     let g := { g with humansTappedThisWay := 0 }
     if n == 0 then g else g.draw controller n
   | .you, .perFatGraveyard =>
     g.drawPerSevenCardGraveyard controller
-  | .you, .discardedHandCount =>
+  | .you, .discardedHand =>
     match g.handDiscardedThisWay with
     | some n => if n == 0 then g else g.draw controller n
     | none => g
@@ -2521,8 +2521,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .scry (.fixed n) =>
     g.beginScry controller n.toNat
   | .scry _ => g
-  | .draw n who amount =>
-    g.applyTriggerDraw controller sourceId n who amount
+  | .draw amount who =>
+    g.applyTriggerDraw controller sourceId amount who
   | .searchLibrary thenDo =>
     g.applySearchLibrary controller sourceId thenDo
   | .discard n who what when =>
@@ -2631,7 +2631,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       lastKnownPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
-  | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw _ _ .fixed) =>
+  | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw (.fixed _) _) =>
     g.mayPutHeroOrDraw controller maxMv subtype
   | .put what how note | .may (.put what how note) _ =>
     g.applyPut controller ab sourceId targets what how note
@@ -2849,9 +2849,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
   | .loseLife n who amount =>
     g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
-  | .may (.draw _ .opponentHasYou _) _ =>
-    g.applyTriggerDraw controller sourceId 1 .opponentHasYou .fixed
-  | .may (.sequence [.draw _ _ .equalToManaSpent, .discard n (when := .ifManaSpent)]) _ =>
+  | .may (.draw _ .opponentHasYou) _ =>
+    g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
+  | .may (.sequence [.draw .equalToManaSpent _, .discard n (when := .ifManaSpent)]) _ =>
     -- X is the mana spent to cast the triggering spell.
     let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
@@ -2963,9 +2963,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.copyCastTriggerSpell controller
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     g.offerMayExileDiscarded controller lastKnownPower
-  | .may (.draw 0 _ (.perControlled ty)) (.draw 1 .eachOpponent _) .ifYouDo =>
+  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     g.mayDrawPerArtifact controller ty
-  | .may (.draw 1 _ .fixed) (.sequence []) .ifYouDo =>
+  | .may (.draw (.fixed 1) _) (.sequence []) .ifYouDo =>
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
@@ -3012,7 +3012,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | [.generic n] =>
         let plusOne :=
           match g.mayThenConditional with
-          | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) => true
+          | some (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) => true
           | _ => false
         let g := { g with pending := .mayPayGeneric controller n }
         g.logMsg <|
@@ -3169,7 +3169,7 @@ def resolveVisionChoice (g : Game) (rest : ChooseModesRest) (mode : Nat) : Game 
   match rest.sourceId.bind (fun id => g.findObject? (g.followMoved id)) with
   | none =>
     match rest.modes[mode]? with
-    | some (.draw _) => g.draw controller 1
+    | some (.draw (.fixed _)) => g.draw controller 1
     | _ => g.logMsg "The Vision is no longer in play"
   | some src =>
     if src.status.modesChosenThisTurn.contains mode ||
@@ -3177,7 +3177,7 @@ def resolveVisionChoice (g : Game) (rest : ChooseModesRest) (mode : Nat) : Game 
       g.logMsg "The Vision's ability is removed from the stack with no effect"
     else if !src.isOnBattlefield then
       match rest.modes[mode]? with
-      | some (.draw _) => g.draw controller 1
+      | some (.draw (.fixed _)) => g.draw controller 1
       | _ => g.logMsg "The Vision is no longer in play"
     else
       let g := g.mapObjectStatus src (fun s =>

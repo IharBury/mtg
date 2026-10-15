@@ -110,7 +110,7 @@ inductive ThisAttackLeftover where
   | payReturnAttacking
   /-- Whenever Iron Man attacks, if an artifact entered under your control
   this turn, draw a card. Resolves as
-  `.«if» .artifactEnteredThisTurn (.draw 1)`. -/
+  `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`. -/
   | ifArtifactEnteredDraw
   /-- Whenever The Mighty Thor attacks, exile up to one target nontoken
   artifact or creature, then return it tapped. Resolves as
@@ -123,7 +123,7 @@ inductive ThisAttackLeftover where
   | equippedDrain
   /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
   power is 4 or greater. Resolves as
-  `.«if» (.sourcePowerAtLeast 4) (.draw 1)`. -/
+  `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`. -/
   | drawIfPower4
   /-- Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0
   and gains indestructible until end of turn. Resolves as
@@ -641,7 +641,7 @@ inductive SharedTrigger where
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
-  `.sequence [.draw 0 (amount := .equalToManaSpent), .discard n (when := .ifManaSpent)]`.
+  `.sequence [.draw .equalToManaSpent, .discard n (when := .ifManaSpent)]`.
   Two cards is `.drawXDiscard 2`. Making that optional is
   `.may (.drawXDiscard 2)`. -/
   | drawXDiscard (n : Nat)
@@ -661,16 +661,16 @@ inductive SharedTrigger where
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card from your hand on the bottom if you don't
   control a legendary creature.
-  Resolves as `.sequence [.draw 1, .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`. -/
+  Resolves as `.sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw 1), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
-  Resolves as `.sequence [.may (.tap .humans) (.sequence []), .draw 0 (amount := .forEachTappedHuman)]`. -/
+  Resolves as `.sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]`. -/
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
@@ -706,7 +706,7 @@ inductive SharedTrigger where
   Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
-  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw 2)]`. -/
+  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. Resolves as
   `.sequence [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
@@ -724,7 +724,7 @@ inductive SharedTrigger where
   /-- You may sacrifice another creature for +1/+1s equal to its power. -/
   | attackSacPlusOneEqualPower
   /-- Loot; a discarded land enters tapped. Resolves as
-  `.sequence [.draw 1, .discard 1, .put .discardedLand (how := .tapped)]`. -/
+  `.sequence [.draw (.fixed 1), .discard 1, .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. Resolves as
   `.mill 0 .thatPlayer .thatManyLost`. -/
@@ -752,7 +752,7 @@ inductive SharedTrigger where
   /-- First resolve this turn: gain 1 life. Second: draw a card. Third:
   +1/+1 on each creature you control. Later resolves do nothing
   (Belladonna Took). Resolves as
-  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw 1), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another) (.sequence [])`. -/
   | bolgMaySacrifice
@@ -776,13 +776,13 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw 1)]`. -/
+  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. Resolves as
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
   | gollumMode
   /-- Discard hand, draw that many; damage if enduring story. Resolves as
-  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw 0 (amount := .discardedHandCount), .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]`. -/
+  `.sequence [.may (.discard (what := .hand)) (.sequence []), .draw .discardedHand, .«if» .enduringStoryNoted (.dealDamage .discardedHand .eachOpponent)]`. -/
   | discardHandDrawDamageIfStory
   /-- Cast artifact, instant, or sorcery from the graveyard. -/
   | castFromGyArtifactInstantSorcery
@@ -816,7 +816,7 @@ inductive SharedTrigger where
   `.sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying]`. -/
   | grimaImpulse
   /-- Palantír end-step. Resolves as
-  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw 1 (who := .opponentHasYou)) (.sequence [])]`. -/
+  `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]`. -/
   | palantir
   /-- Create Treasures equal to last-known noncombat damage. -/
   | treasuresEqualLastKnown
@@ -841,7 +841,7 @@ inductive SharedTrigger where
   `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`. -/
   | scryAndPlan (n : Nat)
   /-- Loot and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .draw 1, .discard 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard 1]`. -/
   | lootAndPlan
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
@@ -849,7 +849,7 @@ inductive SharedTrigger where
   `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife n]`. -/
   | drainAndPlan (n : Nat)
   /-- Draw, lose life, and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .draw 1, .loseLife 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]`. -/
   | drawLoseLifeAndPlan
   /-- Create a tapped Treasure and put a plan counter. -/
   | treasureTappedAndPlan
@@ -909,7 +909,7 @@ inductive SharedTrigger where
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
-  `.sequence [.draw 2, .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
+  `.sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/
@@ -939,7 +939,7 @@ inductive SharedTrigger where
   `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
-  Resolves as `.sequence [.draw 1, .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
+  Resolves as `.sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
   | drawMayPutLandTapped
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero
@@ -952,8 +952,8 @@ inductive SharedTrigger where
   | enter (e : EnterLeftover)
   /-- Leftover step / upkeep / end-step / first-main effect.
   The enchanted creature's controller draws a card, as
-  `.draw 1 (who := .enchantedController)`.
-  Drawing until you have ten cards is `.draw 0 (amount := .upToHandSize 10)`.
+  `.draw (.fixed 1) (who := .enchantedController)`.
+  Drawing until you have ten cards is `.draw (.upToHandSize 10)`.
   Becoming a copy of an artifact, non-Aura enchantment, or land is
   `.becomeCopy .artifactEnchantmentOrLand`.
   Choosing a +1/+1 counter or removing a counter to draw is
@@ -981,14 +981,14 @@ inductive SharedTrigger where
   Paying {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
   Drawing when an artifact entered under your control this turn is
-  `.«if» .artifactEnteredThisTurn (.draw 1)`.
+  `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`.
   Exiling a nontoken artifact or creature and returning it tapped is
   `.exile .target .returnTapped`.
   Each opponent losing X life and you gaining X life, X the Equipment
   attached to the source, is
   `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
   Drawing when the source's power is 4 or greater is
-  `.«if» (.sourcePowerAtLeast 4) (.draw 1)`.
+  `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`.
   The source getting +2/+0 and indestructible until end of turn is
   `.sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | thisAttack (e : ThisAttackLeftover)
@@ -998,8 +998,8 @@ inductive SharedTrigger where
   A 1/1 green Squirrel is `.createTokens .squirrel11green 1 false`. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Leftover watch effect.
-  Drawing a card is `.draw 1`. You may draw a card is
-  `.may (.draw 1) (.sequence []) .ifYouDo`.
+  Drawing a card is `.draw (.fixed 1)`. You may draw a card is
+  `.may (.draw (.fixed 1)) (.sequence []) .ifYouDo`.
   A +1/+1 counter on the source is `.putCounters (.ofKind .plusOnePlusOne) .source`.
   Two +1/+1 counters are `.putCounters (.ofKind .plusOnePlusOne 2) .source`.
   A counter that is not put after the source has left, then 2 damage to
@@ -1068,7 +1068,7 @@ inductive SharedTrigger where
   Damage equal to that spell's mana value is
   `.dealDamage .spellManaValue .target`.
   Drawing a card, then base power equal to the cards in hand, is
-  `.sequence [.draw 1, .grant .basePowerEqualHand .source]`.
+  `.sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source]`.
   A +1/+1 counter on the source is
   `.putCounters (.ofKind .plusOnePlusOne) .source`.
   That counter, then scry 1, is

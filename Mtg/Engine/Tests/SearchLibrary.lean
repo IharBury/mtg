@@ -322,7 +322,7 @@ do not. A missing source does not search. -/
   let crossed := [
     .searchLibrary (.put .linkedExile),
     .searchLibrary (.returnToHand .graveyardCard),
-    .searchLibrary (.draw 1),
+    .searchLibrary (.draw (.fixed 1)),
     .searchLibrary (.put .forest .tapped),
     .searchLibrary (.put .dragon .tapped),
     .searchLibrary (.put .basicLandOnTop .tapped),
@@ -381,7 +381,7 @@ what searches. -/
     { resolution := .searchLibrary (.put .dragon) } ==
   "search your hand and/or library for a Dragon card and put it onto the battlefield"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.draw 1) } ==
+    { resolution := .searchLibrary (.draw (.fixed 1)) } ==
   "search your library"
 #guard TriggeredAbility.resolutionPhrase { resolution := .put .basicLandOnTop } ==
   "put that card on top of your library"
