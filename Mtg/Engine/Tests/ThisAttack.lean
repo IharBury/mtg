@@ -50,7 +50,7 @@ def hand (g : Game) : Nat :=
   .«if» (.sourcePowerAtLeast 4) (.draw 1)
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
-  .sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]
+  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
 
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
   TriggeredAbility.thisAttackSentence .mayPayPlusOne

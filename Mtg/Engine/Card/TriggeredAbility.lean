@@ -658,9 +658,9 @@ def affectedNoun (who : TriggerAffected) (targetNoun : String) : String :=
 creature. A compound action flattened into more than one step is `none`. -/
 def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   match r with
-  | .pump p t .targetWhileSource .fixed =>
+  | .pump (.fixed p) (.fixed t) .targetWhileSource =>
     some s!"that creature gets {signedStat p}/{signedStat t} until end of turn"
-  | .pump _ _ .targetWhileSource .double =>
+  | .pump .double .double .targetWhileSource =>
     some "double that creature's power and toughness until end of turn"
   | .putCounters (.ofKind .plusOnePlusOne n) .targetWhileSource =>
     some s!"put {plusOnePlusOneCountersPhrase n} on that creature"
@@ -699,50 +699,50 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
 def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
   match t.resolution with
-  | .pump power toughness who amount =>
-    match who, amount with
-    | .source, .greatestPower =>
+  | .pump power toughness who =>
+    match power, toughness, who with
+    | .greatestPower, .fixed 0, .source =>
       "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
-    | .source, .perLookedAt =>
+    | .perLookedAt, .perLookedAt, .source =>
       "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
-    | .source, .perOtherCreature =>
+    | .perOtherCreature, .perOtherCreature, .source =>
       "it gets +1/+1 until end of turn for each other creature you control"
-    | .target, .perPlains =>
+    | .perPlains, .perPlains, .target =>
       "target creature you control gets +1/+1 until end of turn for each Plains you control"
-    | .cause, .fixed =>
+    | .fixed power, .fixed toughness, .cause =>
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .othersOfSubtype subtype, .equalSourceToughness =>
+    | .equalSourceToughness, .equalSourceToughness, .othersOfSubtype subtype =>
       s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
-    | .target, .equalSourcePower =>
+    | .equalSourcePower, .fixed 0, .target =>
       s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
-    | .creaturesYouControl, .fixed =>
+    | .fixed power, .fixed toughness, .creaturesYouControl =>
       s!"creatures you control get {signedStat power}/{signedStat toughness} until end of turn"
-    | .othersOfSubtypes subtypes, .fixed =>
+    | .fixed power, .fixed toughness, .othersOfSubtypes subtypes =>
       let recipients :=
         if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
         else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
       s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
-    | .opponentsCreatures, .fixed =>
+    | .fixed power, .fixed toughness, .opponentsCreatures =>
       s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
-    | .target, .fixed =>
+    | .fixed power, .fixed toughness, .target =>
       s!"{noun} gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .target, .double =>
+    | .double, .double, .target =>
       s!"double {noun}'s power and toughness until end of turn"
-    | .source, .fixed =>
+    | .fixed power, .fixed toughness, .source =>
       s!"this creature gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .source, .double =>
+    | .double, .double, .source =>
       "double this creature's power and toughness until end of turn"
-    | .enchanted, .fixed =>
+    | .fixed power, .fixed toughness, .enchanted =>
       s!"enchanted creature gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .enchanted, .double =>
+    | .double, .double, .enchanted =>
       "double enchanted creature's power and toughness until end of turn"
-    | .targetWhileSource, .fixed =>
+    | .fixed power, .fixed toughness, .targetWhileSource =>
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .targetWhileSource, .double =>
+    | .double, .double, .targetWhileSource =>
       "double that creature's power and toughness until end of turn"
-    | .youControlSubtype subtype, .fixed =>
+    | .fixed power, .fixed toughness, .youControlSubtype subtype =>
       s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
-    | _, _ =>
+    | _, _, _ =>
       "those permanents get +P/+T until end of turn"
   | .setBasePT _ _ .target .equalSource =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
@@ -844,11 +844,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .createTokens .treasure 1 false .kind .targetController]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse .scriedOrSurveilledThisTurn
-      (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target) =>
+      (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) =>
     "if you don't control a planeswalker, sacrifice this creature"
-  | .«if» (.otherForestsAtLeast 5) (.pump 3 3 .target) =>
+  | .«if» (.otherForestsAtLeast 5) (.pump (.fixed 3) (.fixed 3) .target) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
   | .may (.pay symbols) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1]) .ifYouDo =>
     match symbols.toList with
@@ -1029,7 +1029,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
-  | .sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] =>
+  | .sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes),
+      .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] =>
     let who :=
       if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
       else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
@@ -1148,9 +1149,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .sequence [.armSurveilReturnLifeGained, .surveil 1] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
-  | .sequence [.pump 3 0 .target, .grant (.keywords k) .target] =>
+  | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .sequence [.pump p t .target, .grant (.keywords k) .target] =>
+  | .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords k) .target] =>
     if k == Keyword.trample then
       s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
     else
@@ -1169,7 +1170,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence [.loseLife n .targetOpponent .fixed, .gainLife m .fixed] =>
     s!"target opponent loses {n} life and you gain {m} life"
-  | .sequence [.pump p 0 (.youControlSubtype "Elf"),
+  | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
       .grant (.keywords k) (.youControlSubtype "Elf")] =>
     if k == Keyword.vigilance then
       s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
@@ -1517,7 +1518,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
     | _, _, _ =>
       "reveal cards from a library"
-  | .«if» (.drewAtLeast 2) (.sequence [.pump 3 0 .target, .grant (.keywords k) .target]) =>
+  | .«if» (.drewAtLeast 2) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
   | .mill n who amount note =>
     match who, amount, note with

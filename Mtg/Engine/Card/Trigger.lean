@@ -341,7 +341,7 @@ deriving Repr, Inhabited, BEq
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn. -/
 inductive TriggerPumpWho where
   /-- The ability's source, if it is still on the battlefield.
-  +P/+T from the arguments is `.pump p t .source`. -/
+  +P/+T from the arguments is `.pump (.fixed p) (.fixed t) .source`. -/
   | source
   /-- The announced permanent. -/
   | target
@@ -602,26 +602,25 @@ inductive TriggerAttachTo where
   | enchantedCreature
 deriving Repr, Inhabited, BEq
 
-/-- Where `TriggerResolution.pump` reads the bonus. `power` and `toughness`
-are used when this is `.fixed`. -/
+/-- Where one statistic of `TriggerResolution.pump` reads its bonus.
+`power` and `toughness` each use one. A fixed bonus is `.fixed n`. -/
 inductive TriggerPumpAmount where
-  /-- +X/+0, where X is the greatest power among creatures the controller controls. -/
+  /-- The greatest power among creatures the controller controls. -/
   | greatestPower
-  /-- +1/+1 for each card looked at while scrying. -/
+  /-- One for each card looked at while scrying. -/
   | perLookedAt
-  /-- +1/+1 for each other creature the controller controls. -/
+  /-- One for each other creature the controller controls. -/
   | perOtherCreature
-  /-- +1/+1 for each Plains the controller controls. -/
+  /-- One for each Plains the controller controls. -/
   | perPlains
-  /-- The `power` and `toughness` arguments. -/
-  | fixed
-  /-- +X/+X, where X is the source's toughness. -/
+  /-- A fixed bonus of `n`. -/
+  | fixed (n : Int)
+  /-- The source's toughness. -/
   | equalSourceToughness
-  /-- +X/+0, where X is the source's power. -/
+  /-- The source's power. -/
   | equalSourcePower
-  /-- Add the permanent's current power and toughness, which doubles them.
-  `power` and `toughness` are unused. The announced permanent is
-  `.pump 0 0 .target .double`. -/
+  /-- This statistic's current value, which doubles it.
+  Doubling the announced permanent is `.pump .double .double .target`. -/
   | double
 deriving Repr, Inhabited, BEq
 
@@ -1315,35 +1314,35 @@ and `grant`. Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
 and `ofTargetWhileSource` map a `PermanentAction` onto them. +P/+T on the
-source is `.pump p t .source`. Tapping the creature this Aura enchants is
+source is `.pump (.fixed p) (.fixed t) .source`. Tapping the creature this Aura enchants is
 `.tap .enchantedWhileSource`. Granting keywords to the target while the
 source remains is `.grant (.keywords k) .targetWhileSource`. -/
 inductive TriggerResolution where
-  /-- Until end of turn, permanents of `who` get the bonus from `amount`.
-  `power` and `toughness` are that bonus when `amount` is `.fixed`.
+  /-- Until end of turn, permanents of `who` get +`power`/+`toughness`.
+  Each statistic reads its own bonus.
   The source by the greatest power among creatures you control is
-  `.pump 0 0 .source .greatestPower`.
+  `.pump .greatestPower (.fixed 0) .source`.
   The source +1/+1 per card looked at while scrying is
-  `.pump 0 0 .source .perLookedAt`.
+  `.pump .perLookedAt .perLookedAt .source`.
   The source +1/+1 for each other creature you control is
-  `.pump 0 0 .source .perOtherCreature`.
+  `.pump .perOtherCreature .perOtherCreature .source`.
   A target creature you control +1/+1 per Plains is
-  `.pump 0 0 .target .perPlains`.
-  The creature that caused this +P/+T is `.pump p t .cause`.
+  `.pump .perPlains .perPlains .target`.
+  The creature that caused this +P/+T is `.pump (.fixed p) (.fixed t) .cause`.
   Other permanents of a subtype +X/+X, X = this toughness, is
-  `.pump 0 0 (.othersOfSubtype subtype) .equalSourceToughness`.
+  `.pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype subtype)`.
   Another target creature +X/+0, X = this power, is
-  `.pump 0 0 .target .equalSourcePower`.
-  Creatures you control +P/+T is `.pump p t .creaturesYouControl`.
+  `.pump .equalSourcePower (.fixed 0) .target`.
+  Creatures you control +P/+T is `.pump (.fixed p) (.fixed t) .creaturesYouControl`.
   Other creatures of these subtypes +P/+T is
-  `.pump p t (.othersOfSubtypes subtypes)`.
-  Creatures opponents control +P/+T is `.pump p t .opponentsCreatures`.
-  The announced permanent gets +P/+T is `.pump p t .target`.
-  Doubling that permanent's power and toughness is `.pump 0 0 .target .double`.
+  `.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes)`.
+  Creatures opponents control +P/+T is
+  `.pump (.fixed p) (.fixed t) .opponentsCreatures`.
+  The announced permanent gets +P/+T is `.pump (.fixed p) (.fixed t) .target`.
+  Doubling that permanent's power and toughness is `.pump .double .double .target`.
   +P/+T and trample is
-  `.sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]`. -/
-  | pump (power toughness : Int) (who : TriggerPumpWho)
-      (amount : TriggerPumpAmount := .fixed)
+  `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`. -/
+  | pump (power toughness : TriggerPumpAmount) (who : TriggerPumpWho)
   /-- Deal damage. `n` is the amount when `amount` is `.fixed`.
   Each creature blocking the source is `.dealDamage n .blockers`.
   Last-known power to the announced creature is
@@ -1632,7 +1631,7 @@ inductive TriggerResolution where
   `.sequence [.returnToHand .permanent .owner .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
-  `.sequence [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures]`.
+  `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`.
   Gain 1 life, draw, or put a +1/+1 counter on each creature you control
   when this is the first, second, or third resolve this turn (Belladonna
   Took), is
@@ -1653,9 +1652,9 @@ inductive TriggerResolution where
   loyalty counter if it is a planeswalker, is
   `.sequence [.grant (.keywords k) .target, .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
-  `.sequence [.pump 3 0 .target, .grant (.keywords Keyword.firstStrike) .target]`.
+  `.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target]`.
   +P/+T and trample is
-  `.sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]`.
+  `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`.
   Becoming an artifact and gaining indestructible is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
   Tap and a stun counter is
@@ -1989,7 +1988,7 @@ inductive TriggerResolution where
   `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
-  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target)`.
+  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
   The revealed creature enters when its mana value is at most the lands
   you control, and goes to your hand otherwise, with
   `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
@@ -2269,9 +2268,9 @@ def visionModes : List TriggerResolution :=
 /-- What `action` does to the announced permanent. -/
 def ofPermanent : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
-  | .pump p t => .pump p t .target
+  | .pump p t => .pump (.fixed p) (.fixed t) .target
   | .pumpAndTrample p t =>
-    .sequence [.pump p t .target, .grant (.keywords Keyword.trample) .target]
+    .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]
   | .destroy => .destroy .target
   | .dealDamage n => .dealDamage n .target
   | .grantKeywords k => .grant (.keywords k) .target
@@ -2291,14 +2290,14 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .putOnTopOfLibrary => .putOnLibrary .top
   | .putOnBottomOfLibrary => .putOnLibrary .bottom
   | .exile => .exile .target .forLater
-  | .doublePowerAndToughness => .pump 0 0 .target .double
+  | .doublePowerAndToughness => .pump .double .double .target
 
 /-- What `action` does to `who`. `target` is the announced permanent. -/
 def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
-  | .pump p t => .pump p t (pumpWho who)
+  | .pump p t => .pump (.fixed p) (.fixed t) (pumpWho who)
   | .pumpAndTrample p t =>
-    .sequence [.pump p t (pumpWho who), .grant (.keywords Keyword.trample) (grantWho who)]
+    .sequence [.pump (.fixed p) (.fixed t) (pumpWho who), .grant (.keywords Keyword.trample) (grantWho who)]
   | .destroy => .destroy (destroyWhat who)
   | .dealDamage n => .dealDamage n (damageWho who)
   | .grantKeywords k => .grant (.keywords k) (grantWho who)
@@ -2318,7 +2317,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .putOnTopOfLibrary => .putOnLibrary .top (.permanent who)
   | .putOnBottomOfLibrary => .putOnLibrary .bottom (.permanent who)
   | .exile => .exile (exileWhat who) .forLater
-  | .doublePowerAndToughness => .pump 0 0 (pumpWho who) .double
+  | .doublePowerAndToughness => .pump .double .double (pumpWho who)
 where
   counterWho : TriggerAffected → TriggerCounterWho
     | .target => .permanent
@@ -2392,7 +2391,7 @@ def ofSpell : SpellResolution → TriggerResolution
   | .recruit => .recruit
   | .surveil n => .surveil n
   | .onPermanent a => ofPermanent a
-  | .creaturesPump p t .youControl => .pump p t .creaturesYouControl
+  | .creaturesPump p t .youControl => .pump (.fixed p) (.fixed t) .creaturesYouControl
   | .teamGain k => .grant (.keywords k) .creaturesYouControl
   | .createTokens kind n .you .fixed => .createTokens kind n false
   | .createTokens kind _ .you (.perSubtype subtype) =>
@@ -2433,7 +2432,7 @@ structure TriggerTiming where
   damage as the controller chooses (CR 601.2d). -/
   dividedDamage : Option (Nat × Nat) := none
   /-- What happens when this ability resolves. -/
-  resolution : TriggerResolution := .pump 0 0 .source .greatestPower
+  resolution : TriggerResolution := .pump .greatestPower (.fixed 0) .source
   /-- Intervening “while you control a creature with power ≥ n” (e.g. Ferocious).
   Checked when the trigger event occurs (CR 603.2 / 603.4); not rechecked on
   resolution. -/
@@ -2472,7 +2471,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .grant .landfallCreateElf .source }
   | .elvesGetVigilance p =>
     { resolution := .sequence [
-        .pump p 0 (.youControlSubtype "Elf"),
+        .pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
         .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
@@ -2696,7 +2695,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millPlayer n =>
     { targeting := .of .player, resolution := .mill n .target }
   | .investigate => { resolution := .investigate }
-  | .pumpCause p t => { resolution := .pump p t .cause }
+  | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
   | .searchLibrary => { resolution := .searchLibrary (.put .forest) }
   | .searchBasicLandToHand =>
     { resolution := .searchLibrary (.returnToHand .basicLand) }
@@ -2716,12 +2715,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .gainLife 0 (amount := .forEachOtherCreature)] }
   | .becomePT p t => { resolution := .becomePT p t }
   | .pumpTargetPerPlains =>
-    { targeting := .of .creatureYouControl, resolution := .pump 0 0 .target .perPlains }
+    { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
     { resolution := .may (.discard (what := .hand)) (.draw n) .ifYouDo }
-  | .pumpByLookedAt => { resolution := .pump 0 0 .source .perLookedAt }
-  | .pumpGreatestPower => { resolution := .pump 0 0 .source .greatestPower }
-  | .pumpForEachOtherCreature => { resolution := .pump 0 0 .source .perOtherCreature }
+  | .pumpByLookedAt => { resolution := .pump .perLookedAt .perLookedAt .source }
+  | .pumpGreatestPower => { resolution := .pump .greatestPower (.fixed 0) .source }
+  | .pumpForEachOtherCreature =>
+    { resolution := .pump .perOtherCreature .perOtherCreature .source }
   | .damageBlockers n => { resolution := .dealDamage n .blockers }
   | .returnLinkedExile => { resolution := .put .linkedExile }
   | .createThenAttach kind =>
@@ -2809,7 +2809,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
-        [.pump p t (.othersOfSubtypes subtypes), .pump oppP oppT .opponentsCreatures] }
+        [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes),
+         .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] }
   | .wolfPlusOneOrTreasure =>
     { resolution := .or
         [.putCounters (.ofKind .plusOnePlusOne) .permanent,
@@ -2860,7 +2861,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .«if» .opponentsMilled (.queueReflexive .copyMilled)] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
-      resolution := .pump 0 0 .target .equalSourcePower }
+      resolution := .pump .equalSourcePower (.fixed 0) .target }
   | .createAlienPerInvasion =>
     { resolution := .sequence
         [.createTokens .treasure 1 false .alien (note := .invasion),
@@ -2924,7 +2925,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .«if» (.drewAtLeast 2) (.sequence [
-        .pump 3 0 .target,
+        .pump (.fixed 3) (.fixed 0) .target,
         .grant (.keywords Keyword.firstStrike) .target]) }
   | .honePerOppAttach =>
     { targeting := .of (.multi #[
@@ -2972,7 +2973,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .«if» (.attackedOrEntered subtype) (.draw 1) }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    { resolution := .pump 0 0 (.othersOfSubtype subtype) .equalSourceToughness }
+    { resolution := .pump .equalSourceToughness .equalSourceToughness
+        (.othersOfSubtype subtype) }
   | .scryAndPlan n =>
     { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry n] }
   | .lootAndPlan =>
@@ -3045,11 +3047,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse .scriedOrSurveilledThisTurn
-        (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump 1 1 .target) }
+        (.putCounters (.ofKind .plusOnePlusOne) .permanent)
+        (.pump (.fixed 1) (.fixed 1) .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
       resolution := .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) }
-  | .creaturesYouControlGet p t => { resolution := .pump p t .creaturesYouControl }
+  | .creaturesYouControlGet p t =>
+    { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .putSourceCountersOnTarget =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .putCounters .sourceCounters .permanent }
@@ -3066,7 +3070,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil 1] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
-      resolution := .«if» (.otherForestsAtLeast 5) (.pump 3 3 .target) }
+      resolution := .«if» (.otherForestsAtLeast 5) (.pump (.fixed 3) (.fixed 3) .target) }
   | .onEnchanted action =>
     { resolution := TriggeredAbility.TriggerResolution.ofEnchanted action }
   | .attachThen followup =>
@@ -3236,7 +3240,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .thisAttack .attacksAlonePlus2Indestructible =>
     { events := #[.attacking]
       resolution := .sequence [
-        .pump 2 0 .source,
+        .pump (.fixed 2) (.fixed 0) .source,
         .grant (.keywords Keyword.indestructible) .source] }
   | .enterOrAttack .copyKeywords =>
     { events := #[.entering, .attacking], targeting := .of .anotherCreature,
@@ -3265,7 +3269,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
       resolution := .sequence [
-        .pump 2 2 .source, .may .retargetCause (.sequence []) .ifYouDo] }
+        .pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo] }
   | .watch .anyPlayerSecondDraw =>
     { events := #[.anyPlayerDrawsSecond], resolution := .draw 1 }
   | .watch .youTargetDrawOnce =>
@@ -3288,7 +3292,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .villainPlusOneLifelink =>
     { events := #[.anotherVillainEnters],
       resolution := .sequence [
-        .pump 1 0 .source, .grant (.keywords Keyword.lifelink) .source] }
+        .pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source] }
   | .watch .hulklingCompare =>
     { events := #[.anotherCreatureYouControlEnters],
       resolution := .«if» .causeGreaterPowerOrToughness
@@ -3299,7 +3303,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .nontokenHeroModal =>
     { events := #[.anotherNontokenHeroEnters],
       resolution := .chooseModes
-        [.createTokens .soldier11white 1 false, .pump 1 1 .creaturesYouControl]
+        [.createTokens .soldier11white 1 false,
+         .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
         .fromLastKnown }
   | .watch .ultronCopy =>
     { events := #[.anotherNontokenArtifactEnters],
@@ -3451,7 +3456,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
   .«if» (.sourcePowerAtLeast 4) (.draw 1)
 #guard (SharedTrigger.timing (.thisAttack .attacksAlonePlus2Indestructible)).resolution ==
-  .sequence [.pump 2 0 .source, .grant (.keywords Keyword.indestructible) .source]
+  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
   .anotherCreature
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).resolution ==
@@ -3524,12 +3529,13 @@ end SharedTrigger
   .putOnLibrary .bottom (.permanent .targetWhileSource)
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
-  .pump 0 0 .target .double
+  .pump .double .double .target
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
-  .sequence [.pump 2 0 .target, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
 #guard TriggeredAbility.TriggerResolution.ofSource (.plusOne 1) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
-#guard TriggeredAbility.TriggerResolution.ofSource (.pump 1 1) == .pump 1 1 .source
+#guard TriggeredAbility.TriggerResolution.ofSource (.pump 1 1) ==
+  .pump (.fixed 1) (.fixed 1) .source
 #guard TriggeredAbility.TriggerResolution.ofSource .tap == .tap .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .tap == .tap .enchantedWhileSource
 #guard TriggeredAbility.TriggerResolution.ofEnchanted (.grantKeywords Keyword.firstStrike) ==

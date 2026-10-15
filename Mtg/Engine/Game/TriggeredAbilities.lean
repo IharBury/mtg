@@ -584,92 +584,74 @@ def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg s!"{phrase} on {o.name}"
     | _ => g
 
-/-- Resolve `TriggerResolution.pump`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+/-- Resolve `TriggerResolution.pump`. `power` and `toughness` are read
+separately, then applied to each permanent `who` names. -/
 def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower lastKnownToughness : Option Int) (power toughness : Int)
-    (who : TriggeredAbility.TriggerPumpWho)
-    (amount : TriggeredAbility.TriggerPumpAmount) : Game :=
-  match who, amount with
-  | .source, .greatestPower =>
-    g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
-  | .source, .perLookedAt =>
-    let n := (lastKnownPower.getD 0).toNat
-    g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
-  | .source, .perOtherCreature =>
-    g.withTriggerSource sourceId fun g o =>
-      let others :=
-        g.battlefield.filter (fun c =>
-          c.isCreature && c.controlledBy controller && c.id != o.id) |>.size
-      g.pumpPermanent o others others
-  | .target, .perPlains =>
-    let n := g.countSubtype controller "Plains"
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o n n)
-      "No target was chosen"
-  | .cause, .fixed =>
-    match (g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller)) with
-    | some o => g.pumpPermanent o power toughness
+    (lastKnownPower lastKnownToughness : Option Int)
+    (power toughness : TriggeredAbility.TriggerPumpAmount)
+    (who : TriggeredAbility.TriggerPumpWho) : Game :=
+  let shared (amount : TriggeredAbility.TriggerPumpAmount) : Option Int :=
+    match amount with
+    | .fixed n => some n
+    | .greatestPower => some (g.greatestPowerAmongCreatures controller)
+    | .perLookedAt => some (lastKnownPower.getD 0).toNat
+    | .perOtherCreature =>
+      some (g.battlefield.filter (fun c =>
+        c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
+    | .perPlains => some (g.countSubtype controller "Plains")
+    | .equalSourcePower => some (g.sourcePowerAtResolution sourceId lastKnownPower)
+    | .equalSourceToughness =>
+      some <|
+        match sourceId.bind g.findObject? with
+        | some src =>
+          if src.isOnBattlefield then g.toughness src
+          else lastKnownToughness.getD (g.toughness src)
+        | none => lastKnownToughness.getD 0
+    | .double => none
+  let powerShared := shared power
+  let toughnessShared := shared toughness
+  let pumpOne (game : Game) (o : GameObject) : Game :=
+    game.pumpPermanent o (powerShared.getD (game.power o))
+      (toughnessShared.getD (game.toughness o))
+  match who with
+  | .source =>
+    g.withAffected controller ab sourceId targets .source pumpOne
+  | .target =>
+    let missing :=
+      match power, toughness with
+      | .perPlains, .perPlains => "No target was chosen"
+      | _, _ => "The target is no longer legal"
+    g.withLegalTriggerPermanent controller ab sourceId targets pumpOne missing
+  | .enchanted =>
+    g.withAffected controller ab sourceId targets .enchanted pumpOne
+  | .targetWhileSource =>
+    g.withAffected controller ab sourceId targets .targetWhileSource pumpOne
+  | .cause =>
+    match g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller) with
+    | some o => pumpOne g o
     | none => g
-  | .othersOfSubtype subtype, .equalSourceToughness =>
-    let (x, srcId?) :=
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then (g.toughness src, some src.id)
-        else (lastKnownToughness.getD (g.toughness src), some src.id)
-      | none => (lastKnownToughness.getD (0 : Int), none)
+  | .creaturesYouControl =>
+    g.forEachControlledCreature controller pumpOne
+  | .othersOfSubtypes subtypes =>
+    g.foldBattlefield (fun o =>
+        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
+          subtypes.any (fun s => g.hasSubtype o s))
+      pumpOne
+  | .othersOfSubtype subtype =>
+    let srcId? := (sourceId.bind g.findObject?).map (·.id)
     g.foldBattlefield (fun o =>
         o.controlledBy controller &&
           (match srcId? with
            | some sid => o.id != sid
            | none => true) &&
           g.hasSubtype o subtype)
-      (fun g o => g.pumpPermanent o x x)
-  | .target, .equalSourcePower =>
-    let x := g.sourcePowerAtResolution sourceId lastKnownPower
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o x 0) "The target is no longer legal"
-  | .creaturesYouControl, .fixed =>
-    g.pumpControlledCreatures controller power toughness
-  | .othersOfSubtypes subtypes, .fixed =>
-    g.foldBattlefield (fun o =>
-        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
-          subtypes.any (fun s => g.hasSubtype o s))
-      (fun g o => g.pumpPermanent o power toughness)
-  | .opponentsCreatures, .fixed =>
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
-      (fun g o => g.pumpPermanent o power toughness)
-  | .target, .fixed =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o power toughness)
-      "The target is no longer legal"
-  | .target, .double =>
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      g.pumpPermanent o (g.power o) (g.toughness o))
-      "The target is no longer legal"
-  | .source, .fixed =>
-    g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o (.pump power toughness)
-  | .source, .double =>
-    g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o .doublePowerAndToughness
-  | .enchanted, .fixed =>
-    g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o (.pump power toughness)
-  | .enchanted, .double =>
-    g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o .doublePowerAndToughness
-  | .targetWhileSource, .fixed =>
-    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o (.pump power toughness)
-  | .targetWhileSource, .double =>
-    g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o .doublePowerAndToughness
-  | .youControlSubtype subtype, .fixed =>
-    g.forEachControlledCreature controller fun g o =>
-      if g.hasSubtype o subtype then g.pumpPermanent o power toughness else g
-  | _, _ => g
+      pumpOne
+  | .opponentsCreatures =>
+    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller) pumpOne
+  | .youControlSubtype subtype =>
+    g.forEachControlledCreature controller fun game o =>
+      if game.hasSubtype o subtype then pumpOne game o else game
 
 /-- Resolve `TriggerResolution.dealDamage`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2518,9 +2500,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
   | .trigger _ => (
   match resolutionOverride.getD ab.resolution with
-  | .pump power toughness who amount =>
+  | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
-      power toughness who amount
+      power toughness who
   | .dealDamage n who amount note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       n who amount note

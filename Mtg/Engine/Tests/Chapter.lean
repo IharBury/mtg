@@ -59,7 +59,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .gainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
 #guard (timing (.elvesGetVigilance 1)).resolution ==
   .sequence [
-    .pump 1 0 (.youControlSubtype "Elf"),
+    .pump (.fixed 1) (.fixed 0) (.youControlSubtype "Elf"),
     .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard 1 (who := .target) (what := .chosenNonland)
@@ -124,13 +124,13 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell {
     resolution := .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
   })).resolution ==
-  .sequence [.pump 1 1 .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
+  .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
 #guard (timing (.spell {
     resolution := .sequence [
       .onPermanent .doublePowerAndToughness,
       .onPermanent (.grantKeywords Keyword.trample)]
   })).resolution ==
-  .sequence [.pump 0 0 .target .double, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump .double .double .target, .grant (.keywords Keyword.trample) .target]
 
 #guard (timing (.dealDamageToOppCreature 6)).targeting.kind == .oppCreature
 #guard (timing .plusOneUpToOne).allowsZeroTargets
