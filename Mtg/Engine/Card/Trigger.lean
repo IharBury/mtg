@@ -147,7 +147,7 @@ inductive TriggerIf where
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.pay` pays. -/
-inductive TriggerPayWhat where
+inductive CostSelector where
   /-- Pay these mana symbols.
   `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
   `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
@@ -1416,7 +1416,7 @@ inductive TriggerResolution where
   Sacrificing an artifact, or discarding a card, is `.pay .artifactOrDiscard`.
   Sacrificing an artifact, or discarding a nonland card, is
   `.pay .artifactOrDiscardNonland`. -/
-  | pay (what : TriggerPayWhat)
+  | pay (what : CostSelector)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
   Each permanent of a subtype is
