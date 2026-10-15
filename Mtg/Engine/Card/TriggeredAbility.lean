@@ -868,6 +868,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
     | .target, .fixed, .none =>
       s!"deals {n} damage to {noun}"
+    | .target, .spellManaValue, _ =>
+      s!"this deals damage equal to that spell's mana value to {noun}"
     | .target, _, _ =>
       s!"it deals {n} damage to {noun}"
     | .targetOpponent, .greatestArtifactMv, _ =>
@@ -1168,6 +1170,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice .you (.source .isSacrificed) .noted),
       .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] =>
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
+  | .sequence [.draw 1, .grant .basePowerEqualHand .source] =>
+    "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1] =>
+    "put a +1/+1 counter on this creature. Scry 1"
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] =>
+    "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
   | .sequence _ =>
     "resolve each step"
   | .gainLife n amount =>
@@ -1332,6 +1340,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
     | .sturdyShield, _, _, _ =>
       "create a colorless Equipment artifact token named Sturdy Shield"
+    | .merfolk, _, _, _ =>
+      "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
     | .kind, .targetController, _, _ =>
       "they create a Treasure token"
     | _, _, _, _ =>
@@ -1395,6 +1405,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
     else if modes == TriggerResolution.hydeModes && how == .plusOneOrRemoveCounter then
       "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
+    else if modes == TriggerResolution.visionModes && how == .vision then
+      "choose one that hasn't been chosen this turn — • This gains double strike until end of turn. • This gains indestructible until end of turn. • Draw a card"
     else
       "choose a mode"
   | .returnToHand what whose note =>
@@ -1463,6 +1475,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
     | .assignCombatDamageEqualToughness, .creaturesYouControl =>
       "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
+    | .basePowerEqualHand, .source =>
+      "until end of turn, this creature's base power is equal to the number of cards in your hand"
+    | .ironFistTap, .source =>
+      "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
+    | .keywords _, .spellTargets =>
+      "those creatures gain flying until end of turn"
     | _, _ =>
       "grant"
   | .revealLibrary how thenDo who =>
@@ -1653,34 +1671,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .retargetCause =>
     "choose new targets for that spell"
-  | .casting .villainToken =>
-    "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
-  | .casting .merfolkFromBlue =>
-    "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
-  | .casting .mayPayHasteUnblockable =>
-    "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
-  | .casting .plusOneEachOther =>
-    "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
-  | .casting .exileFlicker =>
-    "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
-  | .casting .visionModes =>
-    "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
-  | .casting .damageEqualMv =>
-    "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
-  | .casting .drawPowerEqualHand =>
-    "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
-  | .casting .plusOneThis =>
-    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
-  | .casting .plusOneScry =>
-    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
-  | .casting .ironFistTap =>
-    "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
-  | .casting .targetsGainFlying =>
-    "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
-  | .casting .copyIfArtifactOrLand =>
-    "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
-  | .casting .tapCreatureOrLand =>
-    "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
+  | .copyCause =>
+    "copy that spell. You may choose new targets for the copy"
   | .resource .discardExilePlay =>
     "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
   | .resource .drawIfAnotherHeroDamage =>
@@ -1824,6 +1816,38 @@ def youAttackingSentence : YouAttackLeftover → String
     "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
   | .lookSixCast =>
     s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
+
+/-- Printed sentence for a leftover “whenever you cast …” trigger.
+Its resolution is a `TriggerResolution` that does not carry `CastLeftover`. -/
+def castingSentence : CastLeftover → String
+  | .villainToken =>
+    "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
+  | .merfolkFromBlue =>
+    "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
+  | .mayPayHasteUnblockable =>
+    "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
+  | .plusOneEachOther =>
+    "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
+  | .exileFlicker =>
+    "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .visionModes =>
+    "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
+  | .damageEqualMv =>
+    "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
+  | .drawPowerEqualHand =>
+    "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
+  | .plusOneThis =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
+  | .plusOneScry =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
+  | .ironFistTap =>
+    "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
+  | .targetsGainFlying =>
+    "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
+  | .copyIfArtifactOrLand =>
+    "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
+  | .tapCreatureOrLand =>
+    "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
 
 /-- Printed sentence for a leftover watch trigger. Its resolution is a
 `TriggerResolution` that does not carry `WatchLeftover`. -/
@@ -2025,7 +2049,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
     | _, some (.watch e), _ => watchSentence e
     | _, some (.youAttacking e), _ => youAttackingSentence e
-    | _, some (.casting e), _ => resolutionPhrase { resolution := .casting e }
+    | _, some (.casting e), _ => castingSentence e
     | _, some (.resource e), _ => resolutionPhrase { resolution := .resource e }
 
     | _, _, _ =>

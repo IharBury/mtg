@@ -820,7 +820,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
   | .visionMode sourceId available, .mode m =>
     if !available.contains m then throw "That mode was already chosen this turn"
-    return (g.applyVisionMode p sourceId m).finishFraChoice
+    return (g.answerChooseMode sourceId m
+      (fun g => g.applyVisionMode p sourceId m)).finishFraChoice
   | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
   | .moonstoneMayExile cardId, .accept =>
     match g.findObject? cardId with

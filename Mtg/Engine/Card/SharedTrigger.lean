@@ -1051,7 +1051,33 @@ inductive SharedTrigger where
   attacking power, without paying, is
   `.revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)`. -/
   | youAttacking (e : YouAttackLeftover)
-  /-- Leftover “whenever you cast …” effect. -/
+  /-- Leftover “whenever you cast …” effect.
+  A 2/1 black Villain with menace is `.createTokens .villain21menace 1 false`.
+  One 1/1 blue Merfolk for each blue mana symbol in the spell is
+  `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
+  Paying {1} so a creature with haste can't be blocked except by creatures
+  with haste is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo`.
+  A +1/+1 counter on each other creature you control is
+  `.putCounters (.ofKind .plusOnePlusOne) .eachOther`.
+  Exiling another nonland nontoken until the next end step is
+  `.exile .target .nextEndStep`.
+  One unused Vision mode this turn is
+  `.chooseModes TriggerResolution.visionModes .vision`.
+  Damage equal to that spell's mana value is
+  `.dealDamage 0 .target .spellManaValue`.
+  Drawing a card, then base power equal to the cards in hand, is
+  `.sequence [.draw 1, .grant .basePowerEqualHand .source]`.
+  A +1/+1 counter on the source is
+  `.putCounters (.ofKind .plusOnePlusOne) .source`.
+  That counter, then scry 1, is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1]`.
+  Iron Fist's tap ability until end of turn is `.grant .ironFistTap .source`.
+  Flying on the spell's creature targets is
+  `.grant (.keywords Keyword.flying) .spellTargets`.
+  Two +1/+1 counters on the source, then a copy of the spell, is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]`.
+  Tapping the announced creature or land is `.tap .target`. -/
   | casting (e : CastLeftover)
   /-- Leftover draw / discard / life / +1/+1-counter effect. -/
   | resource (e : ResourceLeftover)

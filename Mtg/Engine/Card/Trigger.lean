@@ -157,11 +157,13 @@ deriving Repr, Inhabited, BEq
 /-- A reflexive triggered ability queued by `TriggerResolution.queueReflexive`
 after the optional action of `.may _ _ .ifYouDo` (“When you do”). -/
 inductive TriggerReflexive where
-  /-- An MSH modeled reflexive. `0` grants indestructible. `2` chooses up to
-  `times` Trick Arrows modes. `6` returns a graveyard creature tapped and
-  attacking. `7` destroys an opposing nonland. `12` puts a +1/+1 counter
-  on target creature. `times` is how many times the cost may be paid.
-  One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
+/-- An MSH modeled reflexive. `0` grants indestructible. `2` chooses up to
+`times` Trick Arrows modes. `6` returns a graveyard creature tapped and
+attacking. `7` destroys an opposing nonland. `9` makes a target creature
+with haste unable to be blocked this turn except by creatures with haste.
+`12` puts a +1/+1 counter on target creature. `times` is how many times the
+cost may be paid.
+One payment is `.modeled kind`. Paying up to three times is `.modeled 2 3`. -/
   | modeled (kind : Nat) (times : Nat := 1)
   /-- “This deals `n` damage to any target.” -/
   | damageAny (n : Nat)
@@ -207,6 +209,11 @@ inductive TriggerDamageAmount where
   | discardedHand
   /-- The greatest mana value among artifacts the controller controls. -/
   | greatestArtifactMv
+  /-- The mana value of the spell that caused this, including the chosen
+  value of X. A spell that has left the stack uses the trigger's last-known
+  power, then the newest spell on the stack, then a mana value recorded
+  for this turn. None of those is zero. -/
+  | spellManaValue
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -359,6 +366,10 @@ inductive TriggerToken where
   | sturdyShield
   /-- Galactus, a legendary 16/16 black Elder Alien with flying and trample. -/
   | galactus
+  /-- A 1/1 blue Merfolk creature token. With `qty` `.blueManaSymbols`,
+  the count is the blue mana symbols in the spell that caused this.
+  No blue symbol creates nothing. -/
+  | merfolk
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.createTokens` creates the tokens for. -/
@@ -387,6 +398,9 @@ inductive TriggerTokenQty where
   | chosenCreatureType
   /-- One for each permanent of this subtype the controller controls. -/
   | perSubtype (subtype : String)
+  /-- One for each blue mana symbol in the mana cost of the spell that
+  caused this. No such spell, or no blue symbol, creates nothing. -/
+  | blueManaSymbols
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
@@ -840,6 +854,12 @@ inductive TriggerModeHow where
   /-- The mode index is this trigger's last-known power. None is mode 0.
   An index past `modes` does nothing. This choice does not record a used mode. -/
   | fromLastKnown
+  /-- The controller chooses one Vision mode that has not been chosen this
+  turn. The source remembers it until the turn ends. The modes are
+  `TriggerResolution.visionModes`. If every mode was already chosen, the
+  ability is removed with no effect. A source that has left still draws
+  when that mode is chosen, and does not gain a keyword. -/
+  | vision
 deriving Repr, Inhabited, BEq
 
 /-- Which permanents `TriggerResolution.destroy` destroys. -/
@@ -947,6 +967,13 @@ inductive TriggerGrantWhat where
   assign combat damage equal to their toughness rather than their power.
   Power is unchanged. -/
   | assignCombatDamageEqualToughness
+  /-- Until end of turn, the source's base power is the number of cards in
+  its controller's hand. A missing source changes nothing. -/
+  | basePowerEqualHand
+  /-- Until end of turn, the source gains "{T}: This deals damage equal to
+  its power to any other target." Each resolution adds one such ability.
+  A missing source gains nothing. -/
+  | ironFistTap
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.grant` grants that to. -/
@@ -972,6 +999,10 @@ inductive TriggerGrantWho where
   /-- The one creature the controller has attacking alone.
   None is reported. -/
   | attackingAlone
+  /-- Each creature the spell that caused this trigger targets.
+  A permanent that is not a creature is skipped. No recorded spell grants
+  nothing. -/
+  | spellTargets
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.gainLife` reads how much life. The `n` argument
@@ -1299,6 +1330,8 @@ inductive TriggerResolution where
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
   `.dealDamage 0 .targetOpponent .greatestArtifactMv`.
+  Damage equal to the mana value of the spell that caused this, to the
+  announced player or permanent, is `.dealDamage 0 .target .spellManaValue`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage 0 .target .lastKnownPower) (.sequence []) .ifYouDo`. -/
   | dealDamage (n : Nat) (who : TriggerDamageWho)
@@ -1615,6 +1648,9 @@ inductive TriggerResolution where
   `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
   `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  You may pay {1} so a target creature with haste can't be blocked this turn
+  except by creatures with haste is
+  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
@@ -1804,7 +1840,9 @@ inductive TriggerResolution where
   A Sturdy Shield, remembered for a later attach, is
   `.createTokens .treasure 1 false .sturdyShield (note := .remember)`.
   The target's controller creates a Treasure with
-  `.createTokens .treasure 1 false (who := .targetController)`. -/
+  `.createTokens .treasure 1 false (who := .targetController)`.
+  One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
+  this is `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`. -/
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
       (token : TriggerToken := .kind) (who : TriggerTokenWho := .you)
       (qty : TriggerTokenQty := .fixed) (note : TriggerTokenNote := .none)
@@ -1899,7 +1937,9 @@ inductive TriggerResolution where
   Chosen up to X, in printed order, is
   `.chooseModes TriggerResolution.upToXModes .alreadyChosen`.
   A +1/+1 counter on the source, or removing a counter to draw, is
-  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`. -/
+  `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
+  One unused Vision mode this turn is
+  `.chooseModes TriggerResolution.visionModes .vision`. -/
   | chooseModes (modes : List TriggerResolution) (how : TriggerModeHow)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
@@ -1940,6 +1980,15 @@ inductive TriggerResolution where
   You may pay 2 life to do so with
   `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
   Unable to pay is reported. Declining pays nothing. Power is unchanged.
+  Until end of turn, the source's base power equals the cards in hand with
+  `.grant .basePowerEqualHand .source`. Drawing first is
+  `.sequence [.draw 1, .grant .basePowerEqualHand .source]`.
+  A missing source still draws and does not change a power.
+  Iron Fist's tap ability until end of turn is `.grant .ironFistTap .source`.
+  Each resolution adds one. A missing source gains nothing.
+  Flying on each creature the causing spell targets is
+  `.grant (.keywords Keyword.flying) .spellTargets`. A noncreature target
+  is skipped. No recorded spell grants nothing.
   Any other combination does nothing. -/
   | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
@@ -2098,8 +2147,12 @@ inductive TriggerResolution where
   You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
   Declining a target leaves it unchanged and asks about the next one. -/
   | retargetCause
-  /-- Resolve a leftover CastLeftover. -/
-  | casting (e : CastLeftover)
+  /-- Copy the spell that caused this trigger. You may choose new targets
+  for the copy. A spell that has left the stack is reported. No recorded
+  spell copies nothing. Two +1/+1 counters on the source, then that copy, is
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]`.
+  A missing source still copies the spell. -/
+  | copyCause
   /-- Resolve a leftover ResourceLeftover. -/
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
@@ -2140,6 +2193,14 @@ from a creature you control. `.plusOneOrRemoveCounter` asks for the choice
 and removes the counter; the draw is that mode's follow-up. -/
 def hydeModes : List TriggerResolution :=
   [.putCounters (.ofKind .plusOnePlusOne) .source, .draw 1]
+
+/-- The Vision gains double strike until end of turn. The Vision gains
+indestructible until end of turn. Draw a card. `.vision` asks for one that
+has not been chosen this turn. -/
+def visionModes : List TriggerResolution :=
+  [.grant (.keywords Keyword.doubleStrike) .source,
+   .grant (.keywords Keyword.indestructible) .source,
+   .draw 1]
 
 /-- What `action` does to the announced permanent. -/
 def ofPermanent : PermanentAction → TriggerResolution
@@ -3221,42 +3282,54 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .revealLibrary (.top 6)
         (.mayCast .looked .greatestAttackingPower .withoutPaying) }
   | .casting .villainToken =>
-    { events := #[.youCastVillain], resolution := .casting .villainToken }
+    { events := #[.youCastVillain],
+      resolution := .createTokens .villain21menace 1 false }
   | .casting .merfolkFromBlue =>
-    { events := #[.youCastNoncreature], resolution := .casting .merfolkFromBlue }
+    { events := #[.youCastNoncreature],
+      resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
   | .casting .mayPayHasteUnblockable =>
-    { events := #[.youCastNoncreature], resolution := .casting .mayPayHasteUnblockable }
+    { events := #[.youCastNoncreature],
+      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo }
   | .casting .plusOneEachOther =>
-    { events := #[.youCastNoncreature], resolution := .casting .plusOneEachOther }
+    { events := #[.youCastNoncreature],
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
   | .casting .exileFlicker =>
     { events := #[.youCastNoncreature]
       targeting := .of (.filtered {
         noun := "another target nonland, nontoken permanent"
         nonland := true, nontoken := true, another := true })
-      resolution := .casting .exileFlicker }
+      resolution := .exile .target .nextEndStep }
   | .casting .visionModes =>
-    { events := #[.youCastNoncreature], resolution := .casting .visionModes }
+    { events := #[.youCastNoncreature],
+      resolution := .chooseModes TriggeredAbility.TriggerResolution.visionModes .vision }
   | .casting .damageEqualMv =>
     { events := #[.youCastNoncreature], targeting := .of .playerOrCreature,
-      resolution := .casting .damageEqualMv }
+      resolution := .dealDamage 0 .target .spellManaValue }
   | .casting .drawPowerEqualHand =>
-    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .drawPowerEqualHand }
+    { events := #[.youCastTargetingCreatureYouControl],
+      resolution := .sequence [.draw 1, .grant .basePowerEqualHand .source] }
   | .casting .plusOneThis =>
-    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneThis }
+    { events := #[.youCastTargetingCreatureYouControl],
+      resolution := .putCounters (.ofKind .plusOnePlusOne) .source }
   | .casting .plusOneScry =>
-    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneScry }
+    { events := #[.youCastTargetingCreatureYouControl],
+      resolution := .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry 1] }
   | .casting .ironFistTap =>
-    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .ironFistTap }
+    { events := #[.youCastTargetingCreatureYouControl],
+      resolution := .grant .ironFistTap .source }
   | .casting .targetsGainFlying =>
-    { events := #[.youCastTargetingCreature], resolution := .casting .targetsGainFlying }
+    { events := #[.youCastTargetingCreature],
+      resolution := .grant (.keywords Keyword.flying) .spellTargets }
   | .casting .copyIfArtifactOrLand =>
-    { events := #[.youCastInstantSorceryTargetingArtifactOrLand], resolution := .casting .copyIfArtifactOrLand }
+    { events := #[.youCastInstantSorceryTargetingArtifactOrLand],
+      resolution := .sequence [
+        .putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] }
   | .casting .tapCreatureOrLand =>
     { events := #[.youCastNoncreature],
       targeting := .of (.filtered {
         noun := "target creature or land",
         types := #[.creature, .land] }),
-      resolution := .casting .tapCreatureOrLand }
+      resolution := .tap .target }
   | .resource .discardExilePlay =>
     { events := #[.youDiscard], resolution := .resource .discardExilePlay }
   | .resource .drawIfAnotherHeroDamage =>
