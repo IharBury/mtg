@@ -70,7 +70,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
     [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
     .fromLastKnown
 #guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
-  .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo
+  .may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
   .attach .eachTargetEquipment .enchantedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==
@@ -84,7 +84,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
   .may (.draw (.fixed 1)) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

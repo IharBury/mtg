@@ -146,9 +146,12 @@ inductive TriggerIf where
   | manaSpent
 deriving Repr, Inhabited, BEq
 
-/-- Objects chosen for `TriggerResolution.objectCost`, the optional action of
-`.may _ _ .ifYouDo`. -/
-inductive TriggerObjectCost where
+/-- What `TriggerResolution.pay` pays. -/
+inductive TriggerPayWhat where
+  /-- Pay these mana symbols.
+  `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
+  `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
+  | mana (symbols : Array ManaSymbol)
   /-- Sacrifice another creature. Its power is noted for
   `TriggerResolution.putCounters .plusOneSacrificedPower`. -/
   | anotherCreature
@@ -1280,10 +1283,12 @@ and `putOnLibrary`. Losing indestructible until end of turn, and losing
 all abilities while the source remains, are `lose`. What is lost, and who
 loses it, are arguments. A permanent that can't be blocked this turn, and
 a permanent that can't untap while you control the source, are `cant`.
-What it can't do, and who can't, are arguments. Setting a permanent's base
-power and toughness to fixed values, and setting another creature's base
-power and toughness equal to this creature's, are `setBasePT`. What the new
-base is, and who receives it, are arguments. Putting the announced permanent
+What it can't do, and who can't, are arguments. Paying mana, and paying by
+sacrificing or discarding, are `pay`. What is paid is an argument. Setting
+a permanent's base power and toughness to fixed values, and setting another
+creature's base power and toughness equal to this creature's, are
+`setBasePT`. What the new base is, and who receives it, are arguments.
+Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes, and which card,
 are arguments. Untapping the announced permanent, and untapping each attacking
@@ -1403,13 +1408,15 @@ inductive TriggerResolution where
   choose with `.discard .chosenNonland`.
   Any other selector discards nothing. -/
   | discard (what : ObjectSelector := .cards)
-  /-- Pay `symbols`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
-  `{n}` is `.pay #[.generic n]`. `{1}{G}{U}` is
-  `.pay #[.generic 1, .colored .green, .colored .blue]`. -/
-  | pay (symbols : Array ManaSymbol)
-  /-- Choose objects for `how`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
-  Sacrificing another creature notes its power. -/
-  | objectCost (how : TriggerObjectCost)
+  /-- Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
+  `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
+  `.pay (.mana #[.generic 1, .colored .green, .colored .blue])`.
+  Sacrificing another creature is `.pay .anotherCreature`. Its power is noted.
+  Sacrificing another creature or artifact is `.pay .anotherCreatureOrArtifact`.
+  Sacrificing an artifact, or discarding a card, is `.pay .artifactOrDiscard`.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.pay .artifactOrDiscardNonland`. -/
+  | pay (what : TriggerPayWhat)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
   Each permanent of a subtype is
@@ -1670,33 +1677,33 @@ inductive TriggerResolution where
   Declining with no other effect is `.may action (.sequence [])`.
   You may discard a card to draw `n` is `.may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo`.
   `SharedTrigger.mayTo a b` resolves as `.may` of each step's resolution, `.ifYouDo`.
-  You may pay `{n}` to draw is `.may (.pay #[.generic n]) (.draw (.fixed 1)) .ifYouDo`.
+  You may pay `{n}` to draw is `.may (.pay (.mana #[.generic n])) (.draw (.fixed 1)) .ifYouDo`.
   Paying `{n}` to put a +1/+1 counter on the source and draw is
-  `.may (.pay #[.generic n]) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo`.
+  `.may (.pay (.mana #[.generic n])) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo`.
   You may sacrifice another creature for +1/+1 counters equal to its power is
-  `.may (.objectCost .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
+  `.may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
-  `.may (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source .owner) .ifYouDo`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
-  `.may (.objectCost .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo`.
+  `.may (.pay .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo`.
   You may discard your hand to draw `n` is `.may (.discard .hand) (.draw (.fixed n)) .ifYouDo`.
   You may draw for each permanent of a type, and each opponent draws if you do, is
   `.may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo`.
   You may sacrifice an artifact or discard a card to draw is
-  `.may (.objectCost .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo`.
+  `.may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo`.
   You may sacrifice another creature to destroy an opposing nonland is
-  `.may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo`.
+  `.may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo`.
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
-  `.may (.objectCost .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
+  `.may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
   You may tap this to grant indestructible is
   `.may (.tap .source) (.queueReflexive (.modeled 0)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo`.
   You may pay {1} so a target creature with haste can't be blocked this turn
   except by creatures with haste is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
   target is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   The amount is the trigger's last-known power. Already used this turn does
@@ -1705,9 +1712,9 @@ inductive TriggerResolution where
   You may choose new targets for the spell that caused this is
   `.may .retargetCause (.sequence []) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
-  `.may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
-  `.may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo`.
   You may exile the discarded card and play it until the end of your next
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
@@ -2715,7 +2722,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
   | .payReturnFromGy =>
     { resolution := .may
-        (.pay #[.generic 1, .colored .green, .colored .blue]) (.returnToHand .source .owner) .ifYouDo }
+        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source .owner) .ifYouDo }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
   | .drawXDiscard n =>
@@ -2735,10 +2742,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
-          .may (.pay #[.generic n])
+          .may (.pay (.mana #[.generic n]))
             (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
         else
-          .may (.pay #[.generic n]) (.draw (.fixed 1)) .ifYouDo }
+          .may (.pay (.mana #[.generic n])) (.draw (.fixed 1)) .ifYouDo }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
         [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] }
@@ -2815,7 +2822,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
   | .attackSacPlusOneEqualPower =>
-    { resolution := .may (.objectCost .anotherCreature)
+    { resolution := .may (.pay .anotherCreature)
         (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
@@ -2825,7 +2832,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
   | .maySacDrawTreasure =>
-    { resolution := .may (.objectCost .anotherCreatureOrArtifact)
+    { resolution := .may (.pay .anotherCreatureOrArtifact)
         (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo }
   | .castInstantSorceryFromHand =>
     { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
@@ -3081,7 +3088,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
-    { resolution := .may (.objectCost .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo }
+    { resolution := .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -3115,10 +3122,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .may (.objectCost .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo }
+      resolution := .may (.pay .anotherCreature) (.queueReflexive (.modeled 7)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
-      resolution := .may (.objectCost .artifactOrDiscardNonland)
+      resolution := .may (.pay .artifactOrDiscardNonland)
         (.queueReflexive (.damageAny 2)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
@@ -3190,10 +3197,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking]
-      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo }
   | .thisAttack .payReturnAttacking =>
     { events := #[.attacking]
-      resolution := .may (.pay #[.generic 3, .colored .black])
+      resolution := .may (.pay (.mana #[.generic 3, .colored .black]))
         (.queueReflexive (.modeled 6)) .ifYouDo }
   | .thisAttack .ifArtifactEnteredDraw =>
     { events := #[.attacking]
@@ -3284,7 +3291,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .fromLastKnown }
   | .watch .ultronCopy =>
     { events := #[.anotherNontokenArtifactEnters],
-      resolution := .may (.pay #[.generic 2]) (.becomeCopy .cause) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo }
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
       allowsZeroTargets := true, maxTargets := 1000,
@@ -3308,7 +3315,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.draw (.fixed 1)) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo }
   | .watch .redHulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
@@ -3339,7 +3346,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
-      resolution := .may (.pay #[.generic 1]) (.queueReflexive (.modeled 9)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 9)) .ifYouDo }
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature],
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
@@ -3418,9 +3425,9 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
 #guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
-  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 12)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 12)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .payReturnAttacking)).resolution ==
-  .may (.pay #[.generic 3, .colored .black]) (.queueReflexive (.modeled 6)) .ifYouDo
+  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled 6)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .ifArtifactEnteredDraw)).resolution ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).resolution ==
@@ -3446,7 +3453,7 @@ end SharedTrigger
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
-  .may (.pay #[.generic 1]) (.queueReflexive (.modeled 2 3)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled 2 3)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
