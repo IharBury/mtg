@@ -238,11 +238,12 @@ object until the controller's next turn and keeps the printed exception
 name. Choosing none copies nothing. A missing source copies nothing.
 `.noted` makes the enchanted creature a copy of the creature an earlier
 step noted, until the source leaves. Nothing noted copies nothing.
-`.cause` creates a token copy of the nontoken artifact that caused this.
-An announced permanent is used when one was chosen; otherwise the recorded
-cause. The source need not still be on the battlefield. -/
+`.cause` with no subtype creates a token copy of the nontoken artifact
+that caused this. An announced permanent is used when one was chosen;
+otherwise the recorded cause. The source need not still be on the
+battlefield. Any other selector copies nothing. -/
 def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (of : TriggeredAbility.TriggerCopyOf) : Game :=
+    (targets : Array Target) (of : TriggeredAbility.ObjectSelector) : Game :=
   match of with
   | .noted =>
     let copied := g.notedCopyObject
@@ -254,7 +255,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
       | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
       | none => g
     | _, _ => g
-  | .cause =>
+  | .cause none =>
     let fromTarget :=
       match targets[0]? with
       | some (Target.permanent id) => some id
@@ -264,10 +265,8 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
     match fromTarget.orElse (fun _ => causeId) with
     | none => g.logMsg "Ultron has nothing to copy"
     | some id => g.copyEnteredArtifact controller id
-  | of =>
+  | .artifactEnchantmentOrLand =>
     g.withSourceOnBattlefield sourceId (fun g src =>
-    match of with
-    | .artifactEnchantmentOrLand =>
       match targets[0]? with
       | some (Target.permanent id) =>
         match g.findObject? id with
@@ -282,8 +281,10 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
               (setPT := some (4, 4)) (addVigilance := true)
           else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Absorbing Man doesn't become a copy"
-    | .creatureOrGraveyardCard =>
+      | _ => g.logMsg "Absorbing Man doesn't become a copy")
+      "The source is no longer in play"
+  | .creatureOrGraveyardCard =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
       | some (Target.permanent id) | some (Target.card id) =>
         match g.findObject? id with
@@ -298,8 +299,9 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
               (replaceCreatureLine := true)
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Taskmaster doesn't become a copy"
-    | .noted | .cause => g) "The source is no longer in play"
+      | _ => g.logMsg "Taskmaster doesn't become a copy")
+      "The source is no longer in play"
+  | _ => g
 
 /-- Exile the announced nonland the controller still controls, other than the
 source, then return it under its owner's control. Choosing none does nothing.

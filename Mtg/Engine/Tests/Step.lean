@@ -159,6 +159,17 @@ def notedMissing : Game :=
 #guard (named notedMissing "Grizzly Bears").name == "Grizzly Bears" &&
   (named notedMissing "Grizzly Bears").copyRestore.isNone
 
+/- Any other selector copies nothing. -/
+#guard
+  let g0 := addPermanent afterDraw grizzlyBears me me
+  let g := g0.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
+    (resolutionOverride := some (.becomeCopy .source))
+  (named g "Grizzly Bears").copyRestore.isNone && g.log.size == g0.log.size
+#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy .source } ==
+  "become a copy"
+#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some "Villain")) } ==
+  "become a copy"
+
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/
 def copiedGraveyard : Game :=
   let g := addPermanent afterDraw taskmasterMercenaryMimic me me

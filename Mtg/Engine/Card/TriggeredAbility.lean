@@ -999,7 +999,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       if times > 1 then s!"you may pay \{{n}} up to {times} times"
       else s!"you may pay \{{n}}"
     | _ => "you may pay that cost"
-  | .may (.pay (.mana symbols)) (.becomeCopy .cause) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.becomeCopy (.cause none)) .ifYouDo =>
     match symbols.toList with
     | [.generic 2] => "you may pay {2} to copy it"
     | _ => "you may pay to copy it"
@@ -1742,8 +1742,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
   | .becomeCopy .noted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | .becomeCopy .cause =>
+  | .becomeCopy (.cause none) =>
     "create a token that's a copy of the artifact that caused this"
+  | .becomeCopy _ =>
+    "become a copy"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .retargetCause =>

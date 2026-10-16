@@ -3111,7 +3111,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
                 g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
                   s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
-      | some (.becomeCopy .cause), [.generic 2] =>
+      | some (.becomeCopy (.cause none)), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
       | _, _ =>
         match symbols.toList with

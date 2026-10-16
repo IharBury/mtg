@@ -384,7 +384,9 @@ inductive ObjectSelector where
   a finality counter, is
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
   An announced card or permanent is used when one was chosen; otherwise the
-  recorded cause. A missing cause, or the wrong subtype, puts nothing. -/
+  recorded cause. A missing cause, or the wrong subtype, puts nothing.
+  A token copy of that artifact, with no subtype, is `.becomeCopy .cause`.
+  A subtype copies nothing that way. -/
   | cause (subtype : Option String := none)
   /-- Each creature the controller controls. -/
   | creaturesYouControl
@@ -664,6 +666,23 @@ inductive ObjectSelector where
   It deals damage equal to its power with `.fight .equipmentHost .reflexive`.
   Nothing is queued when no creature received Equipment. -/
   | equipmentHost
+  /-- Up to one target artifact, non-Aura enchantment, or land.
+  The source becomes that copy until the controller's next turn and keeps
+  its name. It is also a legendary 4/4 Human Villain creature with vigilance.
+  `.becomeCopy .artifactEnchantmentOrLand`.
+  Choosing none copies nothing. An illegal object is reported.
+  A missing source copies nothing. -/
+  | artifactEnchantmentOrLand
+  /-- Up to one target creature, or creature card in a graveyard.
+  The source becomes that copy until the controller's next turn and keeps
+  its name. It is a legendary Human Mercenary Villain creature.
+  `.becomeCopy .creatureOrGraveyardCard`. -/
+  | creatureOrGraveyardCard
+  /-- The creature an earlier step exiled and noted.
+  The enchanted creature becomes that copy until the source leaves.
+  Nothing noted, or nothing enchanted, copies nothing.
+  `.becomeCopy .noted`. -/
+  | noted
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -1286,30 +1305,6 @@ inductive TriggerControlHow where
   Inside `queueReflexive`, that ability is put on the stack and the
   opponent is chosen then. -/
   | duringNextTurn
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.becomeCopy` copies, and which exceptions apply.
-The source keeps its name when it copies an announced object until the
-controller's next turn. Choosing none copies nothing. A missing source
-copies nothing. The enchanted creature copies a noted creature until the
-source leaves. The controller creates a token copy of the artifact that
-caused the trigger. -/
-inductive TriggerCopyOf where
-  /-- Up to one target artifact, non-Aura enchantment, or land.
-  The source is also a legendary 4/4 Human Villain creature with vigilance. -/
-  | artifactEnchantmentOrLand
-  /-- Up to one target creature, or creature card in a graveyard.
-  The source is a legendary Human Mercenary Villain creature. -/
-  | creatureOrGraveyardCard
-  /-- The creature an earlier step exiled and noted.
-  The enchanted creature becomes that copy until the source leaves.
-  Nothing noted, or nothing enchanted, copies nothing. -/
-  | noted
-  /-- The nontoken artifact that caused this trigger.
-  An announced permanent is used when one was chosen; otherwise the
-  recorded cause. The controller creates a token copy. A noncreature
-  token becomes a 2/2 Robot Villain after it enters. -/
-  | cause
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.cant` prevents, and who can't do it.
@@ -2358,8 +2353,9 @@ inductive TriggerResolution where
   `.becomeCopy .cause`. An announced permanent is used when one was chosen;
   otherwise the recorded cause. The source need not still be on the
   battlefield. A noncreature token becomes a 2/2 Robot Villain after it
-  enters. -/
-  | becomeCopy (of : TriggerCopyOf)
+  enters. A subtype on `.cause` copies nothing.
+  Any other selector copies nothing. -/
+  | becomeCopy (of : ObjectSelector)
   /-- Choose new targets for the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
   the stack that targets the source. A spell that has left changes nothing.
