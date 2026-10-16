@@ -83,7 +83,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .treasureThenDragonIfFour).resolution ==
   .sequence [
     .createTokens .treasure 1 false,
-    .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice .you (.source .isSacrificed) .noted),
+    .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
     .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)]
 #guard (timing .recruit).resolution == .recruit
 #guard (timing (.returnCreatureFromGyMvAtMost 3)).resolution ==

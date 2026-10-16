@@ -36,7 +36,7 @@ def dividedAmong (maxTargets : Nat) : String :=
 abbrev TriggerTargetKind := EffectTargetKind
 
 /-- How `TriggerResolution.sacrifice` moves the source when `what` is
-`.source`. -/
+`.source` or `.sacrificedSource`. -/
 inductive SacrificeSourceHow where
   /-- Sacrifice it: “{name} is sacrificed”. -/
   | isSacrificed
@@ -82,9 +82,9 @@ inductive TriggerIf where
   | bearsAtLeast (n : Nat)
   /-- You control at least `n` permanents of this subtype. -/
   | controlsAtLeast (subtype : String) (n : Nat)
-  /-- An earlier `.sacrifice .you .source .noted` sacrificed the source. -/
+  /-- An earlier `.sacrifice .source .noted` sacrificed the source. -/
   | sourceWasSacrificed
-  /-- An earlier `.sacrifice .you .plan .forReflexive` sacrificed the Plan.
+  /-- An earlier `.sacrifice .plan .forReflexive` sacrificed the Plan.
   Checking this consumes that note. -/
   | planWasSacrificed
   /-- The source has at least `n` quest counters. -/
@@ -253,10 +253,12 @@ deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
 `TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
-discards, and which cards `TriggerResolution.returnToHand` returns.
+discards, which cards `TriggerResolution.returnToHand` returns, and which
+permanent `TriggerResolution.sacrifice` sacrifices.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
-A returned card names both the card and whose hand. -/
+A returned card names both the card and whose hand.
+A sacrifice names both who sacrifices and which permanent. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -344,6 +346,39 @@ inductive ObjectSelector where
   Inside `queueReflexive`, those targets are chosen when the reflexive
   ability is put on the stack. Outside it, this returns nothing. -/
   | graveyardInstants (n : Nat)
+  /-- The announced opponent sacrifices a creature of their choice.
+  `.sacrifice .opponentChosenCreature`. -/
+  | opponentChosenCreature
+  /-- Each player sacrifices a creature of their choice.
+  `.sacrifice .eachPlayersCreature`. -/
+  | eachPlayersCreature
+  /-- A creature with the least power among creatures the defending player
+  controls.
+  `.sacrifice .leastPower`. -/
+  | leastPower
+  /-- A creature that dealt combat damage to you this turn. Each opponent
+  sacrifices one of their choice.
+  `.sacrifice .combatDamager`. -/
+  | combatDamager
+  /-- The ability's source, sacrificed as `how` says.
+  “{name} is sacrificed” is `.sacrifice .source`, and also
+  `.sacrifice (.sacrificedSource .isSacrificed)`.
+  The controller sacrifices it with
+  `.sacrifice (.sacrificedSource .controllerSacrifices)`.
+  It moves as sacrificed, without a token-sacrifice trigger, with
+  `.sacrifice (.sacrificedSource .movedAsSacrificed)`. -/
+  | sacrificedSource (how : SacrificeSourceHow := .isSacrificed)
+  /-- The Plan, if it is still on the battlefield.
+  `.sacrifice .plan`.
+  Noting whether the sacrifice happened is `.sacrifice .plan .forReflexive`. -/
+  | plan
+  /-- Another creature the controller controls.
+  `.sacrifice .another`. -/
+  | another
+  /-- A nontoken creature of each opponent's choice. An opponent with none
+  sacrifices nothing.
+  `.sacrifice .chosenNontokenCreature`. -/
+  | chosenNontokenCreature
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -677,39 +712,6 @@ inductive TriggerExileNote where
   turn. Used with `.exile .top .playThisTurn`. A missing source still exiles
   the card and does not pump. An empty library exiles nothing. -/
   | ifHero
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.sacrifice` asks to sacrifice. -/
-inductive TriggerSacrificeWho where
-  /-- The announced opponent. -/
-  | targetOpponent
-  /-- Each player, in turn order. -/
-  | eachPlayer
-  /-- The player the source is attacking, or the controller's opponent. -/
-  | defender
-  /-- Each opponent. -/
-  | eachOpponent
-  /-- The controller of the ability. -/
-  | you
-deriving Repr, Inhabited, BEq
-
-/-- Which permanent `TriggerResolution.sacrifice` sacrifices. -/
-inductive TriggerSacrificeWhat where
-  /-- A creature of that player's choice. -/
-  | chosenCreature
-  /-- A creature with the least power among creatures that player controls. -/
-  | leastPower
-  /-- A creature that dealt combat damage to you this turn. -/
-  | combatDamager
-  /-- The ability's source. `how` says how it moves to the graveyard. -/
-  | source (how : SacrificeSourceHow := .isSacrificed)
-  /-- The Plan, if it is still on the battlefield. -/
-  | plan
-  /-- Another creature the controller controls. -/
-  | another
-  /-- A nontoken creature of that player's choice. A player with none
-  sacrifices nothing. -/
-  | chosenNontokenCreature
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.sacrifice` can read. -/
@@ -1604,29 +1606,31 @@ inductive TriggerResolution where
   That arms the attack trigger. It does not put an ability on the stack
   now. Any other resolution queues nothing. -/
   | queueReflexive (followup : TriggerResolution)
-  /-- Sacrifice a permanent. `who` says who sacrifices, `what` says which
-  permanent, and `note` says what a later step can read.
+  /-- Sacrifice a permanent. `what` says who sacrifices and which permanent.
+  `note` says what a later step can read.
   The announced opponent sacrifices a creature of their choice with
-  `.sacrifice .targetOpponent .chosenCreature`.
+  `.sacrifice .opponentChosenCreature`.
   Each player sacrifices a creature of their choice with
-  `.sacrifice .eachPlayer .chosenCreature`.
+  `.sacrifice .eachPlayersCreature`.
   The defending player sacrifices a least-power creature with
-  `.sacrifice .defender .leastPower`.
+  `.sacrifice .leastPower`.
   Each opponent sacrifices a creature that dealt combat damage to you with
-  `.sacrifice .eachOpponent .combatDamager`.
-  The source is sacrificed with `.sacrifice .you .source`.
+  `.sacrifice .combatDamager`.
+  The source is sacrificed with `.sacrifice .source`.
   The controller sacrifices the source with
-  `.sacrifice .you (.source .controllerSacrifices)`.
+  `.sacrifice (.sacrificedSource .controllerSacrifices)`.
   The source moves as sacrificed, without a token-sacrifice trigger, with
-  `.sacrifice .you (.source .movedAsSacrificed)`.
-  The Plan, if it is still on the battlefield, is `.sacrifice .you .plan`.
+  `.sacrifice (.sacrificedSource .movedAsSacrificed)`.
+  `.sacrifice (.sacrificedSource .isSacrificed)` is the same as
+  `.sacrifice .source`.
+  The Plan, if it is still on the battlefield, is `.sacrifice .plan`.
   The Plan, noting whether the sacrifice happened, is
-  `.sacrifice .you .plan .forReflexive`.
-  You may sacrifice another creature with `.may (.sacrifice .you .another) (.sequence [])`.
+  `.sacrifice .plan .forReflexive`.
+  You may sacrifice another creature with `.may (.sacrifice .another) (.sequence [])`.
   Each opponent sacrifices a nontoken creature of their choice with
-  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
-  | sacrifice (who : TriggerSacrificeWho) (what : TriggerSacrificeWhat)
-      (note : TriggerSacrificeNote := .none)
+  `.sacrifice .chosenNontokenCreature`.
+  Any other selector sacrifices nothing. -/
+  | sacrifice (what : ObjectSelector) (note : TriggerSacrificeNote := .none)
   /-- A permanent loses `what`, as `who` says.
   The announced permanent loses indestructible until end of turn is
   `.lose .indestructible`.
@@ -1694,7 +1698,7 @@ inductive TriggerResolution where
   `.sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`.
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]`.
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
@@ -1763,7 +1767,7 @@ inductive TriggerResolution where
   cast the triggering spell, then discard two, is
   `.may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))]) (.sequence [])`.
   You may tap any number of untapped Humans is `.may (.tap .humans) (.sequence [])`.
-  You may sacrifice another creature is `.may (.sacrifice .you .another) (.sequence [])`.
+  You may sacrifice another creature is `.may (.sacrifice .another) (.sequence [])`.
   You may put an artifact from your hand onto the battlefield is
   `.may (.put .artifactFromHand (note := .forAttach)) (.sequence [])`.
   You may discard your hand is `.may (.discard .hand) (.sequence [])`.
@@ -2404,7 +2408,7 @@ def upToXModes : List TriggerResolution :=
   [.sequence [.draw (.fixed 1), .discard (.cards 1)],
    .loseLife 2 (who := .eachOpponent),
    .destroy .target (note := .chosenToken),
-   .sacrifice .eachPlayer .chosenCreature]
+   .sacrifice .eachPlayersCreature]
 
 /-- Put a +1/+1 counter on the source. Draw a card after removing a counter
 from a creature you control. `.plusOneOrRemoveCounter` asks for the choice
@@ -2654,7 +2658,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .sequence [
         .createTokens .treasure 1 false,
         .«if» (.controlsAtLeast "Treasure" 4)
-          (.sacrifice .you (.source .isSacrificed) .noted),
+          (.sacrifice (.sacrificedSource .isSacrificed) .noted),
         .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] }
   | .recruit =>
     { resolution := .recruit }
@@ -2813,7 +2817,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of kind, resolution := .attach .source .target }
   | .opponentSacrificesCreature =>
     { targeting := .of .opponent,
-      resolution := .sacrifice .targetOpponent .chosenCreature }
+      resolution := .sacrifice .opponentChosenCreature }
   | .onPermanent kind action =>
     { targeting := .of kind
       resolution := TriggeredAbility.TriggerResolution.ofPermanent action }
@@ -2850,7 +2854,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .searchBasicLandToHand =>
     { resolution := .searchLibrary (.returnToHand .basicLand) }
   | .eachPlayerSacrificesCreature =>
-    { resolution := .sacrifice .eachPlayer .chosenCreature }
+    { resolution := .sacrifice .eachPlayersCreature }
   | .exileTarget kind =>
     { targeting := .of kind, resolution := .exile .target .leaveTrigger }
   | .returnCreatureFromGyToHand =>
@@ -2918,7 +2922,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
-        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])] }
+        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])] }
   | .tapHumansDraw =>
     { resolution := .sequence
         [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman] }
@@ -2940,7 +2944,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
   | .defenderSacsLeastPower =>
-    { resolution := .sacrifice .defender .leastPower }
+    { resolution := .sacrifice .leastPower }
   | .returnOtherPlusOne =>
     { targeting := .of (.filtered { noun := "up to one other target permanent you control"
                                     controller := .you, another := true })
@@ -2982,7 +2986,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice .you (.source .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
   | .treasuresPerChosenType =>
     { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
   | .revealUntilCreature =>
@@ -3028,7 +3032,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .«if» (.nthResolve 1) (.gainLife 1),
         .«if» (.nthResolve 2) (.draw (.fixed 1)),
         .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] }
-  | .bolgMaySacrifice => { resolution := .may (.sacrifice .you .another) (.sequence []) }
+  | .bolgMaySacrifice => { resolution := .may (.sacrifice .another) (.sequence []) }
   | .bolgDealSacrificedPower =>
     { targeting := .of .anotherCreature,
       resolution := .sequence
@@ -3117,7 +3121,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .revealSaga =>
     { resolution := .revealLibrary .untilSaga (.put .revealed) }
   | .sacDamagersRingTempts =>
-    { resolution := .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] }
+    { resolution := .sequence [.sacrifice .combatDamager, .ringTempts] }
   | .chapter _n e =>
     TriggeredAbility.chapterTiming e
   | .drawIfAttackedOrEnteredSubtype subtype =>
@@ -3149,29 +3153,29 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] }
   | .planFinishDrawPlusOneEach =>
     { resolution := .sequence
-        [.sacrifice .you .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] }
+        [.sacrifice .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] }
   | .planFinishReturnInstants =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive,
+        [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))] }
   | .planFinishControlOpponent =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive,
+        [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn))] }
   | .planFinishExileTopCast =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive,
+        [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] }
   | .planFinishCreateRobots n =>
     { resolution := .sequence
-        [.sacrifice .you .plan, .createTokens .robotVillain22 n false] }
+        [.sacrifice .plan, .createTokens .robotVillain22 n false] }
   | .planFinishDividedDamage n =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive,
+        [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] }
   | .planFinishIndestructibleOnTarget =>
     { resolution := .sequence
-        [.sacrifice .you .plan .forReflexive,
+        [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
   | .surveil n => { resolution := .surveil n }
   | .empowerJace n => { resolution := .empowerJace n }
@@ -3201,7 +3205,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.pump (.fixed 1) (.fixed 1) .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
-      resolution := .«if» .noPlaneswalker (.sacrifice .you (.source .controllerSacrifices)) }
+      resolution := .«if» .noPlaneswalker (.sacrifice (.sacrificedSource .controllerSacrifices)) }
   | .creaturesYouControlGet p t =>
     { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .putSourceCountersOnTarget =>
@@ -3361,7 +3365,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .returnToHand .cause }
   | .death .deathtouchOppSac =>
     { events := #[.creatureYouControlDies]
-      resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
+      resolution := .sacrifice .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking]
       resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo }
@@ -3638,7 +3642,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.death .attackingReturnHand)).resolution ==
   .returnToHand .cause
 #guard (SharedTrigger.timing (.death .deathtouchOppSac)).resolution ==
-  .sacrifice .eachOpponent .chosenNontokenCreature
+  .sacrifice .chosenNontokenCreature
 #guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==
   .lose .indestructible
 #guard TriggeredAbility.TriggerResolution.ofSource .loseIndestructible ==

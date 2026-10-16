@@ -47,7 +47,7 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
   .returnToHand .cause
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  .sacrifice .eachOpponent .chosenNontokenCreature
+  .sacrifice .chosenNontokenCreature
 
 #guard toString (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
   TriggeredAbility.deathSentence .hellcatReturn
