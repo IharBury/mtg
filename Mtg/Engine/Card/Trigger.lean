@@ -227,13 +227,15 @@ def toNat : TriggerReflexiveKind → Nat
 end TriggerReflexiveKind
 
 /-- Which player `ObjectSelector.player` names, who
-`TriggerResolution.draw` draws for, and who
-`TriggerResolution.loseLife` loses life. -/
+`TriggerResolution.draw` draws for, who
+`TriggerResolution.loseLife` loses life, and who
+`TriggerResolution.mill` mills. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
   Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`.
-  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`. -/
+  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
+  Each opponent mills `n` is `.mill (.fixed n) .eachOpponent`. -/
   | eachOpponent
   /-- The announced opponent.
   `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`.
@@ -241,7 +243,8 @@ inductive PlayerSelector where
   | targetOpponent
   /-- The controller of the ability.
   That player draws `n` is `.draw (.fixed n)` (`.you`).
-  That player loses `n` life is `.loseLife (.fixed n)`. -/
+  That player loses `n` life is `.loseLife (.fixed n)`.
+  That player mills `n` is `.mill (.fixed n)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -253,6 +256,14 @@ inductive PlayerSelector where
   Nothing enchanted draws nothing.
   `.draw (.fixed 1) .enchantedController`. -/
   | enchantedController
+  /-- The announced player.
+  An illegal target mills nothing.
+  `.mill (.fixed n) .target`. -/
+  | target
+  /-- The player who lost life. That player's seat is the trigger's
+  last-known toughness. A missing seat mills nothing.
+  `.mill .thatManyLost .thatPlayer`. -/
+  | thatPlayer
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -639,11 +650,12 @@ deriving Repr, Inhabited, BEq
 where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
 draws, where one statistic of `TriggerResolution.setBasePT` reads its
-new base, how much life `TriggerResolution.gainLife` gains, and how much
-life `TriggerResolution.loseLife` loses.
+new base, how much life `TriggerResolution.gainLife` gains, how much
+life `TriggerResolution.loseLife` loses, and how many cards
+`TriggerResolution.mill` mills.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
-`n` life gained, or `n` life lost. -/
+`n` life gained, `n` life lost, or mill `n`. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -657,10 +669,11 @@ inductive NumberSelector where
   /-- One for each Plains the controller controls. -/
   | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
-  `n` life gained, or `n` life lost.
+  `n` life gained, `n` life lost, or mill `n`.
   A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
   You gain `n` life is `.gainLife (.fixed n)`.
-  You lose `n` life is `.loseLife (.fixed n)`. -/
+  You lose `n` life is `.loseLife (.fixed n)`.
+  You mill `n` cards is `.mill (.fixed n)`. -/
   | fixed (n : Int)
   /-- The source's toughness.
   Another creature's base toughness becomes this toughness with
@@ -728,6 +741,10 @@ inductive NumberSelector where
   A source that can no longer be found loses nothing.
   `.loseLife .perBurden`. -/
   | perBurden
+  /-- The life that player lost. The amount is the trigger's last-known
+  power. A missing amount mills nothing.
+  `.mill .thatManyLost .thatPlayer`. -/
+  | thatManyLost
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -1184,29 +1201,6 @@ inductive TriggerGrantWhat where
   its power to any other target." Each resolution adds one such ability.
   A missing source gains nothing. -/
   | ironFistTap
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.mill` mills. -/
-inductive TriggerMillWho where
-  /-- The controller. -/
-  | you
-  /-- The announced player. An illegal target mills nothing. -/
-  | target
-  /-- The player who lost life. That player's seat is the trigger's
-  last-known toughness. A missing seat mills nothing. -/
-  | thatPlayer
-  /-- Each opponent of the controller. -/
-  | eachOpponent
-deriving Repr, Inhabited, BEq
-
-/-- Where `TriggerResolution.mill` reads how many cards. The `n` argument
-is the count when this is `.fixed`. -/
-inductive TriggerMillAmount where
-  /-- `n` cards. -/
-  | fixed
-  /-- The life that player lost. The amount is the trigger's last-known
-  power. A missing amount mills nothing. -/
-  | thatManyLost
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
@@ -2118,7 +2112,7 @@ inductive TriggerResolution where
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
   two otherwise, is
-  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`.
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill (.fixed 2))`.
   Two +1/+1 counters when the target is another Hero, and one otherwise, is
   `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
@@ -2235,21 +2229,23 @@ inductive TriggerResolution where
   Any other combination does nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
       (who : TriggerLibraryWho := .you)
-  /-- Mill cards (CR 701.13). `n` is how many when `amount` is `.fixed`.
-  `who` says who mills, and `note` says what a later step can read.
+  /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
+  later step can read.
   Milling zero cards changes nothing. A library that runs out logs that
   it is empty and mills nothing further.
-  The controller mills `n` with `.mill n`.
-  The announced player mills `n` with `.mill n .target`.
+  The controller mills `n` with `.mill (.fixed n)`.
+  The announced player mills `n` with `.mill (.fixed n) .target`.
+  An illegal target mills nothing.
   The player who lost life mills that many with
-  `.mill 0 .thatPlayer .thatManyLost`.
+  `.mill .thatManyLost .thatPlayer`.
+  The count is the trigger's last-known power. That player's seat is the
+  trigger's last-known toughness. A missing count or seat mills nothing.
   The controller mills `n` and remembers those cards with
-  `.mill n (note := .milledCards)`.
+  `.mill (.fixed n) (note := .milledCards)`.
   Each opponent mills `n`, and a later step sees whether any card was
-  milled, with `.mill n .eachOpponent (note := .opponentsMilled)`.
-  Any other combination mills nothing. -/
-  | mill (n : Nat) (who : TriggerMillWho := .you)
-      (amount : TriggerMillAmount := .fixed)
+  milled, with `.mill (.fixed n) .eachOpponent (note := .opponentsMilled)`.
+  Any other selector mills nothing. -/
+  | mill (amount : NumberSelector) (who : PlayerSelector := .you)
       (note : TriggerMillNote := .none)
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
@@ -2868,7 +2864,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     | .target =>
       { targeting := .of .opponent, resolution := .discard (.cards n .targetOpponent) }
   | .millPlayer n =>
-    { targeting := .of .player, resolution := .mill n .target }
+    { targeting := .of .player, resolution := .mill (.fixed n) .target }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
   | .searchLibrary => { resolution := .searchLibrary (.put .forest) }
@@ -2996,7 +2992,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
-        [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
+        [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
@@ -3020,7 +3016,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)] }
   | .millThatManyLost =>
-    { resolution := .mill 0 .thatPlayer .thatManyLost }
+    { resolution := .mill .thatManyLost .thatPlayer }
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
   | .maySacDrawTreasure =>
@@ -3032,7 +3028,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .mayCast .hand .lastKnown .withoutPaying }
   | .millThenCopy =>
     { resolution := .sequence
-        [.mill 2 .eachOpponent (note := .opponentsMilled),
+        [.mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
          .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
@@ -3268,7 +3264,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.createTokens .food 1 false, .createTokens .treasure 1 false] }
   | .villainIfGyElseMill =>
     { resolution := .ifElse (.creatureCardsInGraveyardAtLeast 2)
-        (.createTokens .villain21menace 1 true) (.mill 2) }
+        (.createTokens .villain21menace 1 true) (.mill (.fixed 2)) }
   | .drawMayPutLandTapped =>
     { resolution := .sequence
         [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }

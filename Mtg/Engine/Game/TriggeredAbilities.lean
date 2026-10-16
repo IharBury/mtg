@@ -1957,30 +1957,31 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.mill`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector mills
+nothing. -/
 def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower lastKnownToughness : Option Int) (n : Nat)
-    (who : TriggeredAbility.TriggerMillWho)
-    (amount : TriggeredAbility.TriggerMillAmount)
+    (lastKnownPower lastKnownToughness : Option Int)
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
-  match who, amount, note with
-  | .you, .fixed, .none =>
-    g.mill controller n
-  | .you, .fixed, .milledCards =>
+  match amount, who, note with
+  | .fixed n, .you, .none =>
+    g.mill controller n.toNat
+  | .fixed n, .you, .milledCards =>
     let before := (g.player controller).graveyard
-    let g := g.mill controller n
+    let g := g.mill controller n.toNat
     let after := (g.player controller).graveyard
     { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .target, .fixed, .none =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
-  | .thatPlayer, .thatManyLost, .none =>
+  | .fixed n, .target, .none =>
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n.toNat)
+  | .thatManyLost, .thatPlayer, .none =>
     match lastKnownPower, lastKnownToughness with
     | some k, some idx => g.mill ⟨idx.toNat⟩ k.toNat
     | _, _ => g
-  | .eachOpponent, .fixed, .opponentsMilled =>
+  | .fixed n, .eachOpponent, .opponentsMilled =>
     let opps := (g.livingOpponents controller).map (·.id)
-    let (g, milled) := g.millThenReflexive opps n
+    let (g, milled) := g.millThenReflexive opps n.toNat
     { g with opponentsMilledThisWay := milled }
   | _, _, _ => g
 
@@ -2886,9 +2887,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ => g
   | .mayCast origin maxMv cost note =>
     g.applyMayCast controller lastKnownPower origin maxMv cost note
-  | .mill n who amount note =>
+  | .mill amount who note =>
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
-      n who amount note
+      amount who note
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>

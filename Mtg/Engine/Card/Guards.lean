@@ -1318,7 +1318,7 @@ namespace CardDef
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
   .ifElse (.creatureCardsInGraveyardAtLeast 2)
-    (.createTokens .villain21menace 1 true) (.mill 2)
+    (.createTokens .villain21menace 1 true) (.mill (.fixed 2))
 #guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
   "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
 #guard TriggeredAbility.toNotation .onEnterDrawGainLifeIfAnotherHero ==
@@ -1564,7 +1564,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.mill 4 (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
+  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==

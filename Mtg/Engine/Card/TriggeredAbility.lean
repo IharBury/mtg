@@ -1096,7 +1096,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
-  | .sequence [.mill n .you .fixed .milledCards, .returnToHand (.milledSubtype subtype)] =>
+  | .sequence [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
   | .sequence [.tap .enchanted, .removeCounters .all .enchanted] =>
     "tap enchanted creature and remove all counters from it"
@@ -1120,7 +1120,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
-  | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
+  | .sequence [.mill (.fixed 2) .eachOpponent .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
   | .sequence [.sacrifice .combatDamager, .ringTempts] =>
@@ -1565,15 +1565,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .mill n who amount note =>
-    match who, amount, note with
-    | .you, .fixed, .none | .you, .fixed, .milledCards =>
+  | .mill amount who note =>
+    match amount, who, note with
+    | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
       s!"mill {n} cards"
-    | .target, .fixed, .none =>
+    | .fixed n, .target, .none =>
       s!"{noun} mills {n} cards"
-    | .thatPlayer, .thatManyLost, .none =>
+    | .thatManyLost, .thatPlayer, .none =>
       "that player mills that many cards"
-    | .eachOpponent, .fixed, .opponentsMilled =>
+    | .fixed n, .eachOpponent, .opponentsMilled =>
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
@@ -1606,7 +1606,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .or [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)
-      (.createTokens .villain21menace 1 true) (.mill 2 .you .fixed .none) =>
+      (.createTokens .villain21menace 1 true) (.mill (.fixed 2)) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
   | .ifElse (.targetIsAnotherSubtype "Hero")
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)

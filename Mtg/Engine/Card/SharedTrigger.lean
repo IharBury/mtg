@@ -573,7 +573,7 @@ inductive SharedTrigger where
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Target player mills `n` cards. Resolves as `.mill n .target`. -/
+  /-- Target player mills `n` cards. Resolves as `.mill (.fixed n) .target`. -/
   | millPlayer (n : Nat)
   /-- Investigate (create a Clue). -/
   | investigate
@@ -709,7 +709,7 @@ inductive SharedTrigger where
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. Resolves as
-  `.sequence [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
+  `.sequence [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
   | exileOppNonlandEachUntilLeaves
@@ -727,7 +727,7 @@ inductive SharedTrigger where
   `.sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. Resolves as
-  `.mill 0 .thatPlayer .thatManyLost`. -/
+  `.mill .thatManyLost .thatPlayer`. -/
   | millThatManyLost
   /-- Draw a card for each fat graveyard. -/
   | drawPerFatGraveyard
@@ -738,7 +738,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]`. -/
+  `.sequence [.mill (.fixed 2) .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower
@@ -936,7 +936,7 @@ inductive SharedTrigger where
   Resolves as `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`. -/
   | createFoodOrTreasure
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
-  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill (.fixed 2))`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
   Resolves as `.sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
