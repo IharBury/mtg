@@ -2123,15 +2123,16 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.gainLife`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector gains
+nothing. -/
 def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
-    (amount : TriggeredAbility.TriggerLifeAmount)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (amount : TriggeredAbility.NumberSelector)
     (sequencedCardPower : Option Nat)
     (lastKnownPower : Option Int := none) : Game :=
   match amount with
-  | .fixed =>
-    g.gainLife controller n
+  | .fixed n =>
+    g.gainLife controller n.toNat
   | .attachedEquipment =>
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then g else g.gainLife controller x
@@ -2150,10 +2151,11 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let k := g.permanentsDestroyedThisWay
     let g := { g with permanentsDestroyedThisWay := 0 }
     if k == 0 then g else g.gainLife controller k
-  | .forEachOtherCreature =>
+  | .perOtherCreature =>
     let k :=
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
     if k == 0 then g else g.gainLife controller k
+  | _ => g
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
 keeps the behavior of the constructor it replaced. -/
@@ -2674,8 +2676,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             sourceName
             cardPower
             steps := combined } }
-  | .gainLife n amount =>
-    g.applyGainLife controller ab sourceId targets n amount sequencedCardPower
+  | .gainLife amount =>
+    g.applyGainLife controller ab sourceId targets amount sequencedCardPower
       lastKnownPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note

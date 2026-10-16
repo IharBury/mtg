@@ -539,7 +539,7 @@ def thrushOffers : Game :=
 #guard
   match oldThrush.triggeredAbilities[0]? with
   | some ab =>
-    ab.resolution == .sequence [.gainLife 2, .searchLibrary (.put .basicLandOnTop)]
+    ab.resolution == .sequence [.gainLife (.fixed 2), .searchLibrary (.put .basicLandOnTop)]
   | none => false
 
 #guard

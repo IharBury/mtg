@@ -1049,22 +1049,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | some (amount, maxTargets) =>
       s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
     | none => "it deals damage divided as you choose"
-  | .sequence [.returnToHand .graveyardCard, .gainLife _ .equalToTargetPower] =>
+  | .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
-      .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])] =>
+      .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .sequence [.createTokens kind 1 false, .attach .source .created] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
-  | .sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
+  | .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife _ .forEachDestroyedThisWay] =>
+  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife .forEachDestroyedThisWay] =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife _ .forEachOtherCreature] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature] =>
     "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
   | .sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
@@ -1078,7 +1078,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
   | .sequence
       [.noteResolveThisTurn 3,
-       .«if» (.nthResolve 1) (.gainLife 1),
+       .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
        .«if» (.nthResolve 2) (.draw (.fixed 1)),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
@@ -1131,7 +1131,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then discard a card and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife n .eachOpponent, .gainLife m] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife n .eachOpponent, .gainLife (.fixed m)] =>
     s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1] =>
     "you draw a card, lose 1 life, and put a plan counter on this enchantment"
@@ -1167,7 +1167,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .sequence [.draw (.fixed 1), .may (.put .landFromHand .tapped _) _] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
-  | .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife 2)] =>
+  | .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife (.fixed 2))] =>
     "draw a card. If you control another Hero, you gain 2 life"
   | .sequence [.createTokens .treasure 1 false .alien .you .fixed .invasion,
       .putCounters .plusOneNoted .createdToken,
@@ -1209,7 +1209,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
-  | .sequence [.loseLife n .targetOpponent .fixed, .gainLife m .fixed] =>
+  | .sequence [.loseLife n .targetOpponent .fixed, .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
   | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
       .grant (.keywords k) (.youControlSubtype "Elf")] =>
@@ -1218,7 +1218,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     else
       "resolve each step"
   | .sequence [.searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
-      .gainLife life .fixed] =>
+      .gainLife (.fixed life)] =>
     s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
   | .sequence [.createTokens .treasure 1 false,
       .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
@@ -1232,17 +1232,19 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
   | .sequence _ =>
     "resolve each step"
-  | .gainLife n amount =>
+  | .gainLife amount =>
     match amount with
-    | .fixed => s!"you gain {n} life"
+    | .fixed n => s!"you gain {n} life"
     | .equalToTargetPower =>
       "you gain life equal to that card's power"
     | .forEachDestroyedThisWay =>
       "you gain 1 life for each permanent destroyed this way"
-    | .forEachOtherCreature =>
+    | .perOtherCreature =>
       "you gain 1 life for each other creature you control"
     | .attachedEquipment =>
       "you gain X life, where X is the number of Equipment attached to it"
+    | _ =>
+      "you gain life"
   | .may (.pay (.mana symbols)) (.draw (.fixed 1)) .ifYouDo =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
@@ -1331,7 +1333,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "remove counters"
   | .«if» .removedHope (.draw (.fixed 1)) =>
     "if a hope counter was removed this way, draw a card"
-  | .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4]) =>
+  | .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)]) =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tap .humans =>
     "tap any number of untapped Humans you control"
@@ -1687,7 +1689,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"when you do, it deals {n} damage divided as you choose among one or two targets"
   | .«if» .planWasSacrificed (.queueReflexive _) =>
     "when you do, the reflexive ability triggers"
-  | .«if» .anotherHero (.gainLife n) =>
+  | .«if» .anotherHero (.gainLife (.fixed n)) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
     playThatCardUntilNextTurnPhrase

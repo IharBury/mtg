@@ -724,7 +724,7 @@ namespace CardDef
   .may (.discard (.cards 1)) (.draw (.fixed 2)) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
     (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
-  .may (.scry (.fixed 1)) (.gainLife 2) .ifYouDo
+  .may (.scry (.fixed 1)) (.gainLife (.fixed 2)) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
     (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetKind ==
   .creature
@@ -779,7 +779,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
-  .sequence [.gainLife 2, .searchLibrary (.put .basicLandOnTop)]
+  .sequence [.gainLife (.fixed 2), .searchLibrary (.put .basicLandOnTop)]
 #guard TriggeredAbility.toNotation (.onEnterGainLifeSearchBasicOnTop 2) ==
   "When this permanent enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top."
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
@@ -791,7 +791,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
   .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackReturnElfGainLife ==
-  .sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]
+  .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
   .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 #guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
@@ -815,7 +815,7 @@ namespace CardDef
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]
+    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
@@ -830,13 +830,13 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 #guard TriggeredAbility.resolution .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
-    .gainLife 0 (amount := .forEachDestroyedThisWay)]
+    .gainLife .forEachDestroyedThisWay]
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 #guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
   .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
 #guard TriggeredAbility.resolution .onEnterOrAttackPlusOneEachOtherGainLife ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature]
 #guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
   "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
@@ -1398,7 +1398,7 @@ namespace CardDef
 #guard StaticAbility.toNotation .boast ==
   "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry (.fixed 1)
-#guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
+#guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife (.fixed 2)
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
 #guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry (.fixed 1)
@@ -1539,7 +1539,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onTokenYouControlEntersBelladonna ==
   .sequence [
     .noteResolveThisTurn 3,
-    .«if» (.nthResolve 1) (.gainLife 1),
+    .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
     .«if» (.nthResolve 2) (.draw (.fixed 1)),
     .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
@@ -1588,7 +1588,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
-  .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife 2)]
+  .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
   .sequence [.createTokens .treasure 1 false .alien (note := .invasion),
     .putCounters .plusOneNoted .createdToken,

@@ -65,7 +65,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass 1
 #guard (timing (.opponentLosesYouGain 1)).resolution ==
-  .sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]
+  .sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)]
 #guard (timing .grantHexproofWhileRemains).resolution ==
   .grant .hexproofWhileSource .target
 #guard (timing .preventDamageWhileRemains).resolution ==
@@ -74,7 +74,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
   .sequence [
     .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
-    .gainLife 2]
+    .gainLife (.fixed 2)]
 #guard (timing .returnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile
 #guard (timing .grantAttackPumpPerPlainsThisTurn).resolution ==
