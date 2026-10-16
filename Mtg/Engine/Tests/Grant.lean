@@ -4,9 +4,10 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.grant`
 
+What is granted is `TriggerGrantWhat`. Who receives it is an `ObjectSelector`.
 Equipped attacking creatures gaining double strike, and the controller
-gaining protection from everything when the source was cast. What is
-granted, and who receives it, are arguments.
+gaining protection from everything when the source was cast. Any other
+selector grants nothing.
 -/
 
 namespace Mtg.Engine.GrantTests
@@ -137,16 +138,19 @@ the ability logs that it does nothing. -/
   !(g.player caster).protectionFromEverything &&
     logContains g "It wasn't cast. The ability does nothing."
 
-/- The other combinations grant nothing. -/
+/- The other combinations, and any other selector, grant nothing. -/
 #guard
   let g0 := cast (attach (addPermanent battle ring caster caster) "Axe" "Bear") "Ring"
   let crossed := step g0 (.grant .doubleStrike .youIfCast) (some (pid g0 "Ring"))
   let swapped := step g0 (.grant .protectionEverything .equippedAttackers)
       (some (pid g0 "Ring"))
+  let other := step g0 (.grant .doubleStrike .humans) (some (pid g0 "Ring"))
   !strikes crossed "Bear" && !(crossed.player caster).protectionFromEverything &&
     crossed.log.size == g0.log.size &&
     !strikes swapped "Bear" && !(swapped.player caster).protectionFromEverything &&
-    swapped.log.size == g0.log.size
+    swapped.log.size == g0.log.size &&
+    !strikes other "Bear" && !(other.player caster).protectionFromEverything &&
+    other.log.size == g0.log.size
 
 #guard TriggeredAbility.resolution .onAttackEquippedGainDoubleStrike == doubleStrike
 #guard TriggeredAbility.resolution .onEnterIfCastProtectionEverything == protection

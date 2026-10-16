@@ -42,7 +42,7 @@ def exiled (g : Game) (name : String) : Option GameObject :=
 do not carry `YouAttackLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness) ==
-  .may (.loseLife 2)
+  .may (.loseLife (.fixed 2))
     (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) ==

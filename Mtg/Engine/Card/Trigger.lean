@@ -226,18 +226,29 @@ def toNat : TriggerReflexiveKind → Nat
 
 end TriggerReflexiveKind
 
-/-- Which player `ObjectSelector.player` names, and who
-`TriggerResolution.draw` draws for. -/
+/-- Which player `ObjectSelector.player` names, who
+`TriggerResolution.draw` draws for, who
+`TriggerResolution.loseLife` loses life, who
+`TriggerResolution.mill` mills, whose library
+`TriggerResolution.revealLibrary` looks at, and who
+`TriggerResolution.amass` amasses for. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
-  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`. -/
+  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`.
+  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
+  Each opponent mills `n` is `.mill (.fixed n) .eachOpponent`. -/
   | eachOpponent
   /-- The announced opponent.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`. -/
+  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`.
+  That player loses `n` life is `.loseLife (.fixed n) .targetOpponent`. -/
   | targetOpponent
   /-- The controller of the ability.
-  That player draws `n` is `.draw (.fixed n)` (`.you`). -/
+  That player draws `n` is `.draw (.fixed n)` (`.you`).
+  That player loses `n` life is `.loseLife (.fixed n)`.
+  That player mills `n` is `.mill (.fixed n)`.
+  That player's library is `.revealLibrary (.top n) (.put .randomCreature)`.
+  That player amasses Goblins `n` is `.amass (.fixed n)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -249,6 +260,30 @@ inductive PlayerSelector where
   Nothing enchanted draws nothing.
   `.draw (.fixed 1) .enchantedController`. -/
   | enchantedController
+  /-- The announced player.
+  An illegal target mills nothing.
+  `.mill (.fixed n) .target`. -/
+  | target
+  /-- The player who lost life. That player's seat is the trigger's
+  last-known toughness. A missing seat mills nothing.
+  `.mill .thatManyLost .thatPlayer`. -/
+  | thatPlayer
+  /-- The player who was dealt combat damage. That seat is
+  `lastCombatDamagePlayer`. A missing seat is the controller's opponent.
+  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`. -/
+  | damagedPlayer
+  /-- The announced player. When none was announced, the resolving ability's
+  last-known toughness is that player's index.
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
+  | announced
+  /-- The controller an earlier step recorded when it destroyed a creature.
+  No destruction amasses nothing.
+  `.amass .notedPower (who := .notedController)`. -/
+  | notedController
+  /-- The controller the targeted permanent had on the battlefield.
+  Destroy may already have moved it.
+  `.createTokens .treasure (.fixed 1) false (who := .targetController)`. -/
+  | targetController
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -256,6 +291,11 @@ deriving Repr, Inhabited, BEq
 discards, which cards `TriggerResolution.returnToHand` returns, which
 permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.putCounters` puts counters on, who
+`TriggerResolution.removeCounters` removes counters from, who
+`TriggerResolution.tap` taps, who `TriggerResolution.untap` untaps,
+which permanents `TriggerResolution.destroy` destroys, who
+`TriggerResolution.grant` grants an ability to, who
+`TriggerResolution.fight` uses, who
 `TriggerResolution.lose` removes an ability from, who
 `TriggerResolution.becomeArtifact` makes an artifact, who
 `TriggerResolution.becomePrepared` prepares, who
@@ -344,7 +384,9 @@ inductive ObjectSelector where
   a finality counter, is
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
   An announced card or permanent is used when one was chosen; otherwise the
-  recorded cause. A missing cause, or the wrong subtype, puts nothing. -/
+  recorded cause. A missing cause, or the wrong subtype, puts nothing.
+  A token copy of that artifact, with no subtype, is `.becomeCopy .cause`.
+  A subtype copies nothing that way. -/
   | cause (subtype : Option String := none)
   /-- Each creature the controller controls. -/
   | creaturesYouControl
@@ -465,7 +507,11 @@ inductive ObjectSelector where
   | eachOther
   /-- The token an earlier step created.
   The noted number of +1/+1 counters is
-  `.putCounters .plusOneNoted .createdToken`. -/
+  `.putCounters .plusOneNoted .createdToken`.
+  Attaching the source to the token the previous step created is
+  `.attach .source .createdToken`.
+  Attaching the token an earlier step remembered to the source is
+  `.attach .createdToken .source`. -/
   | createdToken
   /-- The ability's source, if it is still on the battlefield.
   A source that has left logs that no counter is put. Later steps still run.
@@ -568,22 +614,133 @@ inductive ObjectSelector where
   /-- A creature card of `subtype` with mana value at most `maxMv` from hand.
   `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`. -/
   | creatureFromHand (subtype : String) (maxMv : Nat)
-  /-- The announced creature card in the controller's graveyard.
+  /--   The announced creature card in the controller's graveyard.
   Returned tapped and attacking with a finality counter is
   `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
   Inside `queueReflexive`, that card is chosen when the reflexive ability
   is put on the stack. Outside it, this puts nothing. -/
   | creatureCard
+  /-- Any number of untapped Humans the controller controls.
+  Choosing none taps nothing.
+  `.tap .humans`. -/
+  | humans
+  /-- The creature this Aura enchants, while the Aura is still on the battlefield.
+  Nothing enchanted does nothing. A missing Aura is reported.
+  `.tap .enchantedWhileSource`. -/
+  | enchantedWhileSource
+  /-- Each attacking creature.
+  `.untap .attackingCreatures`. -/
+  | attackingCreatures
+  /-- The creature this Equipment is attached to, while it is on the battlefield.
+  A missing creature is reported, and later steps of the sequence do not happen.
+  `.untap .equipped`. -/
+  | equipped
+  /-- The creature that became tapped, while it is still tapped.
+  The recorded cause is used when one was chosen. Otherwise the creature
+  that became tapped most recently. An untapped creature is left alone.
+  `.untap .firstThisTurn`. -/
+  | firstThisTurn
+  /-- All artifacts and enchantments opponents control.
+  `.destroy .oppArtifactsEnchantments`. -/
+  | oppArtifactsEnchantments
+  /-- The permanent an earlier step dealt damage to.
+  `.destroy .permanentDealtDamage`. -/
+  | permanentDealtDamage
+  /-- Each equipped attacking creature.
+  `.grant .doubleStrike .equippedAttackers`. -/
+  | equippedAttackers
+  /-- The controller, when the source was cast.
+  A source that was not cast does nothing.
+  `.grant .protectionEverything .youIfCast`. -/
+  | youIfCast
+  /-- The one creature the controller has attacking alone.
+  None is reported. -/
+  | attackingAlone
+  /-- Each creature the spell that caused this trigger targets.
+  A permanent that is not a creature is skipped. No recorded spell grants
+  nothing.
+  `.grant (.keywords Keyword.flying) .spellTargets`. -/
+  | spellTargets
+  /-- The announced creature.
+  It fights up to one other announced creature with
+  `.fight .announced .upToOneOther`.
+  It fights another announced creature with `.fight .announced .mutual`. -/
+  | announced
+  /-- The creature an earlier step attached Equipment to.
+  It deals damage equal to its power with `.fight .equipmentHost .reflexive`.
+  Nothing is queued when no creature received Equipment. -/
+  | equipmentHost
+  /-- Up to one target artifact, non-Aura enchantment, or land.
+  The source becomes that copy until the controller's next turn and keeps
+  its name. It is also a legendary 4/4 Human Villain creature with vigilance.
+  `.becomeCopy .artifactEnchantmentOrLand`.
+  Choosing none copies nothing. An illegal object is reported.
+  A missing source copies nothing. -/
+  | artifactEnchantmentOrLand
+  /-- Up to one target creature, or creature card in a graveyard.
+  The source becomes that copy until the controller's next turn and keeps
+  its name. It is a legendary Human Mercenary Villain creature.
+  `.becomeCopy .creatureOrGraveyardCard`. -/
+  | creatureOrGraveyardCard
+  /-- The creature an earlier step exiled and noted.
+  The enchanted creature becomes that copy until the source leaves.
+  Nothing noted, or nothing enchanted, copies nothing.
+  `.becomeCopy .noted`. -/
+  | noted
+  /-- The Villain that caused this trigger. You may have it connive.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported.
+  `.connive .enteringVillain`. -/
+  | enteringVillain
+  /-- Any number of Equipment the controller chooses.
+  `.attach .anyYouControl .target`. -/
+  | anyYouControl
+  /-- The artifact an earlier step put from hand.
+  `.attach .putArtifact .notedHost`. -/
+  | putArtifact
+  /-- The announced Equipment. An illegal Equipment does not move.
+  `.attach .announcedEquipment .announcedCreature`. -/
+  | announcedEquipment
+  /-- Each announced Equipment. Choosing none attaches nothing.
+  `.attach .eachTargetEquipment .enchantedCreature`. -/
+  | eachTargetEquipment
+  /-- Up to one announced creature. A missing creature is reported.
+  `.attach .target .optionalCreature`. -/
+  | optionalCreature
+  /-- The announced creature. When two targets were announced, the later one.
+  `.attach .source .creatureTarget`. -/
+  | creatureTarget
+  /-- The creature remembered with the artifact put from hand.
+  `.attach .putArtifact .notedHost`. -/
+  | notedHost
+  /-- The announced creature. An illegal pair does not move the Equipment.
+  `.attach .announcedEquipment .announcedCreature`. -/
+  | announcedCreature
+  /-- The creature the source enchants. A missing creature leaves Equipment
+  where it is.
+  `.attach .eachTargetEquipment .enchantedCreature`. -/
+  | enchantedCreature
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
 draws, where one statistic of `TriggerResolution.setBasePT` reads its
-new base, and how much life `TriggerResolution.gainLife` gains.
+new base, how much life `TriggerResolution.gainLife` gains, how much
+life `TriggerResolution.loseLife` loses, how many cards
+`TriggerResolution.mill` mills, how many counters
+`TriggerResolution.amass` puts on an Army, how many times
+`TriggerResolution.addMana` adds its mana, how many tokens
+`TriggerResolution.createTokens` creates, how many cards
+`TriggerResolution.surveil` surveils, how many loyalty counters
+`TriggerResolution.empowerJace` puts on a Jace token, how much less
+`TriggerResolution.spellsCostLess` makes a spell cost, how many cards
+`TriggerResolution.lookAtTopRevealTypes` looks at, and the base power
+and toughness `TriggerResolution.becomePT` sets.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
-or `n` life. -/
+`n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
+`n` times. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -597,9 +754,15 @@ inductive NumberSelector where
   /-- One for each Plains the controller controls. -/
   | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
-  or `n` life.
+  `n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
+  `n` times.
   A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
-  You gain `n` life is `.gainLife (.fixed n)`. -/
+  You gain `n` life is `.gainLife (.fixed n)`.
+  You lose `n` life is `.loseLife (.fixed n)`.
+  You mill `n` cards is `.mill (.fixed n)`.
+  You amass Goblins `n` is `.amass (.fixed n)`.
+  Adding the printed mana `n` times is `.addMana types (.fixed n)`.
+  Once is `.addMana types`. -/
   | fixed (n : Int)
   /-- The source's toughness.
   Another creature's base toughness becomes this toughness with
@@ -612,7 +775,9 @@ inductive NumberSelector where
   /-- This statistic's current value, which doubles it.
   Doubling the announced permanent is `.pump .double .double .target`. -/
   | double
-  /-- The source's last-known power. -/
+  /-- The source's last-known power.
+  Amass that many is `.amass .lastKnownPower`.
+  A missing power is zero. -/
   | lastKnownPower
   /-- How many permanents of this subtype the controller controls. -/
   | subtypeCount (subtype : String)
@@ -660,8 +825,46 @@ inductive NumberSelector where
   /-- One for each Equipment attached to the source.
   A source that has left uses its last-known power as that count.
   Zero gains nothing.
-  `.gainLife .attachedEquipment`. -/
+  `.gainLife .attachedEquipment`.
+  Each opponent loses that much with `.loseLife .attachedEquipment .eachOpponent`. -/
   | attachedEquipment
+  /-- One life for each burden counter on the source.
+  A source that can no longer be found loses nothing.
+  `.loseLife .perBurden`. -/
+  | perBurden
+  /-- The life that player lost. The amount is the trigger's last-known
+  power. A missing amount mills nothing.
+  `.mill .thatManyLost .thatPlayer`. -/
+  | thatManyLost
+  /-- Excess damage an earlier step recorded. Zero excess amasses nothing.
+  `.amass .notedExcess`. -/
+  | notedExcess
+  /-- The power an earlier step recorded when it destroyed a creature.
+  No destruction amasses nothing.
+  The noted controller amasses that many with
+  `.amass .notedPower (who := .notedController)`. -/
+  | notedPower
+  /-- The printed mana types, once for each charge counter on the source.
+  A source that has left uses its last-known charge counters.
+  Zero counters add nothing.
+  `.addMana #[.colored .green] .perChargeCounter`. -/
+  | perChargeCounter
+  /-- One tapped Treasure for each artifact opponents control.
+  `.createTokens .treasure .oppArtifacts true`. -/
+  | oppArtifacts
+  /-- One Treasure for each artifact the damaged player controls.
+  `.createTokens .treasure .damagedPlayerArtifacts false`. -/
+  | damagedPlayerArtifacts
+  /-- One Treasure for each creature the controller controls of a chosen type.
+  `.createTokens .treasure .chosenCreatureType false`. -/
+  | chosenCreatureType
+  /-- One token for each permanent of this subtype the controller controls.
+  `.createTokens kind (.perSubtype subtype) false`. -/
+  | perSubtype (subtype : String)
+  /-- One 1/1 blue Merfolk for each blue mana symbol in the spell that
+  caused this. No such spell, or no blue symbol, creates nothing.
+  `.createTokens .treasure .blueManaSymbols false .merfolk`. -/
+  | blueManaSymbols
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -745,41 +948,10 @@ inductive TriggerToken where
   | sturdyShield
   /-- Galactus, a legendary 16/16 black Elder Alien with flying and trample. -/
   | galactus
-  /-- A 1/1 blue Merfolk creature token. With `qty` `.blueManaSymbols`,
+  /-- A 1/1 blue Merfolk creature token. With amount `.blueManaSymbols`,
   the count is the blue mana symbols in the spell that caused this.
   No blue symbol creates nothing. -/
   | merfolk
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.createTokens` creates the tokens for. -/
-inductive TriggerTokenWho where
-  /-- The controller of the ability. -/
-  | you
-  /-- The announced opponent. With no player target, the controller creates it. -/
-  | targetOpponent
-  /-- The controller the targeted permanent had on the battlefield.
-  Destroy may already have moved it. -/
-  | targetController
-deriving Repr, Inhabited, BEq
-
-/-- How many tokens `TriggerResolution.createTokens` creates.
-`.fixed` uses `n`. -/
-inductive TriggerTokenQty where
-  /-- The `n` argument. -/
-  | fixed
-  /-- One for each artifact opponents control. -/
-  | oppArtifacts
-  /-- One for each artifact the damaged player controls. -/
-  | damagedPlayerArtifacts
-  /-- The last-known count. Bird Soldiers use `kind`; other counts are Treasures. -/
-  | lastKnown
-  /-- One for each creature the controller controls of a chosen type. -/
-  | chosenCreatureType
-  /-- One for each permanent of this subtype the controller controls. -/
-  | perSubtype (subtype : String)
-  /-- One for each blue mana symbol in the mana cost of the spell that
-  caused this. No such spell, or no blue symbol, creates nothing. -/
-  | blueManaSymbols
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
@@ -861,54 +1033,6 @@ inductive TriggerSacrificeNote where
   /-- Whether the source was actually sacrificed. A following
   `«if» .sourceWasSacrificed` sees it. -/
   | noted
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.attach` attaches. -/
-inductive TriggerAttachWhat where
-  /-- The source. -/
-  | source
-  /-- The first announced permanent. -/
-  | target
-  /-- Any number of Equipment the controller chooses. -/
-  | anyYouControl
-  /-- The token an earlier step remembered. -/
-  | created
-  /-- The artifact an earlier step put from hand. -/
-  | putArtifact
-  /-- The announced Equipment. An illegal Equipment does not move. -/
-  | announcedEquipment
-  /-- Each announced Equipment. Choosing none attaches nothing. -/
-  | eachTargetEquipment
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.attach` attaches that object to. -/
-inductive TriggerAttachTo where
-  /-- The token the previous step created. -/
-  | created
-  /-- The announced permanent. -/
-  | target
-  /-- Up to one announced creature. A missing creature is reported. -/
-  | optionalCreature
-  /-- The announced creature. When two targets were announced, the later one. -/
-  | creatureTarget
-  /-- The source. -/
-  | source
-  /-- The creature remembered with the artifact put from hand. -/
-  | notedHost
-  /-- The announced creature. An illegal pair does not move the Equipment. -/
-  | announcedCreature
-  /-- The creature the source enchants. A missing creature leaves Equipment
-  where it is. -/
-  | enchantedCreature
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.amass` amasses for. -/
-inductive AmassWho where
-  /-- The ability's controller. -/
-  | you
-  /-- The controller an earlier step recorded when it destroyed a creature.
-  No destruction amasses nothing. -/
-  | notedController
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.mayCast` finds the spell. -/
@@ -1026,16 +1150,6 @@ def enterMods : TriggerPutNote → List TriggerEnterWith
 
 end TriggerPutNote
 
-/-- How `TriggerResolution.addMana` chooses the mana it adds. `types` is
-the printed mana when this is `.fixed`. -/
-inductive TriggerManaAmount where
-  /-- The printed mana types, once. -/
-  | fixed
-  /-- The printed mana types, once for each charge counter on the source.
-  A source that has left uses its last-known charge counters. -/
-  | perChargeCounter
-deriving Repr, Inhabited, BEq
-
 /-- How `TriggerResolution.chooseModes` chooses those modes. -/
 inductive TriggerModeHow where
   /-- The controller chooses one mode that has not been chosen this turn.
@@ -1065,24 +1179,6 @@ inductive TriggerModeHow where
   | vision
 deriving Repr, Inhabited, BEq
 
-/-- Which permanents `TriggerResolution.destroy` destroys. -/
-inductive TriggerDestroyWhat where
-  /-- All artifacts and enchantments opponents control. -/
-  | oppArtifactsEnchantments
-  /-- The announced creature, if any. Choosing none destroys nothing. -/
-  | target
-  /-- The permanent an earlier step dealt damage to. -/
-  | permanentDealtDamage
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-deriving Repr, Inhabited, BEq
-
 /-- What a later step of `TriggerResolution.destroy` can read. -/
 inductive TriggerDestroyNote where
   /-- Nothing beyond the destruction. -/
@@ -1096,16 +1192,6 @@ inductive TriggerDestroyNote where
   /-- The announced token. A permanent that is not a token stays.
   The ability's own target may be a player; the token is `targets[0]`. -/
   | chosenToken
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.fight` uses. -/
-inductive TriggerFightWho where
-  /-- The source. -/
-  | source
-  /-- The creature an earlier step attached Equipment to. -/
-  | equipmentHost
-  /-- The announced creature. -/
-  | announced
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.fight` uses that creature. -/
@@ -1148,82 +1234,6 @@ inductive TriggerGrantWhat where
   | ironFistTap
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.grant` grants that to. -/
-inductive TriggerGrantWho where
-  /-- Each equipped attacking creature. -/
-  | equippedAttackers
-  /-- The controller, when the source was cast. -/
-  | youIfCast
-  /-- The announced permanent. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- Each creature the controller controls. -/
-  | creaturesYouControl
-  /-- Each creature the controller controls of this subtype. -/
-  | youControlSubtype (subtype : String)
-  /-- The one creature the controller has attacking alone.
-  None is reported. -/
-  | attackingAlone
-  /-- Each creature the spell that caused this trigger targets.
-  A permanent that is not a creature is skipped. No recorded spell grants
-  nothing. -/
-  | spellTargets
-deriving Repr, Inhabited, BEq
-
-/-- Who loses life from `TriggerResolution.loseLife`. -/
-inductive TriggerLifeLossWho where
-  /-- The controller. -/
-  | you
-  /-- The announced opponent. An illegal target loses nothing. -/
-  | targetOpponent
-  /-- Each opponent of the controller. -/
-  | eachOpponent
-deriving Repr, Inhabited, BEq
-
-/-- Where `TriggerResolution.loseLife` reads how much life. The `n` argument
-is used when this is `.fixed`. -/
-inductive TriggerLifeLossAmount where
-  /-- The `n` argument. -/
-  | fixed
-  /-- One life for each burden counter on the source.
-  A source that can no longer be found loses nothing. -/
-  | perBurden
-  /-- One life for each Equipment attached to the source.
-  A source that has left uses its last-known power as that count.
-  Zero loses nothing. -/
-  | attachedEquipment
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.mill` mills. -/
-inductive TriggerMillWho where
-  /-- The controller. -/
-  | you
-  /-- The announced player. An illegal target mills nothing. -/
-  | target
-  /-- The player who lost life. That player's seat is the trigger's
-  last-known toughness. A missing seat mills nothing. -/
-  | thatPlayer
-  /-- Each opponent of the controller. -/
-  | eachOpponent
-deriving Repr, Inhabited, BEq
-
-/-- Where `TriggerResolution.mill` reads how many cards. The `n` argument
-is the count when this is `.fixed`. -/
-inductive TriggerMillAmount where
-  /-- `n` cards. -/
-  | fixed
-  /-- The life that player lost. The amount is the trigger's last-known
-  power. A missing amount mills nothing. -/
-  | thatManyLost
-deriving Repr, Inhabited, BEq
-
 /-- What a later step of `TriggerResolution.mill` can read. -/
 inductive TriggerMillNote where
   /-- Nothing beyond the mill. -/
@@ -1242,63 +1252,6 @@ inductive TriggerRemoveWhat where
   | all
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.removeCounters` removes counters from. -/
-inductive TriggerRemoveWho where
-  /-- The ability's source. -/
-  | source
-  /-- The creature the source enchants. -/
-  | enchanted
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.tap` taps. -/
-inductive TriggerTapWho where
-  /-- Any number of untapped Humans the controller controls.
-  Choosing none taps nothing. -/
-  | humans
-  /-- The creature the source enchants. Nothing enchanted taps nothing. -/
-  | enchanted
-  /-- The announced permanent, while it is still on the battlefield.
-  A missing target taps nothing. -/
-  | targetIfPresent
-  /-- The announced permanent, while it is still a legal target.
-  An illegal target is reported. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield.
-  Inside `.may _ _ .ifYouDo`, tapping is optional. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. A missing Aura is reported. -/
-  | enchantedWhileSource
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.untap` untaps. -/
-inductive TriggerUntapWho where
-  /-- The announced permanent, while it is still a legal target.
-  An illegal target is reported. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- Each attacking creature. -/
-  | attackingCreatures
-  /-- The creature this Equipment is attached to, while it is on the
-  battlefield. A missing creature is reported, and later steps of the
-  sequence do not happen. -/
-  | equipped
-  /-- The creature that became tapped, while it is still tapped.
-  The recorded cause is used when one was chosen. Otherwise the creature
-  that became tapped most recently. An untapped creature is left alone. -/
-  | firstThisTurn
-deriving Repr, Inhabited, BEq
-
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
 inductive TriggerLibraryHow where
   /-- The top `n` cards. Looking at zero cards finds nothing. -/
@@ -1311,18 +1264,6 @@ inductive TriggerLibraryHow where
   | untilInstantOrSorcery
   /-- Cards until a nonland card. An empty library finds nothing. -/
   | untilNonland
-deriving Repr, Inhabited, BEq
-
-/-- Whose library `TriggerResolution.revealLibrary` looks at. -/
-inductive TriggerLibraryWho where
-  /-- The controller's library. -/
-  | you
-  /-- The player who was dealt combat damage. That seat is
-  `lastCombatDamagePlayer`. A missing seat is the controller's opponent. -/
-  | damagedPlayer
-  /-- The announced player. When none was announced, the resolving ability's
-  last-known toughness is that player's index. -/
-  | announced
 deriving Repr, Inhabited, BEq
 
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
@@ -1364,30 +1305,6 @@ inductive TriggerControlHow where
   | duringNextTurn
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.becomeCopy` copies, and which exceptions apply.
-The source keeps its name when it copies an announced object until the
-controller's next turn. Choosing none copies nothing. A missing source
-copies nothing. The enchanted creature copies a noted creature until the
-source leaves. The controller creates a token copy of the artifact that
-caused the trigger. -/
-inductive TriggerCopyOf where
-  /-- Up to one target artifact, non-Aura enchantment, or land.
-  The source is also a legendary 4/4 Human Villain creature with vigilance. -/
-  | artifactEnchantmentOrLand
-  /-- Up to one target creature, or creature card in a graveyard.
-  The source is a legendary Human Mercenary Villain creature. -/
-  | creatureOrGraveyardCard
-  /-- The creature an earlier step exiled and noted.
-  The enchanted creature becomes that copy until the source leaves.
-  Nothing noted, or nothing enchanted, copies nothing. -/
-  | noted
-  /-- The nontoken artifact that caused this trigger.
-  An announced permanent is used when one was chosen; otherwise the
-  recorded cause. The controller creates a token copy. A noncreature
-  token becomes a 2/2 Robot Villain after it enters. -/
-  | cause
-deriving Repr, Inhabited, BEq
-
 /-- What `TriggerResolution.cant` prevents, and who can't do it.
 The announced permanent can't be blocked this turn is `.beBlocked`.
 The source is `.beBlocked .source`.
@@ -1404,16 +1321,18 @@ inductive ActionSelector where
   The source is `.cant (.beBlocked .source)`.
   The enchanted creature is `.cant (.beBlocked .enchanted)`.
   The target, while the source remains, is
-  `.cant (.beBlocked .targetWhileSource)`. -/
-  | beBlocked (who : TriggerAffected := .target)
+  `.cant (.beBlocked .targetWhileSource)`.
+  Any other selector does nothing. -/
+  | beBlocked (who : ObjectSelector := .target)
   /-- Can't be blocked this turn except by creatures with haste.
-  `.cant (.beBlockedExceptByHaste .target)`. -/
-  | beBlockedExceptByHaste (who : TriggerAffected := .target)
+  `.cant (.beBlockedExceptByHaste .target)`.
+  Any other selector does nothing. -/
+  | beBlockedExceptByHaste (who : ObjectSelector := .target)
   /-- Can't become untapped for as long as you control the source.
   The announced permanent is `.cant .untapWhileYouControl`.
   An opponent's creature is the only recipient. A creature you control
   is left alone. Any other `who` does nothing. -/
-  | untapWhileYouControl (who : TriggerAffected := .target)
+  | untapWhileYouControl (who : ObjectSelector := .target)
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -1440,12 +1359,20 @@ and setting another creature's base power and toughness equal to this
 creature's, are `setBasePT`. Each statistic is a `NumberSelector`.
 Who receives the new base is an `ObjectSelector`.
 Gaining life is `gainLife`. How much is a `NumberSelector`.
+Losing life is `loseLife`. How much is a `NumberSelector`.
+Who loses it is a `PlayerSelector`.
 Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes is an argument.
 Which card is an `ObjectSelector`.
 Untapping the announced permanent, and untapping each attacking
-creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
+creature, are `untap`. Who is untapped is an `ObjectSelector`.
+Removing counters is `removeCounters`. Who loses them is an `ObjectSelector`.
+Destroying permanents is `destroy`. Which permanents is an `ObjectSelector`.
+Tapping permanents is `tap`. Who is tapped is an `ObjectSelector`.
+Granting an ability is `grant`. Who receives it is an `ObjectSelector`.
+A creature fighting is `fight`. Who fights is an `ObjectSelector`.
++P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
 and `grant`. Who becomes an artifact is an `ObjectSelector`.
@@ -1795,7 +1722,7 @@ inductive TriggerResolution where
   of Humans, then draw that many, is
   `.sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]`.
   Create one token, then attach the source to it, is
-  `.sequence [.createTokens kind 1 false, .attach .source .created]`.
+  `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`.
   Gain life, then you may search a basic land onto the top, is
   `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
@@ -1808,7 +1735,7 @@ inductive TriggerResolution where
   permanent of this subtype, is
   `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
   Destroy the announced creature, then its controller amasses that power, is
-  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
   `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
@@ -1821,7 +1748,7 @@ inductive TriggerResolution where
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife (.fixed 1)), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
-  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`.
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`.
   Put a plan counter, then scry, is
   `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`.
   Put a trample counter on the target, then make it a Bear, is
@@ -1843,7 +1770,7 @@ inductive TriggerResolution where
   Tap and a stun counter is
   `.sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)]`.
+  `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)]`. -/
@@ -1882,7 +1809,7 @@ inductive TriggerResolution where
   You may pay `{1}{G}{U}` to return this from the graveyard is
   `.may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
-  `.may (.pay .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo`.
+  `.may (.pay .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo`.
   You may discard your hand to draw `n` is `.may (.discard .hand) (.draw (.fixed n)) .ifYouDo`.
   You may draw for each permanent of a type, and each opponent draws if you do, is
   `.may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo`.
@@ -1916,7 +1843,7 @@ inductive TriggerResolution where
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   You may create a 0/4 Wall creature token with defender with
-  `.may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo`.
+  `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`.
   Declining creates nothing. -/
   | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says.
@@ -2027,8 +1954,8 @@ inductive TriggerResolution where
   source that has left the battlefield, removes nothing.
   All counters from the enchanted creature are
   `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
-  Any other combination removes nothing. -/
-  | removeCounters (what : TriggerRemoveWhat) (who : TriggerRemoveWho)
+  Any other selector removes nothing. -/
+  | removeCounters (what : TriggerRemoveWhat) (who : ObjectSelector)
   /-- Tap permanents, as `who` says.
   Any number of untapped Humans you control is `.tap .humans`.
   Choosing none taps nothing. Optional as `.may (.tap .humans) (.sequence [])`.
@@ -2038,8 +1965,11 @@ inductive TriggerResolution where
   `.tap .targetIfPresent`. A missing target taps nothing.
   The announced permanent, while it is still a legal target, is
   `.tap .target`. An illegal target is reported.
-  Wrapping one in `may` is that tap. -/
-  | tap (who : TriggerTapWho)
+  Wrapping one in `may` is that tap.
+  The creature this Aura enchants, while the Aura remains, is
+  `.tap .enchantedWhileSource`.
+  Any other selector taps nothing. -/
+  | tap (who : ObjectSelector)
   /-- Untap permanents, as `who` says.
   The announced permanent, while it is still a legal target, is `.untap`.
   An illegal target is reported. A stun counter is removed instead of
@@ -2050,8 +1980,9 @@ inductive TriggerResolution where
   The announced permanent while the source remains is
   `.untap .targetWhileSource`. A source that already left is silent.
   Each attacking creature is `.untap .attackingCreatures`.
-  Tap or untap is `.or [.tap .target, .untap]`. -/
-  | untap (who : TriggerUntapWho := .target)
+  Tap or untap is `.or [.tap .target, .untap]`.
+  Any other selector untaps nothing. -/
+  | untap (who : ObjectSelector := .target)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -2063,57 +1994,65 @@ inductive TriggerResolution where
   `.destroy .target (note := .forAmass)`. No target means no player amasses.
   The announced permanent is `.destroy .target`.
   The announced token, when this ability's target is a player, is
-  `.destroy .target (note := .chosenToken)`. -/
-  | destroy (what : TriggerDestroyWhat) (note : TriggerDestroyNote := .none)
+  `.destroy .target (note := .chosenToken)`.
+  The source is `.destroy .source`.
+  The enchanted creature is `.destroy .enchanted`.
+  The target, while the source remains, is `.destroy .targetWhileSource`.
+  Any other selector destroys nothing. -/
+  | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
-  /-- Amass `subtype` for `who`, as `amount` says. `n` is the count when
-  `amount` is `.fixed`. Attach the source when `attachSource` is true.
-  Goblins `n` is `.amass n`.
-  Orcs `n` is `.amass n "Orc"`.
-  Equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
-  Then attach this Equipment is `.amass n (attachSource := true)`.
-  Equal to the excess an earlier step noted is
-  `.amass 0 (amount := .notedExcess)`.
+  /-- Amass `subtype` for `who`, as `amount` says. Attach the source when
+  `attachSource` is true.
+  Goblins `n` is `.amass (.fixed n)`.
+  Orcs `n` is `.amass (.fixed n) "Orc"`.
+  Equal to this creature's power is `.amass .lastKnownPower`.
+  A missing power is zero.
+  Then attach this Equipment is `.amass (.fixed n) (attachSource := true)`.
+  Equal to the excess an earlier step noted is `.amass .notedExcess`.
+  Zero excess amasses nothing.
   The noted controller amasses that creature's power is
-  `.amass 0 (amount := .notedPower) (who := .notedController)`. -/
-  | amass (n : Nat) (subtype : String := "Goblin")
-      (amount : AmassAmount := .fixed) (attachSource : Bool := false)
-      (who : AmassWho := .you)
-  /-- Create tokens. `n` of `kind` is `.createTokens kind n tapped`.
-  `kind` and `n` are that token and that count when `token` is `.kind` and
-  `qty` is `.fixed`. A last-known count of Bird Soldiers also reads `kind`.
-  An Axe is `.createTokens .treasure 1 false .axe`.
+  `.amass .notedPower (who := .notedController)`.
+  No destruction amasses nothing.
+  Any other selector amasses nothing. -/
+  | amass (amount : NumberSelector) (subtype : String := "Goblin")
+      (attachSource : Bool := false) (who : PlayerSelector := .you)
+  /-- Create tokens. How many is `amount`. Who receives them is a
+  `PlayerSelector`. `token` says which token, and `note` says what a later
+  step can read.
+  `n` of `kind` is `.createTokens kind (.fixed n) tapped`.
+  An Axe is `.createTokens .treasure (.fixed 1) false .axe`.
   Attaching that Axe is
-  `.createTokens .treasure 1 false .axe (note := .attachReflexive)`.
+  `.createTokens .treasure (.fixed 1) false .axe (note := .attachReflexive)`.
   Tapped Treasures equal to opposing artifacts are
-  `.createTokens .treasure 0 true (qty := .oppArtifacts)`.
+  `.createTokens .treasure .oppArtifacts true`.
   A Treasure for each artifact the damaged player controls is
-  `.createTokens .treasure 0 false (qty := .damagedPlayerArtifacts)`.
+  `.createTokens .treasure .damagedPlayerArtifacts false`.
   Bird Soldiers equal to the last-known count are
-  `.createTokens .birdSoldier 0 false (qty := .lastKnown)`.
+  `.createTokens .birdSoldier .lastKnownPower false`.
   Treasures equal to that count are
-  `.createTokens .treasure 0 false (qty := .lastKnown)`.
+  `.createTokens .treasure .lastKnownPower false`.
   Treasures for each creature of a chosen type are
-  `.createTokens .treasure 0 false (qty := .chosenCreatureType)`.
-  Zabu is `.createTokens .treasure 1 false .zabu`.
+  `.createTokens .treasure .chosenCreatureType false`.
+  Zabu is `.createTokens .treasure (.fixed 1) false .zabu`.
   The announced opponent creates The Void with
-  `.createTokens .treasure 1 false .theVoid .targetOpponent`.
-  Redwing is `.createTokens .treasure 1 false .redwing`.
+  `.createTokens .treasure (.fixed 1) false .theVoid .targetOpponent`.
+  Redwing is `.createTokens .treasure (.fixed 1) false .redwing`.
   An Alien, remembering invasion counters, is
-  `.createTokens .treasure 1 false .alien (note := .invasion)`.
+  `.createTokens .treasure (.fixed 1) false .alien (note := .invasion)`.
   A Sturdy Shield, remembered for a later attach, is
-  `.createTokens .treasure 1 false .sturdyShield (note := .remember)`.
+  `.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember)`.
   The target's controller creates a Treasure with
-  `.createTokens .treasure 1 false (who := .targetController)`.
+  `.createTokens .treasure (.fixed 1) false (who := .targetController)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
-  this is `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`. -/
-  | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
-      (token : TriggerToken := .kind) (who : TriggerTokenWho := .you)
-      (qty : TriggerTokenQty := .fixed) (note : TriggerTokenNote := .none)
+  this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
+  Any other selector creates nothing. -/
+  | createTokens (kind : TokenKind) (amount : NumberSelector) (tapped : Bool)
+      (token : TriggerToken := .kind) (who : PlayerSelector := .you)
+      (note : TriggerTokenNote := .none)
   /-- Attach `what` to `host`.
   The source to the token created by the previous step is
-  `.attach .source .created`.
+  `.attach .source .createdToken`.
   The source to the targeted permanent is `.attach .source .target`.
   Target Equipment to up to one target creature you control is
   `.attach .target .optionalCreature`.
@@ -2121,19 +2060,30 @@ inductive TriggerResolution where
   Any number of Equipment you control to the target creature is
   `.attach .anyYouControl .target`.
   The token an earlier step remembered, attached to the source, is
-  `.attach .created .source`.
+  `.attach .createdToken .source`.
   The artifact put from hand, attached to the remembered creature, is
-  `.attach .putArtifact .notedHost`. -/
-  | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
-  /-- Add mana. `types` is the printed mana when `amount` is `.fixed`.
-  Adding those types is `.addMana types`.
+  `.attach .putArtifact .notedHost`.
+  Any other pair attaches nothing. -/
+  | attach (what host : ObjectSelector)
+  /-- Add mana, as `amount` says. `types` is the printed mana.
+  Adding those types once is `.addMana types`.
+  Adding them `n` times is `.addMana types (.fixed n)`.
+  Zero times adds nothing.
   {G} for each charge counter on the source is
-  `.addMana #[.colored .green] (amount := .perChargeCounter)`. -/
-  | addMana (types : Array ManaType) (amount : TriggerManaAmount := .fixed)
-  /-- Set the source's base P/T. -/
-  | becomePT (power toughness : Int)
-  /-- Look at the top `n` and reveal a listed type. -/
-  | lookAtTopRevealTypes (n : Nat) (types : Array String)
+  `.addMana #[.colored .green] .perChargeCounter`.
+  A source that has left uses its last-known charge counters.
+  Any other selector adds nothing. -/
+  | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
+  /-- Set the source's base power and toughness, as the selectors say.
+  `.fixed` is that number. Both printed numbers are `.fixed`.
+  Base power `p` and toughness `t` is `.becomePT (.fixed p) (.fixed t)`.
+  Any other selector changes nothing. -/
+  | becomePT (power toughness : NumberSelector)
+  /-- Look at the top cards, as `n` says, and you may reveal a listed type.
+  `.fixed` is that many cards.
+  The top `n` is `.lookAtTopRevealTypes (.fixed n) types`.
+  Any other amount looks at nothing. -/
+  | lookAtTopRevealTypes (n : NumberSelector) (types : Array String)
   /-- Gain control of the announced permanents, as `how` says.
   Until end of turn, then untap and haste, is `.gainControl .untilEndOfTurn`.
   While the source remains is `.gainControl .whileSourceRemains`.
@@ -2166,7 +2116,7 @@ inductive TriggerResolution where
   `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`. A source that has left uses
   its last-known power. Power below 4 is reported.
   Draining for the Equipment attached to the source is
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`.
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
   No Equipment is reported.
   Discarding `n` cards when mana was spent to cast the triggering spell is
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
@@ -2174,7 +2124,7 @@ inductive TriggerResolution where
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
   two otherwise, is
-  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`.
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`.
   Two +1/+1 counters when the target is another Hero, and one otherwise, is
   `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
@@ -2189,11 +2139,11 @@ inductive TriggerResolution where
   Tap an opposing creature or untap one you control is
   `.or [.tap .target, .untap]`.
   A +1/+1 counter on a Wolf you control, or a Treasure token, is
-  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`.
+  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`.
   Tap or untap the targeted nonland is
   `.or [.tap .target, .untap]`.
   A Food token or a Treasure token is
-  `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`.
+  `.or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]`.
   +1/+1 counters on the creature targets, or returning an artifact or
   enchantment card from the graveyard, is
   `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]`. -/
@@ -2245,7 +2195,7 @@ inductive TriggerResolution where
   power assign combat damage equal to their toughness with
   `.grant .assignCombatDamageEqualToughness .creaturesYouControl`.
   You may pay 2 life to do so with
-  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  `.may (.loseLife (.fixed 2)) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
   Unable to pay is reported. Declining pays nothing. Power is unchanged.
   Until end of turn, the source's base power equals the cards in hand with
   `.grant .basePowerEqualHand .source`. Drawing first is
@@ -2256,8 +2206,8 @@ inductive TriggerResolution where
   Flying on each creature the causing spell targets is
   `.grant (.keywords Keyword.flying) .spellTargets`. A noncreature target
   is skipped. No recorded spell grants nothing.
-  Any other combination does nothing. -/
-  | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
+  Any other selector does nothing. -/
+  | grant (what : TriggerGrantWhat) (who : ObjectSelector)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
   resolve `thenDo` for the cards that were found.
   The top `n` cards of your library, a random creature from among them
@@ -2288,38 +2238,49 @@ inductive TriggerResolution where
   paying its mana cost. The rest go on the bottom in a random order. That is
   `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
   An empty library is reported. No attacker limits the mana value to zero.
-  Any other combination does nothing. -/
+  Whose library is a `PlayerSelector`.
+  Any other selector does nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
-      (who : TriggerLibraryWho := .you)
-  /-- Mill cards (CR 701.13). `n` is how many when `amount` is `.fixed`.
-  `who` says who mills, and `note` says what a later step can read.
+      (who : PlayerSelector := .you)
+  /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
+  later step can read.
   Milling zero cards changes nothing. A library that runs out logs that
   it is empty and mills nothing further.
-  The controller mills `n` with `.mill n`.
-  The announced player mills `n` with `.mill n .target`.
+  The controller mills `n` with `.mill (.fixed n)`.
+  The announced player mills `n` with `.mill (.fixed n) .target`.
+  An illegal target mills nothing.
   The player who lost life mills that many with
-  `.mill 0 .thatPlayer .thatManyLost`.
+  `.mill .thatManyLost .thatPlayer`.
+  The count is the trigger's last-known power. That player's seat is the
+  trigger's last-known toughness. A missing count or seat mills nothing.
   The controller mills `n` and remembers those cards with
-  `.mill n (note := .milledCards)`.
+  `.mill (.fixed n) (note := .milledCards)`.
   Each opponent mills `n`, and a later step sees whether any card was
-  milled, with `.mill n .eachOpponent (note := .opponentsMilled)`.
-  Any other combination mills nothing. -/
-  | mill (n : Nat) (who : TriggerMillWho := .you)
-      (amount : TriggerMillAmount := .fixed)
+  milled, with `.mill (.fixed n) .eachOpponent (note := .opponentsMilled)`.
+  Any other selector mills nothing. -/
+  | mill (amount : NumberSelector) (who : PlayerSelector := .you)
       (note : TriggerMillNote := .none)
   /-- Create two nonlegendary token copies of the source. -/
   | copySelfNonlegendary
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Spells of `which` cost `{n}` less this turn.
-  A card type is `.spellsCostLess (.cardType ty) n`.
-  A supertype is `.spellsCostLess (.supertype s) n`. -/
-  | spellsCostLess (which : SpellCostLess) (n : Nat)
+  /-- Spells of `which` cost less this turn, as `n` says.
+  `.fixed` is that much generic mana.
+  A card type is `.spellsCostLess (.cardType ty) (.fixed n)`.
+  A supertype is `.spellsCostLess (.supertype s) (.fixed n)`.
+  Any other amount changes nothing. -/
+  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Investigate (create a Clue). -/
   | investigate
-  /-- Connive (CR 701.48). The source is `.connive`. A target is
-  `.connive (.target kind)`. -/
-  | connive (who : ConniveSubject := .source)
+  /-- Connive (CR 701.48). `who` says which creature.
+  The source is `.connive`.
+  The announced creature is `.connive .target`. The kind of that target is
+  chosen when the ability is put on the stack.
+  The Villain that caused this is `.connive .enteringVillain`.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported.
+  Any other selector connives nothing. -/
+  | connive (who : ObjectSelector := .source)
   /-- A creature fights, or deals damage equal to its power. `who` says
   which creature, and `how` says which.
   The source fights up to one other target creature with `.fight`.
@@ -2328,8 +2289,9 @@ inductive TriggerResolution where
   The creature that received Equipment deals damage equal to its power
   to up to one target creature with `.fight .equipmentHost .reflexive`.
   That target is chosen when the reflexive ability is put on the stack.
-  Nothing is queued when no creature received Equipment. -/
-  | fight (who : TriggerFightWho := .source) (how : TriggerFightHow := .mutual)
+  Nothing is queued when no creature received Equipment.
+  Any other selector fights nothing. -/
+  | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
   /-- A player reveals cards from their hand (CR 701.16), as `count` says,
   then resolves `thenDo`.
   The opponent reveals their hand. You may exile a nonland card from it, or
@@ -2342,10 +2304,14 @@ inductive TriggerResolution where
   A smaller hand is revealed in full.
   Any other combination does nothing. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
-  /-- Surveil `n` (CR 701.25). -/
-  | surveil (n : Nat)
-  /-- Empower Jace `n` (Reality Fracture). -/
-  | empowerJace (n : Nat)
+  /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
+  Surveil 2 is `.surveil (.fixed 2)`. Any other amount surveils nothing. -/
+  | surveil (n : NumberSelector)
+  /-- Empower Jace, as `n` says (Reality Fracture).
+  `.fixed` is that many loyalty counters.
+  Empower Jace `n` is `.empowerJace (.fixed n)`.
+  Any other amount empowers nothing. -/
+  | empowerJace (n : NumberSelector)
   /-- The source becomes prepared.
   If it isn't prepared is `.prepareSource`.
   If three or more creatures died this turn is
@@ -2357,21 +2323,20 @@ inductive TriggerResolution where
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
-  the amount when `amount` is `.fixed`. Losing 0 life does nothing.
-  You lose `n` life is `.loseLife n`.
+  /-- A player loses life (CR 118.3a), as `amount` and `who` say.
+  Losing 0 life does nothing.
+  You lose `n` life is `.loseLife (.fixed n)`.
   The announced opponent loses `n` life is
-  `.loseLife n (who := .targetOpponent)`.
-  Each opponent loses `n` life is `.loseLife n (who := .eachOpponent)`.
+  `.loseLife (.fixed n) .targetOpponent`.
+  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
   You lose 1 life for each burden counter on the source is
-  `.loseLife 0 (amount := .perBurden)`.
+  `.loseLife .perBurden`.
   A missing source loses nothing.
   Each opponent loses life equal to the Equipment attached to the source with
-  `.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment)`.
+  `.loseLife .attachedEquipment .eachOpponent`.
   A source that has left uses its last-known power. Zero loses nothing.
-  Any other combination does nothing. -/
-  | loseLife (n : Nat) (who : TriggerLifeLossWho := .you)
-      (amount : TriggerLifeLossAmount := .fixed)
+  Any other selector loses nothing. -/
+  | loseLife (amount : NumberSelector) (who : PlayerSelector := .you)
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- You win the game. -/
@@ -2395,8 +2360,9 @@ inductive TriggerResolution where
   `.becomeCopy .cause`. An announced permanent is used when one was chosen;
   otherwise the recorded cause. The source need not still be on the
   battlefield. A noncreature token becomes a 2/2 Robot Villain after it
-  enters. -/
-  | becomeCopy (of : TriggerCopyOf)
+  enters. A subtype on `.cause` copies nothing.
+  Any other selector copies nothing. -/
+  | becomeCopy (of : ObjectSelector)
   /-- Choose new targets for the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
   the stack that targets the source. A spell that has left changes nothing.
@@ -2495,7 +2461,7 @@ def allianceModes : List TriggerResolution :=
 gain 2 life. Draw a card. -/
 def gollumModes : List TriggerResolution :=
   [.putCounters (.ofKind .plusOnePlusOne) .source,
-   .sequence [.loseLife 2 (who := .eachOpponent), .gainLife (.fixed 2)],
+   .sequence [.loseLife (.fixed 2) .eachOpponent, .gainLife (.fixed 2)],
    .draw (.fixed 1)]
 
 /-- Draw a card, then discard a card. Each opponent loses 2 life.
@@ -2503,7 +2469,7 @@ Destroy the announced token. Each player sacrifices the announced creature,
 which is already gone when an earlier mode destroyed it. -/
 def upToXModes : List TriggerResolution :=
   [.sequence [.draw (.fixed 1), .discard (.cards 1)],
-   .loseLife 2 (who := .eachOpponent),
+   .loseLife (.fixed 2) .eachOpponent,
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayersCreature]
 
@@ -2553,19 +2519,19 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
   | .pump p t => .pump (.fixed p) (.fixed t) (affectedWho who)
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (grantWho who)]
-  | .destroy => .destroy (destroyWhat who)
+    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (affectedWho who)]
+  | .destroy => .destroy (affectedWho who)
   | .dealDamage n => .dealDamage (.fixed n) (affectedWho who)
-  | .grantKeywords k => .grant (.keywords k) (grantWho who)
+  | .grantKeywords k => .grant (.keywords k) (affectedWho who)
   | .tap => .tap (tapWho who)
-  | .untap => .untap (untapWho who)
+  | .untap => .untap (affectedWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
-  | .cantBeBlocked => .cant (.beBlocked who)
+  | .cantBeBlocked => .cant (.beBlocked (affectedWho who))
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (grantWho who)]
+    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (affectedWho who)]
   | .becomePrepared => .becomePrepared (affectedWho who)
   | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
   | .tapAndStun =>
@@ -2585,25 +2551,10 @@ where
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  grantWho : TriggerAffected → TriggerGrantWho
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  tapWho : TriggerAffected → TriggerTapWho
+  tapWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchantedWhileSource
-    | .targetWhileSource => .targetWhileSource
-  untapWho : TriggerAffected → TriggerUntapWho
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  destroyWhat : TriggerAffected → TriggerDestroyWhat
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   loseWho : TriggerAffected → ObjectSelector
     | .target => .target
@@ -2630,18 +2581,18 @@ def ofSpell : SpellResolution → TriggerResolution
   | .scry n => .scry (.fixed n)
   | .draw n .you => .draw (.fixed n)
   | .discard n => .discard (.cards n)
-  | .loseLife n .you => .loseLife n
-  | .loseLife n .eachOpponent => .loseLife n (who := .eachOpponent)
+  | .loseLife n .you => .loseLife (.fixed n)
+  | .loseLife n .eachOpponent => .loseLife (.fixed n) .eachOpponent
   | .gainLife n .you => .gainLife (.fixed n)
-  | .amass n subtype => .amass n subtype
+  | .amass n subtype => .amass (.fixed n) subtype
   | .recruit => .recruit
-  | .surveil n => .surveil n
+  | .surveil n => .surveil (.fixed n)
   | .onPermanent a => ofPermanent a
   | .creaturesPump p t .youControl => .pump (.fixed p) (.fixed t) .creaturesYouControl
   | .teamGain k => .grant (.keywords k) .creaturesYouControl
-  | .createTokens kind n .you .fixed => .createTokens kind n false
+  | .createTokens kind n .you .fixed => .createTokens kind (.fixed n) false
   | .createTokens kind _ .you (.perSubtype subtype) =>
-    .createTokens kind 0 false (qty := .perSubtype subtype)
+    .createTokens kind (.perSubtype subtype) false
   | .plusOneOnEachYouControl n .each =>
     .putCounters (.ofKind .plusOnePlusOne n) .youControl
   | .plusOneOnEachYouControl n .eachOther =>
@@ -2651,14 +2602,14 @@ def ofSpell : SpellResolution → TriggerResolution
   | .destroyUpToOneNonland => .destroy .target
   | .mutualFight .upToOne => .fight .announced .upToOneOther
   | .mutualFight .both => .fight .announced .mutual
-  | .createGalactus => .createTokens .treasure 1 false .galactus
+  | .createGalactus => .createTokens .treasure (.fixed 1) false .galactus
   | .nextFreeRGCreature =>
     .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
   | .mayDrawPerArtifactOppsDraw ty =>
     .may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
   | .mayPutHeroMvOrDraw n subtype =>
     .may (.put (.creatureFromHand subtype n)) (.draw (.fixed 1))
-  | .spellsCostLessThisTurn which n => .spellsCostLess which n
+  | .spellsCostLessThisTurn which n => .spellsCostLess which (.fixed n)
   | _ => .sequence []
 
 end TriggerResolution
@@ -2723,10 +2674,10 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { targeting := .of .opponent
       resolution := .discard .chosenNonland }
   | .amass n =>
-    { resolution := .amass n }
+    { resolution := .amass (.fixed n) }
   | .opponentLosesYouGain n =>
     { targeting := .of .opponent
-      resolution := .sequence [.loseLife n (who := .targetOpponent), .gainLife (.fixed n)] }
+      resolution := .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed n)] }
   | .grantHexproofWhileRemains =>
     { targeting := .of .creatureYouControl
       resolution := .grant .hexproofWhileSource .target }
@@ -2748,10 +2699,10 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
       resolution := .exile .target .nextEndStep }
   | .treasureThenDragonIfFour =>
     { resolution := .sequence [
-        .createTokens .treasure 1 false,
+        .createTokens .treasure (.fixed 1) false,
         .«if» (.controlsAtLeast "Treasure" 4)
           (.sacrifice (.sacrificedSource .isSacrificed) .noted),
-        .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] }
+        .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] }
   | .recruit =>
     { resolution := .recruit }
   | .returnCreatureFromGyMvAtMost n =>
@@ -2888,9 +2839,15 @@ namespace SharedTrigger
 def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .scry n => { resolution := .scry (.fixed n) }
   | .draw n => { resolution := .draw (.fixed n) }
-  | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
+  | .createTokens kind n tapped => { resolution := .createTokens kind (.fixed n) tapped }
   | .amass n subtype amount attachSource =>
-    { resolution := .amass n subtype amount attachSource }
+    let resolved : TriggeredAbility.NumberSelector :=
+      match amount with
+      | .fixed => .fixed n
+      | .sourcePower => .lastKnownPower
+      | .notedExcess => .notedExcess
+      | .notedPower => .notedPower
+    { resolution := .amass resolved subtype attachSource }
   | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
@@ -2898,9 +2855,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gainLife n => { resolution := .gainLife (.fixed n) }
   | .connive who =>
     match who with
-    | .source => { resolution := .connive who }
-    | .target kind => { targeting := .of kind, resolution := .connive who }
-    | .enteringVillain => { resolution := .connive who }
+    | .source => { resolution := .connive .source }
+    | .target kind => { targeting := .of kind, resolution := .connive .target }
+    | .enteringVillain => { resolution := .connive .enteringVillain }
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
@@ -2939,7 +2896,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     | .target =>
       { targeting := .of .opponent, resolution := .discard (.cards n .targetOpponent) }
   | .millPlayer n =>
-    { targeting := .of .player, resolution := .mill n .target }
+    { targeting := .of .player, resolution := .mill (.fixed n) .target }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
   | .searchLibrary => { resolution := .searchLibrary (.put .forest) }
@@ -2959,7 +2916,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
          .gainLife .perOtherCreature] }
-  | .becomePT p t => { resolution := .becomePT p t }
+  | .becomePT p t => { resolution := .becomePT (.fixed p) (.fixed t) }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
@@ -2971,13 +2928,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageBlockers n => { resolution := .dealDamage (.fixed n) .blockers }
   | .returnLinkedExile => { resolution := .put .linkedExile }
   | .createThenAttach kind =>
-    { resolution := .sequence [.createTokens kind 1 false, .attach .source .created] }
+    { resolution := .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] }
   | .gainLifeSearchBasicOnTop n =>
     { resolution := .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)] }
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach =>
     { resolution :=
-        .createTokens .treasure 1 false .axe
+        .createTokens .treasure (.fixed 1) false .axe
           (note := if attach then .attachReflexive else .none) }
   | .tapOppOrUntapYours =>
     { resolution := .or [.tap .target, .untap] }
@@ -2987,7 +2944,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .may
         (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
   | .targetOpponentLosesLife n =>
-    { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
+    { targeting := .of .opponent, resolution := .loseLife (.fixed n) .targetOpponent }
   | .drawXDiscard n =>
     { resolution := .sequence
         [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards n))] }
@@ -3045,9 +3002,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.returnToHand .permanent .returnedPermanent,
          .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
-    { resolution := .lookAtTopRevealTypes n types }
+    { resolution := .lookAtTopRevealTypes (.fixed n) types }
   | .createTappedTreasuresEqualOppArtifacts =>
-    { resolution := .createTokens .treasure 0 true (qty := .oppArtifacts) }
+    { resolution := .createTokens .treasure .oppArtifacts true }
   | .putNonlandMvAtMostFromGy mv =>
     { targeting := .of (.filtered
         { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
@@ -3060,14 +3017,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .wolfPlusOneOrTreasure =>
     { resolution := .or
         [.putCounters (.ofKind .plusOnePlusOne) .permanent,
-         .createTokens .treasure 1 false] }
+         .createTokens .treasure (.fixed 1) false] }
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
         [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
-        [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
+        [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
@@ -3080,7 +3037,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mountainQuestDragon =>
     { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» (.questAtLeast 6) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
   | .treasuresPerChosenType =>
-    { resolution := .createTokens .treasure 0 false (qty := .chosenCreatureType) }
+    { resolution := .createTokens .treasure .chosenCreatureType false }
   | .revealUntilCreature =>
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
@@ -3091,26 +3048,26 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)] }
   | .millThatManyLost =>
-    { resolution := .mill 0 .thatPlayer .thatManyLost }
+    { resolution := .mill .thatManyLost .thatPlayer }
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
   | .maySacDrawTreasure =>
     { resolution := .may (.pay .anotherCreatureOrArtifact)
-        (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo }
+        (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo }
   | .castInstantSorceryFromHand =>
     { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
   | .castInstantSorceryMvAtMost =>
     { resolution := .mayCast .hand .lastKnown .withoutPaying }
   | .millThenCopy =>
     { resolution := .sequence
-        [.mill 2 .eachOpponent (note := .opponentsMilled),
+        [.mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
          .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .pump .equalSourcePower (.fixed 0) .target }
   | .createAlienPerInvasion =>
     { resolution := .sequence
-        [.createTokens .treasure 1 false .alien (note := .invasion),
+        [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
          .putCounters .plusOneNoted .createdToken,
          .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
@@ -3129,21 +3086,21 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature,
       resolution := .sequence
         [.dealDamage .lastKnownPower .permanent .excess,
-         .amass 0 (amount := .notedExcess)] }
+         .amass .notedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
-        [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
+        [.createTokens .spirit (.fixed 2) true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     { resolution :=
-        .createTokens .treasure 0 false (qty := .damagedPlayerArtifacts) }
+        .createTokens .treasure .damagedPlayerArtifacts false }
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"] }
+        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
-    { resolution := .createTokens .birdSoldier 0 false (qty := .lastKnown) }
+    { resolution := .createTokens .birdSoldier .lastKnownPower false }
   | .allianceMode =>
     { resolution := .chooseModes TriggeredAbility.TriggerResolution.allianceModes
         .oneUnusedThisTurn }
@@ -3151,7 +3108,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
         [.destroy .target (note := .forAmass),
-         .amass 0 (amount := .notedPower) (who := .notedController),
+         .amass .notedPower (who := .notedController),
          .«if» .youControlledDestroyed (.draw (.fixed 1))] }
   | .gollumMode =>
     { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes
@@ -3206,10 +3163,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
          .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])] }
   | .treasuresEqualLastKnown =>
-    { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
+    { resolution := .createTokens .treasure .lastKnownPower false }
   | .protectionEverything =>
     { resolution := .grant .protectionEverything .youIfCast }
-  | .loseLifePerBurden => { resolution := .loseLife 0 (amount := .perBurden) }
+  | .loseLifePerBurden => { resolution := .loseLife .perBurden }
   | .revealSaga =>
     { resolution := .revealLibrary .untilSaga (.put .revealed) }
   | .sacDamagersRingTempts =>
@@ -3228,16 +3185,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] }
   | .createVillainAndPlan =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] }
+        [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace (.fixed 1) false] }
   | .drainAndPlan n =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife (.fixed n)] }
+        [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n)] }
   | .drawLoseLifeAndPlan =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1] }
+        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] }
   | .treasureTappedAndPlan =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .createTokens .treasure 1 true] }
+        [.putCounters (.ofKind .plan) .source, .createTokens .treasure (.fixed 1) true] }
   | .plusOneOnTargetAndPlan =>
     { targeting := .of .creatureYouControl,
       resolution := .sequence
@@ -3260,7 +3217,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] }
   | .planFinishCreateRobots n =>
     { resolution := .sequence
-        [.sacrifice .plan, .createTokens .robotVillain22 n false] }
+        [.sacrifice .plan, .createTokens .robotVillain22 (.fixed n) false] }
   | .planFinishDividedDamage n =>
     { resolution := .sequence
         [.sacrifice .plan .forReflexive,
@@ -3269,8 +3226,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
-  | .surveil n => { resolution := .surveil n }
-  | .empowerJace n => { resolution := .empowerJace n }
+  | .surveil n => { resolution := .surveil (.fixed n) }
+  | .empowerJace n => { resolution := .empowerJace (.fixed n) }
   | .prepareSource .ifNotPrepared =>
     { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
   | .prepareSource .ifThreeCreaturesDied =>
@@ -3289,7 +3246,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppPermanent,
       resolution := .«if» (.landsAtLeast 6) (.sequence [
         .destroy .target,
-        .createTokens .treasure 1 false (who := .targetController)]) }
+        .createTokens .treasure (.fixed 1) false (who := .targetController)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse .scriedOrSurveilledThisTurn
@@ -3307,13 +3264,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .putCounters (.ofKind .charge) .source }
   | .addGreenPerChargeCounter =>
     { events := #[.yourFirstMain],
-      resolution := .addMana #[.colored .green] (amount := .perChargeCounter) }
+      resolution := .addMana #[.colored .green] .perChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
         [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
-      resolution := .sequence [.armSurveilReturnLifeGained, .surveil 1] }
+      resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
       resolution := .«if» (.otherForestsAtLeast 5) (.pump (.fixed 3) (.fixed 3) .target) }
@@ -3336,10 +3293,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .or [.tap .target, .untap] }
   | .createFoodOrTreasure =>
     { resolution := .or
-        [.createTokens .food 1 false, .createTokens .treasure 1 false] }
+        [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] }
   | .villainIfGyElseMill =>
     { resolution := .ifElse (.creatureCardsInGraveyardAtLeast 2)
-        (.createTokens .villain21menace 1 true) (.mill 2) }
+        (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) }
   | .drawMayPutLandTapped =>
     { resolution := .sequence
         [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }
@@ -3364,15 +3321,15 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
       resolution := .returnToHand .permanent .returnedPermanent }
   | .enter .createZabu =>
-    { events := #[.entering], resolution := .createTokens .treasure 1 false .zabu }
+    { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .zabu }
   | .enter .oppCreatesTheVoid =>
     { events := #[.entering], targeting := .of .opponent,
-      resolution := .createTokens .treasure 1 false .theVoid .targetOpponent }
+      resolution := .createTokens .treasure (.fixed 1) false .theVoid .targetOpponent }
   | .enter .createSturdyShieldAttach =>
     { events := #[.entering],
       resolution := .sequence
-        [.createTokens .treasure 1 false .sturdyShield (note := .remember),
-         .attach .created .source] }
+        [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+         .attach .createdToken .source] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
       resolution := .sequence
@@ -3414,7 +3371,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .revealFromHand .onePlusCreatureCards
         (.discard (.cards 1 .targetOpponent)) }
   | .enter .createRedwing =>
-    { events := #[.entering], resolution := .createTokens .treasure 1 false .redwing }
+    { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .redwing }
   | .step .enchantedControllerDraws =>
     { events := #[.enchantedControllerUpkeep]
       resolution := .draw (.fixed 1) (who := .enchantedController) }
@@ -3478,7 +3435,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .thisAttack .equippedDrain =>
     { events := #[.attacking]
       resolution := .«if» .attachedEquipment (.sequence [
-        .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+        .loseLife .attachedEquipment .eachOpponent,
         .gainLife .attachedEquipment]) }
   | .thisAttack .drawIfPower4 =>
     { events := #[.attacking]
@@ -3493,7 +3450,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters .missingKeywordsFromTarget .source }
   | .enterOrAttack .createSquirrel =>
     { events := #[.entering, .attacking],
-      resolution := .createTokens .squirrel11green 1 false }
+      resolution := .createTokens .squirrel11green (.fixed 1) false }
   | .watch .combatDamageExileUntilNonland =>
     { events := #[.dealsCombatDamageToPlayer],
       resolution := .revealLibrary .untilNonland
@@ -3502,7 +3459,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .announced }
   | .watch .attacksAloneDrain =>
     { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
-      resolution := .sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)] }
+      resolution := .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)] }
   | .watch .attacksAloneFirstStrikeMenace =>
     { events := #[.creatureYouControlAttacksAlone],
       resolution := .grant
@@ -3549,7 +3506,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .nontokenHeroModal =>
     { events := #[.anotherNontokenHeroEnters],
       resolution := .chooseModes
-        [.createTokens .soldier11white 1 false,
+        [.createTokens .soldier11white (.fixed 1) false,
          .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
         .fromLastKnown }
   | .watch .ultronCopy =>
@@ -3592,7 +3549,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
     { events := #[.youAttack],
-      resolution := .may (.loseLife 2)
+      resolution := .may (.loseLife (.fixed 2))
         (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo }
   | .youAttacking .exileTopHeroPump =>
     { events := #[.youAttack],
@@ -3603,10 +3560,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.mayCast .looked .greatestAttackingPower .withoutPaying) }
   | .casting .villainToken =>
     { events := #[.youCastVillain],
-      resolution := .createTokens .villain21menace 1 false }
+      resolution := .createTokens .villain21menace (.fixed 1) false }
   | .casting .merfolkFromBlue =>
     { events := #[.youCastNoncreature],
-      resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
+      resolution := .createTokens .treasure .blueManaSymbols false .merfolk }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
       resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo }
@@ -3665,20 +3622,20 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
   | .resource .secondDrawDrain =>
     { events := #[.youDrawSecondCard],
-      resolution := .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)] }
+      resolution := .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)] }
   | .resource .gainLifePlusOnes =>
     { events := #[.youGainLife], targeting := .of .creatureYouControl,
       allowsZeroTargets := true,
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown }
   | .resource .plusOneCreateInsectOnce =>
     { events := #[.youPutPlusOne], onceEachTurn := true,
-      resolution := .createTokens .insect11green 1 false }
+      resolution := .createTokens .insect11green (.fixed 1) false }
   | .resource .plusOneOnThisOnce =>
     { events := #[.youPutPlusOne], onceEachTurn := true,
       resolution := .putCounters (.ofKind .plusOnePlusOne) .source }
   | .resource .plusOneOnHeroesCreateWall =>
     { events := #[.youPutPlusOne],
-      resolution := .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo }
+      resolution := .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo }
 
 end SharedTrigger
 
@@ -3697,7 +3654,7 @@ end SharedTrigger
   .exile .target .returnTapped
 #guard (SharedTrigger.timing (.thisAttack .equippedDrain)).resolution ==
   .«if» .attachedEquipment (.sequence [
-    .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+    .loseLife .attachedEquipment .eachOpponent,
     .gainLife .attachedEquipment])
 #guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
   .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))
@@ -3708,7 +3665,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).resolution ==
   .putCounters .missingKeywordsFromTarget .source
 #guard (SharedTrigger.timing (.enterOrAttack .createSquirrel)).resolution ==
-  .createTokens .squirrel11green 1 false
+  .createTokens .squirrel11green (.fixed 1) false
 #guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
 #guard (SharedTrigger.timing (.watch .combatDamageExileUntilNonland)).resolution ==
   .revealLibrary .untilNonland
@@ -3806,14 +3763,14 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (SharedTrigger.timing (.resource .secondDrawDrain)).resolution ==
-  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]
 #guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
 #guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).resolution ==
-  .createTokens .insect11green 1 false
+  .createTokens .insect11green (.fixed 1) false
 #guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard (SharedTrigger.timing (.resource .plusOneOnHeroesCreateWall)).resolution ==
-  .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo
+  .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
 
 end Mtg.Engine

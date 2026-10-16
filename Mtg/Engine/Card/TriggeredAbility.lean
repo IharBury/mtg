@@ -758,10 +758,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it loses all abilities for as long as this remains on the battlefield"
   | .lose _ _ =>
     "lose"
-  | .cant (.beBlocked who) =>
-    s!"{affectedNoun who noun} can't be blocked this turn"
-  | .cant (.beBlockedExceptByHaste who) =>
-    s!"{affectedNoun who noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlocked .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn"
+  | .cant (.beBlocked .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn"
+  | .cant (.beBlocked .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn"
+  | .cant (.beBlocked .targetWhileSource) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn"
+  | .cant (.beBlockedExceptByHaste .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .targetWhileSource) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn except by creatures with haste"
   | .cant (.untapWhileYouControl .target) =>
     "that creature can't become untapped for as long as you control this creature"
   | .cant _ =>
@@ -816,8 +828,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a card from your hand on the bottom of your library"
   | .putOnLibrary _ _ =>
     "put on library"
-  | .surveil n => s!"surveil {n}"
-  | .empowerJace n => s!"empower Jace {n}"
+  | .surveil (.fixed n) => s!"surveil {n}"
+  | .surveil _ => "surveil"
+  | .empowerJace (.fixed n) => s!"empower Jace {n}"
+  | .empowerJace _ => "empower Jace"
   | .prepareSource .ifNotPrepared =>
     "if this creature isn't prepared, it becomes prepared"
   | .prepareSource .ifThreeCreaturesDied =>
@@ -877,7 +891,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
   | .«if» (.landsAtLeast 6) (.sequence [.destroy .target,
-      .createTokens .treasure 1 false .kind .targetController]) =>
+      .createTokens .treasure (.fixed 1) false .kind .targetController]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse .scriedOrSurveilledThisTurn
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
@@ -997,11 +1011,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       if times > 1 then s!"you may pay \{{n}} up to {times} times"
       else s!"you may pay \{{n}}"
     | _ => "you may pay that cost"
-  | .may (.pay (.mana symbols)) (.becomeCopy .cause) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.becomeCopy (.cause none)) .ifYouDo =>
     match symbols.toList with
     | [.generic 2] => "you may pay {2} to copy it"
     | _ => "you may pay to copy it"
-  | .may (.loseLife 2 .you .fixed)
+  | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
@@ -1058,7 +1072,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | .sequence [.createTokens kind 1 false, .attach .source .created] =>
+  | .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
@@ -1082,21 +1096,21 @@ def resolutionPhrase (t : TriggerTiming) : String :=
        .«if» (.nthResolve 2) (.draw (.fixed 1)),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass _ _ .notedExcess _ _] =>
+  | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
+  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc" .fixed false _] =>
+  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
+  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
   | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
-  | .sequence [.mill n .you .fixed .milledCards, .returnToHand (.milledSubtype subtype)] =>
+  | .sequence [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
   | .sequence [.tap .enchanted, .removeCounters .all .enchanted] =>
     "tap enchanted creature and remove all counters from it"
@@ -1120,7 +1134,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
   | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
-  | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
+  | .sequence [.mill (.fixed 2) .eachOpponent .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
   | .sequence [.sacrifice .combatDamager, .ringTempts] =>
@@ -1129,13 +1143,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"scry {n} and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] =>
     "draw a card, then discard a card and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace (.fixed 1) false] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife n .eachOpponent, .gainLife (.fixed m)] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed m)] =>
     s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] =>
     "you draw a card, lose 1 life, and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .treasure 1 true] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .treasure (.fixed 1) true] =>
     "create a tapped Treasure token and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source,
       .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] =>
@@ -1151,8 +1165,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
-  | .sequence [.sacrifice .plan, .createTokens .robotVillain22 n false] =>
-    s!"sacrifice it and create {englishNumber n} 2/2 colorless Robot Villain artifact creature tokens"
+  | .sequence [.sacrifice .plan, .createTokens .robotVillain22 (.fixed n) false] =>
+    s!"sacrifice it and create {englishNumber n.toNat} 2/2 colorless Robot Villain artifact creature tokens"
   | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] =>
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
@@ -1169,12 +1183,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
   | .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife (.fixed 2))] =>
     "draw a card. If you control another Hero, you gain 2 life"
-  | .sequence [.createTokens .treasure 1 false .alien .you .fixed .invasion,
+  | .sequence [.createTokens .treasure (.fixed 1) false .alien .you .invasion,
       .putCounters .plusOneNoted .createdToken,
       .putCounters (.ofKind .invasion) .source] =>
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
-  | .sequence [.createTokens .treasure 1 false .sturdyShield .you .fixed .remember,
-      .attach .created .source] =>
+  | .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield .you .remember,
+      .attach .createdToken .source] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
@@ -1188,7 +1202,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
-  | .sequence [.armSurveilReturnLifeGained, .surveil 1] =>
+  | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
@@ -1205,11 +1219,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
     s!"tap {noun} and put a stun counter on it"
   | .sequence [.destroy .target,
-      .createTokens .treasure 1 false .kind .targetController] =>
+      .createTokens .treasure (.fixed 1) false .kind .targetController] =>
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
-  | .sequence [.loseLife n .targetOpponent .fixed, .gainLife (.fixed m)] =>
+  | .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
   | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
       .grant (.keywords k) (.youControlSubtype "Elf")] =>
@@ -1220,9 +1234,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
       .gainLife (.fixed life)] =>
     s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
-  | .sequence [.createTokens .treasure 1 false,
+  | .sequence [.createTokens .treasure (.fixed 1) false,
       .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
-      .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)] =>
+      .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] =>
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source] =>
     "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
@@ -1355,18 +1369,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .recruit .you =>
     "you recruit"
-  | .amass _ subtype .sourcePower _ _ =>
+  | .amass .lastKnownPower subtype _ _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
-  | .amass _ subtype .notedExcess _ _ =>
+  | .amass .notedExcess subtype _ _ =>
     s!"amass {pluralizeName subtype} X, where X is the excess damage"
-  | .amass _ subtype .notedPower _ .notedController =>
+  | .amass .notedPower subtype _ .notedController =>
     s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
-  | .amass n subtype _ true _ =>
+  | .amass (.fixed n) subtype true _ =>
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-  | .amass n subtype _ _ _ =>
+  | .amass (.fixed n) subtype _ _ =>
     s!"amass {pluralizeName subtype} {n}"
-  | .createTokens kind n tapped token who qty note =>
-    match token, who, qty, note with
+  | .amass _ _ _ _ =>
+    "amass"
+  | .createTokens kind amount tapped token who note =>
+    match token, who, amount, note with
     | .axe, _, _, .attachReflexive =>
       "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
     | .axe, _, _, _ =>
@@ -1375,7 +1391,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
     | .kind, .you, .damagedPlayerArtifacts, _ =>
       "you create a Treasure token for each artifact that player controls"
-    | .kind, .you, .lastKnown, _ =>
+    | .kind, .you, .lastKnownPower, _ =>
       if kind == .birdSoldier then
         "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
       else
@@ -1396,15 +1412,17 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
     | .sturdyShield, _, _, _ =>
       "create a colorless Equipment artifact token named Sturdy Shield"
-    | .merfolk, _, _, _ =>
+    | .merfolk, _, .blueManaSymbols, _ =>
       "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
     | .kind, .targetController, _, _ =>
       "they create a Treasure token"
+    | .kind, .you, .fixed n, _ =>
+      TokenKind.createPhrase kind n.toNat (tapped := tapped)
     | _, _, _, _ =>
-      TokenKind.createPhrase kind n (tapped := tapped)
+      "create a token"
   | .attach what host =>
     match what, host with
-    | .source, .created =>
+    | .source, .createdToken =>
       "attach this Equipment to it"
     | .source, .target =>
       s!"attach it to {noun}"
@@ -1414,7 +1432,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "attach this to up to one target creature you control"
     | .anyYouControl, .target =>
       "attach any number of Equipment you control to target creature you control"
-    | .created, .source | .putArtifact, .notedHost =>
+    | .createdToken, .source | .putArtifact, .notedHost =>
       "attach it to this creature"
     | _, _ =>
       "attach it"
@@ -1424,22 +1442,27 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match amount with
     | .perChargeCounter =>
       s!"add {manaSymbolsText types} for each charge counter on this enchantment"
-    | .fixed => s!"add {manaSymbolsText types}"
+    | .fixed 1 => s!"add {manaSymbolsText types}"
+    | _ => "add mana"
   | .or [.tap .target, .untap .target] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
       "choose one — tap target creature an opponent controls; untap target creature you control"
-  | .becomePT p t =>
+  | .becomePT (.fixed p) (.fixed t) =>
     s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .becomePT _ _ =>
+    "you may have this creature's base power and toughness become those values until end of turn"
   | .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source) =>
     "if you do, put a +1/+1 counter on this creature"
-  | .lookAtTopRevealTypes n types =>
+  | .lookAtTopRevealTypes (.fixed n) types =>
     let joined :=
       match types.toList with
       | [a, b] => s!"a {a} or {b} card"
       | xs => s!"a {String.intercalate " or " xs} card"
     s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
+  | .lookAtTopRevealTypes _ _ =>
+    "look at the top cards of your library"
   | .gainControl .untilEndOfTurn =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
   | .gainControl .whileSourceRemains =>
@@ -1489,7 +1512,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "return that card to its owner's hand"
     | _, _ =>
       "return it to a hand"
-  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false] =>
+  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .mayCast origin maxMv cost note =>
     match origin, maxMv, cost, note with
@@ -1565,15 +1588,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from a library"
   | .«if» (.drewAtLeast 2) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .mill n who amount note =>
-    match who, amount, note with
-    | .you, .fixed, .none | .you, .fixed, .milledCards =>
+  | .mill amount who note =>
+    match amount, who, note with
+    | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
       s!"mill {n} cards"
-    | .target, .fixed, .none =>
+    | .fixed n, .target, .none =>
       s!"{noun} mills {n} cards"
-    | .thatPlayer, .thatManyLost, .none =>
+    | .thatManyLost, .thatPlayer, .none =>
       "that player mills that many cards"
-    | .eachOpponent, .fixed, .opponentsMilled =>
+    | .fixed n, .eachOpponent, .opponentsMilled =>
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
@@ -1584,7 +1607,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .may (.pay .anotherCreatureOrArtifact)
-      (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo =>
+      (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
     "the Ring tempts you"
@@ -1592,21 +1615,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
   | .queueReflexive (.pump .perPlains .perPlains .target) =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
-  | .spellsCostLess _ n =>
+  | .spellsCostLess _ (.fixed n) =>
     s!"spells you cast this turn cost \{{n}} less to cast"
+  | .spellsCostLess _ _ =>
+    "spells you cast this turn cost less to cast"
   | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"
   | .connive .source => "it connives"
-  | .connive (.target _) => s!"{noun} connives"
+  | .connive .target => s!"{noun} connives"
   | .connive .enteringVillain => "you may have it connive"
+  | .connive _ => "connive"
   | .«if» (.attackedOrEntered subtype) (.draw (.fixed 1)) =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
-  | .or [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+  | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)
-      (.createTokens .villain21menace 1 true) (.mill 2 .you .fixed .none) =>
+      (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
   | .ifElse (.targetIsAnotherSubtype "Hero")
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
@@ -1672,14 +1698,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile and copy a card"
   | .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) =>
     "when one or more cards are milled this way, exile and copy a card"
-  | .loseLife n who amount =>
-    match who, amount with
-    | .you, .fixed => s!"you lose {n} life"
-    | .targetOpponent, .fixed => s!"{noun} loses {n} life"
-    | .eachOpponent, .fixed => s!"each opponent loses {n} life"
-    | .you, .perBurden =>
+  | .loseLife amount who =>
+    match amount, who with
+    | .fixed n, .you => s!"you lose {n} life"
+    | .fixed n, .targetOpponent => s!"{noun} loses {n} life"
+    | .fixed n, .eachOpponent => s!"each opponent loses {n} life"
+    | .perBurden, .you =>
       "you lose 1 life for each burden counter on this"
-    | .eachOpponent, .attachedEquipment =>
+    | .attachedEquipment, .eachOpponent =>
       "each opponent loses X life, where X is the number of Equipment attached to it"
     | _, _ =>
       "lose life"
@@ -1697,6 +1723,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap up to one target creature"
   | .tap .target =>
     s!"tap {noun}"
+  | .tap _ =>
+    "tap it"
   | .untap who =>
     match who with
     | .attackingCreatures => "untap all attacking creatures"
@@ -1706,6 +1734,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .targetWhileSource => s!"untap {affectedNoun .targetWhileSource noun}"
     | .equipped => "untap equipped creature"
     | .firstThisTurn => "untap it"
+    | _ => "untap it"
   | .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent) =>
@@ -1726,8 +1755,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
   | .becomeCopy .noted =>
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | .becomeCopy .cause =>
+  | .becomeCopy (.cause none) =>
     "create a token that's a copy of the artifact that caused this"
+  | .becomeCopy _ =>
+    "become a copy"
   | .«if» .sourceHarnessed (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
   | .retargetCause =>
@@ -1736,7 +1767,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "copy that spell. You may choose new targets for the copy"
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
-  | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
+  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
     "you may create a 0/4 colorless Wall creature token with defender"
   | .may _ _ .ifYouDo =>
     "you may do it. If you do, do that"

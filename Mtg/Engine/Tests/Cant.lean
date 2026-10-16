@@ -306,4 +306,11 @@ not apply while that object is off the battlefield. -/
 #guard TriggeredAbility.toNotation spider ==
   "When this permanent enters, tap target creature an opponent controls. That creature can't become untapped for as long as you control this creature."
 
+/- A recipient this effect does not name can't be blocked and changes nothing. -/
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .cant (.beBlocked .hand) } == "can't"
+#guard
+  let g := step board (.cant (.beBlocked .hand)) (some (pid board "Titan"))
+  !blocked g "Titan" && g.log == board.log
+
 end Mtg.Engine.CantTests

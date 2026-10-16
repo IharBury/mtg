@@ -485,7 +485,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     s!"{name} creates a Food token or a Treasure token"
   | [.tap .target, .untap .target] =>
     s!"{name} chooses tap or untap"
@@ -495,7 +495,7 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
 /-- Pending-header text for a `TriggerResolution.or` choice. -/
 def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | [.tap .target, .untap .target] =>
     "choose tap or untap"
@@ -1059,15 +1059,16 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector creates
+nothing. -/
 def applyCreateTokens (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower : Option Int) (kind : TokenKind) (n : Nat) (tapped : Bool)
+    (lastKnownPower : Option Int) (kind : TokenKind)
+    (amount : TriggeredAbility.NumberSelector) (tapped : Bool)
     (token : TriggeredAbility.TriggerToken)
-    (who : TriggeredAbility.TriggerTokenWho)
-    (qty : TriggeredAbility.TriggerTokenQty)
+    (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerTokenNote) : Game :=
-  match token, who, qty, note with
+  match token, who, amount, note with
   | .axe, _, _, .attachReflexive =>
     let (g, tok) := g.createToken controller axeToken
     g.putReflexiveTrigger controller (some tok.id) {
@@ -1085,7 +1086,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
-  | .kind, .you, .lastKnown, _ =>
+  | .kind, .you, .lastKnownPower, _ =>
     if kind == .birdSoldier then
       let n := lastKnownPower.getD 0
       g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
@@ -1123,8 +1124,10 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
   | .sturdyShield, _, _, _ =>
     let (g, shield) := g.createToken controller sturdyShieldToken
     { g with createdTokenThisWay := some shield.id }
-  | .merfolk, _, _, _ =>
+  | .merfolk, _, .blueManaSymbols, _ =>
     g.createMerfolkForBlueSymbols controller lastKnownPower
+  | .kind, .you, .fixed n, _ =>
+    g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .kind, .targetController, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the Treasure is the one it had on the battlefield.
@@ -1136,8 +1139,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         g.createTreasureTokens pid 1
       | none => g
     | _ => g
-  | _, _, _, _ =>
-    g.createKindTokens controller kind n (tapped := tapped)
+  | _, _, _, _ => g
 
 /-- Resolve `TriggerResolution.exile`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other selector exiles
@@ -1300,10 +1302,9 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 the behavior of the constructor it replaced. -/
 def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerAttachWhat)
-    (host : TriggeredAbility.TriggerAttachTo) : Game :=
+    (what host : TriggeredAbility.ObjectSelector) : Game :=
   match what, host with
-  | .source, .created =>
+  | .source, .createdToken =>
     match (g.recentTokenIds.back?).bind g.findObject? with
     | some tok =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
@@ -1367,7 +1368,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           if host.isOnBattlefield then g.attachSourceTo o host
           else g.logMsg s!"{host.name} is no longer on the battlefield"
         | none => g.logMsg "The source is no longer in play"
-  | .created, .source =>
+  | .createdToken, .source =>
     match g.createdTokenThisWay.bind g.findObject? with
     | none => { g with createdTokenThisWay := none }
     | some tok =>
@@ -1464,16 +1465,18 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
   | _, _, _, _ => g
 
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector amasses
+nothing. -/
 def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int) (n : Nat) (subtype : String)
-    (amount : AmassAmount) (attachSource : Bool)
-    (who : TriggeredAbility.AmassWho) : Game :=
+    (lastKnownPower : Option Int) (amount : TriggeredAbility.NumberSelector)
+    (subtype : String) (attachSource : Bool)
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match amount, who with
-  | .fixed, .you =>
+  | .fixed n, .you =>
+    let n := n.toNat
     if attachSource then g.amass controller subtype n (attach := sourceId)
     else g.amass controller subtype n
-  | .sourcePower, .you =>
+  | .lastKnownPower, .you =>
     let n := (lastKnownPower.getD 0).toNat
     if attachSource then g.amass controller subtype n (attach := sourceId)
     else g.amass controller subtype n
@@ -1544,7 +1547,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
 the behavior of the constructor it replaced. -/
 def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower : Option Int) (what : TriggeredAbility.TriggerDestroyWhat)
+    (lastKnownPower : Option Int) (what : TriggeredAbility.ObjectSelector)
     (note : TriggeredAbility.TriggerDestroyNote) : Game :=
   match what, note with
   | .oppArtifactsEnchantments, .countDestroyed =>
@@ -1613,12 +1616,16 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector adds
+nothing. -/
 def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (types : Array ManaType) (amount : TriggeredAbility.TriggerManaAmount) : Game :=
+    (types : Array ManaType) (amount : TriggeredAbility.NumberSelector) : Game :=
   match amount with
-  | .fixed =>
-    g.addManaLogged controller types
+  | .fixed n =>
+    if n <= 0 then g
+    else
+      let types := types.foldl (fun acc t => acc ++ Array.replicate n.toNat t) #[]
+      g.addManaLogged controller types
   | .perChargeCounter =>
     -- Ruling 792: if the source left, use its last-known charge counters.
     let n :=
@@ -1633,6 +1640,7 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       else n
     let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
     g.addManaLogged controller types
+  | _ => g
 
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -1834,7 +1842,7 @@ the behavior of the constructor it replaced. -/
 def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (what : TriggeredAbility.TriggerGrantWhat)
-    (who : TriggeredAbility.TriggerGrantWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .doubleStrike, .equippedAttackers =>
     Id.run do
@@ -1896,7 +1904,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (who : TriggeredAbility.TriggerFightWho)
+    (targets : Array Target) (who : TriggeredAbility.ObjectSelector)
     (how : TriggeredAbility.TriggerFightHow) : Game :=
   match who, how with
   | .source, .mutual =>
@@ -1957,30 +1965,31 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.mill`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector mills
+nothing. -/
 def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower lastKnownToughness : Option Int) (n : Nat)
-    (who : TriggeredAbility.TriggerMillWho)
-    (amount : TriggeredAbility.TriggerMillAmount)
+    (lastKnownPower lastKnownToughness : Option Int)
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
-  match who, amount, note with
-  | .you, .fixed, .none =>
-    g.mill controller n
-  | .you, .fixed, .milledCards =>
+  match amount, who, note with
+  | .fixed n, .you, .none =>
+    g.mill controller n.toNat
+  | .fixed n, .you, .milledCards =>
     let before := (g.player controller).graveyard
-    let g := g.mill controller n
+    let g := g.mill controller n.toNat
     let after := (g.player controller).graveyard
     { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .target, .fixed, .none =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
-  | .thatPlayer, .thatManyLost, .none =>
+  | .fixed n, .target, .none =>
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n.toNat)
+  | .thatManyLost, .thatPlayer, .none =>
     match lastKnownPower, lastKnownToughness with
     | some k, some idx => g.mill ⟨idx.toNat⟩ k.toNat
     | _, _ => g
-  | .eachOpponent, .fixed, .opponentsMilled =>
+  | .fixed n, .eachOpponent, .opponentsMilled =>
     let opps := (g.livingOpponents controller).map (·.id)
-    let (g, milled) := g.millThenReflexive opps n
+    let (g, milled) := g.millThenReflexive opps n.toNat
     { g with opponentsMilledThisWay := milled }
   | _, _, _ => g
 
@@ -1989,7 +1998,7 @@ the behavior of the constructor it replaced. A stun counter is removed
 instead of untapping (CR 122.1d). -/
 def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.TriggerUntapWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match who with
   | .attackingCreatures =>
     Id.run do
@@ -2024,12 +2033,13 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some o =>
       if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
     | none => g
+  | _ => g
 
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector taps nothing. -/
 def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.TriggerTapWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match who with
   | .humans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
@@ -2072,12 +2082,13 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .tap
+  | _ => g
 
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector removes nothing. -/
 def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
     (what : TriggeredAbility.TriggerRemoveWhat)
-    (who : TriggeredAbility.TriggerRemoveWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .hope, .source =>
     let g := { g with removedHopeThisWay := false }
@@ -2100,25 +2111,26 @@ def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector loses
+nothing. -/
 def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
-    (who : TriggeredAbility.TriggerLifeLossWho)
-    (amount : TriggeredAbility.TriggerLifeLossAmount)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.PlayerSelector)
     (lastKnownPower : Option Int := none) : Game :=
-  match who, amount with
-  | .you, .fixed =>
-    g.loseLife controller n
-  | .targetOpponent, .fixed =>
+  match amount, who with
+  | .fixed n, .you =>
+    g.loseLife controller n.toNat
+  | .fixed n, .targetOpponent =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.loseLife pid n)
-  | .eachOpponent, .fixed =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
-  | .you, .perBurden =>
+      g.loseLife pid n.toNat)
+  | .fixed n, .eachOpponent =>
+    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
+  | .perBurden, .you =>
     match sourceId.bind g.findObject? with
     | none => g
     | some src => g.loseLife controller src.status.burden
-  | .eachOpponent, .attachedEquipment =>
+  | .attachedEquipment, .eachOpponent =>
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then g
     else g.forEachOpponent controller (fun g pid => g.loseLife pid x)
@@ -2160,12 +2172,13 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _ => g
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
-keeps the behavior of the constructor it replaced. -/
+keeps the behavior of the constructor it replaced. Any other selector
+does nothing. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
-    (who : TriggeredAbility.TriggerLibraryWho) : Game :=
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match how, thenDo, who with
   | .top n, .put .randomCreature .asPrinted .none, .you =>
     let ids := g.scryLookedIds controller n
@@ -2407,12 +2420,18 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (action : TriggeredAbility.ActionSelector) : Game :=
   match action with
   | .beBlocked who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .cantBeBlocked
+    match asAffected who with
+    | some affected =>
+      g.withAffected controller ab sourceId targets affected fun g o =>
+        g.applyPermanentAction o .cantBeBlocked
+    | none => g
   | .beBlockedExceptByHaste who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
-        |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+    match asAffected who with
+    | some affected =>
+      g.withAffected controller ab sourceId targets affected fun g o =>
+        g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
+          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+    | none => g
   | .untapWhileYouControl .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let o := g.object! o.id
@@ -2421,6 +2440,13 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
   | .untapWhileYouControl _ => g
+where
+  asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
+    | .target => some .target
+    | .source => some .source
+    | .enchanted => some .enchanted
+    | .targetWhileSource => some .targetWhileSource
+    | _ => none
 
 /-- Resolve `TriggerResolution.becomeArtifact`. Each printed recipient keeps
 the behavior of the constructor it replaced. Any other selector does nothing. -/
@@ -2699,16 +2725,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
-  | .amass n subtype amount attachSource who =>
-    g.applyAmass controller sourceId lastKnownPower n subtype amount attachSource who
-  | .createTokens kind n tapped token who qty note =>
+  | .amass amount subtype attachSource who =>
+    g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
+  | .createTokens kind amount tapped token who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind n tapped token who qty note
+      kind amount tapped token who note
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount
-  | .becomePT p t =>
+  | .becomePT (.fixed p) (.fixed t) =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then
@@ -2716,7 +2742,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
       else g
     | none => g
-  | .lookAtTopRevealTypes n types =>
+  | .becomePT _ _ => g
+  | .lookAtTopRevealTypes (.fixed n) types =>
+    let n := n.toNat
     let ids := g.scryLookedIds controller n
     let g := g.logLookAtTop controller n
     let eligible := ids.filter (fun id =>
@@ -2729,6 +2757,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => false)
     g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
+  | .lookAtTopRevealTypes _ _ => g
   | .gainControl how =>
     match how with
     | .untilEndOfTurn =>
@@ -2883,9 +2912,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | _ => g
   | .mayCast origin maxMv cost note =>
     g.applyMayCast controller lastKnownPower origin maxMv cost note
-  | .mill n who amount note =>
+  | .mill amount who note =>
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
-      n who amount note
+      amount who note
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
@@ -2904,8 +2933,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
-  | .loseLife n who amount =>
-    g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
+  | .loseLife amount who =>
+    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
@@ -2925,17 +2954,19 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .spellsCostLess which n =>
+  | .spellsCostLess which (.fixed n) =>
+    let n := n.toNat
     match which with
     | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
     | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
+  | .spellsCostLess _ _ => g
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
   | .connive who =>
     match who with
     | .source => g.applyConnive controller sourceId
-    | .target _ =>
+    | .target =>
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
@@ -2951,6 +2982,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           match g.villainConniveTarget? controller src.id targets lastKnownPower with
           | none => g.logMsg "The Villain does not connive"
           | some vid => g.beginMayHaveVillainConnive controller src.id vid
+    | _ => g
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g
@@ -2966,18 +2998,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g
   | .revealFromHand count thenDo =>
     g.applyRevealFromHand controller sourceId targets count thenDo
-  | .surveil n =>
+  | .surveil (.fixed n) =>
     let armed := g.armSurveilReturn
     let life := (g.player controller).lifeGainedThisTurn
     let g := { g with armSurveilReturn := false }
-    let g := g.beginSurveil controller n
+    let g := g.beginSurveil controller n.toNat
     if armed then
       match g.pending with
       | .surveil _ _ => { g with surveilReturnMvAtMost := some life }
       | _ => g
     else g
-  | .empowerJace n =>
-    g.empowerJace controller n
+  | .surveil _ => g
+  | .empowerJace (.fixed n) =>
+    g.empowerJace controller n.toNat
+  | .empowerJace _ => g
   | .prepareSource .ifNotPrepared =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -3011,7 +3045,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .may (.loseLife 2 .you .fixed)
+  | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     g.offerPay2LifeToughness controller
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
@@ -3058,7 +3092,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
-  | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
+  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
     g.offerMayCreateWall controller
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
@@ -3090,7 +3124,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
                 g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
                   s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
-      | some (.becomeCopy .cause), [.generic 2] =>
+      | some (.becomeCopy (.cause none)), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
       | _, _ =>
         match symbols.toList with

@@ -4,9 +4,10 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.destroy`
 
-Opponents' artifacts and enchantments, the permanent an earlier step dealt
-damage to, and the announced creature. What is destroyed, and what a later
-step can read, are arguments.
+Which permanents are destroyed is an `ObjectSelector`. Opponents' artifacts
+and enchantments, the permanent an earlier step dealt damage to, and the
+announced creature. Any other selector destroys nothing. What a later step
+can read is still a note.
 -/
 
 namespace Mtg.Engine.DestroyTests
@@ -59,7 +60,7 @@ def notedDestroy : TriggeredAbility.TriggerResolution :=
 def amassSeq : TriggeredAbility.TriggerResolution :=
   .sequence [
     notedDestroy,
-    .amass 0 (amount := .notedPower) (who := .notedController),
+    .amass .notedPower (who := .notedController),
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 
 /- Opponents' artifacts and enchantments are destroyed and counted.
@@ -249,6 +250,12 @@ controller still amasses when the creature is indestructible. -/
     (g.player caster).hand.size == before + 1 &&
     logContains g "is indestructible and isn't destroyed"
 
+/- Any other selector destroys nothing. -/
+#guard
+  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
+  let g := step g0 (.destroy .humans)
+  onBoard g "Ogre" && g.permanentsDestroyedThisWay == 0 && g.log == g0.log
+
 /- Noting the controller is the note. Without it, the creature stays. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
@@ -281,5 +288,12 @@ controller still amasses when the creature is indestructible. -/
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .destroy .target } ==
   "destroy it"
+#guard TriggeredAbility.resolutionPhrase { resolution := .destroy .humans } ==
+  "destroy it"
+
+/- A selector amass does not use amasses nothing. -/
+#guard
+  let g := step afterDraw (.amass .perOtherCreature)
+  g.log.size == afterDraw.log.size
 
 end Mtg.Engine.DestroyTests

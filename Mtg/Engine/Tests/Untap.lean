@@ -4,9 +4,10 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.untap`
 
-The announced permanent, the source, the enchanted creature, and the target
-while the source remains. Each attacking creature. Who is untapped is an
-argument. A stun counter is removed instead of untapping (CR 122.1d).
+Who is untapped is an `ObjectSelector`. The announced permanent, the source,
+the enchanted creature, and the target while the source remains. Each
+attacking creature. Any other selector untaps nothing. A stun counter is
+removed instead of untapping (CR 122.1d).
 -/
 
 namespace Mtg.Engine.UntapTests
@@ -253,6 +254,12 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
   !tapped g "Titan" && tapped g "Bear" && g.additionalCombatPhases == 1 &&
     logContains g "Attacking creatures untap. After this phase, there is an additional combat phase"
 
+/- Any other selector untaps nothing. -/
+#guard
+  let g0 := mark board "Titan"
+  let g := step g0 (.untap .humans) (targets := #[Target.permanent (pid g0 "Titan")])
+  tapped g "Titan" && g.log == g0.log
+
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .untap == .untap
 #guard TriggeredAbility.TriggerResolution.ofSource .untap == .untap .source
@@ -274,6 +281,8 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
   "untap that creature"
 #guard TriggeredAbility.resolutionPhrase { resolution := attackers } ==
   "untap all attacking creatures"
+#guard TriggeredAbility.resolutionPhrase { resolution := .untap .humans } ==
+  "untap it"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] } ==
   "untap all attacking creatures. After this phase, there is an additional combat phase"

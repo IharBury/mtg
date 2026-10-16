@@ -4,7 +4,8 @@ import Mtg.Engine.Fixture
 # `TriggerResolution.removeCounters`
 
 A hope counter from the source, and every counter from the enchanted
-creature. What is removed, and who loses it, are arguments.
+creature. What is removed is `TriggerRemoveWhat`. Who loses it is an
+`ObjectSelector`. Any other selector removes nothing.
 -/
 
 namespace Mtg.Engine.RemoveCountersTests
@@ -206,10 +207,13 @@ Removing them does not count as removing a hope counter. -/
   let g0 := { g0 with removedHopeThisWay := true }
   let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
   let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
+  let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
   crossed.removedHopeThisWay && stillLoaded (obj crossed "Bear").status &&
     (obj crossed "Grasp").status.hope == 2 && crossed.log == g0.log &&
     swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
-    (obj swapped "Grasp").status.hope == 2 && swapped.log == g0.log
+    (obj swapped "Grasp").status.hope == 2 && swapped.log == g0.log &&
+    other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
+    (obj other "Grasp").status.hope == 2 && other.log == g0.log
 
 /- Tap, then remove, including when nothing is enchanted. -/
 #guard
@@ -243,6 +247,8 @@ Removing them does not count as removing a hope counter. -/
     { resolution := .removeCounters .hope .enchanted } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .removeCounters .all .source } == "remove counters"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .removeCounters .hope .target } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
     (SharedTrigger.timing .removeHopeDrawSac) ==
   "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"

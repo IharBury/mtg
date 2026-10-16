@@ -119,7 +119,7 @@ inductive ThisAttackLeftover where
   /-- Whenever Whiplash attacks, if he's equipped, each opponent loses X
   life and you gain X life, where X is the number of Equipment attached
   to him. Resolves as
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`. -/
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`. -/
   | equippedDrain
   /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
   power is 4 or greater. Resolves as
@@ -141,7 +141,7 @@ inductive EnterOrAttackLeftover where
   | copyKeywords
   /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or
   attacks, create a 1/1 green Squirrel creature token. Resolves as
-  `.createTokens .squirrel11green 1 false`. -/
+  `.createTokens .squirrel11green (.fixed 1) false`. -/
   | createSquirrel
 deriving Repr, Inhabited, BEq
 
@@ -541,7 +541,7 @@ inductive SharedTrigger where
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
   /-- Connive. The source is `.connive`. A target of `kind` is
-  `.connive (.target kind)`. -/
+  `.connive (.target kind)`. That target resolves as `.connive .target`. -/
   | connive (who : ConniveSubject := .source)
   /-- Exile a target of this kind until the source leaves. -/
   | exileUntilLeaves (kind : EffectTargetKind)
@@ -573,7 +573,7 @@ inductive SharedTrigger where
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Target player mills `n` cards. Resolves as `.mill n .target`. -/
+  /-- Target player mills `n` cards. Resolves as `.mill (.fixed n) .target`. -/
   | millPlayer (n : Nat)
   /-- Investigate (create a Clue). -/
   | investigate
@@ -619,7 +619,7 @@ inductive SharedTrigger where
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
-  Resolves as `.sequence [.createTokens kind 1 false, .attach .source .created]`. -/
+  Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
@@ -637,7 +637,7 @@ inductive SharedTrigger where
   /-- Landfall from the graveyard: pay to return this to hand. -/
   | payReturnFromGy
   /-- Target opponent loses `n` life.
-  Resolves as `.loseLife n (who := .targetOpponent)`. -/
+  Resolves as `.loseLife (.fixed n) .targetOpponent`. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
@@ -703,13 +703,13 @@ inductive SharedTrigger where
   `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
-  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`. -/
+  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. Resolves as
-  `.sequence [.mill n (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
+  `.sequence [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
   | millThenSubtypeToHand (n : Nat) (subtype : String)
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
   | exileOppNonlandEachUntilLeaves
@@ -727,7 +727,7 @@ inductive SharedTrigger where
   `.sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]`. -/
   | lootLandEntersTapped
   /-- That player mills that many cards. Resolves as
-  `.mill 0 .thatPlayer .thatManyLost`. -/
+  `.mill .thatManyLost .thatPlayer`. -/
   | millThatManyLost
   /-- Draw a card for each fat graveyard. -/
   | drawPerFatGraveyard
@@ -738,7 +738,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]`. -/
+  `.sequence [.mill (.fixed 2) .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower
@@ -757,15 +757,15 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .another) (.sequence [])`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`. -/
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
-  `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
+  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
   /-- Deal 1 then amass Orcs 1. Resolves as
-  `.sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"]`. -/
+  `.sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
   Resolves as `.sequence [.untap .attackingCreatures, .additionalCombatPhase]`. -/
@@ -776,7 +776,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. Resolves as
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
@@ -824,7 +824,7 @@ inductive SharedTrigger where
   `.grant .protectionEverything .youIfCast`. -/
   | protectionEverything
   /-- Lose 1 life per burden counter.
-  Resolves as `.loseLife 0 (amount := .perBurden)`. -/
+  Resolves as `.loseLife .perBurden`. -/
   | loseLifePerBurden
   /-- Reveal until a Saga. -/
   | revealSaga
@@ -846,10 +846,10 @@ inductive SharedTrigger where
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
   /-- Drain `n` and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife (.fixed n)]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n)]`. -/
   | drainAndPlan (n : Nat)
   /-- Draw, lose life, and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)]`. -/
   | drawLoseLifeAndPlan
   /-- Create a tapped Treasure and put a plan counter. -/
   | treasureTappedAndPlan
@@ -889,7 +889,7 @@ inductive SharedTrigger where
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» (.landsAtLeast 6) (.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)])`. -/
+  `.«if» (.landsAtLeast 6) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
@@ -905,7 +905,7 @@ inductive SharedTrigger where
   /-- Put a charge counter on the source. -/
   | chargeCounterOnSource
   /-- Add {G} for each charge counter on the source.
-  Resolves as `.addMana #[.colored .green] (amount := .perChargeCounter)`. -/
+  Resolves as `.addMana #[.colored .green] .perChargeCounter`. -/
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
@@ -916,7 +916,7 @@ inductive SharedTrigger where
   | pumpIfFiveOtherForests
   /-- If you gained life this turn, surveil 1; a card with mana value at most
   the life gained put into the graveyard this way goes to your hand. Resolves as
-  `.sequence [.armSurveilReturnLifeGained, .surveil 1]`. -/
+  `.sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]`. -/
   | surveilReturnIfGainedLife
   /-- Apply `action` to the enchanted creature.
   Resolves as `TriggerResolution.ofEnchanted`. -/
@@ -933,10 +933,10 @@ inductive SharedTrigger where
   Resolves as `.or [.tap .target, .untap]`. -/
   | tapOrUntapNonland
   /-- Create a Food or a Treasure.
-  Resolves as `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`. -/
+  Resolves as `.or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]`. -/
   | createFoodOrTreasure
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
-  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill 2)`. -/
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
   Resolves as `.sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
@@ -986,7 +986,7 @@ inductive SharedTrigger where
   `.exile .target .returnTapped`.
   Each opponent losing X life and you gaining X life, X the Equipment
   attached to the source, is
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`.
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
   Drawing when the source's power is 4 or greater is
   `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`.
   The source getting +2/+0 and indestructible until end of turn is
@@ -995,7 +995,7 @@ inductive SharedTrigger where
   /-- Leftover “enters or attacks” effect.
   Copying the keyword counters the source lacks is
   `.putCounters .missingKeywordsFromTarget .source`.
-  A 1/1 green Squirrel is `.createTokens .squirrel11green 1 false`. -/
+  A 1/1 green Squirrel is `.createTokens .squirrel11green (.fixed 1) false`. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Leftover watch effect.
   Drawing a card is `.draw (.fixed 1)`. You may draw a card is
@@ -1010,7 +1010,7 @@ inductive SharedTrigger where
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)]`.
+  `.sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]`.
   1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player .targetOpponent)`.
   1 damage from the equipped creature to each opponent is
   `.dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped`.
@@ -1032,7 +1032,7 @@ inductive SharedTrigger where
   Attaching each announced Equipment to the enchanted creature is
   `.attach .eachTargetEquipment .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
-  `.chooseModes [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
+  `.chooseModes [.createTokens .soldier11white (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is
   `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
@@ -1045,7 +1045,7 @@ inductive SharedTrigger where
   /-- Leftover “whenever you attack” effect.
   Paying 2 life so creatures you control assign combat damage equal to their
   toughness is
-  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  `.may (.loseLife (.fixed 2)) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
   Exiling the top card, pumping +2/+1 when it is a Hero, and playing it this
   turn is `.may (.exile .top .playThisTurn .ifHero) (.sequence [])`.
   Looking at the top six and casting one with mana value at most the greatest
@@ -1053,9 +1053,9 @@ inductive SharedTrigger where
   `.revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)`. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Leftover “whenever you cast …” effect.
-  A 2/1 black Villain with menace is `.createTokens .villain21menace 1 false`.
+  A 2/1 black Villain with menace is `.createTokens .villain21menace (.fixed 1) false`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell is
-  `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
+  `.createTokens .treasure .blueManaSymbols false .merfolk`.
   Paying {1} so a creature with haste can't be blocked except by creatures
   with haste is
   `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo`.
@@ -1092,14 +1092,14 @@ inductive SharedTrigger where
   A +1/+1 counter on the announced creature is
   `.putCounters (.ofKind .plusOnePlusOne) .permanent`.
   Each opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]`.
+  `.sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]`.
   A +1/+1 counter on each announced creature you control, up to the life
   gained, is `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
-  A 1/1 green Insect is `.createTokens .insect11green 1 false`.
+  A 1/1 green Insect is `.createTokens .insect11green (.fixed 1) false`.
   A +1/+1 counter on the source is
   `.putCounters (.ofKind .plusOnePlusOne) .source`.
   You may create a 0/4 Wall with defender is
-  `.may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo`. -/
+  `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`. -/
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 

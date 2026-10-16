@@ -8,8 +8,9 @@ until a creature, and cards until a Saga are reveals. Cards from the damaged
 player's library until an instant or sorcery are exiled for an impulse cast.
 Cards from the announced player's library until a nonland may put a +1/+1
 counter on the source, or let you cast that nonland until end of turn.
-How far the ability looks and whose library it uses are arguments. What
-happens to the cards is a `TriggerResolution`.
+How far the ability looks is `TriggerLibraryHow`. Whose library it uses
+is a `PlayerSelector`. What happens to the cards is a `TriggerResolution`.
+Any other selector does nothing.
 -/
 
 namespace Mtg.Engine.RevealLibraryTests
@@ -434,7 +435,8 @@ reported, and an empty library exiles nothing. -/
     .revealLibrary (.top 1)
       (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
         (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
-      .announced]
+      .announced,
+    .revealLibrary (.top 3) (.put .randomCreature) .eachOpponent]
   crossed.all fun r =>
     let g := step g0 r
     libNames g caster == libNames g0 caster &&
@@ -480,6 +482,9 @@ what gives them the revealed cards. -/
   "that player exiles cards until a nonland card"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .revealLibrary (.top 2) (.put .revealed) } ==
+  "reveal cards from a library"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .revealLibrary (.top 3) (.put .randomCreature) .eachOpponent } ==
   "reveal cards from a library"
 #guard TriggeredAbility.toNotation (.onDiesRevealTopPutRandomCreature 4) ==
   s!"When this artifact is put into a graveyard from the battlefield, reveal the top 4 cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}."

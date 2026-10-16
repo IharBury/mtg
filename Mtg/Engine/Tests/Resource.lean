@@ -45,15 +45,15 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawDrain) ==
-  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]
 #guard TriggeredAbility.resolution (resource Effect.resourceGainLifePlusOnes) ==
   .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  .createTokens .insect11green 1 false
+  .createTokens .insect11green (.fixed 1) false
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnThisOnce) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo
+  .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
 
 #guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).onceEachTurn
 #guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).onceEachTurn

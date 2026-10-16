@@ -72,7 +72,7 @@ use `queueReflexive`. -/
     .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]
 #guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
   .sequence [
-    .mill 2 .eachOpponent (note := .opponentsMilled),
+    .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
 #guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)

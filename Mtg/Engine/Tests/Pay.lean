@@ -90,7 +90,7 @@ def sacPower : TriggeredAbility.TriggerResolution :=
 
 def sacTreasure : TriggeredAbility.TriggerResolution :=
   .may (.pay .anotherCreatureOrArtifact)
-    (.sequence [.draw (.fixed 1), .createTokens .treasure 1 false]) .ifYouDo
+    (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo
 
 def sacOrDiscard : TriggeredAbility.TriggerResolution :=
   .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo
