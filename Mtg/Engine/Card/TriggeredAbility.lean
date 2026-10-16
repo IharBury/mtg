@@ -1697,6 +1697,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "tap up to one target creature"
   | .tap .target =>
     s!"tap {noun}"
+  | .tap _ =>
+    "tap it"
   | .untap who =>
     match who with
     | .attackingCreatures => "untap all attacking creatures"
@@ -1706,6 +1708,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .targetWhileSource => s!"untap {affectedNoun .targetWhileSource noun}"
     | .equipped => "untap equipped creature"
     | .firstThisTurn => "untap it"
+    | _ => "untap it"
   | .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent) =>

@@ -256,6 +256,11 @@ deriving Repr, Inhabited, BEq
 discards, which cards `TriggerResolution.returnToHand` returns, which
 permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.putCounters` puts counters on, who
+`TriggerResolution.removeCounters` removes counters from, who
+`TriggerResolution.tap` taps, who `TriggerResolution.untap` untaps,
+which permanents `TriggerResolution.destroy` destroys, who
+`TriggerResolution.grant` grants an ability to, who
+`TriggerResolution.fight` uses, who
 `TriggerResolution.lose` removes an ability from, who
 `TriggerResolution.becomeArtifact` makes an artifact, who
 `TriggerResolution.becomePrepared` prepares, who
@@ -568,12 +573,62 @@ inductive ObjectSelector where
   /-- A creature card of `subtype` with mana value at most `maxMv` from hand.
   `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`. -/
   | creatureFromHand (subtype : String) (maxMv : Nat)
-  /-- The announced creature card in the controller's graveyard.
+  /--   The announced creature card in the controller's graveyard.
   Returned tapped and attacking with a finality counter is
   `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
   Inside `queueReflexive`, that card is chosen when the reflexive ability
   is put on the stack. Outside it, this puts nothing. -/
   | creatureCard
+  /-- Any number of untapped Humans the controller controls.
+  Choosing none taps nothing.
+  `.tap .humans`. -/
+  | humans
+  /-- The creature this Aura enchants, while the Aura is still on the battlefield.
+  Nothing enchanted does nothing. A missing Aura is reported.
+  `.tap .enchantedWhileSource`. -/
+  | enchantedWhileSource
+  /-- Each attacking creature.
+  `.untap .attackingCreatures`. -/
+  | attackingCreatures
+  /-- The creature this Equipment is attached to, while it is on the battlefield.
+  A missing creature is reported, and later steps of the sequence do not happen.
+  `.untap .equipped`. -/
+  | equipped
+  /-- The creature that became tapped, while it is still tapped.
+  The recorded cause is used when one was chosen. Otherwise the creature
+  that became tapped most recently. An untapped creature is left alone.
+  `.untap .firstThisTurn`. -/
+  | firstThisTurn
+  /-- All artifacts and enchantments opponents control.
+  `.destroy .oppArtifactsEnchantments`. -/
+  | oppArtifactsEnchantments
+  /-- The permanent an earlier step dealt damage to.
+  `.destroy .permanentDealtDamage`. -/
+  | permanentDealtDamage
+  /-- Each equipped attacking creature.
+  `.grant .doubleStrike .equippedAttackers`. -/
+  | equippedAttackers
+  /-- The controller, when the source was cast.
+  A source that was not cast does nothing.
+  `.grant .protectionEverything .youIfCast`. -/
+  | youIfCast
+  /-- The one creature the controller has attacking alone.
+  None is reported. -/
+  | attackingAlone
+  /-- Each creature the spell that caused this trigger targets.
+  A permanent that is not a creature is skipped. No recorded spell grants
+  nothing.
+  `.grant (.keywords Keyword.flying) .spellTargets`. -/
+  | spellTargets
+  /-- The announced creature.
+  It fights up to one other announced creature with
+  `.fight .announced .upToOneOther`.
+  It fights another announced creature with `.fight .announced .mutual`. -/
+  | announced
+  /-- The creature an earlier step attached Equipment to.
+  It deals damage equal to its power with `.fight .equipmentHost .reflexive`.
+  Nothing is queued when no creature received Equipment. -/
+  | equipmentHost
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -1065,24 +1120,6 @@ inductive TriggerModeHow where
   | vision
 deriving Repr, Inhabited, BEq
 
-/-- Which permanents `TriggerResolution.destroy` destroys. -/
-inductive TriggerDestroyWhat where
-  /-- All artifacts and enchantments opponents control. -/
-  | oppArtifactsEnchantments
-  /-- The announced creature, if any. Choosing none destroys nothing. -/
-  | target
-  /-- The permanent an earlier step dealt damage to. -/
-  | permanentDealtDamage
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-deriving Repr, Inhabited, BEq
-
 /-- What a later step of `TriggerResolution.destroy` can read. -/
 inductive TriggerDestroyNote where
   /-- Nothing beyond the destruction. -/
@@ -1096,16 +1133,6 @@ inductive TriggerDestroyNote where
   /-- The announced token. A permanent that is not a token stays.
   The ability's own target may be a player; the token is `targets[0]`. -/
   | chosenToken
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.fight` uses. -/
-inductive TriggerFightWho where
-  /-- The source. -/
-  | source
-  /-- The creature an earlier step attached Equipment to. -/
-  | equipmentHost
-  /-- The announced creature. -/
-  | announced
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.fight` uses that creature. -/
@@ -1146,35 +1173,6 @@ inductive TriggerGrantWhat where
   its power to any other target." Each resolution adds one such ability.
   A missing source gains nothing. -/
   | ironFistTap
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.grant` grants that to. -/
-inductive TriggerGrantWho where
-  /-- Each equipped attacking creature. -/
-  | equippedAttackers
-  /-- The controller, when the source was cast. -/
-  | youIfCast
-  /-- The announced permanent. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- Each creature the controller controls. -/
-  | creaturesYouControl
-  /-- Each creature the controller controls of this subtype. -/
-  | youControlSubtype (subtype : String)
-  /-- The one creature the controller has attacking alone.
-  None is reported. -/
-  | attackingAlone
-  /-- Each creature the spell that caused this trigger targets.
-  A permanent that is not a creature is skipped. No recorded spell grants
-  nothing. -/
-  | spellTargets
 deriving Repr, Inhabited, BEq
 
 /-- Who loses life from `TriggerResolution.loseLife`. -/
@@ -1240,63 +1238,6 @@ inductive TriggerRemoveWhat where
   | hope
   /-- Every counter on that permanent. -/
   | all
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.removeCounters` removes counters from. -/
-inductive TriggerRemoveWho where
-  /-- The ability's source. -/
-  | source
-  /-- The creature the source enchants. -/
-  | enchanted
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.tap` taps. -/
-inductive TriggerTapWho where
-  /-- Any number of untapped Humans the controller controls.
-  Choosing none taps nothing. -/
-  | humans
-  /-- The creature the source enchants. Nothing enchanted taps nothing. -/
-  | enchanted
-  /-- The announced permanent, while it is still on the battlefield.
-  A missing target taps nothing. -/
-  | targetIfPresent
-  /-- The announced permanent, while it is still a legal target.
-  An illegal target is reported. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield.
-  Inside `.may _ _ .ifYouDo`, tapping is optional. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. A missing Aura is reported. -/
-  | enchantedWhileSource
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.untap` untaps. -/
-inductive TriggerUntapWho where
-  /-- The announced permanent, while it is still a legal target.
-  An illegal target is reported. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- Each attacking creature. -/
-  | attackingCreatures
-  /-- The creature this Equipment is attached to, while it is on the
-  battlefield. A missing creature is reported, and later steps of the
-  sequence do not happen. -/
-  | equipped
-  /-- The creature that became tapped, while it is still tapped.
-  The recorded cause is used when one was chosen. Otherwise the creature
-  that became tapped most recently. An untapped creature is left alone. -/
-  | firstThisTurn
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
@@ -1445,7 +1386,13 @@ on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes is an argument.
 Which card is an `ObjectSelector`.
 Untapping the announced permanent, and untapping each attacking
-creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
+creature, are `untap`. Who is untapped is an `ObjectSelector`.
+Removing counters is `removeCounters`. Who loses them is an `ObjectSelector`.
+Destroying permanents is `destroy`. Which permanents is an `ObjectSelector`.
+Tapping permanents is `tap`. Who is tapped is an `ObjectSelector`.
+Granting an ability is `grant`. Who receives it is an `ObjectSelector`.
+A creature fighting is `fight`. Who fights is an `ObjectSelector`.
++P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
 and `grant`. Who becomes an artifact is an `ObjectSelector`.
@@ -2027,8 +1974,8 @@ inductive TriggerResolution where
   source that has left the battlefield, removes nothing.
   All counters from the enchanted creature are
   `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
-  Any other combination removes nothing. -/
-  | removeCounters (what : TriggerRemoveWhat) (who : TriggerRemoveWho)
+  Any other selector removes nothing. -/
+  | removeCounters (what : TriggerRemoveWhat) (who : ObjectSelector)
   /-- Tap permanents, as `who` says.
   Any number of untapped Humans you control is `.tap .humans`.
   Choosing none taps nothing. Optional as `.may (.tap .humans) (.sequence [])`.
@@ -2038,8 +1985,11 @@ inductive TriggerResolution where
   `.tap .targetIfPresent`. A missing target taps nothing.
   The announced permanent, while it is still a legal target, is
   `.tap .target`. An illegal target is reported.
-  Wrapping one in `may` is that tap. -/
-  | tap (who : TriggerTapWho)
+  Wrapping one in `may` is that tap.
+  The creature this Aura enchants, while the Aura remains, is
+  `.tap .enchantedWhileSource`.
+  Any other selector taps nothing. -/
+  | tap (who : ObjectSelector)
   /-- Untap permanents, as `who` says.
   The announced permanent, while it is still a legal target, is `.untap`.
   An illegal target is reported. A stun counter is removed instead of
@@ -2050,8 +2000,9 @@ inductive TriggerResolution where
   The announced permanent while the source remains is
   `.untap .targetWhileSource`. A source that already left is silent.
   Each attacking creature is `.untap .attackingCreatures`.
-  Tap or untap is `.or [.tap .target, .untap]`. -/
-  | untap (who : TriggerUntapWho := .target)
+  Tap or untap is `.or [.tap .target, .untap]`.
+  Any other selector untaps nothing. -/
+  | untap (who : ObjectSelector := .target)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -2063,8 +2014,12 @@ inductive TriggerResolution where
   `.destroy .target (note := .forAmass)`. No target means no player amasses.
   The announced permanent is `.destroy .target`.
   The announced token, when this ability's target is a player, is
-  `.destroy .target (note := .chosenToken)`. -/
-  | destroy (what : TriggerDestroyWhat) (note : TriggerDestroyNote := .none)
+  `.destroy .target (note := .chosenToken)`.
+  The source is `.destroy .source`.
+  The enchanted creature is `.destroy .enchanted`.
+  The target, while the source remains, is `.destroy .targetWhileSource`.
+  Any other selector destroys nothing. -/
+  | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
   /-- Amass `subtype` for `who`, as `amount` says. `n` is the count when
@@ -2256,8 +2211,8 @@ inductive TriggerResolution where
   Flying on each creature the causing spell targets is
   `.grant (.keywords Keyword.flying) .spellTargets`. A noncreature target
   is skipped. No recorded spell grants nothing.
-  Any other combination does nothing. -/
-  | grant (what : TriggerGrantWhat) (who : TriggerGrantWho)
+  Any other selector does nothing. -/
+  | grant (what : TriggerGrantWhat) (who : ObjectSelector)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
   resolve `thenDo` for the cards that were found.
   The top `n` cards of your library, a random creature from among them
@@ -2328,8 +2283,9 @@ inductive TriggerResolution where
   The creature that received Equipment deals damage equal to its power
   to up to one target creature with `.fight .equipmentHost .reflexive`.
   That target is chosen when the reflexive ability is put on the stack.
-  Nothing is queued when no creature received Equipment. -/
-  | fight (who : TriggerFightWho := .source) (how : TriggerFightHow := .mutual)
+  Nothing is queued when no creature received Equipment.
+  Any other selector fights nothing. -/
+  | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
   /-- A player reveals cards from their hand (CR 701.16), as `count` says,
   then resolves `thenDo`.
   The opponent reveals their hand. You may exile a nonland card from it, or
@@ -2553,19 +2509,19 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
   | .pump p t => .pump (.fixed p) (.fixed t) (affectedWho who)
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (grantWho who)]
-  | .destroy => .destroy (destroyWhat who)
+    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (affectedWho who)]
+  | .destroy => .destroy (affectedWho who)
   | .dealDamage n => .dealDamage (.fixed n) (affectedWho who)
-  | .grantKeywords k => .grant (.keywords k) (grantWho who)
+  | .grantKeywords k => .grant (.keywords k) (affectedWho who)
   | .tap => .tap (tapWho who)
-  | .untap => .untap (untapWho who)
+  | .untap => .untap (affectedWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
   | .cantBeBlocked => .cant (.beBlocked who)
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (grantWho who)]
+    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (affectedWho who)]
   | .becomePrepared => .becomePrepared (affectedWho who)
   | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
   | .tapAndStun =>
@@ -2585,25 +2541,10 @@ where
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  grantWho : TriggerAffected → TriggerGrantWho
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  tapWho : TriggerAffected → TriggerTapWho
+  tapWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchantedWhileSource
-    | .targetWhileSource => .targetWhileSource
-  untapWho : TriggerAffected → TriggerUntapWho
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  destroyWhat : TriggerAffected → TriggerDestroyWhat
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   loseWho : TriggerAffected → ObjectSelector
     | .target => .target

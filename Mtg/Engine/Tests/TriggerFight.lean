@@ -142,7 +142,8 @@ target is chosen then, and only that creature is dealt damage. -/
   g.equipmentAttachedHost.isNone && g.stack.size == g0.stack.size &&
     !(logContains g "reflexive")
 
-/- A combination that is not printed fights nothing and queues nothing. -/
+/- A combination that is not printed, and any other selector, fights nothing
+and queues nothing. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
@@ -163,6 +164,12 @@ target is chosen then, and only that creature is dealt damage. -/
   g.equipmentAttachedHost == some alphaId && g.stack.size == marked.stack.size &&
     damageOf g "Alpha" == 0 && damageOf g "Beta" == 0 &&
     !(logContains g "reflexive") && !(logContains g "no longer")
+
+#guard
+  let g0 := board
+  let g := step g0 (.fight .target .mutual) (some (pid g0 "Alpha"))
+    #[Target.permanent (pid g0 "Beta")]
+  damageOf g "Alpha" == 0 && damageOf g "Beta" == 0 && g.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard (.fight : TriggeredAbility.TriggerResolution) == sourceFight

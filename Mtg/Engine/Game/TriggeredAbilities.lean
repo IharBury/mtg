@@ -1544,7 +1544,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
 the behavior of the constructor it replaced. -/
 def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower : Option Int) (what : TriggeredAbility.TriggerDestroyWhat)
+    (lastKnownPower : Option Int) (what : TriggeredAbility.ObjectSelector)
     (note : TriggeredAbility.TriggerDestroyNote) : Game :=
   match what, note with
   | .oppArtifactsEnchantments, .countDestroyed =>
@@ -1834,7 +1834,7 @@ the behavior of the constructor it replaced. -/
 def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (what : TriggeredAbility.TriggerGrantWhat)
-    (who : TriggeredAbility.TriggerGrantWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .doubleStrike, .equippedAttackers =>
     Id.run do
@@ -1896,7 +1896,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (who : TriggeredAbility.TriggerFightWho)
+    (targets : Array Target) (who : TriggeredAbility.ObjectSelector)
     (how : TriggeredAbility.TriggerFightHow) : Game :=
   match who, how with
   | .source, .mutual =>
@@ -1989,7 +1989,7 @@ the behavior of the constructor it replaced. A stun counter is removed
 instead of untapping (CR 122.1d). -/
 def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.TriggerUntapWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match who with
   | .attackingCreatures =>
     Id.run do
@@ -2024,12 +2024,13 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some o =>
       if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
     | none => g
+  | _ => g
 
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector taps nothing. -/
 def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.TriggerTapWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match who with
   | .humans =>
     { g with pending := .tapHumans controller, humansTappedThisWay := 0 }.logMsg
@@ -2072,12 +2073,13 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .tap
+  | _ => g
 
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector removes nothing. -/
 def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
     (what : TriggeredAbility.TriggerRemoveWhat)
-    (who : TriggeredAbility.TriggerRemoveWho) : Game :=
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .hope, .source =>
     let g := { g with removedHopeThisWay := false }

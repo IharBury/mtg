@@ -4,8 +4,9 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.tap`
 
-Any number of untapped Humans, the enchanted creature, and the announced
-permanent while it is still on the battlefield. Who is tapped is an argument.
+Who is tapped is an `ObjectSelector`. Any number of untapped Humans, the
+enchanted creature, and the announced permanent while it is still on the
+battlefield. Any other selector taps nothing.
 -/
 
 namespace Mtg.Engine.TapTests
@@ -270,6 +271,12 @@ source to still be there. -/
     #[Target.card (pid g0 "Hawk")]
   !(obj g "Hawk").status.tapped && g.log == g0.log
 
+/- Any other selector taps nothing. -/
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 (.tap .attackingCreatures) (some (pid g0 "Bear"))
+  !(obj g "Bear").status.tapped && g.log == g0.log
+
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw == humansDraw
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters == enchantedRemove
@@ -285,6 +292,8 @@ source to still be there. -/
   "tap enchanted creature"
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .targetIfPresent } ==
   "tap up to one target creature"
+#guard TriggeredAbility.resolutionPhrase { resolution := .tap .attackingCreatures } ==
+  "tap it"
 #guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .enchanted) (.sequence []) } ==
   "you may do it"
 #guard TriggeredAbility.resolutionPhrase { resolution := humansDraw } ==
