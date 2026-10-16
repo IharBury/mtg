@@ -41,7 +41,7 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceDrawIfAnotherHeroDamage) ==
   .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawBecome66) ==
-  .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
+  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawDrain) ==

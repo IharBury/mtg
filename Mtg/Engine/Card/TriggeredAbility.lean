@@ -683,7 +683,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .becomeArtifact .targetWhileSource =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
   | .becomePrepared .targetWhileSource => some "that creature becomes prepared"
-  | .setBasePT p t .targetWhileSource .fixed =>
+  | .setBasePT (.fixed p) (.fixed t) .targetWhileSource =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .putOnLibrary .top (.permanent .targetWhileSource) =>
     some "that creature's owner puts it on top of their library"
@@ -744,7 +744,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
     | _, _, _ =>
       "those permanents get +P/+T until end of turn"
-  | .setBasePT _ _ .target .equalSource =>
+  | .setBasePT .equalSourcePower .equalSourceToughness .target =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
   | .lose .indestructible .target =>
     s!"{noun} loses indestructible until end of turn"
@@ -786,9 +786,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that creature becomes prepared"
   | .becomePrepared _ =>
     "becomes prepared"
-  | .setBasePT p t who .fixed =>
-    s!"{affectedNoun who noun} has base power and toughness {p}/{t} until end of turn"
-  | .setBasePT _ _ _ _ =>
+  | .setBasePT (.fixed p) (.fixed t) .target =>
+    s!"{noun} has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) .source =>
+    s!"this creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) .enchanted =>
+    s!"enchanted creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) .targetWhileSource =>
+    s!"that creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT _ _ _ =>
     "set base power and toughness"
   | .putOnLibrary .top (.permanent who) =>
     s!"{affectedNoun who noun}'s owner puts it on top of their library"

@@ -131,7 +131,8 @@ keep working.
 - `PutOnLibrary`: the announced permanent on top or on the bottom of its
   owner's library, and a card from hand on the bottom
 - `SetBasePT`: a fixed base power and toughness, and another creature's
-  base power and toughness equal to this creature's
+  base power and toughness equal to this creature's, as two `NumberSelector`s
+  and an `ObjectSelector`
 - `Untap`: the announced permanent, the source, the enchanted creature,
   the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
