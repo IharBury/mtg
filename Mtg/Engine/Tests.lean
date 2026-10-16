@@ -62,6 +62,7 @@ import Mtg.Engine.Tests.Sacrifice
 import Mtg.Engine.Tests.PutCounters
 import Mtg.Engine.Tests.BecomeArtifact
 import Mtg.Engine.Tests.BecomePrepared
+import Mtg.Engine.Tests.Exile
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -151,4 +152,5 @@ keep working.
 - `PutCounters`: what is put, as a `CounterSelector`, and who receives it, as an `ObjectSelector`
 - `BecomeArtifact`: who becomes an artifact until end of turn, as an `ObjectSelector`
 - `BecomePrepared`: who becomes prepared, as an `ObjectSelector`
+- `Exile`: which cards are exiled, as an `ObjectSelector`
 -/

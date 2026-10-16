@@ -1140,10 +1140,11 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     g.createKindTokens controller kind n (tapped := tapped)
 
 /-- Resolve `TriggerResolution.exile`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector exiles
+nothing. -/
 def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerExileWhat)
+    (what : TriggeredAbility.ObjectSelector)
     (how : TriggeredAbility.TriggerExileHow)
     (note : TriggeredAbility.TriggerExileNote) : Game :=
   match what, how, note with
