@@ -507,7 +507,11 @@ inductive ObjectSelector where
   | eachOther
   /-- The token an earlier step created.
   The noted number of +1/+1 counters is
-  `.putCounters .plusOneNoted .createdToken`. -/
+  `.putCounters .plusOneNoted .createdToken`.
+  Attaching the source to the token the previous step created is
+  `.attach .source .createdToken`.
+  Attaching the token an earlier step remembered to the source is
+  `.attach .createdToken .source`. -/
   | createdToken
   /-- The ability's source, if it is still on the battlefield.
   A source that has left logs that no counter is put. Later steps still run.
@@ -683,6 +687,34 @@ inductive ObjectSelector where
   Nothing noted, or nothing enchanted, copies nothing.
   `.becomeCopy .noted`. -/
   | noted
+  /-- Any number of Equipment the controller chooses.
+  `.attach .anyYouControl .target`. -/
+  | anyYouControl
+  /-- The artifact an earlier step put from hand.
+  `.attach .putArtifact .notedHost`. -/
+  | putArtifact
+  /-- The announced Equipment. An illegal Equipment does not move.
+  `.attach .announcedEquipment .announcedCreature`. -/
+  | announcedEquipment
+  /-- Each announced Equipment. Choosing none attaches nothing.
+  `.attach .eachTargetEquipment .enchantedCreature`. -/
+  | eachTargetEquipment
+  /-- Up to one announced creature. A missing creature is reported.
+  `.attach .target .optionalCreature`. -/
+  | optionalCreature
+  /-- The announced creature. When two targets were announced, the later one.
+  `.attach .source .creatureTarget`. -/
+  | creatureTarget
+  /-- The creature remembered with the artifact put from hand.
+  `.attach .putArtifact .notedHost`. -/
+  | notedHost
+  /-- The announced creature. An illegal pair does not move the Equipment.
+  `.attach .announcedEquipment .announcedCreature`. -/
+  | announcedCreature
+  /-- The creature the source enchants. A missing creature leaves Equipment
+  where it is.
+  `.attach .eachTargetEquipment .enchantedCreature`. -/
+  | enchantedCreature
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -996,45 +1028,6 @@ inductive TriggerSacrificeNote where
   /-- Whether the source was actually sacrificed. A following
   `«if» .sourceWasSacrificed` sees it. -/
   | noted
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.attach` attaches. -/
-inductive TriggerAttachWhat where
-  /-- The source. -/
-  | source
-  /-- The first announced permanent. -/
-  | target
-  /-- Any number of Equipment the controller chooses. -/
-  | anyYouControl
-  /-- The token an earlier step remembered. -/
-  | created
-  /-- The artifact an earlier step put from hand. -/
-  | putArtifact
-  /-- The announced Equipment. An illegal Equipment does not move. -/
-  | announcedEquipment
-  /-- Each announced Equipment. Choosing none attaches nothing. -/
-  | eachTargetEquipment
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.attach` attaches that object to. -/
-inductive TriggerAttachTo where
-  /-- The token the previous step created. -/
-  | created
-  /-- The announced permanent. -/
-  | target
-  /-- Up to one announced creature. A missing creature is reported. -/
-  | optionalCreature
-  /-- The announced creature. When two targets were announced, the later one. -/
-  | creatureTarget
-  /-- The source. -/
-  | source
-  /-- The creature remembered with the artifact put from hand. -/
-  | notedHost
-  /-- The announced creature. An illegal pair does not move the Equipment. -/
-  | announcedCreature
-  /-- The creature the source enchants. A missing creature leaves Equipment
-  where it is. -/
-  | enchantedCreature
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.mayCast` finds the spell. -/
@@ -1722,7 +1715,7 @@ inductive TriggerResolution where
   of Humans, then draw that many, is
   `.sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]`.
   Create one token, then attach the source to it, is
-  `.sequence [.createTokens kind (.fixed 1) false, .attach .source .created]`.
+  `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`.
   Gain life, then you may search a basic land onto the top, is
   `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`.
   Destroy opponents' artifacts and enchantments, then gain 1 life for each
@@ -2052,7 +2045,7 @@ inductive TriggerResolution where
       (note : TriggerTokenNote := .none)
   /-- Attach `what` to `host`.
   The source to the token created by the previous step is
-  `.attach .source .created`.
+  `.attach .source .createdToken`.
   The source to the targeted permanent is `.attach .source .target`.
   Target Equipment to up to one target creature you control is
   `.attach .target .optionalCreature`.
@@ -2060,10 +2053,11 @@ inductive TriggerResolution where
   Any number of Equipment you control to the target creature is
   `.attach .anyYouControl .target`.
   The token an earlier step remembered, attached to the source, is
-  `.attach .created .source`.
+  `.attach .createdToken .source`.
   The artifact put from hand, attached to the remembered creature, is
-  `.attach .putArtifact .notedHost`. -/
-  | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
+  `.attach .putArtifact .notedHost`.
+  Any other pair attaches nothing. -/
+  | attach (what host : ObjectSelector)
   /-- Add mana, as `amount` says. `types` is the printed mana.
   Adding those types once is `.addMana types`.
   Adding them `n` times is `.addMana types (.fixed n)`.
@@ -2921,7 +2915,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageBlockers n => { resolution := .dealDamage (.fixed n) .blockers }
   | .returnLinkedExile => { resolution := .put .linkedExile }
   | .createThenAttach kind =>
-    { resolution := .sequence [.createTokens kind (.fixed 1) false, .attach .source .created] }
+    { resolution := .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] }
   | .gainLifeSearchBasicOnTop n =>
     { resolution := .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)] }
   | .addMana types => { resolution := .addMana types }
@@ -3322,7 +3316,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering],
       resolution := .sequence
         [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
-         .attach .created .source] }
+         .attach .createdToken .source] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
       resolution := .sequence

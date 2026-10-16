@@ -1060,7 +1060,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | .sequence [.createTokens kind (.fixed 1) false, .attach .source .created] =>
+  | .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] =>
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
@@ -1176,7 +1176,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .putCounters (.ofKind .invasion) .source] =>
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
   | .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield .you .remember,
-      .attach .created .source] =>
+      .attach .createdToken .source] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
@@ -1410,7 +1410,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create a token"
   | .attach what host =>
     match what, host with
-    | .source, .created =>
+    | .source, .createdToken =>
       "attach this Equipment to it"
     | .source, .target =>
       s!"attach it to {noun}"
@@ -1420,7 +1420,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "attach this to up to one target creature you control"
     | .anyYouControl, .target =>
       "attach any number of Equipment you control to target creature you control"
-    | .created, .source | .putArtifact, .notedHost =>
+    | .createdToken, .source | .putArtifact, .notedHost =>
       "attach it to this creature"
     | _, _ =>
       "attach it"

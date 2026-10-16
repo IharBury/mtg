@@ -1302,10 +1302,9 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 the behavior of the constructor it replaced. -/
 def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerAttachWhat)
-    (host : TriggeredAbility.TriggerAttachTo) : Game :=
+    (what host : TriggeredAbility.ObjectSelector) : Game :=
   match what, host with
-  | .source, .created =>
+  | .source, .createdToken =>
     match (g.recentTokenIds.back?).bind g.findObject? with
     | some tok =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
@@ -1369,7 +1368,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           if host.isOnBattlefield then g.attachSourceTo o host
           else g.logMsg s!"{host.name} is no longer on the battlefield"
         | none => g.logMsg "The source is no longer in play"
-  | .created, .source =>
+  | .createdToken, .source =>
     match g.createdTokenThisWay.bind g.findObject? with
     | none => { g with createdTokenThisWay := none }
     | some tok =>

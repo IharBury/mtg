@@ -775,7 +775,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
   .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
 #guard TriggeredAbility.resolution (.onEnterCreateThenAttach .dwarf) ==
-  .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .created]
+  .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .createdToken]
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
@@ -1285,6 +1285,8 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
 #guard TriggeredAbility.resolutionPhrase { resolution := .surveil .perOtherCreature } ==
   "surveil"
+#guard TriggeredAbility.resolutionPhrase { resolution := .attach .source .source } ==
+  "attach it"
 #guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace (.fixed 2) } ==
   "empower Jace 2"
 #guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace .perOtherCreature } ==
@@ -1382,7 +1384,7 @@ namespace CardDef
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
   .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
-    .attach .created .source]
+    .attach .createdToken .source]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
@@ -1643,7 +1645,7 @@ end CardDef
   .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
   .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
-    .attach .created .source]
+    .attach .createdToken .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==

@@ -619,7 +619,7 @@ inductive SharedTrigger where
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
-  Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .created]`. -/
+  Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
