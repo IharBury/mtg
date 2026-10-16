@@ -2454,24 +2454,33 @@ where
 
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
-puts nothing. -/
+puts nothing. Any other selector puts nothing. -/
 def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (place : TriggeredAbility.TriggerLibraryPlace)
-    (what : TriggeredAbility.TriggerLibraryWhat) : Game :=
-  match place, what with
-  | .top, .permanent who =>
+    (what : TriggeredAbility.ObjectSelector) : Game :=
+  match what with
+  | .target => put .target
+  | .source => put .source
+  | .enchanted => put .enchanted
+  | .targetWhileSource => put .targetWhileSource
+  | .cardFromHand =>
+    match place with
+    | .bottom =>
+      if (g.player controller).hand.isEmpty then g
+      else
+        { g with pending := .putOnBottom controller 1 }.logMsg
+          s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
+    | .top => g
+  | _ => g
+where
+  put (who : TriggeredAbility.TriggerAffected) : Game :=
+    let action : PermanentAction :=
+      match place with
+      | .top => .putOnTopOfLibrary
+      | .bottom => .putOnBottomOfLibrary
     g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .putOnTopOfLibrary
-  | .bottom, .permanent who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .putOnBottomOfLibrary
-  | .bottom, .cardFromHand =>
-    if (g.player controller).hand.isEmpty then g
-    else
-      { g with pending := .putOnBottom controller 1 }.logMsg
-        s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-  | .top, .cardFromHand => g
+      g.applyPermanentAction o action
 
 /-- Resolve `TriggerResolution.setBasePT`. `power` and `toughness` are read
 separately. Each printed combination keeps the behavior of the constructor

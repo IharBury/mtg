@@ -128,8 +128,7 @@ keep working.
   source remains
 - `Cant`: can't be blocked this turn, and can't untap while you control
   the source
-- `PutOnLibrary`: the announced permanent on top or on the bottom of its
-  owner's library, and a card from hand on the bottom
+- `PutOnLibrary`: which card is put on a library, as an `ObjectSelector`
 - `SetBasePT`: a fixed base power and toughness, and another creature's
   base power and toughness equal to this creature's, as two `NumberSelector`s
   and an `ObjectSelector`

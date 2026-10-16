@@ -685,9 +685,9 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .becomePrepared .targetWhileSource => some "that creature becomes prepared"
   | .setBasePT (.fixed p) (.fixed t) .targetWhileSource =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
-  | .putOnLibrary .top (.permanent .targetWhileSource) =>
+  | .putOnLibrary .top .targetWhileSource =>
     some "that creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom (.permanent .targetWhileSource) =>
+  | .putOnLibrary .bottom .targetWhileSource =>
     some "that creature's owner puts it on the bottom of their library"
   | .destroy .targetWhileSource _ => some "destroy that creature"
   | .dealDamage (.fixed n) .targetWhileSource .none =>
@@ -796,10 +796,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .setBasePT _ _ _ =>
     "set base power and toughness"
-  | .putOnLibrary .top (.permanent who) =>
-    s!"{affectedNoun who noun}'s owner puts it on top of their library"
-  | .putOnLibrary .bottom (.permanent who) =>
-    s!"{affectedNoun who noun}'s owner puts it on the bottom of their library"
+  | .putOnLibrary .top .target =>
+    s!"{noun}'s owner puts it on top of their library"
+  | .putOnLibrary .bottom .target =>
+    s!"{noun}'s owner puts it on the bottom of their library"
+  | .putOnLibrary .top .source =>
+    "this creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom .source =>
+    "this creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .top .enchanted =>
+    "enchanted creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom .enchanted =>
+    "enchanted creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .top .targetWhileSource =>
+    "that creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom .targetWhileSource =>
+    "that creature's owner puts it on the bottom of their library"
   | .putOnLibrary .bottom .cardFromHand =>
     "put a card from your hand on the bottom of your library"
   | .putOnLibrary _ _ =>
