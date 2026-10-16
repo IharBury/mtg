@@ -2722,7 +2722,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount
-  | .becomePT p t =>
+  | .becomePT (.fixed p) (.fixed t) =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then
@@ -2730,7 +2730,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
       else g
     | none => g
-  | .lookAtTopRevealTypes n types =>
+  | .becomePT _ _ => g
+  | .lookAtTopRevealTypes (.fixed n) types =>
+    let n := n.toNat
     let ids := g.scryLookedIds controller n
     let g := g.logLookAtTop controller n
     let eligible := ids.filter (fun id =>
@@ -2743,6 +2745,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => false)
     g.beginFraChoice controller (.mayRevealToHand ids eligible false)
       s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
+  | .lookAtTopRevealTypes _ _ => g
   | .gainControl how =>
     match how with
     | .untilEndOfTurn =>
@@ -2939,10 +2942,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
-  | .spellsCostLess which n =>
+  | .spellsCostLess which (.fixed n) =>
+    let n := n.toNat
     match which with
     | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
     | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
+  | .spellsCostLess _ _ => g
   | .investigate =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
@@ -2991,8 +2996,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | _ => g
     else g
   | .surveil _ => g
-  | .empowerJace n =>
-    g.empowerJace controller n
+  | .empowerJace (.fixed n) =>
+    g.empowerJace controller n.toNat
+  | .empowerJace _ => g
   | .prepareSource .ifNotPrepared =>
     match sourceId.bind g.findObject? with
     | some o =>

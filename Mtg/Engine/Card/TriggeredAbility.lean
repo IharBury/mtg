@@ -818,7 +818,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put on library"
   | .surveil (.fixed n) => s!"surveil {n}"
   | .surveil _ => "surveil"
-  | .empowerJace n => s!"empower Jace {n}"
+  | .empowerJace (.fixed n) => s!"empower Jace {n}"
+  | .empowerJace _ => "empower Jace"
   | .prepareSource .ifNotPrepared =>
     "if this creature isn't prepared, it becomes prepared"
   | .prepareSource .ifThreeCreaturesDied =>
@@ -1436,16 +1437,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
       "choose one — tap target creature an opponent controls; untap target creature you control"
-  | .becomePT p t =>
+  | .becomePT (.fixed p) (.fixed t) =>
     s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .becomePT _ _ =>
+    "you may have this creature's base power and toughness become those values until end of turn"
   | .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source) =>
     "if you do, put a +1/+1 counter on this creature"
-  | .lookAtTopRevealTypes n types =>
+  | .lookAtTopRevealTypes (.fixed n) types =>
     let joined :=
       match types.toList with
       | [a, b] => s!"a {a} or {b} card"
       | xs => s!"a {String.intercalate " or " xs} card"
     s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
+  | .lookAtTopRevealTypes _ _ =>
+    "look at the top cards of your library"
   | .gainControl .untilEndOfTurn =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
   | .gainControl .whileSourceRemains =>
@@ -1598,8 +1603,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
   | .queueReflexive (.pump .perPlains .perPlains .target) =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
-  | .spellsCostLess _ n =>
+  | .spellsCostLess _ (.fixed n) =>
     s!"spells you cast this turn cost \{{n}} less to cast"
+  | .spellsCostLess _ _ =>
+    "spells you cast this turn cost less to cast"
   | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"

@@ -2072,10 +2072,16 @@ inductive TriggerResolution where
   A source that has left uses its last-known charge counters.
   Any other selector adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
-  /-- Set the source's base P/T. -/
-  | becomePT (power toughness : Int)
-  /-- Look at the top `n` and reveal a listed type. -/
-  | lookAtTopRevealTypes (n : Nat) (types : Array String)
+  /-- Set the source's base power and toughness, as the selectors say.
+  `.fixed` is that number. Both printed numbers are `.fixed`.
+  Base power `p` and toughness `t` is `.becomePT (.fixed p) (.fixed t)`.
+  Any other selector changes nothing. -/
+  | becomePT (power toughness : NumberSelector)
+  /-- Look at the top cards, as `n` says, and you may reveal a listed type.
+  `.fixed` is that many cards.
+  The top `n` is `.lookAtTopRevealTypes (.fixed n) types`.
+  Any other amount looks at nothing. -/
+  | lookAtTopRevealTypes (n : NumberSelector) (types : Array String)
   /-- Gain control of the announced permanents, as `how` says.
   Until end of turn, then untap and haste, is `.gainControl .untilEndOfTurn`.
   While the source remains is `.gainControl .whileSourceRemains`.
@@ -2256,10 +2262,12 @@ inductive TriggerResolution where
   | copySelfNonlegendary
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Spells of `which` cost `{n}` less this turn.
-  A card type is `.spellsCostLess (.cardType ty) n`.
-  A supertype is `.spellsCostLess (.supertype s) n`. -/
-  | spellsCostLess (which : SpellCostLess) (n : Nat)
+  /-- Spells of `which` cost less this turn, as `n` says.
+  `.fixed` is that much generic mana.
+  A card type is `.spellsCostLess (.cardType ty) (.fixed n)`.
+  A supertype is `.spellsCostLess (.supertype s) (.fixed n)`.
+  Any other amount changes nothing. -/
+  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Investigate (create a Clue). -/
   | investigate
   /-- Connive (CR 701.48). The source is `.connive`. A target is
@@ -2291,8 +2299,11 @@ inductive TriggerResolution where
   /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
   Surveil 2 is `.surveil (.fixed 2)`. Any other amount surveils nothing. -/
   | surveil (n : NumberSelector)
-  /-- Empower Jace `n` (Reality Fracture). -/
-  | empowerJace (n : Nat)
+  /-- Empower Jace, as `n` says (Reality Fracture).
+  `.fixed` is that many loyalty counters.
+  Empower Jace `n` is `.empowerJace (.fixed n)`.
+  Any other amount empowers nothing. -/
+  | empowerJace (n : NumberSelector)
   /-- The source becomes prepared.
   If it isn't prepared is `.prepareSource`.
   If three or more creatures died this turn is
@@ -2589,7 +2600,7 @@ def ofSpell : SpellResolution → TriggerResolution
     .may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
   | .mayPutHeroMvOrDraw n subtype =>
     .may (.put (.creatureFromHand subtype n)) (.draw (.fixed 1))
-  | .spellsCostLessThisTurn which n => .spellsCostLess which n
+  | .spellsCostLessThisTurn which n => .spellsCostLess which (.fixed n)
   | _ => .sequence []
 
 end TriggerResolution
@@ -2896,7 +2907,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
          .gainLife .perOtherCreature] }
-  | .becomePT p t => { resolution := .becomePT p t }
+  | .becomePT p t => { resolution := .becomePT (.fixed p) (.fixed t) }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
@@ -2982,7 +2993,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.returnToHand .permanent .returnedPermanent,
          .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
-    { resolution := .lookAtTopRevealTypes n types }
+    { resolution := .lookAtTopRevealTypes (.fixed n) types }
   | .createTappedTreasuresEqualOppArtifacts =>
     { resolution := .createTokens .treasure .oppArtifacts true }
   | .putNonlandMvAtMostFromGy mv =>
@@ -3207,7 +3218,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
   | .surveil n => { resolution := .surveil (.fixed n) }
-  | .empowerJace n => { resolution := .empowerJace n }
+  | .empowerJace n => { resolution := .empowerJace (.fixed n) }
   | .prepareSource .ifNotPrepared =>
     { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
   | .prepareSource .ifThreeCreaturesDied =>

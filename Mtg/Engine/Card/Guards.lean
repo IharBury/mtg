@@ -1285,6 +1285,25 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
 #guard TriggeredAbility.resolutionPhrase { resolution := .surveil .perOtherCreature } ==
   "surveil"
+#guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace (.fixed 2) } ==
+  "empower Jace 2"
+#guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace .perOtherCreature } ==
+  "empower Jace"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) } ==
+  "spells you cast this turn cost {1} less to cast"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .spellsCostLess (.cardType .artifact) .perOtherCreature } ==
+  "spells you cast this turn cost less to cast"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .becomePT (.fixed 2) (.fixed 2) } ==
+  "you may have this creature's base power and toughness become 2/2 until end of turn"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .becomePT .perOtherCreature (.fixed 2) } ==
+  "you may have this creature's base power and toughness become those values until end of turn"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .lookAtTopRevealTypes .perOtherCreature #["Dwarf"] } ==
+  "look at the top cards of your library"
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) ==
