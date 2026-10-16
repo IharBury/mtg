@@ -60,6 +60,7 @@ import Mtg.Engine.Tests.Reflexive
 import Mtg.Engine.Tests.Pay
 import Mtg.Engine.Tests.Sacrifice
 import Mtg.Engine.Tests.PutCounters
+import Mtg.Engine.Tests.BecomeArtifact
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -146,4 +147,5 @@ keep working.
 - `Pay`: mana, and a sacrificed or discarded object, paid as one `pay`
 - `Sacrifice`: who sacrifices and which permanent, as one `ObjectSelector`
 - `PutCounters`: what is put, as a `CounterSelector`, and who receives it, as an `ObjectSelector`
+- `BecomeArtifact`: who becomes an artifact until end of turn, as an `ObjectSelector`
 -/
