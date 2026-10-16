@@ -776,8 +776,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until end of turn, that creature becomes an artifact in addition to its other types"
   | .becomeArtifact _ =>
     "becomes an artifact"
-  | .becomePrepared who =>
-    s!"{affectedNoun who noun} becomes prepared"
+  | .becomePrepared .target =>
+    s!"{noun} becomes prepared"
+  | .becomePrepared .source =>
+    "this creature becomes prepared"
+  | .becomePrepared .enchanted =>
+    "enchanted creature becomes prepared"
+  | .becomePrepared .targetWhileSource =>
+    "that creature becomes prepared"
+  | .becomePrepared _ =>
+    "becomes prepared"
   | .setBasePT p t who .fixed =>
     s!"{affectedNoun who noun} has base power and toughness {p}/{t} until end of turn"
   | .setBasePT _ _ _ _ =>

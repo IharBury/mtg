@@ -256,15 +256,17 @@ deriving Repr, Inhabited, BEq
 discards, which cards `TriggerResolution.returnToHand` returns, which
 permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.putCounters` puts counters on, who
-`TriggerResolution.lose` removes an ability from, and who
-`TriggerResolution.becomeArtifact` makes an artifact.
+`TriggerResolution.lose` removes an ability from, who
+`TriggerResolution.becomeArtifact` makes an artifact, and who
+`TriggerResolution.becomePrepared` prepares.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
 A sacrifice names both who sacrifices and which permanent.
 Counters name who receives them.
 Losing an ability names who loses it.
-Becoming an artifact names who becomes one. -/
+Becoming an artifact names who becomes one.
+Becoming prepared names who becomes prepared. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -274,21 +276,24 @@ inductive ObjectSelector where
   A loyalty counter is `.putCounters (.ofKind .loyalty) .source`.
   It loses indestructible until end of turn is
   `.lose .indestructible .source`.
-  It becomes an artifact until end of turn is `.becomeArtifact .source`. -/
+  It becomes an artifact until end of turn is `.becomeArtifact .source`.
+  It becomes prepared is `.becomePrepared .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
   It loses indestructible until end of turn is `.lose .indestructible`
   (`.target`). An illegal target is reported.
   It becomes an artifact until end of turn is `.becomeArtifact`
-  (`.target`). -/
+  (`.target`).
+  It becomes prepared is `.becomePrepared` (`.target`). -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
   A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`.
   It loses indestructible until end of turn is
   `.lose .indestructible .enchanted`.
-  It becomes an artifact until end of turn is `.becomeArtifact .enchanted`. -/
+  It becomes an artifact until end of turn is `.becomeArtifact .enchanted`.
+  It becomes prepared is `.becomePrepared .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
@@ -296,7 +301,8 @@ inductive ObjectSelector where
   It loses indestructible until end of turn is
   `.lose .indestructible .targetWhileSource`.
   It becomes an artifact until end of turn is
-  `.becomeArtifact .targetWhileSource`. -/
+  `.becomeArtifact .targetWhileSource`.
+  It becomes prepared is `.becomePrepared .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -1401,6 +1407,7 @@ creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
 and `grant`. Who becomes an artifact is an `ObjectSelector`.
+Who becomes prepared is an `ObjectSelector`.
 Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1690,8 +1697,14 @@ inductive TriggerResolution where
   Any other selector does nothing. -/
   | becomeArtifact (who : ObjectSelector := .target)
   /-- `who` becomes prepared. A creature that is already prepared, or has no
-  prepare spell, does not. The announced permanent is `.becomePrepared`. -/
-  | becomePrepared (who : TriggerAffected := .target)
+  prepare spell, does not. The announced permanent is `.becomePrepared`
+  (`.target`).
+  The source is `.becomePrepared .source`.
+  The enchanted creature is `.becomePrepared .enchanted`.
+  The target, while the source remains, is
+  `.becomePrepared .targetWhileSource`.
+  Any other selector does nothing. -/
+  | becomePrepared (who : ObjectSelector := .target)
   /-- Until end of turn, `who`'s base power and toughness become the values
   `amount` names. `power` and `toughness` are those values when `amount`
   is `.fixed`.
@@ -2499,7 +2512,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
     .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (grantWho who)]
-  | .becomePrepared => .becomePrepared who
+  | .becomePrepared => .becomePrepared (affectedWho who)
   | .setBasePT p t => .setBasePT p t who
   | .tapAndStun =>
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]

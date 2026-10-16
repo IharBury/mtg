@@ -61,6 +61,7 @@ import Mtg.Engine.Tests.Pay
 import Mtg.Engine.Tests.Sacrifice
 import Mtg.Engine.Tests.PutCounters
 import Mtg.Engine.Tests.BecomeArtifact
+import Mtg.Engine.Tests.BecomePrepared
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -148,4 +149,5 @@ keep working.
 - `Sacrifice`: who sacrifices and which permanent, as one `ObjectSelector`
 - `PutCounters`: what is put, as a `CounterSelector`, and who receives it, as an `ObjectSelector`
 - `BecomeArtifact`: who becomes an artifact until end of turn, as an `ObjectSelector`
+- `BecomePrepared`: who becomes prepared, as an `ObjectSelector`
 -/

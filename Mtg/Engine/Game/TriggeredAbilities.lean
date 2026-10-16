@@ -2435,6 +2435,23 @@ where
       let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
       g.logMsg s!"{o.name} becomes an artifact until end of turn"
 
+/-- Resolve `TriggerResolution.becomePrepared`. Each printed recipient keeps
+the behavior of the constructor it replaced. A creature that is already
+prepared, or has no prepare spell, does not. Any other selector does nothing. -/
+def applyBecomePrepared (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
+  match who with
+  | .target => become .target
+  | .source => become .source
+  | .enchanted => become .enchanted
+  | .targetWhileSource => become .targetWhileSource
+  | _ => g
+where
+  become (affected : TriggeredAbility.TriggerAffected) : Game :=
+    g.withAffected controller ab sourceId targets affected fun g o =>
+      g.applyPermanentAction o .becomePrepared
+
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
 puts nothing. -/
@@ -2552,8 +2569,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .becomeArtifact who =>
     g.applyBecomeArtifact controller ab sourceId targets who
   | .becomePrepared who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .becomePrepared
+    g.applyBecomePrepared controller ab sourceId targets who
   | .setBasePT power toughness who amount =>
     g.applySetBasePT controller ab sourceId targets lastKnownPower lastKnownToughness
       power toughness who amount
