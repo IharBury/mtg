@@ -2164,12 +2164,13 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _ => g
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
-keeps the behavior of the constructor it replaced. -/
+keeps the behavior of the constructor it replaced. Any other selector
+does nothing. -/
 partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (how : TriggeredAbility.TriggerLibraryHow)
     (thenDo : TriggeredAbility.TriggerResolution)
-    (who : TriggeredAbility.TriggerLibraryWho) : Game :=
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match how, thenDo, who with
   | .top n, .put .randomCreature .asPrinted .none, .you =>
     let ids := g.scryLookedIds controller n

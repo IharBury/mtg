@@ -228,8 +228,9 @@ end TriggerReflexiveKind
 
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
-`TriggerResolution.loseLife` loses life, and who
-`TriggerResolution.mill` mills. -/
+`TriggerResolution.loseLife` loses life, who
+`TriggerResolution.mill` mills, and whose library
+`TriggerResolution.revealLibrary` looks at. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
@@ -244,7 +245,8 @@ inductive PlayerSelector where
   /-- The controller of the ability.
   That player draws `n` is `.draw (.fixed n)` (`.you`).
   That player loses `n` life is `.loseLife (.fixed n)`.
-  That player mills `n` is `.mill (.fixed n)`. -/
+  That player mills `n` is `.mill (.fixed n)`.
+  That player's library is `.revealLibrary (.top n) (.put .randomCreature)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -264,6 +266,14 @@ inductive PlayerSelector where
   last-known toughness. A missing seat mills nothing.
   `.mill .thatManyLost .thatPlayer`. -/
   | thatPlayer
+  /-- The player who was dealt combat damage. That seat is
+  `lastCombatDamagePlayer`. A missing seat is the controller's opponent.
+  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`. -/
+  | damagedPlayer
+  /-- The announced player. When none was announced, the resolving ability's
+  last-known toughness is that player's index.
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
+  | announced
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -1233,18 +1243,6 @@ inductive TriggerLibraryHow where
   | untilInstantOrSorcery
   /-- Cards until a nonland card. An empty library finds nothing. -/
   | untilNonland
-deriving Repr, Inhabited, BEq
-
-/-- Whose library `TriggerResolution.revealLibrary` looks at. -/
-inductive TriggerLibraryWho where
-  /-- The controller's library. -/
-  | you
-  /-- The player who was dealt combat damage. That seat is
-  `lastCombatDamagePlayer`. A missing seat is the controller's opponent. -/
-  | damagedPlayer
-  /-- The announced player. When none was announced, the resolving ability's
-  last-known toughness is that player's index. -/
-  | announced
 deriving Repr, Inhabited, BEq
 
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
@@ -2226,9 +2224,10 @@ inductive TriggerResolution where
   paying its mana cost. The rest go on the bottom in a random order. That is
   `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
   An empty library is reported. No attacker limits the mana value to zero.
-  Any other combination does nothing. -/
+  Whose library is a `PlayerSelector`.
+  Any other selector does nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
-      (who : TriggerLibraryWho := .you)
+      (who : PlayerSelector := .you)
   /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
   later step can read.
   Milling zero cards changes nothing. A library that runs out logs that
