@@ -3,9 +3,11 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.put`
 
+Which cards is an `ObjectSelector`.
 Cards the source exiled, a graveyard nonland, the source returned as an
 artifact, noted lands, a discarded land, a land from hand, and an artifact
 from hand.
+Any other selector puts nothing.
 -/
 
 namespace Mtg.Engine.PutTests
@@ -284,5 +286,42 @@ attach; another artifact is not. An empty hand skips the choice. -/
       let g := mustApply g caster .decline
       g.pending == .none && g.putArtifactThisWay.isNone &&
         (g.player caster).hand.contains id
+
+/- Any other selector puts nothing. A printed card with an entry it does
+not use puts nothing. An empty linked exile puts nothing. -/
+#guard
+  let g0 := putInGraveyard (addPermanent afterDraw bear caster caster) beast caster
+  let sid := (onBoard g0 "Test Bear").map (·.id)
+  let crossed := [
+    putStep g0 (.put .target) sid,
+    putStep g0 (.put .hand) sid,
+    putStep g0 (.put (.player .you)) sid,
+    putStep g0 (.put .graveyardCard) sid,
+    putStep g0 (.put .top) sid,
+    putStep g0 (.put .source) sid,
+    putStep g0 (.put .cause) sid,
+    putStep g0 (.put .linkedExile (how := .tapped)) sid,
+    putStep g0 (.put .notedLands) sid]
+  crossed.all fun g =>
+    (onBoard g "Test Bear").isSome && (onBoard g "Costly Beast").isNone &&
+      g.pending == .none && g.log == g0.log && g.exiledIdsThisWay == g0.exiledIdsThisWay
+
+/- Printed phrases stay with the combination that produces them. -/
+#guard TriggeredAbility.resolutionPhrase { resolution := .put .linkedExile } ==
+  "return the exiled card to the battlefield under its owner's control"
+#guard TriggeredAbility.resolutionPhrase { resolution := .put (.nonlandMvAtMost 3) } ==
+  "put up to one target nonland permanent card with mana value 3 or less from a graveyard onto the battlefield under its owner's control"
+#guard TriggeredAbility.resolutionPhrase { resolution := .put .source (how := .asArtifact) } ==
+  "if they were a creature, return them to the battlefield. They're an artifact"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .put .source .underOwner (.entering [.loseAllAbilities]) } ==
+  "return this from its owner's graveyard to the battlefield under its owner's control"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .put (.cause (some "Villain")) .underOwner } ==
+  "return it to the battlefield under its owner's control"
+#guard TriggeredAbility.resolutionPhrase { resolution := .put .landFromHand (how := .tapped) } ==
+  "put a land card from your hand onto the battlefield tapped"
+#guard TriggeredAbility.resolutionPhrase { resolution := .put .target } ==
+  "put it onto the battlefield"
 
 end Mtg.Engine.PutTests

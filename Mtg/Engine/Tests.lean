@@ -98,8 +98,8 @@ keep working.
 - `MayCast`: casting from a graveyard, from hand, and from an impulse
 - `Draw`: fixed draws, counted draws, mana spent, and the opponent's draw offer
 - `ReturnToHand`: graveyard cards, permanents, milled subtypes, and the source
-- `Put`: putting linked exile, graveyard cards, noted lands, discarded
-  lands, and cards from hand onto the battlefield
+- `Put`: linked exile, a graveyard nonland, the source, noted lands,
+  a discarded land, and cards from hand, as an `ObjectSelector`
 - `AddMana`: printed mana, and {G} for each charge counter on the source
 - `Destroy`: opponents' artifacts and enchantments, a permanent dealt
   damage, and the announced creature noted for amass

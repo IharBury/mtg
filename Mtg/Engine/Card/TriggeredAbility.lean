@@ -709,7 +709,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "it gets +1/+1 until end of turn for each other creature you control"
     | .perPlains, .perPlains, .target =>
       "target creature you control gets +1/+1 until end of turn for each Plains you control"
-    | .fixed power, .fixed toughness, .cause =>
+    | .fixed power, .fixed toughness, .cause _ =>
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
     | .equalSourceToughness, .equalSourceToughness, .othersOfSubtype subtype =>
       s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
@@ -1485,7 +1485,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "put it into your hand"
     | .linkedExile, .none =>
       "put a card exiled with this Saga into its owner's hand"
-    | .cause, .none =>
+    | .cause _, .none =>
       "return that card to its owner's hand"
     | _, _ =>
       "return it to a hand"
