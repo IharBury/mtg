@@ -4,9 +4,11 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.gainLife`
 
+How much life is a `NumberSelector`.
 A fixed amount, life equal to the targeted card's power, one life for each
-permanent an earlier step destroyed, and one life for each other creature
-you control. How much is an argument.
+permanent an earlier step destroyed, one life for each other creature you
+control, and life for each Equipment attached to the source.
+Any other selector gains nothing.
 -/
 
 namespace Mtg.Engine.GainLifeTests
@@ -56,24 +58,27 @@ def elf : CardDef := creature "Lorien Elf" ManaCost.empty #["Elf"] 4 4
 def bear : CardDef := creature "Cave Bear" ManaCost.empty #["Bear"] 2 2
 
 def equalPower : TriggeredAbility.TriggerResolution :=
-  .gainLife 0 (amount := .equalToTargetPower)
+  .gainLife .equalToTargetPower
 
 def perDestroyed : TriggeredAbility.TriggerResolution :=
-  .gainLife 0 (amount := .forEachDestroyedThisWay)
+  .gainLife .forEachDestroyedThisWay
 
 def perOther : TriggeredAbility.TriggerResolution :=
-  .gainLife 0 (amount := .forEachOtherCreature)
+  .gainLife .perOtherCreature
 
-/- The controller gains the printed amount. Gaining none changes nothing. -/
+/- The controller gains the printed amount. Gaining none changes nothing.
+A selector this resolution does not read gains nothing. -/
 #guard
-  let g := step afterDraw (.gainLife 4)
+  let g := step afterDraw (.gainLife (.fixed 4))
   life g == life afterDraw + 4 && logContains g "gains 4 life"
 
 #guard
-  let g := step afterDraw (.gainLife 0)
+  let g := step afterDraw (.gainLife (.fixed 0))
   life g == life afterDraw && g.log == afterDraw.log
 
-#guard (.gainLife 2 : TriggeredAbility.TriggerResolution) == .gainLife 2 .fixed
+#guard
+  let g := step afterDraw (.gainLife .greatestPower)
+  life g == life afterDraw && g.log == afterDraw.log
 
 /- Life equal to the targeted card's power. The amount noted when a sequence
 starts is used even when that card's current power is different. A missing
@@ -165,8 +170,11 @@ opposing creatures are not counted. None gains nothing. -/
   life g == life g0 + 1 && counters g "Ally" == 1 && counters g "Source" == 0 &&
     counters g "Foe" == 0
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .gainLife 3 } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .gainLife (.fixed 3) } ==
   "you gain 3 life"
+
+#guard TriggeredAbility.resolutionPhrase { resolution := .gainLife .greatestPower } ==
+  "you gain life"
 
 #guard TriggeredAbility.resolutionPhrase { resolution := equalPower } ==
   "you gain life equal to that card's power"

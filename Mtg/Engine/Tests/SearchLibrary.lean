@@ -356,7 +356,7 @@ what searches. -/
 #guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
   .searchLibrary (.returnToHand .basicLand)
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
-  .sequence [.gainLife 2, .searchLibrary (.put .basicLandOnTop)]
+  .sequence [.gainLife (.fixed 2), .searchLibrary (.put .basicLandOnTop)]
 #guard TriggeredAbility.resolution .onMountainEntersQuestThenDragon ==
   .sequence [
     .putCounters (.ofKind .quest) .source,

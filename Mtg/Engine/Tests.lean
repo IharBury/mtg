@@ -109,7 +109,8 @@ keep working.
 - `Grant`: double strike for equipped attackers, and protection from
   everything when the source was cast
 - `GainLife`: a fixed amount, the targeted card's power, one life per
-  permanent destroyed, and one life per other creature
+  permanent destroyed, one life per other creature, and life per attached
+  Equipment, as a `NumberSelector`
 - `LoseLife`: a fixed amount for the controller, the announced opponent,
   or each opponent, and one life per burden counter on the source
 - `Mill`: the controller, the announced player, the player who lost life,

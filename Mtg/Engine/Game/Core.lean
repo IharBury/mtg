@@ -163,7 +163,7 @@ structure Game where
   `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
   /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
-  `.gainLife 0 (amount := .forEachDestroyedThisWay)` gains this much life. -/
+  `.gainLife .forEachDestroyedThisWay` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
   /-- A hope counter was removed by the current `removeCounters .hope .source` step.
   `«if» .removedHope` draws a card when this is set. -/

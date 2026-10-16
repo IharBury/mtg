@@ -202,7 +202,7 @@ the source is on the battlefield. -/
 #guard TriggeredAbility.resolution .onYouSacrificeTokenOppLosesLife == targetOpp 1
 #guard TriggeredAbility.resolution .onYourUpkeepLoseLifePerBurden == perBurden
 #guard TriggeredAbility.resolution (.onVillainYouControlEntersDrainAndPlan 2) ==
-  .sequence [.putCounters (.ofKind .plan) .source, eachOpp 2, .gainLife 2]
+  .sequence [.putCounters (.ofKind .plan) .source, eachOpp 2, .gainLife (.fixed 2)]
 #guard TriggeredAbility.resolution .onCreatureCardsToGyDrawLoseLifeAndPlan ==
   .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]
 
@@ -227,7 +227,7 @@ the source is on the battlefield. -/
   "you draw a card, lose 1 life, and put a plan counter on this enchantment"
 
 #guard TriggeredAbility.TriggerResolution.gollumModes[1]! ==
-  .sequence [.loseLife 2 (who := .eachOpponent), .gainLife 2]
+  .sequence [.loseLife 2 (who := .eachOpponent), .gainLife (.fixed 2)]
 #guard TriggeredAbility.TriggerResolution.upToXModes[1]! == eachOpp 2
 
 #guard (SharedTrigger.timing (.targetOpponentLosesLife 1)).resolution == targetOpp 1

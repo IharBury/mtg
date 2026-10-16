@@ -119,7 +119,7 @@ inductive ThisAttackLeftover where
   /-- Whenever Whiplash attacks, if he's equipped, each opponent loses X
   life and you gain X life, where X is the number of Equipment attached
   to him. Resolves as
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`. -/
+  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`. -/
   | equippedDrain
   /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
   power is 4 or greater. Resolves as
@@ -600,7 +600,7 @@ inductive SharedTrigger where
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
   /-- +1/+1 on each other creature you control, then gain 1 life for each.
-  Resolves as `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife 0 (amount := .forEachOtherCreature)]`. -/
+  Resolves as `.sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature]`. -/
   | plusOneEachOtherGainLife
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
@@ -622,7 +622,7 @@ inductive SharedTrigger where
   Resolves as `.sequence [.createTokens kind 1 false, .attach .source .created]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
-  Resolves as `.sequence [.gainLife n, .searchLibrary (.put .basicLandOnTop)]`. -/
+  Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
   | gainLifeSearchBasicOnTop (n : Nat)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)
@@ -651,7 +651,7 @@ inductive SharedTrigger where
   Resolves as `.setBasePT .equalSourcePower .equalSourceToughness`. -/
   | setOtherBasePT
   /-- Return a target Elf from the graveyard, then gain life equal to its power.
-  Resolves as `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`. -/
+  Resolves as `.sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]`. -/
   | returnElfGainLife
   /-- Deal damage equal to last-known power to a target. -/
   | damageFromLastKnownPower
@@ -666,7 +666,7 @@ inductive SharedTrigger where
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]`. -/
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -674,7 +674,7 @@ inductive SharedTrigger where
   | tapHumansDraw
   /-- Destroy opponents' artifacts and enchantments; gain life for each.
   Resolves as
-  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife 0 (amount := .forEachDestroyedThisWay)]`. -/
+  `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife .forEachDestroyedThisWay]`. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
   | damageEqualSubtypeToEachOpponent (subtype : String)
@@ -752,7 +752,7 @@ inductive SharedTrigger where
   /-- First resolve this turn: gain 1 life. Second: draw a card. Third:
   +1/+1 on each creature you control. Later resolves do nothing
   (Belladonna Took). Resolves as
-  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
+  `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife (.fixed 1)), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .another) (.sequence [])`. -/
   | bolgMaySacrifice
@@ -846,7 +846,7 @@ inductive SharedTrigger where
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
   /-- Drain `n` and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife n]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife (.fixed n)]`. -/
   | drainAndPlan (n : Nat)
   /-- Draw, lose life, and put a plan counter. Resolves as
   `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]`. -/
@@ -986,7 +986,7 @@ inductive SharedTrigger where
   `.exile .target .returnTapped`.
   Each opponent losing X life and you gaining X life, X the Equipment
   attached to the source, is
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife 0 (amount := .attachedEquipment)])`.
+  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`.
   Drawing when the source's power is 4 or greater is
   `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`.
   The source getting +2/+0 and indestructible until end of turn is
@@ -1010,7 +1010,7 @@ inductive SharedTrigger where
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife 1]`.
+  `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)]`.
   1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player .targetOpponent)`.
   1 damage from the equipped creature to each opponent is
   `.dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped`.
@@ -1092,7 +1092,7 @@ inductive SharedTrigger where
   A +1/+1 counter on the announced creature is
   `.putCounters (.ofKind .plusOnePlusOne) .permanent`.
   Each opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .eachOpponent), .gainLife 1]`.
+  `.sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]`.
   A +1/+1 counter on each announced creature you control, up to the life
   gained, is `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
   A 1/1 green Insect is `.createTokens .insect11green 1 false`.

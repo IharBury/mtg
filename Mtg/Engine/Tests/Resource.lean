@@ -45,7 +45,7 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawDrain) ==
-  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife 1]
+  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]
 #guard TriggeredAbility.resolution (resource Effect.resourceGainLifePlusOnes) ==
   .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneCreateInsectOnce) ==
