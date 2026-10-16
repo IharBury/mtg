@@ -4,10 +4,11 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.putOnLibrary`
 
+Which card is an `ObjectSelector`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains go on top or on the bottom of their owner's library.
-A card from the controller's hand goes on the bottom. Where the card goes,
-and which card, are arguments.
+A card from the controller's hand goes on the bottom. Any other selector
+puts nothing.
 -/
 
 namespace Mtg.Engine.PutOnLibraryTests
@@ -127,27 +128,27 @@ that were already there. -/
 /- The source goes on top or on the bottom of its owner's library. A missing
 source, and a source that has left, move nothing. -/
 #guard
-  let g := step board (.putOnLibrary .top (.permanent .source))
+  let g := step board (.putOnLibrary .top .source)
     (some (pid board "Titan"))
   topName g caster == "Titan" && !onBoard g "Titan" &&
     logContains g "puts Titan on the top of their library"
 
 #guard
   let oldBottom := (board.player caster).library[0]!
-  let g := step board (.putOnLibrary .bottom (.permanent .source))
+  let g := step board (.putOnLibrary .bottom .source)
     (some (pid board "Titan"))
   bottomName g caster == "Titan" && !onBoard g "Titan" &&
     (g.player caster).library[1]? == some oldBottom
 
 #guard
-  let g := step board (.putOnLibrary .top (.permanent .source))
+  let g := step board (.putOnLibrary .top .source)
   onBoard g "Titan" &&
     logContains g "The triggered ability's source is no longer in play"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.putOnLibrary .bottom (.permanent .source)) (some newId)
+  let g := step g0 (.putOnLibrary .bottom .source) (some newId)
   (g.player caster).library[0]? == (g0.player caster).library[0]? &&
     logContains g "Titan is no longer on the battlefield"
 
@@ -155,7 +156,7 @@ source, and a source that has left, move nothing. -/
 silent. An Aura that has left is reported. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.putOnLibrary .top (.permanent .enchanted))
+  let g := step g0 (.putOnLibrary .top .enchanted)
     (some (pid g0 "Grasp"))
   topName g caster == "Titan" && !onBoard g "Titan" && onBoard g "Grasp" &&
     logContains g "puts Titan on the top of their library"
@@ -163,14 +164,14 @@ silent. An Aura that has left is reported. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Bear"
   let oldBottom := (g0.player opp).library[0]!
-  let g := step g0 (.putOnLibrary .bottom (.permanent .enchanted))
+  let g := step g0 (.putOnLibrary .bottom .enchanted)
     (some (pid g0 "Grasp"))
   bottomName g opp == "Bear" && !onBoard g "Bear" &&
     (g.player opp).library[1]? == some oldBottom
 
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.putOnLibrary .top (.permanent .enchanted))
+  let g := step g0 (.putOnLibrary .top .enchanted)
     (some (pid g0 "Grasp"))
   onBoard g "Titan" && g.log == g0.log
 
@@ -178,35 +179,35 @@ silent. An Aura that has left is reported. -/
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.putOnLibrary .bottom (.permanent .enchanted)) (some newId)
+  let g := step g1 (.putOnLibrary .bottom .enchanted) (some newId)
   onBoard g "Titan" && logContains g "Grasp is no longer on the battlefield"
 
 #guard
-  let g := step board (.putOnLibrary .top (.permanent .enchanted))
+  let g := step board (.putOnLibrary .top .enchanted)
   onBoard g "Titan" &&
     logContains g "The Aura is no longer in play"
 
 /- The target moves only while the source remains. A source that has left
 is silent. An illegal target is reported while the source is still there. -/
 #guard
-  let g := step board (.putOnLibrary .bottom (.permanent .targetWhileSource))
+  let g := step board (.putOnLibrary .bottom .targetWhileSource)
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   bottomName g caster == "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.putOnLibrary .top (.permanent .targetWhileSource))
+  let g := step board (.putOnLibrary .top .targetWhileSource)
     (some (pid board "Titan")) #[Target.permanent (pid board "Bear")]
   topName g opp == "Bear" && !onBoard g "Bear" && onBoard g "Titan"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.putOnLibrary .top (.permanent .targetWhileSource))
+  let g := step g0 (.putOnLibrary .top .targetWhileSource)
     (some newId) #[Target.permanent (pid g0 "Titan")]
   onBoard g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.putOnLibrary .bottom (.permanent .targetWhileSource))
+  let g := step board (.putOnLibrary .bottom .targetWhileSource)
     (some (pid board "Bear"))
   onBoard g "Titan" && logContains g "The target is no longer legal"
 
@@ -257,18 +258,33 @@ creature you already control skips the bottom step. -/
     g.pending == .none &&
     !logContains g "bottom of their library"
 
+/- Any other selector puts nothing. -/
+#guard
+  let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
+  let sid := some (pid g0 "Bear")
+  let tgt := #[Target.permanent (pid g0 "Titan")]
+  let crossed := [
+    step g0 (.putOnLibrary .top .cause) sid tgt,
+    step g0 (.putOnLibrary .bottom .creaturesYouControl) sid tgt,
+    step g0 (.putOnLibrary .top (.player .you)) sid tgt,
+    step g0 (.putOnLibrary .bottom .hand) sid tgt,
+    step g0 (.putOnLibrary .top .permanent) sid tgt]
+  crossed.all fun g =>
+    onBoard g "Titan" && onBoard g "Bear" && onBoard g "Grasp" &&
+      g.pending == .none && g.log == g0.log
+
 /- Printed phrases stay with the combination that produces them. -/
 #guard (.putOnLibrary .top : TriggeredAbility.TriggerResolution) ==
-  .putOnLibrary .top (.permanent .target)
+  .putOnLibrary .top .target
 #guard (.putOnLibrary : TriggeredAbility.TriggerResolution) == onTop
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary == onTop
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary == onBottom
 #guard TriggeredAbility.TriggerResolution.ofSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.permanent .source)
+  .putOnLibrary .bottom .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnTopOfLibrary ==
-  .putOnLibrary .top (.permanent .enchanted)
+  .putOnLibrary .top .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.permanent .targetWhileSource)
+  .putOnLibrary .bottom .targetWhileSource
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
   .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature fromHand]
 
@@ -279,13 +295,13 @@ creature you already control skips the bottom step. -/
     { targeting := .of .creature, resolution := onBottom } ==
   "target creature's owner puts it on the bottom of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top (.permanent .source) } ==
+    { resolution := .putOnLibrary .top .source } ==
   "this creature's owner puts it on top of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .bottom (.permanent .enchanted) } ==
+    { resolution := .putOnLibrary .bottom .enchanted } ==
   "enchanted creature's owner puts it on the bottom of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top (.permanent .targetWhileSource) } ==
+    { resolution := .putOnLibrary .top .targetWhileSource } ==
   "that creature's owner puts it on top of their library"
 #guard TriggeredAbility.resolutionPhrase { resolution := fromHand } ==
   "put a card from your hand on the bottom of your library"
@@ -294,10 +310,12 @@ creature you already control skips the bottom step. -/
   "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .putOnLibrary .top .cardFromHand } == "put on library"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .putOnLibrary .bottom .cause } == "put on library"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .putOnLibrary .bottom (.permanent .targetWhileSource)] } ==
+      [.attach .source .target, .putOnLibrary .bottom .targetWhileSource] } ==
   "attach it to target creature you control. That creature's owner puts it on the bottom of their library"
 
 #guard TriggeredAbility.toNotation onCreature ==

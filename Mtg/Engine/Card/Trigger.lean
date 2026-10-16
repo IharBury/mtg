@@ -258,8 +258,9 @@ permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.putCounters` puts counters on, who
 `TriggerResolution.lose` removes an ability from, who
 `TriggerResolution.becomeArtifact` makes an artifact, who
-`TriggerResolution.becomePrepared` prepares, and who
-`TriggerResolution.setBasePT` gives a new base power and toughness.
+`TriggerResolution.becomePrepared` prepares, who
+`TriggerResolution.setBasePT` gives a new base power and toughness, and
+which card `TriggerResolution.putOnLibrary` puts on a library.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
@@ -268,7 +269,8 @@ Counters name who receives them.
 Losing an ability names who loses it.
 Becoming an artifact names who becomes one.
 Becoming prepared names who becomes prepared.
-A new base power and toughness names who receives it. -/
+A new base power and toughness names who receives it.
+Putting a card on a library names which card. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -281,7 +283,9 @@ inductive ObjectSelector where
   It becomes an artifact until end of turn is `.becomeArtifact .source`.
   It becomes prepared is `.becomePrepared .source`.
   Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t) .source`. -/
+  `.setBasePT (.fixed p) (.fixed t) .source`.
+  Its owner puts it on top of their library is `.putOnLibrary .top .source`.
+  On the bottom is `.putOnLibrary .bottom .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
@@ -291,7 +295,9 @@ inductive ObjectSelector where
   (`.target`).
   It becomes prepared is `.becomePrepared` (`.target`).
   Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t)` (`.target`). -/
+  `.setBasePT (.fixed p) (.fixed t)` (`.target`).
+  Its owner puts it on top of their library is `.putOnLibrary .top`
+  (`.target`). On the bottom is `.putOnLibrary .bottom`. -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
@@ -301,7 +307,9 @@ inductive ObjectSelector where
   It becomes an artifact until end of turn is `.becomeArtifact .enchanted`.
   It becomes prepared is `.becomePrepared .enchanted`.
   Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t) .enchanted`. -/
+  `.setBasePT (.fixed p) (.fixed t) .enchanted`.
+  Its owner puts it on top of their library is `.putOnLibrary .top .enchanted`.
+  On the bottom is `.putOnLibrary .bottom .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
@@ -312,7 +320,10 @@ inductive ObjectSelector where
   `.becomeArtifact .targetWhileSource`.
   It becomes prepared is `.becomePrepared .targetWhileSource`.
   Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`. -/
+  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`.
+  Its owner puts it on top of their library is
+  `.putOnLibrary .top .targetWhileSource`.
+  On the bottom is `.putOnLibrary .bottom .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -449,6 +460,12 @@ inductive ObjectSelector where
   `.lose .allAbilities .targetIfPresent`.
   A source that has left leaves that permanent able. -/
   | targetIfPresent
+  /-- A card from the controller's hand.
+  An empty hand skips the choice.
+  Putting it on the bottom of that player's library is
+  `.putOnLibrary .bottom .cardFromHand`.
+  Putting it on top puts nothing. -/
+  | cardFromHand
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -1301,14 +1318,6 @@ inductive TriggerLibraryPlace where
   | bottom
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.putOnLibrary` puts there. -/
-inductive TriggerLibraryWhat where
-  /-- The permanent `who` names. Its owner puts it on their library. -/
-  | permanent (who : TriggerAffected := .target)
-  /-- A card from the controller's hand. An empty hand skips the choice. -/
-  | cardFromHand
-deriving Repr, Inhabited, BEq
-
 /-- Which outcome of `TriggerResolution.may` resolves `follow`. -/
 inductive TriggerMayWhen where
   /-- The player performed `action`. Declining skips `follow`. -/
@@ -1407,14 +1416,16 @@ creature's, are `setBasePT`. Each statistic is a `NumberSelector`.
 Who receives the new base is an `ObjectSelector`.
 Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
-hand on the bottom, are `putOnLibrary`. Where the card goes, and which card,
-are arguments. Untapping the announced permanent, and untapping each attacking
+hand on the bottom, are `putOnLibrary`. Where the card goes is an argument.
+Which card is an `ObjectSelector`.
+Untapping the announced permanent, and untapping each attacking
 creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
 and `grant`. Who becomes an artifact is an `ObjectSelector`.
 Who becomes prepared is an `ObjectSelector`.
 Who receives a new base power and toughness is an `ObjectSelector`.
+Which card is put on a library is an `ObjectSelector`.
 Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1729,14 +1740,18 @@ inductive TriggerResolution where
   says which card.
   The announced permanent on top of its owner's library is `.putOnLibrary .top`.
   The announced permanent on the bottom is `.putOnLibrary .bottom`.
-  The source, the enchanted creature, and the target while the source
-  remains are `.permanent .source`, `.permanent .enchanted`, and
-  `.permanent .targetWhileSource`, with either place.
+  The source is `.putOnLibrary .top .source` or `.putOnLibrary .bottom .source`.
+  The enchanted creature is `.putOnLibrary .top .enchanted` or
+  `.putOnLibrary .bottom .enchanted`.
+  The target, while the source remains, is
+  `.putOnLibrary .top .targetWhileSource` or
+  `.putOnLibrary .bottom .targetWhileSource`.
   A card from your hand on the bottom of your library is
   `.putOnLibrary .bottom .cardFromHand`. An empty hand skips the choice.
-  A card from your hand on top puts nothing. -/
+  A card from your hand on top puts nothing.
+  Any other selector puts nothing. -/
   | putOnLibrary (place : TriggerLibraryPlace := .top)
-      (what : TriggerLibraryWhat := .permanent)
+      (what : ObjectSelector := .target)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Apply each resolution in order. An illegal required target skips every
@@ -2521,8 +2536,8 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
   | .tapAndStun =>
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
-  | .putOnTopOfLibrary => .putOnLibrary .top (.permanent who)
-  | .putOnBottomOfLibrary => .putOnLibrary .bottom (.permanent who)
+  | .putOnTopOfLibrary => .putOnLibrary .top (affectedWho who)
+  | .putOnBottomOfLibrary => .putOnLibrary .bottom (affectedWho who)
   | .exile => .exile (exileWhat who) .forLater
   | .doublePowerAndToughness => .pump .double .double (affectedWho who)
 where
@@ -3719,17 +3734,17 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary ==
   .putOnLibrary .bottom
 #guard TriggeredAbility.TriggerResolution.ofSource .putOnTopOfLibrary ==
-  .putOnLibrary .top (.permanent .source)
+  .putOnLibrary .top .source
 #guard TriggeredAbility.TriggerResolution.ofSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.permanent .source)
+  .putOnLibrary .bottom .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnTopOfLibrary ==
-  .putOnLibrary .top (.permanent .enchanted)
+  .putOnLibrary .top .enchanted
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.permanent .enchanted)
+  .putOnLibrary .bottom .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnTopOfLibrary ==
-  .putOnLibrary .top (.permanent .targetWhileSource)
+  .putOnLibrary .top .targetWhileSource
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.permanent .targetWhileSource)
+  .putOnLibrary .bottom .targetWhileSource
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
   .pump .double .double .target
