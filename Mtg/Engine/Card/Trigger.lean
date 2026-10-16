@@ -259,8 +259,9 @@ permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.lose` removes an ability from, who
 `TriggerResolution.becomeArtifact` makes an artifact, who
 `TriggerResolution.becomePrepared` prepares, who
-`TriggerResolution.setBasePT` gives a new base power and toughness, and
-which card `TriggerResolution.putOnLibrary` puts on a library.
+`TriggerResolution.setBasePT` gives a new base power and toughness,
+which card `TriggerResolution.putOnLibrary` puts on a library, and
+which cards `TriggerResolution.exile` exiles.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
@@ -270,7 +271,8 @@ Losing an ability names who loses it.
 Becoming an artifact names who becomes one.
 Becoming prepared names who becomes prepared.
 A new base power and toughness names who receives it.
-Putting a card on a library names which card. -/
+Putting a card on a library names which card.
+Exiling names which cards. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -285,7 +287,8 @@ inductive ObjectSelector where
   Its base power and toughness become `p`/`t` is
   `.setBasePT (.fixed p) (.fixed t) .source`.
   Its owner puts it on top of their library is `.putOnLibrary .top .source`.
-  On the bottom is `.putOnLibrary .bottom .source`. -/
+  On the bottom is `.putOnLibrary .bottom .source`.
+  Exiling it is `.exile .source .forLater`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
@@ -297,7 +300,8 @@ inductive ObjectSelector where
   Its base power and toughness become `p`/`t` is
   `.setBasePT (.fixed p) (.fixed t)` (`.target`).
   Its owner puts it on top of their library is `.putOnLibrary .top`
-  (`.target`). On the bottom is `.putOnLibrary .bottom`. -/
+  (`.target`). On the bottom is `.putOnLibrary .bottom`.
+  Exiling it is `.exile .target .forLater`. -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
@@ -309,7 +313,8 @@ inductive ObjectSelector where
   Its base power and toughness become `p`/`t` is
   `.setBasePT (.fixed p) (.fixed t) .enchanted`.
   Its owner puts it on top of their library is `.putOnLibrary .top .enchanted`.
-  On the bottom is `.putOnLibrary .bottom .enchanted`. -/
+  On the bottom is `.putOnLibrary .bottom .enchanted`.
+  Exiling it is `.exile .enchanted .forLater`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
@@ -323,7 +328,8 @@ inductive ObjectSelector where
   `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`.
   Its owner puts it on top of their library is
   `.putOnLibrary .top .targetWhileSource`.
-  On the bottom is `.putOnLibrary .bottom .targetWhileSource`. -/
+  On the bottom is `.putOnLibrary .bottom .targetWhileSource`.
+  Exiling it is `.exile .targetWhileSource .forLater`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -372,7 +378,9 @@ inductive ObjectSelector where
   | chosenNonland
   /-- The announced graveyard card, returned to the controller's hand.
   A card that has left is reported.
-  `.returnToHand .graveyardCard`. -/
+  `.returnToHand .graveyardCard`.
+  Exiling it so it can be played is
+  `.exile .graveyardCard .forLater .playCard`. -/
   | graveyardCard
   /-- The announced graveyard card, or that card as a permanent target,
   returned to the controller's hand.
@@ -466,6 +474,44 @@ inductive ObjectSelector where
   `.putOnLibrary .bottom .cardFromHand`.
   Putting it on top puts nothing. -/
   | cardFromHand
+  /-- Each announced permanent.
+  Each one until the source leaves is
+  `.exile .eachTarget .untilSourceLeaves`.
+  A source that has left exiles nothing. -/
+  | eachTarget
+  /-- The top card of the controller's library.
+  Playable until the end of your next turn is
+  `.exile .top .playUntilNextTurn`.
+  Playable this turn, and +2/+1 on the source when it is a Hero, is
+  `.exile .top .playThisTurn .ifHero`.
+  A missing source still exiles the card. An empty library exiles nothing.
+  Inside `revealLibrary`, the top card remembered for `.mayCast .impulse` is
+  `.exile .top .forLater .impulse`. Outside that resolution, the exile does
+  nothing.
+  The nonland from `revealLibrary .untilNonland` is
+  `.exile .top .forLater .anyManaThisTurn` inside that resolution.
+  Outside it, the exile does nothing. -/
+  | top
+  /-- Each announced land the controller still controls.
+  Remembered so they return tapped is
+  `.exile .landsYouControl .forLater .lands`. -/
+  | landsYouControl
+  /-- Up to `max` basic cards of this subtype from the controller's library.
+  Linked to the source is
+  `.exile (.basicUpTo subtype max) .forLater .linked`. -/
+  | basicUpTo (subtype : String) (max : Nat)
+  /-- The card recorded as this trigger's last-known power.
+  You may exile it from your graveyard and play it until the end of your
+  next turn with
+  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
+  A card that has left the graveyard is reported. No recorded card is
+  reported. Declining exiles nothing. -/
+  | discarded
+  /-- The top `n` cards of the announced opponent's library.
+  `.exile (.opponentTop 5) (.mayCastUpTo 2)`.
+  Inside `queueReflexive`, the opponent is chosen when the reflexive
+  ability is put on the stack. Outside it, this exiles nothing. -/
+  | opponentTop (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -684,42 +730,6 @@ inductive TriggerTokenNote where
   | remember
   /-- Remember the token and how many invasion counters the source had. -/
   | invasion
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.exile` exiles. -/
-inductive TriggerExileWhat where
-  /-- The announced permanent. -/
-  | target
-  /-- Each announced permanent. -/
-  | eachTarget
-  /-- The top card of the controller's library. -/
-  | top
-  /-- Each announced land the controller still controls. -/
-  | landsYouControl
-  /-- The announced graveyard card. -/
-  | graveyardCard
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- Up to `max` basic cards of this subtype from the controller's library. -/
-  | basicUpTo (subtype : String) (max : Nat)
-  /-- The card recorded as this trigger's last-known power.
-  You may exile it from your graveyard and play it until the end of your
-  next turn with
-  `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
-  A card that has left the graveyard is reported. No recorded card is
-  reported. Declining exiles nothing. -/
-  | discarded
-  /-- The top `n` cards of the announced opponent's library.
-  `.exile (.opponentTop 5) (.mayCastUpTo 2)`.
-  Inside `queueReflexive`, the opponent is chosen when the reflexive
-  ability is put on the stack. Outside it, this exiles nothing. -/
-  | opponentTop (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.exile` lasts. -/
@@ -1428,6 +1438,7 @@ and `grant`. Who becomes an artifact is an `ObjectSelector`.
 Who becomes prepared is an `ObjectSelector`.
 Who receives a new base power and toughness is an `ObjectSelector`.
 Which card is put on a library is an `ObjectSelector`.
+Which cards `exile` exiles is an `ObjectSelector`.
 Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1908,6 +1919,7 @@ inductive TriggerResolution where
   | gainLife (amount : NumberSelector)
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
+  Which cards is an `ObjectSelector`.
   The targeted permanent, linked for a leave trigger, is
   `.exile .target .leaveTrigger`.
   The targeted permanent until the source leaves is
@@ -1937,6 +1949,10 @@ inductive TriggerResolution where
   `.exile .top .forLater .anyManaThisTurn` inside that resolution.
   Outside it, the exile does nothing.
   The announced permanent, with no return, is `.exile .target .forLater`.
+  The source is `.exile .source .forLater`.
+  The enchanted creature is `.exile .enchanted .forLater`.
+  The target, while the source remains, is
+  `.exile .targetWhileSource .forLater`.
   The announced nonland the controller still controls, other than the
   source, exiled and returned immediately, is
   `.exile .target .returnImmediately`. Choosing none does nothing.
@@ -1949,8 +1965,9 @@ inductive TriggerResolution where
   play it until the end of your next turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   A card that has left your graveyard is reported. No recorded card is
-  reported. Declining exiles nothing. -/
-  | exile (what : TriggerExileWhat) (how : TriggerExileHow)
+  reported. Declining exiles nothing.
+  Any other selector exiles nothing. -/
+  | exile (what : ObjectSelector) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
   how they enter, and `note` says what a later step can read.
@@ -2538,7 +2555,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
   | .putOnTopOfLibrary => .putOnLibrary .top (affectedWho who)
   | .putOnBottomOfLibrary => .putOnLibrary .bottom (affectedWho who)
-  | .exile => .exile (exileWhat who) .forLater
+  | .exile => .exile (affectedWho who) .forLater
   | .doublePowerAndToughness => .pump .double .double (affectedWho who)
 where
   counterWho : TriggerAffected → ObjectSelector
@@ -2567,11 +2584,6 @@ where
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
   destroyWhat : TriggerAffected → TriggerDestroyWhat
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
-  exileWhat : TriggerAffected → TriggerExileWhat
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
@@ -3746,6 +3758,11 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
   .putOnLibrary .bottom .targetWhileSource
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
+#guard TriggeredAbility.TriggerResolution.ofSource .exile == .exile .source .forLater
+#guard TriggeredAbility.TriggerResolution.ofEnchanted .exile ==
+  .exile .enchanted .forLater
+#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .exile ==
+  .exile .targetWhileSource .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
   .pump .double .double .target
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
