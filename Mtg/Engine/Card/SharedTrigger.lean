@@ -91,7 +91,7 @@ inductive DeathLeftover where
   | attackingReturnHand
   /-- Whenever another creature you control with deathtouch dies, each opponent
   sacrifices a nontoken creature of their choice. Resolves as
-  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
+  `.sacrifice .chosenNontokenCreature`. -/
   | deathtouchOppSac
 deriving Repr, Inhabited, BEq
 
@@ -666,7 +666,7 @@ inductive SharedTrigger where
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]`. -/
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -754,7 +754,7 @@ inductive SharedTrigger where
   (Belladonna Took). Resolves as
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife 1), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`. -/
   | belladonnaTokenReward
-  /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .you .another) (.sequence [])`. -/
+  /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .another) (.sequence [])`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
   `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`. -/
@@ -829,7 +829,7 @@ inductive SharedTrigger where
   /-- Reveal until a Saga. -/
   | revealSaga
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
-  `.sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts]`. -/
+  `.sequence [.sacrifice .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
   /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
   | chapter (n : Nat) (e : ChapterResolution)
@@ -973,7 +973,7 @@ inductive SharedTrigger where
   The attacking creature that died returns to its owner's hand, as
   `.returnToHand .cause`.
   Each opponent sacrifices a nontoken creature, as
-  `.sacrifice .eachOpponent .chosenNontokenCreature`. -/
+  `.sacrifice .chosenNontokenCreature`. -/
   | death (e : DeathLeftover)
   /-- Leftover “whenever this attacks” effect.
   Paying {1} to put a +1/+1 counter on target creature is

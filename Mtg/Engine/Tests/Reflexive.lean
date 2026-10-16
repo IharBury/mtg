@@ -53,7 +53,7 @@ def stackEffect (g : Game) : Option Effect :=
 def sacrificed (follow : TriggeredAbility.TriggerResolution) :
     TriggeredAbility.TriggerResolution :=
   .sequence [
-    .sacrifice .you .plan .forReflexive,
+    .sacrifice .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive follow)]
 
 /- The Plan's reflexive abilities, the milled copy, and the attack pump
@@ -68,7 +68,7 @@ use `queueReflexive`. -/
   sacrificed (.putCounters (.ofKind .indestructible) .permanent)
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [
-    .sacrifice .you .plan .forReflexive,
+    .sacrifice .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]
 #guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
   .sequence [
@@ -159,7 +159,7 @@ use `queueReflexive`. -/
   let g0 := planOnBoard
   let sid := planId g0
   let g := step g0 (.sequence [
-    .sacrifice .you .plan .forReflexive,
+    .sacrifice .plan .forReflexive,
     .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]) (some sid)
   match stackEffect g with
   | some eff =>

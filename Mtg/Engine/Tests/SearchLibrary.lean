@@ -362,7 +362,7 @@ what searches. -/
     .putCounters (.ofKind .quest) .source,
     .«if» (.questAtLeast 6)
       (.sequence [
-        .sacrifice .you (.source .movedAsSacrificed),
+        .sacrifice (.sacrificedSource .movedAsSacrificed),
         .searchLibrary (.put .dragon)])]
 #guard (SharedTrigger.timing .searchLibrary).resolution ==
   .searchLibrary (.put .forest)

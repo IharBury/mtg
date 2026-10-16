@@ -231,7 +231,7 @@ Removing them does not count as removing a hope counter. -/
 
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
+    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, allFromEnchanted]
 
@@ -257,7 +257,7 @@ Removing them does not count as removing a hope counter. -/
 
 #guard (SharedTrigger.timing .removeHopeDrawSac).resolution ==
   .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .you .source, .gainLife 4])]
+    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife 4])]
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution ==
   .sequence [.tap .enchanted, allFromEnchanted]
 
