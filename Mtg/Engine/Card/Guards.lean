@@ -1369,7 +1369,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .sequence [.tap .target, .cant .untapWhileYouControl]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
-  .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo
+  .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
@@ -1581,10 +1581,10 @@ end CardDef
   .sequence [.sacrifice .you .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl]
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
   .sequence [.sacrifice .you .plan .forReflexive,
-    .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants))]
+    .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))]
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [.sacrifice .you .plan .forReflexive,
-    .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7))]
+    .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==

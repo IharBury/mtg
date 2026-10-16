@@ -50,32 +50,32 @@ def stackEffect (g : Game) : Option Effect :=
   | some e => (g.findObject? e.objectId).bind (·.abilityEffect)
   | none => none
 
-def sacrificed (kind : TriggeredAbility.TriggerReflexiveKind) :
+def sacrificed (follow : TriggeredAbility.TriggerResolution) :
     TriggeredAbility.TriggerResolution :=
   .sequence [
     .sacrifice .you .plan .forReflexive,
-    .«if» .planWasSacrificed (.queueReflexive (.modeled kind))]
+    .«if» .planWasSacrificed (.queueReflexive follow)]
 
 /- The Plan's reflexive abilities, the milled copy, and the attack pump
 use `queueReflexive`. -/
 #guard TriggeredAbility.resolution .onFourthPlanReturnInstants ==
-  sacrificed .returnInstants
+  sacrificed (.returnToHand (.graveyardInstants 2))
 #guard TriggeredAbility.resolution .onSeventhPlanControlOpponent ==
-  sacrificed .controlOpponent
+  sacrificed (.gainControl .duringNextTurn)
 #guard TriggeredAbility.resolution .onFifthPlanExileTopCast ==
-  sacrificed .exileTopFive
+  sacrificed (.exile (.opponentTop 5) (.mayCastUpTo 2))
 #guard TriggeredAbility.resolution .onFourthPlanIndestructible ==
-  sacrificed .indestructibleCounter
+  sacrificed (.putCounters (.ofKind .indestructible) .permanent)
 #guard TriggeredAbility.resolution .onFourthPlanDividedDamage ==
   .sequence [
     .sacrifice .you .plan .forReflexive,
-    .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7))]
+    .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]
 #guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
   .sequence [
     .mill 2 .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled (.queueReflexive .copyMilled)]
+    .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
 #guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
-  .queueReflexive .attackPumpPerPlains
+  .queueReflexive (.pump .perPlains .perPlains .target)
 
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .trickArrows == 2
@@ -90,19 +90,19 @@ use `queueReflexive`. -/
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .plusOne == 12
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants)) } ==
+    { resolution := .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2))) } ==
   "when you do, the reflexive ability triggers"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7)) } ==
+    { resolution := .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided)) } ==
   "when you do, it deals 7 damage divided as you choose among one or two targets"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .queueReflexive .copyMilled } ==
+    { resolution := .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying) } ==
   "exile and copy a card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .opponentsMilled (.queueReflexive .copyMilled) } ==
+    { resolution := .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) } ==
   "when one or more cards are milled this way, exile and copy a card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .queueReflexive .attackPumpPerPlains } ==
+    { resolution := .queueReflexive (.pump .perPlains .perPlains .target) } ==
   "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
 #guard TriggeredAbility.resolutionPhrase
     (TriggeredAbility.onFourthPlanDividedDamage).timing ==
@@ -115,7 +115,7 @@ use `queueReflexive`. -/
 #guard
   let g0 := planOnBoard
   let sid := planId g0
-  let g := step g0 (sacrificed .returnInstants) (some sid)
+  let g := step g0 (sacrificed (.returnToHand (.graveyardInstants 2))) (some sid)
   let queued :=
     match stackEffect g with
     | some eff =>
@@ -134,8 +134,8 @@ use `queueReflexive`. -/
 #guard
   let g0 := planOnBoard
   let sid := planId g0
-  let g := step g0 (sacrificed .returnInstants) (some sid)
-  let again := step g (.«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants)))
+  let g := step g0 (sacrificed (.returnToHand (.graveyardInstants 2))) (some sid)
+  let again := step g (.«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2))))
     (some sid)
   g.stack.size == again.stack.size && !again.planWasSacrificed
 
@@ -144,14 +144,14 @@ use `queueReflexive`. -/
   let g0 := planOnBoard
   let sid := planId g0
   let (gGone, _) := g0.move sid (.graveyard caster) none
-  let g := step gGone (sacrificed .indestructibleCounter) (some sid)
+  let g := step gGone (sacrificed (.putCounters (.ofKind .indestructible) .permanent)) (some sid)
   g.stack.isEmpty && !g.planWasSacrificed &&
     logContains g "is no longer on the battlefield. The reflexive ability doesn't trigger."
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
   let g0 := { planOnBoard with planWasSacrificed := true }
-  let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent)))
+  let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 
 /- Divided damage uses the printed total and the divided-damage reflexive. -/
@@ -160,7 +160,7 @@ use `queueReflexive`. -/
   let sid := planId g0
   let g := step g0 (.sequence [
     .sacrifice .you .plan .forReflexive,
-    .«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7))]) (some sid)
+    .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))]) (some sid)
   match stackEffect g with
   | some eff =>
     eff.dividedDamage == some (7, 2) &&
@@ -174,13 +174,13 @@ use `queueReflexive`. -/
 /- No note queues no divided damage. -/
 #guard
   let g := step planOnBoard
-    (.«if» .planWasSacrificed (.queueReflexive (.dividedDamage 7)))
+    (.«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided)))
   g.stack.isEmpty && !g.planWasSacrificed
 
 /- A milled instant of a low enough mana value is the reflexive's target. -/
 #guard
   let g0 := putInGraveyard afterDraw bolt opp
-  let g := step g0 (.queueReflexive .copyMilled) none (some 1)
+  let g := step g0 (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) none (some 1)
   match stackEffect g with
   | some eff =>
     match eff.resolution with
@@ -191,14 +191,14 @@ use `queueReflexive`. -/
 
 /- No legal milled card removes the reflexive. -/
 #guard
-  let g := step afterDraw (.queueReflexive .copyMilled) none (some 1)
+  let g := step afterDraw (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) none (some 1)
   g.stack.isEmpty &&
     logContains g "reflexive ability has no legal target and is removed"
 
 /- Each resolution arms one attack pump for the rest of this turn. -/
 #guard
-  let g := step afterDraw (.queueReflexive .attackPumpPerPlains)
-  let again := step g (.queueReflexive .attackPumpPerPlains)
+  let g := step afterDraw (.queueReflexive (.pump .perPlains .perPlains .target))
+  let again := step g (.queueReflexive (.pump .perPlains .perPlains .target))
   (g.player caster).attackPumpPerPlainsThisTurn == 1 &&
     logContains g "for each Plains they control" &&
     (again.player caster).attackPumpPerPlainsThisTurn == 2

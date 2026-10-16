@@ -395,6 +395,14 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         g.addFinalityTo o n (byPlayer := some controller)
       | kind, asEnters =>
         g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller)
+    | .attacking =>
+      let o := g.object! id
+      let whom :=
+        match (g.livingOpponents controller)[0]? with
+        | some pl => some pl.id
+        | none => none
+      g.setObject { o with status := { o.status with
+        attacking := true, attackingWhom := whom } }
 
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/

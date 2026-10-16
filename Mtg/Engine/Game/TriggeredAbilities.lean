@@ -2411,6 +2411,10 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .beBlocked, _ =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o .cantBeBlocked
+  | .beBlockedExceptByHaste, _ =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
+        |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
   | .untapWhileYouControl, .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let o := g.object! o.id
@@ -2687,6 +2691,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
     | .whileSourceRemains =>
       g.gainControlWhileSource controller sourceId targets
+    | .duringNextTurn =>
+      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
+        let g := g.setPlayerControl controller pid
+        { g with controlOnNextTakenTurn := true })
+        sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=
       g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
@@ -2984,12 +2993,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName (some .retargetCause)
       sequencedCardPower
-  | .may (.pay (.mana symbols)) (.queueReflexive (.modeled kind times)) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.queueReflexive followup) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
-    if times > 1 then
-      g.offerPayForReflexive controller sourceId symbols kind.toNat times
-    else
-      let follow := TriggeredAbility.TriggerResolution.queueReflexive (.modeled kind times)
+    match TriggeredAbility.TriggerResolution.queuedReflexive followup with
+    | .modeled kind times =>
+      if times > 1 then
+        g.offerPayForReflexive controller sourceId symbols kind times
+      else
+        let follow := TriggeredAbility.TriggerResolution.queueReflexive followup
+        let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
+        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+          lastKnownPower lastKnownToughness sourceName
+          (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
+    | _ =>
+      let follow := TriggeredAbility.TriggerResolution.queueReflexive followup
       let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
@@ -3006,8 +3023,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match what with
     | .mana symbols =>
       match g.mayThenConditional, symbols.toList with
-      | some (.queueReflexive (.modeled kind times)), _ =>
-        g.offerPayForReflexive controller sourceId symbols kind.toNat times
+      | some (.queueReflexive followup), _ =>
+        match TriggeredAbility.TriggerResolution.queuedReflexive followup with
+        | .modeled kind times =>
+          g.offerPayForReflexive controller sourceId symbols kind times
+        | _ =>
+          match symbols.toList with
+          | [.generic n] =>
+            let g := { g with pending := .mayPayGeneric controller n }
+            g.logMsg s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
+          | _ =>
+            match sourceId.bind g.findObject? with
+            | none =>
+              (g.logMsg "The ability's source is no longer in the graveyard").failMayThen
+            | some src =>
+              if src.zone != .graveyard src.owner then
+                (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
+              else
+                let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
+                g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+                  s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
       | some (.becomeCopy .cause), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
       | _, _ =>
@@ -3082,22 +3117,22 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
       | none => g.failMayThen
   | .queueReflexive followup =>
-    match followup with
-    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind.toNat 0
-    | .countersOnSource kind =>
+    match TriggeredAbility.TriggerResolution.queuedReflexive followup with
+    | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0
+    | .counters kind =>
       match sourceId.bind g.findObject? with
       | some o =>
         if o.isOnBattlefield then
-          g.queueModeledReflexive controller sourceId kind.toNat o.status.plusOnePlusOne
+          g.queueModeledReflexive controller sourceId kind o.status.plusOnePlusOne
         else
           g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
       | none =>
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
-    | .damageAny n =>
+    | .damage n =>
       g.putReflexiveTrigger controller sourceId
         { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
           phrase := s!"This deals {n} damage to any target" }
-    | .copyMilled =>
+    | .copy =>
       let mv :=
         match g.fraCause? with
         | some spell => g.objectManaValue spell
@@ -3111,14 +3146,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           mvAtMost := some mv })
         resolution := .fra .sarumanExileCopyMayCast
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
-    | .dividedDamage amount =>
+    | .divided amount =>
       g.putReflexiveTrigger controller sourceId {
         targeting := .of .playerOrCreature
         dividedDamage := some (amount, 2)
         resolution := .fra (.mshReflexive 10 0)
         phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
-    | .attackPumpPerPlains =>
+    | .attackPump =>
       g.attackPumpPerPlains controller
+    | .none => g
   | .may _ _ =>
     g.logMsg s!"{(g.player controller).name}'s optional action doesn't resolve")
   | r =>

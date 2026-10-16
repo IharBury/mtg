@@ -96,10 +96,10 @@ def sacOrDiscard : TriggeredAbility.TriggerResolution :=
   .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo
 
 def sacDestroy : TriggeredAbility.TriggerResolution :=
-  .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo
+  .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
 
 def sacDamage : TriggeredAbility.TriggerResolution :=
-  .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo
+  .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo
 
 /- Printed phrases stay the sentences those payments used. -/
 #guard phrase payDraw == "you may pay {1}. If you do, draw a card"

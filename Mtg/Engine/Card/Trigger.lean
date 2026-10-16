@@ -163,48 +163,48 @@ inductive CostSelector where
   | artifactOrDiscardNonland
 deriving Repr, Inhabited, BEq
 
-/-- Which reflexive `TriggerReflexive.modeled` and
-`TriggerReflexive.countersOnSource` queue. -/
+/-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
+`toNat` is the index `FraResolution.mshReflexive` matches. -/
 inductive TriggerReflexiveKind where
   /-- Another target nonattacking creature you control gains indestructible
   until end of turn.
-  `.modeled .grantIndestructible`. -/
+  `.grant (.keywords Keyword.indestructible) .target`. -/
   | grantIndestructible
-  /-- Choose up to `times` Trick Arrows modes.
-  Paying up to three times is `.modeled .trickArrows 3`. -/
+  /-- Choose up to three Trick Arrows modes.
+  `.chooseModes TriggerResolution.trickArrowModes .alreadyChosen`. -/
   | trickArrows
   /-- Put an indestructible counter on target creature you control.
-  `.modeled .indestructibleCounter`. -/
+  `.putCounters (.ofKind .indestructible) .permanent`. -/
   | indestructibleCounter
   /-- You control target opponent during their next turn.
-  `.modeled .controlOpponent`. -/
+  `.gainControl .duringNextTurn`. -/
   | controlOpponent
   /-- Target opponent exiles the top five cards of their library. You may
   cast up to two spells from among the exiled cards without paying their
   mana costs.
-  `.modeled .exileTopFive`. -/
+  `.exile (.opponentTop 5) (.mayCastUpTo 2)`. -/
   | exileTopFive
   /-- Return target creature card from your graveyard to the battlefield
   tapped and attacking with a finality counter on it.
-  `.modeled .returnAttacking`. -/
+  `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`. -/
   | returnAttacking
   /-- Destroy target nonland permanent an opponent controls.
-  `.modeled .destroyOppNonland`. -/
+  `.destroy .target`. -/
   | destroyOppNonland
   /-- Deal damage equal to the +1/+1 counters on the source to any other
   target.
-  `.countersOnSource .countersDamage`. -/
+  `.dealDamage .plusOneCounters .target`. -/
   | countersDamage
   /-- Target creature with haste can't be blocked this turn except by
   creatures with haste.
-  `.modeled .hasteUnblockable`. -/
+  `.cant .beBlockedExceptByHaste .target`. -/
   | hasteUnblockable
   /-- Return up to two target instant and/or sorcery cards from your
   graveyard to your hand.
-  `.modeled .returnInstants`. -/
+  `.returnToHand (.graveyardInstants 2)`. -/
   | returnInstants
   /-- Put a +1/+1 counter on target creature.
-  `.modeled .plusOne`. -/
+  `.putCounters (.ofKind .plusOnePlusOne) .permanent`. -/
   | plusOne
 deriving Repr, Inhabited, BEq
 
@@ -225,35 +225,6 @@ def toNat : TriggerReflexiveKind → Nat
   | .plusOne => 12
 
 end TriggerReflexiveKind
-
-/-- A later ability queued by `TriggerResolution.queueReflexive`. -/
-inductive TriggerReflexive where
-  /-- An MSH modeled reflexive of `kind`. `times` is how many times the cost
-  may be paid.
-  One payment is `.modeled kind`. Paying up to three times is
-  `.modeled .trickArrows 3`. -/
-  | modeled (kind : TriggerReflexiveKind) (times : Nat := 1)
-  /-- “This deals `n` damage to any target.” -/
-  | damageAny (n : Nat)
-  /-- `kind`, dealing damage equal to the +1/+1 counters on the source.
-  A source that has left queues nothing.
-  `.countersOnSource .countersDamage`. -/
-  | countersOnSource (kind : TriggerReflexiveKind)
-  /-- Exile target enchantment, instant, or sorcery card with mana value at
-  most the causing spell's from an opponent's graveyard. Copy it. You may
-  cast the copy without paying its mana cost.
-  The mana value is the causing spell's, or the trigger's last-known power
-  when no spell is recorded. No legal card removes the reflexive ability. -/
-  | copyMilled
-  /-- Deal `amount` damage divided as you choose among one or two targets.
-  The reflexive is the divided-damage ability. `amount` is that total. -/
-  | dividedDamage (amount : Nat)
-  /-- Whenever the controller attacks this turn, a creature they control
-  gets +1/+1 until end of turn for each Plains they control.
-  This arms that attack trigger. It does not put an ability on the stack
-  now. The source may already have left. -/
-  | attackPumpPerPlains
-deriving Repr, Inhabited, BEq
 
 /-- Which player `ObjectSelector.player` names, and who
 `TriggerResolution.draw` draws for. -/
@@ -367,6 +338,12 @@ inductive ObjectSelector where
   A missing source, or nothing exiled, returns nothing.
   `.returnToHand .linkedExile`. -/
   | linkedExile
+  /-- Up to `n` target instant and/or sorcery cards from the controller's
+  graveyard.
+  `.returnToHand (.graveyardInstants 2)`.
+  Inside `queueReflexive`, those targets are chosen when the reflexive
+  ability is put on the stack. Outside it, this returns nothing. -/
+  | graveyardInstants (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -424,6 +401,10 @@ inductive NumberSelector where
   A hand that already has `n` draws nothing.
   `.draw (.upToHandSize n)`. -/
   | upToHandSize (n : Nat)
+  /-- The number of +1/+1 counters on the source.
+  A source that has left queues no reflexive damage from this amount.
+  `.dealDamage .plusOneCounters .target`. -/
+  | plusOneCounters
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -437,6 +418,11 @@ inductive TriggerDamageNote where
   /-- The creature this Equipment is attached to deals the damage.
   Nothing equipped still deals it, with no source. -/
   | fromEquipped
+  /-- The damage is divided among one or two targets.
+  `.dealDamage (.fixed n) .target .divided`.
+  Inside `queueReflexive`, that ability is put on the stack and the
+  targets are chosen then. Outside it, this deals nothing. -/
+  | divided
 deriving Repr, Inhabited, BEq
 
 /-- Which permanent an effect uses when several recipients share one constructor.
@@ -629,6 +615,11 @@ inductive TriggerExileWhat where
   A card that has left the graveyard is reported. No recorded card is
   reported. Declining exiles nothing. -/
   | discarded
+  /-- The top `n` cards of the announced opponent's library.
+  `.exile (.opponentTop 5) (.mayCastUpTo 2)`.
+  Inside `queueReflexive`, the opponent is chosen when the reflexive
+  ability is put on the stack. Outside it, this exiles nothing. -/
+  | opponentTop (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.exile` lasts. -/
@@ -656,6 +647,11 @@ inductive TriggerExileHow where
   A token, a permanent that is neither an artifact nor a creature, or a
   missing target is not exiled. -/
   | returnTapped
+  /-- You may cast up to `casts` spells from among the exiled cards
+  without paying their mana costs.
+  `.exile (.opponentTop 5) (.mayCastUpTo 2)`.
+  Outside `queueReflexive`, this exiles nothing. -/
+  | mayCastUpTo (casts : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
@@ -791,6 +787,14 @@ inductive TriggerCastFrom where
   /-- A spell among the cards `revealLibrary (.top n)` just looked at.
   Outside that resolution, this origin does nothing. -/
   | looked
+  /-- An enchantment, instant, or sorcery card in an opponent's graveyard
+  with mana value at most the causing spell.
+  `.mayCast .milledSpell .causingSpell .withoutPaying`.
+  Inside `queueReflexive`, that ability is put on the stack. The mana
+  value is the causing spell's, or the trigger's last-known power when
+  no spell is recorded. No legal card removes the reflexive ability.
+  Outside `queueReflexive`, this casts nothing. -/
+  | milledSpell
 deriving Repr, Inhabited, BEq
 
 /-- The mana-value limit of `TriggerResolution.mayCast`.
@@ -805,6 +809,10 @@ inductive TriggerCastMv where
   /-- At most the greatest power among attacking creatures the controller
   controls. No attacker is a limit of zero. -/
   | greatestAttackingPower
+  /-- At most the mana value of the spell that caused this.
+  No recorded spell uses the trigger's last-known power.
+  `.mayCast .milledSpell .causingSpell .withoutPaying`. -/
+  | causingSpell
 deriving Repr, Inhabited, BEq
 
 /-- Whether `TriggerResolution.mayCast` pays the mana cost. -/
@@ -872,6 +880,12 @@ inductive TriggerPutWhat where
   or permanent is used when one was chosen; otherwise the recorded cause.
   A missing cause, or the wrong subtype, puts nothing. -/
   | cause (subtype : Option String := none)
+  /-- The announced creature card in the controller's graveyard.
+  Returned tapped and attacking with a finality counter is
+  `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
+  Inside `queueReflexive`, that card is chosen when the reflexive ability
+  is put on the stack. Outside it, this puts nothing. -/
+  | creatureCard
 deriving Repr, Inhabited, BEq
 
 /-- How a card `TriggerResolution.put` changes as it enters. -/
@@ -885,6 +899,8 @@ inductive TriggerEnterWith where
   /-- Put `n` counters of `kind` on it. `asEnters` reports that it enters
   with them. A finality counter is put by the ability's controller. -/
   | counter (kind : CounterKind) (n : Nat := 1) (asEnters : Bool := false)
+  /-- The permanent enters attacking. -/
+  | attacking
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
@@ -1288,6 +1304,11 @@ inductive TriggerControlHow where
   | untilEndOfTurn
   /-- For as long as the source remains on the battlefield. -/
   | whileSourceRemains
+  /-- You control the announced opponent during their next turn.
+  `.gainControl .duringNextTurn`.
+  Inside `queueReflexive`, that ability is put on the stack and the
+  opponent is chosen then. -/
+  | duringNextTurn
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.becomeCopy` copies, and which exceptions apply.
@@ -1318,6 +1339,9 @@ deriving Repr, Inhabited, BEq
 inductive TriggerCantWhat where
   /-- Can't be blocked this turn. -/
   | beBlocked
+  /-- Can't be blocked this turn except by creatures with haste.
+  `.cant .beBlockedExceptByHaste .target`. -/
+  | beBlockedExceptByHaste
   /-- Can't become untapped for as long as you control the source. -/
   | untapWhileYouControl
 deriving Repr, Inhabited, BEq
@@ -1542,23 +1566,44 @@ inductive TriggerResolution where
   | returnToHand (what : ObjectSelector := .graveyardCard)
       (note : TriggerReturnNote := .none)
   /-- Put later ability `followup` on the stack (“When you do”), or arm it
-  for a later event.
-  An MSH modeled reflexive is `.queueReflexive (.modeled kind)`.
-  Damage to any target is `.queueReflexive (.damageAny n)`.
+  for a later event. `followup` is that ability.
+  Another nonattacking creature gains indestructible is
+  `.queueReflexive (.grant (.keywords Keyword.indestructible) .target)`.
+  Trick Arrows, paying up to three times, is
+  `.queueReflexive (.chooseModes TriggerResolution.trickArrowModes .alreadyChosen)`.
+  An indestructible counter is
+  `.queueReflexive (.putCounters (.ofKind .indestructible) .permanent)`.
+  Controlling an opponent during their next turn is
+  `.queueReflexive (.gainControl .duringNextTurn)`.
+  An opponent exiling the top five, and casting up to two, is
+  `.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2))`.
+  A graveyard creature returning tapped and attacking is
+  `.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))`.
+  Destroying an opposing nonland is `.queueReflexive (.destroy .target)`.
+  A creature with haste that can't be blocked except by haste is
+  `.queueReflexive (.cant .beBlockedExceptByHaste .target)`.
+  Up to two instants or sorceries from the graveyard are
+  `.queueReflexive (.returnToHand (.graveyardInstants 2))`.
+  A +1/+1 counter on target creature is
+  `.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
+  Damage to any target is `.queueReflexive (.dealDamage (.fixed n) .target)`.
   Damage equal to the source's +1/+1 counters is
-  `.queueReflexive (.countersOnSource kind)`.
-  Exile and copy a milled spell is `.queueReflexive .copyMilled`.
+  `.queueReflexive (.dealDamage .plusOneCounters .target)`.
+  A source that has left queues nothing.
+  Exile and copy a milled spell is
+  `.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)`.
   After opponents mill, that is
-  `.«if» .opponentsMilled (.queueReflexive .copyMilled)`.
-  Divided damage is `.queueReflexive (.dividedDamage amount)`.
+  `.«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))`.
+  Divided damage is
+  `.queueReflexive (.dealDamage (.fixed amount) .target .divided)`.
   After the Plan is sacrificed, that is
-  `.«if» .planWasSacrificed (.queueReflexive (.dividedDamage amount))`.
-  A modeled reflexive after that sacrifice is
-  `.«if» .planWasSacrificed (.queueReflexive (.modeled kind))`.
+  `.«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed amount) .target .divided))`.
   A Plan that was not sacrificed queues nothing.
   Whenever you attack this turn, +1/+1 for each Plains, is
-  `.queueReflexive .attackPumpPerPlains`. -/
-  | queueReflexive (followup : TriggerReflexive)
+  `.queueReflexive (.pump .perPlains .perPlains .target)`.
+  That arms the attack trigger. It does not put an ability on the stack
+  now. Any other resolution queues nothing. -/
+  | queueReflexive (followup : TriggerResolution)
   /-- Sacrifice a permanent. `who` says who sacrifices, `what` says which
   permanent, and `note` says what a later step can read.
   The announced opponent sacrifices a creature of their choice with
@@ -1749,18 +1794,18 @@ inductive TriggerResolution where
   You may sacrifice an artifact or discard a card to draw is
   `.may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo`.
   You may sacrifice another creature to destroy an opposing nonland is
-  `.may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo`.
+  `.may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo`.
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
-  `.may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo`.
+  `.may (.pay .artifactOrDiscardNonland) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`.
   You may tap this to grant indestructible is
-  `.may (.tap .source) (.queueReflexive (.modeled .grantIndestructible)) .ifYouDo`.
+  `.may (.tap .source) (.queueReflexive (.grant (.keywords Keyword.indestructible) .target)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo`.
   You may pay {1} so a target creature with haste can't be blocked this turn
   except by creatures with haste is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .hasteUnblockable)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
   target is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`.
   The amount is the trigger's last-known power. Already used this turn does
@@ -1769,7 +1814,7 @@ inductive TriggerResolution where
   You may choose new targets for the spell that caused this is
   `.may .retargetCause (.sequence []) .ifYouDo`.
   You may pay {1} up to three times, then choose that many modes, is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo`.
   You may pay {2} to copy the nontoken artifact that caused this is
   `.may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo`.
   You may exile the discarded card and play it until the end of your next
@@ -2267,6 +2312,71 @@ deriving Repr, Inhabited, BEq
 
 namespace TriggerResolution
 
+/-- What `queueReflexive` does with a follow-up resolution.
+`.modeled` queues that MSH reflexive. `times` is how many times a mana
+cost may be paid. `.counters` reads the source's +1/+1 counters as the
+paid count. `.damage` deals that much to any target. `.copy` exiles and
+copies a milled spell. `.divided` deals that total among one or two
+targets. `.attackPump` arms this turn's attack pump. `.none` queues
+nothing. -/
+inductive QueuedReflexive where
+  | modeled (kind times : Nat)
+  | counters (kind : Nat)
+  | damage (n : Nat)
+  | copy
+  | divided (amount : Nat)
+  | attackPump
+  | none
+deriving Repr, Inhabited, BEq
+
+/-- Trick Arrows: Net, Explosive, and Boomerang.
+Paying up to three times is
+`.chooseModes trickArrowModes .alreadyChosen`. -/
+def trickArrowModes : List TriggerResolution :=
+  [.cant .beBlocked,
+   .dealDamage (.fixed 2) (.player .targetOpponent),
+   .sequence [.discard, .draw (.fixed 1)]]
+
+/-- Which reflexive `follow` queues. Any other resolution queues nothing. -/
+def queuedReflexive : TriggerResolution → QueuedReflexive
+  | .grant (.keywords k) .target =>
+    if k == Keyword.indestructible then
+      .modeled (TriggerReflexiveKind.toNat .grantIndestructible) 1
+    else .none
+  | .chooseModes modes .alreadyChosen =>
+    if modes == trickArrowModes then
+      .modeled (TriggerReflexiveKind.toNat .trickArrows) modes.length
+    else .none
+  | .putCounters (.ofKind .indestructible _) .permanent =>
+    .modeled (TriggerReflexiveKind.toNat .indestructibleCounter) 1
+  | .gainControl .duringNextTurn =>
+    .modeled (TriggerReflexiveKind.toNat .controlOpponent) 1
+  | .exile (.opponentTop 5) (.mayCastUpTo 2) _ =>
+    .modeled (TriggerReflexiveKind.toNat .exileTopFive) 1
+  | .put .creatureCard .tapped (.entering mods) =>
+    if mods == [.attacking, .counter .finality] then
+      .modeled (TriggerReflexiveKind.toNat .returnAttacking) 1
+    else .none
+  | .destroy .target .none =>
+    .modeled (TriggerReflexiveKind.toNat .destroyOppNonland) 1
+  | .cant .beBlockedExceptByHaste .target =>
+    .modeled (TriggerReflexiveKind.toNat .hasteUnblockable) 1
+  | .returnToHand (.graveyardInstants _) .none =>
+    .modeled (TriggerReflexiveKind.toNat .returnInstants) 1
+  | .putCounters (.ofKind .plusOnePlusOne _) .permanent =>
+    .modeled (TriggerReflexiveKind.toNat .plusOne) 1
+  | .dealDamage .plusOneCounters .target .none =>
+    .counters (TriggerReflexiveKind.toNat .countersDamage)
+  | .dealDamage (.fixed n) .target .divided =>
+    .divided n.toNat
+  | .dealDamage (.fixed n) .target .none =>
+    .damage n.toNat
+  | .mayCast .milledSpell .causingSpell .withoutPaying _ =>
+    .copy
+  | .pump .perPlains .perPlains .target =>
+    .attackPump
+  | _ => .none
+
 /-- Nested `sequence` constructors, left to right. An `or` stays one step:
 flattening it would resolve every alternative. -/
 def flatten : TriggerResolution → List TriggerResolution
@@ -2536,7 +2646,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .returnLinkedExileToHand =>
     { resolution := .returnToHand .linkedExile }
   | .grantAttackPumpPerPlainsThisTurn =>
-    { resolution := .queueReflexive .attackPumpPerPlains }
+    { resolution := .queueReflexive (.pump .perPlains .perPlains .target) }
   | .blinkUntilEndStep =>
     { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
       resolution := .exile .target .nextEndStep }
@@ -2898,7 +3008,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .millThenCopy =>
     { resolution := .sequence
         [.mill 2 .eachOpponent (note := .opponentsMilled),
-         .«if» .opponentsMilled (.queueReflexive .copyMilled)] }
+         .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] }
   | .pumpTargetBySourcePower =>
     { targeting := .of .anotherCreatureYouControl,
       resolution := .pump .equalSourcePower (.fixed 0) .target }
@@ -3043,26 +3153,26 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .planFinishReturnInstants =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants))] }
+         .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))] }
   | .planFinishControlOpponent =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent))] }
+         .«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn))] }
   | .planFinishExileTopCast =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled .exileTopFive))] }
+         .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] }
   | .planFinishCreateRobots n =>
     { resolution := .sequence
         [.sacrifice .you .plan, .createTokens .robotVillain22 n false] }
   | .planFinishDividedDamage n =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.dividedDamage n))] }
+         .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] }
   | .planFinishIndestructibleOnTarget =>
     { resolution := .sequence
         [.sacrifice .you .plan .forReflexive,
-         .«if» .planWasSacrificed (.queueReflexive (.modeled .indestructibleCounter))] }
+         .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
   | .surveil n => { resolution := .surveil n }
   | .empowerJace n => { resolution := .empowerJace n }
   | .prepareSource .ifNotPrepared =>
@@ -3179,11 +3289,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland)) .ifYouDo }
+      resolution := .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
       resolution := .may (.pay .artifactOrDiscardNonland)
-        (.queueReflexive (.damageAny 2)) .ifYouDo }
+        (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
       resolution := .revealFromHand .hand (.exile .target .untilSourceLeaves) }
@@ -3198,7 +3308,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
-      resolution := .may (.tap .source) (.queueReflexive (.modeled .grantIndestructible)) .ifYouDo }
+      resolution := .may (.tap .source) (.queueReflexive (.grant (.keywords Keyword.indestructible) .target)) .ifYouDo }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -3254,11 +3364,11 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sacrifice .eachOpponent .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking]
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo }
   | .thisAttack .payReturnAttacking =>
     { events := #[.attacking]
       resolution := .may (.pay (.mana #[.generic 3, .colored .black]))
-        (.queueReflexive (.modeled .returnAttacking)) .ifYouDo }
+        (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo }
   | .thisAttack .ifArtifactEnteredDraw =>
     { events := #[.attacking]
       resolution := .«if» .artifactEnteredThisTurn (.draw (.fixed 1)) }
@@ -3372,12 +3482,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.draw (.fixed 1)) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo }
   | .watch .redHulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .source,
-        .queueReflexive (.countersOnSource .countersDamage)] }
+        .queueReflexive (.dealDamage .plusOneCounters .target)] }
   | .watch .hulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
@@ -3403,7 +3513,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .hasteUnblockable)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo }
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature],
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
@@ -3482,9 +3592,9 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
 #guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .payReturnAttacking)).resolution ==
-  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo
+  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .ifArtifactEnteredDraw)).resolution ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).resolution ==
@@ -3510,7 +3620,7 @@ end SharedTrigger
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo
+  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

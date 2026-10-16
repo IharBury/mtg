@@ -101,12 +101,12 @@ Each one resolves through `may`, `if`, `exile`, `loseLife`, `gainLife`,
 inductive ThisAttackLeftover where
   /-- Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1
   counter on target creature. Resolves as
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo`. -/
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo`. -/
   | mayPayPlusOne
   /-- Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return
   target creature card from your graveyard tapped and attacking with a
   finality counter. Resolves as
-  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo`. -/
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo`. -/
   | payReturnAttacking
   /-- Whenever Iron Man attacks, if an artifact entered under your control
   this turn, draw a card. Resolves as
@@ -738,7 +738,7 @@ inductive SharedTrigger where
   /-- You may cast an instant or sorcery with mana value at most that damage. -/
   | castInstantSorceryMvAtMost
   /-- Mill, then maybe copy a milled spell. Resolves as
-  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive .copyMilled)]`. -/
+  `.sequence [.mill 2 .eachOpponent (note := .opponentsMilled), .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]`. -/
   | millThenCopy
   /-- Another creature gets +X/+0 equal to this creature's power. -/
   | pumpTargetBySourcePower
@@ -977,9 +977,9 @@ inductive SharedTrigger where
   | death (e : DeathLeftover)
   /-- Leftover “whenever this attacks” effect.
   Paying {1} to put a +1/+1 counter on target creature is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .plusOne)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo`.
   Paying {3}{B} to return a graveyard creature tapped and attacking is
-  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.modeled .returnAttacking)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo`.
   Drawing when an artifact entered under your control this turn is
   `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`.
   Exiling a nontoken artifact or creature and returning it tapped is
@@ -1023,7 +1023,7 @@ inductive SharedTrigger where
   Putting a counter, untapping when attacking, and an Enrage combat is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» .sourceAttacking (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
   Putting a counter, then damage equal to those counters, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.countersOnSource .countersDamage)]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.dealDamage .plusOneCounters .target)]`.
   +2/+2, then you may retarget the spell, is
   `.sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]`.
   You may have the entering Villain connive is `.connive .enteringVillain`.
@@ -1034,7 +1034,7 @@ inductive SharedTrigger where
   Choosing a Soldier or a team pump from the last-known mode is
   `.chooseModes [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .trickArrows 3)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
   You may deal the damage that caused this is
@@ -1058,7 +1058,7 @@ inductive SharedTrigger where
   `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
   Paying {1} so a creature with haste can't be blocked except by creatures
   with haste is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.modeled .hasteUnblockable)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo`.
   A +1/+1 counter on each other creature you control is
   `.putCounters (.ofKind .plusOnePlusOne) .eachOther`.
   Exiling another nonland nontoken until the next end step is
