@@ -257,8 +257,9 @@ discards, which cards `TriggerResolution.returnToHand` returns, which
 permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.putCounters` puts counters on, who
 `TriggerResolution.lose` removes an ability from, who
-`TriggerResolution.becomeArtifact` makes an artifact, and who
-`TriggerResolution.becomePrepared` prepares.
+`TriggerResolution.becomeArtifact` makes an artifact, who
+`TriggerResolution.becomePrepared` prepares, and who
+`TriggerResolution.setBasePT` gives a new base power and toughness.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
@@ -266,7 +267,8 @@ A sacrifice names both who sacrifices and which permanent.
 Counters name who receives them.
 Losing an ability names who loses it.
 Becoming an artifact names who becomes one.
-Becoming prepared names who becomes prepared. -/
+Becoming prepared names who becomes prepared.
+A new base power and toughness names who receives it. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -277,7 +279,9 @@ inductive ObjectSelector where
   It loses indestructible until end of turn is
   `.lose .indestructible .source`.
   It becomes an artifact until end of turn is `.becomeArtifact .source`.
-  It becomes prepared is `.becomePrepared .source`. -/
+  It becomes prepared is `.becomePrepared .source`.
+  Its base power and toughness become `p`/`t` is
+  `.setBasePT (.fixed p) (.fixed t) .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
@@ -285,7 +289,9 @@ inductive ObjectSelector where
   (`.target`). An illegal target is reported.
   It becomes an artifact until end of turn is `.becomeArtifact`
   (`.target`).
-  It becomes prepared is `.becomePrepared` (`.target`). -/
+  It becomes prepared is `.becomePrepared` (`.target`).
+  Its base power and toughness become `p`/`t` is
+  `.setBasePT (.fixed p) (.fixed t)` (`.target`). -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
@@ -293,7 +299,9 @@ inductive ObjectSelector where
   It loses indestructible until end of turn is
   `.lose .indestructible .enchanted`.
   It becomes an artifact until end of turn is `.becomeArtifact .enchanted`.
-  It becomes prepared is `.becomePrepared .enchanted`. -/
+  It becomes prepared is `.becomePrepared .enchanted`.
+  Its base power and toughness become `p`/`t` is
+  `.setBasePT (.fixed p) (.fixed t) .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
@@ -302,7 +310,9 @@ inductive ObjectSelector where
   `.lose .indestructible .targetWhileSource`.
   It becomes an artifact until end of turn is
   `.becomeArtifact .targetWhileSource`.
-  It becomes prepared is `.becomePrepared .targetWhileSource`. -/
+  It becomes prepared is `.becomePrepared .targetWhileSource`.
+  Its base power and toughness become `p`/`t` is
+  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -443,9 +453,10 @@ deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards
-`TriggerResolution.scry` looks at, and how many cards `TriggerResolution.draw`
-draws. `.greatestPower` is first so a default resolution uses it.
-`.fixed` is a fixed bonus, `n` damage, scry `n`, and draw `n`. -/
+`TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
+draws, and where one statistic of `TriggerResolution.setBasePT` reads its
+new base. `.greatestPower` is first so a default resolution uses it.
+`.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, or a base of `n`. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -455,11 +466,16 @@ inductive NumberSelector where
   | perOtherCreature
   /-- One for each Plains the controller controls. -/
   | perPlains
-  /-- A fixed bonus of `n`, `n` damage, scry `n`, or draw `n`. -/
+  /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, or a base of `n`.
+  A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`. -/
   | fixed (n : Int)
-  /-- The source's toughness. -/
+  /-- The source's toughness.
+  Another creature's base toughness becomes this toughness with
+  `.setBasePT .equalSourcePower .equalSourceToughness`. -/
   | equalSourceToughness
-  /-- The source's power. -/
+  /-- The source's power.
+  Another creature's base power becomes this power with
+  `.setBasePT .equalSourcePower .equalSourceToughness`. -/
   | equalSourcePower
   /-- This statistic's current value, which doubles it.
   Doubling the announced permanent is `.pump .double .double .target`. -/
@@ -1293,16 +1309,6 @@ inductive TriggerLibraryWhat where
   | cardFromHand
 deriving Repr, Inhabited, BEq
 
-/-- Where `TriggerResolution.setBasePT` reads the new base power and toughness.
-`power` and `toughness` are those values when this is `.fixed`. -/
-inductive TriggerBasePTAmount where
-  /-- The `power` and `toughness` arguments. -/
-  | fixed
-  /-- This creature's power and toughness as the ability resolves.
-  A source that has left uses its last-known power and toughness. -/
-  | equalSource
-deriving Repr, Inhabited, BEq
-
 /-- Which outcome of `TriggerResolution.may` resolves `follow`. -/
 inductive TriggerMayWhen where
   /-- The player performed `action`. Declining skips `follow`. -/
@@ -1397,8 +1403,8 @@ What it can't do, and who can't, are one `ActionSelector`. Paying mana,
 and paying by sacrificing or discarding, are `pay`. What is paid is an
 argument. Setting a permanent's base power and toughness to fixed values,
 and setting another creature's base power and toughness equal to this
-creature's, are `setBasePT`. What the new base is, and who receives it,
-are arguments.
+creature's, are `setBasePT`. Each statistic is a `NumberSelector`.
+Who receives the new base is an `ObjectSelector`.
 Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes, and which card,
@@ -1408,6 +1414,7 @@ a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
 and `grant`. Who becomes an artifact is an `ObjectSelector`.
 Who becomes prepared is an `ObjectSelector`.
+Who receives a new base power and toughness is an `ObjectSelector`.
 Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1705,21 +1712,19 @@ inductive TriggerResolution where
   `.becomePrepared .targetWhileSource`.
   Any other selector does nothing. -/
   | becomePrepared (who : ObjectSelector := .target)
-  /-- Until end of turn, `who`'s base power and toughness become the values
-  `amount` names. `power` and `toughness` are those values when `amount`
-  is `.fixed`.
-  The announced permanent becoming `p`/`t` is `.setBasePT p t`.
-  The source is `.setBasePT p t .source`.
-  The enchanted creature is `.setBasePT p t .enchanted`.
+  /-- Until end of turn, `who`'s base power and toughness become `power` and
+  `toughness`. Each statistic reads its own value.
+  The announced permanent becoming `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
+  The source is `.setBasePT (.fixed p) (.fixed t) .source`.
+  The enchanted creature is `.setBasePT (.fixed p) (.fixed t) .enchanted`.
   The target, while the source remains, is
-  `.setBasePT p t .targetWhileSource`.
+  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`.
   Another target creature becoming equal to this creature's power and
-  toughness is `.setBasePT 0 0 (amount := .equalSource)`. A source that has
-  left uses its last-known power and toughness. No target logs that none
-  was chosen.
+  toughness is `.setBasePT .equalSourcePower .equalSourceToughness`.
+  A source that has left uses its last-known power and toughness.
+  No target logs that none was chosen.
   Any other combination sets nothing. -/
-  | setBasePT (power toughness : Int) (who : TriggerAffected := .target)
-      (amount : TriggerBasePTAmount := .fixed)
+  | setBasePT (power toughness : NumberSelector) (who : ObjectSelector := .target)
   /-- Put a card onto a library. `place` says top or bottom, and `what`
   says which card.
   The announced permanent on top of its owner's library is `.putOnLibrary .top`.
@@ -2486,7 +2491,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .becomeArtifactIndestructible =>
     .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
   | .becomePrepared => .becomePrepared
-  | .setBasePT p t => .setBasePT p t
+  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t)
   | .tapAndStun =>
     .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
   | .putOnTopOfLibrary => .putOnLibrary .top
@@ -2513,7 +2518,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .becomeArtifactIndestructible =>
     .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (grantWho who)]
   | .becomePrepared => .becomePrepared (affectedWho who)
-  | .setBasePT p t => .setBasePT p t who
+  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
   | .tapAndStun =>
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
   | .putOnTopOfLibrary => .putOnLibrary .top (.permanent who)
@@ -2945,7 +2950,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .ringTempts => { resolution := .ringTempts }
   | .setOtherBasePT =>
     { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
-      resolution := .setBasePT 0 0 (amount := .equalSource) }
+      resolution := .setBasePT .equalSourcePower .equalSourceToughness }
   | .returnElfGainLife =>
     { targeting := .of .elfInYourGraveyard
       resolution := .sequence
@@ -3610,7 +3615,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
-        .setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source] }
+        .setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source] }
   | .resource .secondDrawPlusOneTarget =>
     { events := #[.youDrawSecondCard], targeting := .of .creature,
       resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
@@ -3705,7 +3710,8 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
   .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared == .becomePrepared
-#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) == .setBasePT 2 2
+#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) ==
+  .setBasePT (.fixed 2) (.fixed 2)
 #guard TriggeredAbility.TriggerResolution.ofPermanent .tapAndStun ==
   .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
 #guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary ==
@@ -3747,7 +3753,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
   .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
-  .sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]
+  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (SharedTrigger.timing (.resource .secondDrawDrain)).resolution ==

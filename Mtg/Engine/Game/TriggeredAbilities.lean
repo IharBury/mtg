@@ -2473,26 +2473,35 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
   | .top, .cardFromHand => g
 
-/-- Resolve `TriggerResolution.setBasePT`. Each printed combination keeps
-the behavior of the constructor it replaced. Any other combination sets
-nothing. -/
+/-- Resolve `TriggerResolution.setBasePT`. `power` and `toughness` are read
+separately. Each printed combination keeps the behavior of the constructor
+it replaced. Any other combination sets nothing. -/
 def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower lastKnownToughness : Option Int)
-    (power toughness : Int) (who : TriggeredAbility.TriggerAffected)
-    (amount : TriggeredAbility.TriggerBasePTAmount) : Game :=
-  match amount, who with
-  | .fixed, _ =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o (.setBasePT power toughness)
-  | .equalSource, .target =>
+    (power toughness : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
+  match power, toughness, who with
+  | .fixed pw, .fixed tw, .target =>
+    fixed .target pw tw
+  | .fixed pw, .fixed tw, .source =>
+    fixed .source pw tw
+  | .fixed pw, .fixed tw, .enchanted =>
+    fixed .enchanted pw tw
+  | .fixed pw, .fixed tw, .targetWhileSource =>
+    fixed .targetWhileSource pw tw
+  | .equalSourcePower, .equalSourceToughness, .target =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
       let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | .equalSource, _ => g
+  | _, _, _ => g
+where
+  fixed (affected : TriggeredAbility.TriggerAffected) (pw tw : Int) : Game :=
+    g.withAffected controller ab sourceId targets affected fun g o =>
+      g.applyPermanentAction o (.setBasePT pw tw)
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -2570,9 +2579,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyBecomeArtifact controller ab sourceId targets who
   | .becomePrepared who =>
     g.applyBecomePrepared controller ab sourceId targets who
-  | .setBasePT power toughness who amount =>
+  | .setBasePT power toughness who =>
     g.applySetBasePT controller ab sourceId targets lastKnownPower lastKnownToughness
-      power toughness who amount
+      power toughness who
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
   | .dividedDamage =>

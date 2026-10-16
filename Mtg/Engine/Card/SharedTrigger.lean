@@ -648,7 +648,7 @@ inductive SharedTrigger where
   /-- The Ring tempts you. -/
   | ringTempts
   /-- Set another creature's base P/T to this creature's.
-  Resolves as `.setBasePT 0 0 (amount := .equalSource)`. -/
+  Resolves as `.setBasePT .equalSourcePower .equalSourceToughness`. -/
   | setOtherBasePT
   /-- Return a target Elf from the graveyard, then gain life equal to its power.
   Resolves as `.sequence [.returnToHand .graveyardCard, .gainLife 0 (amount := .equalToTargetPower)]`. -/
@@ -1088,7 +1088,7 @@ inductive SharedTrigger where
   If you control another Hero, 1 damage to the announced opponent is
   `.«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent))`.
   Base power and toughness 6/6 and trample until end of turn is
-  `.sequence [.setBasePT 6 6 .source, .grant (.keywords Keyword.trample) .source]`.
+  `.sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]`.
   A +1/+1 counter on the announced creature is
   `.putCounters (.ofKind .plusOnePlusOne) .permanent`.
   Each opponent loses 1 life and you gain 1 life is

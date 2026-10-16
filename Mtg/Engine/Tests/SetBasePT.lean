@@ -4,10 +4,12 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.setBasePT`
 
+Power and toughness are `NumberSelector`s. Who receives the new base is an
+`ObjectSelector`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains get a fixed base power and toughness until end of
 turn. Another target creature's base power and toughness become equal to
-this creature's. What the new base is, and who receives it, are arguments.
+this creature's. Any other combination sets nothing.
 -/
 
 namespace Mtg.Engine.SetBasePTTests
@@ -54,10 +56,10 @@ def ogre : CardDef := creature "Ogre" ManaCost.empty #[] 3 3
 def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 
-def fixed : TriggeredAbility.TriggerResolution := .setBasePT 1 1
+def fixed : TriggeredAbility.TriggerResolution := .setBasePT (.fixed 1) (.fixed 1)
 
 def equalSource : TriggeredAbility.TriggerResolution :=
-  .setBasePT 0 0 (amount := .equalSource)
+  .setBasePT .equalSourcePower .equalSourceToughness
 
 def base (g : Game) (name : String) : Option (Int × Int) :=
   (obj g name).status.setBasePT
@@ -104,25 +106,25 @@ and a creature that has left are not set. -/
   (anyObj g "Titan").status.setBasePT == none &&
     logContains g "The target is no longer in play"
 
-#guard (.setBasePT 1 1 : TriggeredAbility.TriggerResolution) ==
-  .setBasePT 1 1 .target .fixed
+#guard (.setBasePT (.fixed 1) (.fixed 1) : TriggeredAbility.TriggerResolution) ==
+  .setBasePT (.fixed 1) (.fixed 1) .target
 
 /- The source gets the fixed base. A missing source, and a source that has
 left, are not set. -/
 #guard
-  let g := step board (.setBasePT 5 5 .source) (some (pid board "Titan"))
+  let g := step board (.setBasePT (.fixed 5) (.fixed 5) .source) (some (pid board "Titan"))
   base g "Titan" == some (5, 5) && base g "Bear" == none &&
     logContains g "Titan has base power and toughness 5/5 until end of turn"
 
 #guard
-  let g := step board (.setBasePT 5 5 .source)
+  let g := step board (.setBasePT (.fixed 5) (.fixed 5) .source)
   base g "Titan" == none &&
     logContains g "The triggered ability's source is no longer in play"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.setBasePT 5 5 .source) (some newId)
+  let g := step g0 (.setBasePT (.fixed 5) (.fixed 5) .source) (some newId)
   (anyObj g "Titan").status.setBasePT == none &&
     logContains g "Titan is no longer on the battlefield"
 
@@ -130,43 +132,43 @@ left, are not set. -/
 An Aura that has left is reported. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.setBasePT 0 2 .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (.setBasePT (.fixed 0) (.fixed 2) .enchanted) (some (pid g0 "Grasp"))
   base g "Titan" == some (0, 2) &&
     logContains g "Titan has base power and toughness 0/2 until end of turn"
 
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.setBasePT 0 2 .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (.setBasePT (.fixed 0) (.fixed 2) .enchanted) (some (pid g0 "Grasp"))
   base g "Titan" == none && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.setBasePT 0 2 .enchanted) (some newId)
+  let g := step g1 (.setBasePT (.fixed 0) (.fixed 2) .enchanted) (some newId)
   base g "Titan" == none && logContains g "Grasp is no longer on the battlefield"
 
 #guard
-  let g := step board (.setBasePT 0 2 .enchanted)
+  let g := step board (.setBasePT (.fixed 0) (.fixed 2) .enchanted)
   base g "Titan" == none && logContains g "The Aura is no longer in play"
 
 /- The target gets the fixed base only while the source remains. A source
 that has left is silent. An illegal target is reported while the source is
 still there. -/
 #guard
-  let g := step board (.setBasePT 3 1 .targetWhileSource)
+  let g := step board (.setBasePT (.fixed 3) (.fixed 1) .targetWhileSource)
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   base g "Titan" == some (3, 1) && base g "Bear" == none
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.setBasePT 3 1 .targetWhileSource)
+  let g := step g0 (.setBasePT (.fixed 3) (.fixed 1) .targetWhileSource)
     (some newId) #[Target.permanent (pid g0 "Titan")]
   base g "Titan" == none && g.log == g0.log
 
 #guard
-  let g := step board (.setBasePT 3 1 .targetWhileSource) (some (pid board "Bear"))
+  let g := step board (.setBasePT (.fixed 3) (.fixed 1) .targetWhileSource) (some (pid board "Bear"))
   base g "Titan" == none && logContains g "The target is no longer legal"
 
 /- Another target creature's base becomes this creature's power and
@@ -232,54 +234,66 @@ an opponent's creature, and a creature that has left are not set. -/
     (ab := .onAttackSetOtherBasePT)
   logContains g "The target is no longer in play"
 
-/- Equal to this creature for anyone but the announced target sets nothing. -/
+/- Equal to this creature for anyone but the announced target sets nothing.
+A fixed base for any other selector sets nothing. -/
 #guard
   let g0 := attach (addPermanent (addPermanent board ogre caster caster) grasp caster caster)
     "Grasp" "Titan"
   let sid := some (pid g0 "Titan")
   let tgt := #[Target.permanent (pid g0 "Ogre")]
   let crossed := [
-    step g0 (.setBasePT 0 0 .source .equalSource) sid tgt
+    step g0 (.setBasePT .equalSourcePower .equalSourceToughness .source) sid tgt
       (ab := .onAttackSetOtherBasePT),
-    step g0 (.setBasePT 0 0 .enchanted .equalSource) sid tgt
+    step g0 (.setBasePT .equalSourcePower .equalSourceToughness .enchanted) sid tgt
       (ab := .onAttackSetOtherBasePT),
-    step g0 (.setBasePT 0 0 .targetWhileSource .equalSource) sid tgt
+    step g0 (.setBasePT .equalSourcePower .equalSourceToughness .targetWhileSource) sid tgt
       (ab := .onAttackSetOtherBasePT)]
-  crossed.all fun g =>
-    base g "Titan" == none && base g "Ogre" == none && g.log == g0.log
+  let others := [
+    step g0 (.setBasePT (.fixed 1) (.fixed 1) .cause) sid tgt,
+    step g0 (.setBasePT (.fixed 1) (.fixed 1) .creaturesYouControl) sid tgt,
+    step g0 (.setBasePT (.fixed 1) (.fixed 1) (.player .you)) sid tgt,
+    step g0 (.setBasePT .double .double .target) sid tgt]
+  crossed.all (fun g =>
+    base g "Titan" == none && base g "Ogre" == none && g.log == g0.log) &&
+    others.all (fun g =>
+      base g "Titan" == none && base g "Ogre" == none && g.log == g0.log)
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) == .setBasePT 2 2
+#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) ==
+  .setBasePT (.fixed 2) (.fixed 2)
 #guard TriggeredAbility.TriggerResolution.ofSource (.setBasePT 2 2) ==
-  .setBasePT 2 2 .source
+  .setBasePT (.fixed 2) (.fixed 2) .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted (.setBasePT 2 2) ==
-  .setBasePT 2 2 .enchanted
+  .setBasePT (.fixed 2) (.fixed 2) .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource (.setBasePT 2 2) ==
-  .setBasePT 2 2 .targetWhileSource
-#guard equalSource == .setBasePT 0 0 .target .equalSource
+  .setBasePT (.fixed 2) (.fixed 2) .targetWhileSource
+#guard equalSource == .setBasePT .equalSourcePower .equalSourceToughness .target
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT == equalSource
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := fixed } ==
   "target creature has base power and toughness 1/1 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT 5 5 .source } ==
+    { resolution := .setBasePT (.fixed 5) (.fixed 5) .source } ==
   "this creature has base power and toughness 5/5 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT 0 2 .enchanted } ==
+    { resolution := .setBasePT (.fixed 0) (.fixed 2) .enchanted } ==
   "enchanted creature has base power and toughness 0/2 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT 3 1 .targetWhileSource } ==
+    { resolution := .setBasePT (.fixed 3) (.fixed 1) .targetWhileSource } ==
   "that creature has base power and toughness 3/1 until end of turn"
 #guard TriggeredAbility.resolutionPhrase { resolution := equalSource } ==
   "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT 0 0 .source .equalSource } ==
+    { resolution := .setBasePT .equalSourcePower .equalSourceToughness .source } ==
+  "set base power and toughness"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .setBasePT (.fixed 1) (.fixed 1) .cause } ==
   "set base power and toughness"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .setBasePT 2 2 .targetWhileSource] } ==
+      [.attach .source .target, .setBasePT (.fixed 2) (.fixed 2) .targetWhileSource] } ==
   "attach it to target creature you control. That creature has base power and toughness 2/2 until end of turn"
 
 #guard TriggeredAbility.toNotation onCreature ==
