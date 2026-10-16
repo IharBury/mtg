@@ -1426,7 +1426,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match amount with
     | .perChargeCounter =>
       s!"add {manaSymbolsText types} for each charge counter on this enchantment"
-    | .fixed => s!"add {manaSymbolsText types}"
+    | .fixed 1 => s!"add {manaSymbolsText types}"
+    | _ => "add mana"
   | .or [.tap .target, .untap .target] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"

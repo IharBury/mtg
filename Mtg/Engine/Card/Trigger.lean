@@ -668,11 +668,13 @@ where `TriggerResolution.dealDamage` reads its amount, how many cards
 draws, where one statistic of `TriggerResolution.setBasePT` reads its
 new base, how much life `TriggerResolution.gainLife` gains, how much
 life `TriggerResolution.loseLife` loses, how many cards
-`TriggerResolution.mill` mills, and how many counters
-`TriggerResolution.amass` puts on an Army.
+`TriggerResolution.mill` mills, how many counters
+`TriggerResolution.amass` puts on an Army, and how many times
+`TriggerResolution.addMana` adds its mana.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
-`n` life gained, `n` life lost, mill `n`, or amass `n`. -/
+`n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
+`n` times. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -686,12 +688,15 @@ inductive NumberSelector where
   /-- One for each Plains the controller controls. -/
   | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
-  `n` life gained, `n` life lost, mill `n`, or amass `n`.
+  `n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
+  `n` times.
   A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
   You gain `n` life is `.gainLife (.fixed n)`.
   You lose `n` life is `.loseLife (.fixed n)`.
   You mill `n` cards is `.mill (.fixed n)`.
-  You amass Goblins `n` is `.amass (.fixed n)`. -/
+  You amass Goblins `n` is `.amass (.fixed n)`.
+  Adding the printed mana `n` times is `.addMana types (.fixed n)`.
+  Once is `.addMana types`. -/
   | fixed (n : Int)
   /-- The source's toughness.
   Another creature's base toughness becomes this toughness with
@@ -773,6 +778,11 @@ inductive NumberSelector where
   The noted controller amasses that many with
   `.amass .notedPower (who := .notedController)`. -/
   | notedPower
+  /-- The printed mana types, once for each charge counter on the source.
+  A source that has left uses its last-known charge counters.
+  Zero counters add nothing.
+  `.addMana #[.colored .green] .perChargeCounter`. -/
+  | perChargeCounter
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -1127,16 +1137,6 @@ def enterMods : TriggerPutNote → List TriggerEnterWith
   | _ => []
 
 end TriggerPutNote
-
-/-- How `TriggerResolution.addMana` chooses the mana it adds. `types` is
-the printed mana when this is `.fixed`. -/
-inductive TriggerManaAmount where
-  /-- The printed mana types, once. -/
-  | fixed
-  /-- The printed mana types, once for each charge counter on the source.
-  A source that has left uses its last-known charge counters. -/
-  | perChargeCounter
-deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.chooseModes` chooses those modes. -/
 inductive TriggerModeHow where
@@ -2072,11 +2072,15 @@ inductive TriggerResolution where
   The artifact put from hand, attached to the remembered creature, is
   `.attach .putArtifact .notedHost`. -/
   | attach (what : TriggerAttachWhat) (host : TriggerAttachTo)
-  /-- Add mana. `types` is the printed mana when `amount` is `.fixed`.
-  Adding those types is `.addMana types`.
+  /-- Add mana, as `amount` says. `types` is the printed mana.
+  Adding those types once is `.addMana types`.
+  Adding them `n` times is `.addMana types (.fixed n)`.
+  Zero times adds nothing.
   {G} for each charge counter on the source is
-  `.addMana #[.colored .green] (amount := .perChargeCounter)`. -/
-  | addMana (types : Array ManaType) (amount : TriggerManaAmount := .fixed)
+  `.addMana #[.colored .green] .perChargeCounter`.
+  A source that has left uses its last-known charge counters.
+  Any other selector adds nothing. -/
+  | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
   /-- Set the source's base P/T. -/
   | becomePT (power toughness : Int)
   /-- Look at the top `n` and reveal a listed type. -/
@@ -3248,7 +3252,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .putCounters (.ofKind .charge) .source }
   | .addGreenPerChargeCounter =>
     { events := #[.yourFirstMain],
-      resolution := .addMana #[.colored .green] (amount := .perChargeCounter) }
+      resolution := .addMana #[.colored .green] .perChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
         [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }

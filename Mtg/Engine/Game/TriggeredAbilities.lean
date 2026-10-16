@@ -1615,12 +1615,16 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector adds
+nothing. -/
 def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (types : Array ManaType) (amount : TriggeredAbility.TriggerManaAmount) : Game :=
+    (types : Array ManaType) (amount : TriggeredAbility.NumberSelector) : Game :=
   match amount with
-  | .fixed =>
-    g.addManaLogged controller types
+  | .fixed n =>
+    if n <= 0 then g
+    else
+      let types := types.foldl (fun acc t => acc ++ Array.replicate n.toNat t) #[]
+      g.addManaLogged controller types
   | .perChargeCounter =>
     -- Ruling 792: if the source left, use its last-known charge counters.
     let n :=
@@ -1635,6 +1639,7 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       else n
     let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
     g.addManaLogged controller types
+  | _ => g
 
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
