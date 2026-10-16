@@ -678,7 +678,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .untap .targetWhileSource => some "untap that creature"
   | .lose .indestructible .targetWhileSource =>
     some "that creature loses indestructible until end of turn"
-  | .cant .beBlocked .targetWhileSource =>
+  | .cant (.beBlocked .targetWhileSource) =>
     some "that creature can't be blocked this turn"
   | .becomeArtifact .targetWhileSource =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
@@ -758,13 +758,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it loses all abilities for as long as this remains on the battlefield"
   | .lose _ _ =>
     "lose"
-  | .cant .beBlocked who =>
+  | .cant (.beBlocked who) =>
     s!"{affectedNoun who noun} can't be blocked this turn"
-  | .cant .beBlockedExceptByHaste who =>
+  | .cant (.beBlockedExceptByHaste who) =>
     s!"{affectedNoun who noun} can't be blocked this turn except by creatures with haste"
-  | .cant .untapWhileYouControl .target =>
+  | .cant (.untapWhileYouControl .target) =>
     "that creature can't become untapped for as long as you control this creature"
-  | .cant _ _ =>
+  | .cant _ =>
     "can't"
   | .becomeArtifact who =>
     s!"until end of turn, {affectedNoun who noun} becomes an artifact in addition to its other types"
@@ -1144,7 +1144,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
-  | .sequence [.tap .target, .cant .untapWhileYouControl .target] =>
+  | .sequence [.tap .target, .cant (.untapWhileYouControl .target)] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
   | .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent] =>
     "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"

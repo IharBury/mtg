@@ -1058,7 +1058,7 @@ inductive SharedTrigger where
   `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
   Paying {1} so a creature with haste can't be blocked except by creatures
   with haste is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo`.
   A +1/+1 counter on each other creature you control is
   `.putCounters (.ofKind .plusOnePlusOne) .eachOther`.
   Exiling another nonland nontoken until the next end step is
