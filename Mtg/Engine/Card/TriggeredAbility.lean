@@ -816,7 +816,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a card from your hand on the bottom of your library"
   | .putOnLibrary _ _ =>
     "put on library"
-  | .surveil n => s!"surveil {n}"
+  | .surveil (.fixed n) => s!"surveil {n}"
+  | .surveil _ => "surveil"
   | .empowerJace n => s!"empower Jace {n}"
   | .prepareSource .ifNotPrepared =>
     "if this creature isn't prepared, it becomes prepared"
@@ -1188,7 +1189,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
-  | .sequence [.armSurveilReturnLifeGained, .surveil 1] =>
+  | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"

@@ -2980,16 +2980,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g
   | .revealFromHand count thenDo =>
     g.applyRevealFromHand controller sourceId targets count thenDo
-  | .surveil n =>
+  | .surveil (.fixed n) =>
     let armed := g.armSurveilReturn
     let life := (g.player controller).lifeGainedThisTurn
     let g := { g with armSurveilReturn := false }
-    let g := g.beginSurveil controller n
+    let g := g.beginSurveil controller n.toNat
     if armed then
       match g.pending with
       | .surveil _ _ => { g with surveilReturnMvAtMost := some life }
       | _ => g
     else g
+  | .surveil _ => g
   | .empowerJace n =>
     g.empowerJace controller n
   | .prepareSource .ifNotPrepared =>

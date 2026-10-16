@@ -1282,7 +1282,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry (.fixed 2)
-#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil 2
+#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
+#guard TriggeredAbility.resolutionPhrase { resolution := .surveil .perOtherCreature } ==
+  "surveil"
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) ==
@@ -1598,7 +1600,7 @@ end CardDef
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
   .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
-  .sequence [.armSurveilReturnLifeGained, .surveil 1]
+  .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
   .sequence [.grant (.keywords Keyword.hexproof) .target,
     .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent),

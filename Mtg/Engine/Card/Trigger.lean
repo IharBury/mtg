@@ -2288,8 +2288,9 @@ inductive TriggerResolution where
   A smaller hand is revealed in full.
   Any other combination does nothing. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
-  /-- Surveil `n` (CR 701.25). -/
-  | surveil (n : Nat)
+  /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
+  Surveil 2 is `.surveil (.fixed 2)`. Any other amount surveils nothing. -/
+  | surveil (n : NumberSelector)
   /-- Empower Jace `n` (Reality Fracture). -/
   | empowerJace (n : Nat)
   /-- The source becomes prepared.
@@ -2565,7 +2566,7 @@ def ofSpell : SpellResolution → TriggerResolution
   | .gainLife n .you => .gainLife (.fixed n)
   | .amass n subtype => .amass (.fixed n) subtype
   | .recruit => .recruit
-  | .surveil n => .surveil n
+  | .surveil n => .surveil (.fixed n)
   | .onPermanent a => ofPermanent a
   | .creaturesPump p t .youControl => .pump (.fixed p) (.fixed t) .creaturesYouControl
   | .teamGain k => .grant (.keywords k) .creaturesYouControl
@@ -3205,7 +3206,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
-  | .surveil n => { resolution := .surveil n }
+  | .surveil n => { resolution := .surveil (.fixed n) }
   | .empowerJace n => { resolution := .empowerJace n }
   | .prepareSource .ifNotPrepared =>
     { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
@@ -3249,7 +3250,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
-      resolution := .sequence [.armSurveilReturnLifeGained, .surveil 1] }
+      resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
       resolution := .«if» (.otherForestsAtLeast 5) (.pump (.fixed 3) (.fixed 3) .target) }

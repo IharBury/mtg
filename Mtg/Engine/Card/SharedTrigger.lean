@@ -916,7 +916,7 @@ inductive SharedTrigger where
   | pumpIfFiveOtherForests
   /-- If you gained life this turn, surveil 1; a card with mana value at most
   the life gained put into the graveyard this way goes to your hand. Resolves as
-  `.sequence [.armSurveilReturnLifeGained, .surveil 1]`. -/
+  `.sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]`. -/
   | surveilReturnIfGainedLife
   /-- Apply `action` to the enchanted creature.
   Resolves as `TriggerResolution.ofEnchanted`. -/
