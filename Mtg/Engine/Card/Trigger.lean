@@ -673,8 +673,14 @@ draws, where one statistic of `TriggerResolution.setBasePT` reads its
 new base, how much life `TriggerResolution.gainLife` gains, how much
 life `TriggerResolution.loseLife` loses, how many cards
 `TriggerResolution.mill` mills, how many counters
-`TriggerResolution.amass` puts on an Army, and how many times
-`TriggerResolution.addMana` adds its mana.
+`TriggerResolution.amass` puts on an Army, how many times
+`TriggerResolution.addMana` adds its mana, how many tokens
+`TriggerResolution.createTokens` creates, how many cards
+`TriggerResolution.surveil` surveils, how many loyalty counters
+`TriggerResolution.empowerJace` puts on a Jace token, how much less
+`TriggerResolution.spellsCostLess` makes a spell cost, how many cards
+`TriggerResolution.lookAtTopRevealTypes` looks at, and the base power
+and toughness `TriggerResolution.becomePT` sets.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
 `n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
