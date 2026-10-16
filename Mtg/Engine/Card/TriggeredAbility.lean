@@ -760,6 +760,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "lose"
   | .cant .beBlocked who =>
     s!"{affectedNoun who noun} can't be blocked this turn"
+  | .cant .beBlockedExceptByHaste who =>
+    s!"{affectedNoun who noun} can't be blocked this turn except by creatures with haste"
   | .cant .untapWhileYouControl .target =>
     "that creature can't become untapped for as long as you control this creature"
   | .cant _ _ =>
@@ -951,7 +953,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may have this deal that much damage"
   | .may .retargetCause (.sequence []) .ifYouDo =>
     "you may choose new targets for that spell"
-  | .may (.pay (.mana symbols)) (.queueReflexive (.modeled _ times)) .ifYouDo =>
+  | .may (.pay (.mana symbols)) (.queueReflexive follow) .ifYouDo =>
+    let times :=
+      match TriggerResolution.queuedReflexive follow with
+      | .modeled _ times => times
+      | _ => 1
     match symbols.toList with
     | [.generic n] =>
       if times > 1 then s!"you may pay \{{n}} up to {times} times"
@@ -1081,7 +1087,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
     "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
   | .sequence [.mill 2 .eachOpponent .fixed .opponentsMilled,
-      .«if» .opponentsMilled (.queueReflexive .copyMilled)] =>
+      .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] =>
     "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
   | .sequence [.sacrifice .eachOpponent .combatDamager, .ringTempts] =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
@@ -1103,21 +1109,21 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.sacrifice .you .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
     "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled .returnInstants))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))] =>
     "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled .controlOpponent))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn))] =>
     "sacrifice it. When you do, you control target opponent during their next turn"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled .exileTopFive))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
   | .sequence [.sacrifice .you .plan, .createTokens .robotVillain22 n false] =>
     s!"sacrifice it and create {englishNumber n} 2/2 colorless Robot Villain artifact creature tokens"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.dividedDamage n))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] =>
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
   | .sequence [.sacrifice .you .plan .forReflexive,
-      .«if» .planWasSacrificed (.queueReflexive (.modeled .indestructibleCounter))] =>
+      .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] =>
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .sequence [.attach .source .target, followup] =>
     match attachedFollowupPhrase followup with
@@ -1402,6 +1408,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
   | .gainControl .whileSourceRemains =>
     s!"gain control of {noun} for as long as this Saga remains on the battlefield"
+  | .gainControl .duringNextTurn =>
+    "you control target opponent during their next turn"
   | .honeEachEquipment =>
     "put a hone counter on each Equipment you control"
   | .cascade =>
@@ -1546,7 +1554,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "the Ring tempts you"
   | .may (.discard .hand) (.draw (.fixed n)) .ifYouDo =>
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
-  | .queueReflexive .attackPumpPerPlains =>
+  | .queueReflexive (.pump .perPlains .perPlains .target) =>
     "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .spellsCostLess _ n =>
     s!"spells you cast this turn cost \{{n}} less to cast"
@@ -1584,9 +1592,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .may (.pay .anotherCreature) (.queueReflexive (.modeled .destroyOppNonland _)) .ifYouDo =>
+  | .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.damageAny 2)) .ifYouDo =>
+  | .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
@@ -1598,8 +1606,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "reveal cards from their hand"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .may (.tap .source) (.queueReflexive (.modeled .grantIndestructible _)) .ifYouDo =>
-    "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
+  | .may (.tap .source) (.queueReflexive (.grant (.keywords k) .target)) .ifYouDo =>
+    if k == Keyword.indestructible then
+      "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
+    else
+      "you may tap this creature. When you do, that ability triggers"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
   | .«if» .equippedLegendaryYouControl .markRecentTokensAttacking =>
@@ -1621,9 +1632,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
     "that creature deals damage equal to its power to up to one target creature"
-  | .queueReflexive .copyMilled =>
+  | .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying) =>
     "exile and copy a card"
-  | .«if» .opponentsMilled (.queueReflexive .copyMilled) =>
+  | .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) =>
     "when one or more cards are milled this way, exile and copy a card"
   | .loseLife n who amount =>
     match who, amount with
@@ -1636,12 +1647,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "each opponent loses X life, where X is the number of Equipment attached to it"
     | _, _ =>
       "lose life"
-  | .«if» .planWasSacrificed (.queueReflexive (.modeled _ _)) =>
+  | .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided)) =>
+    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+  | .queueReflexive (.dealDamage (.fixed n) .target .divided) =>
+    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+  | .«if» .planWasSacrificed (.queueReflexive _) =>
     "when you do, the reflexive ability triggers"
-  | .«if» .planWasSacrificed (.queueReflexive (.dividedDamage n)) =>
-    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .queueReflexive (.dividedDamage n) =>
-    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
   | .«if» .anotherHero (.gainLife n) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
