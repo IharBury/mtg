@@ -253,27 +253,32 @@ deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
 `TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
-discards, which cards `TriggerResolution.returnToHand` returns, and which
-permanent `TriggerResolution.sacrifice` sacrifices.
+discards, which cards `TriggerResolution.returnToHand` returns, which
+permanent `TriggerResolution.sacrifice` sacrifices, and who
+`TriggerResolution.putCounters` puts counters on.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
-A sacrifice names both who sacrifices and which permanent. -/
+A sacrifice names both who sacrifices and which permanent.
+Counters name who receives them. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
   `n` damage is `.dealDamage (.fixed n) .source`.
   Returned from its owner's graveyard to their hand is
-  `.returnToHand .source`. -/
+  `.returnToHand .source`.
+  A loyalty counter is `.putCounters (.ofKind .loyalty) .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent. -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
+  Nothing enchanted does nothing.
+  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
+  A source that already left is silent.
+  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -293,10 +298,13 @@ inductive ObjectSelector where
   | youControlSubtype (subtype : String)
   /-- Each creature blocking the source. -/
   | blockers
-  /-- The announced permanent.
+  /-- The announced permanent. `byYou` means the controller puts the counters,
+  and an illegal target logs that you won't put counters.
   Returned to its owner's hand, noting the return, is
-  `.returnToHand .permanent .returnedPermanent`. -/
-  | permanent
+  `.returnToHand .permanent .returnedPermanent`.
+  A +1/+1 counter you put on the target is
+  `.putCounters (.ofKind .plusOnePlusOne) (.permanent true)`. -/
+  | permanent (byYou : Bool := false)
   /-- Each creature that is not this subtype, and each opponent. -/
   | eachNonSubtypeAndOpponents (subtype : String)
   /-- The player `who` names.
@@ -379,6 +387,28 @@ inductive ObjectSelector where
   sacrifices nothing.
   `.sacrifice .chosenNontokenCreature`. -/
   | chosenNontokenCreature
+  /-- Permanents you control.
+  Each creature is `.youControl`.
+  Each permanent of a subtype is `.youControl (.subtype s)`.
+  One counter, or two with the city's blessing, is `.youControl .citysBlessing`.
+  `.putCounters (.ofKind .plusOnePlusOne) .youControl`. -/
+  | youControl (which : YouControlPlusOne := .eachCreature)
+  /-- Each other creature you control.
+  `.putCounters (.ofKind .plusOnePlusOne) .eachOther`. -/
+  | eachOther
+  /-- The token an earlier step created.
+  The noted number of +1/+1 counters is
+  `.putCounters .plusOneNoted .createdToken`. -/
+  | createdToken
+  /-- The ability's source, if it is still on the battlefield.
+  A source that has left logs that no counter is put. Later steps still run.
+  `.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent`. -/
+  | sourceIfPresent
+  /-- Each announced permanent, up to the trigger's last-known count.
+  None, or zero, puts counters on nothing. An illegal permanent is
+  reported and skipped. Announced permanents past that count are ignored.
+  `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`. -/
+  | eachUpToLastKnown
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -501,39 +531,8 @@ inductive TriggerLoseWho where
   | targetIfPresent
 deriving Repr, Inhabited, BEq
 
-/-- Who `TriggerResolution.putCounters` puts counters on. -/
-inductive TriggerCounterWho where
-  /-- Permanents you control.
-  Each creature is `.youControl`.
-  Each permanent of a subtype is `.youControl (.subtype s)`.
-  One counter, or two with the city's blessing, is `.youControl .citysBlessing`. -/
-  | youControl (which : YouControlPlusOne := .eachCreature)
-  /-- Each other creature you control. -/
-  | eachOther
-  /-- The announced permanent. `byYou` means the controller puts the counters,
-  and an illegal target logs that you won't put counters. -/
-  | permanent (byYou : Bool := false)
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The token an earlier step created. -/
-  | createdToken
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- The ability's source, if it is still on the battlefield.
-  A source that has left logs that no counter is put. Later steps still run. -/
-  | sourceIfPresent
-  /-- Each announced permanent, up to the trigger's last-known count.
-  None, or zero, puts counters on nothing. An illegal permanent is
-  reported and skipped. Announced permanents past that count are ignored. -/
-  | eachUpToLastKnown
-deriving Repr, Inhabited, BEq
-
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
-inductive TriggerCounterWhat where
+inductive CounterSelector where
   /-- `n` counters of this kind. One is `.ofKind kind`. -/
   | ofKind (kind : CounterKind) (n : Nat := 1)
   /-- +1/+1 counters equal to the source's last-known mana value. -/
@@ -1543,8 +1542,9 @@ inductive TriggerResolution where
   gained (the trigger's last-known power), is
   `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
   None, or zero life, puts counters on nothing. An illegal permanent is
-  reported and skipped. Extra announced permanents are ignored. -/
-  | putCounters (what : TriggerCounterWhat) (who : TriggerCounterWho)
+  reported and skipped. Extra announced permanents are ignored.
+  Any other selector puts nothing. -/
+  | putCounters (what : CounterSelector) (who : ObjectSelector)
   /-- Return cards to a hand. `what` says which cards and whose hand.
   `note` says what a later step can read.
   A creature card from your graveyard to your hand is
@@ -2478,7 +2478,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .exile => .exile (exileWhat who) .forLater
   | .doublePowerAndToughness => .pump .double .double (affectedWho who)
 where
-  counterWho : TriggerAffected → TriggerCounterWho
+  counterWho : TriggerAffected → ObjectSelector
     | .target => .permanent
     | .source => .source
     | .enchanted => .enchanted

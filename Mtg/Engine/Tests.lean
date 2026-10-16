@@ -59,6 +59,7 @@ import Mtg.Engine.Tests.Resource
 import Mtg.Engine.Tests.Reflexive
 import Mtg.Engine.Tests.Pay
 import Mtg.Engine.Tests.Sacrifice
+import Mtg.Engine.Tests.PutCounters
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -144,4 +145,5 @@ keep working.
 - `Reflexive`: a reflexive queued now, after the Plan is sacrificed, after a mill, and an attack pump armed for this turn
 - `Pay`: mana, and a sacrificed or discarded object, paid as one `pay`
 - `Sacrifice`: who sacrifices and which permanent, as one `ObjectSelector`
+- `PutCounters`: what is put, as a `CounterSelector`, and who receives it, as an `ObjectSelector`
 -/

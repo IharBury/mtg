@@ -854,12 +854,12 @@ def copyMissingKeywordCounters (g : Game) (src other : GameObject) : Game :=
         vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector puts nothing. -/
 def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int)
-    (what : TriggeredAbility.TriggerCounterWhat)
-    (who : TriggeredAbility.TriggerCounterWho) : Game :=
+    (what : TriggeredAbility.CounterSelector)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .ofKind .plusOnePlusOne _, .youControl which =>
     match which with
