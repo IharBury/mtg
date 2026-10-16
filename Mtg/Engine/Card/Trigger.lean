@@ -260,8 +260,9 @@ permanent `TriggerResolution.sacrifice` sacrifices, who
 `TriggerResolution.becomeArtifact` makes an artifact, who
 `TriggerResolution.becomePrepared` prepares, who
 `TriggerResolution.setBasePT` gives a new base power and toughness,
-which card `TriggerResolution.putOnLibrary` puts on a library, and
-which cards `TriggerResolution.exile` exiles.
+which card `TriggerResolution.putOnLibrary` puts on a library,
+which cards `TriggerResolution.exile` exiles, and
+which cards `TriggerResolution.put` puts onto the battlefield.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
@@ -272,7 +273,8 @@ Becoming an artifact names who becomes one.
 Becoming prepared names who becomes prepared.
 A new base power and toughness names who receives it.
 Putting a card on a library names which card.
-Exiling names which cards. -/
+Exiling names which cards.
+Putting cards onto the battlefield names which cards. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -288,7 +290,10 @@ inductive ObjectSelector where
   `.setBasePT (.fixed p) (.fixed t) .source`.
   Its owner puts it on top of their library is `.putOnLibrary .top .source`.
   On the bottom is `.putOnLibrary .bottom .source`.
-  Exiling it is `.exile .source .forLater`. -/
+  Exiling it is `.exile .source .forLater`.
+  Returned from its owner's graveyard as an artifact is
+  `.put .source (how := .asArtifact)`.
+  Returned under its owner's control is `.put .source .underOwner`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
@@ -333,8 +338,14 @@ inductive ObjectSelector where
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
-  A token ceases to exist. -/
-  | cause
+  A token ceases to exist.
+  `subtype`, when set, requires that subtype.
+  The Villain that caused this, under its owner's control, as a Hero with
+  a finality counter, is
+  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
+  An announced card or permanent is used when one was chosen; otherwise the
+  recorded cause. A missing cause, or the wrong subtype, puts nothing. -/
+  | cause (subtype : Option String := none)
   /-- Each creature the controller controls. -/
   | creaturesYouControl
   /-- Each other creature the controller controls of these subtypes.
@@ -392,14 +403,17 @@ inductive ObjectSelector where
   | milledSubtype (subtype : String)
   /-- The card `revealLibrary .untilCreature` revealed, put into the
   controller's hand on the hand branch.
-  Outside that resolution, `.returnToHand .revealed` does nothing. -/
+  Outside that resolution, `.returnToHand .revealed` does nothing.
+  Put onto the battlefield is `.put .revealed`. Outside `.untilSaga` and
+  the battlefield branch of `.untilCreature`, that put does nothing. -/
   | revealed
   /-- A basic land card `searchLibrary` found, put into the controller's hand.
   Outside that resolution, `.returnToHand .basicLand` does nothing. -/
   | basicLand
   /-- A card the source exiled, returned to its owner's hand.
   A missing source, or nothing exiled, returns nothing.
-  `.returnToHand .linkedExile`. -/
+  `.returnToHand .linkedExile`.
+  Put onto the battlefield is `.put .linkedExile`. -/
   | linkedExile
   /-- Up to `n` target instant and/or sorcery cards from the controller's
   graveyard.
@@ -512,6 +526,54 @@ inductive ObjectSelector where
   Inside `queueReflexive`, the opponent is chosen when the reflexive
   ability is put on the stack. Outside it, this exiles nothing. -/
   | opponentTop (n : Nat)
+  /-- The announced nonland permanent card from a graveyard.
+  Its mana value is at most `mv`.
+  `.put (.nonlandMvAtMost mv)`. -/
+  | nonlandMvAtMost (mv : Nat)
+  /-- Lands an earlier step exiled.
+  Returned tapped is `.put .notedLands (how := .tapped)`. -/
+  | notedLands
+  /-- The card an earlier step discarded, when it is a land.
+  Entering tapped is `.put .discardedLand (how := .tapped)`. -/
+  | discardedLand
+  /-- A land card from the controller's hand.
+  Entering tapped is `.put .landFromHand (how := .tapped)`.
+  Optional as `.may (.put .landFromHand (how := .tapped)) (.sequence [])`. -/
+  | landFromHand
+  /-- An artifact card from the controller's hand.
+  Remembered for a later attach is
+  `.put .artifactFromHand (note := .forAttach)`.
+  Optional as `.may (.put .artifactFromHand (note := .forAttach)) (.sequence [])`.
+  An empty hand skips that choice. -/
+  | artifactFromHand
+  /-- A random creature from the cards `revealLibrary (.top n)` revealed.
+  `.put .randomCreature`.
+  Outside that resolution, this puts nothing. -/
+  | randomCreature
+  /-- A Forest card `searchLibrary` found.
+  `.put .forest`.
+  Outside that resolution, this puts nothing. -/
+  | forest
+  /-- A basic land card `searchLibrary` found, put on top of the library.
+  `.put .basicLandOnTop`.
+  Outside that resolution, this puts nothing. -/
+  | basicLandOnTop
+  /-- A Dragon card `searchLibrary` found in the hand and/or library.
+  `.put .dragon`.
+  Outside that resolution, this puts nothing. -/
+  | dragon
+  /-- The announced creature card. Its mana value is at most `mv`.
+  `.put (.creatureMvAtMost mv)`. -/
+  | creatureMvAtMost (mv : Nat)
+  /-- A creature card of `subtype` with mana value at most `maxMv` from hand.
+  `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`. -/
+  | creatureFromHand (subtype : String) (maxMv : Nat)
+  /-- The announced creature card in the controller's graveyard.
+  Returned tapped and attacking with a finality counter is
+  `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
+  Inside `queueReflexive`, that card is chosen when the reflexive ability
+  is put on the stack. Outside it, this puts nothing. -/
+  | creatureCard
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -915,54 +977,6 @@ inductive TriggerReturnNote where
   | none
   /-- Whether a permanent was actually returned. -/
   | returnedPermanent
-deriving Repr, Inhabited, BEq
-
-/-- Which cards `TriggerResolution.put` puts onto the battlefield. -/
-inductive TriggerPutWhat where
-  /-- Each card the source exiled. -/
-  | linkedExile
-  /-- The announced nonland permanent card. Its mana value is at most `mv`. -/
-  | nonlandMvAtMost (mv : Nat)
-  /-- The source, from its owner's graveyard. -/
-  | source
-  /-- Lands an earlier step exiled. -/
-  | notedLands
-  /-- The card an earlier step discarded, when it is a land. -/
-  | discardedLand
-  /-- A land card from the controller's hand. -/
-  | landFromHand
-  /-- An artifact card from the controller's hand. -/
-  | artifactFromHand
-  /-- A random creature from the cards `revealLibrary (.top n)` revealed.
-  Outside that resolution, `.put .randomCreature` does nothing. -/
-  | randomCreature
-  /-- The card `revealLibrary` revealed. Outside `.untilSaga` and the
-  battlefield branch of `.untilCreature`, `.put .revealed` does nothing. -/
-  | revealed
-  /-- A Forest card `searchLibrary` found. Outside that resolution,
-  `.put .forest` does nothing. -/
-  | forest
-  /-- A basic land card `searchLibrary` found, put on top of the library.
-  Outside that resolution, `.put .basicLandOnTop` does nothing. -/
-  | basicLandOnTop
-  /-- A Dragon card `searchLibrary` found in the hand and/or library.
-  Outside that resolution, `.put .dragon` does nothing. -/
-  | dragon
-  /-- The announced creature card. Its mana value is at most `mv`. -/
-  | creatureMvAtMost (mv : Nat)
-  /-- A creature card of `subtype` with mana value at most `maxMv` from hand. -/
-  | creatureFromHand (subtype : String) (maxMv : Nat)
-  /-- The object that caused this trigger, if it is still in its owner's
-  graveyard. `subtype`, when set, requires that subtype. An announced card
-  or permanent is used when one was chosen; otherwise the recorded cause.
-  A missing cause, or the wrong subtype, puts nothing. -/
-  | cause (subtype : Option String := none)
-  /-- The announced creature card in the controller's graveyard.
-  Returned tapped and attacking with a finality counter is
-  `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
-  Inside `queueReflexive`, that card is chosen when the reflexive ability
-  is put on the stack. Outside it, this puts nothing. -/
-  | creatureCard
 deriving Repr, Inhabited, BEq
 
 /-- How a card `TriggerResolution.put` changes as it enters. -/
@@ -1439,6 +1453,7 @@ Who becomes prepared is an `ObjectSelector`.
 Who receives a new base power and toughness is an `ObjectSelector`.
 Which card is put on a library is an `ObjectSelector`.
 Which cards `exile` exiles is an `ObjectSelector`.
+Which cards `put` puts onto the battlefield is an `ObjectSelector`.
 Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
@@ -1971,6 +1986,7 @@ inductive TriggerResolution where
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
   how they enter, and `note` says what a later step can read.
+  Which cards is an `ObjectSelector`.
   Cards the source exiled are `.put .linkedExile`.
   A nonland permanent card with mana value at most `mv` from a graveyard is
   `.put (.nonlandMvAtMost mv)`.
@@ -2001,8 +2017,9 @@ inductive TriggerResolution where
   The Villain that caused this, under its owner's control, as a Hero with
   a finality counter, is
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
-  A missing cause puts nothing. -/
-  | put (what : TriggerPutWhat) (how : TriggerPutHow := .asPrinted)
+  A missing cause puts nothing.
+  Any other selector puts nothing. -/
+  | put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
   A hope counter from the source is `.removeCounters .hope .source`.

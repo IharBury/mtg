@@ -632,7 +632,7 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withAffected controller ab sourceId targets .enchanted pumpOne
   | .targetWhileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource pumpOne
-  | .cause =>
+  | .cause _ =>
     match g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller) with
     | some o => pumpOne g o
     | none => g
@@ -1725,15 +1725,16 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g.logMsg "The ability's source is no longer in the graveyard"
   | .linkedExile, .none =>
     g.returnLinkedExileToHand sourceId
-  | .cause, .none =>
+  | .cause _, .none =>
     g.returnCauseToOwnerHand targets
   | _, _ => g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector puts
+nothing. -/
 def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerPutWhat)
+    (what : TriggeredAbility.ObjectSelector)
     (how : TriggeredAbility.TriggerPutHow)
     (note : TriggeredAbility.TriggerPutNote) : Game :=
   match what, how, note with
