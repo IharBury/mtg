@@ -197,7 +197,7 @@ inductive TriggerReflexiveKind where
   | countersDamage
   /-- Target creature with haste can't be blocked this turn except by
   creatures with haste.
-  `.cant .beBlockedExceptByHaste .target`. -/
+  `.cant (.beBlockedExceptByHaste .target)`. -/
   | hasteUnblockable
   /-- Return up to two target instant and/or sorcery cards from your
   graveyard to your hand.
@@ -1334,15 +1334,32 @@ inductive TriggerCopyOf where
   | cause
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.cant` prevents. -/
-inductive TriggerCantWhat where
-  /-- Can't be blocked this turn. -/
-  | beBlocked
+/-- What `TriggerResolution.cant` prevents, and who can't do it.
+The announced permanent can't be blocked this turn is `.beBlocked`.
+The source is `.beBlocked .source`.
+The enchanted creature is `.beBlocked .enchanted`.
+The target, while the source remains, is `.beBlocked .targetWhileSource`.
+Can't be blocked this turn except by creatures with haste is
+`.beBlockedExceptByHaste`.
+The announced permanent can't become untapped for as long as you control
+the source is `.untapWhileYouControl`. An opponent's creature is the only
+recipient. -/
+inductive ActionSelector where
+  /-- Can't be blocked this turn.
+  The announced permanent is `.cant .beBlocked`.
+  The source is `.cant (.beBlocked .source)`.
+  The enchanted creature is `.cant (.beBlocked .enchanted)`.
+  The target, while the source remains, is
+  `.cant (.beBlocked .targetWhileSource)`. -/
+  | beBlocked (who : TriggerAffected := .target)
   /-- Can't be blocked this turn except by creatures with haste.
-  `.cant .beBlockedExceptByHaste .target`. -/
-  | beBlockedExceptByHaste
-  /-- Can't become untapped for as long as you control the source. -/
-  | untapWhileYouControl
+  `.cant (.beBlockedExceptByHaste .target)`. -/
+  | beBlockedExceptByHaste (who : TriggerAffected := .target)
+  /-- Can't become untapped for as long as you control the source.
+  The announced permanent is `.cant .untapWhileYouControl`.
+  An opponent's creature is the only recipient. A creature you control
+  is left alone. Any other `who` does nothing. -/
+  | untapWhileYouControl (who : TriggerAffected := .target)
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -1362,11 +1379,12 @@ and `putOnLibrary`. Losing indestructible until end of turn, and losing
 all abilities while the source remains, are `lose`. What is lost, and who
 loses it, are arguments. A permanent that can't be blocked this turn, and
 a permanent that can't untap while you control the source, are `cant`.
-What it can't do, and who can't, are arguments. Paying mana, and paying by
-sacrificing or discarding, are `pay`. What is paid is an argument. Setting
-a permanent's base power and toughness to fixed values, and setting another
-creature's base power and toughness equal to this creature's, are
-`setBasePT`. What the new base is, and who receives it, are arguments.
+What it can't do, and who can't, are one `ActionSelector`. Paying mana,
+and paying by sacrificing or discarding, are `pay`. What is paid is an
+argument. Setting a permanent's base power and toughness to fixed values,
+and setting another creature's base power and toughness equal to this
+creature's, are `setBasePT`. What the new base is, and who receives it,
+are arguments.
 Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes, and which card,
@@ -1581,7 +1599,7 @@ inductive TriggerResolution where
   `.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))`.
   Destroying an opposing nonland is `.queueReflexive (.destroy .target)`.
   A creature with haste that can't be blocked except by haste is
-  `.queueReflexive (.cant .beBlockedExceptByHaste .target)`.
+  `.queueReflexive (.cant (.beBlockedExceptByHaste .target))`.
   Up to two instants or sorceries from the graveyard are
   `.queueReflexive (.returnToHand (.graveyardInstants 2))`.
   A +1/+1 counter on target creature is
@@ -1641,17 +1659,17 @@ inductive TriggerResolution where
   A source that has left leaves that permanent able.
   Any other selector loses nothing. -/
   | lose (what : AbilitySelector) (who : ObjectSelector := .target)
-  /-- `who` can't do `what`.
+  /-- `action` says what can't be done, and who can't do it.
   The announced permanent can't be blocked this turn is `.cant .beBlocked`.
-  The source is `.cant .beBlocked .source`.
-  The enchanted creature is `.cant .beBlocked .enchanted`.
+  The source is `.cant (.beBlocked .source)`.
+  The enchanted creature is `.cant (.beBlocked .enchanted)`.
   The target, while the source remains, is
-  `.cant .beBlocked .targetWhileSource`.
+  `.cant (.beBlocked .targetWhileSource)`.
   The announced permanent can't become untapped for as long as you control
   the source is `.cant .untapWhileYouControl`. An opponent's creature is
   the only recipient. A creature you control is left alone. A missing
-  source still records a stand-in. Any other combination does nothing. -/
-  | cant (what : TriggerCantWhat) (who : TriggerAffected := .target)
+  source still records a stand-in. Any other selector does nothing. -/
+  | cant (action : ActionSelector)
   /-- Until end of turn, `who` becomes an artifact in addition to its other
   types. Gaining indestructible as well is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
@@ -1805,7 +1823,7 @@ inductive TriggerResolution where
   `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo`.
   You may pay {1} so a target creature with haste can't be blocked this turn
   except by creatures with haste is
-  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo`.
+  `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo`.
   You may pay {3}{B} to return a graveyard creature tapped and attacking is
   `.may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo`.
   You may have the source deal the damage that caused this to the announced
@@ -2361,7 +2379,7 @@ def queuedReflexive : TriggerResolution → QueuedReflexive
     else .none
   | .destroy .target .none =>
     .modeled (TriggerReflexiveKind.toNat .destroyOppNonland) 1
-  | .cant .beBlockedExceptByHaste .target =>
+  | .cant (.beBlockedExceptByHaste .target) =>
     .modeled (TriggerReflexiveKind.toNat .hasteUnblockable) 1
   | .returnToHand (.graveyardInstants _) .none =>
     .modeled (TriggerReflexiveKind.toNat .returnInstants) 1
@@ -2461,7 +2479,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .tap => .tap (tapWho who)
   | .untap => .untap (untapWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
-  | .cantBeBlocked => .cant .beBlocked who
+  | .cantBeBlocked => .cant (.beBlocked who)
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
@@ -3515,7 +3533,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols) }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant .beBlockedExceptByHaste .target)) .ifYouDo }
+      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo }
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature],
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }

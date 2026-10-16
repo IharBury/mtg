@@ -7,7 +7,7 @@ import Mtg.Engine.Fixture
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains can't be blocked this turn. The announced permanent
 can't become untapped for as long as you control the source. What it can't
-do, and who can't, are arguments.
+do, and who can't, are one `ActionSelector`.
 -/
 
 namespace Mtg.Engine.CantTests
@@ -106,24 +106,24 @@ has left are not affected. -/
     logContains g "The target is no longer in play"
 
 #guard (.cant .beBlocked : TriggeredAbility.TriggerResolution) ==
-  .cant .beBlocked .target
+  .cant (.beBlocked .target)
 
 /- The source can't be blocked. A missing source, and a source that has
 left, are not affected. -/
 #guard
-  let g := step board (.cant .beBlocked .source) (some (pid board "Titan"))
+  let g := step board (.cant (.beBlocked .source)) (some (pid board "Titan"))
   blocked g "Titan" && !blocked g "Bear" &&
     logContains g "Titan can't be blocked this turn"
 
 #guard
-  let g := step board (.cant .beBlocked .source)
+  let g := step board (.cant (.beBlocked .source))
   !blocked g "Titan" &&
     logContains g "The triggered ability's source is no longer in play"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.cant .beBlocked .source) (some newId)
+  let g := step g0 (.cant (.beBlocked .source)) (some newId)
   !(anyObj g "Titan").status.untilEotKeywords.cantBeBlocked &&
     logContains g "Titan is no longer on the battlefield"
 
@@ -131,24 +131,24 @@ left, are not affected. -/
 An Aura that has left is reported. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.cant .beBlocked .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (.cant (.beBlocked .enchanted)) (some (pid g0 "Grasp"))
   blocked g "Titan" &&
     logContains g "Titan can't be blocked this turn"
 
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.cant .beBlocked .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (.cant (.beBlocked .enchanted)) (some (pid g0 "Grasp"))
   !blocked g "Titan" && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.cant .beBlocked .enchanted) (some newId)
+  let g := step g1 (.cant (.beBlocked .enchanted)) (some newId)
   !blocked g "Titan" && logContains g "Grasp is no longer on the battlefield"
 
 #guard
-  let g := step board (.cant .beBlocked .enchanted)
+  let g := step board (.cant (.beBlocked .enchanted))
   !blocked g "Titan" &&
     logContains g "The Aura is no longer in play"
 
@@ -156,19 +156,19 @@ An Aura that has left is reported. -/
 A source that has left is silent. An illegal target is reported while
 the source is still there. -/
 #guard
-  let g := step board (.cant .beBlocked .targetWhileSource)
+  let g := step board (.cant (.beBlocked .targetWhileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   blocked g "Titan" && !blocked g "Bear"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.cant .beBlocked .targetWhileSource)
+  let g := step g0 (.cant (.beBlocked .targetWhileSource))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   !blocked g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.cant .beBlocked .targetWhileSource)
+  let g := step board (.cant (.beBlocked .targetWhileSource))
     (some (pid board "Bear"))
   !blocked g "Titan" && logContains g "The target is no longer legal"
 
@@ -251,9 +251,9 @@ not apply while that object is off the battlefield. -/
   let sid := some (pid g0 "Bear")
   let tgt := #[Target.permanent (pid g0 "Titan")]
   let crossed := [
-    step g0 (.cant .untapWhileYouControl .source) sid tgt (ab := spider),
-    step g0 (.cant .untapWhileYouControl .enchanted) sid tgt (ab := spider),
-    step g0 (.cant .untapWhileYouControl .targetWhileSource) sid tgt (ab := spider)]
+    step g0 (.cant (.untapWhileYouControl .source)) sid tgt (ab := spider),
+    step g0 (.cant (.untapWhileYouControl .enchanted)) sid tgt (ab := spider),
+    step g0 (.cant (.untapWhileYouControl .targetWhileSource)) sid tgt (ab := spider)]
   crossed.all fun g =>
     !blocked g "Titan" && grantedBy g "Titan" == #[] &&
       grantedBy g "Bear" == #[] && g.log == g0.log
@@ -262,11 +262,11 @@ not apply while that object is off the battlefield. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked ==
   unblockable
 #guard TriggeredAbility.TriggerResolution.ofSource .cantBeBlocked ==
-  .cant .beBlocked .source
+  .cant (.beBlocked .source)
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .cantBeBlocked ==
-  .cant .beBlocked .enchanted
+  .cant (.beBlocked .enchanted)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .cantBeBlocked ==
-  .cant .beBlocked .targetWhileSource
+  .cant (.beBlocked .targetWhileSource)
 #guard (SharedTrigger.timing (.enter .tapOppCantUntapWhileControl)).resolution ==
   tapThenFrozen
 #guard TriggeredAbility.resolution spider == tapThenFrozen
@@ -275,13 +275,13 @@ not apply while that object is off the battlefield. -/
     { targeting := .of .creature, resolution := unblockable } ==
   "target creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant .beBlocked .source } ==
+    { resolution := .cant (.beBlocked .source) } ==
   "this creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant .beBlocked .enchanted } ==
+    { resolution := .cant (.beBlocked .enchanted) } ==
   "enchanted creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant .beBlocked .targetWhileSource } ==
+    { resolution := .cant (.beBlocked .targetWhileSource) } ==
   "that creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase { resolution := frozen } ==
   "that creature can't become untapped for as long as you control this creature"
@@ -289,11 +289,11 @@ not apply while that object is off the battlefield. -/
     { targeting := .of .oppCreature, resolution := tapThenFrozen } ==
   "tap target creature an opponent controls. That creature can't become untapped for as long as you control this creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant .untapWhileYouControl .source } == "can't"
+    { resolution := .cant (.untapWhileYouControl .source) } == "can't"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .cant .beBlocked .targetWhileSource] } ==
+      [.attach .source .target, .cant (.beBlocked .targetWhileSource)] } ==
   "attach it to target creature you control. That creature can't be blocked this turn"
 
 #guard TriggeredAbility.toNotation onCreature ==

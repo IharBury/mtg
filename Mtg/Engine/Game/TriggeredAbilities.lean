@@ -2395,29 +2395,28 @@ where
     g.withAffected controller ab sourceId targets affected fun g o =>
       g.applyPermanentAction o .loseIndestructible
 
-/-- Resolve `TriggerResolution.cant`. Each printed combination keeps
-the behavior of the constructor it replaced. Any other combination
+/-- Resolve `TriggerResolution.cant`. Each printed selector keeps
+the behavior of the combination it replaced. Any other selector
 does nothing. -/
 def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerCantWhat)
-    (who : TriggeredAbility.TriggerAffected) : Game :=
-  match what, who with
-  | .beBlocked, _ =>
+    (action : TriggeredAbility.ActionSelector) : Game :=
+  match action with
+  | .beBlocked who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o .cantBeBlocked
-  | .beBlockedExceptByHaste, _ =>
+  | .beBlockedExceptByHaste who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
         |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
-  | .untapWhileYouControl, .target =>
+  | .untapWhileYouControl .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let o := g.object! o.id
       let sid := sourceId.getD ⟨0⟩
       g.mapObjectStatus o (fun s =>
         { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
-  | .untapWhileYouControl, _ => g
+  | .untapWhileYouControl _ => g
 
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
@@ -2531,8 +2530,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applySacrifice controller ab sourceId targets what note
   | .lose what who =>
     g.applyLose controller ab sourceId targets what who
-  | .cant what who =>
-    g.applyCant controller ab sourceId targets what who
+  | .cant action =>
+    g.applyCant controller ab sourceId targets action
   | .becomeArtifact who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
