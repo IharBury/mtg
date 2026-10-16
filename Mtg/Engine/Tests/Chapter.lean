@@ -63,7 +63,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
     .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard .chosenNonland
-#guard (timing (.amass 1)).resolution == .amass 1
+#guard (timing (.amass 1)).resolution == .amass (.fixed 1)
 #guard (timing (.opponentLosesYouGain 1)).resolution ==
   .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]
 #guard (timing .grantHexproofWhileRemains).resolution ==

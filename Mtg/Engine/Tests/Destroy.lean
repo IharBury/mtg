@@ -60,7 +60,7 @@ def notedDestroy : TriggeredAbility.TriggerResolution :=
 def amassSeq : TriggeredAbility.TriggerResolution :=
   .sequence [
     notedDestroy,
-    .amass 0 (amount := .notedPower) (who := .notedController),
+    .amass .notedPower (who := .notedController),
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 
 /- Opponents' artifacts and enchantments are destroyed and counted.
@@ -290,5 +290,10 @@ controller still amasses when the creature is indestructible. -/
   "destroy it"
 #guard TriggeredAbility.resolutionPhrase { resolution := .destroy .humans } ==
   "destroy it"
+
+/- A selector amass does not use amasses nothing. -/
+#guard
+  let g := step afterDraw (.amass .perOtherCreature)
+  g.log.size == afterDraw.log.size
 
 end Mtg.Engine.DestroyTests

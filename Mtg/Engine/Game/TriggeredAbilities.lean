@@ -1464,16 +1464,18 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
   | _, _, _, _ => g
 
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector amasses
+nothing. -/
 def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int) (n : Nat) (subtype : String)
-    (amount : AmassAmount) (attachSource : Bool)
-    (who : TriggeredAbility.AmassWho) : Game :=
+    (lastKnownPower : Option Int) (amount : TriggeredAbility.NumberSelector)
+    (subtype : String) (attachSource : Bool)
+    (who : TriggeredAbility.PlayerSelector) : Game :=
   match amount, who with
-  | .fixed, .you =>
+  | .fixed n, .you =>
+    let n := n.toNat
     if attachSource then g.amass controller subtype n (attach := sourceId)
     else g.amass controller subtype n
-  | .sourcePower, .you =>
+  | .lastKnownPower, .you =>
     let n := (lastKnownPower.getD 0).toNat
     if attachSource then g.amass controller subtype n (attach := sourceId)
     else g.amass controller subtype n
@@ -2704,8 +2706,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.beginRecruit controller
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
-  | .amass n subtype amount attachSource who =>
-    g.applyAmass controller sourceId lastKnownPower n subtype amount attachSource who
+  | .amass amount subtype attachSource who =>
+    g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
   | .createTokens kind n tapped token who qty note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
       kind n tapped token who qty note

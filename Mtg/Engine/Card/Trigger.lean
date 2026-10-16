@@ -229,8 +229,9 @@ end TriggerReflexiveKind
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
 `TriggerResolution.loseLife` loses life, who
-`TriggerResolution.mill` mills, and whose library
-`TriggerResolution.revealLibrary` looks at. -/
+`TriggerResolution.mill` mills, whose library
+`TriggerResolution.revealLibrary` looks at, and who
+`TriggerResolution.amass` amasses for. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
@@ -246,7 +247,8 @@ inductive PlayerSelector where
   That player draws `n` is `.draw (.fixed n)` (`.you`).
   That player loses `n` life is `.loseLife (.fixed n)`.
   That player mills `n` is `.mill (.fixed n)`.
-  That player's library is `.revealLibrary (.top n) (.put .randomCreature)`. -/
+  That player's library is `.revealLibrary (.top n) (.put .randomCreature)`.
+  That player amasses Goblins `n` is `.amass (.fixed n)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -274,6 +276,10 @@ inductive PlayerSelector where
   last-known toughness is that player's index.
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
   | announced
+  /-- The controller an earlier step recorded when it destroyed a creature.
+  No destruction amasses nothing.
+  `.amass .notedPower (who := .notedController)`. -/
+  | notedController
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -661,11 +667,12 @@ where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
 draws, where one statistic of `TriggerResolution.setBasePT` reads its
 new base, how much life `TriggerResolution.gainLife` gains, how much
-life `TriggerResolution.loseLife` loses, and how many cards
-`TriggerResolution.mill` mills.
+life `TriggerResolution.loseLife` loses, how many cards
+`TriggerResolution.mill` mills, and how many counters
+`TriggerResolution.amass` puts on an Army.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
-`n` life gained, `n` life lost, or mill `n`. -/
+`n` life gained, `n` life lost, mill `n`, or amass `n`. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -679,11 +686,12 @@ inductive NumberSelector where
   /-- One for each Plains the controller controls. -/
   | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
-  `n` life gained, `n` life lost, or mill `n`.
+  `n` life gained, `n` life lost, mill `n`, or amass `n`.
   A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
   You gain `n` life is `.gainLife (.fixed n)`.
   You lose `n` life is `.loseLife (.fixed n)`.
-  You mill `n` cards is `.mill (.fixed n)`. -/
+  You mill `n` cards is `.mill (.fixed n)`.
+  You amass Goblins `n` is `.amass (.fixed n)`. -/
   | fixed (n : Int)
   /-- The source's toughness.
   Another creature's base toughness becomes this toughness with
@@ -696,7 +704,9 @@ inductive NumberSelector where
   /-- This statistic's current value, which doubles it.
   Doubling the announced permanent is `.pump .double .double .target`. -/
   | double
-  /-- The source's last-known power. -/
+  /-- The source's last-known power.
+  Amass that many is `.amass .lastKnownPower`.
+  A missing power is zero. -/
   | lastKnownPower
   /-- How many permanents of this subtype the controller controls. -/
   | subtypeCount (subtype : String)
@@ -755,6 +765,14 @@ inductive NumberSelector where
   power. A missing amount mills nothing.
   `.mill .thatManyLost .thatPlayer`. -/
   | thatManyLost
+  /-- Excess damage an earlier step recorded. Zero excess amasses nothing.
+  `.amass .notedExcess`. -/
+  | notedExcess
+  /-- The power an earlier step recorded when it destroyed a creature.
+  No destruction amasses nothing.
+  The noted controller amasses that many with
+  `.amass .notedPower (who := .notedController)`. -/
+  | notedPower
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -993,15 +1011,6 @@ inductive TriggerAttachTo where
   /-- The creature the source enchants. A missing creature leaves Equipment
   where it is. -/
   | enchantedCreature
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.amass` amasses for. -/
-inductive AmassWho where
-  /-- The ability's controller. -/
-  | you
-  /-- The controller an earlier step recorded when it destroyed a creature.
-  No destruction amasses nothing. -/
-  | notedController
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.mayCast` finds the spell. -/
@@ -1736,7 +1745,7 @@ inductive TriggerResolution where
   permanent of this subtype, is
   `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
   Destroy the announced creature, then its controller amasses that power, is
-  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
   `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
@@ -1749,7 +1758,7 @@ inductive TriggerResolution where
   `.sequence [.noteResolveThisTurn 3, .«if» (.nthResolve 1) (.gainLife (.fixed 1)), .«if» (.nthResolve 2) (.draw (.fixed 1)), .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]`.
   Deal the sacrificed creature's power, then amass Goblins for the excess
   (Bolg), is
-  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`.
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`.
   Put a plan counter, then scry, is
   `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`.
   Put a trample counter on the target, then make it a Bear, is
@@ -2003,19 +2012,21 @@ inductive TriggerResolution where
   | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
-  /-- Amass `subtype` for `who`, as `amount` says. `n` is the count when
-  `amount` is `.fixed`. Attach the source when `attachSource` is true.
-  Goblins `n` is `.amass n`.
-  Orcs `n` is `.amass n "Orc"`.
-  Equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
-  Then attach this Equipment is `.amass n (attachSource := true)`.
-  Equal to the excess an earlier step noted is
-  `.amass 0 (amount := .notedExcess)`.
+  /-- Amass `subtype` for `who`, as `amount` says. Attach the source when
+  `attachSource` is true.
+  Goblins `n` is `.amass (.fixed n)`.
+  Orcs `n` is `.amass (.fixed n) "Orc"`.
+  Equal to this creature's power is `.amass .lastKnownPower`.
+  A missing power is zero.
+  Then attach this Equipment is `.amass (.fixed n) (attachSource := true)`.
+  Equal to the excess an earlier step noted is `.amass .notedExcess`.
+  Zero excess amasses nothing.
   The noted controller amasses that creature's power is
-  `.amass 0 (amount := .notedPower) (who := .notedController)`. -/
-  | amass (n : Nat) (subtype : String := "Goblin")
-      (amount : AmassAmount := .fixed) (attachSource : Bool := false)
-      (who : AmassWho := .you)
+  `.amass .notedPower (who := .notedController)`.
+  No destruction amasses nothing.
+  Any other selector amasses nothing. -/
+  | amass (amount : NumberSelector) (subtype : String := "Goblin")
+      (attachSource : Bool := false) (who : PlayerSelector := .you)
   /-- Create tokens. `n` of `kind` is `.createTokens kind n tapped`.
   `kind` and `n` are that token and that count when `token` is `.kind` and
   `qty` is `.fixed`. A last-known count of Bird Soldiers also reads `kind`.
@@ -2557,7 +2568,7 @@ def ofSpell : SpellResolution → TriggerResolution
   | .loseLife n .you => .loseLife (.fixed n)
   | .loseLife n .eachOpponent => .loseLife (.fixed n) .eachOpponent
   | .gainLife n .you => .gainLife (.fixed n)
-  | .amass n subtype => .amass n subtype
+  | .amass n subtype => .amass (.fixed n) subtype
   | .recruit => .recruit
   | .surveil n => .surveil n
   | .onPermanent a => ofPermanent a
@@ -2647,7 +2658,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { targeting := .of .opponent
       resolution := .discard .chosenNonland }
   | .amass n =>
-    { resolution := .amass n }
+    { resolution := .amass (.fixed n) }
   | .opponentLosesYouGain n =>
     { targeting := .of .opponent
       resolution := .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed n)] }
@@ -2814,7 +2825,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .draw n => { resolution := .draw (.fixed n) }
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
   | .amass n subtype amount attachSource =>
-    { resolution := .amass n subtype amount attachSource }
+    let resolved : TriggeredAbility.NumberSelector :=
+      match amount with
+      | .fixed => .fixed n
+      | .sourcePower => .lastKnownPower
+      | .notedExcess => .notedExcess
+      | .notedPower => .notedPower
+    { resolution := .amass resolved subtype attachSource }
   | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
@@ -3053,7 +3070,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature,
       resolution := .sequence
         [.dealDamage .lastKnownPower .permanent .excess,
-         .amass 0 (amount := .notedExcess)] }
+         .amass .notedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
         [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] }
@@ -3063,7 +3080,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"] }
+        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
@@ -3075,7 +3092,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
         [.destroy .target (note := .forAmass),
-         .amass 0 (amount := .notedPower) (who := .notedController),
+         .amass .notedPower (who := .notedController),
          .«if» .youControlledDestroyed (.draw (.fixed 1))] }
   | .gollumMode =>
     { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes

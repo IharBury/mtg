@@ -757,7 +757,7 @@ inductive SharedTrigger where
   /-- Bolg may-sacrifice. Resolves as `.may (.sacrifice .another) (.sequence [])`. -/
   | bolgMaySacrifice
   /-- Bolg reflexive damage. Resolves as
-  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass 0 (amount := .notedExcess)]`. -/
+  `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
   `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
@@ -765,7 +765,7 @@ inductive SharedTrigger where
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
   /-- Deal 1 then amass Orcs 1. Resolves as
-  `.sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"]`. -/
+  `.sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]`. -/
   | deal1ThenAmassOrcs
   /-- Untap attackers and take an extra combat. `n` is Oracle total power.
   Resolves as `.sequence [.untap .attackingCreatures, .additionalCombatPhase]`. -/
@@ -776,7 +776,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroy .target (note := .forAmass), .amass 0 (amount := .notedPower) (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. Resolves as
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/

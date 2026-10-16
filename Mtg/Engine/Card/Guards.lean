@@ -1407,11 +1407,13 @@ namespace CardDef
   .searchLibrary (.put .forest)
 #guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
   .searchLibrary (.returnToHand .basicLand)
-#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass 1 "Orc"
+#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass (.fixed 1) "Orc"
 #guard TriggeredAbility.resolution .onDiesAmassGoblinsEqualPower ==
-  .amass 0 "Goblin" .sourcePower
+  .amass .lastKnownPower
 #guard TriggeredAbility.resolution (.onEnterAmassThenAttach 1) ==
-  .amass 1 "Goblin" .fixed true
+  .amass (.fixed 1) (attachSource := true)
+#guard TriggeredAbility.resolutionPhrase { resolution := .amass .perOtherCreature } ==
+  "amass"
 #guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
 #guard TriggeredAbility.resolution .onEnterRecruit == .recruit
 #guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.resolution ==
@@ -1544,16 +1546,16 @@ end CardDef
     .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)]
 #guard TriggeredAbility.resolution .onBolgDealSacrificedPower ==
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
-    .amass 0 (amount := .notedExcess)]
+    .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
   .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
-  .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc"]
+  .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroy .target (note := .forAmass),
-    .amass 0 (amount := .notedPower) (who := .notedController),
+    .amass .notedPower (who := .notedController),
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand,

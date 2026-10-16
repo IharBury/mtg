@@ -1082,15 +1082,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
        .«if» (.nthResolve 2) (.draw (.fixed 1)),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass _ _ .notedExcess _ _] =>
+  | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass 1 "Orc" .fixed false _] =>
+  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroy .target .forAmass, .amass _ _ .notedPower _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
+  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
@@ -1355,16 +1355,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .recruit .you =>
     "you recruit"
-  | .amass _ subtype .sourcePower _ _ =>
+  | .amass .lastKnownPower subtype _ _ =>
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
-  | .amass _ subtype .notedExcess _ _ =>
+  | .amass .notedExcess subtype _ _ =>
     s!"amass {pluralizeName subtype} X, where X is the excess damage"
-  | .amass _ subtype .notedPower _ .notedController =>
+  | .amass .notedPower subtype _ .notedController =>
     s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
-  | .amass n subtype _ true _ =>
+  | .amass (.fixed n) subtype true _ =>
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-  | .amass n subtype _ _ _ =>
+  | .amass (.fixed n) subtype _ _ =>
     s!"amass {pluralizeName subtype} {n}"
+  | .amass _ _ _ _ =>
+    "amass"
   | .createTokens kind n tapped token who qty note =>
     match token, who, qty, note with
     | .axe, _, _, .attachReflexive =>
