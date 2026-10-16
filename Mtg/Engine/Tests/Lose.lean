@@ -4,10 +4,11 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.lose`
 
+What is lost is an `AbilitySelector`. Who loses it is an `ObjectSelector`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains lose indestructible until end of turn. The announced
-permanent loses all abilities while the source remains. What is lost, and who
-loses it, are arguments.
+permanent loses all abilities while the source remains. Any other selector
+loses nothing.
 -/
 
 namespace Mtg.Engine.LoseTests
@@ -240,7 +241,7 @@ before it resolves still taps and leaves the abilities. -/
   (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
     logContains g "keeps its abilities"
 
-/- The other combinations lose nothing. -/
+/- Any other selector loses nothing. -/
 #guard
   let g0 := addPermanent (addPermanent board grasp caster caster) hawk caster caster
   let g0 := attach g0 "Grasp" "Titan"
@@ -251,7 +252,9 @@ before it resolves still taps and leaves the abilities. -/
     step g0 (.lose .allAbilities .source) sid tgt,
     step g0 (.lose .allAbilities .enchanted) sid tgt,
     step g0 (.lose .allAbilities .targetWhileSource) sid tgt,
-    step g0 (.lose .indestructible .targetIfPresent) sid tgt]
+    step g0 (.lose .indestructible .targetIfPresent) sid tgt,
+    step g0 (.lose .indestructible .cause) sid tgt,
+    step g0 (.lose .allAbilities .hand) sid tgt]
   crossed.all fun g =>
     kept g "Titan" && g.hasFlying (obj g "Hawk") &&
       (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log

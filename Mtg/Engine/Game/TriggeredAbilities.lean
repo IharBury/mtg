@@ -2354,12 +2354,12 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
   | _ => g
 
 /-- Resolve `TriggerResolution.lose`. Each printed combination keeps
-the behavior of the constructor it replaced. Any other combination
+the behavior of the constructor it replaced. Any other selector
 loses nothing. -/
 def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerLoseWhat)
-    (who : TriggeredAbility.TriggerLoseWho) : Game :=
+    (what : TriggeredAbility.AbilitySelector)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
   | .indestructible, .target =>
     loseIndestructible .target
