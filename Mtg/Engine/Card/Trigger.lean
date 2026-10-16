@@ -255,14 +255,16 @@ deriving Repr, Inhabited, BEq
 `TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
 discards, which cards `TriggerResolution.returnToHand` returns, which
 permanent `TriggerResolution.sacrifice` sacrifices, who
-`TriggerResolution.putCounters` puts counters on, and who
-`TriggerResolution.lose` removes an ability from.
+`TriggerResolution.putCounters` puts counters on, who
+`TriggerResolution.lose` removes an ability from, and who
+`TriggerResolution.becomeArtifact` makes an artifact.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
 A sacrifice names both who sacrifices and which permanent.
 Counters name who receives them.
-Losing an ability names who loses it. -/
+Losing an ability names who loses it.
+Becoming an artifact names who becomes one. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -271,24 +273,30 @@ inductive ObjectSelector where
   `.returnToHand .source`.
   A loyalty counter is `.putCounters (.ofKind .loyalty) .source`.
   It loses indestructible until end of turn is
-  `.lose .indestructible .source`. -/
+  `.lose .indestructible .source`.
+  It becomes an artifact until end of turn is `.becomeArtifact .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
   a player or a permanent.
   It loses indestructible until end of turn is `.lose .indestructible`
-  (`.target`). An illegal target is reported. -/
+  (`.target`). An illegal target is reported.
+  It becomes an artifact until end of turn is `.becomeArtifact`
+  (`.target`). -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
   A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`.
   It loses indestructible until end of turn is
-  `.lose .indestructible .enchanted`. -/
+  `.lose .indestructible .enchanted`.
+  It becomes an artifact until end of turn is `.becomeArtifact .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
   A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource`.
   It loses indestructible until end of turn is
-  `.lose .indestructible .targetWhileSource`. -/
+  `.lose .indestructible .targetWhileSource`.
+  It becomes an artifact until end of turn is
+  `.becomeArtifact .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -1392,7 +1400,8 @@ are arguments. Untapping the announced permanent, and untapping each attacking
 creature, are `untap`. Who is untapped is an argument. +P/+T and trample is
 a sequence of `pump` and `grant`. Becoming an artifact and gaining
 indestructible is a sequence of `becomeArtifact`
-and `grant`. Tap and a stun counter is a sequence of `tap` and
+and `grant`. Who becomes an artifact is an `ObjectSelector`.
+Tap and a stun counter is a sequence of `tap` and
 `putCounters`. The source, the enchanted creature, and a follow-up while
 the source remains use those same constructors. `ofSource`, `ofEnchanted`,
 and `ofTargetWhileSource` map a `PermanentAction` onto them. +P/+T on the
@@ -1671,10 +1680,15 @@ inductive TriggerResolution where
   source still records a stand-in. Any other selector does nothing. -/
   | cant (action : ActionSelector)
   /-- Until end of turn, `who` becomes an artifact in addition to its other
-  types. Gaining indestructible as well is
+  types. The announced permanent is `.becomeArtifact` (`.target`).
+  The source is `.becomeArtifact .source`.
+  The enchanted creature is `.becomeArtifact .enchanted`.
+  The target, while the source remains, is
+  `.becomeArtifact .targetWhileSource`.
+  Gaining indestructible as well is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
-  The announced permanent is `.becomeArtifact`. -/
-  | becomeArtifact (who : TriggerAffected := .target)
+  Any other selector does nothing. -/
+  | becomeArtifact (who : ObjectSelector := .target)
   /-- `who` becomes prepared. A creature that is already prepared, or has no
   prepare spell, does not. The announced permanent is `.becomePrepared`. -/
   | becomePrepared (who : TriggerAffected := .target)
@@ -2484,7 +2498,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) (grantWho who)]
+    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (grantWho who)]
   | .becomePrepared => .becomePrepared who
   | .setBasePT p t => .setBasePT p t who
   | .tapAndStun =>

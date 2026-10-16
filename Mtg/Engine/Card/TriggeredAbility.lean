@@ -766,8 +766,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "that creature can't become untapped for as long as you control this creature"
   | .cant _ =>
     "can't"
-  | .becomeArtifact who =>
-    s!"until end of turn, {affectedNoun who noun} becomes an artifact in addition to its other types"
+  | .becomeArtifact .target =>
+    s!"until end of turn, {noun} becomes an artifact in addition to its other types"
+  | .becomeArtifact .source =>
+    "until end of turn, this creature becomes an artifact in addition to its other types"
+  | .becomeArtifact .enchanted =>
+    "until end of turn, enchanted creature becomes an artifact in addition to its other types"
+  | .becomeArtifact .targetWhileSource =>
+    "until end of turn, that creature becomes an artifact in addition to its other types"
+  | .becomeArtifact _ =>
+    "becomes an artifact"
   | .becomePrepared who =>
     s!"{affectedNoun who noun} becomes prepared"
   | .setBasePT p t who .fixed =>

@@ -2418,6 +2418,23 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       sourceId (some "The target is no longer legal")
   | .untapWhileYouControl _ => g
 
+/-- Resolve `TriggerResolution.becomeArtifact`. Each printed recipient keeps
+the behavior of the constructor it replaced. Any other selector does nothing. -/
+def applyBecomeArtifact (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (who : TriggeredAbility.ObjectSelector) : Game :=
+  match who with
+  | .target => become .target
+  | .source => become .source
+  | .enchanted => become .enchanted
+  | .targetWhileSource => become .targetWhileSource
+  | _ => g
+where
+  become (affected : TriggeredAbility.TriggerAffected) : Game :=
+    g.withAffected controller ab sourceId targets affected fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
+      g.logMsg s!"{o.name} becomes an artifact until end of turn"
+
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
 puts nothing. -/
@@ -2533,9 +2550,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .cant action =>
     g.applyCant controller ab sourceId targets action
   | .becomeArtifact who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
-      g.logMsg s!"{o.name} becomes an artifact until end of turn"
+    g.applyBecomeArtifact controller ab sourceId targets who
   | .becomePrepared who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o .becomePrepared
