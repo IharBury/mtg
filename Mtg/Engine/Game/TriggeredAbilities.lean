@@ -2420,12 +2420,18 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (action : TriggeredAbility.ActionSelector) : Game :=
   match action with
   | .beBlocked who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .cantBeBlocked
+    match asAffected who with
+    | some affected =>
+      g.withAffected controller ab sourceId targets affected fun g o =>
+        g.applyPermanentAction o .cantBeBlocked
+    | none => g
   | .beBlockedExceptByHaste who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
-        |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+    match asAffected who with
+    | some affected =>
+      g.withAffected controller ab sourceId targets affected fun g o =>
+        g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
+          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+    | none => g
   | .untapWhileYouControl .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let o := g.object! o.id
@@ -2434,6 +2440,13 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
       sourceId (some "The target is no longer legal")
   | .untapWhileYouControl _ => g
+where
+  asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
+    | .target => some .target
+    | .source => some .source
+    | .enchanted => some .enchanted
+    | .targetWhileSource => some .targetWhileSource
+    | _ => none
 
 /-- Resolve `TriggerResolution.becomeArtifact`. Each printed recipient keeps
 the behavior of the constructor it replaced. Any other selector does nothing. -/
@@ -2953,7 +2966,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .connive who =>
     match who with
     | .source => g.applyConnive controller sourceId
-    | .target _ =>
+    | .target =>
       match targets[0]? with
       | some (Target.permanent id) => g.applyConnive controller (some id)
       | _ => g.applyConnive controller sourceId
@@ -2969,6 +2982,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           match g.villainConniveTarget? controller src.id targets lastKnownPower with
           | none => g.logMsg "The Villain does not connive"
           | some vid => g.beginMayHaveVillainConnive controller src.id vid
+    | _ => g
   | .grantPlayNotedUntilNextTurn =>
     match g.playExiledThisWay with
     | none => g

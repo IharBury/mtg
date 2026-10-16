@@ -541,7 +541,7 @@ inductive SharedTrigger where
   /-- You gain `n` life. -/
   | gainLife (n : Nat)
   /-- Connive. The source is `.connive`. A target of `kind` is
-  `.connive (.target kind)`. -/
+  `.connive (.target kind)`. That target resolves as `.connive .target`. -/
   | connive (who : ConniveSubject := .source)
   /-- Exile a target of this kind until the source leaves. -/
   | exileUntilLeaves (kind : EffectTargetKind)

@@ -1087,7 +1087,11 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onCombatMayPutArtifactAttachEquipment ==
   "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature."
 #guard TriggeredAbility.resolution .onCombatTargetYouControlConnives ==
-  .connive (.target .creatureYouControl)
+  .connive .target
+#guard TriggeredAbility.targetKind .onCombatTargetYouControlConnives ==
+  .creatureYouControl
+#guard TriggeredAbility.resolutionPhrase { resolution := .connive .hand } ==
+  "connive"
 #guard TriggeredAbility.targetKind .onCombatAnotherGetsSourcePower ==
   .anotherCreatureYouControl
 #guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .yourBeginCombat

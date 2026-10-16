@@ -758,10 +758,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it loses all abilities for as long as this remains on the battlefield"
   | .lose _ _ =>
     "lose"
-  | .cant (.beBlocked who) =>
-    s!"{affectedNoun who noun} can't be blocked this turn"
-  | .cant (.beBlockedExceptByHaste who) =>
-    s!"{affectedNoun who noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlocked .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn"
+  | .cant (.beBlocked .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn"
+  | .cant (.beBlocked .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn"
+  | .cant (.beBlocked .targetWhileSource) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn"
+  | .cant (.beBlockedExceptByHaste .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .targetWhileSource) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn except by creatures with haste"
   | .cant (.untapWhileYouControl .target) =>
     "that creature can't become untapped for as long as you control this creature"
   | .cant _ =>
@@ -1611,8 +1623,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .investigate => "investigate"
   | .connive .source => "it connives"
-  | .connive (.target _) => s!"{noun} connives"
+  | .connive .target => s!"{noun} connives"
   | .connive .enteringVillain => "you may have it connive"
+  | .connive _ => "connive"
   | .«if» (.attackedOrEntered subtype) (.draw (.fixed 1)) =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"

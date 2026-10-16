@@ -687,6 +687,11 @@ inductive ObjectSelector where
   Nothing noted, or nothing enchanted, copies nothing.
   `.becomeCopy .noted`. -/
   | noted
+  /-- The Villain that caused this trigger. You may have it connive.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported.
+  `.connive .enteringVillain`. -/
+  | enteringVillain
   /-- Any number of Equipment the controller chooses.
   `.attach .anyYouControl .target`. -/
   | anyYouControl
@@ -1316,16 +1321,18 @@ inductive ActionSelector where
   The source is `.cant (.beBlocked .source)`.
   The enchanted creature is `.cant (.beBlocked .enchanted)`.
   The target, while the source remains, is
-  `.cant (.beBlocked .targetWhileSource)`. -/
-  | beBlocked (who : TriggerAffected := .target)
+  `.cant (.beBlocked .targetWhileSource)`.
+  Any other selector does nothing. -/
+  | beBlocked (who : ObjectSelector := .target)
   /-- Can't be blocked this turn except by creatures with haste.
-  `.cant (.beBlockedExceptByHaste .target)`. -/
-  | beBlockedExceptByHaste (who : TriggerAffected := .target)
+  `.cant (.beBlockedExceptByHaste .target)`.
+  Any other selector does nothing. -/
+  | beBlockedExceptByHaste (who : ObjectSelector := .target)
   /-- Can't become untapped for as long as you control the source.
   The announced permanent is `.cant .untapWhileYouControl`.
   An opponent's creature is the only recipient. A creature you control
   is left alone. Any other `who` does nothing. -/
-  | untapWhileYouControl (who : TriggerAffected := .target)
+  | untapWhileYouControl (who : ObjectSelector := .target)
 deriving Repr, Inhabited, BEq
 
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
@@ -2265,9 +2272,15 @@ inductive TriggerResolution where
   | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Investigate (create a Clue). -/
   | investigate
-  /-- Connive (CR 701.48). The source is `.connive`. A target is
-  `.connive (.target kind)`. -/
-  | connive (who : ConniveSubject := .source)
+  /-- Connive (CR 701.48). `who` says which creature.
+  The source is `.connive`.
+  The announced creature is `.connive .target`. The kind of that target is
+  chosen when the ability is put on the stack.
+  The Villain that caused this is `.connive .enteringVillain`.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported.
+  Any other selector connives nothing. -/
+  | connive (who : ObjectSelector := .source)
   /-- A creature fights, or deals damage equal to its power. `who` says
   which creature, and `how` says which.
   The source fights up to one other target creature with `.fight`.
@@ -2513,7 +2526,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .tap => .tap (tapWho who)
   | .untap => .untap (affectedWho who)
   | .loseIndestructible => .lose .indestructible (loseWho who)
-  | .cantBeBlocked => .cant (.beBlocked who)
+  | .cantBeBlocked => .cant (.beBlocked (affectedWho who))
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
@@ -2842,9 +2855,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .gainLife n => { resolution := .gainLife (.fixed n) }
   | .connive who =>
     match who with
-    | .source => { resolution := .connive who }
-    | .target kind => { targeting := .of kind, resolution := .connive who }
-    | .enteringVillain => { resolution := .connive who }
+    | .source => { resolution := .connive .source }
+    | .target kind => { targeting := .of kind, resolution := .connive .target }
+    | .enteringVillain => { resolution := .connive .enteringVillain }
   | .exileUntilLeaves kind =>
     { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
   | .damageEachOpponent n =>
