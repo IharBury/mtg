@@ -254,31 +254,41 @@ deriving Repr, Inhabited, BEq
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
 `TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
 discards, which cards `TriggerResolution.returnToHand` returns, which
-permanent `TriggerResolution.sacrifice` sacrifices, and who
-`TriggerResolution.putCounters` puts counters on.
+permanent `TriggerResolution.sacrifice` sacrifices, who
+`TriggerResolution.putCounters` puts counters on, and who
+`TriggerResolution.lose` removes an ability from.
 `.source` is first so a default resolution pumps the source.
 A player is `.player`. `n` cards from a hand are `.cards n`.
 A returned card names both the card and whose hand.
 A sacrifice names both who sacrifices and which permanent.
-Counters name who receives them. -/
+Counters name who receives them.
+Losing an ability names who loses it. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
   `n` damage is `.dealDamage (.fixed n) .source`.
   Returned from its owner's graveyard to their hand is
   `.returnToHand .source`.
-  A loyalty counter is `.putCounters (.ofKind .loyalty) .source`. -/
+  A loyalty counter is `.putCounters (.ofKind .loyalty) .source`.
+  It loses indestructible until end of turn is
+  `.lose .indestructible .source`. -/
   | source
   /-- The announced permanent for a pump. For damage, the announced target,
-  a player or a permanent. -/
+  a player or a permanent.
+  It loses indestructible until end of turn is `.lose .indestructible`
+  (`.target`). An illegal target is reported. -/
   | target
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
-  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`. -/
+  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`.
+  It loses indestructible until end of turn is
+  `.lose .indestructible .enchanted`. -/
   | enchanted
   /-- The announced permanent, while the source is still on the battlefield.
   A source that already left is silent.
-  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource`. -/
+  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource`.
+  It loses indestructible until end of turn is
+  `.lose .indestructible .targetWhileSource`. -/
   | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
@@ -409,6 +419,12 @@ inductive ObjectSelector where
   reported and skipped. Announced permanents past that count are ignored.
   `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`. -/
   | eachUpToLastKnown
+  /-- The announced permanent, while it is still on the battlefield.
+  A missing target loses nothing.
+  It loses all abilities while the source remains is
+  `.lose .allAbilities .targetIfPresent`.
+  A source that has left leaves that permanent able. -/
+  | targetIfPresent
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -506,29 +522,11 @@ inductive TriggerAffected where
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.lose` removes. -/
-inductive TriggerLoseWhat where
+inductive AbilitySelector where
   /-- Indestructible, until end of turn. -/
   | indestructible
   /-- All abilities, for as long as the source remains on the battlefield. -/
   | allAbilities
-deriving Repr, Inhabited, BEq
-
-/-- Who `TriggerResolution.lose` removes that from. -/
-inductive TriggerLoseWho where
-  /-- The announced permanent, while it is still a legal target.
-  An illegal target is reported. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-  /-- The announced permanent, while it is still on the battlefield.
-  A missing target loses nothing. -/
-  | targetIfPresent
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
@@ -1641,8 +1639,8 @@ inductive TriggerResolution where
   The announced permanent loses all abilities while the source remains is
   `.lose .allAbilities .targetIfPresent`. A missing target loses nothing.
   A source that has left leaves that permanent able.
-  Any other combination loses nothing. -/
-  | lose (what : TriggerLoseWhat) (who : TriggerLoseWho := .target)
+  Any other selector loses nothing. -/
+  | lose (what : AbilitySelector) (who : ObjectSelector := .target)
   /-- `who` can't do `what`.
   The announced permanent can't be blocked this turn is `.cant .beBlocked`.
   The source is `.cant .beBlocked .source`.
@@ -2513,7 +2511,7 @@ where
     | .source => .source
     | .enchanted => .enchanted
     | .targetWhileSource => .targetWhileSource
-  loseWho : TriggerAffected → TriggerLoseWho
+  loseWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
