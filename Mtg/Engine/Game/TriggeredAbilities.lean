@@ -2102,25 +2102,26 @@ def applyRemoveCounters (g : Game) (sourceId : Option ObjectId)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector loses
+nothing. -/
 def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target) (n : Nat)
-    (who : TriggeredAbility.TriggerLifeLossWho)
-    (amount : TriggeredAbility.TriggerLifeLossAmount)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (amount : TriggeredAbility.NumberSelector)
+    (who : TriggeredAbility.PlayerSelector)
     (lastKnownPower : Option Int := none) : Game :=
-  match who, amount with
-  | .you, .fixed =>
-    g.loseLife controller n
-  | .targetOpponent, .fixed =>
+  match amount, who with
+  | .fixed n, .you =>
+    g.loseLife controller n.toNat
+  | .fixed n, .targetOpponent =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.loseLife pid n)
-  | .eachOpponent, .fixed =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
-  | .you, .perBurden =>
+      g.loseLife pid n.toNat)
+  | .fixed n, .eachOpponent =>
+    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
+  | .perBurden, .you =>
     match sourceId.bind g.findObject? with
     | none => g
     | some src => g.loseLife controller src.status.burden
-  | .eachOpponent, .attachedEquipment =>
+  | .attachedEquipment, .eachOpponent =>
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then g
     else g.forEachOpponent controller (fun g pid => g.loseLife pid x)
@@ -2906,8 +2907,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, _) := g.createToken controller face
         let (g, _) := g.createToken controller face
         g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
-  | .loseLife n who amount =>
-    g.applyLoseLife controller ab sourceId targets n who amount lastKnownPower
+  | .loseLife amount who =>
+    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
@@ -3013,7 +3014,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.resolvingCauseId.orElse (fun _ => fromStack) with
     | none => g
     | some spellId => g.offerSpellRetarget controller spellId 0
-  | .may (.loseLife 2 .you .fixed)
+  | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     g.offerPay2LifeToughness controller
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>

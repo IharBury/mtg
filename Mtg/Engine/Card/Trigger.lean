@@ -226,18 +226,22 @@ def toNat : TriggerReflexiveKind → Nat
 
 end TriggerReflexiveKind
 
-/-- Which player `ObjectSelector.player` names, and who
-`TriggerResolution.draw` draws for. -/
+/-- Which player `ObjectSelector.player` names, who
+`TriggerResolution.draw` draws for, and who
+`TriggerResolution.loseLife` loses life. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
-  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`. -/
+  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`.
+  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`. -/
   | eachOpponent
   /-- The announced opponent.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`. -/
+  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`.
+  That player loses `n` life is `.loseLife (.fixed n) .targetOpponent`. -/
   | targetOpponent
   /-- The controller of the ability.
-  That player draws `n` is `.draw (.fixed n)` (`.you`). -/
+  That player draws `n` is `.draw (.fixed n)` (`.you`).
+  That player loses `n` life is `.loseLife (.fixed n)`. -/
   | you
   /-- The targeted opponent may have the controller draw a card.
   Declining mills X cards, where X is the influence counters on the source,
@@ -635,10 +639,11 @@ deriving Repr, Inhabited, BEq
 where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
 draws, where one statistic of `TriggerResolution.setBasePT` reads its
-new base, and how much life `TriggerResolution.gainLife` gains.
+new base, how much life `TriggerResolution.gainLife` gains, and how much
+life `TriggerResolution.loseLife` loses.
 `.greatestPower` is first so a default resolution uses it.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
-or `n` life. -/
+`n` life gained, or `n` life lost. -/
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
@@ -652,9 +657,10 @@ inductive NumberSelector where
   /-- One for each Plains the controller controls. -/
   | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
-  or `n` life.
+  `n` life gained, or `n` life lost.
   A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
-  You gain `n` life is `.gainLife (.fixed n)`. -/
+  You gain `n` life is `.gainLife (.fixed n)`.
+  You lose `n` life is `.loseLife (.fixed n)`. -/
   | fixed (n : Int)
   /-- The source's toughness.
   Another creature's base toughness becomes this toughness with
@@ -715,8 +721,13 @@ inductive NumberSelector where
   /-- One for each Equipment attached to the source.
   A source that has left uses its last-known power as that count.
   Zero gains nothing.
-  `.gainLife .attachedEquipment`. -/
+  `.gainLife .attachedEquipment`.
+  Each opponent loses that much with `.loseLife .attachedEquipment .eachOpponent`. -/
   | attachedEquipment
+  /-- One life for each burden counter on the source.
+  A source that can no longer be found loses nothing.
+  `.loseLife .perBurden`. -/
+  | perBurden
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -1175,30 +1186,6 @@ inductive TriggerGrantWhat where
   | ironFistTap
 deriving Repr, Inhabited, BEq
 
-/-- Who loses life from `TriggerResolution.loseLife`. -/
-inductive TriggerLifeLossWho where
-  /-- The controller. -/
-  | you
-  /-- The announced opponent. An illegal target loses nothing. -/
-  | targetOpponent
-  /-- Each opponent of the controller. -/
-  | eachOpponent
-deriving Repr, Inhabited, BEq
-
-/-- Where `TriggerResolution.loseLife` reads how much life. The `n` argument
-is used when this is `.fixed`. -/
-inductive TriggerLifeLossAmount where
-  /-- The `n` argument. -/
-  | fixed
-  /-- One life for each burden counter on the source.
-  A source that can no longer be found loses nothing. -/
-  | perBurden
-  /-- One life for each Equipment attached to the source.
-  A source that has left uses its last-known power as that count.
-  Zero loses nothing. -/
-  | attachedEquipment
-deriving Repr, Inhabited, BEq
-
 /-- Who `TriggerResolution.mill` mills. -/
 inductive TriggerMillWho where
   /-- The controller. -/
@@ -1381,6 +1368,8 @@ and setting another creature's base power and toughness equal to this
 creature's, are `setBasePT`. Each statistic is a `NumberSelector`.
 Who receives the new base is an `ObjectSelector`.
 Gaining life is `gainLife`. How much is a `NumberSelector`.
+Losing life is `loseLife`. How much is a `NumberSelector`.
+Who loses it is a `PlayerSelector`.
 Putting the announced permanent
 on top or on the bottom of its owner's library, and putting a card from your
 hand on the bottom, are `putOnLibrary`. Where the card goes is an argument.
@@ -2121,7 +2110,7 @@ inductive TriggerResolution where
   `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`. A source that has left uses
   its last-known power. Power below 4 is reported.
   Draining for the Equipment attached to the source is
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`.
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
   No Equipment is reported.
   Discarding `n` cards when mana was spent to cast the triggering spell is
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
@@ -2200,7 +2189,7 @@ inductive TriggerResolution where
   power assign combat damage equal to their toughness with
   `.grant .assignCombatDamageEqualToughness .creaturesYouControl`.
   You may pay 2 life to do so with
-  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  `.may (.loseLife (.fixed 2)) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
   Unable to pay is reported. Declining pays nothing. Power is unchanged.
   Until end of turn, the source's base power equals the cards in hand with
   `.grant .basePowerEqualHand .source`. Drawing first is
@@ -2313,21 +2302,20 @@ inductive TriggerResolution where
   | additionalCombatPhase
   /-- The target becomes a Bear in addition to its other types. -/
   | becomeBear
-  /-- A player loses life (CR 118.3a), as `who` and `amount` say. `n` is
-  the amount when `amount` is `.fixed`. Losing 0 life does nothing.
-  You lose `n` life is `.loseLife n`.
+  /-- A player loses life (CR 118.3a), as `amount` and `who` say.
+  Losing 0 life does nothing.
+  You lose `n` life is `.loseLife (.fixed n)`.
   The announced opponent loses `n` life is
-  `.loseLife n (who := .targetOpponent)`.
-  Each opponent loses `n` life is `.loseLife n (who := .eachOpponent)`.
+  `.loseLife (.fixed n) .targetOpponent`.
+  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
   You lose 1 life for each burden counter on the source is
-  `.loseLife 0 (amount := .perBurden)`.
+  `.loseLife .perBurden`.
   A missing source loses nothing.
   Each opponent loses life equal to the Equipment attached to the source with
-  `.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment)`.
+  `.loseLife .attachedEquipment .eachOpponent`.
   A source that has left uses its last-known power. Zero loses nothing.
-  Any other combination does nothing. -/
-  | loseLife (n : Nat) (who : TriggerLifeLossWho := .you)
-      (amount : TriggerLifeLossAmount := .fixed)
+  Any other selector loses nothing. -/
+  | loseLife (amount : NumberSelector) (who : PlayerSelector := .you)
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
   /-- You win the game. -/
@@ -2451,7 +2439,7 @@ def allianceModes : List TriggerResolution :=
 gain 2 life. Draw a card. -/
 def gollumModes : List TriggerResolution :=
   [.putCounters (.ofKind .plusOnePlusOne) .source,
-   .sequence [.loseLife 2 (who := .eachOpponent), .gainLife (.fixed 2)],
+   .sequence [.loseLife (.fixed 2) .eachOpponent, .gainLife (.fixed 2)],
    .draw (.fixed 1)]
 
 /-- Draw a card, then discard a card. Each opponent loses 2 life.
@@ -2459,7 +2447,7 @@ Destroy the announced token. Each player sacrifices the announced creature,
 which is already gone when an earlier mode destroyed it. -/
 def upToXModes : List TriggerResolution :=
   [.sequence [.draw (.fixed 1), .discard (.cards 1)],
-   .loseLife 2 (who := .eachOpponent),
+   .loseLife (.fixed 2) .eachOpponent,
    .destroy .target (note := .chosenToken),
    .sacrifice .eachPlayersCreature]
 
@@ -2571,8 +2559,8 @@ def ofSpell : SpellResolution → TriggerResolution
   | .scry n => .scry (.fixed n)
   | .draw n .you => .draw (.fixed n)
   | .discard n => .discard (.cards n)
-  | .loseLife n .you => .loseLife n
-  | .loseLife n .eachOpponent => .loseLife n (who := .eachOpponent)
+  | .loseLife n .you => .loseLife (.fixed n)
+  | .loseLife n .eachOpponent => .loseLife (.fixed n) .eachOpponent
   | .gainLife n .you => .gainLife (.fixed n)
   | .amass n subtype => .amass n subtype
   | .recruit => .recruit
@@ -2667,7 +2655,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .amass n }
   | .opponentLosesYouGain n =>
     { targeting := .of .opponent
-      resolution := .sequence [.loseLife n (who := .targetOpponent), .gainLife (.fixed n)] }
+      resolution := .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed n)] }
   | .grantHexproofWhileRemains =>
     { targeting := .of .creatureYouControl
       resolution := .grant .hexproofWhileSource .target }
@@ -2928,7 +2916,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .may
         (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
   | .targetOpponentLosesLife n =>
-    { targeting := .of .opponent, resolution := .loseLife n (who := .targetOpponent) }
+    { targeting := .of .opponent, resolution := .loseLife (.fixed n) .targetOpponent }
   | .drawXDiscard n =>
     { resolution := .sequence
         [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards n))] }
@@ -3150,7 +3138,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .createTokens .treasure 0 false (qty := .lastKnown) }
   | .protectionEverything =>
     { resolution := .grant .protectionEverything .youIfCast }
-  | .loseLifePerBurden => { resolution := .loseLife 0 (amount := .perBurden) }
+  | .loseLifePerBurden => { resolution := .loseLife .perBurden }
   | .revealSaga =>
     { resolution := .revealLibrary .untilSaga (.put .revealed) }
   | .sacDamagersRingTempts =>
@@ -3172,10 +3160,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] }
   | .drainAndPlan n =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife (.fixed n)] }
+        [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n)] }
   | .drawLoseLifeAndPlan =>
     { resolution := .sequence
-        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1] }
+        [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] }
   | .treasureTappedAndPlan =>
     { resolution := .sequence
         [.putCounters (.ofKind .plan) .source, .createTokens .treasure 1 true] }
@@ -3419,7 +3407,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .thisAttack .equippedDrain =>
     { events := #[.attacking]
       resolution := .«if» .attachedEquipment (.sequence [
-        .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+        .loseLife .attachedEquipment .eachOpponent,
         .gainLife .attachedEquipment]) }
   | .thisAttack .drawIfPower4 =>
     { events := #[.attacking]
@@ -3443,7 +3431,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .announced }
   | .watch .attacksAloneDrain =>
     { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
-      resolution := .sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)] }
+      resolution := .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)] }
   | .watch .attacksAloneFirstStrikeMenace =>
     { events := #[.creatureYouControlAttacksAlone],
       resolution := .grant
@@ -3533,7 +3521,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
     { events := #[.youAttack],
-      resolution := .may (.loseLife 2)
+      resolution := .may (.loseLife (.fixed 2))
         (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo }
   | .youAttacking .exileTopHeroPump =>
     { events := #[.youAttack],
@@ -3606,7 +3594,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
   | .resource .secondDrawDrain =>
     { events := #[.youDrawSecondCard],
-      resolution := .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)] }
+      resolution := .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)] }
   | .resource .gainLifePlusOnes =>
     { events := #[.youGainLife], targeting := .of .creatureYouControl,
       allowsZeroTargets := true,
@@ -3638,7 +3626,7 @@ end SharedTrigger
   .exile .target .returnTapped
 #guard (SharedTrigger.timing (.thisAttack .equippedDrain)).resolution ==
   .«if» .attachedEquipment (.sequence [
-    .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+    .loseLife .attachedEquipment .eachOpponent,
     .gainLife .attachedEquipment])
 #guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
   .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))
@@ -3747,7 +3735,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (SharedTrigger.timing (.resource .secondDrawDrain)).resolution ==
-  .sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]
 #guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
 #guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).resolution ==

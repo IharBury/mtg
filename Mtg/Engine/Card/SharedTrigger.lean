@@ -119,7 +119,7 @@ inductive ThisAttackLeftover where
   /-- Whenever Whiplash attacks, if he's equipped, each opponent loses X
   life and you gain X life, where X is the number of Equipment attached
   to him. Resolves as
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`. -/
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`. -/
   | equippedDrain
   /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
   power is 4 or greater. Resolves as
@@ -637,7 +637,7 @@ inductive SharedTrigger where
   /-- Landfall from the graveyard: pay to return this to hand. -/
   | payReturnFromGy
   /-- Target opponent loses `n` life.
-  Resolves as `.loseLife n (who := .targetOpponent)`. -/
+  Resolves as `.loseLife (.fixed n) .targetOpponent`. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
@@ -824,7 +824,7 @@ inductive SharedTrigger where
   `.grant .protectionEverything .youIfCast`. -/
   | protectionEverything
   /-- Lose 1 life per burden counter.
-  Resolves as `.loseLife 0 (amount := .perBurden)`. -/
+  Resolves as `.loseLife .perBurden`. -/
   | loseLifePerBurden
   /-- Reveal until a Saga. -/
   | revealSaga
@@ -846,10 +846,10 @@ inductive SharedTrigger where
   /-- Create a Villain and a plan counter. -/
   | createVillainAndPlan
   /-- Drain `n` and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife n (who := .eachOpponent), .gainLife (.fixed n)]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n)]`. -/
   | drainAndPlan (n : Nat)
   /-- Draw, lose life, and put a plan counter. Resolves as
-  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]`. -/
+  `.sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)]`. -/
   | drawLoseLifeAndPlan
   /-- Create a tapped Treasure and put a plan counter. -/
   | treasureTappedAndPlan
@@ -986,7 +986,7 @@ inductive SharedTrigger where
   `.exile .target .returnTapped`.
   Each opponent losing X life and you gaining X life, X the Equipment
   attached to the source, is
-  `.«if» .attachedEquipment (.sequence [.loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment), .gainLife .attachedEquipment])`.
+  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
   Drawing when the source's power is 4 or greater is
   `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`.
   The source getting +2/+0 and indestructible until end of turn is
@@ -1010,7 +1010,7 @@ inductive SharedTrigger where
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)]`.
+  `.sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]`.
   1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player .targetOpponent)`.
   1 damage from the equipped creature to each opponent is
   `.dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped`.
@@ -1045,7 +1045,7 @@ inductive SharedTrigger where
   /-- Leftover “whenever you attack” effect.
   Paying 2 life so creatures you control assign combat damage equal to their
   toughness is
-  `.may (.loseLife 2) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
+  `.may (.loseLife (.fixed 2)) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
   Exiling the top card, pumping +2/+1 when it is a Hero, and playing it this
   turn is `.may (.exile .top .playThisTurn .ifHero) (.sequence [])`.
   Looking at the top six and casting one with mana value at most the greatest
@@ -1092,7 +1092,7 @@ inductive SharedTrigger where
   A +1/+1 counter on the announced creature is
   `.putCounters (.ofKind .plusOnePlusOne) .permanent`.
   Each opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife 1 (who := .eachOpponent), .gainLife (.fixed 1)]`.
+  `.sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]`.
   A +1/+1 counter on each announced creature you control, up to the life
   gained, is `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
   A 1/1 green Insect is `.createTokens .insect11green 1 false`.

@@ -1001,7 +1001,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match symbols.toList with
     | [.generic 2] => "you may pay {2} to copy it"
     | _ => "you may pay to copy it"
-  | .may (.loseLife 2 .you .fixed)
+  | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
@@ -1131,9 +1131,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then discard a card and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace 1 false] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife n .eachOpponent, .gainLife (.fixed m)] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed m)] =>
     s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] =>
     "you draw a card, lose 1 life, and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .treasure 1 true] =>
     "create a tapped Treasure token and put a plan counter on this enchantment"
@@ -1209,7 +1209,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» .putArtifactIsEquipment (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
-  | .sequence [.loseLife n .targetOpponent .fixed, .gainLife (.fixed m)] =>
+  | .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
   | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
       .grant (.keywords k) (.youControlSubtype "Elf")] =>
@@ -1672,14 +1672,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile and copy a card"
   | .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) =>
     "when one or more cards are milled this way, exile and copy a card"
-  | .loseLife n who amount =>
-    match who, amount with
-    | .you, .fixed => s!"you lose {n} life"
-    | .targetOpponent, .fixed => s!"{noun} loses {n} life"
-    | .eachOpponent, .fixed => s!"each opponent loses {n} life"
-    | .you, .perBurden =>
+  | .loseLife amount who =>
+    match amount, who with
+    | .fixed n, .you => s!"you lose {n} life"
+    | .fixed n, .targetOpponent => s!"{noun} loses {n} life"
+    | .fixed n, .eachOpponent => s!"each opponent loses {n} life"
+    | .perBurden, .you =>
       "you lose 1 life for each burden counter on this"
-    | .eachOpponent, .attachedEquipment =>
+    | .attachedEquipment, .eachOpponent =>
       "each opponent loses X life, where X is the number of Equipment attached to it"
     | _, _ =>
       "lose life"

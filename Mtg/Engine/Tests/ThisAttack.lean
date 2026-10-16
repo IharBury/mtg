@@ -44,7 +44,7 @@ def hand (g : Game) : Nat :=
   .exile .target .returnTapped
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain) ==
   .«if» .attachedEquipment (.sequence [
-    .loseLife 0 (who := .eachOpponent) (amount := .attachedEquipment),
+    .loseLife .attachedEquipment .eachOpponent,
     .gainLife .attachedEquipment])
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
   .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))

@@ -65,7 +65,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass 1
 #guard (timing (.opponentLosesYouGain 1)).resolution ==
-  .sequence [.loseLife 1 (who := .targetOpponent), .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]
 #guard (timing .grantHexproofWhileRemains).resolution ==
   .grant .hexproofWhileSource .target
 #guard (timing .preventDamageWhileRemains).resolution ==
@@ -113,7 +113,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .plusOneOnCreatureN 3 })).resolution ==
   .putCounters (.ofKind .plusOnePlusOne 3) .permanent
 #guard (timing (.spell { resolution := .loseLife 2 .eachOpponent })).resolution ==
-  .loseLife 2 (who := .eachOpponent)
+  .loseLife (.fixed 2) .eachOpponent
 #guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
   .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))

@@ -4,9 +4,10 @@ import Mtg.Engine.Fixture
 /-!
 # `TriggerResolution.loseLife`
 
-The controller, the announced opponent, or each opponent loses a fixed
-amount of life, and the controller loses one life for each burden counter
-on the source. Who loses life, and how much, are arguments.
+How much life is lost is a `NumberSelector`. Who loses it is a
+`PlayerSelector`. You lose `n` life is `.loseLife (.fixed n)`. The announced
+opponent and each opponent use those players. One life for each burden
+counter is `.loseLife .perBurden`. Any other selector loses nothing.
 -/
 
 namespace Mtg.Engine.LoseLifeTests
@@ -46,26 +47,27 @@ def handSize (g : Game) (p : PlayerId) : Nat :=
 def ring : CardDef := artifact "Ring" ManaCost.empty ""
 
 def perBurden : TriggeredAbility.TriggerResolution :=
-  .loseLife 0 (amount := .perBurden)
+  .loseLife .perBurden
 
 def targetOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .loseLife n (who := .targetOpponent)
+  .loseLife (.fixed n) .targetOpponent
 
 def eachOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .loseLife n (who := .eachOpponent)
+  .loseLife (.fixed n) .eachOpponent
 
 /- The controller loses the printed amount. Losing none changes nothing. -/
 #guard
-  let g := step afterDraw (.loseLife 4)
+  let g := step afterDraw (.loseLife (.fixed 4))
   lifeOf g caster == lifeOf afterDraw caster - 4 &&
     lifeOf g opp == lifeOf afterDraw opp &&
     logContains g "loses 4 life"
 
 #guard
-  let g := step afterDraw (.loseLife 0)
+  let g := step afterDraw (.loseLife (.fixed 0))
   lifeOf g caster == lifeOf afterDraw caster && g.log == afterDraw.log
 
-#guard (.loseLife 2 : TriggeredAbility.TriggerResolution) == .loseLife 2 .you .fixed
+#guard (.loseLife (.fixed 2) : TriggeredAbility.TriggerResolution) ==
+  .loseLife (.fixed 2) .you
 
 /- The announced opponent loses the printed amount. The controller does not.
 A missing target, the controller, and a permanent lose nothing. -/
@@ -190,8 +192,8 @@ the source is on the battlefield. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 5
-  let crossed := step g0 (.loseLife 3 .eachOpponent .perBurden) (some (pid g0 "Ring"))
-  let swapped := step g0 (.loseLife 3 .targetOpponent .perBurden)
+  let crossed := step g0 (.loseLife .perBurden .eachOpponent) (some (pid g0 "Ring"))
+  let swapped := step g0 (.loseLife .perBurden .targetOpponent)
     (some (pid g0 "Ring")) (targets := #[Target.player opp])
     (ab := .onYouSacrificeTokenOppLosesLife)
   lifeOf crossed caster == lifeOf g0 caster && lifeOf crossed opp == lifeOf g0 opp &&
@@ -199,14 +201,28 @@ the source is on the battlefield. -/
     lifeOf swapped caster == lifeOf g0 caster && lifeOf swapped opp == lifeOf g0 opp &&
     swapped.log == g0.log
 
+/- Any other selector loses nothing. -/
+#guard
+  let g := step afterDraw (.loseLife .perOtherCreature)
+  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
+    g.log == afterDraw.log
+
+#guard
+  let g0 := afterDraw
+  let g := step g0 (.loseLife (.fixed 3) .opponentHasYou)
+    (targets := #[Target.player opp])
+    (ab := .onYouSacrificeTokenOppLosesLife)
+  lifeOf g caster == lifeOf g0 caster && lifeOf g opp == lifeOf g0 opp &&
+    g.log == g0.log
+
 #guard TriggeredAbility.resolution .onYouSacrificeTokenOppLosesLife == targetOpp 1
 #guard TriggeredAbility.resolution .onYourUpkeepLoseLifePerBurden == perBurden
 #guard TriggeredAbility.resolution (.onVillainYouControlEntersDrainAndPlan 2) ==
   .sequence [.putCounters (.ofKind .plan) .source, eachOpp 2, .gainLife (.fixed 2)]
 #guard TriggeredAbility.resolution .onCreatureCardsToGyDrawLoseLifeAndPlan ==
-  .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife 1]
+  .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)]
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .loseLife 3 } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .loseLife (.fixed 3) } ==
   "you lose 3 life"
 #guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.targetOpponentLosesLife 1)) ==
   "target opponent loses 1 life"
@@ -215,7 +231,9 @@ the source is on the battlefield. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := perBurden } ==
   "you lose 1 life for each burden counter on this"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .loseLife 3 .eachOpponent .perBurden } == "lose life"
+    { resolution := .loseLife .perBurden .eachOpponent } == "lose life"
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .loseLife .perOtherCreature } == "lose life"
 
 #guard TriggeredAbility.toNotation .onYouSacrificeTokenOppLosesLife ==
   "Whenever you sacrifice a token, target opponent loses 1 life."
@@ -227,7 +245,7 @@ the source is on the battlefield. -/
   "you draw a card, lose 1 life, and put a plan counter on this enchantment"
 
 #guard TriggeredAbility.TriggerResolution.gollumModes[1]! ==
-  .sequence [.loseLife 2 (who := .eachOpponent), .gainLife (.fixed 2)]
+  .sequence [.loseLife (.fixed 2) .eachOpponent, .gainLife (.fixed 2)]
 #guard TriggeredAbility.TriggerResolution.upToXModes[1]! == eachOpp 2
 
 #guard (SharedTrigger.timing (.targetOpponentLosesLife 1)).resolution == targetOpp 1
