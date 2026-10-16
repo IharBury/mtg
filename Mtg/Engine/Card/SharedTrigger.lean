@@ -141,7 +141,7 @@ inductive EnterOrAttackLeftover where
   | copyKeywords
   /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or
   attacks, create a 1/1 green Squirrel creature token. Resolves as
-  `.createTokens .squirrel11green 1 false`. -/
+  `.createTokens .squirrel11green (.fixed 1) false`. -/
   | createSquirrel
 deriving Repr, Inhabited, BEq
 
@@ -619,7 +619,7 @@ inductive SharedTrigger where
   /-- Return cards exiled by the source. -/
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
-  Resolves as `.sequence [.createTokens kind 1 false, .attach .source .created]`. -/
+  Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .created]`. -/
   | createThenAttach (kind : TokenKind)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
@@ -703,7 +703,7 @@ inductive SharedTrigger where
   `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
-  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]`. -/
+  Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
   `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» (.bearsAtLeast 3) (.draw (.fixed 2))]`. -/
@@ -760,7 +760,7 @@ inductive SharedTrigger where
   `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
-  `.sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
+  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
@@ -889,7 +889,7 @@ inductive SharedTrigger where
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» (.landsAtLeast 6) (.sequence [.destroy .target, .createTokens .treasure 1 false (who := .targetController)])`. -/
+  `.«if» (.landsAtLeast 6) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
@@ -933,10 +933,10 @@ inductive SharedTrigger where
   Resolves as `.or [.tap .target, .untap]`. -/
   | tapOrUntapNonland
   /-- Create a Food or a Treasure.
-  Resolves as `.or [.createTokens .food 1 false, .createTokens .treasure 1 false]`. -/
+  Resolves as `.or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]`. -/
   | createFoodOrTreasure
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
-  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace 1 true) (.mill (.fixed 2))`. -/
+  `.ifElse (.creatureCardsInGraveyardAtLeast 2) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
   Resolves as `.sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
@@ -995,7 +995,7 @@ inductive SharedTrigger where
   /-- Leftover “enters or attacks” effect.
   Copying the keyword counters the source lacks is
   `.putCounters .missingKeywordsFromTarget .source`.
-  A 1/1 green Squirrel is `.createTokens .squirrel11green 1 false`. -/
+  A 1/1 green Squirrel is `.createTokens .squirrel11green (.fixed 1) false`. -/
   | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Leftover watch effect.
   Drawing a card is `.draw (.fixed 1)`. You may draw a card is
@@ -1032,7 +1032,7 @@ inductive SharedTrigger where
   Attaching each announced Equipment to the enchanted creature is
   `.attach .eachTargetEquipment .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
-  `.chooseModes [.createTokens .soldier11white 1 false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
+  `.chooseModes [.createTokens .soldier11white (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is
   `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo`.
   Exiling until a nonland, then a counter or a cast, is
@@ -1053,9 +1053,9 @@ inductive SharedTrigger where
   `.revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)`. -/
   | youAttacking (e : YouAttackLeftover)
   /-- Leftover “whenever you cast …” effect.
-  A 2/1 black Villain with menace is `.createTokens .villain21menace 1 false`.
+  A 2/1 black Villain with menace is `.createTokens .villain21menace (.fixed 1) false`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell is
-  `.createTokens .treasure 0 false .merfolk (qty := .blueManaSymbols)`.
+  `.createTokens .treasure .blueManaSymbols false .merfolk`.
   Paying {1} so a creature with haste can't be blocked except by creatures
   with haste is
   `.may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo`.
@@ -1095,11 +1095,11 @@ inductive SharedTrigger where
   `.sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]`.
   A +1/+1 counter on each announced creature you control, up to the life
   gained, is `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
-  A 1/1 green Insect is `.createTokens .insect11green 1 false`.
+  A 1/1 green Insect is `.createTokens .insect11green (.fixed 1) false`.
   A +1/+1 counter on the source is
   `.putCounters (.ofKind .plusOnePlusOne) .source`.
   You may create a 0/4 Wall with defender is
-  `.may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo`. -/
+  `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`. -/
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 

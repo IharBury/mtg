@@ -82,9 +82,9 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .blinkUntilEndStep).resolution == .exile .target .nextEndStep
 #guard (timing .treasureThenDragonIfFour).resolution ==
   .sequence [
-    .createTokens .treasure 1 false,
+    .createTokens .treasure (.fixed 1) false,
     .«if» (.controlsAtLeast "Treasure" 4) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
-    .«if» .sourceWasSacrificed (.createTokens .dragon 1 false)]
+    .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)]
 #guard (timing .recruit).resolution == .recruit
 #guard (timing (.returnCreatureFromGyMvAtMost 3)).resolution ==
   .put (.creatureMvAtMost 3)
@@ -99,13 +99,16 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
-  .createTokens .villain21menace 2 false
+  .createTokens .villain21menace (.fixed 2) false
 #guard (timing (.spell { resolution := .createTokens .treasure 0 (qty := .perSubtype "Villain") })).resolution ==
-  .createTokens .treasure 0 false (qty := .perSubtype "Villain")
+  .createTokens .treasure (.perSubtype "Villain") false
 #guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
   .fight .announced .upToOneOther
 #guard (timing (.spell { resolution := .createGalactus })).resolution ==
-  .createTokens .treasure 1 false .galactus
+  .createTokens .treasure (.fixed 1) false .galactus
+#guard TriggeredAbility.resolutionPhrase
+    { resolution := .createTokens .treasure .perOtherCreature false } ==
+  "create a token"
 #guard (timing (.spell { resolution := .nextFreeRGCreature })).resolution ==
   .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
 #guard (timing (.spell { resolution := .plusOneOnEachYouControl })).resolution ==
@@ -141,6 +144,12 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   "When a lore counter is put on this Saga, recruit."
 #guard toString (TriggeredAbility.sagaChapter 1 (Effect.chapterDraw 1)) ==
   "When a lore counter is put on this Saga, draw a card."
+
+/- A selector createTokens does not use creates nothing. -/
+#guard
+  let g := afterDraw.applyTriggeredAbility caster (.onEnterDraw 1) none
+    (resolutionOverride := some (.createTokens .treasure .perOtherCreature false))
+  g.log.size == afterDraw.log.size
 
 /- Drawing, adding mana, and recruiting go through those constructors. -/
 #guard

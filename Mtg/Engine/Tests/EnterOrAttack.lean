@@ -37,7 +37,7 @@ carry `EnterOrAttackLeftover`. The printed sentence stays the Oracle line. -/
   .putCounters .missingKeywordsFromTarget .source
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) ==
-  .createTokens .squirrel11green 1 false
+  .createTokens .squirrel11green (.fixed 1) false
 
 #guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords) ==
   TriggeredAbility.enterOrAttackSentence .copyKeywords

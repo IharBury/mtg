@@ -681,9 +681,9 @@ namespace CardDef
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1 true) ==
   "When this permanent enters, create a tapped Treasure token."
 #guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1) ==
-  .createTokens .treasure 1 false
+  .createTokens .treasure (.fixed 1) false
 #guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1 true) ==
-  .createTokens .treasure 1 true
+  .createTokens .treasure (.fixed 1) true
 #guard TriggeredAbility.onEnterScry 2 == .triggered .enter (Effect.ofTrigger (.scry 2))
 #guard TriggeredAbility.onAttackScry 1 == .triggered .attack (Effect.ofTrigger (.scry 1))
 #guard TriggeredAbility.onEnterDraw 1 == .triggered .enter (Effect.ofTrigger (.draw 1))
@@ -775,7 +775,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
   .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
 #guard TriggeredAbility.resolution (.onEnterCreateThenAttach .dwarf) ==
-  .sequence [.createTokens .dwarf 1 false, .attach .source .created]
+  .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .created]
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
@@ -889,7 +889,7 @@ namespace CardDef
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
   .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 #guard TriggeredAbility.resolution .onCombatDamageWolfPlusOneOrTreasure ==
-  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure 1 false]
+  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]
 #guard (SharedTrigger.timing .tapOppOrUntapYours).resolution ==
   .or [.tap .target, .untap]
 #guard TriggeredAbility.resolution .onLandYouControlEntersTapOrUntap ==
@@ -1309,7 +1309,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
   "When this creature enters, create a Food token or a Treasure token."
 #guard TriggeredAbility.resolution .onEnterCreateFoodOrTreasure ==
-  .or [.createTokens .food 1 false, .createTokens .treasure 1 false]
+  .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
   .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
@@ -1318,7 +1318,7 @@ namespace CardDef
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
   .ifElse (.creatureCardsInGraveyardAtLeast 2)
-    (.createTokens .villain21menace 1 true) (.mill (.fixed 2))
+    (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))
 #guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
   "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
 #guard TriggeredAbility.toNotation .onEnterDrawGainLifeIfAnotherHero ==
@@ -1360,7 +1360,7 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
+  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
     .attach .created .source]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
@@ -1425,9 +1425,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe ==
-  .createTokens .treasure 1 false .axe
+  .createTokens .treasure (.fixed 1) false .axe
 #guard TriggeredAbility.resolution .onEnterCreateAxeAttach ==
-  .createTokens .treasure 1 false .axe (note := .attachReflexive)
+  .createTokens .treasure (.fixed 1) false .axe (note := .attachReflexive)
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
@@ -1548,7 +1548,7 @@ end CardDef
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
     .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit 2 true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
+  .sequence [.createTokens .spirit (.fixed 2) true, .«if» .equippedLegendaryYouControl .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
@@ -1592,7 +1592,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw (.fixed 1), .«if» .anotherHero (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createTokens .treasure 1 false .alien (note := .invasion),
+  .sequence [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
@@ -1610,7 +1610,7 @@ end CardDef
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» (.landsAtLeast 6) (.sequence [
     .destroy .target,
-    .createTokens .treasure 1 false (who := .targetController)])
+    .createTokens .treasure (.fixed 1) false (who := .targetController)])
 #guard TriggeredAbility.toNotation
     (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
@@ -1621,7 +1621,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
-  .sequence [.createTokens .treasure 1 false .sturdyShield (note := .remember),
+  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
     .attach .created .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]

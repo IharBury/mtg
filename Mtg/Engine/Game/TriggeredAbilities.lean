@@ -485,7 +485,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     s!"{name} creates a Food token or a Treasure token"
   | [.tap .target, .untap .target] =>
     s!"{name} chooses tap or untap"
@@ -495,7 +495,7 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
 /-- Pending-header text for a `TriggerResolution.or` choice. -/
 def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food 1 false, .createTokens .treasure 1 false] =>
+  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | [.tap .target, .untap .target] =>
     "choose tap or untap"
@@ -1059,15 +1059,16 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | _, _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
+the behavior of the constructor it replaced. Any other selector creates
+nothing. -/
 def applyCreateTokens (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower : Option Int) (kind : TokenKind) (n : Nat) (tapped : Bool)
+    (lastKnownPower : Option Int) (kind : TokenKind)
+    (amount : TriggeredAbility.NumberSelector) (tapped : Bool)
     (token : TriggeredAbility.TriggerToken)
-    (who : TriggeredAbility.TriggerTokenWho)
-    (qty : TriggeredAbility.TriggerTokenQty)
+    (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerTokenNote) : Game :=
-  match token, who, qty, note with
+  match token, who, amount, note with
   | .axe, _, _, .attachReflexive =>
     let (g, tok) := g.createToken controller axeToken
     g.putReflexiveTrigger controller (some tok.id) {
@@ -1085,7 +1086,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
-  | .kind, .you, .lastKnown, _ =>
+  | .kind, .you, .lastKnownPower, _ =>
     if kind == .birdSoldier then
       let n := lastKnownPower.getD 0
       g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
@@ -1123,8 +1124,10 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
   | .sturdyShield, _, _, _ =>
     let (g, shield) := g.createToken controller sturdyShieldToken
     { g with createdTokenThisWay := some shield.id }
-  | .merfolk, _, _, _ =>
+  | .merfolk, _, .blueManaSymbols, _ =>
     g.createMerfolkForBlueSymbols controller lastKnownPower
+  | .kind, .you, .fixed n, _ =>
+    g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .kind, .targetController, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the Treasure is the one it had on the battlefield.
@@ -1136,8 +1139,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         g.createTreasureTokens pid 1
       | none => g
     | _ => g
-  | _, _, _, _ =>
-    g.createKindTokens controller kind n (tapped := tapped)
+  | _, _, _, _ => g
 
 /-- Resolve `TriggerResolution.exile`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other selector exiles
@@ -2713,9 +2715,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
-  | .createTokens kind n tapped token who qty note =>
+  | .createTokens kind amount tapped token who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind n tapped token who qty note
+      kind amount tapped token who note
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
@@ -3070,7 +3072,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
-  | .may (.createTokens .wall04defender 1 false) (.sequence []) .ifYouDo =>
+  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
     g.offerMayCreateWall controller
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
