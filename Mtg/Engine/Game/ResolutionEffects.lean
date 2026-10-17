@@ -567,6 +567,20 @@ def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option Objec
     { id := sourceId.getD ⟨0⟩, printed := { name := "The ability", types := #[] }
       owner := controller, controller := some controller, zone := .battlefield }
 
+/-- Put `followup` on the stack as a reflexive triggered ability (CR 603.12).
+Printed MSH reflexes use `putReflexiveTrigger` and choose targets now. This
+follow-up keeps the targets the original ability already has. -/
+def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (followup : TriggeredAbility.TriggerResolution) : Game :=
+  let src := g.abilitySourceFor controller sourceId
+  let effect : Effect := {
+    resolution := .trigger (.draw 0)
+    phrase := "when you do, that ability triggers" }
+  let marker : TriggeredAbility := .triggered .enter effect {}
+  let (g, obj) := g.putStackAbility src controller (triggeredAbility := some marker)
+  let g := g.setObject { obj with sourceId := sourceId, reflexiveResolution := some followup }
+  g.logMsg s!"{src.name}'s reflexive ability is put on the stack"
+
 /-- Put a reflexive triggered ability (“When you do, …”) on the stack with
 `effect` (CR 603.12). Its targets are chosen now. -/
 def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)

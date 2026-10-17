@@ -9,7 +9,8 @@ Power and toughness are `NumberSelector`s. Who receives the new base is an
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains get a fixed base power and toughness until end of
 turn. Another target creature's base power and toughness become equal to
-this creature's. Any other combination sets nothing.
+this creature's. Any other permanent the selector names receives the base
+the two counts name. A player, and a count that is not a number, sets nothing.
 -/
 
 namespace Mtg.Engine.SetBasePTTests
@@ -234,29 +235,39 @@ an opponent's creature, and a creature that has left are not set. -/
     (ab := .onAttackSetOtherBasePT)
   logContains g "The target is no longer in play"
 
-/- Equal to this creature for anyone but the announced target sets nothing.
-A fixed base for any other selector sets nothing. -/
+/- The source and the target, while the source remains, take this creature's
+power and toughness. Nothing enchanted by the creature itself is unchanged.
+Creatures the controller controls take a fixed base. A missing cause, a
+player, and doubling set nothing. -/
 #guard
   let g0 := attach (addPermanent (addPermanent board ogre caster caster) grasp caster caster)
     "Grasp" "Titan"
   let sid := some (pid g0 "Titan")
   let tgt := #[Target.permanent (pid g0 "Ogre")]
-  let crossed := [
+  let onSource :=
     step g0 (.setBasePT .equalSourcePower .equalSourceToughness .source) sid tgt
-      (ab := .onAttackSetOtherBasePT),
+      (ab := .onAttackSetOtherBasePT)
+  let onEnchanted :=
     step g0 (.setBasePT .equalSourcePower .equalSourceToughness .enchanted) sid tgt
-      (ab := .onAttackSetOtherBasePT),
+      (ab := .onAttackSetOtherBasePT)
+  let onTarget :=
     step g0 (.setBasePT .equalSourcePower .equalSourceToughness .targetWhileSource) sid tgt
-      (ab := .onAttackSetOtherBasePT)]
-  let others := [
-    step g0 (.setBasePT (.fixed 1) (.fixed 1) .cause) sid tgt,
-    step g0 (.setBasePT (.fixed 1) (.fixed 1) .creaturesYouControl) sid tgt,
-    step g0 (.setBasePT (.fixed 1) (.fixed 1) (.player .you)) sid tgt,
-    step g0 (.setBasePT .double .double .target) sid tgt]
-  crossed.all (fun g =>
-    base g "Titan" == none && base g "Ogre" == none && g.log == g0.log) &&
-    others.all (fun g =>
-      base g "Titan" == none && base g "Ogre" == none && g.log == g0.log)
+      (ab := .onAttackSetOtherBasePT)
+  let onCause := step g0 (.setBasePT (.fixed 1) (.fixed 1) .cause) sid tgt
+  let onYours := step g0 (.setBasePT (.fixed 1) (.fixed 1) .creaturesYouControl) sid tgt
+  let onPlayer := step g0 (.setBasePT (.fixed 1) (.fixed 1) (.player .you)) sid tgt
+  let doubled := step g0 (.setBasePT .double .double .target) sid tgt
+  base onSource "Titan" == some (4, 4) && base onSource "Ogre" == none &&
+    base onEnchanted "Titan" == none && base onEnchanted "Ogre" == none &&
+    onEnchanted.log == g0.log &&
+    base onTarget "Ogre" == some (4, 4) && base onTarget "Titan" == none &&
+    base onCause "Titan" == none && base onCause "Ogre" == none &&
+    onCause.log == g0.log &&
+    base onYours "Titan" == some (1, 1) && base onYours "Ogre" == some (1, 1) &&
+    base onYours "Bear" == none &&
+    base onPlayer "Titan" == none && onPlayer.log == g0.log &&
+    base doubled "Titan" == none && base doubled "Ogre" == none &&
+    doubled.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) ==

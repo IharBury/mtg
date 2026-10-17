@@ -379,6 +379,10 @@ inductive FraChoice where
   graveyard, paying its cost (Bilbo, Thief in the Night). An instant or
   sorcery cast this way is exiled instead of going to the graveyard. -/
   | mayCastFromGraveyard (eligible : Array ObjectId)
+  /-- You may cast one of these cards. `withoutPaying` skips the mana cost.
+  An instant or sorcery is exiled instead of going to the graveyard when
+  `exileInstead` is set. -/
+  | mayCastCards (eligible : Array ObjectId) (withoutPaying exileInstead : Bool)
   /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)

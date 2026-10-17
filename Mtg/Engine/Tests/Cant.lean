@@ -245,18 +245,21 @@ not apply while that object is off the battlefield. -/
   !(obj g "Titan").status.tapped && grantedBy g "Titan" == #[] &&
     logContains g "The target is no longer legal"
 
-/- The other combinations do nothing. -/
+/- An opponent's source can't untap. A creature you control, and nothing
+enchanted by that source, is left alone. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
+  let bearId := pid g0 "Bear"
   let tgt := #[Target.permanent (pid g0 "Titan")]
-  let crossed := [
-    step g0 (.cant (.untapWhileYouControl .source)) sid tgt (ab := spider),
+  let yours := step g0 (.cant (.untapWhileYouControl .source)) sid tgt (ab := spider)
+  let quiet := [
     step g0 (.cant (.untapWhileYouControl .enchanted)) sid tgt (ab := spider),
     step g0 (.cant (.untapWhileYouControl .targetWhileSource)) sid tgt (ab := spider)]
-  crossed.all fun g =>
-    !blocked g "Titan" && grantedBy g "Titan" == #[] &&
-      grantedBy g "Bear" == #[] && g.log == g0.log
+  grantedBy yours "Bear" == #[bearId] && grantedBy yours "Titan" == #[] &&
+    quiet.all fun g =>
+      !blocked g "Titan" && grantedBy g "Titan" == #[] &&
+        grantedBy g "Bear" == #[] && g.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked ==

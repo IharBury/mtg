@@ -193,6 +193,8 @@ structure Game where
   amassYouControlledThisWay : Bool := false
   /-- Cards milled by `.mill` when it notes `.milledCards`. -/
   milledIdsThisWay : Array ObjectId := #[]
+  /-- Cards `revealLibrary` just showed. A following step reads them. -/
+  revealedIdsThisWay : Array ObjectId := #[]
   /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
   opponentsMilledThisWay : Bool := false
   /-- Palantír finished putting an influence counter; the following step offers
@@ -247,6 +249,14 @@ structure Game where
   /-- Conditional of the `mayThen` currently offered. The optional action
   reads it for its log and which choice to open. -/
   mayThenConditional : Option TriggeredAbility.TriggerResolution := none
+  /-- Accepting `Pending.mayResolve` applies this trigger resolution.
+  The ability context is `mayContext`. -/
+  mayOnAccept : Option TriggeredAbility.TriggerResolution := none
+  /-- Declining `Pending.mayResolve` applies this trigger resolution
+  instead of `mayOnAccept`. -/
+  mayOnDecline : Option TriggeredAbility.TriggerResolution := none
+  /-- Ability context for `mayOnAccept` and `mayOnDecline`. -/
+  mayContext : Option TriggerSequenceRest := none
   /-- Power of the creature sacrificed for
   `putCounters .plusOneSacrificedPower`. -/
   sacrificedPowerThisWay : Option Nat := none

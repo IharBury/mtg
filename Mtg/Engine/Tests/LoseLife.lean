@@ -188,7 +188,8 @@ the source is on the battlefield. -/
   lifeOf g caster == lifeOf g1 caster && lifeOf g opp == lifeOf g1 opp &&
     logContains g "no longer"
 
-/- The other combinations lose nothing. -/
+/- Burden life loss uses the same count for every player selector.
+The controller is unchanged. Each named player loses that much. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 5
@@ -196,12 +197,12 @@ the source is on the battlefield. -/
   let swapped := step g0 (.loseLife .perBurden .targetOpponent)
     (some (pid g0 "Ring")) (targets := #[Target.player opp])
     (ab := .onYouSacrificeTokenOppLosesLife)
-  lifeOf crossed caster == lifeOf g0 caster && lifeOf crossed opp == lifeOf g0 opp &&
-    crossed.log == g0.log &&
-    lifeOf swapped caster == lifeOf g0 caster && lifeOf swapped opp == lifeOf g0 opp &&
-    swapped.log == g0.log
+  lifeOf crossed caster == lifeOf g0 caster && lifeOf crossed opp == lifeOf g0 opp - 5 &&
+    logContains crossed "loses 5 life" &&
+    lifeOf swapped caster == lifeOf g0 caster && lifeOf swapped opp == lifeOf g0 opp - 5 &&
+    logContains swapped "loses 5 life"
 
-/- Any other selector loses nothing. -/
+/- A count of zero loses nothing. An offer is not a player who loses life. -/
 #guard
   let g := step afterDraw (.loseLife .perOtherCreature)
   lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&

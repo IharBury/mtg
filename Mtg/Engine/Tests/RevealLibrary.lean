@@ -10,7 +10,8 @@ Cards from the announced player's library until a nonland may put a +1/+1
 counter on the source, or let you cast that nonland until end of turn.
 How far the ability looks is `TriggerLibraryHow`. Whose library it uses
 is a `PlayerSelector`. What happens to the cards is a `TriggerResolution`.
-Any other selector does nothing.
+Any other combination reveals those cards, then resolves the follow-up.
+A player the selector does not name reveals nothing.
 -/
 
 namespace Mtg.Engine.RevealLibraryTests
@@ -409,39 +410,116 @@ reported, and an empty library exiles nothing. -/
     exiled.isNone && libNames g opp == []
   | _ => false
 
-/- A combination that is not printed does nothing. -/
+/- A combination that is not printed reveals as `how` and `who` say,
+then resolves the follow-up. No announced player reveals nothing. -/
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
   let g0 := { g0 with
     lastCombatDamagePlayer := some opp
     grimaImpulseReady := false }
-  let crossed := [
-    .revealLibrary (.top 3) (.put .revealed),
-    .revealLibrary (.top 3) (.returnToHand .revealed),
-    .revealLibrary (.top 3) (.exile .top .forLater .impulse),
-    .revealLibrary (.top 3) (.put .randomCreature) .damagedPlayer,
-    .revealLibrary .untilCreature (.put .randomCreature),
-    .revealLibrary .untilCreature (.put .revealed),
-    .revealLibrary .untilSaga (.returnToHand .revealed),
-    .revealLibrary .untilSaga (.put .revealed) .damagedPlayer,
-    .revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse),
-    .revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer,
+  let g := step g0 (.revealLibrary (.top 3) (.put .revealed))
+  onBattlefield g "Reveal Plot" && onBattlefield g "Reveal Bear" &&
+    onBattlefield g "Reveal Tale" && libNames g caster == []
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary (.top 3) (.returnToHand .revealed))
+  inHand g caster "Reveal Plot" && inHand g caster "Reveal Bear" &&
+    inHand g caster "Reveal Tale" && libNames g caster == []
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g0 := { g0 with grimaImpulseReady := false }
+  let g := step g0 (.revealLibrary (.top 3) (.exile .top .forLater .impulse))
+  g.grimaImpulseReady && inExile g "Reveal Plot" && inExile g "Reveal Bear" &&
+    inExile g "Reveal Tale" && libNames g caster == []
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g0 := { g0 with lastCombatDamagePlayer := some opp }
+  let g := step g0 (.revealLibrary (.top 3) (.put .randomCreature) .damagedPlayer)
+  !onBattlefield g "Reveal Bolt" && !onBattlefield g "Reveal Plot" &&
+    inLib g opp "Reveal Bolt" && inLib g opp "Reveal Plot" &&
+    logContains g "No creature card was revealed"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary .untilCreature (.put .randomCreature))
+  onBattlefield g "Reveal Bear" && inLib g caster "Reveal Plot" &&
+    inLib g caster "Reveal Tale" && !inLib g caster "Reveal Bear"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary .untilCreature (.put .revealed))
+  onBattlefield g "Reveal Bear" && inLib g caster "Reveal Plot" &&
+    inLib g caster "Reveal Tale"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary .untilSaga (.returnToHand .revealed))
+  inHand g caster "Reveal Tale" && inLib g caster "Reveal Plot" &&
+    inLib g caster "Reveal Bear" && !inLib g caster "Reveal Tale"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g0 := { g0 with lastCombatDamagePlayer := some opp }
+  let g := step g0 (.revealLibrary .untilSaga (.put .revealed) .damagedPlayer)
+  !onBattlefield g "Reveal Bolt" && !onBattlefield g "Reveal Plot" &&
+    inLib g opp "Reveal Bolt" && inLib g opp "Reveal Plot" &&
+    logContains g "reveals Reveal Plot"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse))
+  !g.grimaImpulseReady && inLib g caster "Reveal Plot" &&
+    inLib g caster "Reveal Bear" && inLib g caster "Reveal Tale" &&
+    logContains g "reveals Reveal Tale"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g0 := { g0 with lastCombatDamagePlayer := some opp }
+  let g := step g0
+    (.revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer)
+  onBattlefield g "Reveal Bolt" && inLib g opp "Reveal Plot" &&
+    !inLib g opp "Reveal Bolt"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let quiet := [
     .revealLibrary .untilNonland (.put .revealed) .announced,
-    .revealLibrary .untilNonland (.exile .top .forLater .anyManaThisTurn) .announced,
-    .revealLibrary .untilNonland
-      (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
-        (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
-      .you,
-    .revealLibrary (.top 1)
-      (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
-        (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
-      .announced,
-    .revealLibrary (.top 3) (.put .randomCreature) .eachOpponent]
-  crossed.all fun r =>
+    .revealLibrary .untilNonland (.exile .top .forLater .anyManaThisTurn) .announced]
+  quiet.all fun r =>
     let g := step g0 r
-    libNames g caster == libNames g0 caster &&
-      libNames g opp == libNames g0 opp &&
-      !g.grimaImpulseReady && g.log.size == g0.log.size
+    libNames g caster == libNames g0 caster && libNames g opp == libNames g0 opp &&
+      g.log.size == g0.log.size
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let offered := step g0 (.revealLibrary .untilNonland
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .you)
+  let g := mustApply offered caster .decline
+  (match offered.pending with
+    | .mayResolve p => p == caster
+    | _ => false) &&
+    inExile g "Reveal Tale" &&
+    (g.objects.any fun o =>
+      o.name == "Reveal Tale" && (o.playPermission.bind (fun p => some p.anyMana)) == some true) &&
+    inLib g caster "Reveal Bear" && inLib g caster "Reveal Plot"
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary (.top 1)
+    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced)
+  libNames g caster == libNames g0 caster && libNames g opp == libNames g0 opp &&
+    g.log.size > g0.log.size
+
+#guard
+  let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
+  let g := step g0 (.revealLibrary (.top 3) (.put .randomCreature) .eachOpponent)
+  !onBattlefield g "Reveal Bolt" && inLib g opp "Reveal Bolt" &&
+    inLib g opp "Reveal Plot" && logContains g "No creature card was revealed"
 
 /- The follow-up resolutions do nothing on their own. `revealLibrary` is
 what gives them the revealed cards. -/

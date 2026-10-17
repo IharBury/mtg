@@ -7,7 +7,8 @@ import Mtg.Engine.Fixture
 Who becomes prepared is an `ObjectSelector`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains become prepared. A creature that is already
-prepared, or has no prepare spell, does not. Any other selector does nothing.
+prepared, or has no prepare spell, does not. Any other permanent the selector
+names becomes prepared. A card or a hand does not.
 -/
 
 namespace Mtg.Engine.BecomePreparedTests
@@ -239,19 +240,21 @@ the source is still there. -/
     (some (pid board "Bear"))
   !isPrepared g "Angel" && logContains g "The target is no longer legal"
 
-/- Any other selector does nothing. -/
+/- No recorded cause, a player, and a hand do nothing. Creatures you control
+become prepared. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Angel"
   let sid := some (pid g0 "Bear")
   let tgt := #[Target.permanent (pid g0 "Angel")]
-  let crossed := [
+  let quiet := [
     step g0 (.becomePrepared .cause) sid tgt,
-    step g0 (.becomePrepared .creaturesYouControl) sid tgt,
     step g0 (.becomePrepared (.player .you)) sid tgt,
     step g0 (.becomePrepared .hand) sid tgt]
-  crossed.all fun g =>
+  let yours := step g0 (.becomePrepared .creaturesYouControl) sid tgt
+  quiet.all (fun g =>
     !isPrepared g "Angel" && !isPrepared g "Bear" &&
-      !(obj g "Grasp").status.prepared && g.log == g0.log
+      !(obj g "Grasp").status.prepared && g.log == g0.log) &&
+    isPrepared yours "Angel" && !isPrepared yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared ==

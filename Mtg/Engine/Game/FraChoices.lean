@@ -940,6 +940,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         acc + (g.object! id).printed.manaValue) 0
     return (g.loseLife p mv).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
+  | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
+    if !eligible.contains id then throw "That card can't be cast this way"
+    let some o := g.findObject? id | throw "no such object"
+    if !withoutPaying && !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+      throw s!"{o.name} cannot be cast; add mana first, or decline"
+    return (g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
+      (exileInstantSorceryInstead := exileInstead)).finishFraChoice
+  | .mayCastCards _ _ _, .decline =>
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+  | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastFromGraveyard eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -1242,6 +1252,17 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .kingpinMayPay2Life => .decline
   | .daredevilMayExile _ => .decline
   | .mayChangeSpellTarget .. => .decline
+  | .mayCastCards eligible withoutPaying _ =>
+    if withoutPaying then
+      match eligible[0]? with
+      | some id => .cast id
+      | none => .decline
+    else
+      match eligible.find? (fun id =>
+        (g.findObject? id).any (fun o =>
+          (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
+      | some id => .cast id
+      | none => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>

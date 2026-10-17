@@ -5,7 +5,7 @@ import Mtg.Engine.Fixture
 
 The printed mana types, and those types once for each charge counter on
 the source. How many times is a `NumberSelector`. A source that has left
-uses its last-known charge counters. Any other selector adds nothing.
+uses its last-known charge counters. Zero times adds nothing.
 -/
 
 namespace Mtg.Engine.AddManaTests
@@ -97,8 +97,8 @@ def addStep (g : Game) (r : TriggeredAbility.TriggerResolution)
 #guard (SharedTrigger.timing .addGreenPerChargeCounter).resolution ==
   .addMana #[.colored .green] .perChargeCounter
 
-/- Adding the types twice repeats them. Zero times, and any other selector,
-adds nothing. -/
+/- Adding the types twice repeats them. Zero times adds nothing.
+A count of other creatures adds that many. -/
 #guard
   let g := addStep afterDraw (.addMana #[.colored .red] (.fixed 2))
   manaOf g (.colored .red) == 2
@@ -108,6 +108,17 @@ adds nothing. -/
   let other := addStep afterDraw (.addMana #[.colored .red] .perOtherCreature)
   manaOf zero (.colored .red) == 0 && zero.log.size == afterDraw.log.size &&
     manaOf other (.colored .red) == 0 && other.log.size == afterDraw.log.size
+
+#guard
+  let bear : CardDef := {
+    name := "Mana Bear"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := addStep g0 (.addMana #[.colored .red] .perOtherCreature)
+  manaOf g (.colored .red) == 1
 
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .addMana #[.colored .red] .perOtherCreature } == "add mana"

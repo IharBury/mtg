@@ -195,6 +195,22 @@ use `queueReflexive`. -/
   g.stack.isEmpty &&
     logContains g "reflexive ability has no legal target and is removed"
 
+/- A follow-up that is not a modeled reflexive is still put on the stack,
+and resolving it applies that follow-up. -/
+#guard
+  let g0 := afterDraw
+  let hand := (g0.player caster).hand.size
+  let g := step g0 (.queueReflexive (.draw (.fixed 1)))
+  let queued :=
+    match g.stack.back?.bind (fun e => g.findObject? e.objectId) with
+    | some o =>
+      o.reflexiveResolution == some (.draw (.fixed 1)) && o.abilityEffect.isNone
+    | none => false
+  let resolved := passBoth g
+  queued && g.stack.size == g0.stack.size + 1 &&
+    logContains g "reflexive ability is put on the stack" &&
+    (resolved.player caster).hand.size == hand + 1
+
 /- Each resolution arms one attack pump for the rest of this turn. -/
 #guard
   let g := step afterDraw (.queueReflexive (.pump .perPlains .perPlains .target))

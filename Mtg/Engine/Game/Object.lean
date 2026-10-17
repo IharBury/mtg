@@ -64,6 +64,9 @@ structure GameObject where
   abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
   triggeredAbility : Option TriggeredAbility := none
+  /-- Follow-up a generic `queueReflexive` resolves as. Printed MSH reflexes
+  use `abilityEffect` and leave this empty. -/
+  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
   /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
   /-- Last known power of a trigger source (CR 113.7a / 608.2g). -/

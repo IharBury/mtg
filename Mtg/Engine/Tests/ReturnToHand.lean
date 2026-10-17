@@ -191,8 +191,8 @@ A source that has left, or no source, is reported. -/
     (r := some (.returnToHand .source))
   logContains g "The ability's source is no longer in the graveyard"
 
-/- A selector that is not a printed return does nothing. The announced
-permanent without the return note stays where it is. -/
+/- A hand is not a permanent, so it returns nothing. The announced
+permanent returns to its owner's hand even without the return note. -/
 #guard
   let g0 := putInGraveyard afterDraw bear caster
   let id := namedIn g0 (g0.player caster).graveyard "Grave Bear"
@@ -207,8 +207,9 @@ permanent without the return note stays where it is. -/
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none
     #[Target.permanent id]
     (some (.returnToHand .permanent))
-  onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
-    !(logContains g "is returned")
+  !onBattlefield g "Grave Relic" && inHand g owner "Grave Relic" &&
+    !g.returnedPermanentThisWay &&
+    logContains g "Grave Relic is returned to Nissa's hand"
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .returnToHand .hand } ==
   "return it to a hand"

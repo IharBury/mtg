@@ -287,24 +287,32 @@ attach; another artifact is not. An empty hand skips the choice. -/
       g.pending == .none && g.putArtifactThisWay.isNone &&
         (g.player caster).hand.contains id
 
-/- Any other selector puts nothing. A printed card with an entry it does
-not use puts nothing. An empty linked exile puts nothing. -/
+/- A hand, a player, an untargeted graveyard card, a battlefield source,
+a missing cause, an empty linked exile, and lands that were not exiled
+put nothing. The top card of the library enters. -/
 #guard
   let g0 := putInGraveyard (addPermanent afterDraw bear caster caster) beast caster
   let sid := (onBoard g0 "Test Bear").map (·.id)
-  let crossed := [
+  let quiet := [
     putStep g0 (.put .target) sid,
     putStep g0 (.put .hand) sid,
     putStep g0 (.put (.player .you)) sid,
     putStep g0 (.put .graveyardCard) sid,
-    putStep g0 (.put .top) sid,
     putStep g0 (.put .source) sid,
     putStep g0 (.put .cause) sid,
     putStep g0 (.put .linkedExile (how := .tapped)) sid,
     putStep g0 (.put .notedLands) sid]
-  crossed.all fun g =>
+  quiet.all fun g =>
     (onBoard g "Test Bear").isSome && (onBoard g "Costly Beast").isNone &&
       g.pending == .none && g.log == g0.log && g.exiledIdsThisWay == g0.exiledIdsThisWay
+
+#guard
+  let g0 := putInGraveyard (addPermanent afterDraw bear caster caster) beast caster
+  let before := (g0.player caster).library.size
+  let g := putStep g0 (.put .top) ((onBoard g0 "Test Bear").map (·.id))
+  (g.player caster).library.size == before - 1 &&
+    (onBoard g "Test Bear").isSome && (onBoard g "Costly Beast").isNone &&
+    logContains g "is put onto the battlefield"
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := .put .linkedExile } ==

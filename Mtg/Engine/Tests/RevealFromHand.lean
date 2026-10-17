@@ -213,7 +213,9 @@ cards stay in hand. A missing player reveals nothing. -/
   let g := step afterDraw countedDiscard
   handSize g opp == handSize afterDraw opp && g.log == afterDraw.log
 
-/- The other combinations reveal nothing. -/
+/- Revealing a hand, then discarding, asks the announced player to
+discard. Revealing that count, then exiling until the source leaves,
+exiles the chosen creature. -/
 #guard
   let g0 := addPermanent (withSource afterDraw) bear opp opp
   let src := obj g0 "Cloak Source"
@@ -221,13 +223,24 @@ cards stay in hand. A missing player reveals nothing. -/
   let targets := #[Target.player opp, Target.permanent victim.id]
   let crossed := step g0 (.revealFromHand .hand (.discard (.cards 1 .targetOpponent)))
     (some src.id) targets
+  onBattlefield crossed "Reveal Bear" && !inExile crossed "Reveal Bear" &&
+    logContains crossed "reveals their hand" &&
+    match crossed.pending with
+    | .chooseDiscardCard p _ => p == opp
+    | _ => false
+
+#guard
+  let g0 := addPermanent (withSource afterDraw) bear opp opp
+  let src := obj g0 "Cloak Source"
+  let victim := obj g0 "Reveal Bear"
+  let ab : TriggeredAbility :=
+    .triggered .enter (Effect.ofTrigger (.onPermanent .creature .exile))
   let swapped := step g0
     (.revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves))
-    (some src.id) targets
-  onBattlefield crossed "Reveal Bear" && !inExile crossed "Reveal Bear" &&
-    crossed.log == g0.log &&
-    onBattlefield swapped "Reveal Bear" && !inExile swapped "Reveal Bear" &&
-    swapped.log == g0.log
+    (some src.id) #[Target.permanent victim.id] ab
+  inExile swapped "Reveal Bear" && !onBattlefield swapped "Reveal Bear" &&
+    logContains swapped "reveals" &&
+    (obj swapped "Cloak Source").linkedExile.size == 1
 
 #guard TriggeredAbility.resolution cloakAbility == exileUntil
 #guard TriggeredAbility.resolution klawAbility == countedDiscard

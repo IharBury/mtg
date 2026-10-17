@@ -6,7 +6,8 @@ import Mtg.Engine.Fixture
 The controller, the announced player, and the player who lost life mill
 cards. The controller can remember the cards milled, and each opponent's
 mill can be seen by the next step. How many is a `NumberSelector` and who
-mills is a `PlayerSelector`. Any other selector mills nothing.
+mills is a `PlayerSelector`. A count and a player are read together.
+A count of zero mills nothing.
 -/
 
 namespace Mtg.Engine.MillTests
@@ -306,28 +307,45 @@ ability and clears the note. -/
   !g.opponentsMilledThisWay && g.stack.isEmpty &&
     !(logContains g "reflexive ability")
 
-/- A combination that is not printed mills nothing. -/
+/- A count, a player, and a note are read together. -/
 #guard
   let g0 := {
     putOnLibrary (putOnLibrary afterDraw elf caster) bolt opp with
     milledIdsThisWay := #[⟨1⟩]
     opponentsMilledThisWay := true }
-  let crossed := [
-    .mill (.fixed 2) .target (note := .milledCards),
-    .mill (.fixed 2) .eachOpponent,
-    .mill .thatManyLost,
-    .mill (.fixed 2) .thatPlayer,
-    .mill (.fixed 2) .eachOpponent .milledCards,
-    .mill (.fixed 2) .you .opponentsMilled,
-    .mill .perOtherCreature]
-  crossed.all fun r =>
-    let g := step g0 r #[Target.player opp]
+  let run (r : TriggeredAbility.TriggerResolution) : Game :=
+    step g0 r #[Target.player opp]
       (lastKnownPower := some 2) (lastKnownToughness := some 1)
       (ab := playerMill)
-    libSize g caster == libSize g0 caster &&
-      libSize g opp == libSize g0 opp &&
-      g.milledIdsThisWay == #[⟨1⟩] && g.opponentsMilledThisWay &&
-      g.log.size == g0.log.size
+  let targetNoted := run (.mill (.fixed 2) .target (note := .milledCards))
+  let eachOpp := run (.mill (.fixed 2) .eachOpponent)
+  let thatMany := run (.mill .thatManyLost)
+  let thatSeat := run (.mill (.fixed 2) .thatPlayer)
+  let eachNoted := run (.mill (.fixed 2) .eachOpponent .milledCards)
+  let youNoted := run (.mill (.fixed 2) .you .opponentsMilled)
+  let none := run (.mill .perOtherCreature)
+  inGraveyard targetNoted opp "Mill Bolt" &&
+    libSize targetNoted caster == libSize g0 caster &&
+    libSize targetNoted opp == libSize g0 opp - 2 &&
+    noted targetNoted "Mill Bolt" && targetNoted.opponentsMilledThisWay &&
+    inGraveyard eachOpp opp "Mill Bolt" &&
+    libSize eachOpp caster == libSize g0 caster &&
+    eachOpp.milledIdsThisWay == #[⟨1⟩] && eachOpp.opponentsMilledThisWay &&
+    inGraveyard thatMany caster "Mill Elf" &&
+    libSize thatMany opp == libSize g0 opp &&
+    thatMany.milledIdsThisWay == #[⟨1⟩] && thatMany.opponentsMilledThisWay &&
+    inGraveyard thatSeat opp "Mill Bolt" &&
+    libSize thatSeat caster == libSize g0 caster &&
+    inGraveyard eachNoted opp "Mill Bolt" && noted eachNoted "Mill Bolt" &&
+    eachNoted.opponentsMilledThisWay &&
+    inGraveyard youNoted caster "Mill Elf" &&
+    libSize youNoted opp == libSize g0 opp &&
+    !youNoted.opponentsMilledThisWay &&
+    youNoted.milledIdsThisWay == #[⟨1⟩] &&
+    libSize none caster == libSize g0 caster &&
+    libSize none opp == libSize g0 opp &&
+    none.milledIdsThisWay == #[⟨1⟩] && none.opponentsMilledThisWay &&
+    none.log.size == g0.log.size
 
 /- Printed phrases and resolutions stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution (.onDrawSecondMillPlayer 3) == .mill (.fixed 3) .target

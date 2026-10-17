@@ -258,20 +258,23 @@ creature you already control skips the bottom step. -/
     g.pending == .none &&
     !logContains g "bottom of their library"
 
-/- Any other selector puts nothing. -/
+/- No recorded cause, a player, and a hand put nothing. Creatures you control
+go on the bottom. The announced permanent goes on top. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
   let tgt := #[Target.permanent (pid g0 "Titan")]
-  let crossed := [
+  let quiet := [
     step g0 (.putOnLibrary .top .cause) sid tgt,
-    step g0 (.putOnLibrary .bottom .creaturesYouControl) sid tgt,
     step g0 (.putOnLibrary .top (.player .you)) sid tgt,
-    step g0 (.putOnLibrary .bottom .hand) sid tgt,
-    step g0 (.putOnLibrary .top .permanent) sid tgt]
-  crossed.all fun g =>
+    step g0 (.putOnLibrary .bottom .hand) sid tgt]
+  let bottom := step g0 (.putOnLibrary .bottom .creaturesYouControl) sid tgt
+  let top := step g0 (.putOnLibrary .top .permanent) sid tgt
+  quiet.all (fun g =>
     onBoard g "Titan" && onBoard g "Bear" && onBoard g "Grasp" &&
-      g.pending == .none && g.log == g0.log
+      g.pending == .none && g.log == g0.log) &&
+    !onBoard bottom "Titan" && onBoard bottom "Bear" &&
+    !onBoard top "Titan" && onBoard top "Bear"
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard (.putOnLibrary .top : TriggeredAbility.TriggerResolution) ==
