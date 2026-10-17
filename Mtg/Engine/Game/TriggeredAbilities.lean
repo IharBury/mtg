@@ -640,6 +640,48 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Whether `cost` can be paid as this ability resolves.
+An `or` can be paid when any of its costs can. Mana needs a pool that
+can pay it. A sacrifice or a discard needs a legal object. -/
+def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (cost : TriggeredAbility.CostSelector) : Bool :=
+  match cost with
+  | .mana symbols =>
+    (g.player controller).manaPool.canPay { symbols := symbols }
+  | .anotherCreature =>
+    match sourceId with
+    | none => false
+    | some sid => (g.creaturesControlledBy controller).any (·.id != sid)
+  | .anotherCreatureOrArtifact =>
+    match sourceId with
+    | none => false
+    | some sid =>
+      (g.permanentsOf controller).any (fun o =>
+        o.id != sid && (o.isCreature || o.printed.isArtifact))
+  | .artifact =>
+    (g.permanentsOf controller).any (·.printed.isArtifact)
+  | .discard =>
+    !(g.player controller).hand.isEmpty
+  | .discardNonland =>
+    (g.player controller).hand.any (fun id =>
+      (g.findObject? id).any (!·.printed.isLand))
+  | .or costs =>
+    let rec go : List TriggeredAbility.CostSelector → Bool
+      | [] => false
+      | c :: rest => costPayable g controller sourceId c || go rest
+    go costs
+
+/-- Offer `pick` as an optional payment. Nothing legal skips the follow-up
+of a `may`. Outside `may`, paying finishes the ability. Gaining no life is
+that empty follow-up. -/
+def offerMayPayPick (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (pick : CostPick) (msg : String) : Game :=
+  let sid := sourceId.getD ⟨0⟩
+  if (g.costPickCandidates controller sid pick).isEmpty then
+    g.failMayThen
+  else
+    g.beginFraChoice controller (.mayPayPickThen pick (.gainLife 0) sid) msg
+
 /-- Offer to pay {2} to copy the nontoken artifact that caused this trigger.
 An announced permanent is used when one was chosen; otherwise the recorded
 cause. A token, a nonartifact, or the source itself skips the copy. -/
@@ -4365,19 +4407,43 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else
           g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
             s!"{(g.player controller).name} may sacrifice another creature or artifact"
-    | .artifactOrDiscard =>
-      { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
-        s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
-    | .artifactOrDiscardNonland =>
-      match sourceId with
-      | some sid =>
-        if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then
-          g.failMayThen
-        else
-          g.beginFraChoice controller
-            (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
-            s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
-      | none => g.failMayThen
+    | .artifact =>
+      g.offerMayPayPick controller sourceId .sacrificeArtifact
+        s!"{(g.player controller).name} may sacrifice an artifact"
+    | .discard =>
+      g.offerMayPayPick controller sourceId .discardACard
+        s!"{(g.player controller).name} may discard a card"
+    | .discardNonland =>
+      g.offerMayPayPick controller sourceId .discardNonland
+        s!"{(g.player controller).name} may discard a nonland card"
+    | .or costs =>
+      -- Sacrificing an artifact or discarding is one choice of an object.
+      -- Either order is that payment.
+      if costs == [.artifact, .discard] || costs == [.discard, .artifact] then
+        { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
+          s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
+      else if costs == [.artifact, .discardNonland] ||
+          costs == [.discardNonland, .artifact] then
+        match sourceId with
+        | some sid =>
+          if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then
+            g.failMayThen
+          else
+            g.beginFraChoice controller
+              (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
+              s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
+        | none => g.failMayThen
+      else
+        match costs.filter (g.costPayable controller sourceId) with
+        | [] => g.failMayThen
+        | [c] =>
+          g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+            lastKnownPower lastKnownToughness sourceName
+            (some (.pay c)) sequencedCardPower
+        | cs =>
+          g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+            lastKnownPower lastKnownToughness sourceName
+            (some (.or (cs.map fun c => .pay c))) sequencedCardPower
   | .queueReflexive followup =>
     match TriggeredAbility.TriggerResolution.queuedReflexive followup with
     | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0

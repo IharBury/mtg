@@ -1639,7 +1639,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo =>
+  | .may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
@@ -1657,7 +1657,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "fight"
   | .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .may (.pay .artifactOrDiscardNonland) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
+  | .may (.pay (.or [.artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
