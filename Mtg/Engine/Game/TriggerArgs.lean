@@ -262,7 +262,8 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .nonlandMvAtMost _ | .notedLands | .discardedLand | .landFromHand
     | .artifactFromHand | .randomCreature | .forest | .basicLandOnTop
     | .dragon | .creatureMvAtMost _ | .creatureFromHand _ _
-    | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard =>
+    | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
+    | .card | .nonland =>
     none
 
 /-- How many objects `what` names.

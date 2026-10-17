@@ -822,6 +822,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           "may sacrifice another creature or artifact: choose <id>, or decline"
         | .maySacrificeThese n _ =>
           s!"may sacrifice {n}: choose <id> ..., or decline"
+        | .mayDiscardThese n _ =>
+          s!"may discard {n}: choose <id> ..., or decline"
         | .mayPaySymbolsThen .. => "may pay the cost (accept), or decline"
         | .attachAnyEquipment _ eligible =>
           s!"attach any number of Equipment ({eligible.size}): choose <id> ..., or decline"
