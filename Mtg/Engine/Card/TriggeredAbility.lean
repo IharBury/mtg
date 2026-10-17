@@ -896,7 +896,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .ifElse .scriedOrSurveilledThisTurn
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
-  | .«if» .noPlaneswalker (.sacrifice (.sacrificedSource .controllerSacrifices)) =>
+  | .«if» (.not .controlsPlaneswalker) (.sacrifice (.sacrificedSource .controllerSacrifices)) =>
     "if you don't control a planeswalker, sacrifice this creature"
   | .«if» (.otherForestsAtLeast 5) (.pump (.fixed 3) (.fixed 3) .target) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
@@ -1065,10 +1065,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | none => "it deals damage divided as you choose"
   | .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
-  | .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] =>
+  | .sequence [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
-      .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] =>
+      .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] =>
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
@@ -1200,7 +1200,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» .targetIsCreature (.putCounters (.ofKind .plusOnePlusOne) .permanent),
       .«if» .targetIsPlaneswalker (.putCounters (.ofKind .loyalty) .permanent)] =>
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
-  | .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] =>
+  | .sequence [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
@@ -1263,7 +1263,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
     | _ => "you may pay. If you do, draw a card"
-  | .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand) =>
+  | .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand) =>
     "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .exile what how note =>
     match what, how, note with
@@ -1347,7 +1347,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "remove counters"
   | .«if» .removedHope (.draw (.fixed 1)) =>
     "if a hope counter was removed this way, draw a card"
-  | .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)]) =>
+  | .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)]) =>
     "if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .tap .humans =>
     "tap any number of untapped Humans you control"
@@ -1741,7 +1741,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a loyalty counter on it if it's a planeswalker"
   | .winTheGame =>
     "you win the game"
-  | .«if» .libraryEmpty .winTheGame =>
+  | .«if» (.not .libraryNotEmpty) .winTheGame =>
     "if your library has no cards in it, you win the game"
   | .shuffleSource =>
     "its owner shuffles it into their library"

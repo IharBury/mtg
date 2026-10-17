@@ -661,12 +661,12 @@ inductive SharedTrigger where
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card from your hand on the bottom if you don't
   control a legendary creature.
-  Resolves as `.sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`. -/
+  Resolves as `.sequence [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
   Resolves as
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`. -/
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`. -/
   | removeHopeDrawSac
   /-- Tap any number of untapped Humans you control. Draw a card for each
   Human tapped this way.
@@ -895,7 +895,8 @@ inductive SharedTrigger where
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
   `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`. -/
   | pumpOrCounterIfScried
-  /-- If you don't control a planeswalker, sacrifice the source. -/
+  /-- If you don't control a planeswalker, sacrifice the source.
+  Resolves as `.«if» (.not .controlsPlaneswalker) (.sacrifice (.sacrificedSource .controllerSacrifices))`. -/
   | sacrificeSourceIfNoPlaneswalker
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
@@ -909,7 +910,7 @@ inductive SharedTrigger where
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
-  `.sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
+  `.sequence [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/
