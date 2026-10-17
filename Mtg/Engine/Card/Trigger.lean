@@ -110,12 +110,31 @@ def toNat : TriggerReflexiveKind → Nat
 
 end TriggerReflexiveKind
 
+/-- Which announced target `PlayerSelector.target` names.
+`.player` is that player. `.opponent` narrows it to an opponent.
+`.controller` is the controller the targeted permanent had. -/
+inductive PlayerTarget where
+  /-- The announced player.
+  An illegal target mills nothing.
+  `.mill (.fixed n) .target`. -/
+  | player
+  /-- The announced opponent.
+  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
+  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`. -/
+  | opponent
+  /-- The controller the targeted permanent had on the battlefield.
+  Destroy may already have moved it.
+  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`. -/
+  | controller
+deriving Repr, Inhabited, BEq
+
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
 `TriggerResolution.loseLife` loses life, who
 `TriggerResolution.mill` mills, whose library
 `TriggerResolution.revealLibrary` looks at, and who
-`TriggerResolution.amass` amasses for. -/
+`TriggerResolution.amass` amasses for.
+An announced target is `.target`. `which` is the restriction on that target. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
@@ -123,10 +142,6 @@ inductive PlayerSelector where
   Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
   Each opponent mills `n` is `.mill (.fixed n) .eachOpponent`. -/
   | eachOpponent
-  /-- The announced opponent.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player .targetOpponent)`.
-  That player loses `n` life is `.loseLife (.fixed n) .targetOpponent`. -/
-  | targetOpponent
   /-- The controller of the ability.
   That player draws `n` is `.draw (.fixed n)` (`.you`).
   That player loses `n` life is `.loseLife (.fixed n)`.
@@ -144,10 +159,17 @@ inductive PlayerSelector where
   Nothing enchanted draws nothing.
   `.draw (.fixed 1) .enchantedController`. -/
   | enchantedController
-  /-- The announced player.
+  /-- The announced target `which` names.
+  The announced player is `.target` (`.player`).
   An illegal target mills nothing.
-  `.mill (.fixed n) .target`. -/
-  | target
+  `.mill (.fixed n) .target`.
+  The announced opponent is `.target .opponent`.
+  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
+  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
+  The targeted permanent's controller is `.target .controller`.
+  Destroy may already have moved it.
+  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`. -/
+  | target (which : PlayerTarget := .player)
   /-- The player who lost life. That player's seat is the trigger's
   last-known toughness. A missing seat mills nothing.
   `.mill .thatManyLost .thatPlayer`. -/
@@ -164,10 +186,6 @@ inductive PlayerSelector where
   No destruction amasses nothing.
   `.amass .notedPower (who := .notedController)`. -/
   | notedController
-  /-- The controller the targeted permanent had on the battlefield.
-  Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .targetController)`. -/
-  | targetController
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -301,12 +319,12 @@ inductive ObjectSelector where
   /-- The player `who` names.
   The controller is `.player .you`.
   Each opponent is `.player .eachOpponent`.
-  The announced opponent is `.player .targetOpponent`. -/
+  The announced opponent is `.player (.target .opponent)`. -/
   | player (who : PlayerSelector)
   /-- `n` cards from the hand of `who`.
   The controller discards `n` is `.cards n` (`.you`).
   Each opponent discards one is `.cards 1 .eachOpponent`.
-  The announced opponent discards `n` is `.cards n .targetOpponent`.
+  The announced opponent discards `n` is `.cards n (.target .opponent)`.
   `TriggerResolution.discard` reads this selector. -/
   | cards (n : Nat := 1) (who : PlayerSelector := .you)
   /-- The controller's hand. The number discarded is noted for a later step.
@@ -1618,13 +1636,13 @@ inductive TriggerResolution where
   `.dealDamage .lastKnownPower .permanent .excess`.
   Damage to each opponent equal to the hand discarded by an earlier step is
   `.dealDamage .discardedHand (.player .eachOpponent)`.
-  `n` damage to the announced opponent is `.dealDamage (.fixed n) (.player .targetOpponent)`.
+  `n` damage to the announced opponent is `.dealDamage (.fixed n) (.player (.target .opponent))`.
   `n` damage to the announced target is `.dealDamage (.fixed n) .target`.
   `n` damage to each creature that is not `subtype`, and to each opponent, is
   `.dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype)`.
   Damage equal to the greatest mana value among artifacts you control, to
   the announced opponent, is
-  `.dealDamage .greatestArtifactMv (.player .targetOpponent)`.
+  `.dealDamage .greatestArtifactMv (.player (.target .opponent))`.
   Damage equal to the mana value of the spell that caused this, to the
   announced player or permanent, is `.dealDamage .spellManaValue .target`.
   The trigger's last-known power to the announced player or permanent, offered
@@ -1672,7 +1690,7 @@ inductive TriggerResolution where
   One card from the controller is `.discard` (`.cards`).
   Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
   Each opponent discards one is `.discard (.cards 1 .eachOpponent)`.
-  The announced opponent discards `n` is `.discard (.cards n .targetOpponent)`.
+  The announced opponent discards `n` is `.discard (.cards n (.target .opponent))`.
   The controller's hand, noting how many cards were discarded, is
   `.discard .hand`.
   Optional as `.may (.discard .hand) (.sequence [])`. Declining leaves the note
@@ -1980,7 +1998,7 @@ inductive TriggerResolution where
   Tap and a stun counter is
   `.sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)]`.
+  `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .target .controller)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
@@ -2260,14 +2278,14 @@ inductive TriggerResolution where
   `.createTokens .treasure .chosenCreatureType false`.
   Zabu is `.createTokens .treasure (.fixed 1) false .zabu`.
   The announced opponent creates The Void with
-  `.createTokens .treasure (.fixed 1) false .theVoid .targetOpponent`.
+  `.createTokens .treasure (.fixed 1) false .theVoid (.target .opponent)`.
   Redwing is `.createTokens .treasure (.fixed 1) false .redwing`.
   An Alien, remembering invasion counters, is
   `.createTokens .treasure (.fixed 1) false .alien (note := .invasion)`.
   A Sturdy Shield, remembered for a later attach, is
   `.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember)`.
   The target's controller creates a Treasure with
-  `.createTokens .treasure (.fixed 1) false (who := .targetController)`.
+  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
   this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
   Any other count creates that many of the named token for the players
@@ -2537,7 +2555,7 @@ inductive TriggerResolution where
   A source that has already left still reveals; nothing is exiled.
   The announced player reveals one card plus one for each creature card in
   your graveyard. You choose one of them and that player discards it, with
-  `.revealFromHand .onePlusCreatureCards (.discard (.cards 1 .targetOpponent))`.
+  `.revealFromHand .onePlusCreatureCards (.discard (.cards 1 (.target .opponent)))`.
   A smaller hand is revealed in full.
   Any other combination reveals that hand, then resolves `thenDo`. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
@@ -2567,7 +2585,7 @@ inductive TriggerResolution where
   Losing 0 life does nothing.
   You lose `n` life is `.loseLife (.fixed n)`.
   The announced opponent loses `n` life is
-  `.loseLife (.fixed n) .targetOpponent`.
+  `.loseLife (.fixed n) (.target .opponent)`.
   Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
   You lose 1 life for each burden counter on the source is
   `.loseLife .perBurden`.
@@ -2644,7 +2662,7 @@ Paying up to three times is
 `.chooseModes trickArrowModes .alreadyChosen`. -/
 def trickArrowModes : List TriggerResolution :=
   [.cant .beBlocked,
-   .dealDamage (.fixed 2) (.player .targetOpponent),
+   .dealDamage (.fixed 2) (.player (.target .opponent)),
    .sequence [.discard, .draw (.fixed 1)]]
 
 /-- Which reflexive `follow` queues as a printed MSH ability. Any other
@@ -2921,7 +2939,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .amass (.fixed n) }
   | .opponentLosesYouGain n =>
     { targeting := .of .opponent
-      resolution := .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed n)] }
+      resolution := .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed n)] }
   | .grantHexproofWhileRemains =>
     { targeting := .of .creatureYouControl
       resolution := .grant .hexproofWhileSource .target }
@@ -2962,7 +2980,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) }
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     { targeting := .of .opponent
-      resolution := .dealDamage .greatestArtifactMv (.player .targetOpponent) }
+      resolution := .dealDamage .greatestArtifactMv (.player (.target .opponent)) }
   | .spell s =>
     { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
       resolution := TriggerResolution.ofSpell s.resolution }
@@ -3138,7 +3156,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     match who with
     | .each => { resolution := .discard (.cards n .eachOpponent) }
     | .target =>
-      { targeting := .of .opponent, resolution := .discard (.cards n .targetOpponent) }
+      { targeting := .of .opponent, resolution := .discard (.cards n (.target .opponent)) }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .mill (.fixed n) .target }
   | .investigate => { resolution := .investigate }
@@ -3188,7 +3206,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .may
         (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
   | .targetOpponentLosesLife n =>
-    { targeting := .of .opponent, resolution := .loseLife (.fixed n) .targetOpponent }
+    { targeting := .of .opponent, resolution := .loseLife (.fixed n) (.target .opponent) }
   | .drawXDiscard n =>
     { resolution := .sequence
         [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards n))] }
@@ -3382,7 +3400,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] }
   | .damageTargetOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player .targetOpponent) }
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player (.target .opponent)) }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
@@ -3492,7 +3510,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppPermanent,
       resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
         .destroy .target,
-        .createTokens .treasure (.fixed 1) false (who := .targetController)]) }
+        .createTokens .treasure (.fixed 1) false (who := .target .controller)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
@@ -3570,7 +3588,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .zabu }
   | .enter .oppCreatesTheVoid =>
     { events := #[.entering], targeting := .of .opponent,
-      resolution := .createTokens .treasure (.fixed 1) false .theVoid .targetOpponent }
+      resolution := .createTokens .treasure (.fixed 1) false .theVoid (.target .opponent) }
   | .enter .createSturdyShieldAttach =>
     { events := #[.entering],
       resolution := .sequence
@@ -3615,7 +3633,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
       resolution := .revealFromHand .onePlusCreatureCards
-        (.discard (.cards 1 .targetOpponent)) }
+        (.discard (.cards 1 (.target .opponent))) }
   | .enter .createRedwing =>
     { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .redwing }
   | .step .enchantedControllerDraws =>
@@ -3705,7 +3723,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .announced }
   | .watch .attacksAloneDrain =>
     { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
-      resolution := .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)] }
+      resolution := .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)] }
   | .watch .attacksAloneFirstStrikeMenace =>
     { events := #[.creatureYouControlAttacksAlone],
       resolution := .grant
@@ -3725,7 +3743,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.youTargetSomething], onceEachTurn := true, resolution := .draw (.fixed 1) }
   | .watch .villainOrArtifactDamage =>
     { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent,
-      resolution := .dealDamage (.fixed 1) (.player .targetOpponent) }
+      resolution := .dealDamage (.fixed 1) (.player (.target .opponent)) }
   | .watch .villainConniveOnce =>
     { events := #[.anotherVillainEnters], optionalOnceEachTurn := true,
       resolution := .connive .enteringVillain }
@@ -3858,7 +3876,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent)) }
+      resolution := .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) }
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
@@ -4003,7 +4021,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
-  .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))
+  .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
   .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==

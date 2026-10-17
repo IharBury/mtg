@@ -954,7 +954,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
             | none => false
           if marked then { g with permanentDealtDamageThisWay := some oid } else g
       | _ => g.logMsg "The target is no longer legal")
-  | .player .targetOpponent, .greatestArtifactMv, _ =>
+  | .player (.target .opponent), .greatestArtifactMv, _ =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid x)
@@ -963,7 +963,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
     g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
-  | .player .targetOpponent, .fixed n, _ =>
+  | .player (.target .opponent), .fixed n, _ =>
     let n := n.toNat
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.dealDamageToPlayer pid n)
@@ -1492,19 +1492,15 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     g.createMerfolkForBlueSymbols controller lastKnownPower
   | .kind, .you, .fixed n, _ =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .kind, .targetController, _, _ =>
+  | .kind, .target .controller, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the token is the one it had on the battlefield.
     let n := counted.getD 0
-    match targets[0]? with
-    | some (Target.permanent oid) =>
-      match g.findObject? (g.followMoved oid) with
-      | some o =>
-        let pid := (o.controller.orElse (fun _ => o.lastController)).getD o.owner
-        if kind == .treasure && !tapped then g.createTreasureTokens pid n
-        else g.createKindTokens pid kind n (tapped := tapped)
-      | none => g
-    | _ => g
+    match (g.collectPlayers ctx (.target .controller)).bind (·[0]?) with
+    | some pid =>
+      if kind == .treasure && !tapped then g.createTreasureTokens pid n
+      else g.createKindTokens pid kind n (tapped := tapped)
+    | none => g
   | .kind, _who, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
@@ -2188,7 +2184,7 @@ def applyDiscard (g : Game) (controller : PlayerId)
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
-  | .cards n .targetOpponent =>
+  | .cards n (.target .opponent) =>
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
       | Target.player pid => g.beginDiscardCards #[pid] n
@@ -2926,7 +2922,7 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let g := g.mill controller n.toNat
     let after := (g.player controller).graveyard
     { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .fixed n, .target, .none =>
+  | .fixed n, .target .player, .none =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n.toNat)
   | .thatManyLost, .thatPlayer, .none =>
     match lastKnownPower, lastKnownToughness with
@@ -2943,7 +2939,7 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
     | some n =>
       match who with
-      | .target | .targetOpponent =>
+      | .target .player | .target .opponent =>
         g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
           g.millCollected controller #[pid] n note
       | _ =>
@@ -3108,7 +3104,7 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   match amount, who with
   | .fixed n, .you =>
     g.loseLife controller n.toNat
-  | .fixed n, .targetOpponent =>
+  | .fixed n, .target .opponent =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
       g.loseLife pid n.toNat)
   | .fixed n, .eachOpponent =>
@@ -3128,7 +3124,7 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
     | some n =>
       match who with
-      | .target | .targetOpponent =>
+      | .target .player | .target .opponent =>
         g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
           g.loseLife pid n
       | _ =>
@@ -3415,7 +3411,7 @@ def applyRevealFromHand (g : Game) (controller : PlayerId)
           | none => g
         | _ => g)
         "Cloak and Dagger have left the battlefield. Nothing is exiled."
-  | .onePlusCreatureCards, .discard (.cards 1 .targetOpponent) =>
+  | .onePlusCreatureCards, .discard (.cards 1 (.target .opponent)) =>
     match targets[0]? with
     | some (Target.player pid) =>
       let n :=
@@ -3987,13 +3983,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
-  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent)) =>
+  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1))
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
-        (some (.dealDamage (.fixed 1) (.player .targetOpponent))) sequencedCardPower
+        (some (.dealDamage (.fixed 1) (.player (.target .opponent)))) sequencedCardPower
     else
       g.logMsg "Human Torch's ability has no effect"
   | .«if» cond thenDo =>
@@ -4199,7 +4195,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .revealFromHand count thenDo =>
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none
-    | .onePlusCreatureCards, .discard (.cards 1 .targetOpponent) =>
+    | .onePlusCreatureCards, .discard (.cards 1 (.target .opponent)) =>
       g.applyRevealFromHand controller sourceId targets count thenDo
     | _, _ =>
       let pids :=

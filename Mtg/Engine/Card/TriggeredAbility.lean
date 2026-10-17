@@ -891,7 +891,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
   | .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind .targetController]) =>
+      .createTokens .treasure (.fixed 1) false .kind (.target .controller)]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
@@ -928,11 +928,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"this deals damage equal to that spell's mana value to {noun}"
     | .target, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
-    | .player .targetOpponent, .greatestArtifactMv, _ =>
+    | .player (.target .opponent), .greatestArtifactMv, _ =>
       s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
     | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
       s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
-    | .player .targetOpponent, .fixed n, _ =>
+    | .player (.target .opponent), .fixed n, _ =>
       s!"this deals {n} damage to {noun}"
     | .permanent, .fixed n, _ =>
       s!"it deals {n} damage to {noun}"
@@ -989,7 +989,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .cards n .eachOpponent =>
       if n == 1 then "each opponent discards a card"
       else s!"each opponent discards {cardPhrase n}"
-    | .cards n .targetOpponent =>
+    | .cards n (.target .opponent) =>
       s!"{noun} discards {cardPhrase n}"
     | .chosenNonland =>
       s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
@@ -1219,11 +1219,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
     s!"tap {noun} and put a stun counter on it"
   | .sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind .targetController] =>
+      .createTokens .treasure (.fixed 1) false .kind (.target .controller)] =>
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
-  | .sequence [.loseLife (.fixed n) .targetOpponent, .gainLife (.fixed m)] =>
+  | .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
   | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
       .grant (.keywords k) (.youControlSubtype "Elf")] =>
@@ -1414,7 +1414,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create a colorless Equipment artifact token named Sturdy Shield"
     | .merfolk, _, .blueManaSymbols, _ =>
       "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
-    | .kind, .targetController, _, _ =>
+    | .kind, .target .controller, _, _ =>
       "they create a Treasure token"
     | .kind, .you, .fixed n, _ =>
       TokenKind.createPhrase kind n.toNat (tapped := tapped)
@@ -1592,7 +1592,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match amount, who, note with
     | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
       s!"mill {n} cards"
-    | .fixed n, .target, .none =>
+    | .fixed n, .target .player, .none =>
       s!"{noun} mills {n} cards"
     | .thatManyLost, .thatPlayer, .none =>
       "that player mills that many cards"
@@ -1663,7 +1663,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none =>
       "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-    | .onePlusCreatureCards, .discard (.cards 1 .targetOpponent) =>
+    | .onePlusCreatureCards, .discard (.cards 1 (.target .opponent)) =>
       s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
     | _, _ =>
       "reveal cards from their hand"
@@ -1702,7 +1702,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .loseLife amount who =>
     match amount, who with
     | .fixed n, .you => s!"you lose {n} life"
-    | .fixed n, .targetOpponent => s!"{noun} loses {n} life"
+    | .fixed n, .target .opponent => s!"{noun} loses {n} life"
     | .fixed n, .eachOpponent => s!"each opponent loses {n} life"
     | .perBurden, .you =>
       "you lose 1 life for each burden counter on this"

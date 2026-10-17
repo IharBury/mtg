@@ -25,7 +25,9 @@ private def recordedCauseId (g : Game) : Option ObjectId :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
 /-- Players `who` names. `.opponentHasYou` is an offer, not a recipient.
-An announced player that was not chosen is `none`. -/
+An announced player that was not chosen is `none`.
+`.target .player` and `.target .opponent` are that announced player.
+`.target .controller` is the controller the targeted permanent had. -/
 def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.PlayerSelector) :
     Option (Array PlayerId) :=
   let controller := ctx.controller
@@ -33,12 +35,24 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   match who with
   | .you => one controller
   | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
-  | .target | .targetOpponent =>
-    match ctx.targets.findSome? fun
-      | Target.player pid => some pid
-      | _ => none with
-    | some pid => one pid
-    | none => none
+  | .target which =>
+    match which with
+    | .player | .opponent =>
+      match ctx.targets.findSome? fun
+        | Target.player pid => some pid
+        | _ => none with
+      | some pid => one pid
+      | none => none
+    | .controller =>
+      match ctx.targets.findSome? fun
+        | Target.permanent oid => some oid
+        | _ => none with
+      | some oid =>
+        match g.findObject? (g.followMoved oid) with
+        | some o =>
+          one ((o.controller.orElse (fun _ => o.lastController)).getD o.owner)
+        | none => none
+      | none => none
   | .thatPlayer =>
     ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
   | .damagedPlayer =>
@@ -58,16 +72,6 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       | none => none
   | .notedController =>
     if g.destroyedForAmassThisWay then g.amassControllerThisWay.map (#[·]) else none
-  | .targetController =>
-    match ctx.targets.findSome? fun
-      | Target.permanent oid => some oid
-      | _ => none with
-    | some oid =>
-      match g.findObject? (g.followMoved oid) with
-      | some o =>
-        one ((o.controller.orElse (fun _ => o.lastController)).getD o.owner)
-      | none => none
-    | none => none
   | .opponentHasYou => none
 
 /-- Permanents `who` names. Selectors that name a card, a hand, or a
@@ -412,7 +416,7 @@ created for the controller. -/
 def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.TriggerToken)
     (who : TriggeredAbility.PlayerSelector) : Array PlayerId :=
   match who, token with
-  | .targetOpponent, .theVoid =>
+  | .target .opponent, .theVoid =>
     match ctx.targets.findSome? fun
       | Target.player pid => some pid
       | _ => none with

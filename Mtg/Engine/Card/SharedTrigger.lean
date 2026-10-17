@@ -639,7 +639,7 @@ inductive SharedTrigger where
   /-- Landfall from the graveyard: pay to return this to hand. -/
   | payReturnFromGy
   /-- Target opponent loses `n` life.
-  Resolves as `.loseLife (.fixed n) .targetOpponent`. -/
+  Resolves as `.loseLife (.fixed n) (.target .opponent)`. -/
   | targetOpponentLosesLife (n : Nat)
   /-- Draw X cards, where X is the mana spent to cast the triggering spell,
   then discard `n`. Resolves as
@@ -893,7 +893,7 @@ inductive SharedTrigger where
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)])`. -/
+  `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .target .controller)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
@@ -1016,8 +1016,8 @@ inductive SharedTrigger where
   First strike and menace on the creature attacking alone is
   `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
-  `.sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]`.
-  1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player .targetOpponent)`.
+  `.sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]`.
+  1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player (.target .opponent))`.
   1 damage from the equipped creature to each opponent is
   `.dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped`.
   Tapping the announced creature is `.tap .target`.
@@ -1092,7 +1092,7 @@ inductive SharedTrigger where
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   If you control another Hero, 1 damage to the announced opponent is
-  `.«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))`.
+  `.«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))`.
   Base power and toughness 6/6 and trample until end of turn is
   `.sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]`.
   A +1/+1 counter on the announced creature is

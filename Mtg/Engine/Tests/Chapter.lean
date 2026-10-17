@@ -65,7 +65,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass (.fixed 1)
 #guard (timing (.opponentLosesYouGain 1)).resolution ==
-  .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]
 #guard (timing .grantHexproofWhileRemains).resolution ==
   .grant .hexproofWhileSource .target
 #guard (timing .preventDamageWhileRemains).resolution ==
@@ -95,7 +95,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
   .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
-  .dealDamage .greatestArtifactMv (.player .targetOpponent)
+  .dealDamage .greatestArtifactMv (.player (.target .opponent))
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==

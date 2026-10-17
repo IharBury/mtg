@@ -50,7 +50,7 @@ def perBurden : TriggeredAbility.TriggerResolution :=
   .loseLife .perBurden
 
 def targetOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .loseLife (.fixed n) .targetOpponent
+  .loseLife (.fixed n) (.target .opponent)
 
 def eachOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
   .loseLife (.fixed n) .eachOpponent
@@ -194,7 +194,7 @@ The controller is unchanged. Each named player loses that much. -/
   let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 5
   let crossed := step g0 (.loseLife .perBurden .eachOpponent) (some (pid g0 "Ring"))
-  let swapped := step g0 (.loseLife .perBurden .targetOpponent)
+  let swapped := step g0 (.loseLife .perBurden (.target .opponent))
     (some (pid g0 "Ring")) (targets := #[Target.player opp])
     (ab := .onYouSacrificeTokenOppLosesLife)
   lifeOf crossed caster == lifeOf g0 caster && lifeOf crossed opp == lifeOf g0 opp - 5 &&

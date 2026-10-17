@@ -38,7 +38,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneDrain) ==
-  .sequence [.loseLife (.fixed 1) .targetOpponent, .gainLife (.fixed 1)]
+  .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneFirstStrikeMenace) ==
   .grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone
 #guard TriggeredAbility.resolution (onWatch Effect.watchFirstTapUntap) ==
@@ -50,7 +50,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
-  .dealDamage (.fixed 1) (.player .targetOpponent)
+  .dealDamage (.fixed 1) (.player (.target .opponent))
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainConniveOnce) ==
   .connive .enteringVillain
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneDamageOnce) ==
