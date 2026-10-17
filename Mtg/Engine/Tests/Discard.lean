@@ -101,19 +101,19 @@ An empty hand skips the choice. The discarded-land note is cleared. -/
 /- The announced opponent discards. No target, or an illegal one, discards
 nothing. -/
 #guard
-  let g := step afterDraw (.discard (.cards 2 .targetOpponent)) (targets := #[Target.player opp])
+  let g := step afterDraw (.discard (.cards 2 (.target .opponent))) (targets := #[Target.player opp])
   g.pendingDiscardsLeft == 2 &&
     match g.pending with
     | .chooseDiscardCard p _ => p == opp
     | _ => false
 
 #guard
-  let g := step afterDraw (.discard (.cards 2 .targetOpponent))
+  let g := step afterDraw (.discard (.cards 2 (.target .opponent)))
   g.pending == afterDraw.pending && handSize g opp == handSize afterDraw opp &&
     !(logContains g "must discard")
 
 #guard
-  let g := step afterDraw (.discard (.cards 1 .targetOpponent)) (targets := #[Target.player caster])
+  let g := step afterDraw (.discard (.cards 1 (.target .opponent))) (targets := #[Target.player caster])
   logContains g "The target is no longer legal" &&
     handSize g caster == handSize afterDraw caster &&
     match g.pending with
@@ -213,7 +213,7 @@ Spending none discards nothing and leaves an earlier note alone. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard (.cards 2 .eachOpponent) } ==
   "each opponent discards 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .opponent, resolution := .discard (.cards 2 .targetOpponent) } ==
+    { targeting := .of .opponent, resolution := .discard (.cards 2 (.target .opponent)) } ==
   "target opponent discards 2 cards"
 #guard TriggeredAbility.resolutionPhrase { resolution := .discard .hand } ==
   "discard your hand"

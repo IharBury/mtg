@@ -1448,7 +1448,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEnterEachOpponentDiscards ==
   .discard (.cards 1 .eachOpponent)
 #guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==
-  .discard (.cards 2 .targetOpponent)
+  .discard (.cards 2 (.target .opponent))
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe ==
@@ -1637,7 +1637,7 @@ end CardDef
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
-    .createTokens .treasure (.fixed 1) false (who := .targetController)])
+    .createTokens .treasure (.fixed 1) false (who := .target .controller)])
 #guard TriggeredAbility.toNotation
     (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
