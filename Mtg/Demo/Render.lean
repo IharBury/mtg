@@ -907,6 +907,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
         | .mayChangeSpellTarget .. =>
           "may choose a new target for the spell: choose <id>, or decline to keep it"
+        | .mayCastCards eligible withoutPaying exileInstead =>
+          let pay := if withoutPaying then "without paying" else "paying its cost"
+          let exile := if exileInstead then ", exiling an instant or sorcery instead" else ""
+          s!"may cast one of {eligible.size} card(s) {pay}{exile}: cast <id>, or decline"
         | .mayCastFromGraveyard eligible =>
           s!"may cast an artifact, instant, or sorcery from your graveyard ({eligible.size} card(s)): cast <id>, or decline"
         | .maySearchLibrary _ _ _ _ kind =>

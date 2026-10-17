@@ -425,13 +425,25 @@ def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
   | .mayResolve q =>
     if p != q then
       throw s!"Only {(g.player q).name} may accept"
-    let some effect := g.mayEffect | throw "Nothing to resolve"
-    let controller := g.mayController
-    let targets := g.mayTargets
-    let g := { g with pending := .none }.clearMay
-    let g := g.applyUnified controller effect targets
-    if g.pending != .none || g.over then return g
-    return g.receivePriority g.activePlayer
+    match g.mayOnAccept, g.mayContext with
+    | some action, some ctx =>
+      let g := { g with
+        pending := .none
+        mayOnAccept := none
+        mayOnDecline := none
+        mayContext := none
+        triggerSequenceRest := some { ctx with steps := [action] } }.clearMay
+      let g := g.resumeTriggerSequence
+      if g.pending != .none || g.over then return g
+      return g.receivePriority g.activePlayer
+    | _, _ =>
+      let some effect := g.mayEffect | throw "Nothing to resolve"
+      let controller := g.mayController
+      let targets := g.mayTargets
+      let g := { g with pending := .none }.clearMay
+      let g := g.applyUnified controller effect targets
+      if g.pending != .none || g.over then return g
+      return g.receivePriority g.activePlayer
   | _ => throw "Nothing to accept now"
 
 /-- Apply alternative `idx` of a pending `SpellResolution.or`. -/
@@ -660,8 +672,20 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline"
     let g := g.logMsg s!"{(g.player p).name} declines"
-    let g := { g with pending := .none }.clearMay
-    return g.receivePriority g.activePlayer
+    match g.mayOnDecline, g.mayContext with
+    | some follow, some ctx =>
+      let g := { g with
+        pending := .none
+        mayOnAccept := none
+        mayOnDecline := none
+        mayContext := none
+        triggerSequenceRest := some { ctx with steps := [follow] } }.clearMay
+      let g := g.resumeTriggerSequence
+      if g.pending != .none || g.over then return g
+      return g.receivePriority g.activePlayer
+    | _, _ =>
+      let g := { g with pending := .none, mayOnAccept := none, mayOnDecline := none, mayContext := none }.clearMay
+      return g.receivePriority g.activePlayer
   | .tapHumans q =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to tap Humans"

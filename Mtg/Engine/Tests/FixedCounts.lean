@@ -4,8 +4,8 @@ import Mtg.Engine.Fixture
 # Remaining `TriggerResolution` counts
 
 `empowerJace`, `spellsCostLess`, `lookAtTopRevealTypes`, and `becomePT`
-read a `NumberSelector`. `.fixed` is the printed number. Any other
-selector does nothing.
+read a `NumberSelector`. `.fixed` is the printed number. Every other
+count is read the same way. A count of zero still runs that action.
 -/
 
 namespace Mtg.Engine.FixedCountTests
@@ -33,7 +33,8 @@ def bearOf (g : Game) : GameObject :=
   | none => panic! "missing Count Bear"
 
 /- Empower Jace 2 creates a token and puts two loyalty counters.
-Any other selector empowers nothing. -/
+A count of other creatures is read the same way. Zero still creates
+the token and puts no loyalty. -/
 #guard
   let g := step afterDraw (.empowerJace (.fixed 2))
   match g.jacePlaneswalkerTokens caster with
@@ -42,11 +43,20 @@ Any other selector empowers nothing. -/
 
 #guard
   let g := step afterDraw (.empowerJace .perOtherCreature)
-  (g.jacePlaneswalkerTokens caster).isEmpty && g.log.size == afterDraw.log.size
+  match g.jacePlaneswalkerTokens caster with
+  | #[o] => o.status.loyaltyCounters == 0 && logContains g "Empower Jace 0"
+  | _ => false
+
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 (.empowerJace .perOtherCreature)
+  match g.jacePlaneswalkerTokens caster with
+  | #[o] => o.status.loyaltyCounters == 1
+  | _ => false
 
 #guard (SharedTrigger.timing (.empowerJace 2)).resolution == .empowerJace (.fixed 2)
 
-/- Artifact spells cost {1} less. Any other amount changes nothing. -/
+/- Artifact spells cost {1} less. Another count is read the same way. -/
 #guard
   let g := step afterDraw (.spellsCostLess (.cardType .artifact) (.fixed 1))
   (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 1)]
@@ -57,10 +67,14 @@ Any other selector empowers nothing. -/
 
 #guard
   let g := step afterDraw (.spellsCostLess (.cardType .artifact) .perOtherCreature)
-  (g.player caster).typeSpellCostLessThisTurn.isEmpty &&
-    g.log.size == afterDraw.log.size
+  (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 0)]
 
-/- Looking at the top card offers the reveal. Any other amount does not. -/
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 (.spellsCostLess (.cardType .artifact) .perOtherCreature)
+  (g.player caster).typeSpellCostLessThisTurn == #[(.artifact, 1)]
+
+/- Looking at the top card offers the reveal. Another count looks at that many. -/
 #guard
   let g := step afterDraw (.lookAtTopRevealTypes (.fixed 1) #["Creature"])
   match g.pending with
@@ -69,12 +83,21 @@ Any other selector empowers nothing. -/
 
 #guard
   let g := step afterDraw (.lookAtTopRevealTypes .perOtherCreature #["Creature"])
-  g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
+  match g.pending with
+  | .fraChoice p _ => p == caster && logContains g "looks at the top 0"
+  | _ => false
+
+#guard
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := step g0 (.lookAtTopRevealTypes .perOtherCreature #["Creature"])
+  match g.pending with
+  | .fraChoice p _ => p == caster && logContains g "looks at the top 1"
+  | _ => false
 
 #guard (SharedTrigger.timing (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])).resolution ==
   .lookAtTopRevealTypes (.fixed 4) #["Dwarf", "Equipment"]
 
-/- The source may become 3/3. Any other selector changes nothing. -/
+/- The source may become 3/3. Another count is the base that is offered. -/
 #guard
   let g0 := addPermanent afterDraw bear caster caster
   let g := step g0 (.becomePT (.fixed 3) (.fixed 3)) (some (bearOf g0).id)
@@ -85,7 +108,20 @@ Any other selector empowers nothing. -/
 #guard
   let g0 := addPermanent afterDraw bear caster caster
   let g := step g0 (.becomePT .perOtherCreature (.fixed 3)) (some (bearOf g0).id)
-  g.pending == g0.pending && g.log.size == g0.log.size
+  match g.pending with
+  | .fraChoice p (.mayBecomeBasePT id 0 3) => p == caster && id == (bearOf g0).id
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) bear caster caster
+  let source :=
+    match g0.battlefield.find? (·.name == "Count Bear") with
+    | some o => o.id
+    | none => panic! "missing Count Bear"
+  let g := step g0 (.becomePT .perOtherCreature (.fixed 3)) (some source)
+  match g.pending with
+  | .fraChoice _ (.mayBecomeBasePT _ 1 3) => true
+  | _ => false
 
 #guard (SharedTrigger.timing (.becomePT 1 1)).resolution ==
   .becomePT (.fixed 1) (.fixed 1)

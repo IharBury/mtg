@@ -105,6 +105,7 @@ def resolveTop (g : Game) : Game :=
                 obj.fraCauseStatus then
             g.applyTriggeredAbility entry.controller t obj.sourceId
               entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
+              (resolutionOverride := obj.reflexiveResolution)
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
         let g := { g with resolvingAbility := none }
         let g := g.ceaseToExist obj.id

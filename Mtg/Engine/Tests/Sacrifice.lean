@@ -101,11 +101,14 @@ selector that is not a sacrifice, leave the permanent where it is. -/
   !g.sourceWasSacrificed && onBoard g "Sacrifice Relic" &&
     logContains g "The ability's source is no longer in play"
 
+/- The reflexive note still sacrifices by `how`, and records that it did. -/
 #guard
   let g0 := withRelic
   let sid := pid g0 "Sacrifice Relic"
   let g := step g0 (.sacrifice (.sacrificedSource .isSacrificed) .forReflexive) (some sid)
-  onBoard g "Sacrifice Relic" && g.log == g0.log && !g.sourceWasSacrificed
+  !onBoard g "Sacrifice Relic" && inGraveyard g caster "Sacrifice Relic" &&
+    g.planWasSacrificed && !g.sourceWasSacrificed &&
+    logContains g "Sacrifice Relic is sacrificed"
 
 #guard
   let g0 := withRelic
@@ -206,7 +209,8 @@ means that opponent sacrifices nothing. -/
   g.pending == afterDraw.pending && g.log == afterDraw.log
 
 /- The Plan is sacrificed, and the reflexive note records that it was.
-A Plan that has left, or a note this selector does not read, does not. -/
+A Plan that has left does not. The source note sacrifices it and records
+that the source was sacrificed. -/
 #guard
   let g0 := addPermanent afterDraw planCard caster caster
   let sid := pid g0 "The Plan"
@@ -233,7 +237,9 @@ A Plan that has left, or a note this selector does not read, does not. -/
   let g0 := addPermanent afterDraw planCard caster caster
   let sid := pid g0 "The Plan"
   let g := step g0 (.sacrifice .plan .noted) (some sid)
-  onBoard g "The Plan" && !g.planWasSacrificed && g.log == g0.log
+  !onBoard g "The Plan" && inGraveyard g caster "The Plan" &&
+    g.sourceWasSacrificed && !g.planWasSacrificed &&
+    logContains g "The Plan is sacrificed"
 
 /- Another creature is the Bolg choice. A missing source is reported. -/
 #guard

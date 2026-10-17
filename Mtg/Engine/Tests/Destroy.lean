@@ -105,11 +105,12 @@ not count. A permanent exiled instead of dying still counts. -/
   (g.player caster).life == (afterDraw.player caster).life &&
     g.permanentsDestroyedThisWay == 0
 
-/- Counting is the note. Without it, nothing is destroyed. -/
+/- Counting is the note. Without it, those permanents are still destroyed
+and the count stays empty. -/
 #guard
   let g0 := addPermanent afterDraw (artifact "Opp Sword" ManaCost.empty "") opp opp
   let g := step g0 (.destroy .oppArtifactsEnchantments)
-  onBoard g "Opp Sword" && g.permanentsDestroyedThisWay == 0
+  !onBoard g "Opp Sword" && buried g "Opp Sword" && g.permanentsDestroyedThisWay == 0
 
 /- The permanent an earlier damage step marked is destroyed, and the mark
 is cleared. No mark, a missing object, indestructible, and a shield
@@ -151,13 +152,17 @@ counter each leave the permanent in play. -/
     g.permanentDealtDamageThisWay.isNone &&
     logContains g "shield counter is removed"
 
-/- A different note does not destroy the marked permanent. -/
+/- `.forAmass` destroys the marked permanent and records its controller.
+The printed `.none` note is what clears the mark. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
   let g := step { g0 with permanentDealtDamageThisWay := some id }
     (.destroy .permanentDealtDamage (note := .forAmass))
-  onBoard g "Wyrm" && g.permanentDealtDamageThisWay == some id
+  !onBoard g "Wyrm" && buried g "Wyrm" &&
+    g.permanentDealtDamageThisWay == some id &&
+    g.destroyedForAmassThisWay && g.amassAmountThisWay == 4 &&
+    g.amassControllerThisWay == some opp
 
 /- Damage, then destroy only when that damage marked a Dragon.
 The ability's target kind is what makes the permanent a legal target. -/
@@ -250,7 +255,7 @@ controller still amasses when the creature is indestructible. -/
     (g.player caster).hand.size == before + 1 &&
     logContains g "is indestructible and isn't destroyed"
 
-/- Any other selector destroys nothing. -/
+/- A selector that names no permanent on this board destroys nothing. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
   let g := step g0 (.destroy .humans)
@@ -291,9 +296,12 @@ controller still amasses when the creature is indestructible. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := .destroy .humans } ==
   "destroy it"
 
-/- A selector amass does not use amasses nothing. -/
+/- Amass reads the count. Zero other creatures still amasses Goblins 0. -/
 #guard
   let g := step afterDraw (.amass .perOtherCreature)
-  g.log.size == afterDraw.log.size
+  onBoard g "Goblin Army" &&
+    (g.battlefield.find? (·.name == "Goblin Army")).any
+      (fun o => o.status.plusOnePlusOne == 0 && o.controlledBy caster) &&
+    logContains g "amasses Goblins 0"
 
 end Mtg.Engine.DestroyTests

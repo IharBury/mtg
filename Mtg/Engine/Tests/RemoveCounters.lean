@@ -5,7 +5,8 @@ import Mtg.Engine.Fixture
 
 A hope counter from the source, and every counter from the enchanted
 creature. What is removed is `TriggerRemoveWhat`. Who loses it is an
-`ObjectSelector`. Any other selector removes nothing.
+`ObjectSelector`. Any other permanent the selector names loses that
+counter. A card or an unmade choice loses nothing.
 -/
 
 namespace Mtg.Engine.RemoveCountersTests
@@ -198,21 +199,41 @@ Removing them does not count as removing a hope counter. -/
   !Status.hasCounters host.status && host.status.damage == 4 && host.status.pump == (1, 2) &&
     logContains g "counters are removed from Bear"
 
-/- The other combinations remove nothing, and they leave an earlier note. -/
+/- Hope from the enchanted creature is removed, and the note records that.
+Every counter on the source is removed. Hope from a permanent that was
+not announced clears the note and removes nothing. -/
+#guard
+  let g0 := load (attach
+    (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
+      "Grasp" 2)
+    "Grasp" "Bear") "Bear"
+  let g0 := { g0 with removedHopeThisWay := false }
+  let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
+  crossed.removedHopeThisWay && (obj crossed "Bear").status.hope == 0 &&
+    (obj crossed "Bear").status.plusOnePlusOne == 2 &&
+    (obj crossed "Grasp").status.hope == 2 &&
+    logContains crossed "Bear loses a hope counter"
+
 #guard
   let g0 := load (attach
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
   let g0 := { g0 with removedHopeThisWay := true }
-  let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
   let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
+  swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
+    (obj swapped "Grasp").status.hope == 0 &&
+    (obj swapped "Grasp").status.plusOnePlusOne == 0 &&
+    logContains swapped "counters are removed from Grasp"
+
+#guard
+  let g0 := load (attach
+    (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
+      "Grasp" 2)
+    "Grasp" "Bear") "Bear"
+  let g0 := { g0 with removedHopeThisWay := true }
   let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
-  crossed.removedHopeThisWay && stillLoaded (obj crossed "Bear").status &&
-    (obj crossed "Grasp").status.hope == 2 && crossed.log == g0.log &&
-    swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
-    (obj swapped "Grasp").status.hope == 2 && swapped.log == g0.log &&
-    other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
+  !other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
     (obj other "Grasp").status.hope == 2 && other.log == g0.log
 
 /- Tap, then remove, including when nothing is enchanted. -/

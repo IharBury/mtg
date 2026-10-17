@@ -241,23 +241,30 @@ before it resolves still taps and leaves the abilities. -/
   (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
     logContains g "keeps its abilities"
 
-/- Any other selector loses nothing. -/
+/- A hand, an unattached enchantment, and a cause that was not recorded lose
+nothing. The announced permanent, the source, and the target while the
+source remains lose what the selector names. -/
 #guard
   let g0 := addPermanent (addPermanent board grasp caster caster) hawk caster caster
   let g0 := attach g0 "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
+  let bearId := pid g0 "Bear"
   let tgt := #[Target.permanent (pid g0 "Titan")]
-  let crossed := [
-    step g0 (.lose .allAbilities) sid tgt,
-    step g0 (.lose .allAbilities .source) sid tgt,
+  let quiet := [
     step g0 (.lose .allAbilities .enchanted) sid tgt,
-    step g0 (.lose .allAbilities .targetWhileSource) sid tgt,
-    step g0 (.lose .indestructible .targetIfPresent) sid tgt,
     step g0 (.lose .indestructible .cause) sid tgt,
     step g0 (.lose .allAbilities .hand) sid tgt]
-  crossed.all fun g =>
+  let announced := step g0 (.lose .allAbilities) sid tgt
+  let fromSource := step g0 (.lose .allAbilities .source) sid tgt
+  let whileSource := step g0 (.lose .allAbilities .targetWhileSource) sid tgt
+  let dropped := step g0 (.lose .indestructible .targetIfPresent) sid tgt
+  quiet.all (fun g =>
     kept g "Titan" && g.hasFlying (obj g "Hawk") &&
-      (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log
+      (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log) &&
+    (obj announced "Titan").status.losesAbilitiesGrantedBy == #[bearId] &&
+    (obj fromSource "Bear").status.losesAbilitiesGrantedBy == #[bearId] &&
+    (obj whileSource "Titan").status.losesAbilitiesGrantedBy == #[bearId] &&
+    lostFlag dropped "Titan"
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==

@@ -4,7 +4,7 @@ import Mtg.Engine.Fixture
 # `TriggerResolution.surveil`
 
 How many cards is a `NumberSelector`. `.fixed` surveils that many.
-Any other selector surveils nothing.
+Every other count is read the same way. Surveil 0 still logs.
 -/
 
 namespace Mtg.Engine.SurveilTests
@@ -25,10 +25,24 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
   | .surveil p n => p == caster && n == 1
   | _ => false
 
-/- Any other selector surveils nothing. -/
+/- A count of other creatures is surveilled. Zero creatures still surveils 0. -/
 #guard
   let g := step (.surveil .perOtherCreature)
-  g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
+  g.pending == afterDraw.pending && logContains g "surveils 0"
+
+#guard
+  let bear : CardDef := {
+    name := "Surveil Bear"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  let g0 := addPermanent afterDraw bear caster caster
+  let g := g0.applyTriggeredAbility caster (.onEnterDraw 1) none
+    (resolutionOverride := some (.surveil .perOtherCreature))
+  match g.pending with
+  | .surveil p n => p == caster && n == 1
+  | _ => false
 
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
 

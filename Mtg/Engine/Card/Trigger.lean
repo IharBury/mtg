@@ -1447,7 +1447,9 @@ inductive TriggerResolution where
   | dealDamage (amount : NumberSelector) (who : ObjectSelector)
       (note : TriggerDamageNote := .none)
   /-- Scry, as `n` says. `.fixed` is that many cards.
-  Scry 2 is `.scry (.fixed 2)`. Any other amount scries nothing. -/
+  Scry 2 is `.scry (.fixed 2)`. Any other count scries that many cards.
+  Scry 0 looks at nothing and does not trigger “whenever you scry.” A
+  selector that is not a count scries nothing. -/
   | scry (n : NumberSelector)
   /-- `who` draws cards, as `amount` says. `.fixed` is that many cards.
   The controller is `.you`.
@@ -1477,7 +1479,9 @@ inductive TriggerResolution where
   `.searchLibrary (.put .dragon)`. A card from the library shuffles.
   A card from the hand does not. Choosing not to find does not.
   An empty hand and library still shuffles: nothing was eligible to choose.
-  Any other resolution does nothing. `thenDo` does nothing on its own. -/
+  A creature card onto the battlefield is `.searchLibrary (.put .creatureCard)`.
+  Any other follow-up is resolved on its own, and the library is not searched.
+  `thenDo` on its own, outside `searchLibrary`, does what that resolution does. -/
   | searchLibrary (thenDo : TriggerResolution)
   /-- Discard cards, as `what` says.
   One card from the controller is `.discard` (`.cards`).
@@ -1492,7 +1496,8 @@ inductive TriggerResolution where
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing.
   The announced opponent reveals their hand and discards a nonland you
   choose with `.discard .chosenNonland`.
-  Any other selector discards nothing. -/
+  `.cards n` for any other player discards that many cards. A selector that
+  does not name cards discards nothing. -/
   | discard (what : ObjectSelector := .cards)
   /-- Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
@@ -1548,7 +1553,8 @@ inductive TriggerResolution where
   `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`.
   None, or zero life, puts counters on nothing. An illegal permanent is
   reported and skipped. Extra announced permanents are ignored.
-  Any other selector puts nothing. -/
+  Any other permanent the selector names gets `n` counters of that kind.
+  A card or a hand receives none. -/
   | putCounters (what : CounterSelector) (who : ObjectSelector)
   /-- Return cards to a hand. `what` says which cards and whose hand.
   `note` says what a later step can read.
@@ -1569,7 +1575,9 @@ inductive TriggerResolution where
   `.returnToHand .linkedExile`.
   The card that caused this trigger, to its owner's hand, is
   `.returnToHand .cause`. A token ceases to exist.
-  Any other selector returns nothing. -/
+  Any other permanent the selector names returns to its owner's hand.
+  `.revealed` returns the cards an earlier reveal found. A card or a hand
+  that is not one of those returns nothing. -/
   | returnToHand (what : ObjectSelector := .graveyardCard)
       (note : TriggerReturnNote := .none)
   /-- Put later ability `followup` on the stack (“When you do”), or arm it
@@ -1609,7 +1617,8 @@ inductive TriggerResolution where
   Whenever you attack this turn, +1/+1 for each Plains, is
   `.queueReflexive (.pump .perPlains .perPlains .target)`.
   That arms the attack trigger. It does not put an ability on the stack
-  now. Any other resolution queues nothing. -/
+  now. Any other follow-up is put on the stack and resolves as that
+  follow-up. It keeps the targets this ability already has. -/
   | queueReflexive (followup : TriggerResolution)
   /-- Sacrifice a permanent. `what` says who sacrifices and which permanent.
   `note` says what a later step can read.
@@ -1634,7 +1643,9 @@ inductive TriggerResolution where
   You may sacrifice another creature with `.may (.sacrifice .another) (.sequence [])`.
   Each opponent sacrifices a nontoken creature of their choice with
   `.sacrifice .chosenNontokenCreature`.
-  Any other selector sacrifices nothing. -/
+  Any other permanent the selector names is sacrificed. `.noted` records
+  that a sacrifice happened. `.forReflexive` records it for the next
+  reflexive step. A card or a hand is not sacrificed. -/
   | sacrifice (what : ObjectSelector) (note : TriggerSacrificeNote := .none)
   /-- A permanent loses `what`, as `who` says.
   The announced permanent loses indestructible until end of turn is
@@ -1646,7 +1657,8 @@ inductive TriggerResolution where
   The announced permanent loses all abilities while the source remains is
   `.lose .allAbilities .targetIfPresent`. A missing target loses nothing.
   A source that has left leaves that permanent able.
-  Any other selector loses nothing. -/
+  Any other permanent the selector names loses that ability. A card or a
+  hand loses nothing. -/
   | lose (what : AbilitySelector) (who : ObjectSelector := .target)
   /-- `action` says what can't be done, and who can't do it.
   The announced permanent can't be blocked this turn is `.cant .beBlocked`.
@@ -1657,7 +1669,8 @@ inductive TriggerResolution where
   The announced permanent can't become untapped for as long as you control
   the source is `.cant .untapWhileYouControl`. An opponent's creature is
   the only recipient. A creature you control is left alone. A missing
-  source still records a stand-in. Any other selector does nothing. -/
+  source still records a stand-in. Any other permanent the selector names
+  can't do that. A card or a hand is unchanged. -/
   | cant (action : ActionSelector)
   /-- Until end of turn, `who` becomes an artifact in addition to its other
   types. The announced permanent is `.becomeArtifact` (`.target`).
@@ -1667,7 +1680,8 @@ inductive TriggerResolution where
   `.becomeArtifact .targetWhileSource`.
   Gaining indestructible as well is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
-  Any other selector does nothing. -/
+  Any other permanent the selector names becomes an artifact until end of
+  turn. A card or a hand does not. -/
   | becomeArtifact (who : ObjectSelector := .target)
   /-- `who` becomes prepared. A creature that is already prepared, or has no
   prepare spell, does not. The announced permanent is `.becomePrepared`
@@ -1676,7 +1690,9 @@ inductive TriggerResolution where
   The enchanted creature is `.becomePrepared .enchanted`.
   The target, while the source remains, is
   `.becomePrepared .targetWhileSource`.
-  Any other selector does nothing. -/
+  Any other permanent the selector names becomes prepared. A creature that
+  is already prepared, or has no prepare spell, does not. A card or a hand
+  does not. -/
   | becomePrepared (who : ObjectSelector := .target)
   /-- Until end of turn, `who`'s base power and toughness become `power` and
   `toughness`. Each statistic reads its own value.
@@ -1689,7 +1705,9 @@ inductive TriggerResolution where
   toughness is `.setBasePT .equalSourcePower .equalSourceToughness`.
   A source that has left uses its last-known power and toughness.
   No target logs that none was chosen.
-  Any other combination sets nothing. -/
+  Any other permanent the selector names receives the two counts.
+  A count that is not a number, and a selector that names no permanent,
+  sets nothing. -/
   | setBasePT (power toughness : NumberSelector) (who : ObjectSelector := .target)
   /-- Put a card onto a library. `place` says top or bottom, and `what`
   says which card.
@@ -1704,7 +1722,8 @@ inductive TriggerResolution where
   A card from your hand on the bottom of your library is
   `.putOnLibrary .bottom .cardFromHand`. An empty hand skips the choice.
   A card from your hand on top puts nothing.
-  Any other selector puts nothing. -/
+  Any other permanent the selector names is put there. A card or a hand
+  that is not that choice puts nothing. -/
   | putOnLibrary (place : TriggerLibraryPlace := .top)
       (what : ObjectSelector := .target)
   /-- Deal previously divided damage to the announced targets. -/
@@ -1857,7 +1876,8 @@ inductive TriggerResolution where
   Life equal to the Equipment attached to the source is
   `.gainLife .attachedEquipment`. A source that has left uses its last-known
   power. Zero gains nothing.
-  Any other selector gains nothing. -/
+  Any other count gains that much life. A count that cannot be read
+  gains nothing. -/
   | gainLife (amount : NumberSelector)
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
@@ -1908,7 +1928,11 @@ inductive TriggerResolution where
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   A card that has left your graveyard is reported. No recorded card is
   reported. Declining exiles nothing.
-  Any other selector exiles nothing. -/
+  Any other permanent the selector names is exiled as `how` and `note` say.
+  A graveyard card, the top of a library, a linked exile, a milled card, a
+  discarded card, or a card an earlier reveal found is exiled the same way.
+  `.top` with `.impulse` or `.anyManaThisTurn` exiles nothing unless an
+  earlier reveal found a card. A hand or an unmade choice exiles nothing. -/
   | exile (what : ObjectSelector) (how : TriggerExileHow)
       (note : TriggerExileNote := .none)
   /-- Put cards onto the battlefield. `what` says which cards, `how` says
@@ -1945,7 +1969,11 @@ inductive TriggerResolution where
   a finality counter, is
   `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
   A missing cause puts nothing.
-  Any other selector puts nothing. -/
+  Any other graveyard card the selector names, the top card of your library,
+  or the source in its owner's graveyard is put onto the battlefield as
+  `how` and `note` say. `.revealed` and `.randomCreature` use the cards an
+  earlier reveal found. Outside that reveal, both do nothing. A permanent
+  already on the battlefield is not put again. -/
   | put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
   /-- Remove counters. `what` says which, and `who` says from whom.
@@ -1954,7 +1982,8 @@ inductive TriggerResolution where
   source that has left the battlefield, removes nothing.
   All counters from the enchanted creature are
   `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
-  Any other selector removes nothing. -/
+  Any other permanent the selector names loses that counter, or every
+  counter. A card or a hand loses nothing. -/
   | removeCounters (what : TriggerRemoveWhat) (who : ObjectSelector)
   /-- Tap permanents, as `who` says.
   Any number of untapped Humans you control is `.tap .humans`.
@@ -1968,7 +1997,8 @@ inductive TriggerResolution where
   Wrapping one in `may` is that tap.
   The creature this Aura enchants, while the Aura remains, is
   `.tap .enchantedWhileSource`.
-  Any other selector taps nothing. -/
+  Any other permanent the selector names is tapped. A card or a hand
+  is not. -/
   | tap (who : ObjectSelector)
   /-- Untap permanents, as `who` says.
   The announced permanent, while it is still a legal target, is `.untap`.
@@ -1981,7 +2011,8 @@ inductive TriggerResolution where
   `.untap .targetWhileSource`. A source that already left is silent.
   Each attacking creature is `.untap .attackingCreatures`.
   Tap or untap is `.or [.tap .target, .untap]`.
-  Any other selector untaps nothing. -/
+  Any other permanent the selector names is untapped. A card or a hand
+  is not. -/
   | untap (who : ObjectSelector := .target)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
@@ -1998,7 +2029,8 @@ inductive TriggerResolution where
   The source is `.destroy .source`.
   The enchanted creature is `.destroy .enchanted`.
   The target, while the source remains, is `.destroy .targetWhileSource`.
-  Any other selector destroys nothing. -/
+  Any other permanent the selector names is destroyed. A card or a hand
+  is not. -/
   | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
@@ -2014,7 +2046,8 @@ inductive TriggerResolution where
   The noted controller amasses that creature's power is
   `.amass .notedPower (who := .notedController)`.
   No destruction amasses nothing.
-  Any other selector amasses nothing. -/
+  Any other count is amassed for the players the selector names.
+  A count that cannot be read amasses nothing. -/
   | amass (amount : NumberSelector) (subtype : String := "Goblin")
       (attachSource : Bool := false) (who : PlayerSelector := .you)
   /-- Create tokens. How many is `amount`. Who receives them is a
@@ -2046,7 +2079,9 @@ inductive TriggerResolution where
   `.createTokens .treasure (.fixed 1) false (who := .targetController)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
   this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
-  Any other selector creates nothing. -/
+  Any other count creates that many of the named token for the players
+  the selector names. Zero creates nothing. A count that cannot be read
+  creates nothing. -/
   | createTokens (kind : TokenKind) (amount : NumberSelector) (tapped : Bool)
       (token : TriggerToken := .kind) (who : PlayerSelector := .you)
       (note : TriggerTokenNote := .none)
@@ -2063,7 +2098,8 @@ inductive TriggerResolution where
   `.attach .createdToken .source`.
   The artifact put from hand, attached to the remembered creature, is
   `.attach .putArtifact .notedHost`.
-  Any other pair attaches nothing. -/
+  Any other pair attaches each permanent `what` names to the first permanent
+  `host` names. A card or a hand attaches nothing. -/
   | attach (what host : ObjectSelector)
   /-- Add mana, as `amount` says. `types` is the printed mana.
   Adding those types once is `.addMana types`.
@@ -2072,17 +2108,20 @@ inductive TriggerResolution where
   {G} for each charge counter on the source is
   `.addMana #[.colored .green] .perChargeCounter`.
   A source that has left uses its last-known charge counters.
-  Any other selector adds nothing. -/
+  Any other count adds the printed types that many times. Zero adds
+  nothing. A count that cannot be read adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
   /-- Set the source's base power and toughness, as the selectors say.
   `.fixed` is that number. Both printed numbers are `.fixed`.
   Base power `p` and toughness `t` is `.becomePT (.fixed p) (.fixed t)`.
-  Any other selector changes nothing. -/
+  Any other counts offer those base values. A count that is not a number
+  changes nothing. -/
   | becomePT (power toughness : NumberSelector)
   /-- Look at the top cards, as `n` says, and you may reveal a listed type.
   `.fixed` is that many cards.
   The top `n` is `.lookAtTopRevealTypes (.fixed n) types`.
-  Any other amount looks at nothing. -/
+  Any other count looks at that many cards. A count that cannot be read
+  looks at nothing. -/
   | lookAtTopRevealTypes (n : NumberSelector) (types : Array String)
   /-- Gain control of the announced permanents, as `how` says.
   Until end of turn, then untap and haste, is `.gainControl .untilEndOfTurn`.
@@ -2206,7 +2245,8 @@ inductive TriggerResolution where
   Flying on each creature the causing spell targets is
   `.grant (.keywords Keyword.flying) .spellTargets`. A noncreature target
   is skipped. No recorded spell grants nothing.
-  Any other selector does nothing. -/
+  Any other permanent the selector names receives that ability. A card, a
+  hand, or an unmade choice receives nothing. -/
   | grant (what : TriggerGrantWhat) (who : ObjectSelector)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
   resolve `thenDo` for the cards that were found.
@@ -2239,7 +2279,8 @@ inductive TriggerResolution where
   `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
   An empty library is reported. No attacker limits the mana value to zero.
   Whose library is a `PlayerSelector`.
-  Any other selector does nothing. -/
+  Any other combination reveals the cards `how` and `who` name, then
+  resolves `thenDo`. A player the selector does not name reveals nothing. -/
   | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
       (who : PlayerSelector := .you)
   /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
@@ -2257,7 +2298,8 @@ inductive TriggerResolution where
   `.mill (.fixed n) (note := .milledCards)`.
   Each opponent mills `n`, and a later step sees whether any card was
   milled, with `.mill (.fixed n) .eachOpponent (note := .opponentsMilled)`.
-  Any other selector mills nothing. -/
+  Any other count is milled by the players the selector names, and the
+  note records what it says. A missing count or player mills nothing. -/
   | mill (amount : NumberSelector) (who : PlayerSelector := .you)
       (note : TriggerMillNote := .none)
   /-- Create two nonlegendary token copies of the source. -/
@@ -2268,7 +2310,8 @@ inductive TriggerResolution where
   `.fixed` is that much generic mana.
   A card type is `.spellsCostLess (.cardType ty) (.fixed n)`.
   A supertype is `.spellsCostLess (.supertype s) (.fixed n)`.
-  Any other amount changes nothing. -/
+  Any other count reduces the cost by that much. A count that cannot be
+  read changes nothing. -/
   | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Investigate (create a Clue). -/
   | investigate
@@ -2279,7 +2322,8 @@ inductive TriggerResolution where
   The Villain that caused this is `.connive .enteringVillain`.
   Already chosen this turn does nothing. A Villain that will not connive
   is reported.
-  Any other selector connives nothing. -/
+  Any other permanent the selector names connives. A card or a hand
+  connives nothing. -/
   | connive (who : ObjectSelector := .source)
   /-- A creature fights, or deals damage equal to its power. `who` says
   which creature, and `how` says which.
@@ -2290,7 +2334,9 @@ inductive TriggerResolution where
   to up to one target creature with `.fight .equipmentHost .reflexive`.
   That target is chosen when the reflexive ability is put on the stack.
   Nothing is queued when no creature received Equipment.
-  Any other selector fights nothing. -/
+  Any other permanent the selector names fights another targeted creature,
+  or deals damage equal to its power when `how` is `.reflexive`. A card or
+  a hand fights nothing. -/
   | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
   /-- A player reveals cards from their hand (CR 701.16), as `count` says,
   then resolves `thenDo`.
@@ -2302,15 +2348,18 @@ inductive TriggerResolution where
   your graveyard. You choose one of them and that player discards it, with
   `.revealFromHand .onePlusCreatureCards (.discard (.cards 1 .targetOpponent))`.
   A smaller hand is revealed in full.
-  Any other combination does nothing. -/
+  Any other combination reveals that hand, then resolves `thenDo`. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
   /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
-  Surveil 2 is `.surveil (.fixed 2)`. Any other amount surveils nothing. -/
+  Surveil 2 is `.surveil (.fixed 2)`. Any other count surveils that many
+  cards. Surveil 0 looks at nothing. A count that cannot be read surveils
+  nothing. -/
   | surveil (n : NumberSelector)
   /-- Empower Jace, as `n` says (Reality Fracture).
   `.fixed` is that many loyalty counters.
   Empower Jace `n` is `.empowerJace (.fixed n)`.
-  Any other amount empowers nothing. -/
+  Any other count puts that many loyalty counters. A count that cannot
+  be read empowers nothing. -/
   | empowerJace (n : NumberSelector)
   /-- The source becomes prepared.
   If it isn't prepared is `.prepareSource`.
@@ -2335,7 +2384,8 @@ inductive TriggerResolution where
   Each opponent loses life equal to the Equipment attached to the source with
   `.loseLife .attachedEquipment .eachOpponent`.
   A source that has left uses its last-known power. Zero loses nothing.
-  Any other selector loses nothing. -/
+  Any other count is lost by the players the selector names. An offer
+  is not a player, and a missing count loses nothing. -/
   | loseLife (amount : NumberSelector) (who : PlayerSelector := .you)
   /-- You may play the exiled card until the end of your next turn. -/
   | grantPlayNotedUntilNextTurn
@@ -2361,7 +2411,9 @@ inductive TriggerResolution where
   otherwise the recorded cause. The source need not still be on the
   battlefield. A noncreature token becomes a 2/2 Robot Villain after it
   enters. A subtype on `.cause` copies nothing.
-  Any other selector copies nothing. -/
+  Any other permanent the selector names, other than the source itself, is
+  what the source copies. A missing source copies nothing. A card or a hand
+  copies nothing. -/
   | becomeCopy (of : ObjectSelector)
   /-- Choose new targets for the spell that caused this trigger.
   The recorded cause is used when one was chosen. Otherwise the spell on
@@ -2404,7 +2456,8 @@ def trickArrowModes : List TriggerResolution :=
    .dealDamage (.fixed 2) (.player .targetOpponent),
    .sequence [.discard, .draw (.fixed 1)]]
 
-/-- Which reflexive `follow` queues. Any other resolution queues nothing. -/
+/-- Which reflexive `follow` queues as a printed MSH ability. Any other
+resolution is `.none`; the caller still puts that follow-up on the stack. -/
 def queuedReflexive : TriggerResolution → QueuedReflexive
   | .grant (.keywords k) .target =>
     if k == Keyword.indestructible then

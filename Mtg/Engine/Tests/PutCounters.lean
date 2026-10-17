@@ -5,7 +5,8 @@ import Mtg.Engine.Game
 # `TriggerResolution.putCounters`
 
 What is put is a `CounterSelector`. Who receives it is an `ObjectSelector`.
-Any other selector puts nothing.
+A kind and a permanent the selector names receive those counters. A hand
+does not.
 -/
 
 namespace Mtg.Engine.PutCountersTests
@@ -213,14 +214,26 @@ counter. A noncreature is reported. Zero puts nothing. -/
     logContains g "The target is no longer legal" &&
     plus none "Counter Bear" == 0 && plus none "Counter Elf" == 0
 
-/- Any other selector puts nothing. -/
+/- The announced permanent gets the counters. A shield counter is put.
+A hand is not a permanent, so it receives nothing. -/
 #guard
   let g0 := board
   let tgt := #[Target.permanent (pid g0 "Counter Bear")]
   let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .target) none tgt
     TriggeredAbility.onEnterPlusOneOnCreature
-  plus g "Counter Bear" == 0 && plus g "Counter Other" == 0 &&
+  plus g "Counter Bear" == 1 && plus g "Counter Other" == 0 &&
     plus g "Counter Elf" == 0
+
+#guard
+  let g0 := board
+  let g := step g0 (.putCounters (.ofKind .shield) .source) (some (pid g0 "Counter Bear"))
+  (obj g "Counter Bear").status.shield == 1 &&
+    (obj g "Counter Other").status.shield == 0
+
+#guard
+  let g0 := board
+  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .hand)
+  plus g "Counter Bear" == 0 && plus g "Counter Other" == 0
 
 #guard phrase (.putCounters (.ofKind .plusOnePlusOne) .youControl) ==
   "put a +1/+1 counter on each creature you control"

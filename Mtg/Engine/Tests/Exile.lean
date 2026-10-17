@@ -9,7 +9,8 @@ The announced permanent, the source, the enchanted creature, and the target
 while the source remains are exiled with `.forLater`.
 Each announced permanent, the top card, lands you control, a basic land
 search, and the opponent's top cards use those selectors.
-Any other selector exiles nothing.
+Any other permanent or card the selector names is exiled the same way.
+A hand or an unmade choice exiles nothing.
 -/
 
 namespace Mtg.Engine.ExileTests
@@ -220,36 +221,53 @@ A creature, and an opponent's land, stay. -/
   | .fraChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
   | _ => false
 
-/- Outside `queueReflexive`, the opponent's top cards are not exiled.
-The reflexive still recognizes that resolution. -/
+/- The opponent's top cards are exiled, and that many casts are offered.
+The reflexive still recognizes that resolution. Several lands can share
+a name, so the new top may still be called the same thing. -/
 #guard
-  let name := topName board opp
+  let before := (board.player opp).library.size
   let g := step board (.exile (.opponentTop 5) (.mayCastUpTo 2))
     (targets := #[Target.player opp])
-  topName g opp == name && onBoard g "Titan" && g.pending == .none &&
-    g.log == board.log
+  before ≥ 5 && (g.player opp).library.size == before - 5 && onBoard g "Titan" &&
+    match g.pending with
+    | .fraChoice _ (.mayCastUpToFromExile ids 2) => ids.size == 5
+    | _ => false
 
 #guard TriggeredAbility.TriggerResolution.queuedReflexive
     (.exile (.opponentTop 5) (.mayCastUpTo 2)) ==
   .modeled (TriggeredAbility.TriggerReflexiveKind.toNat .exileTopFive) 1
 
-/- Any other selector exiles nothing. A printed selector with a duration
-it does not use exiles nothing. -/
+/- A cause that was not recorded, a player, a hand, and an unchosen card
+exile nothing. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
   let tgt := #[Target.permanent (pid g0 "Titan")]
-  let crossed := [
+  let quiet := [
     step g0 (.exile .cause .forLater) sid tgt,
-    step g0 (.exile .creaturesYouControl .untilSourceLeaves) sid tgt,
     step g0 (.exile (.player .you) .forLater) sid tgt,
     step g0 (.exile .hand .forLater) sid tgt,
-    step g0 (.exile .permanent .forLater) sid tgt,
-    step g0 (.exile .cardFromHand .playUntilNextTurn) sid tgt,
-    step g0 (.exile .source .playUntilNextTurn) sid tgt]
-  crossed.all fun g =>
+    step g0 (.exile .cardFromHand .playUntilNextTurn) sid tgt]
+  quiet.all fun g =>
     onBoard g "Titan" && onBoard g "Bear" && onBoard g "Grasp" &&
       g.pending == .none && g.log == g0.log
+
+/- Creatures you control are exiled until the source leaves. The announced
+permanent is exiled with no return. The source may be played until the
+controller's next turn. -/
+#guard
+  let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
+  let sid := some (pid g0 "Bear")
+  let tgt := #[Target.permanent (pid g0 "Titan")]
+  let yours := step g0 (.exile .creaturesYouControl .untilSourceLeaves) sid tgt
+  let announced := step g0 (.exile .permanent .forLater) sid tgt
+  let source := step g0 (.exile .source .playUntilNextTurn) sid tgt
+  exiled yours "Titan" && onBoard yours "Bear" &&
+    exiled announced "Titan" && onBoard announced "Bear" &&
+    exiled source "Bear" && onBoard source "Titan" &&
+    match source.objects.find? (·.name == "Bear") with
+    | some o => o.playPermission.isSome
+    | none => false
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile ==

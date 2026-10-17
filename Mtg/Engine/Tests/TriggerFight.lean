@@ -6,7 +6,8 @@ import Mtg.Engine.Fixture
 
 The source fighting up to one other creature, and the creature that
 received Equipment dealing damage equal to its power. Who fights and
-how are arguments.
+how are arguments. Any other permanent the selector names fights that
+way. A card or an unmade choice fights nothing.
 -/
 
 namespace Mtg.Engine.TriggerFightTests
@@ -142,8 +143,10 @@ target is chosen then, and only that creature is dealt damage. -/
   g.equipmentAttachedHost.isNone && g.stack.size == g0.stack.size &&
     !(logContains g "reflexive")
 
-/- A combination that is not printed, and any other selector, fights nothing
-and queues nothing. -/
+/- The source dealing damage equal to its power hits the other creature
+and does not queue a reflexive. The equipped creature fighting that
+other creature deals damage both ways. The announced creature, with no
+other creature chosen, has nothing to fight. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
@@ -152,8 +155,7 @@ and queues nothing. -/
     #[Target.permanent (pid g0 "Beta")]
   g.equipmentAttachedHost == some alphaId && g.stack.size == marked.stack.size &&
     g.pending == marked.pending && damageOf g "Alpha" == 0 &&
-    damageOf g "Beta" == 0 && !(logContains g "reflexive") &&
-    !(logContains g "no longer")
+    damageOf g "Beta" == 2 && !(logContains g "reflexive")
 
 #guard
   let g0 := board
@@ -162,14 +164,15 @@ and queues nothing. -/
   let g := step marked (.fight .equipmentHost .mutual) (some alphaId)
     #[Target.permanent (pid g0 "Beta")]
   g.equipmentAttachedHost == some alphaId && g.stack.size == marked.stack.size &&
-    damageOf g "Alpha" == 0 && damageOf g "Beta" == 0 &&
-    !(logContains g "reflexive") && !(logContains g "no longer")
+    damageOf g "Alpha" == 3 && damageOf g "Beta" == 2 &&
+    !(logContains g "reflexive")
 
 #guard
   let g0 := board
   let g := step g0 (.fight .target .mutual) (some (pid g0 "Alpha"))
     #[Target.permanent (pid g0 "Beta")]
-  damageOf g "Alpha" == 0 && damageOf g "Beta" == 0 && g.log == g0.log
+  damageOf g "Alpha" == 0 && damageOf g "Beta" == 0 &&
+    logContains g "Beta has nothing to fight"
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard (.fight : TriggeredAbility.TriggerResolution) == sourceFight

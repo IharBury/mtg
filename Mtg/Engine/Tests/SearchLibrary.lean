@@ -6,8 +6,9 @@ import Mtg.Engine.Fixture
 A Forest onto the battlefield, a basic land into hand, a basic land you
 may put on top, and a Dragon from hand or library are `searchLibrary`.
 What happens to the found card is a `TriggerResolution`. Printed pairs
-keep their phrases. Other resolutions do nothing, and those follow-ups
-do nothing on their own.
+keep their phrases. Another library find searches that way. Any other
+follow-up is resolved itself, and those follow-ups do nothing on their
+own.
 -/
 
 namespace Mtg.Engine.SearchLibraryTests
@@ -315,20 +316,67 @@ do not. A missing source does not search. -/
     !shuffledSince before g &&
     logContains g "The triggered ability's source is no longer in play"
 
-/- A combination that is not printed does nothing. -/
+/- A library find that is not the printed pair still searches.
+A follow-up that is not a find is resolved itself. -/
 #guard
   let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
     [forest, mountain, dragon]) handDragon caster
-  let crossed := [
+  let g := takeSearch (step g0 (.searchLibrary (.put .forest .tapped)))
+  onBattlefield g "Search Forest" && (permanent g "Search Forest").status.tapped &&
+    inLibrary g caster "Search Mountain" && !onBattlefield g "Search Mountain"
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let g := takeSearch (step g0 (.searchLibrary (.put .dragon .tapped)))
+  let handOn := onBattlefield g "Hand Dragon"
+  let libOn := onBattlefield g "Search Dragon"
+  (handOn || libOn) && !(handOn && libOn) &&
+    (if handOn then (permanent g "Hand Dragon").status.tapped
+     else (permanent g "Search Dragon").status.tapped)
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let g := takeSearch (step g0 (.searchLibrary (.put .basicLandOnTop .tapped)))
+  let forestOn := onBattlefield g "Search Forest"
+  let mountainOn := onBattlefield g "Search Mountain"
+  (forestOn || mountainOn) && !(forestOn && mountainOn) &&
+    (if forestOn then (permanent g "Search Forest").status.tapped
+     else (permanent g "Search Mountain").status.tapped) &&
+    !onBattlefield g "Search Dragon"
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let g := takeSearch (step g0
+    (.searchLibrary (.returnToHand .basicLand .returnedPermanent)))
+  (inHand g caster "Search Forest" || inHand g caster "Search Mountain") &&
+    !onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
+    !g.returnedPermanentThisWay
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let g := step g0 (.searchLibrary (.draw (.fixed 1)))
+  inHand g caster "Search Dragon" && !inLibrary g caster "Search Dragon" &&
+    inLibrary g caster "Search Forest"
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let g := step g0 (.searchLibrary (.returnToHand .graveyardCard))
+  (g.player caster).library == (g0.player caster).library &&
+    (g.player caster).hand == (g0.player caster).hand &&
+    logContains g "no longer legal"
+
+#guard
+  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
+    [forest, mountain, dragon]) handDragon caster
+  let quiet := [
     .searchLibrary (.put .linkedExile),
-    .searchLibrary (.returnToHand .graveyardCard),
-    .searchLibrary (.draw (.fixed 1)),
-    .searchLibrary (.put .forest .tapped),
-    .searchLibrary (.put .dragon .tapped),
-    .searchLibrary (.put .basicLandOnTop .tapped),
-    .searchLibrary (.returnToHand .basicLand .returnedPermanent),
     .searchLibrary (.may (.put .basicLandOnTop) (.sequence []))]
-  crossed.all fun r =>
+  quiet.all fun r =>
     let g := step g0 r
     (g.player caster).library == (g0.player caster).library &&
       (g.player caster).hand == (g0.player caster).hand &&
