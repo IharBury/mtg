@@ -110,6 +110,8 @@ def toNat : TriggerReflexiveKind → Nat
 
 end TriggerReflexiveKind
 
+mutual
+
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
 `TriggerResolution.loseLife` loses life, who
@@ -117,7 +119,8 @@ end TriggerReflexiveKind
 `TriggerResolution.revealLibrary` looks at, and who
 `TriggerResolution.amass` amasses for.
 An announced target is `.target`, and `which` is the `PlayerSelector`
-restricting it. A player is `.target .player`. -/
+restricting it. A player is `.target .player`.
+The controllers of the objects an `ObjectSelector` names are `.controller`. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
@@ -138,10 +141,6 @@ inductive PlayerSelector where
   An earlier step must have recorded the offer.
   `.draw (.fixed 1) .opponentHasYou`. -/
   | opponentHasYou
-  /-- The controller of the creature the source enchants.
-  Nothing enchanted draws nothing.
-  `.draw (.fixed 1) .enchantedController`. -/
-  | enchantedController
   /-- The announced player. This is the restriction `.target` uses for a player.
   An illegal target mills nothing.
   `.mill (.fixed n) (.target .player)`.
@@ -152,12 +151,23 @@ inductive PlayerSelector where
   That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
   Read on its own, this is that same player. A missing target names nothing. -/
   | opponent
-  /-- The controller the targeted permanent had on the battlefield.
-  This is the restriction `.target` uses for that controller.
+  /-- The controllers of the objects `what` names.
+  Each object names the player who controls it. A permanent that has
+  left names the controller it had. The same player is named once.
+  The enchanted creature's controller is `.controller .enchanted`.
+  Nothing enchanted names no player.
+  `.draw (.fixed 1) (.controller .enchanted)`.
+  The targeted permanent's controller is `.controller .target`.
   Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
-  Read on its own, this is that same controller. No permanent names nothing. -/
-  | controller
+  `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
+  The creature an earlier step destroyed is that target, so its
+  controller amasses with
+  `.amass .notedPower (who := .controller .target)`.
+  No destruction amasses nothing.
+  Each creature the controller controls names that player with
+  `.controller .creaturesYouControl`.
+  A selector that does not name objects names no player. -/
+  | controller (what : ObjectSelector)
   /-- The announced target `which` names. `which` is a `PlayerSelector`.
   The announced player is `.target .player`.
   An illegal target mills nothing.
@@ -165,9 +175,6 @@ inductive PlayerSelector where
   The announced opponent is `.target .opponent`.
   `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
   That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
-  The targeted permanent's controller is `.target .controller`.
-  Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
   Any other restriction names nothing. -/
   | target (which : PlayerSelector)
   /-- The player who lost life. That player's seat is the trigger's
@@ -182,10 +189,6 @@ inductive PlayerSelector where
   last-known toughness is that player's index.
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
   | announced
-  /-- The controller an earlier step recorded when it destroyed a creature.
-  No destruction amasses nothing.
-  `.amass .notedPower (who := .notedController)`. -/
-  | notedController
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -326,7 +329,7 @@ inductive ObjectSelector where
   Each opponent discards one is `.cards 1 .eachOpponent`.
   The announced opponent discards `n` is `.cards n (.target .opponent)`.
   `TriggerResolution.discard` reads this selector. -/
-  | cards (n : Nat := 1) (who : PlayerSelector := .you)
+  | cards (n : Nat := 1) (who : PlayerSelector := by exact .you)
   /-- The controller's hand. The number discarded is noted for a later step.
   Declining leaves the note empty.
   `.discard .hand`. -/
@@ -697,6 +700,8 @@ inductive ObjectSelector where
   | nonland
 deriving Repr, Inhabited, BEq
 
+end
+
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
@@ -825,7 +830,7 @@ inductive NumberSelector where
   /-- The power an earlier step recorded when it destroyed a creature.
   No destruction amasses nothing.
   The noted controller amasses that many with
-  `.amass .notedPower (who := .notedController)`. -/
+  `.amass .notedPower (who := .controller .target)`. -/
   | notedPower
   /-- The printed mana types, once for each charge counter on the source.
   A source that has left uses its last-known charge counters.
@@ -1667,7 +1672,7 @@ inductive TriggerResolution where
   Optional as `.may (.draw (.fixed 1) .opponentHasYou) (.sequence [])`. Declining that
   offer mills and that player loses life; it does not skip.
   The enchanted creature's controller draws a card is
-  `.draw (.fixed 1) .enchantedController`. Nothing enchanted draws nothing.
+  `.draw (.fixed 1) (.controller .enchanted)`. Nothing enchanted draws nothing.
   Cards until the controller has ten in hand are
   `.draw (.upToHandSize 10)`. A hand that already has ten draws nothing.
   One card for each permanent of `ty` the controller controls is
@@ -1963,7 +1968,7 @@ inductive TriggerResolution where
   permanent of this subtype, is
   `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`.
   Destroy the announced creature, then its controller amasses that power, is
-  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1))]`.
   Return another permanent to its owner's hand, then put a +1/+1 counter on
   the source if one was actually returned, is
   `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
@@ -1998,7 +2003,7 @@ inductive TriggerResolution where
   Tap and a stun counter is
   `.sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]`.
   Destroy the target, then its controller creates a Treasure, is
-  `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .target .controller)]`.
+  `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .controller .target)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
@@ -2253,7 +2258,7 @@ inductive TriggerResolution where
   Equal to the excess an earlier step noted is `.amass .notedExcess`.
   Zero excess amasses nothing.
   The noted controller amasses that creature's power is
-  `.amass .notedPower (who := .notedController)`.
+  `.amass .notedPower (who := .controller .target)`.
   No destruction amasses nothing.
   Any other count is amassed for the players the selector names.
   A count that cannot be read amasses nothing. -/
@@ -2285,7 +2290,7 @@ inductive TriggerResolution where
   A Sturdy Shield, remembered for a later attach, is
   `.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember)`.
   The target's controller creates a Treasure with
-  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
+  `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
   this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
   Any other count creates that many of the named token for the players
@@ -3370,7 +3375,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreature, allowsZeroTargets := true,
       resolution := .sequence
         [.destroy .target (note := .forAmass),
-         .amass .notedPower (who := .notedController),
+         .amass .notedPower (who := .controller .target),
          .«if» .youControlledDestroyed (.draw (.fixed 1))] }
   | .gollumMode =>
     { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes
@@ -3510,7 +3515,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppPermanent,
       resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
         .destroy .target,
-        .createTokens .treasure (.fixed 1) false (who := .target .controller)]) }
+        .createTokens .treasure (.fixed 1) false (who := .controller .target)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
@@ -3638,7 +3643,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .redwing }
   | .step .enchantedControllerDraws =>
     { events := #[.enchantedControllerUpkeep]
-      resolution := .draw (.fixed 1) (who := .enchantedController) }
+      resolution := .draw (.fixed 1) (who := .controller .enchanted) }
   | .step .drawToTen =>
     { events := #[.yourEndStep], resolution := .draw (.upToHandSize 10) }
   | .step .copyAbsorbingMan =>

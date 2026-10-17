@@ -778,7 +778,7 @@ inductive SharedTrigger where
   `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`. -/
   | allianceMode
   /-- Destroy another; its controller amasses equal to its power. Resolves as
-  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .notedController), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
+  `.sequence [.destroy .target (note := .forAmass), .amass .notedPower (who := .controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1))]`. -/
   | destroyOtherAmassControllerPower
   /-- Gollum parity modes. Resolves as
   `.chooseModes TriggerResolution.gollumModes .oneUnused`. -/
@@ -893,7 +893,7 @@ inductive SharedTrigger where
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .target .controller)])`. -/
+  `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .controller .target)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
@@ -958,7 +958,7 @@ inductive SharedTrigger where
   | enter (e : EnterLeftover)
   /-- Leftover step / upkeep / end-step / first-main effect.
   The enchanted creature's controller draws a card, as
-  `.draw (.fixed 1) (who := .enchantedController)`.
+  `.draw (.fixed 1) (who := .controller .enchanted)`.
   Drawing until you have ten cards is `.draw (.upToHandSize 10)`.
   Becoming a copy of an artifact, non-Aura enchantment, or land is
   `.becomeCopy .artifactEnchantmentOrLand`.
