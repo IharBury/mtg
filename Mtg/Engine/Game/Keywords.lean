@@ -84,8 +84,9 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
   match o.controller with
   | none => false
   | some p =>
+    let pl := g.player p
     (o.staticAbilities.any (· == .fra .attackDespiteDefenderIfScried) &&
-      (g.player p).scriedOrSurveilledThisTurn) ||
+      (pl.scriedThisTurn || pl.surveilledThisTurn)) ||
     (g.permanentsOf p).any (·.staticAbilities.any (· == .fra .creaturesAttackDespiteDefender))
 
 

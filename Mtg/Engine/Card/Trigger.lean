@@ -48,7 +48,7 @@ inductive SacrificeSourceHow where
 deriving Repr, Inhabited, BEq
 
 /-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
-`not` negates another condition. -/
+`not` negates another condition. `or` holds when any of its conditions hold. -/
 inductive ConditionSelector where
   /-- You control a legendary creature.
   Controlling none is `.not .controlsLegendaryCreature`. -/
@@ -59,6 +59,14 @@ inductive ConditionSelector where
   Controlling no planeswalker is `.not .controlsPlaneswalker`.
   An empty library is `.not .libraryNotEmpty`. -/
   | not (cond : ConditionSelector)
+  /-- Any of `conds` holds. Once one holds, later conditions are not checked.
+  Attacking with a Hero, or a Hero entering, is
+  `.or [.attackedWithSubtype "Hero", .subtypeEntered "Hero"]`.
+  Having scried or surveilled is
+  `.or [.scriedThisTurn, .surveilledThisTurn]`.
+  Greater power or toughness is
+  `.or [.causeGreaterPower, .causeGreaterToughness]`. -/
+  | or (conds : List ConditionSelector)
   /-- An earlier step removed a hope counter. -/
   | removedHope
   /-- The source is missing, has left the battlefield, or has a hope counter.
@@ -69,8 +77,14 @@ inductive ConditionSelector where
   | drewAtLeast (n : Nat)
   /-- An earlier step dealt damage to a permanent of this subtype. -/
   | dealtDamageToSubtype (subtype : String)
-  /-- You attacked with this subtype, or one entered under your control this turn. -/
-  | attackedOrEntered (subtype : String)
+  /-- You attacked with a permanent of this subtype this turn.
+  A Hero that left after attacking still counts.
+  Attacking with a Hero, or a Hero entering, is
+  `.or [.attackedWithSubtype "Hero", .subtypeEntered "Hero"]`. -/
+  | attackedWithSubtype (subtype : String)
+  /-- A permanent of this subtype entered under your control this turn.
+  A Hero that left after entering still counts. -/
+  | subtypeEntered (subtype : String)
   /-- At least `n` loyalty counters were removed to activate the ability.
   That count is the ability's last-known power. -/
   | removedLoyaltyAtLeast (n : Nat)
@@ -120,8 +134,14 @@ inductive ConditionSelector where
   | creatureCardsInGraveyardAtLeast (n : Nat)
   /-- The targeted permanent has this subtype and is not the source. -/
   | targetIsAnotherSubtype (subtype : String)
-  /-- You have scried or surveilled this turn. -/
-  | scriedOrSurveilledThisTurn
+  /-- You have scried this turn.
+  Scry 0 does not count.
+  Having scried or surveilled is
+  `.or [.scriedThisTurn, .surveilledThisTurn]`. -/
+  | scriedThisTurn
+  /-- You have surveilled this turn.
+  Surveil 0 does not count. -/
+  | surveilledThisTurn
   /-- The artifact an earlier step put from hand is Equipment. -/
   | putArtifactIsEquipment
   /-- The card `revealLibrary .untilCreature` revealed has mana value at
@@ -147,11 +167,18 @@ inductive ConditionSelector where
   /-- An earlier Enrage trigger noted an additional combat phase.
   Checking this consumes that note. -/
   | enrageGrantsCombat
-  /-- The creature that caused this has greater power or toughness than
-  the source. An announced permanent is used when one was chosen;
-  otherwise the recorded cause. A missing source is reported. No cause
-  does not hold. The source itself does not hold. -/
-  | causeGreaterPowerOrToughness
+  /-- The creature that caused this has greater power than the source.
+  An announced permanent is used when one was chosen; otherwise the
+  recorded cause. A missing source is reported. No cause does not hold.
+  The source itself does not hold.
+  Greater power or toughness is
+  `.or [.causeGreaterPower, .causeGreaterToughness]`. -/
+  | causeGreaterPower
+  /-- The creature that caused this has greater toughness than the source.
+  An announced permanent is used when one was chosen; otherwise the
+  recorded cause. A missing source is reported. No cause does not hold.
+  The source itself does not hold. -/
+  | causeGreaterToughness
   /-- Mana was spent to cast the triggering spell.
   Spending none does not hold. -/
   | manaSpent
@@ -2179,7 +2206,7 @@ inductive TriggerResolution where
   `.ifElse (.targetIsAnotherSubtype "Hero") (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
-  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
+  `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
   The revealed creature enters when its mana value is at most the lands
   you control, and goes to your hand otherwise, with
   `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
@@ -3238,7 +3265,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .chapter _n e =>
     TriggeredAbility.chapterTiming e
   | .drawIfAttackedOrEnteredSubtype subtype =>
-    { resolution := .«if» (.attackedOrEntered subtype) (.draw (.fixed 1)) }
+    { resolution := .«if»
+        (.or [.attackedWithSubtype subtype, .subtypeEntered subtype])
+        (.draw (.fixed 1)) }
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
     { resolution := .pump .equalSourceToughness .equalSourceToughness
         (.othersOfSubtype subtype) }
@@ -3313,7 +3342,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .createTokens .treasure (.fixed 1) false (who := .targetController)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
-      resolution := .ifElse .scriedOrSurveilledThisTurn
+      resolution := .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
         (.putCounters (.ofKind .plusOnePlusOne) .permanent)
         (.pump (.fixed 1) (.fixed 1) .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
@@ -3562,7 +3591,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source] }
   | .watch .hulklingCompare =>
     { events := #[.anotherCreatureYouControlEnters],
-      resolution := .«if» .causeGreaterPowerOrToughness
+      resolution := .«if» (.or [.causeGreaterPower, .causeGreaterToughness])
         (.putCounters (.ofKind .plusOnePlusOne) .source) }
   | .watch .justiceBounce =>
     { events := #[.anotherNonlandReturned],

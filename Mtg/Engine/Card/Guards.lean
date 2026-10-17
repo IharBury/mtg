@@ -1361,7 +1361,7 @@ namespace CardDef
     (.triggered .yourBeginCombat (Effect.ofTrigger .pumpOrCounterIfScried)) ==
   "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
 #guard (SharedTrigger.timing .pumpOrCounterIfScried).resolution ==
-  .ifElse .scriedOrSurveilledThisTurn
+  .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
     (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)
 #guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
   "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."

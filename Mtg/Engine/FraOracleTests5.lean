@@ -232,7 +232,7 @@ def vraskaEnters (lands : Nat) : Game :=
 def futurescribeCombat (scried surveilled : Bool) : Game :=
   let g := addPermanent (addPermanent afterDraw desperateFuturescribe ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with scriedOrSurveilledThisTurn := scried || surveilled })
+    { pl with scriedThisTurn := scried, surveilledThisTurn := surveilled })
   resolveStack (skipTo g .beginningOfCombat 80) 20
 
 /- Having scried and surveilled still gives only one counter. -/
@@ -244,10 +244,13 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
   o.status.plusOnePlusOne == 0 && o.status.pump == (1, 1)
 #guard (fraRuling 804).comment.contains "only one +1/+1 counter"
 
-/- Scrying or surveilling sets the flag; scry 0 doesn't. -/
-#guard (afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩ |>.scriedOrSurveilledThisTurn
-#guard (afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩ |>.scriedOrSurveilledThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).scriedOrSurveilledThisTurn
+/- Scrying sets only the scry flag. Surveilling sets only the surveil flag. Scry 0 sets neither. -/
+#guard (afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩ |>.surveilledThisTurn
+#guard !((afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩).scriedThisTurn
+#guard (afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩ |>.scriedThisTurn
+#guard !((afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩).surveilledThisTurn
+#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).scriedThisTurn
+#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).surveilledThisTurn
 
 /-!
 ## The Theorist, Jace Beleren (ruling 770)

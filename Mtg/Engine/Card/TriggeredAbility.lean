@@ -893,7 +893,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .«if» (.landsAtLeast 6) (.sequence [.destroy .target,
       .createTokens .treasure (.fixed 1) false .kind .targetController]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
-  | .ifElse .scriedOrSurveilledThisTurn
+  | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
   | .«if» (.not .controlsPlaneswalker) (.sacrifice (.sacrificedSource .controllerSacrifices)) =>
@@ -1626,9 +1626,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .connive .target => s!"{noun} connives"
   | .connive .enteringVillain => "you may have it connive"
   | .connive _ => "connive"
-  | .«if» (.attackedOrEntered subtype) (.draw (.fixed 1)) =>
-    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
-    s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
+  | .«if» (.or [.attackedWithSubtype attacked, .subtypeEntered entered]) (.draw (.fixed 1)) =>
+    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
+    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
+    s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
   | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | .ifElse (.creatureCardsInGraveyardAtLeast 2)

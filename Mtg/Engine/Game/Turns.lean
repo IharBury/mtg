@@ -77,7 +77,8 @@ def clearTurnActivations (g : Game) : Game :=
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
           pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
           pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
-          pl.scriedOrSurveilledThisTurn || pl.copyNextInstantSorceryThisTurn != 0 ||
+          pl.scriedThisTurn || pl.surveilledThisTurn ||
+          pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
           pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
@@ -103,7 +104,8 @@ def clearTurnActivations (g : Game) : Game :=
           cardsDiscardedThisTurn := 0
           artifactEnteredThisTurn := false
           jaceLoyaltyAtInstantSpeed := false
-          scriedOrSurveilledThisTurn := false
+          scriedThisTurn := false
+          surveilledThisTurn := false
           copyNextInstantSorceryThisTurn := 0
           dealtNoncombatDamageThisTurn := false
           dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn

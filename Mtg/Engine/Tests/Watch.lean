@@ -62,7 +62,8 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
   .sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]
 #guard TriggeredAbility.resolution (onWatch Effect.watchHulklingCompare) ==
-  .«if» .causeGreaterPowerOrToughness (.putCounters (.ofKind .plusOnePlusOne) .source)
+  .«if» (.or [.causeGreaterPower, .causeGreaterToughness])
+    (.putCounters (.ofKind .plusOnePlusOne) .source)
 #guard TriggeredAbility.resolution (onWatch Effect.watchJusticeBounce) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (onWatch Effect.watchNontokenHeroModal) ==

@@ -116,8 +116,12 @@ structure Player where
   copyNextInstantSorceryThisTurn : Nat := 0
   /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
   dealtNoncombatDamageThisTurn : Bool := false
-  /-- This player scried or surveilled this turn (Desperate Futurescribe). -/
-  scriedOrSurveilledThisTurn : Bool := false
+  /-- This player scried this turn (Desperate Futurescribe).
+  Scry 0 does not count. -/
+  scriedThisTurn : Bool := false
+  /-- This player surveilled this turn (Desperate Futurescribe).
+  Surveil 0 does not count. -/
+  surveilledThisTurn : Bool := false
   /-- Sideboard cards not yet brought into play as objects outside the game
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
