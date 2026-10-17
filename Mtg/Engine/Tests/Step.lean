@@ -52,7 +52,7 @@ def onBoard (g : Game) (name : String) : Bool :=
     (TriggeredAbility.onEnter (Effect.ofTrigger .exileOtherCopyEnchanted)) ==
   .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
-  .«if» .sourceHarnessed (.exile .target .returnImmediately)
+  .«if» (.countAtLeast .harnessedSource (.fixed 1)) (.exile .target .returnImmediately)
 
 #guard toString (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
   TriggeredAbility.stepSentence .enchantedControllerDraws

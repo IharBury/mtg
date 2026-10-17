@@ -299,12 +299,45 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .landsYouControl =>
     some ((g.permanentsOf controller).filter (·.printed.isLand))
-  | .putArtifact =>
+  | .legendaryCreaturesYouControl =>
+    some ((g.permanentsOf controller).filter fun o => o.isCreature && o.isLegendary)
+  | .planeswalkersYouControl =>
+    some ((g.permanentsOf controller).filter (·.printed.isPlaneswalker))
+  | .forestsExceptCause =>
+    -- The causing Forest's id is this trigger's last-known power.
+    let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
+    some ((g.permanentsOf controller).filter fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause)
+  | .equippedLegendary =>
+    match sourceId.bind g.findObject? with
+    | some eq =>
+      match eq.attachedTo.bind onBf with
+      | some host =>
+        if host.isLegendary && host.controller == some controller then some #[host] else someEmpty
+      | none => someEmpty
+    | none => someEmpty
+  | .targetCreature =>
+    some (permanentTargets.filter (·.isCreature))
+  | .targetPlaneswalker =>
+    some (permanentTargets.filter (·.printed.isPlaneswalker))
+  | .targetAnotherSubtype subtype =>
+    some (permanentTargets.filter fun o =>
+      g.hasSubtype o subtype && some o.id != sourceId)
+  | .putArtifact | .putEquipment =>
     match g.putArtifactThisWay with
     | some (oid, _) =>
       match onBf oid with
-      | some o => some #[o]
+      | some o =>
+        if who == .putEquipment && !o.printed.isEquipment then someEmpty else some #[o]
       | none => someEmpty
+    | none => someEmpty
+  | .harnessedSource =>
+    match sourceId.bind onBf with
+    | some o => if o.status.harnessed then some #[o] else someEmpty
+    | none => someEmpty
+  | .attackingSource =>
+    match sourceId.bind onBf with
+    | some o => if o.status.attacking then some #[o] else someEmpty
     | none => someEmpty
   | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
     | .graveyardCard | .graveyardPermanent | .milledSubtype _
@@ -315,8 +348,37 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .nonlandMvAtMost _ | .notedLands | .discardedLand | .landFromHand
     | .artifactFromHand | .randomCreature | .forest | .basicLandOnTop
     | .dragon | .creatureMvAtMost _ | .creatureFromHand _ _
-    | .creatureCard | .anyYouControl =>
+    | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard =>
     none
+
+/-- How many objects `what` names.
+`none` means `what` does not name a counted set. An empty set is `some 0`.
+Quest counters are counted only while the source is on the battlefield.
+A missing source, or one that has left, is `none`. -/
+def countNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSelector) :
+    Option Nat :=
+  let sourceId := ctx.sourceId
+  match what with
+  | .questCounters =>
+    match sourceId.bind g.findObject? with
+    | some src => if src.isOnBattlefield then some src.status.quest else none
+    | none => none
+  | .creatureCardsInGraveyard =>
+    some ((g.player ctx.controller).graveyard.filter (fun id =>
+      (g.object! id).printed.isCreature)).size
+  | .harnessedSource =>
+    match sourceId.bind g.findObject? with
+    | some src => some (if src.status.harnessed then 1 else 0)
+    | none => some 0
+  | .putEquipment =>
+    match g.putArtifactThisWay with
+    | some (oid, _) =>
+      match g.findObject? oid with
+      | some o => some (if o.printed.isEquipment then 1 else 0)
+      | none => some 0
+    | none => some 0
+  | _ =>
+    (g.permanentsNamed ctx what).map (·.size)
 
 /-- Create `n` tokens with `face` for each player. The last token's id is
 returned when at least one was created. -/

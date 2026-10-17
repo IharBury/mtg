@@ -300,7 +300,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) (lastKnownPower : Option Int)
     (cond : TriggeredAbility.ConditionSelector) : Game × Bool :=
   match cond with
-  | .controlsLegendaryCreature => (g, g.controlsLegendaryCreature controller)
+  | (.countAtLeast .legendaryCreaturesYouControl (.fixed 1)) => (g, g.controlsLegendaryCreature controller)
   | .not cond =>
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
@@ -361,7 +361,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
     (g, holds)
   | .removedLoyaltyAtLeast n => (g, (lastKnownPower.getD 0) ≥ Int.ofNat n)
-  | .landsAtLeast n =>
+  | (.countAtLeast .landsYouControl (.fixed n)) =>
+    let n := n.toNat
     let lands := ((g.permanentsOf controller).filter (·.printed.isLand)).size
     if lands < n then
       let g :=
@@ -370,16 +371,17 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else g
       (g, false)
     else (g, true)
-  | .controlsPlaneswalker =>
+  | (.countAtLeast .planeswalkersYouControl (.fixed 1)) =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
       (g.logMsg "You control a planeswalker. The ability does nothing", true)
     else (g, false)
-  | .otherForestsAtLeast n =>
+  | (.countAtLeast .forestsExceptCause (.fixed n)) =>
     -- Rulings 818 / 819: count Forests other than the one that caused the
     -- trigger, whether or not that one is still on the battlefield.
     let cause : Option ObjectId := lastKnownPower.map (fun k => ⟨k.toNat⟩)
     let others := ((g.permanentsOf controller).filter (fun o =>
       g.hasSubtype o "Forest" && some o.id != cause)).size
+    let n := n.toNat
     if others < n then
       let g :=
         if n == 5 then
@@ -409,19 +411,21 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (srcId.bind g.findObject?).any (·.isOnBattlefield)
       if holds then (g, true)
       else ({ g with handDiscardedThisWay := none, notedSourceThisWay := none }, false)
-  | .bearsAtLeast n => (g, g.countSubtype controller "Bear" ≥ n)
-  | .controlsAtLeast subtype n => (g, g.countSubtype controller subtype ≥ n)
+  | (.countAtLeast (.youControl (.subtype "Bear")) (.fixed n)) =>
+    (g, g.countSubtype controller "Bear" ≥ n.toNat)
+  | (.countAtLeast (.youControl (.subtype subtype)) (.fixed n)) =>
+    (g, g.countSubtype controller subtype ≥ n.toNat)
   | .sourceWasSacrificed =>
     let yes := g.sourceWasSacrificed
     ({ g with sourceWasSacrificed := false }, yes)
   | .planWasSacrificed =>
     let yes := g.planWasSacrificed
     ({ g with planWasSacrificed := false }, yes)
-  | .questAtLeast n =>
+  | (.countAtLeast .questCounters (.fixed n)) =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The triggered ability's source is no longer in play", false)
     | some src =>
-      if src.isOnBattlefield then (g, src.status.quest ≥ n)
+      if src.isOnBattlefield then (g, src.status.quest ≥ n.toNat)
       else (g.logMsg s!"{src.name} is no longer on the battlefield", false)
   | .equipmentAttached =>
     match g.equipmentAttachedHost with
@@ -435,11 +439,11 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .opponentsMilled =>
     let milled := g.opponentsMilledThisWay
     ({ g with opponentsMilledThisWay := false }, milled)
-  | .anotherHero =>
+  | (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) =>
     (g, (g.permanentsOf controller).any (fun o =>
       g.hasSubtype o "Hero" && some o.id != sourceId))
   | .libraryNotEmpty => (g, !(g.player controller).library.isEmpty)
-  | .equippedLegendaryYouControl =>
+  | (.countAtLeast .equippedLegendary (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The Equipment is no longer in play", false)
     | some eq =>
@@ -451,21 +455,21 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if hostOk then (g, true)
       else
         (g.logMsg s!"{(g.player controller).name} creates two tapped Spirit tokens", false)
-  | .targetIsCreature =>
+  | (.countAtLeast .targetCreature (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
     | some o => (g, o.isCreature)
     | none => (g, false)
-  | .targetIsPlaneswalker =>
+  | (.countAtLeast .targetPlaneswalker (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
     | some o => (g, o.printed.isPlaneswalker)
     | none => (g, false)
-  | .creatureCardsInGraveyardAtLeast n =>
+  | (.countAtLeast .creatureCardsInGraveyard (.fixed n)) =>
     let gy := ((g.player controller).graveyard.filter (fun id =>
       (g.object! id).printed.isCreature)).size
-    (g, gy ≥ n)
-  | .targetIsAnotherSubtype subtype =>
+    (g, gy ≥ n.toNat)
+  | (.countAtLeast (.targetAnotherSubtype subtype) (.fixed 1)) =>
     let legal := g.legalTargetsForKind controller ab.targetKind sourceId
     let holds :=
       match targets[0]? with
@@ -478,7 +482,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (g, holds)
   | .scriedThisTurn => (g, (g.player controller).scriedThisTurn)
   | .surveilledThisTurn => (g, (g.player controller).surveilledThisTurn)
-  | .putArtifactIsEquipment =>
+  | (.countAtLeast .putEquipment (.fixed 1)) =>
     match g.putArtifactThisWay with
     | none => (g, false)
     | some (id, _) =>
@@ -491,7 +495,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.revealedIdsThisWay[0]?.bind g.findObject? with
     | some o => (g, o.printed.manaValue ≤ g.landsYouControl controller)
     | none => (g, false)
-  | .sourceHarnessed =>
+  | (.countAtLeast .harnessedSource (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | none => (g, false)
     | some src =>
@@ -515,7 +519,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then (g.logMsg "Whiplash isn't equipped", false)
     else (g, true)
-  | .sourceAttacking =>
+  | (.countAtLeast .attackingSource (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | some o => (g, o.isOnBattlefield && o.status.attacking)
     | none => (g, false)
@@ -537,6 +541,75 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let spent :=
       ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
     (g, spent > 0)
+  | .countAtLeast what amount =>
+    -- Printed counts above keep their logs and notes. Every other pair is
+    -- the number of objects `what` names, compared with `amount`.
+    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
+    let (g, counted) :=
+      match what with
+      | .targetCreature =>
+        let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
+        let n :=
+          match o? with
+          | some o => if o.isCreature then 1 else 0
+          | none => 0
+        (g, some n)
+      | .targetPlaneswalker =>
+        let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
+        let n :=
+          match o? with
+          | some o => if o.printed.isPlaneswalker then 1 else 0
+          | none => 0
+        (g, some n)
+      | .targetAnotherSubtype subtype =>
+        let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+        let n :=
+          match targets[0]? with
+          | some (Target.permanent oid) =>
+            if legal.contains (Target.permanent oid) then
+              match g.findObject? oid with
+              | some o => if g.hasSubtype o subtype && some o.id != sourceId then 1 else 0
+              | none => 0
+            else 0
+          | _ => 0
+        (g, some n)
+      | .putEquipment =>
+        match g.putArtifactThisWay with
+        | none => (g, some 0)
+        | some (id, _) =>
+          match g.findObject? id with
+          | some o =>
+            if o.printed.isEquipment then (g, some 1)
+            else ({ g with putArtifactThisWay := none }, some 0)
+          | none => ({ g with putArtifactThisWay := none }, some 0)
+      | .questCounters =>
+        match sourceId.bind g.findObject? with
+        | none => (g.logMsg "The triggered ability's source is no longer in play", none)
+        | some src =>
+          if src.isOnBattlefield then (g, some src.status.quest)
+          else (g.logMsg s!"{src.name} is no longer on the battlefield", none)
+      | .equippedLegendary =>
+        match sourceId.bind g.findObject? with
+        | none => (g.logMsg "The Equipment is no longer in play", some 0)
+        | some eq =>
+          let n :=
+            match eq.attachedTo.bind g.findObject? with
+            | some host =>
+              if host.isOnBattlefield && host.isLegendary && host.controller == some controller then
+                1
+              else 0
+            | none => 0
+          (g, some n)
+      | .harnessedSource =>
+        match sourceId.bind g.findObject? with
+        | none => (g, some 0)
+        | some src =>
+          if src.status.harnessed then (g, some 1)
+          else (g.logMsg "The Mind Stone is not harnessed", some 0)
+      | _ => (g, g.countNamed ctx what)
+    match g.triggerCount ctx amount, counted with
+    | some k, some c => (g, c ≥ k)
+    | _, _ => (g, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -3843,9 +3916,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
-  | .«if» .anotherHero (.dealDamage (.fixed 1) (.player .targetOpponent)) =>
+  | .«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent)) =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower .anotherHero
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1))
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
