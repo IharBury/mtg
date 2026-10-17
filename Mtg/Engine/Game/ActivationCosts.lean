@@ -62,6 +62,7 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
   | .sacrificeArtifactOrDiscardNonland =>
     (perm && artifact) || (inHand && !o.printed.isLand)
   | .discardACard => inHand
+  | .discardNonland => inHand && !o.printed.isLand
   | .discardLegendaryCard => inHand && o.isLegendary
   | .discardLegendarySameName =>
     inHand && o.isLegendary &&

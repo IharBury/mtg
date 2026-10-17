@@ -47,7 +47,8 @@ inductive SacrificeSourceHow where
   | movedAsSacrificed
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.pay` pays. -/
+/-- What `TriggerResolution.pay` pays.
+`or` pays any one of its costs. -/
 inductive CostSelector where
   /-- Pay these mana symbols.
   `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
@@ -58,10 +59,28 @@ inductive CostSelector where
   | anotherCreature
   /-- Sacrifice another creature or artifact. -/
   | anotherCreatureOrArtifact
-  /-- Sacrifice an artifact, or discard a card. -/
-  | artifactOrDiscard
-  /-- Sacrifice an artifact, or discard a nonland card. -/
-  | artifactOrDiscardNonland
+  /-- Sacrifice an artifact.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.artifact, .discard]`.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.artifact, .discardNonland]`. -/
+  | artifact
+  /-- Discard a card.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.artifact, .discard]`. -/
+  | discard
+  /-- Discard a nonland card.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.artifact, .discardNonland]`. -/
+  | discardNonland
+  /-- Pay any one of `costs`.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.artifact, .discard]`.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.artifact, .discardNonland]`.
+  Any other list offers each cost that can be paid. One payable cost
+  is that cost. Several are a choice of which to pay. None pays nothing. -/
+  | or (costs : List CostSelector)
 deriving Repr, Inhabited, BEq
 
 /-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
@@ -1630,9 +1649,13 @@ inductive TriggerResolution where
   `.pay (.mana #[.generic 1, .colored .green, .colored .blue])`.
   Sacrificing another creature is `.pay .anotherCreature`. Its power is noted.
   Sacrificing another creature or artifact is `.pay .anotherCreatureOrArtifact`.
-  Sacrificing an artifact, or discarding a card, is `.pay .artifactOrDiscard`.
+  Sacrificing an artifact is `.pay .artifact`.
+  Discarding a card is `.pay .discard`.
+  Discarding a nonland card is `.pay .discardNonland`.
+  Sacrificing an artifact, or discarding a card, is
+  `.pay (.or [.artifact, .discard])`.
   Sacrificing an artifact, or discarding a nonland card, is
-  `.pay .artifactOrDiscardNonland`. -/
+  `.pay (.or [.artifact, .discardNonland])`. -/
   | pay (what : CostSelector)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
@@ -1959,11 +1982,11 @@ inductive TriggerResolution where
   You may draw for each permanent of a type, and each opponent draws if you do, is
   `.may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo`.
   You may sacrifice an artifact or discard a card to draw is
-  `.may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo`.
+  `.may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo`.
   You may sacrifice another creature to destroy an opposing nonland is
   `.may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo`.
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
-  `.may (.pay .artifactOrDiscardNonland) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`.
+  `.may (.pay (.or [.artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`.
   You may tap this to grant indestructible is
   `.may (.tap .source) (.queueReflexive (.grant (.keywords Keyword.indestructible) .target)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
@@ -3489,7 +3512,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
-    { resolution := .may (.pay .artifactOrDiscard) (.draw (.fixed 1)) .ifYouDo }
+    { resolution := .may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -3526,7 +3549,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
-      resolution := .may (.pay .artifactOrDiscardNonland)
+      resolution := .may (.pay (.or [.artifact, .discardNonland]))
         (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,

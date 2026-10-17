@@ -161,6 +161,8 @@ inductive CostPick where
   /-- Sacrifice an artifact, or discard a nonland card. -/
   | sacrificeArtifactOrDiscardNonland
   | discardACard
+  /-- Discard a nonland card. -/
+  | discardNonland
   | discardLegendaryCard
   /-- Discard a legendary card with the same name as a legendary permanent
   you control. -/
@@ -187,6 +189,7 @@ def CostPick.phrase : CostPick → String
   | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
   | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"
   | .discardACard => "discard a card"
+  | .discardNonland => "discard a nonland card"
   | .discardLegendaryCard => "discard a legendary card"
   | .discardLegendarySameName =>
     "discard a legendary card with the same name as a legendary permanent you control"
