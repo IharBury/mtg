@@ -93,7 +93,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
-    .«if» (.countAtLeast .attackingSource (.fixed 1)) (.untap .source),
+    .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source),
     .«if» .enrageGrantsCombat .additionalCombatPhase]
 
 #guard toString (onWatch Effect.watchJusticeBounce) ==

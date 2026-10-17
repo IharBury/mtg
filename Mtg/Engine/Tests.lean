@@ -139,7 +139,7 @@ keep working.
   the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
 - `Chapter`: printed Saga chapters resolved by the other trigger constructors
-- `Count`: at least `n` objects matching an `ObjectSelector`, as `ConditionSelector.countAtLeast`
+- `Count`: `ConditionSelector.atLeast` compares two `NumberSelector`s, including how many objects an `ObjectSelector` names
 - `Step`: upkeep, end-step, and first-main triggers that used to resolve as `step`
 - `Death`: dies triggers that used to resolve as `death`
 - `ThisAttack`: attack triggers that used to resolve as `thisAttack`

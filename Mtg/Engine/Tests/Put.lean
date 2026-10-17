@@ -245,7 +245,7 @@ attach; another artifact is not. An empty hand skips the choice. -/
       match g.putArtifactThisWay, onBoard g "Test Sword" with
       | some (putId, hid), some sword =>
         let (g, holds) := g.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
-          #[] none (.countAtLeast .putEquipment (.fixed 1))
+          #[] none (.atLeast (.count .putEquipment) (.fixed 1))
         offered && putId == sword.id && hid == host.id && holds &&
           g.putArtifactThisWay.isSome
       | _, _ => false
@@ -262,7 +262,7 @@ attach; another artifact is not. An empty hand skips the choice. -/
       let g := putStep g (.put .artifactFromHand (note := .forAttach)) (some host.id)
       let g := mustApply g caster (.cast id)
       let (g, holds) := g.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
-        #[] none (.countAtLeast .putEquipment (.fixed 1))
+        #[] none (.atLeast (.count .putEquipment) (.fixed 1))
       !holds && g.putArtifactThisWay.isNone && (onBoard g "Test Bauble").isSome
 
 #guard
