@@ -1,4 +1,5 @@
 import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.FraHelpers
 
 /-!
 # Reality Fracture choices
@@ -465,6 +466,23 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySacrificeThese _ _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeThese n _, _ => throw s!"Choose {n} to sacrifice, or decline"
+  | .mayDiscardThese n ids, .objects chosen =>
+    if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
+        !chosen.all (ids.contains ·) then
+      throw s!"Choose {n} to discard, or decline"
+    let mut g := g
+    for id in chosen do
+      let some o := g.findObject? id | throw "no such object"
+      if o.owner != p || o.zone != .hand p then
+        throw s!"Can't discard {o.name}"
+      g := g.discardFromHand p id
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      return g.finishFraChoice
+  | .mayDiscardThese _ _, .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
+  | .mayDiscardThese n _, _ => throw s!"Choose {n} to discard, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
     if !(g.player p).manaPool.canPay cost then
@@ -1187,6 +1205,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .maySacrificeAnotherCreatureForPower _ => .decline
   | .maySacrificeAnotherForDrawTreasure _ => .decline
   | .maySacrificeThese _ _ => .decline
+  | .mayDiscardThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
     if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
   | .attachAnyEquipment _ eligible => .choosePermanents eligible

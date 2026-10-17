@@ -341,6 +341,8 @@ inductive FraChoice where
   | maySacrificeAnotherForDrawTreasure (sourceId : ObjectId)
   /-- You may sacrifice `n` of `ids`. Declining pays nothing. -/
   | maySacrificeThese (n : Nat) (ids : Array ObjectId)
+  /-- You may discard `n` of `ids`. Declining pays nothing. -/
+  | mayDiscardThese (n : Nat) (ids : Array ObjectId)
   /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
   | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId)
   /-- Choose any number of Equipment to attach to `hostId`. Declining

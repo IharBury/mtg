@@ -653,10 +653,22 @@ def sacrificeCostCandidates (g : Game) (ctx : TriggerRead)
   | _ =>
     (g.permanentsNamed ctx what).getD #[]
 
+/-- Cards in the controller's hand that can pay `CostSelector.discard` of `what`.
+`.card` is each card in that hand. `.nonland` is each nonland card.
+A selector that does not name cards in hand names none. A permanent is
+not discarded. -/
+def discardCostCandidates (g : Game) (controller : PlayerId)
+    (what : TriggeredAbility.ObjectSelector) : Array GameObject :=
+  let hand := (g.player controller).hand.filterMap g.findObject?
+  match what with
+  | .card => hand
+  | .nonland => hand.filter (!·.printed.isLand)
+  | _ => #[]
+
 /-- Whether `cost` can be paid as this ability resolves.
 An `or` can be paid when any of its costs can. Mana needs a pool that
 can pay it. A sacrifice needs at least `n` permanents `what` names.
-A discard needs a legal card. -/
+A discard needs at least `n` cards `what` names. -/
 def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (cost : TriggeredAbility.CostSelector)
     (targets : Array Target := #[])
@@ -671,11 +683,12 @@ def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     match g.triggerCount ctx n with
     | some k => k > 0 && (g.sacrificeCostCandidates ctx what).size ≥ k
     | none => false
-  | .discard =>
-    !(g.player controller).hand.isEmpty
-  | .discardNonland =>
-    (g.player controller).hand.any (fun id =>
-      (g.findObject? id).any (!·.printed.isLand))
+  | .discard n what =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
+    match g.triggerCount ctx n with
+    | some k => k > 0 && (g.discardCostCandidates controller what).size ≥ k
+    | none => false
   | .or costs =>
     let rec go : List TriggeredAbility.CostSelector → Bool
       | [] => false
@@ -4440,21 +4453,39 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             s!"{(g.player controller).name} may sacrifice {noun}"
       | none =>
         (g.logMsg "Nothing to sacrifice").failMayThen
-    | .discard =>
+    | .discard (.fixed 1) .card =>
       g.offerMayPayPick controller sourceId .discardACard
         s!"{(g.player controller).name} may discard a card"
-    | .discardNonland =>
+    | .discard (.fixed 1) .nonland =>
       g.offerMayPayPick controller sourceId .discardNonland
         s!"{(g.player controller).name} may discard a nonland card"
+    | .discard n what =>
+      -- Printed discards above keep their choices and logs. Every other
+      -- count offers that many cards `what` names. A count that is not a
+      -- positive number, or fewer cards than that count, pays nothing.
+      let ctx : TriggerRead := {
+        controller, sourceId, targets, lastKnownPower, lastKnownToughness,
+        sequencedCardPower }
+      match g.triggerCount ctx n with
+      | some k =>
+        let ids := (g.discardCostCandidates controller what).map (·.id)
+        if k == 0 || ids.size < k then
+          (g.logMsg "Nothing to discard").failMayThen
+        else
+          let noun := if k == 1 then "a card" else s!"{k} cards"
+          g.beginFraChoice controller (.mayDiscardThese k ids)
+            s!"{(g.player controller).name} may discard {noun}"
+      | none =>
+        (g.logMsg "Nothing to discard").failMayThen
     | .or costs =>
       -- Sacrificing an artifact or discarding is one choice of an object.
       -- Either order is that payment.
-      if costs == [.sacrifice (.fixed 1) .artifact, .discard] ||
-          costs == [.discard, .sacrifice (.fixed 1) .artifact] then
+      if costs == [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card] ||
+          costs == [.discard (.fixed 1) .card, .sacrifice (.fixed 1) .artifact] then
         { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
           s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
-      else if costs == [.sacrifice (.fixed 1) .artifact, .discardNonland] ||
-          costs == [.discardNonland, .sacrifice (.fixed 1) .artifact] then
+      else if costs == [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland] ||
+          costs == [.discard (.fixed 1) .nonland, .sacrifice (.fixed 1) .artifact] then
         match sourceId with
         | some sid =>
           if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then
