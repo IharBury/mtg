@@ -808,7 +808,7 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw (.fixed 1), .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]
+  .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
@@ -935,7 +935,7 @@ namespace CardDef
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 #guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
   .sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
-    .«if» (.countAtLeast .putEquipment (.fixed 1)) (.attach .putArtifact .notedHost)]
+    .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]
 #guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
   .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
@@ -1344,7 +1344,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
-  .ifElse ((.countAtLeast .creatureCardsInGraveyard (.fixed 2)))
+  .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
     (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))
 #guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
   "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
@@ -1353,7 +1353,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterPlusOneOrTwoIfAnotherHero ==
   "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
 #guard TriggeredAbility.resolution .onEnterPlusOneOrTwoIfAnotherHero ==
-  .ifElse ((.countAtLeast (.targetAnotherSubtype "Hero") (.fixed 1)))
+  .ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)))
     (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
     (.putCounters (.ofKind .plusOnePlusOne) .permanent)
 #guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
@@ -1575,7 +1575,7 @@ end CardDef
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
     .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.countAtLeast .equippedLegendary (.fixed 1)) .markRecentTokensAttacking]
+  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
@@ -1589,7 +1589,7 @@ end CardDef
     .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
-    .«if» ((.countAtLeast (.youControl (.subtype "Bear")) (.fixed 3))) (.draw (.fixed 2))]
+    .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
@@ -1617,25 +1617,25 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
-  .sequence [.draw (.fixed 1), .«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.gainLife (.fixed 2))]
+  .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
   .sequence [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
-  .sequence [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
+  .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
   .sequence [.grant (.keywords Keyword.hexproof) .target,
-    .«if» (.countAtLeast .targetCreature (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
-    .«if» (.countAtLeast .targetPlaneswalker (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
+    .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
+    .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
-  .«if» (.drewAtLeast 2) (.sequence [
+  .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
     .pump (.fixed 3) (.fixed 0) .target,
     .grant (.keywords Keyword.firstStrike) .target])
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
-  .«if» ((.countAtLeast .landsYouControl (.fixed 6))) (.sequence [
+  .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
     .createTokens .treasure (.fixed 1) false (who := .targetController)])
 #guard TriggeredAbility.toNotation

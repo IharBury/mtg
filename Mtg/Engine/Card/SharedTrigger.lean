@@ -123,7 +123,7 @@ inductive ThisAttackLeftover where
   | equippedDrain
   /-- Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her
   power is 4 or greater. Resolves as
-  `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`. -/
+  `.«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))`. -/
   | drawIfPower4
   /-- Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0
   and gains indestructible until end of turn. Resolves as
@@ -661,7 +661,7 @@ inductive SharedTrigger where
   | mayPayGenericDraw (n : Nat) (plusOneOnSource : Bool := false)
   /-- Draw a card, then put a card from your hand on the bottom if you don't
   control a legendary creature.
-  Resolves as `.sequence [.draw (.fixed 1), .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]`. -/
+  Resolves as `.sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]`. -/
   | drawThenBottomIfNoLegendary
   /-- Remove a hope counter from this. If you do, draw a card. Then if it has
   no hope counters, sacrifice it and you gain 4 life.
@@ -706,7 +706,7 @@ inductive SharedTrigger where
   Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`. -/
   | wolfPlusOneOrTreasure
   /-- Trample counter, become a Bear, maybe draw. Resolves as
-  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.countAtLeast (.youControl (.subtype "Bear")) (.fixed 3))) (.draw (.fixed 2))]`. -/
+  `.sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))]`. -/
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. Resolves as
   `.sequence [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
@@ -745,7 +745,7 @@ inductive SharedTrigger where
   /-- Create an Alien and grow it from invasion counters. -/
   | createAlienPerInvasion
   /-- You may put an artifact from hand; attach if Equipment. Resolves as
-  `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.countAtLeast .putEquipment (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
+  `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
   | mayPutArtifactAttachEquipment
   /-- Cascade. -/
   | cascade
@@ -760,7 +760,7 @@ inductive SharedTrigger where
   `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
-  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» (.countAtLeast .equippedLegendary (.fixed 1)) .markRecentTokensAttacking]`. -/
+  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
@@ -796,7 +796,7 @@ inductive SharedTrigger where
   | revealTopPutRandomCreature (n : Nat)
   /-- If you drew two or more, another creature you control gets +3/+0 and
   gains first strike. Resolves as
-  `.«if» (.drewAtLeast 2) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target])`. -/
+  `.«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target])`. -/
   | beginCombatIfDrawnTwoPump
   /-- Hone per opposing creatures and attach. -/
   | honePerOppAttach
@@ -887,18 +887,18 @@ inductive SharedTrigger where
   /-- Target permanent you control gains these keywords until end of turn; a
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
-  `.sequence [.grant (.keywords k) .target, .«if» (.countAtLeast .targetCreature (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.countAtLeast .targetPlaneswalker (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`. -/
+  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
-  `.«if» ((.countAtLeast .landsYouControl (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)])`. -/
+  `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)])`. -/
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
   `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`. -/
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source.
-  Resolves as `.«if» (.not (.countAtLeast .planeswalkersYouControl (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices))`. -/
+  Resolves as `.«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices))`. -/
   | sacrificeSourceIfNoPlaneswalker
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlGet (power toughness : Int)
@@ -912,7 +912,7 @@ inductive SharedTrigger where
   | addGreenPerChargeCounter
   /-- Draw two cards; if your library is then empty, you win; the owner
   shuffles the source into their library (Fblthp, Impossibly Lost). Resolves as
-  `.sequence [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource]`. -/
+  `.sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource]`. -/
   | drawTwoWinIfEmptyShuffleSource
   /-- If you control at least five other Forests, target creature you
   control gets +3/+3 until end of turn (Roiling Canopy). -/
@@ -939,7 +939,7 @@ inductive SharedTrigger where
   Resolves as `.or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]`. -/
   | createFoodOrTreasure
   /-- Villain if two creature cards in gy; otherwise mill two. Resolves as
-  `.ifElse ((.countAtLeast .creatureCardsInGraveyard (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`. -/
+  `.ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`. -/
   | villainIfGyElseMill
   /-- Draw, then you may put a land from hand tapped.
   Resolves as `.sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]`. -/
@@ -947,7 +947,7 @@ inductive SharedTrigger where
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero
   /-- +1/+1, or two if that creature is another Hero. Resolves as
-  `.ifElse ((.countAtLeast (.targetAnotherSubtype "Hero") (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
+  `.ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
   | plusOneOrTwoIfAnotherHero
   /-- You may sac an artifact or discard; if you do, draw. -/
   | maySacArtifactOrDiscardDraw
@@ -964,7 +964,7 @@ inductive SharedTrigger where
   Becoming a copy of a creature or a graveyard creature card is
   `.becomeCopy .creatureOrGraveyardCard`.
   Exiling and returning another nonland while harnessed is
-  `.«if» (.countAtLeast .harnessedSource (.fixed 1)) (.exile .target .returnImmediately)`. -/
+  `.«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)`. -/
   | step (e : StepLeftover)
   /-- Leftover dies effect.
   Hellcat returns under her owner's control, losing all abilities, gaining
@@ -991,7 +991,7 @@ inductive SharedTrigger where
   attached to the source, is
   `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
   Drawing when the source's power is 4 or greater is
-  `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`.
+  `.«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))`.
   The source getting +2/+0 and indestructible until end of turn is
   `.sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]`. -/
   | thisAttack (e : ThisAttackLeftover)
@@ -1024,7 +1024,7 @@ inductive SharedTrigger where
   A +1/+1 counter when the entering creature is greater is
   `.«if» (.or [.causeGreaterPower, .causeGreaterToughness]) (.putCounters (.ofKind .plusOnePlusOne) .source)`.
   Putting a counter, untapping when attacking, and an Enrage combat is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» (.countAtLeast .attackingSource (.fixed 1)) (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
   Putting a counter, then damage equal to those counters, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.dealDamage .plusOneCounters .target)]`.
   +2/+2, then you may retarget the spell, is
@@ -1089,7 +1089,7 @@ inductive SharedTrigger where
   turn with
   `.may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo`.
   If you control another Hero, 1 damage to the announced opponent is
-  `.«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))`.
+  `.«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))`.
   Base power and toughness 6/6 and trample until end of turn is
   `.sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]`.
   A +1/+1 counter on the announced creature is

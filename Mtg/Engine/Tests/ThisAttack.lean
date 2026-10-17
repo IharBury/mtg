@@ -47,7 +47,7 @@ def hand (g : Game) : Nat :=
     .loseLife .attachedEquipment .eachOpponent,
     .gainLife .attachedEquipment])
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
-  .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))
+  .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
   .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]

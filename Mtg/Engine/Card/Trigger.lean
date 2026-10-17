@@ -216,7 +216,7 @@ A new base power and toughness names who receives it.
 Putting a card on a library names which card.
 Exiling names which cards.
 Putting cards onto the battlefield names which cards.
-Which objects `ConditionSelector.countAtLeast` counts are these selectors. -/
+Which objects `NumberSelector.count` counts are these selectors. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -624,51 +624,51 @@ inductive ObjectSelector where
   | enchantedCreature
   /-- Each legendary creature the controller controls.
   You control one is
-  `.countAtLeast .legendaryCreaturesYouControl (.fixed 1)`. -/
+  `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`. -/
   | legendaryCreaturesYouControl
   /-- Each planeswalker the controller controls.
   You control one is
-  `.countAtLeast .planeswalkersYouControl (.fixed 1)`. -/
+  `.atLeast (.count .planeswalkersYouControl) (.fixed 1)`. -/
   | planeswalkersYouControl
   /-- Each Forest the controller controls other than the one that caused this.
   That Forest's id is this trigger's last-known power.
   At least `n` other Forests is
-  `.countAtLeast .forestsExceptCause (.fixed n)`. -/
+  `.atLeast (.count .forestsExceptCause) (.fixed n)`. -/
   | forestsExceptCause
   /-- The quest counters on the source, while it is on the battlefield.
-  At least `n` is `.countAtLeast .questCounters (.fixed n)`.
+  At least `n` is `.atLeast (.count .questCounters) (.fixed n)`.
   A missing source is reported. A source that has left is reported. -/
   | questCounters
   /-- The creature this Equipment is attached to, when that creature is
   legendary and you control it.
-  That creature is `.countAtLeast .equippedLegendary (.fixed 1)`.
+  That creature is `.atLeast (.count .equippedLegendary) (.fixed 1)`.
   A missing Equipment is reported. -/
   | equippedLegendary
   /-- The announced permanent when it is a creature.
-  A creature target is `.countAtLeast .targetCreature (.fixed 1)`.
+  A creature target is `.atLeast (.count .targetCreature) (.fixed 1)`.
   An illegal target is reported. -/
   | targetCreature
   /-- The announced permanent when it is a planeswalker.
-  A planeswalker target is `.countAtLeast .targetPlaneswalker (.fixed 1)`.
+  A planeswalker target is `.atLeast (.count .targetPlaneswalker) (.fixed 1)`.
   An illegal target is reported. -/
   | targetPlaneswalker
   /-- Creature cards in the controller's graveyard.
-  At least `n` is `.countAtLeast .creatureCardsInGraveyard (.fixed n)`. -/
+  At least `n` is `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`. -/
   | creatureCardsInGraveyard
   /-- The announced permanent when it has this subtype and is not the source.
   Another Hero is
-  `.countAtLeast (.targetAnotherSubtype "Hero") (.fixed 1)`. -/
+  `.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)`. -/
   | targetAnotherSubtype (subtype : String)
   /-- The artifact an earlier step put from hand, when it is Equipment.
-  Equipment is `.countAtLeast .putEquipment (.fixed 1)`.
+  Equipment is `.atLeast (.count .putEquipment) (.fixed 1)`.
   An artifact that is not Equipment clears that note. -/
   | putEquipment
   /-- The source, when it is harnessed.
-  Harnessed is `.countAtLeast .harnessedSource (.fixed 1)`.
+  Harnessed is `.atLeast (.count .harnessedSource) (.fixed 1)`.
   An unharnessed source is reported. A missing source does nothing. -/
   | harnessedSource
   /-- The source, when it is on the battlefield and attacking.
-  Attacking is `.countAtLeast .attackingSource (.fixed 1)`.
+  Attacking is `.atLeast (.count .attackingSource) (.fixed 1)`.
   A missing source does not hold. -/
   | attackingSource
 deriving Repr, Inhabited, BEq
@@ -687,9 +687,12 @@ life `TriggerResolution.loseLife` loses, how many cards
 `TriggerResolution.empowerJace` puts on a Jace token, how much less
 `TriggerResolution.spellsCostLess` makes a spell cost, how many cards
 `TriggerResolution.lookAtTopRevealTypes` looks at, and the base power
-and toughness `TriggerResolution.becomePT` sets, and the threshold of
-`ConditionSelector.countAtLeast`.
+and toughness `TriggerResolution.becomePT` sets, and each number
+`ConditionSelector.atLeast` compares.
 `.greatestPower` is first so a default resolution uses it.
+`.count` is how many objects an `ObjectSelector` names.
+`.cardsDrawnThisTurn` is how many cards the controller has drawn this turn.
+`.libraryCards` is how many cards are in the controller's library.
 `.fixed` is a fixed bonus, `n` damage, scry `n`, draw `n`, a base of `n`,
 `n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
 `n` times. -/
@@ -817,70 +820,99 @@ inductive NumberSelector where
   caused this. No such spell, or no blue symbol, creates nothing.
   `.createTokens .treasure .blueManaSymbols false .merfolk`. -/
   | blueManaSymbols
+  /-- How many objects `what` names.
+  A selector that does not name a counted set is not a number.
+  Quest counters are counted only while the source is on the battlefield.
+  A missing source, or one that has left, is not a number.
+  At least one legendary creature you control is
+  `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`. -/
+  | count (what : ObjectSelector)
+  /-- How many cards the controller has drawn this turn.
+  At least two is `.atLeast .cardsDrawnThisTurn (.fixed 2)`. -/
+  | cardsDrawnThisTurn
+  /-- How many cards are in the controller's library.
+  A card remains is `.atLeast .libraryCards (.fixed 1)`.
+  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`. -/
+  | libraryCards
 deriving Repr, Inhabited, BEq
 
 /-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
 `not` negates another condition. `or` holds when any of its conditions hold.
-`countAtLeast` holds when at least as many objects as `n` match `what`. -/
+`atLeast` holds when its first number is at least its second. -/
 inductive ConditionSelector where
-  /-- At least `n` objects match `what`.
-  `n` is a `NumberSelector`. `.fixed` is the printed count.
+  /-- The first number is at least the second.
+  Each number is a `NumberSelector`. `.fixed` is a printed number.
+  `.count` is how many objects an `ObjectSelector` names.
   You control a legendary creature is
-  `.countAtLeast .legendaryCreaturesYouControl (.fixed 1)`.
+  `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`.
   Controlling none is
-  `.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))`.
+  `.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))`.
   You control at least `n` lands is
-  `.countAtLeast .landsYouControl (.fixed n)`.
+  `.atLeast (.count .landsYouControl) (.fixed n)`.
   Fewer than six is reported.
   You control a planeswalker is
-  `.countAtLeast .planeswalkersYouControl (.fixed 1)`.
+  `.atLeast (.count .planeswalkersYouControl) (.fixed 1)`.
   Controlling one is reported.
   Controlling none is
-  `.not (.countAtLeast .planeswalkersYouControl (.fixed 1))`.
+  `.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))`.
   You control at least `n` Forests other than the one that caused this is
-  `.countAtLeast .forestsExceptCause (.fixed n)`.
+  `.atLeast (.count .forestsExceptCause) (.fixed n)`.
   Fewer than five is reported.
   You control at least `n` Bears is
-  `.countAtLeast (.youControl (.subtype "Bear")) (.fixed n)`.
+  `.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed n)`.
   You control at least `n` permanents of this subtype is
-  `.countAtLeast (.youControl (.subtype subtype)) (.fixed n)`.
+  `.atLeast (.count (.youControl (.subtype subtype))) (.fixed n)`.
   The source has at least `n` quest counters is
-  `.countAtLeast .questCounters (.fixed n)`.
+  `.atLeast (.count .questCounters) (.fixed n)`.
   A missing source is reported. A source that has left is reported.
   You control a Hero other than the source is
-  `.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)`.
+  `.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)`.
   This Equipment is attached to a legendary creature you control is
-  `.countAtLeast .equippedLegendary (.fixed 1)`.
+  `.atLeast (.count .equippedLegendary) (.fixed 1)`.
   A missing Equipment is reported.
   The target is a creature is
-  `.countAtLeast .targetCreature (.fixed 1)`.
+  `.atLeast (.count .targetCreature) (.fixed 1)`.
   The target is a planeswalker is
-  `.countAtLeast .targetPlaneswalker (.fixed 1)`.
+  `.atLeast (.count .targetPlaneswalker) (.fixed 1)`.
   An illegal target is reported.
   Your graveyard has at least `n` creature cards is
-  `.countAtLeast .creatureCardsInGraveyard (.fixed n)`.
+  `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`.
   The targeted permanent has this subtype and is not the source is
-  `.countAtLeast (.targetAnotherSubtype subtype) (.fixed 1)`.
+  `.atLeast (.count (.targetAnotherSubtype subtype)) (.fixed 1)`.
   The artifact an earlier step put from hand is Equipment is
-  `.countAtLeast .putEquipment (.fixed 1)`.
+  `.atLeast (.count .putEquipment) (.fixed 1)`.
   An artifact that is not Equipment clears that note.
   The source is harnessed is
-  `.countAtLeast .harnessedSource (.fixed 1)`.
+  `.atLeast (.count .harnessedSource) (.fixed 1)`.
   An unharnessed source is reported. A missing source does nothing.
   The source is on the battlefield and attacking is
-  `.countAtLeast .attackingSource (.fixed 1)`.
+  `.atLeast (.count .attackingSource) (.fixed 1)`.
   A missing source does not hold.
-  Any other selector is the number of objects it names.
+  Any other counted selector is the number of objects it names.
   A count that cannot be read does not hold.
-  A selector that does not name a counted set does not hold. -/
-  | countAtLeast (what : ObjectSelector) (n : NumberSelector)
+  A selector that does not name a counted set does not hold.
+  You have drawn at least `n` cards this turn is
+  `.atLeast .cardsDrawnThisTurn (.fixed n)`.
+  At least `n` loyalty counters were removed to activate this ability is
+  `.atLeast .lastKnownPower (.fixed n)`.
+  That count is the ability's last-known power. A missing power is zero.
+  Your library still has a card is
+  `.atLeast .libraryCards (.fixed 1)`.
+  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`.
+  The source's power as this ability resolves is at least `n` is
+  `.atLeast .equalSourcePower (.fixed n)`.
+  A source that has left uses its last-known power.
+  Power below 4 is reported as Viv Vision's.
+  Any other pair compares the two numbers.
+  A number that cannot be read does not hold. -/
+  | atLeast (left right : NumberSelector)
   /-- `cond` does not hold.
   Controlling no legendary creature is
-  `.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))`.
+  `.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))`.
   The source on the battlefield with no hope counters is `.not .hopeOnSource`.
   Controlling no planeswalker is
-  `.not (.countAtLeast .planeswalkersYouControl (.fixed 1))`.
-  An empty library is `.not .libraryNotEmpty`. -/
+  `.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))`.
+  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`. -/
   | not (cond : ConditionSelector)
   /-- Any of `conds` holds. Once one holds, later conditions are not checked.
   Attacking with a Hero, or a Hero entering, is
@@ -896,8 +928,6 @@ inductive ConditionSelector where
   On the battlefield with none, this does not hold.
   No hope counters on that permanent is `.not .hopeOnSource`. -/
   | hopeOnSource
-  /-- You have drawn at least `n` cards this turn. -/
-  | drewAtLeast (n : Nat)
   /-- An earlier step dealt damage to a permanent of this subtype. -/
   | dealtDamageToSubtype (subtype : String)
   /-- You attacked with a permanent of this subtype this turn.
@@ -908,9 +938,6 @@ inductive ConditionSelector where
   /-- A permanent of this subtype entered under your control this turn.
   A Hero that left after entering still counts. -/
   | subtypeEntered (subtype : String)
-  /-- At least `n` loyalty counters were removed to activate the ability.
-  That count is the ability's last-known power. -/
-  | removedLoyaltyAtLeast (n : Nat)
   /-- An earlier step returned a permanent to its owner's hand. -/
   | returnedPermanent
   /-- `noteResolveThisTurn` recorded ordinal `n`. -/
@@ -928,9 +955,6 @@ inductive ConditionSelector where
   | equipmentAttached
   /-- `.mill` noted `.opponentsMilled`: an opponent milled a card. -/
   | opponentsMilled
-  /-- Your library still has a card.
-  An empty library is `.not .libraryNotEmpty`. -/
-  | libraryNotEmpty
   /-- You have scried this turn.
   Scry 0 does not count.
   Having scried or surveilled is
@@ -946,10 +970,6 @@ inductive ConditionSelector where
   /-- An artifact entered the battlefield under your control this turn.
   None did is reported. -/
   | artifactEnteredThisTurn
-  /-- The source's power as this ability resolves is at least `n`.
-  A source that has left uses its last-known power.
-  Power below 4 is reported as Viv Vision's. -/
-  | sourcePowerAtLeast (n : Nat)
   /-- Equipment is attached to the source, or its last-known power is
   positive when the source has left. None is reported. -/
   | attachedEquipment
@@ -1838,7 +1858,7 @@ inductive TriggerResolution where
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
-  `.sequence [.draw (.fixed 1), .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]`.
+  `.sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
   `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`.
@@ -1885,7 +1905,7 @@ inductive TriggerResolution where
   `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.grant (.keywords k) .target, .«if» (.countAtLeast .targetCreature (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.countAtLeast .targetPlaneswalker (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`.
+  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target]`.
   +P/+T and trample is
@@ -1898,7 +1918,7 @@ inductive TriggerResolution where
   `.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .targetController)]`.
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
-  `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.countAtLeast .putEquipment (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
+  `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
   | sequence (rs : List TriggerResolution)
   /-- The controller may resolve `action`. `when` says which outcome resolves
   `follow`. `.ifYouDont` is the default: declining resolves `follow`, and
@@ -2025,7 +2045,7 @@ inductive TriggerResolution where
   source, exiled and returned immediately, is
   `.exile .target .returnImmediately`. Choosing none does nothing.
   While the source is harnessed is
-  `.«if» (.countAtLeast .harnessedSource (.fixed 1)) (.exile .target .returnImmediately)`.
+  `.«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)`.
   An unharnessed source is reported and exiles nothing.
   The announced nontoken artifact or creature, returned tapped, is
   `.exile .target .returnTapped`. Choosing none does nothing.
@@ -2244,21 +2264,21 @@ inductive TriggerResolution where
   | noteResolveThisTurn (limit : Nat)
   /-- Resolve `thenDo` when `cond` holds.
   Putting a card on the bottom when you control no legendary creature is
-  `.«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)`.
+  `.«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)`.
   Drawing when an earlier step removed a hope counter is
   `.«if» .removedHope (.draw (.fixed 1))`.
   Doing `thenDo` on the nth resolution this turn is
   `.«if» (.nthResolve n) thenDo`.
   Attaching the artifact put from hand when it is Equipment is
-  `.«if» (.countAtLeast .putEquipment (.fixed 1)) (.attach .putArtifact .notedHost)`.
+  `.«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)`.
   Exiling and returning the announced permanent while the source is
   harnessed is
-  `.«if» (.countAtLeast .harnessedSource (.fixed 1)) (.exile .target .returnImmediately)`.
+  `.«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)`.
   An unharnessed source is reported. A missing source does nothing.
   Drawing when an artifact entered under your control this turn is
   `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`. None did is reported.
   Drawing when the source's power is at least 4 is
-  `.«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))`. A source that has left uses
+  `.«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))`. A source that has left uses
   its last-known power. Power below 4 is reported.
   Draining for the Equipment attached to the source is
   `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
@@ -2269,9 +2289,9 @@ inductive TriggerResolution where
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
   two otherwise, is
-  `.ifElse ((.countAtLeast .creatureCardsInGraveyard (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`.
+  `.ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`.
   Two +1/+1 counters when the target is another Hero, and one otherwise, is
-  `.ifElse ((.countAtLeast (.targetAnotherSubtype "Hero") (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
+  `.ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
   `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
@@ -2859,7 +2879,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .treasureThenDragonIfFour =>
     { resolution := .sequence [
         .createTokens .treasure (.fixed 1) false,
-        .«if» ((.countAtLeast (.youControl (.subtype "Treasure")) (.fixed 4)))
+        .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4)))
           (.sacrifice (.sacrificedSource .isSacrificed) .noted),
         .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] }
   | .recruit =>
@@ -3127,7 +3147,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
           .may (.pay (.mana #[.generic n])) (.draw (.fixed 1)) .ifYouDo }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
-        [.draw (.fixed 1), .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] }
+        [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
         [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] }
@@ -3180,7 +3200,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
-        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.countAtLeast (.youControl (.subtype "Bear")) (.fixed 3))) (.draw (.fixed 2))] }
+        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
         [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
@@ -3194,7 +3214,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
   | .mountainQuestDragon =>
-    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» ((.countAtLeast .questCounters (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
   | .treasuresPerChosenType =>
     { resolution := .createTokens .treasure .chosenCreatureType false }
   | .revealUntilCreature =>
@@ -3232,7 +3252,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPutArtifactAttachEquipment =>
     { resolution := .sequence
         [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
-         .«if» (.countAtLeast .putEquipment (.fixed 1)) (.attach .putArtifact .notedHost)] }
+         .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] }
   | .cascade => { resolution := .cascade }
   | .belladonnaTokenReward =>
     { resolution := .sequence [
@@ -3248,7 +3268,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .amass .notedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
-        [.createTokens .spirit (.fixed 2) true, .«if» (.countAtLeast .equippedLegendary (.fixed 1)) .markRecentTokensAttacking] }
+        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     { resolution :=
         .createTokens .treasure .damagedPlayerArtifacts false }
@@ -3286,7 +3306,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealLibrary (.top n) (.put .randomCreature) }
   | .beginCombatIfDrawnTwoPump =>
     { targeting := .of .anotherCreatureYouControl,
-      resolution := .«if» (.drewAtLeast 2) (.sequence [
+      resolution := .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
         .pump (.fixed 3) (.fixed 0) .target,
         .grant (.keywords Keyword.firstStrike) .target]) }
   | .honePerOppAttach =>
@@ -3394,18 +3414,18 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .prepareSource .ifThreeCreaturesDied =>
     { events := #[.eachEndStep], resolution := .prepareSource .ifThreeCreaturesDied }
   | .drawIfRemovedTwoLoyalty =>
-    { resolution := .«if» (.removedLoyaltyAtLeast 2) (.draw (.fixed 1)) }
+    { resolution := .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) }
   | .loyaltyOnSource =>
     { resolution := .putCounters (.ofKind .loyalty) .source }
   | .grantThenCounterByType k =>
     { targeting := .of .permanentYouControl,
       resolution := .sequence
         [.grant (.keywords k) .target,
-         .«if» (.countAtLeast .targetCreature (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
-         .«if» (.countAtLeast .targetPlaneswalker (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] }
+         .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
+         .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent,
-      resolution := .«if» ((.countAtLeast .landsYouControl (.fixed 6))) (.sequence [
+      resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
         .destroy .target,
         .createTokens .treasure (.fixed 1) false (who := .targetController)]) }
   | .pumpOrCounterIfScried =>
@@ -3415,7 +3435,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.pump (.fixed 1) (.fixed 1) .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
-      resolution := .«if» (.not (.countAtLeast .planeswalkersYouControl (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) }
+      resolution := .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) }
   | .creaturesYouControlGet p t =>
     { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .putSourceCountersOnTarget =>
@@ -3428,13 +3448,13 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .addMana #[.colored .green] .perChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
-        [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
+        [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
-      resolution := .«if» ((.countAtLeast .forestsExceptCause (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) }
+      resolution := .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) }
   | .onEnchanted action =>
     { resolution := TriggeredAbility.TriggerResolution.ofEnchanted action }
   | .attachThen followup =>
@@ -3456,16 +3476,16 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .or
         [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] }
   | .villainIfGyElseMill =>
-    { resolution := .ifElse ((.countAtLeast .creatureCardsInGraveyard (.fixed 2)))
+    { resolution := .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
         (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) }
   | .drawMayPutLandTapped =>
     { resolution := .sequence
         [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }
   | .drawGainLifeIfAnotherHero =>
-    { resolution := .sequence [.draw (.fixed 1), .«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.gainLife (.fixed 2))] }
+    { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] }
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature,
-      resolution := .ifElse ((.countAtLeast (.targetAnotherSubtype "Hero") (.fixed 1)))
+      resolution := .ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)))
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
@@ -3560,7 +3580,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         noun := "up to one other target nonland permanent you control"
         nonland := true, controller := .you, another := true })
       allowsZeroTargets := true, maxTargets := 1
-      resolution := .«if» (.countAtLeast .harnessedSource (.fixed 1)) (.exile .target .returnImmediately) }
+      resolution := .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
     { events := #[.dying]
       resolution := .put .source .underOwner (.entering [
@@ -3600,7 +3620,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .gainLife .attachedEquipment]) }
   | .thisAttack .drawIfPower4 =>
     { events := #[.attacking]
-      resolution := .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1)) }
+      resolution := .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1)) }
   | .thisAttack .attacksAlonePlus2Indestructible =>
     { events := #[.attacking]
       resolution := .sequence [
@@ -3706,7 +3726,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .source,
-        .«if» (.countAtLeast .attackingSource (.fixed 1)) (.untap .source),
+        .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source),
         .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
     { events := #[.youAttack],
@@ -3773,7 +3793,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent)) }
+      resolution := .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent)) }
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
@@ -3818,7 +3838,7 @@ end SharedTrigger
     .loseLife .attachedEquipment .eachOpponent,
     .gainLife .attachedEquipment])
 #guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
-  .«if» (.sourcePowerAtLeast 4) (.draw (.fixed 1))
+  .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .attacksAlonePlus2Indestructible)).resolution ==
   .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
@@ -3838,7 +3858,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
-    .«if» (.countAtLeast .attackingSource (.fixed 1)) (.untap .source),
+    .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source),
     .«if» .enrageGrantsCombat .additionalCombatPhase]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]
@@ -3918,7 +3938,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
-  .«if» (.countAtLeast (.othersOfSubtype "Hero") (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))
+  .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player .targetOpponent))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
   .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==

@@ -24,100 +24,6 @@ structure TriggerRead where
 private def recordedCauseId (g : Game) : Option ObjectId :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
-/-- The integer `amount` names. `none` is not a number here: `.double`,
-a choice that has not been made, or a note that was never written.
-A missing last-known power is zero for `.lastKnownPower` and absent for
-`.thatManyLost`. -/
-def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
-    Option Int :=
-  let controller := ctx.controller
-  let sourceId := ctx.sourceId
-  match amount with
-  | .fixed n => some n
-  | .double => none
-  | .chosenCreatureType => none
-  | .greatestPower => some (g.greatestPowerAmongCreatures controller)
-  | .perLookedAt => some (Int.ofNat (ctx.lastKnownPower.getD 0).toNat)
-  | .perOtherCreature =>
-    some (g.battlefield.filter (fun c =>
-      c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
-  | .perPlains => some (g.countSubtype controller "Plains")
-  | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
-  | .equalSourceToughness =>
-    some <|
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then g.toughness src
-        else ctx.lastKnownToughness.getD (g.toughness src)
-      | none => ctx.lastKnownToughness.getD 0
-  | .lastKnownPower => some (ctx.lastKnownPower.getD 0)
-  | .subtypeCount subtype | .perSubtype subtype =>
-    some (g.countSubtype controller subtype)
-  | .discardedHand => g.handDiscardedThisWay.map Int.ofNat
-  | .greatestArtifactMv =>
-    some (g.greatestManaValueAmong controller (·.printed.isArtifact))
-  | .spellManaValue =>
-    some (g.castSpellManaValue controller ctx.lastKnownPower)
-  | .forEachTappedHuman => some g.humansTappedThisWay
-  | .perFatGraveyard =>
-    some (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
-  | .equalToManaSpent =>
-    some <|
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
-  | .perControlled ty =>
-    some ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
-  | .upToHandSize n =>
-    let cards := (g.player controller).hand.size
-    if cards < n then some (n - cards) else some 0
-  | .plusOneCounters =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then some src.status.plusOnePlusOne else none
-    | none => none
-  | .equalToTargetPower =>
-    match ctx.sequencedCardPower with
-    | some k => some (Int.ofNat k)
-    | none =>
-      match ctx.targets[0]? with
-      | some (Target.card oid) | some (Target.permanent oid) =>
-        match g.findObject? oid with
-        | some o => some (g.power o)
-        | none => none
-      | _ => none
-  | .forEachDestroyedThisWay => some g.permanentsDestroyedThisWay
-  | .attachedEquipment =>
-    some (g.attachedEquipmentAtResolution sourceId ctx.lastKnownPower)
-  | .perBurden =>
-    match sourceId.bind g.findObject? with
-    | some src => some src.status.burden
-    | none => none
-  | .thatManyLost => ctx.lastKnownPower
-  | .notedExcess => some g.excessDamageThisWay
-  | .notedPower =>
-    if g.destroyedForAmassThisWay then some g.amassAmountThisWay else none
-  | .perChargeCounter =>
-    let n :=
-      match sourceId.bind g.findObject? with
-      | some o => if o.isOnBattlefield then o.status.charge else 0
-      | none => 0
-    let n :=
-      if n == 0 then
-        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
-        | some (_, last) => last.charge
-        | none => n
-      else n
-    some n
-  | .oppArtifacts => some (g.countOpponentArtifacts controller)
-  | .damagedPlayerArtifacts =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    some (g.countArtifactsControlledBy pid)
-  | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
-
-/-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
-def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
-    Option Nat :=
-  g.triggerInt ctx amount |>.map (·.toNat)
-
 /-- Players `who` names. `.opponentHasYou` is an offer, not a recipient.
 An announced player that was not chosen is `none`. -/
 def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.PlayerSelector) :
@@ -379,6 +285,104 @@ def countNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSel
     | none => some 0
   | _ =>
     (g.permanentsNamed ctx what).map (·.size)
+
+/-- The integer `amount` names. `none` is not a number here: `.double`,
+a choice that has not been made, a note that was never written, or a
+`.count` whose selector does not name a counted set.
+A missing last-known power is zero for `.lastKnownPower` and absent for
+`.thatManyLost`. Quest counters that cannot be read are `none`. -/
+def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
+    Option Int :=
+  let controller := ctx.controller
+  let sourceId := ctx.sourceId
+  match amount with
+  | .fixed n => some n
+  | .double => none
+  | .chosenCreatureType => none
+  | .greatestPower => some (g.greatestPowerAmongCreatures controller)
+  | .perLookedAt => some (Int.ofNat (ctx.lastKnownPower.getD 0).toNat)
+  | .perOtherCreature =>
+    some (g.battlefield.filter (fun c =>
+      c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
+  | .perPlains => some (g.countSubtype controller "Plains")
+  | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
+  | .equalSourceToughness =>
+    some <|
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then g.toughness src
+        else ctx.lastKnownToughness.getD (g.toughness src)
+      | none => ctx.lastKnownToughness.getD 0
+  | .lastKnownPower => some (ctx.lastKnownPower.getD 0)
+  | .subtypeCount subtype | .perSubtype subtype =>
+    some (g.countSubtype controller subtype)
+  | .discardedHand => g.handDiscardedThisWay.map Int.ofNat
+  | .greatestArtifactMv =>
+    some (g.greatestManaValueAmong controller (·.printed.isArtifact))
+  | .spellManaValue =>
+    some (g.castSpellManaValue controller ctx.lastKnownPower)
+  | .forEachTappedHuman => some g.humansTappedThisWay
+  | .perFatGraveyard =>
+    some (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
+  | .equalToManaSpent =>
+    some <|
+      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+  | .perControlled ty =>
+    some ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
+  | .upToHandSize n =>
+    let cards := (g.player controller).hand.size
+    if cards < n then some (n - cards) else some 0
+  | .plusOneCounters =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then some src.status.plusOnePlusOne else none
+    | none => none
+  | .equalToTargetPower =>
+    match ctx.sequencedCardPower with
+    | some k => some (Int.ofNat k)
+    | none =>
+      match ctx.targets[0]? with
+      | some (Target.card oid) | some (Target.permanent oid) =>
+        match g.findObject? oid with
+        | some o => some (g.power o)
+        | none => none
+      | _ => none
+  | .forEachDestroyedThisWay => some g.permanentsDestroyedThisWay
+  | .attachedEquipment =>
+    some (g.attachedEquipmentAtResolution sourceId ctx.lastKnownPower)
+  | .perBurden =>
+    match sourceId.bind g.findObject? with
+    | some src => some src.status.burden
+    | none => none
+  | .thatManyLost => ctx.lastKnownPower
+  | .notedExcess => some g.excessDamageThisWay
+  | .notedPower =>
+    if g.destroyedForAmassThisWay then some g.amassAmountThisWay else none
+  | .perChargeCounter =>
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some o => if o.isOnBattlefield then o.status.charge else 0
+      | none => 0
+    let n :=
+      if n == 0 then
+        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+        | some (_, last) => last.charge
+        | none => n
+      else n
+    some n
+  | .oppArtifacts => some (g.countOpponentArtifacts controller)
+  | .damagedPlayerArtifacts =>
+    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    some (g.countArtifactsControlledBy pid)
+  | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
+  | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
+  | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn
+  | .libraryCards => some (g.player controller).library.size
+
+/-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
+def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
+    Option Nat :=
+  g.triggerInt ctx amount |>.map (·.toNat)
 
 /-- Create `n` tokens with `face` for each player. The last token's id is
 returned when at least one was created. -/
