@@ -266,6 +266,34 @@ def legalTriggerPermanent? (g : Game) (controller : PlayerId) (ab : TriggeredAbi
 def resolvingCauseId (g : Game) : Option ObjectId :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
+/-- Power and toughness of the cause, then of the source.
+`none` when the source is missing or has left, there is no cause, or the
+cause is the source. A missing or departed source is reported. -/
+def causeAndSourcePT? (g : Game) (sourceId : Option ObjectId) (targets : Array Target) :
+    Game × Option (Int × Int × Int × Int) :=
+  match sourceId.bind g.findObject? with
+  | none => (g.logMsg "The source is no longer in play", none)
+  | some src =>
+    if !src.isOnBattlefield then
+      (g.logMsg s!"{src.name} is no longer on the battlefield", none)
+    else
+      let cause :=
+        match targets[0]? with
+        | some (Target.permanent id) | some (Target.card id) => g.findObject? id
+        | _ => g.resolvingCauseId.bind g.findObject?
+      match cause with
+      | none => (g, none)
+      | some other =>
+        if other.id == src.id then (g, none)
+        else
+          let op :=
+            if other.isOnBattlefield then g.power other
+            else other.lastKnownPower.getD (g.power other)
+          let ot :=
+            if other.isOnBattlefield then g.toughness other
+            else other.lastKnownToughness.getD (g.toughness other)
+          (g, some (op, ot, g.power src, g.toughness src))
+
 /-- Whether `cond` holds as this trigger resolves. One-shot notes that the
 action does not read are cleared here. -/
 def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -277,6 +305,30 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
     (g, !holds)
+  | .or conds =>
+    -- Once one condition holds, later ones are not checked. A later condition
+    -- that only repeats the log lines of the previous one does not report
+    -- them again, so a shared failure is reported once.
+    let rec go (g : Game) (cs : List TriggeredAbility.ConditionSelector)
+        (prev : Option (Array String)) : Game × Bool :=
+      match cs with
+      | [] => (g, false)
+      | c :: rest =>
+        let start := g.log.size
+        let (g, holds) :=
+          g.triggerIfHolds controller ab sourceId targets lastKnownPower c
+        if holds then (g, true)
+        else
+          let added := g.log.extract start g.log.size
+          let g :=
+            match prev with
+            | some earlier =>
+              if !added.isEmpty && added == earlier then
+                { g with log := g.log.extract 0 start }
+              else g
+            | none => g
+          go g rest (some added)
+    go g conds none
   | .removedHope =>
     let removed := g.removedHopeThisWay
     ({ g with removedHopeThisWay := false }, removed)
@@ -294,13 +346,19 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if o.isOnBattlefield && g.hasSubtype o subtype then (g, true)
         else ({ g with permanentDealtDamageThisWay := none }, false)
       | none => ({ g with permanentDealtDamageThisWay := none }, false)
-  | .attackedOrEntered subtype =>
+  | .attackedWithSubtype subtype =>
     let pl := g.player controller
     let holds :=
-      (subtype == "Hero" && (pl.attackedWithHeroThisTurn || pl.heroEnteredThisTurn)) ||
+      (subtype == "Hero" && pl.attackedWithHeroThisTurn) ||
         (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype &&
-            (o.status.attacking || o.status.enteredThisTurn)))
+          o.controlledBy controller && g.hasSubtype o subtype && o.status.attacking))
+    (g, holds)
+  | .subtypeEntered subtype =>
+    let pl := g.player controller
+    let holds :=
+      (subtype == "Hero" && pl.heroEnteredThisTurn) ||
+        (g.battlefield.any (fun o =>
+          o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
     (g, holds)
   | .removedLoyaltyAtLeast n => (g, (lastKnownPower.getD 0) ≥ Int.ofNat n)
   | .landsAtLeast n =>
@@ -418,8 +476,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | none => false
       | _ => false
     (g, holds)
-  | .scriedOrSurveilledThisTurn =>
-    (g, (g.player controller).scriedOrSurveilledThisTurn)
+  | .scriedThisTurn => (g, (g.player controller).scriedThisTurn)
+  | .surveilledThisTurn => (g, (g.player controller).surveilledThisTurn)
   | .putArtifactIsEquipment =>
     match g.putArtifactThisWay with
     | none => (g, false)
@@ -465,29 +523,16 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if g.enrageGrantsAdditionalCombat > 0 then
       ({ g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 }, true)
     else (g, false)
-  | .causeGreaterPowerOrToughness =>
-    match sourceId.bind g.findObject? with
-    | none => (g.logMsg "The source is no longer in play", false)
-    | some hulkling =>
-      if !hulkling.isOnBattlefield then
-        (g.logMsg s!"{hulkling.name} is no longer on the battlefield", false)
-      else
-        let entered :=
-          match targets[0]? with
-          | some (Target.permanent id) | some (Target.card id) => g.findObject? id
-          | _ => (g.resolvingCauseId).bind g.findObject?
-        match entered with
-        | none => (g, false)
-        | some other =>
-          if other.id == hulkling.id then (g, false)
-          else
-            let op :=
-              if other.isOnBattlefield then g.power other
-              else other.lastKnownPower.getD (g.power other)
-            let ot :=
-              if other.isOnBattlefield then g.toughness other
-              else other.lastKnownToughness.getD (g.toughness other)
-            (g, op > g.power hulkling || ot > g.toughness hulkling)
+  | .causeGreaterPower =>
+    let (g, stats?) := g.causeAndSourcePT? sourceId targets
+    match stats? with
+    | some (op, _, hp, _) => (g, op > hp)
+    | none => (g, false)
+  | .causeGreaterToughness =>
+    let (g, stats?) := g.causeAndSourcePT? sourceId targets
+    match stats? with
+    | some (_, ot, _, ht) => (g, ot > ht)
+    | none => (g, false)
   | .manaSpent =>
     let spent :=
       ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0

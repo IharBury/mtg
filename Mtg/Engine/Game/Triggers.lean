@@ -887,7 +887,7 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g := if n == 0 then g else g.queueScryTriggers p count
   let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
   let g := if n == 0 then g else
-    g.modifyPlayer p (fun pl => { pl with scriedOrSurveilledThisTurn := true })
+    g.modifyPlayer p (fun pl => { pl with scriedThisTurn := true })
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else

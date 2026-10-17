@@ -24,7 +24,9 @@ def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
 /-- Whether a Reality Fracture “Activate only if …” condition holds. -/
 def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
   | .none => true
-  | .scriedOrSurveilledThisTurn => (g.player p).scriedOrSurveilledThisTurn
+  | .scriedOrSurveilledThisTurn =>
+    let pl := g.player p
+    pl.scriedThisTurn || pl.surveilledThisTurn
   | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
   | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
 

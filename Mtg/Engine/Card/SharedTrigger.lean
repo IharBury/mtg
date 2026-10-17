@@ -833,7 +833,9 @@ inductive SharedTrigger where
   | sacDamagersRingTempts
   /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
   | chapter (n : Nat) (e : ChapterResolution)
-  /-- Draw if you attacked with or a subtype entered. -/
+  /-- Draw if you attacked with this subtype or one entered under your control.
+  Resolves as
+  `.«if» (.or [.attackedWithSubtype subtype, .subtypeEntered subtype]) (.draw (.fixed 1))`. -/
   | drawIfAttackedOrEnteredSubtype (subtype : String)
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/
   | othersOfSubtypeGetEqualSourceToughness (subtype : String)
@@ -893,7 +895,7 @@ inductive SharedTrigger where
   | destroyOppPermanentIfSixLands
   /-- Another target creature you control gets +1/+1 until end of turn, or a
   +1/+1 counter instead if you've scried or surveilled this turn. Resolves as
-  `.ifElse .scriedOrSurveilledThisTurn (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`. -/
+  `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`. -/
   | pumpOrCounterIfScried
   /-- If you don't control a planeswalker, sacrifice the source.
   Resolves as `.«if» (.not .controlsPlaneswalker) (.sacrifice (.sacrificedSource .controllerSacrifices))`. -/
@@ -1020,7 +1022,7 @@ inductive SharedTrigger where
   Untapping the equipped creature, then scrying 1, is
   `.sequence [.untap .equipped, .scry (.fixed 1)]`.
   A +1/+1 counter when the entering creature is greater is
-  `.«if» .causeGreaterPowerOrToughness (.putCounters (.ofKind .plusOnePlusOne) .source)`.
+  `.«if» (.or [.causeGreaterPower, .causeGreaterToughness]) (.putCounters (.ofKind .plusOnePlusOne) .source)`.
   Putting a counter, untapping when attacking, and an Enrage combat is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» .sourceAttacking (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
   Putting a counter, then damage equal to those counters, is
