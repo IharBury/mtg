@@ -188,7 +188,7 @@ silent. An Aura that has left is reported. -/
 A source that has left is silent. An illegal target is reported while
 the source is still there. -/
 #guard
-  let g := step board (.becomeArtifact .targetWhileSource)
+  let g := step board (.becomeArtifact (.target .whileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   became g "Titan" && !flagged g "Bear"
 
@@ -201,12 +201,12 @@ the source is still there. -/
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.becomeArtifact .targetWhileSource)
+  let g := step g0 (.becomeArtifact (.target .whileSource))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   !flagged g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.becomeArtifact .targetWhileSource)
+  let g := step board (.becomeArtifact (.target .whileSource))
     (some (pid board "Bear"))
   !flagged g "Titan" && logContains g "The target is no longer legal"
 
@@ -234,8 +234,8 @@ become artifacts. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .becomeArtifactIndestructible ==
   .sequence [.becomeArtifact .enchanted, .grant (.keywords Keyword.indestructible) .enchanted]
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact .targetWhileSource,
-    .grant (.keywords Keyword.indestructible) .targetWhileSource]
+  .sequence [.becomeArtifact (.target .whileSource),
+    .grant (.keywords Keyword.indestructible) (.target .whileSource)]
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := artifacted } ==
@@ -247,7 +247,7 @@ become artifacts. -/
     { resolution := .becomeArtifact .enchanted } ==
   "until end of turn, enchanted creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomeArtifact .targetWhileSource } ==
+    { resolution := .becomeArtifact (.target .whileSource) } ==
   "until end of turn, that creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := both } ==
@@ -258,7 +258,7 @@ become artifacts. -/
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .becomeArtifact .targetWhileSource] } ==
+      [.attach .source .target, .becomeArtifact (.target .whileSource)] } ==
   "attach it to target creature you control. Until end of turn, that creature becomes an artifact in addition to its other types"
 
 #guard TriggeredAbility.toNotation onCreature ==

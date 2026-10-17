@@ -218,7 +218,7 @@ An Aura that has left is reported. -/
 A source that has left is silent. An illegal target is reported while
 the source is still there. -/
 #guard
-  let g := step board (.becomePrepared .targetWhileSource)
+  let g := step board (.becomePrepared (.target .whileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Angel")]
   isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel"
 
@@ -231,12 +231,12 @@ the source is still there. -/
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.becomePrepared .targetWhileSource)
+  let g := step g0 (.becomePrepared (.target .whileSource))
     (some newId) #[Target.permanent (pid g0 "Angel")]
   !isPrepared g "Angel" && g.log == g0.log
 
 #guard
-  let g := step board (.becomePrepared .targetWhileSource)
+  let g := step board (.becomePrepared (.target .whileSource))
     (some (pid board "Bear"))
   !isPrepared g "Angel" && logContains g "The target is no longer legal"
 
@@ -264,7 +264,7 @@ become prepared. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .becomePrepared ==
   .becomePrepared .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomePrepared ==
-  .becomePrepared .targetWhileSource
+  .becomePrepared (.target .whileSource)
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := prepared } ==
@@ -276,7 +276,7 @@ become prepared. -/
     { resolution := .becomePrepared .enchanted } ==
   "enchanted creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePrepared .targetWhileSource } ==
+    { resolution := .becomePrepared (.target .whileSource) } ==
   "that creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .becomePrepared .cause } ==
@@ -284,7 +284,7 @@ become prepared. -/
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .becomePrepared .targetWhileSource] } ==
+      [.attach .source .target, .becomePrepared (.target .whileSource)] } ==
   "attach it to target creature you control. That creature becomes prepared"
 
 #guard TriggeredAbility.toNotation onCreature ==

@@ -156,19 +156,19 @@ An Aura that has left is reported. -/
 A source that has left is silent. An illegal target is reported while
 the source is still there. -/
 #guard
-  let g := step board (.cant (.beBlocked .targetWhileSource))
+  let g := step board (.cant (.beBlocked (.target .whileSource)))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   blocked g "Titan" && !blocked g "Bear"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.cant (.beBlocked .targetWhileSource))
+  let g := step g0 (.cant (.beBlocked (.target .whileSource)))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   !blocked g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.cant (.beBlocked .targetWhileSource))
+  let g := step board (.cant (.beBlocked (.target .whileSource)))
     (some (pid board "Bear"))
   !blocked g "Titan" && logContains g "The target is no longer legal"
 
@@ -255,7 +255,7 @@ enchanted by that source, is left alone. -/
   let yours := step g0 (.cant (.untapWhileYouControl .source)) sid tgt (ab := spider)
   let quiet := [
     step g0 (.cant (.untapWhileYouControl .enchanted)) sid tgt (ab := spider),
-    step g0 (.cant (.untapWhileYouControl .targetWhileSource)) sid tgt (ab := spider)]
+    step g0 (.cant (.untapWhileYouControl (.target .whileSource))) sid tgt (ab := spider)]
   grantedBy yours "Bear" == #[bearId] && grantedBy yours "Titan" == #[] &&
     quiet.all fun g =>
       !blocked g "Titan" && grantedBy g "Titan" == #[] &&
@@ -269,7 +269,7 @@ enchanted by that source, is left alone. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .cantBeBlocked ==
   .cant (.beBlocked .enchanted)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .cantBeBlocked ==
-  .cant (.beBlocked .targetWhileSource)
+  .cant (.beBlocked (.target .whileSource))
 #guard (SharedTrigger.timing (.enter .tapOppCantUntapWhileControl)).resolution ==
   tapThenFrozen
 #guard TriggeredAbility.resolution spider == tapThenFrozen
@@ -284,7 +284,7 @@ enchanted by that source, is left alone. -/
     { resolution := .cant (.beBlocked .enchanted) } ==
   "enchanted creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.beBlocked .targetWhileSource) } ==
+    { resolution := .cant (.beBlocked (.target .whileSource)) } ==
   "that creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase { resolution := frozen } ==
   "that creature can't become untapped for as long as you control this creature"
@@ -296,7 +296,7 @@ enchanted by that source, is left alone. -/
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .cant (.beBlocked .targetWhileSource)] } ==
+      [.attach .source .target, .cant (.beBlocked (.target .whileSource))] } ==
   "attach it to target creature you control. That creature can't be blocked this turn"
 
 #guard TriggeredAbility.toNotation onCreature ==

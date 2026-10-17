@@ -452,12 +452,14 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if hostOk then (g, true)
       else
         (g.logMsg s!"{(g.player controller).name} creates two tapped Spirit tokens", false)
-  | (.atLeast (.count .targetCreature) (.fixed 1)) =>
+  | (.atLeast (.count .creature) (.fixed 1))
+  | (.atLeast (.count (.target .creature)) (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
     | some o => (g, o.isCreature)
     | none => (g, false)
-  | (.atLeast (.count .targetPlaneswalker) (.fixed 1)) =>
+  | (.atLeast (.count .planeswalker) (.fixed 1))
+  | (.atLeast (.count (.target .planeswalker)) (.fixed 1)) =>
     let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
     match o? with
     | some o => (g, o.printed.isPlaneswalker)
@@ -466,7 +468,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let gy := ((g.player controller).graveyard.filter (fun id =>
       (g.object! id).printed.isCreature)).size
     (g, gy ≥ n.toNat)
-  | (.atLeast (.count (.targetAnotherSubtype subtype)) (.fixed 1)) =>
+  | (.atLeast (.count (.anotherSubtype subtype)) (.fixed 1))
+  | (.atLeast (.count (.target (.anotherSubtype subtype))) (.fixed 1)) =>
     let legal := g.legalTargetsForKind controller ab.targetKind sourceId
     let holds :=
       match targets[0]? with
@@ -544,21 +547,21 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
     let (g, counted) :=
       match what with
-      | .targetCreature =>
+      | .creature | .target .creature =>
         let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
         let n :=
           match o? with
           | some o => if o.isCreature then 1 else 0
           | none => 0
         (g, some n)
-      | .targetPlaneswalker =>
+      | .planeswalker | .target .planeswalker =>
         let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
         let n :=
           match o? with
           | some o => if o.printed.isPlaneswalker then 1 else 0
           | none => 0
         (g, some n)
-      | .targetAnotherSubtype subtype =>
+      | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
         let legal := g.legalTargetsForKind controller ab.targetKind sourceId
         let n :=
           match targets[0]? with
@@ -829,7 +832,7 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.withLegalTriggerPermanent controller ab sourceId targets pumpOne missing
   | .enchanted =>
     g.withAffected controller ab sourceId targets .enchanted pumpOne
-  | .targetWhileSource =>
+  | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource pumpOne
   | .cause _ =>
     match g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller) with
@@ -982,7 +985,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let n := n.toNat
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o (.dealDamage n)
-  | .targetWhileSource, .fixed n, _ =>
+  | .whileSource, .fixed n, _ | .target .whileSource, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o (.dealDamage n)
@@ -1324,7 +1327,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.applyAffectedCounters controller ab sourceId targets kind n .source
   | .ofKind kind n, .enchanted =>
     g.applyAffectedCounters controller ab sourceId targets kind n .enchanted
-  | .ofKind kind n, .targetWhileSource =>
+  | .ofKind kind n, .whileSource | .ofKind kind n, .target .whileSource =>
     g.applyAffectedCounters controller ab sourceId targets kind n .targetWhileSource
   | .ofKind .plusOnePlusOne n, .sourceIfPresent =>
     match sourceId.bind g.findObject? with
@@ -1575,7 +1578,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
   | .top, .playUntilNextTurn, .none =>
     g.resolveExileTopPlayUntilEndOfNextTurn controller
-  | .eachTarget, .untilSourceLeaves, .none =>
+  | .eachPermanent, .untilSourceLeaves, .none
+  | .target .eachPermanent, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
       targets.foldl (fun acc t =>
         match t with
@@ -1614,7 +1618,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .enchanted, .forLater, .none =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o .exile
-  | .targetWhileSource, .forLater, .none =>
+  | .whileSource, .forLater, .none | .target .whileSource, .forLater, .none =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .exile
   | .basicUpTo subtype max, .forLater, .linked =>
@@ -1897,7 +1901,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some (Target.permanent _), none =>
       g.logMsg "No creature was chosen"
     | _, _ => g.logMsg "The target is no longer legal"
-  | .source, .creatureTarget =>
+  | .source, .laterCreature | .source, .target .laterCreature =>
     match targets[1]?, targets[0]? with
     | some (Target.permanent hid), _
     | none, some (Target.permanent hid) =>
@@ -1966,7 +1970,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.logMsg "No Equipment was chosen"
       | none => g.logMsg "The Equipment won't move"
     | _ => g.logMsg "The Equipment won't move"
-  | .eachTargetEquipment, .enchantedCreature =>
+  | .eachEquipment, .enchantedCreature | .target .eachEquipment, .enchantedCreature =>
     match sourceId.bind g.findObject? with
     | some src =>
       match src.attachedTo.bind g.findObject? with
@@ -2277,7 +2281,7 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .enchanted, _ =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o .destroy
-  | .targetWhileSource, _ =>
+  | .whileSource, _ | .target .whileSource, _ =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .destroy
   | what, note =>
@@ -2702,7 +2706,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .enchanted =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o (.grantKeywords k)
-  | .keywords k, .targetWhileSource =>
+  | .keywords k, .whileSource | .keywords k, .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o (.grantKeywords k)
   | .keywords k, .creaturesYouControl =>
@@ -2970,7 +2974,7 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .enchanted =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o .untap
-  | .targetWhileSource =>
+  | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .untap
   | .equipped =>
@@ -3010,7 +3014,7 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match src.attachedTo.bind g.findObject? with
       | none => g.logMsg "Nothing is enchanted"
       | some host => g.applyPermanentAction host .tap
-  | .targetIfPresent =>
+  | .ifPresent | .target .ifPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
@@ -3038,7 +3042,7 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .enchantedWhileSource =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
       g.applyPermanentAction o .tap
-  | .targetWhileSource =>
+  | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
       g.applyPermanentAction o .tap
   | who =>
@@ -3478,9 +3482,9 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     loseIndestructible .source
   | .indestructible, .enchanted =>
     loseIndestructible .enchanted
-  | .indestructible, .targetWhileSource =>
+  | .indestructible, .whileSource | .indestructible, .target .whileSource =>
     loseIndestructible .targetWhileSource
-  | .allAbilities, .targetIfPresent =>
+  | .allAbilities, .ifPresent | .allAbilities, .target .ifPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
@@ -3580,10 +3584,10 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
 where
   asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
-    | .target => some .target
+    | .any | .target .any => some .target
     | .source => some .source
     | .enchanted => some .enchanted
-    | .targetWhileSource => some .targetWhileSource
+    | .whileSource | .target .whileSource => some .targetWhileSource
     | _ => none
 
 /-- Resolve `TriggerResolution.becomeArtifact`. Each printed recipient keeps
@@ -3597,7 +3601,7 @@ def applyBecomeArtifact (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
   | .target => become .target
   | .source => become .source
   | .enchanted => become .enchanted
-  | .targetWhileSource => become .targetWhileSource
+  | .whileSource | .target .whileSource => become .targetWhileSource
   | who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -3623,7 +3627,7 @@ def applyBecomePrepared (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
   | .target => become .target
   | .source => become .source
   | .enchanted => become .enchanted
-  | .targetWhileSource => become .targetWhileSource
+  | .whileSource | .target .whileSource => become .targetWhileSource
   | who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -3646,7 +3650,7 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .target => put .target
   | .source => put .source
   | .enchanted => put .enchanted
-  | .targetWhileSource => put .targetWhileSource
+  | .whileSource | .target .whileSource => put .targetWhileSource
   | .cardFromHand =>
     match place with
     | .bottom =>
@@ -3684,7 +3688,7 @@ def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     fixed .source pw tw
   | .fixed pw, .fixed tw, .enchanted =>
     fixed .enchanted pw tw
-  | .fixed pw, .fixed tw, .targetWhileSource =>
+  | .fixed pw, .fixed tw, .whileSource | .fixed pw, .fixed tw, .target .whileSource =>
     fixed .targetWhileSource pw tw
   | .equalSourcePower, .equalSourceToughness, .target =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>

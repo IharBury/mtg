@@ -26,7 +26,10 @@ private def recordedCauseId (g : Game) : Option ObjectId :=
 
 /-- Permanents `who` names. Selectors that name a card, a hand, or a
 choice that has not been offered are `none`. An empty array means the
-selector named permanents and none of them are on the battlefield. -/
+selector named permanents and none of them are on the battlefield.
+`.any` and `.target .any` are the announced permanents. A restriction
+read on its own names the same permanents as `.target` of that
+restriction. Any other `.target` restriction names nothing. -/
 def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.ObjectSelector) :
     Option (Array GameObject) :=
   let controller := ctx.controller
@@ -45,9 +48,12 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match sourceId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .target | .permanent _ | .targetIfPresent | .announced | .announcedCreature
-    | .creatureTarget | .optionalCreature | .artifactEnchantmentOrLand
-    | .eachTarget | .eachUpToLastKnown | .announcedEquipment | .eachTargetEquipment
+  | .any | .ifPresent | .eachPermanent | .laterCreature | .eachEquipment
+    | .target .any | .target .ifPresent | .target .eachPermanent
+    | .target .laterCreature | .target .eachEquipment
+    | .permanent _ | .announced | .announcedCreature
+    | .optionalCreature | .artifactEnchantmentOrLand
+    | .eachUpToLastKnown | .announcedEquipment
     | .creatureOrGraveyardCard =>
     some permanentTargets
   | .enchanted | .enchantedWhileSource | .enchantedCreature =>
@@ -59,7 +65,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
         | none => someEmpty
       else someEmpty
     | none => someEmpty
-  | .targetWhileSource =>
+  | .whileSource | .target .whileSource =>
     match sourceId.bind onBf with
     | some _ => some permanentTargets
     | none => someEmpty
@@ -176,13 +182,14 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
         if host.isLegendary && host.controller == some controller then some #[host] else someEmpty
       | none => someEmpty
     | none => someEmpty
-  | .targetCreature =>
+  | .creature | .target .creature =>
     some (permanentTargets.filter (·.isCreature))
-  | .targetPlaneswalker =>
+  | .planeswalker | .target .planeswalker =>
     some (permanentTargets.filter (·.printed.isPlaneswalker))
-  | .targetAnotherSubtype subtype =>
+  | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
     some (permanentTargets.filter fun o =>
       g.hasSubtype o subtype && some o.id != sourceId)
+  | .target _ => none
   | .putArtifact | .putEquipment =>
     match g.putArtifactThisWay with
     | some (oid, _) =>
@@ -240,7 +247,7 @@ def controllersNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.Obj
     match g.attachedHost? ctx.sourceId with
     | some host => some #[host.controller.getD host.owner]
     | none => none
-  | .target | .permanent _ =>
+  | .any | .target .any | .permanent _ =>
     let ids := ctx.targets.filterMap fun
       | Target.permanent oid => some (g.followMoved oid)
       | _ => none

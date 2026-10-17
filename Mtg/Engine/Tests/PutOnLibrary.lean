@@ -190,24 +190,24 @@ silent. An Aura that has left is reported. -/
 /- The target moves only while the source remains. A source that has left
 is silent. An illegal target is reported while the source is still there. -/
 #guard
-  let g := step board (.putOnLibrary .bottom .targetWhileSource)
+  let g := step board (.putOnLibrary .bottom (.target .whileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   bottomName g caster == "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.putOnLibrary .top .targetWhileSource)
+  let g := step board (.putOnLibrary .top (.target .whileSource))
     (some (pid board "Titan")) #[Target.permanent (pid board "Bear")]
   topName g opp == "Bear" && !onBoard g "Bear" && onBoard g "Titan"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.putOnLibrary .top .targetWhileSource)
+  let g := step g0 (.putOnLibrary .top (.target .whileSource))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   onBoard g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.putOnLibrary .bottom .targetWhileSource)
+  let g := step board (.putOnLibrary .bottom (.target .whileSource))
     (some (pid board "Bear"))
   onBoard g "Titan" && logContains g "The target is no longer legal"
 
@@ -287,7 +287,7 @@ go on the bottom. The announced permanent goes on top. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnTopOfLibrary ==
   .putOnLibrary .top .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom .targetWhileSource
+  .putOnLibrary .bottom (.target .whileSource)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
   .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) fromHand]
 
@@ -304,7 +304,7 @@ go on the bottom. The announced permanent goes on top. -/
     { resolution := .putOnLibrary .bottom .enchanted } ==
   "enchanted creature's owner puts it on the bottom of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top .targetWhileSource } ==
+    { resolution := .putOnLibrary .top (.target .whileSource) } ==
   "that creature's owner puts it on top of their library"
 #guard TriggeredAbility.resolutionPhrase { resolution := fromHand } ==
   "put a card from your hand on the bottom of your library"
@@ -318,7 +318,7 @@ go on the bottom. The announced permanent goes on top. -/
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .putOnLibrary .bottom .targetWhileSource] } ==
+      [.attach .source .target, .putOnLibrary .bottom (.target .whileSource)] } ==
   "attach it to target creature you control. That creature's owner puts it on the bottom of their library"
 
 #guard TriggeredAbility.toNotation onCreature ==
