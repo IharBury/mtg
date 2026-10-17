@@ -408,7 +408,7 @@ what searches. -/
 #guard TriggeredAbility.resolution .onMountainEntersQuestThenDragon ==
   .sequence [
     .putCounters (.ofKind .quest) .source,
-    .«if» (.questAtLeast 6)
+    .«if» ((.countAtLeast .questCounters (.fixed 6)))
       (.sequence [
         .sacrifice (.sacrificedSource .movedAsSacrificed),
         .searchLibrary (.put .dragon)])]

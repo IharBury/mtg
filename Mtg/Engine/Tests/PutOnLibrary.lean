@@ -289,7 +289,7 @@ go on the bottom. The announced permanent goes on top. -/
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
   .putOnLibrary .bottom .targetWhileSource
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) fromHand]
+  .sequence [.draw (.fixed 1), .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) fromHand]
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := onTop } ==
@@ -309,7 +309,7 @@ go on the bottom. The announced permanent goes on top. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := fromHand } ==
   "put a card from your hand on the bottom of your library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» (.not .controlsLegendaryCreature) fromHand } ==
+    { resolution := .«if» (.not (.countAtLeast .legendaryCreaturesYouControl (.fixed 1))) fromHand } ==
   "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .putOnLibrary .top .cardFromHand } == "put on library"

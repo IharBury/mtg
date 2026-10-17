@@ -358,7 +358,7 @@ ability and clears the note. -/
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
-  .ifElse (.creatureCardsInGraveyardAtLeast 2)
+  .ifElse ((.countAtLeast .creatureCardsInGraveyard (.fixed 2)))
     (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))
 #guard TriggeredAbility.resolutionPhrase { resolution := .mill (.fixed 4) } == "mill 4 cards"
 #guard TriggeredAbility.resolutionPhrase
