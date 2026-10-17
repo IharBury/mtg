@@ -448,6 +448,23 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
+  | .maySacrificeThese n ids, .objects chosen =>
+    if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
+        !chosen.all (ids.contains ·) then
+      throw s!"Choose {n} to sacrifice, or decline"
+    let mut g := g
+    for id in chosen do
+      let some o := g.findObject? id | throw "no such object"
+      if !o.isOnBattlefield || !o.controlledBy p then
+        throw s!"Can't sacrifice {o.name}"
+      g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    if g.mayThenDrop > 0 then
+      return g.acceptMayThen
+    else
+      return g.finishFraChoice
+  | .maySacrificeThese _ _, .decline =>
+    if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
+  | .maySacrificeThese n _, _ => throw s!"Choose {n} to sacrifice, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
     if !(g.player p).manaPool.canPay cost then
@@ -1169,6 +1186,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .chooseCreatureType _ => .chooseMode 0
   | .maySacrificeAnotherCreatureForPower _ => .decline
   | .maySacrificeAnotherForDrawTreasure _ => .decline
+  | .maySacrificeThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
     if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
   | .attachAnyEquipment _ eligible => .choosePermanents eligible

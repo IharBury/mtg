@@ -245,6 +245,14 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match sourceId.bind onBf with
     | some o => if o.status.attacking then some #[o] else someEmpty
     | none => someEmpty
+  | .artifact =>
+    some ((g.permanentsOf controller).filter (·.printed.isArtifact))
+  | .anotherCreatureOrArtifact =>
+    match sourceId with
+    | some sid =>
+      some ((g.permanentsOf controller).filter fun o =>
+        o.id != sid && (o.isCreature || o.printed.isArtifact))
+    | none => someEmpty
   | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
     | .graveyardCard | .graveyardPermanent | .milledSubtype _
     | .revealed | .basicLand | .linkedExile | .graveyardInstants _

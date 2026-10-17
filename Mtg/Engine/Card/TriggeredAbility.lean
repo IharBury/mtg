@@ -1600,13 +1600,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
-  | .may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
+  | .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-  | .may (.pay .anotherCreatureOrArtifact)
+  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
       (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
@@ -1639,7 +1639,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo =>
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])) (.draw (.fixed 1)) .ifYouDo =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
@@ -1655,9 +1655,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo =>
+  | .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .may (.pay (.or [.artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
@@ -1770,6 +1770,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
   | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
     "you may create a 0/4 colorless Wall creature token with defender"
+  | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>
+    "you may sacrifice that. If you do, do that"
   | .may _ _ .ifYouDo =>
     "you may do it. If you do, do that"
   | .pay (.mana symbols) =>

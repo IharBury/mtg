@@ -47,42 +47,6 @@ inductive SacrificeSourceHow where
   | movedAsSacrificed
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.pay` pays.
-`or` pays any one of its costs. -/
-inductive CostSelector where
-  /-- Pay these mana symbols.
-  `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
-  `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
-  | mana (symbols : Array ManaSymbol)
-  /-- Sacrifice another creature. Its power is noted for
-  `TriggerResolution.putCounters .plusOneSacrificedPower`. -/
-  | anotherCreature
-  /-- Sacrifice another creature or artifact. -/
-  | anotherCreatureOrArtifact
-  /-- Sacrifice an artifact.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.artifact, .discard]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.artifact, .discardNonland]`. -/
-  | artifact
-  /-- Discard a card.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.artifact, .discard]`. -/
-  | discard
-  /-- Discard a nonland card.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.artifact, .discardNonland]`. -/
-  | discardNonland
-  /-- Pay any one of `costs`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.artifact, .discard]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.artifact, .discardNonland]`.
-  Any other list offers each cost that can be paid. One payable cost
-  is that cost. Several are a choice of which to pay. None pays nothing. -/
-  | or (costs : List CostSelector)
-deriving Repr, Inhabited, BEq
-
 /-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
 `toNat` is the index `FraResolution.mshReflexive` matches. -/
 inductive TriggerReflexiveKind where
@@ -235,7 +199,8 @@ A new base power and toughness names who receives it.
 Putting a card on a library names which card.
 Exiling names which cards.
 Putting cards onto the battlefield names which cards.
-Which objects `NumberSelector.count` counts are these selectors. -/
+Which objects `NumberSelector.count` counts are these selectors.
+Which permanents `CostSelector.sacrifice` sacrifices are these selectors. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -411,7 +376,9 @@ inductive ObjectSelector where
   Noting whether the sacrifice happened is `.sacrifice .plan .forReflexive`. -/
   | plan
   /-- Another creature the controller controls.
-  `.sacrifice .another`. -/
+  `.sacrifice .another`.
+  Sacrificing one as a cost is `.pay (.sacrifice (.fixed 1) .another)`.
+  Its power is noted. -/
   | another
   /-- A nontoken creature of each opponent's choice. An opponent with none
   sacrifices nothing.
@@ -690,6 +657,17 @@ inductive ObjectSelector where
   Attacking is `.atLeast (.count .attackingSource) (.fixed 1)`.
   A missing source does not hold. -/
   | attackingSource
+  /-- Each artifact the controller controls.
+  The source is included when it is an artifact.
+  Sacrificing one as a cost is `.pay (.sacrifice (.fixed 1) .artifact)`.
+  Sacrificing each of them is `.sacrifice .artifact`. -/
+  | artifact
+  /-- Each other creature or artifact the controller controls.
+  The source is not included. A missing source names nothing.
+  Sacrificing one as a cost is
+  `.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)`.
+  Sacrificing each of them is `.sacrifice .anotherCreatureOrArtifact`. -/
+  | anotherCreatureOrArtifact
 deriving Repr, Inhabited, BEq
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
@@ -706,7 +684,8 @@ life `TriggerResolution.loseLife` loses, how many cards
 `TriggerResolution.empowerJace` puts on a Jace token, how much less
 `TriggerResolution.spellsCostLess` makes a spell cost, how many cards
 `TriggerResolution.lookAtTopRevealTypes` looks at, and the base power
-and toughness `TriggerResolution.becomePT` sets, and each number
+and toughness `TriggerResolution.becomePT` sets, how many permanents
+`CostSelector.sacrifice` sacrifices, and each number
 `ConditionSelector.atLeast` compares.
 `.greatestPower` is first so a default resolution uses it.
 `.count` is how many objects an `ObjectSelector` names.
@@ -853,6 +832,49 @@ inductive NumberSelector where
   A card remains is `.atLeast .libraryCards (.fixed 1)`.
   An empty library is `.not (.atLeast .libraryCards (.fixed 1))`. -/
   | libraryCards
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.pay` pays.
+`sacrifice` pays by sacrificing permanents.
+`or` pays any one of its costs. -/
+inductive CostSelector where
+  /-- Pay these mana symbols.
+  `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
+  `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
+  | mana (symbols : Array ManaSymbol)
+  /-- Sacrifice `n` permanents `what` names.
+  Sacrificing another creature is `.sacrifice (.fixed 1) .another`.
+  Its power is noted for
+  `TriggerResolution.putCounters .plusOneSacrificedPower`.
+  Sacrificing another creature or artifact is
+  `.sacrifice (.fixed 1) .anotherCreatureOrArtifact`.
+  Sacrificing an artifact is `.sacrifice (.fixed 1) .artifact`.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discard]`.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discardNonland]`.
+  Any other positive count offers that many permanents `what` names.
+  A count that is not a positive number pays nothing.
+  Fewer permanents than that count pays nothing.
+  A selector that does not name permanents pays nothing.
+  A card or a hand is not sacrificed. -/
+  | sacrifice (n : NumberSelector) (what : ObjectSelector)
+  /-- Discard a card.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discard]`. -/
+  | discard
+  /-- Discard a nonland card.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discardNonland]`. -/
+  | discardNonland
+  /-- Pay any one of `costs`.
+  Sacrificing an artifact, or discarding a card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discard]`.
+  Sacrificing an artifact, or discarding a nonland card, is
+  `.or [.sacrifice (.fixed 1) .artifact, .discardNonland]`.
+  Any other list offers each cost that can be paid. One payable cost
+  is that cost. Several are a choice of which to pay. None pays nothing. -/
+  | or (costs : List CostSelector)
 deriving Repr, Inhabited, BEq
 
 /-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
@@ -1647,15 +1669,17 @@ inductive TriggerResolution where
   /-- Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
   `.pay (.mana #[.generic 1, .colored .green, .colored .blue])`.
-  Sacrificing another creature is `.pay .anotherCreature`. Its power is noted.
-  Sacrificing another creature or artifact is `.pay .anotherCreatureOrArtifact`.
-  Sacrificing an artifact is `.pay .artifact`.
+  Sacrificing another creature is `.pay (.sacrifice (.fixed 1) .another)`.
+  Its power is noted.
+  Sacrificing another creature or artifact is
+  `.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)`.
+  Sacrificing an artifact is `.pay (.sacrifice (.fixed 1) .artifact)`.
   Discarding a card is `.pay .discard`.
   Discarding a nonland card is `.pay .discardNonland`.
   Sacrificing an artifact, or discarding a card, is
-  `.pay (.or [.artifact, .discard])`.
+  `.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])`.
   Sacrificing an artifact, or discarding a nonland card, is
-  `.pay (.or [.artifact, .discardNonland])`. -/
+  `.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland])`. -/
   | pay (what : CostSelector)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
@@ -1973,20 +1997,20 @@ inductive TriggerResolution where
   Paying `{n}` to put a +1/+1 counter on the source and draw is
   `.may (.pay (.mana #[.generic n])) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo`.
   You may sacrifice another creature for +1/+1 counters equal to its power is
-  `.may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
+  `.may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo`.
   You may pay `{1}{G}{U}` to return this from the graveyard is
   `.may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo`.
   You may sacrifice another creature or artifact to draw and create a Treasure is
-  `.may (.pay .anotherCreatureOrArtifact) (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo`.
+  `.may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo`.
   You may discard your hand to draw `n` is `.may (.discard .hand) (.draw (.fixed n)) .ifYouDo`.
   You may draw for each permanent of a type, and each opponent draws if you do, is
   `.may (.draw (.perControlled ty)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo`.
   You may sacrifice an artifact or discard a card to draw is
-  `.may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo`.
+  `.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])) (.draw (.fixed 1)) .ifYouDo`.
   You may sacrifice another creature to destroy an opposing nonland is
-  `.may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo`.
+  `.may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo`.
   You may sacrifice an artifact or discard a nonland to deal 2 damage is
-  `.may (.pay (.or [.artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`.
+  `.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`.
   You may tap this to grant indestructible is
   `.may (.tap .source) (.queueReflexive (.grant (.keywords Keyword.indestructible) .target)) .ifYouDo`.
   You may pay {1} to put a +1/+1 counter on target creature is
@@ -3244,7 +3268,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
   | .attackSacPlusOneEqualPower =>
-    { resolution := .may (.pay .anotherCreature)
+    { resolution := .may (.pay (.sacrifice (.fixed 1) .another))
         (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
@@ -3254,7 +3278,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
   | .maySacDrawTreasure =>
-    { resolution := .may (.pay .anotherCreatureOrArtifact)
+    { resolution := .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
         (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo }
   | .castInstantSorceryFromHand =>
     { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
@@ -3512,7 +3536,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
-    { resolution := .may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo }
+    { resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])) (.draw (.fixed 1)) .ifYouDo }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -3546,10 +3570,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo }
+      resolution := .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
-      resolution := .may (.pay (.or [.artifact, .discardNonland]))
+      resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland]))
         (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,

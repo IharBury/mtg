@@ -640,26 +640,37 @@ steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
+/-- Permanents that can pay `CostSelector.sacrifice` of `what`.
+`.another` is each other creature. Every other selector is the permanents
+it names. A selector that does not name permanents names none. -/
+def sacrificeCostCandidates (g : Game) (ctx : TriggerRead)
+    (what : TriggeredAbility.ObjectSelector) : Array GameObject :=
+  match what with
+  | .another =>
+    match ctx.sourceId with
+    | some sid => (g.creaturesControlledBy ctx.controller).filter (·.id != sid)
+    | none => #[]
+  | _ =>
+    (g.permanentsNamed ctx what).getD #[]
+
 /-- Whether `cost` can be paid as this ability resolves.
 An `or` can be paid when any of its costs can. Mana needs a pool that
-can pay it. A sacrifice or a discard needs a legal object. -/
+can pay it. A sacrifice needs at least `n` permanents `what` names.
+A discard needs a legal card. -/
 def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (cost : TriggeredAbility.CostSelector) : Bool :=
+    (cost : TriggeredAbility.CostSelector)
+    (targets : Array Target := #[])
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Bool :=
   match cost with
   | .mana symbols =>
     (g.player controller).manaPool.canPay { symbols := symbols }
-  | .anotherCreature =>
-    match sourceId with
+  | .sacrifice n what =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
+    match g.triggerCount ctx n with
+    | some k => k > 0 && (g.sacrificeCostCandidates ctx what).size ≥ k
     | none => false
-    | some sid => (g.creaturesControlledBy controller).any (·.id != sid)
-  | .anotherCreatureOrArtifact =>
-    match sourceId with
-    | none => false
-    | some sid =>
-      (g.permanentsOf controller).any (fun o =>
-        o.id != sid && (o.isCreature || o.printed.isArtifact))
-  | .artifact =>
-    (g.permanentsOf controller).any (·.printed.isArtifact)
   | .discard =>
     !(g.player controller).hand.isEmpty
   | .discardNonland =>
@@ -668,7 +679,8 @@ def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
   | .or costs =>
     let rec go : List TriggeredAbility.CostSelector → Bool
       | [] => false
-      | c :: rest => costPayable g controller sourceId c || go rest
+      | c :: rest =>
+        costPayable g controller sourceId c targets lastKnownPower lastKnownToughness || go rest
     go costs
 
 /-- Offer `pick` as an optional payment. Nothing legal skips the follow-up
@@ -4373,7 +4385,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
               g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
                 s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
-    | .anotherCreature =>
+    | .sacrifice (.fixed 1) .another =>
       let reflexive :=
         match g.mayThenConditional with
         | some (.queueReflexive _) => true
@@ -4397,7 +4409,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none =>
         if reflexive then g.failMayThen
         else (g.logMsg "No other creature to sacrifice").failMayThen
-    | .anotherCreatureOrArtifact =>
+    | .sacrifice (.fixed 1) .anotherCreatureOrArtifact =>
       match sourceId with
       | none => (g.logMsg "Nothing to sacrifice").failMayThen
       | some sid =>
@@ -4407,9 +4419,27 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else
           g.beginFraChoice controller (.maySacrificeAnotherForDrawTreasure sid)
             s!"{(g.player controller).name} may sacrifice another creature or artifact"
-    | .artifact =>
+    | .sacrifice (.fixed 1) .artifact =>
       g.offerMayPayPick controller sourceId .sacrificeArtifact
         s!"{(g.player controller).name} may sacrifice an artifact"
+    | .sacrifice n what =>
+      -- Printed sacrifices above keep their choices and logs. Every other
+      -- count offers that many permanents `what` names. A count that is not
+      -- a positive number, or fewer permanents than that count, pays nothing.
+      let ctx : TriggerRead := {
+        controller, sourceId, targets, lastKnownPower, lastKnownToughness,
+        sequencedCardPower }
+      match g.triggerCount ctx n with
+      | some k =>
+        let ids := (g.sacrificeCostCandidates ctx what).map (·.id)
+        if k == 0 || ids.size < k then
+          (g.logMsg "Nothing to sacrifice").failMayThen
+        else
+          let noun := if k == 1 then "a permanent" else s!"{k} permanents"
+          g.beginFraChoice controller (.maySacrificeThese k ids)
+            s!"{(g.player controller).name} may sacrifice {noun}"
+      | none =>
+        (g.logMsg "Nothing to sacrifice").failMayThen
     | .discard =>
       g.offerMayPayPick controller sourceId .discardACard
         s!"{(g.player controller).name} may discard a card"
@@ -4419,11 +4449,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .or costs =>
       -- Sacrificing an artifact or discarding is one choice of an object.
       -- Either order is that payment.
-      if costs == [.artifact, .discard] || costs == [.discard, .artifact] then
+      if costs == [.sacrifice (.fixed 1) .artifact, .discard] ||
+          costs == [.discard, .sacrifice (.fixed 1) .artifact] then
         { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
           s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw a card"
-      else if costs == [.artifact, .discardNonland] ||
-          costs == [.discardNonland, .artifact] then
+      else if costs == [.sacrifice (.fixed 1) .artifact, .discardNonland] ||
+          costs == [.discardNonland, .sacrifice (.fixed 1) .artifact] then
         match sourceId with
         | some sid =>
           if (g.costPickCandidates controller sid .sacrificeArtifactOrDiscardNonland).isEmpty then
@@ -4434,7 +4465,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
         | none => g.failMayThen
       else
-        match costs.filter (g.costPayable controller sourceId) with
+        match costs.filter (fun c =>
+            g.costPayable controller sourceId c targets lastKnownPower lastKnownToughness) with
         | [] => g.failMayThen
         | [c] =>
           g.applyTriggeredAbility controller ab sourceId targets dividedDamage
