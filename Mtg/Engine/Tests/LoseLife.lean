@@ -7,7 +7,9 @@ import Mtg.Engine.Fixture
 How much life is lost is a `NumberSelector`. Who loses it is a
 `PlayerSelector`. You lose `n` life is `.loseLife (.fixed n)`. The announced
 opponent and each opponent use those players. One life for each burden
-counter is `.loseLife .perBurden`. Any other selector loses nothing.
+counter is `.loseLife .perBurden`. The controllers of the objects an
+`ObjectSelector` names lose that life with `.controller`. A selector that
+names no player loses nothing.
 -/
 
 namespace Mtg.Engine.LoseLifeTests
@@ -215,6 +217,47 @@ The controller is unchanged. Each named player loses that much. -/
     (ab := .onYouSacrificeTokenOppLosesLife)
   lifeOf g caster == lifeOf g0 caster && lifeOf g opp == lifeOf g0 opp &&
     g.log == g0.log
+
+/- `.controller` names who controls the objects an `ObjectSelector` names.
+The source's controller is that permanent's controller. The announced
+permanent's controller still loses life after the permanent has left.
+Several creatures name one controller once. Creatures of both players
+name both controllers. A hand names no player. -/
+#guard
+  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
+  let g := step g0 (.loseLife (.fixed 1) (.controller .source)) (some (pid g0 "Ogre"))
+  lifeOf g opp == lifeOf g0 opp - 1 && lifeOf g caster == lifeOf g0 caster &&
+    logContains g "loses 1 life"
+
+#guard
+  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
+  let id := pid g0 "Ogre"
+  let (g1, _) := g0.move id (.graveyard opp) none
+  let g := step g1 (.loseLife (.fixed 2) (.controller .target))
+    (targets := #[Target.permanent id])
+  lifeOf g opp == lifeOf g1 opp - 2 && lifeOf g caster == lifeOf g1 caster
+
+#guard
+  let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
+  let g0 := addPermanent g0 (creature "Also" ManaCost.empty #[] 1 1) caster caster
+  let g := step g0 (.loseLife (.fixed 1) (.controller .creaturesYouControl))
+  lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp
+
+#guard
+  let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
+  let g0 := addPermanent g0 (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
+  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents "Dragon")))
+  lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp - 1
+
+#guard
+  let g := step afterDraw (.loseLife (.fixed 3) (.controller .hand))
+  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
+    g.log == afterDraw.log
+
+#guard
+  let g := step afterDraw (.loseLife (.fixed 3) (.controller .target))
+  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
+    g.log == afterDraw.log
 
 #guard TriggeredAbility.resolution .onYouSacrificeTokenOppLosesLife == targetOpp 1
 #guard TriggeredAbility.resolution .onYourUpkeepLoseLifePerBurden == perBurden

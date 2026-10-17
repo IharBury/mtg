@@ -60,7 +60,7 @@ def notedDestroy : TriggeredAbility.TriggerResolution :=
 def amassSeq : TriggeredAbility.TriggerResolution :=
   .sequence [
     notedDestroy,
-    .amass .notedPower (who := .notedController),
+    .amass .notedPower (who := .controller .target),
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 
 /- Opponents' artifacts and enchantments are destroyed and counted.

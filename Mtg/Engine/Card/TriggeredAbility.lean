@@ -891,7 +891,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
   | .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind (.target .controller)]) =>
+      .createTokens .treasure (.fixed 1) false .kind (.controller .target)]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
@@ -962,7 +962,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "draw a card for each permanent you control of that type"
     | .you, .upToHandSize _ =>
       "if you have fewer than that many cards in hand, draw cards equal to the difference"
-    | .enchantedController, _ =>
+    | .controller .enchanted, _ =>
       "that player draws a card"
     | .eachOpponent, .fixed n =>
       s!"each opponent draws {cardPhrase n.toNat}"
@@ -1104,7 +1104,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ .notedController, .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
+  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
@@ -1219,7 +1219,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
     s!"tap {noun} and put a stun counter on it"
   | .sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind (.target .controller)] =>
+      .createTokens .treasure (.fixed 1) false .kind (.controller .target)] =>
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
@@ -1373,7 +1373,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"amass {pluralizeName subtype} X, where X is this creature's power"
   | .amass .notedExcess subtype _ _ =>
     s!"amass {pluralizeName subtype} X, where X is the excess damage"
-  | .amass .notedPower subtype _ .notedController =>
+  | .amass .notedPower subtype _ (.controller .target) =>
     s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
   | .amass (.fixed n) subtype true _ =>
     s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
@@ -1414,7 +1414,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "create a colorless Equipment artifact token named Sturdy Shield"
     | .merfolk, _, .blueManaSymbols, _ =>
       "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
-    | .kind, .target .controller, _, _ =>
+    | .kind, .controller .target, _, _ =>
       "they create a Treasure token"
     | .kind, .you, .fixed n, _ =>
       TokenKind.createPhrase kind n.toNat (tapped := tapped)

@@ -1492,11 +1492,11 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     g.createMerfolkForBlueSymbols controller lastKnownPower
   | .kind, .you, .fixed n, _ =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .kind, .target .controller, _, _ =>
+  | .kind, .controller .target, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the token is the one it had on the battlefield.
     let n := counted.getD 0
-    match (g.collectPlayers ctx (.target .controller)).bind (·[0]?) with
+    match (g.collectPlayers ctx (.controller .target)).bind (·[0]?) with
     | some pid =>
       if kind == .treasure && !tapped then g.createTreasureTokens pid n
       else g.createKindTokens pid kind n (tapped := tapped)
@@ -2350,7 +2350,7 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
   let ctx : TriggerRead := {
     controller, sourceId, targets, lastKnownPower, lastKnownToughness, sequencedCardPower }
   match who, amount with
-  | .enchantedController, amount =>
+  | .controller .enchanted, amount =>
     match g.attachedHost? sourceId with
     | some host =>
       match g.triggerCount ctx amount with

@@ -24,58 +24,6 @@ structure TriggerRead where
 private def recordedCauseId (g : Game) : Option ObjectId :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
-/-- Players `who` names. `.opponentHasYou` is an offer, not a recipient.
-An announced player that was not chosen is `none`.
-`.player`, `.opponent`, `.target .player`, and `.target .opponent` are that
-announced player. `.controller` and `.target .controller` are the controller
-the targeted permanent had. Any other `.target` restriction names nothing. -/
-def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.PlayerSelector) :
-    Option (Array PlayerId) :=
-  let controller := ctx.controller
-  let one (pid : PlayerId) : Option (Array PlayerId) := some #[pid]
-  let announcedPlayer : Option (Array PlayerId) :=
-    match ctx.targets.findSome? fun
-      | Target.player pid => some pid
-      | _ => none with
-    | some pid => one pid
-    | none => none
-  let permanentController : Option (Array PlayerId) :=
-    match ctx.targets.findSome? fun
-      | Target.permanent oid => some oid
-      | _ => none with
-    | some oid =>
-      match g.findObject? (g.followMoved oid) with
-      | some o =>
-        one ((o.controller.orElse (fun _ => o.lastController)).getD o.owner)
-      | none => none
-    | none => none
-  match who with
-  | .you => one controller
-  | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
-  | .player | .opponent | .target .player | .target .opponent => announcedPlayer
-  | .controller | .target .controller => permanentController
-  | .target _ => none
-  | .thatPlayer =>
-    ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
-  | .damagedPlayer =>
-    one (g.lastCombatDamagePlayer.getD (g.opponent controller))
-  | .enchantedController =>
-    match g.attachedHost? ctx.sourceId with
-    | some host => one (host.controller.getD host.owner)
-    | none => none
-  | .announced =>
-    match ctx.targets.findSome? fun
-      | Target.player pid => some pid
-      | _ => none with
-    | some pid => one pid
-    | none =>
-      match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
-      | some idx => one ⟨idx.toNat⟩
-      | none => none
-  | .notedController =>
-    if g.destroyedForAmassThisWay then g.amassControllerThisWay.map (#[·]) else none
-  | .opponentHasYou => none
-
 /-- Permanents `who` names. Selectors that name a card, a hand, or a
 choice that has not been offered are `none`. An empty array means the
 selector named permanents and none of them are on the battlefield. -/
@@ -271,6 +219,75 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
     | .card | .nonland =>
     none
+
+/-- Controllers of the objects `what` names.
+`none` means `what` does not name objects, or a single object it names
+cannot be found.
+An empty array means it named objects and none of them remain.
+Each player is named once, in the order the objects are named.
+The enchanted creature is the creature the source enchants. Nothing
+enchanted is `none`.
+An announced permanent is read after it has left the battlefield. The
+controller it had is used. -/
+def controllersNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSelector) :
+    Option (Array PlayerId) :=
+  let controlling (o : GameObject) : PlayerId :=
+    (o.controller.orElse (fun _ => o.lastController)).getD o.owner
+  let distinct (pids : Array PlayerId) : Array PlayerId :=
+    pids.foldl (fun acc pid => if acc.contains pid then acc else acc.push pid) #[]
+  match what with
+  | .enchanted =>
+    match g.attachedHost? ctx.sourceId with
+    | some host => some #[host.controller.getD host.owner]
+    | none => none
+  | .target | .permanent _ =>
+    let ids := ctx.targets.filterMap fun
+      | Target.permanent oid => some (g.followMoved oid)
+      | _ => none
+    if ids.isEmpty then none
+    else
+      let pids := distinct (ids.filterMap fun oid => (g.findObject? oid).map controlling)
+      if pids.isEmpty then none else some pids
+  | what =>
+    match g.permanentsNamed ctx what with
+    | none => none
+    | some objs => some (distinct (objs.map controlling))
+
+/-- Players `who` names. `.opponentHasYou` is an offer, not a recipient.
+An announced player that was not chosen is `none`.
+`.player`, `.opponent`, `.target .player`, and `.target .opponent` are that
+announced player. `.controller` is the controllers of the objects it names.
+Any other `.target` restriction names nothing. -/
+def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.PlayerSelector) :
+    Option (Array PlayerId) :=
+  let controller := ctx.controller
+  let one (pid : PlayerId) : Option (Array PlayerId) := some #[pid]
+  let announcedPlayer : Option (Array PlayerId) :=
+    match ctx.targets.findSome? fun
+      | Target.player pid => some pid
+      | _ => none with
+    | some pid => one pid
+    | none => none
+  match who with
+  | .you => one controller
+  | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
+  | .player | .opponent | .target .player | .target .opponent => announcedPlayer
+  | .controller what => g.controllersNamed ctx what
+  | .target _ => none
+  | .thatPlayer =>
+    ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
+  | .damagedPlayer =>
+    one (g.lastCombatDamagePlayer.getD (g.opponent controller))
+  | .announced =>
+    match ctx.targets.findSome? fun
+      | Target.player pid => some pid
+      | _ => none with
+    | some pid => one pid
+    | none =>
+      match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
+      | some idx => one ⟨idx.toNat⟩
+      | none => none
+  | .opponentHasYou => none
 
 /-- How many objects `what` names.
 `none` means `what` does not name a counted set. An empty set is `some 0`.

@@ -39,7 +39,7 @@ def onBoard (g : Game) (name : String) : Bool :=
 /- The shared step effects resolve as constructors that do not carry
 `StepLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  .draw (.fixed 1) (who := .enchantedController)
+  .draw (.fixed 1) (who := .controller .enchanted)
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepDrawToTen) ==
   .draw (.upToHandSize 10)
 #guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan) ==

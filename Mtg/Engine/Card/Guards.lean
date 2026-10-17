@@ -1582,7 +1582,7 @@ end CardDef
   .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
   .sequence [.destroy .target (note := .forAmass),
-    .amass .notedPower (who := .notedController),
+    .amass .notedPower (who := .controller .target),
     .«if» .youControlledDestroyed (.draw (.fixed 1))]
 #guard TriggeredAbility.resolution (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") ==
   .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand,
@@ -1637,7 +1637,7 @@ end CardDef
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
-    .createTokens .treasure (.fixed 1) false (who := .target .controller)])
+    .createTokens .treasure (.fixed 1) false (who := .controller .target)])
 #guard TriggeredAbility.toNotation
     (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
