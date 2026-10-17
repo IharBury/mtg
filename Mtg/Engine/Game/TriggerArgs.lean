@@ -24,12 +24,49 @@ structure TriggerRead where
 private def recordedCauseId (g : Game) : Option ObjectId :=
   ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
 
+/-- Objects of `xs` that also occur in `ys`, in the order of `xs`. -/
+def intersectObjects (xs ys : Array GameObject) : Array GameObject :=
+  xs.filter fun o => ys.any (·.id == o.id)
+
+/-- `xs`, then each object of `ys` whose id is not already named. -/
+def unionObjects (xs ys : Array GameObject) : Array GameObject :=
+  ys.foldl (fun acc o => if acc.any (·.id == o.id) then acc else acc.push o) xs
+
+/-- Permanents named by every set. One `none` names nothing.
+An empty list names nothing. -/
+private def intersectPermanentSets (parts : List (Option (Array GameObject))) :
+    Option (Array GameObject) :=
+  match parts with
+  | [] => some #[]
+  | none :: _ => none
+  | some xs :: rest =>
+    match intersectPermanentSets rest with
+    | none => none
+    | some ys =>
+      match rest with
+      | [] => some xs
+      | _ => some (intersectObjects xs ys)
+
+/-- Permanents named by any set. A `none` adds nothing.
+Every part `none` names nothing as `none`. An empty list names nothing. -/
+private def unionPermanentSets (parts : List (Option (Array GameObject))) :
+    Option (Array GameObject) :=
+  if parts.isEmpty then some #[]
+  else
+    let named := parts.filterMap id
+    if named.isEmpty then none
+    else some (named.foldl (fun acc xs => unionObjects acc xs) #[])
+
 /-- Permanents `who` names. Selectors that name a card, a hand, or a
 choice that has not been offered are `none`. An empty array means the
 selector named permanents and none of them are on the battlefield.
 `.any` and `.target .any` are the announced permanents. A restriction
 read on its own names the same permanents as `.target` of that
-restriction. Any other `.target` restriction names nothing. -/
+restriction. Any other `.target` restriction names nothing.
+`.intersection` names permanents every selector names. One selector that
+does not name permanents names nothing. `.union` names permanents any
+selector names. A selector that does not name permanents adds nothing.
+An empty list names nothing. -/
 def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.ObjectSelector) :
     Option (Array GameObject) :=
   let controller := ctx.controller
@@ -77,17 +114,11 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
       | none => some #[o]
     | none => someEmpty
   | .creaturesYouControl => some (g.creaturesControlledBy controller)
-  | .othersOfSubtypes subtypes =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && some o.id != sourceId &&
-        subtypes.any (g.hasSubtype o))
   | .othersOfSubtype subtype =>
     some (g.battlefield.filter fun o =>
       o.controlledBy controller && some o.id != sourceId && g.hasSubtype o subtype)
   | .opponentsCreatures =>
     some (g.battlefield.filter fun o => o.isCreature && !o.controlledBy controller)
-  | .youControlSubtype subtype =>
-    some (g.creaturesControlledBy controller |>.filter (g.hasSubtype · subtype))
   | .blockers =>
     match sourceId with
     | some sid => some (g.blockersOf sid)
@@ -174,14 +205,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
     some ((g.permanentsOf controller).filter fun o =>
       g.hasSubtype o "Forest" && some o.id != cause)
-  | .equippedLegendary =>
-    match sourceId.bind g.findObject? with
-    | some eq =>
-      match eq.attachedTo.bind onBf with
-      | some host =>
-        if host.isLegendary && host.controller == some controller then some #[host] else someEmpty
-      | none => someEmpty
-    | none => someEmpty
   | .creature | .target .creature =>
     some (permanentTargets.filter (·.isCreature))
   | .planeswalker | .target .planeswalker =>
@@ -201,10 +224,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
   | .harnessedSource =>
     match sourceId.bind onBf with
     | some o => if o.status.harnessed then some #[o] else someEmpty
-    | none => someEmpty
-  | .attackingSource =>
-    match sourceId.bind onBf with
-    | some o => if o.status.attacking then some #[o] else someEmpty
     | none => someEmpty
   | .artifact =>
     some ((g.permanentsOf controller).filter (·.printed.isArtifact))
@@ -226,6 +245,10 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
     | .card | .nonland =>
     none
+  | .intersection sels =>
+    intersectPermanentSets (sels.map (g.permanentsNamed ctx))
+  | .union sels =>
+    unionPermanentSets (sels.map (g.permanentsNamed ctx))
 
 /-- Controllers of the objects `what` names.
 `none` means `what` does not name objects, or a single object it names

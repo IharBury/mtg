@@ -224,7 +224,9 @@ Which objects `NumberSelector.count` counts are these selectors.
 Which permanents `CostSelector.sacrifice` sacrifices are these selectors.
 Which cards `CostSelector.discard` discards are these selectors.
 An announced target is `.target`, and `which` is the `ObjectSelector`
-restricting it. The announced permanent is `.target` (`.any`). -/
+restricting it. The announced permanent is `.target` (`.any`).
+Objects every selector names are `.intersection`. Objects any selector
+names are `.union`. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -376,16 +378,13 @@ inductive ObjectSelector where
   | cause (subtype : Option String := none)
   /-- Each creature the controller controls. -/
   | creaturesYouControl
-  /-- Each other creature the controller controls of these subtypes.
-  The source is not included. -/
-  | othersOfSubtypes (subtypes : Array String)
   /-- Each other permanent the controller controls of this subtype.
-  The source is not included. -/
+  The source is not included.
+  Each other creature of these subtypes is
+  `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`. -/
   | othersOfSubtype (subtype : String)
   /-- Each creature an opponent controls. -/
   | opponentsCreatures
-  /-- Each creature the controller controls of this subtype. -/
-  | youControlSubtype (subtype : String)
   /-- Each creature blocking the source. -/
   | blockers
   /-- The announced permanent. `byYou` means the controller puts the counters,
@@ -708,11 +707,6 @@ inductive ObjectSelector where
   At least `n` is `.atLeast (.count .questCounters) (.fixed n)`.
   A missing source is reported. A source that has left is reported. -/
   | questCounters
-  /-- The creature this Equipment is attached to, when that creature is
-  legendary and you control it.
-  That creature is `.atLeast (.count .equippedLegendary) (.fixed 1)`.
-  A missing Equipment is reported. -/
-  | equippedLegendary
   /-- Creature cards in the controller's graveyard.
   At least `n` is `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`. -/
   | creatureCardsInGraveyard
@@ -724,10 +718,6 @@ inductive ObjectSelector where
   Harnessed is `.atLeast (.count .harnessedSource) (.fixed 1)`.
   An unharnessed source is reported. A missing source does nothing. -/
   | harnessedSource
-  /-- The source, when it is on the battlefield and attacking.
-  Attacking is `.atLeast (.count .attackingSource) (.fixed 1)`.
-  A missing source does not hold. -/
-  | attackingSource
   /-- Each artifact the controller controls.
   The source is included when it is an artifact.
   Sacrificing one as a cost is `.pay (.sacrifice (.fixed 1) .artifact)`.
@@ -747,6 +737,34 @@ inductive ObjectSelector where
   Discarding one as a cost is `.pay (.discard (.fixed 1) .nonland)`.
   A land is not included. A permanent is not a card in hand. -/
   | nonland
+  /-- Objects every selector in `what` names.
+  An object is named when each selector names it. The same object is named
+  once, in the order the first selector names it. An empty list names nothing.
+  A selector that does not name objects names nothing here.
+  The source, while it is on the battlefield and attacking, is
+  `.intersection [.source, .attackingCreatures]`.
+  Each creature the controller controls of this subtype is
+  `.intersection [.creaturesYouControl, .youControl (.subtype subtype)]`.
+  Elves the controller controls are
+  `.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]`.
+  Each other creature the controller controls of these subtypes is
+  `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`.
+  The creature this Equipment is attached to, when that creature is legendary
+  and the controller controls it, is
+  `.intersection [.equipped, .legendaryCreaturesYouControl]`.
+  That creature is
+  `.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)`.
+  A missing Equipment is reported. -/
+  | intersection (what : List ObjectSelector)
+  /-- Objects any selector in `what` names.
+  An object is named when one selector names it. The same object is named
+  once, in the order the selectors name it. An empty list names nothing.
+  A selector that does not name objects adds nothing.
+  Each other permanent of these subtypes is
+  `.union (subtypes.toList.map .othersOfSubtype)`.
+  The creatures among them are
+  `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`. -/
+  | union (what : List ObjectSelector)
 deriving Repr, Inhabited, BEq
 
 end
@@ -999,7 +1017,7 @@ inductive ConditionSelector where
   You control a Hero other than the source is
   `.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)`.
   This Equipment is attached to a legendary creature you control is
-  `.atLeast (.count .equippedLegendary) (.fixed 1)`.
+  `.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)`.
   A missing Equipment is reported.
   The target is a creature is
   `.atLeast (.count (.target .creature)) (.fixed 1)`.
@@ -1017,7 +1035,7 @@ inductive ConditionSelector where
   `.atLeast (.count .harnessedSource) (.fixed 1)`.
   An unharnessed source is reported. A missing source does nothing.
   The source is on the battlefield and attacking is
-  `.atLeast (.count .attackingSource) (.fixed 1)`.
+  `.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)`.
   A missing source does not hold.
   Any other counted selector is the number of objects it names.
   A count that cannot be read does not hold.
@@ -1663,7 +1681,7 @@ inductive TriggerResolution where
   `.pump .equalSourcePower (.fixed 0) .target`.
   Creatures you control +P/+T is `.pump (.fixed p) (.fixed t) .creaturesYouControl`.
   Other creatures of these subtypes +P/+T is
-  `.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes)`.
+  `.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)])`.
   Creatures opponents control +P/+T is
   `.pump (.fixed p) (.fixed t) .opponentsCreatures`.
   The announced permanent gets +P/+T is `.pump (.fixed p) (.fixed t) .target`.
@@ -2023,7 +2041,7 @@ inductive TriggerResolution where
   `.sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]`.
   Other creatures you control of these subtypes get +P/+T, and creatures
   your opponents control get +oppP/+oppT, is
-  `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`.
+  `.sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`.
   Gain 1 life, draw, or put a +1/+1 counter on each creature you control
   when this is the first, second, or third resolve this turn (Belladonna
   Took), is
@@ -2984,8 +3002,8 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .grant .landfallCreateElf .source }
   | .elvesGetVigilance p =>
     { resolution := .sequence [
-        .pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
-        .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")] }
+        .pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
+        .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
       resolution := .discard .chosenNonland }
@@ -3328,7 +3346,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
-        [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes),
+        [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]),
          .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] }
   | .wolfPlusOneOrTreasure =>
     { resolution := .or
@@ -3405,7 +3423,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .amass .notedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
-        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking] }
+        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     { resolution :=
         .createTokens .treasure .damagedPlayerArtifacts false }
@@ -3863,7 +3881,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
         .putCounters (.ofKind .plusOnePlusOne) .source,
-        .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source),
+        .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
         .«if» .enrageGrantsCombat .additionalCombatPhase] }
   | .youAttacking .pay2LifeToughness =>
     { events := #[.youAttack],
@@ -3995,7 +4013,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
-    .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source),
+    .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
     .«if» .enrageGrantsCombat .additionalCombatPhase]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]

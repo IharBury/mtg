@@ -59,8 +59,8 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .gainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
 #guard (timing (.elvesGetVigilance 1)).resolution ==
   .sequence [
-    .pump (.fixed 1) (.fixed 0) (.youControlSubtype "Elf"),
-    .grant (.keywords Keyword.vigilance) (.youControlSubtype "Elf")]
+    .pump (.fixed 1) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
+    .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass (.fixed 1)

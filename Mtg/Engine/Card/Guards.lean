@@ -881,7 +881,7 @@ namespace CardDef
   .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
 #guard TriggeredAbility.resolution
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
-  .sequence [.pump (.fixed 2) (.fixed 2) (.othersOfSubtypes #["Goblin", "Orc"]),
+  .sequence [.pump (.fixed 2) (.fixed 2) (.intersection [.creaturesYouControl, .union (#["Goblin", "Orc"].toList.map .othersOfSubtype)]),
     .pump (.fixed (-1)) (.fixed (-1)) .opponentsCreatures]
 #guard TriggeredAbility.toNotation
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
@@ -1575,7 +1575,7 @@ end CardDef
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
     .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking]
+  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==

@@ -702,7 +702,7 @@ inductive SharedTrigger where
   | putNonlandMvAtMostFromGy (mv : Nat)
   /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT.
   Resolves as
-  `.sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
+  `.sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
   Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`. -/
@@ -762,7 +762,7 @@ inductive SharedTrigger where
   `.sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess]`. -/
   | bolgDealSacrificedPower
   /-- Create Spirits for the equipped creature. Resolves as
-  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking]`. -/
+  `.sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]`. -/
   | createSpiritsForEquipped
   /-- Treasures equal to the damaged player's artifacts. -/
   | createTreasuresEqualDamagedPlayerArtifacts
@@ -1027,7 +1027,7 @@ inductive SharedTrigger where
   A +1/+1 counter when the entering creature is greater is
   `.«if» (.or [.causeGreaterPower, .causeGreaterToughness]) (.putCounters (.ofKind .plusOnePlusOne) .source)`.
   Putting a counter, untapping when attacking, and an Enrage combat is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» (.atLeast (.count .attackingSource) (.fixed 1)) (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
+  `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source), .«if» .enrageGrantsCombat .additionalCombatPhase]`.
   Putting a counter, then damage equal to those counters, is
   `.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .queueReflexive (.dealDamage .plusOneCounters .target)]`.
   +2/+2, then you may retarget the spell, is

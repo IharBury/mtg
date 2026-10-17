@@ -695,6 +695,13 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .exile (.target .whileSource) .forLater .none => some "exile that creature"
   | _ => none
 
+/-- Subtypes when `parts` is only `.othersOfSubtype`, in that order. -/
+private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array String) :=
+  parts.foldl (fun acc part =>
+    match acc, part with
+    | some ss, .othersOfSubtype subtype => some (ss.push subtype)
+    | _, _ => none) (some #[])
+
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
@@ -717,11 +724,16 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
     | .fixed power, .fixed toughness, .creaturesYouControl =>
       s!"creatures you control get {signedStat power}/{signedStat toughness} until end of turn"
-    | .fixed power, .fixed toughness, .othersOfSubtypes subtypes =>
-      let recipients :=
-        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
-        else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-      s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
+    | .fixed power, .fixed toughness,
+        .intersection [.creaturesYouControl, .union parts] =>
+      match othersOfSubtypeParts parts with
+      | some subtypes =>
+        let recipients :=
+          if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+          else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+        s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
+      | none =>
+        "those permanents get +P/+T until end of turn"
     | .fixed power, .fixed toughness, .opponentsCreatures =>
       s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
     | .fixed power, .fixed toughness, .target =>
@@ -740,7 +752,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
     | .double, .double, (.target .whileSource) =>
       "double that creature's power and toughness until end of turn"
-    | .fixed power, .fixed toughness, .youControlSubtype subtype =>
+    | .fixed power, .fixed toughness,
+        .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
       s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
     | _, _, _ =>
       "those permanents get +P/+T until end of turn"
@@ -1084,12 +1097,17 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
   | .sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
     s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
-  | .sequence [.pump (.fixed p) (.fixed t) (.othersOfSubtypes subtypes),
+  | .sequence [.pump (.fixed p) (.fixed t)
+      (.intersection [.creaturesYouControl, .union parts]),
       .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] =>
-    let who :=
-      if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
-      else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-    s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+    match othersOfSubtypeParts parts with
+    | some subtypes =>
+      let who :=
+        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+        else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+      s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+    | none =>
+      "resolve each step"
   | .sequence
       [.noteResolveThisTurn 3,
        .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
@@ -1098,7 +1116,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
   | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking] =>
+  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
   | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
@@ -1225,8 +1243,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
-  | .sequence [.pump (.fixed p) (.fixed 0) (.youControlSubtype "Elf"),
-      .grant (.keywords k) (.youControlSubtype "Elf")] =>
+  | .sequence [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
+      .grant (.keywords k) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] =>
     if k == Keyword.vigilance then
       s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
     else
@@ -1546,7 +1564,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"that creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .creaturesYouControl =>
       s!"creatures you control gain {k.joinedAnd} until end of turn"
-    | .keywords k, .youControlSubtype subtype =>
+    | .keywords k, .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
       s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
     | .hexproofWhileSource, .target =>
       s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
@@ -1676,7 +1694,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may tap this creature. When you do, that ability triggers"
   | .markRecentTokensAttacking =>
     "those tokens enter tapped and attacking"
-  | .«if» (.atLeast (.count .equippedLegendary) (.fixed 1)) .markRecentTokensAttacking =>
+  | .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking =>
     "those tokens are tapped and attacking if that creature is legendary"
   | .additionalCombatPhase =>
     "after this phase, there is an additional combat phase"
