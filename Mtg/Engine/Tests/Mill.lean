@@ -124,25 +124,25 @@ then logs that it is empty. -/
 target kind decides who is legal. -/
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.player opp] (ab := playerMill)
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
   inGraveyard g opp "Mill Bolt" && libSize g caster == libSize g0 caster &&
     logContains g "Nissa mills Mill Bolt" && g.milledIdsThisWay.isEmpty &&
     !g.opponentsMilledThisWay
 
 #guard
   let g0 := putOnLibrary afterDraw elf caster
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.player caster] (ab := playerMill)
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player caster] (ab := playerMill)
   inGraveyard g caster "Mill Elf" && logContains g "Chandra mills Mill Elf"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) .target) (ab := playerMill)
+  let g := step g0 (.mill (.fixed 1) (.target .player)) (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" && libSize g opp == libSize g0 opp &&
     logContains g "The target is no longer legal"
 
 #guard
   let g0 := addPermanent (putOnLibrary afterDraw bolt opp) relic caster caster
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.permanent (permanentId g0 "Mill Relic")]
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.permanent (permanentId g0 "Mill Relic")]
     (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"
@@ -150,20 +150,20 @@ target kind decides who is legal. -/
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
   let g0 := g0.setPlayer { g0.player opp with lost := true }
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.player opp] (ab := playerMill)
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
   let g0 := g0.setPlayer { g0.player opp with protectionFromEverything := true }
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.player opp] (ab := playerMill)
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) .target) #[Target.player opp]
+  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp]
   !inGraveyard g opp "Mill Bolt" &&
     logContains g "The target is no longer legal"
 
@@ -317,7 +317,7 @@ ability and clears the note. -/
     step g0 r #[Target.player opp]
       (lastKnownPower := some 2) (lastKnownToughness := some 1)
       (ab := playerMill)
-  let targetNoted := run (.mill (.fixed 2) .target (note := .milledCards))
+  let targetNoted := run (.mill (.fixed 2) (.target .player) (note := .milledCards))
   let eachOpp := run (.mill (.fixed 2) .eachOpponent)
   let thatMany := run (.mill .thatManyLost)
   let thatSeat := run (.mill (.fixed 2) .thatPlayer)
@@ -348,7 +348,7 @@ ability and clears the note. -/
     none.log.size == g0.log.size
 
 /- Printed phrases and resolutions stay with the combination that produces them. -/
-#guard TriggeredAbility.resolution (.onDrawSecondMillPlayer 3) == .mill (.fixed 3) .target
+#guard TriggeredAbility.resolution (.onDrawSecondMillPlayer 3) == .mill (.fixed 3) (.target .player)
 #guard TriggeredAbility.resolution .onPlayerLosesLifeMillThatMany ==
   .mill .thatManyLost .thatPlayer
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
@@ -364,7 +364,7 @@ ability and clears the note. -/
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .mill (.fixed 4) (note := .milledCards) } == "mill 4 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .player, resolution := .mill (.fixed 3) .target } ==
+    { targeting := .of .player, resolution := .mill (.fixed 3) (.target .player) } ==
   "target player mills 3 cards"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .mill .thatManyLost .thatPlayer } ==
@@ -373,7 +373,7 @@ ability and clears the note. -/
     { resolution := .mill (.fixed 2) .eachOpponent (note := .opponentsMilled) } ==
   "each opponent mills 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill (.fixed 2) .target (note := .milledCards) } == "mill"
+    { resolution := .mill (.fixed 2) (.target .player) (note := .milledCards) } == "mill"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .mill .perOtherCreature } == "mill"
 #guard TriggeredAbility.toNotation (.onDrawSecondMillPlayer 3) ==

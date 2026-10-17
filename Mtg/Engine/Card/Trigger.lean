@@ -110,31 +110,14 @@ def toNat : TriggerReflexiveKind → Nat
 
 end TriggerReflexiveKind
 
-/-- Which announced target `PlayerSelector.target` names.
-`.player` is that player. `.opponent` narrows it to an opponent.
-`.controller` is the controller the targeted permanent had. -/
-inductive PlayerTarget where
-  /-- The announced player.
-  An illegal target mills nothing.
-  `.mill (.fixed n) .target`. -/
-  | player
-  /-- The announced opponent.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
-  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`. -/
-  | opponent
-  /-- The controller the targeted permanent had on the battlefield.
-  Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`. -/
-  | controller
-deriving Repr, Inhabited, BEq
-
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
 `TriggerResolution.loseLife` loses life, who
 `TriggerResolution.mill` mills, whose library
 `TriggerResolution.revealLibrary` looks at, and who
 `TriggerResolution.amass` amasses for.
-An announced target is `.target`. `which` is the restriction on that target. -/
+An announced target is `.target`, and `which` is the `PlayerSelector`
+restricting it. A player is `.target .player`. -/
 inductive PlayerSelector where
   /-- Each opponent, or the announced opponent when the ability targets.
   `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
@@ -159,17 +142,34 @@ inductive PlayerSelector where
   Nothing enchanted draws nothing.
   `.draw (.fixed 1) .enchantedController`. -/
   | enchantedController
-  /-- The announced target `which` names.
-  The announced player is `.target` (`.player`).
+  /-- The announced player. This is the restriction `.target` uses for a player.
   An illegal target mills nothing.
-  `.mill (.fixed n) .target`.
+  `.mill (.fixed n) (.target .player)`.
+  Read on its own, this is that same player. A missing target names nothing. -/
+  | player
+  /-- The announced opponent. This is the restriction `.target` uses for an opponent.
+  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
+  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
+  Read on its own, this is that same player. A missing target names nothing. -/
+  | opponent
+  /-- The controller the targeted permanent had on the battlefield.
+  This is the restriction `.target` uses for that controller.
+  Destroy may already have moved it.
+  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
+  Read on its own, this is that same controller. No permanent names nothing. -/
+  | controller
+  /-- The announced target `which` names. `which` is a `PlayerSelector`.
+  The announced player is `.target .player`.
+  An illegal target mills nothing.
+  `.mill (.fixed n) (.target .player)`.
   The announced opponent is `.target .opponent`.
   `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
   That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
   The targeted permanent's controller is `.target .controller`.
   Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`. -/
-  | target (which : PlayerTarget := .player)
+  `.createTokens .treasure (.fixed 1) false (who := .target .controller)`.
+  Any other restriction names nothing. -/
+  | target (which : PlayerSelector)
   /-- The player who lost life. That player's seat is the trigger's
   last-known toughness. A missing seat mills nothing.
   `.mill .thatManyLost .thatPlayer`. -/
@@ -2497,7 +2497,7 @@ inductive TriggerResolution where
   Milling zero cards changes nothing. A library that runs out logs that
   it is empty and mills nothing further.
   The controller mills `n` with `.mill (.fixed n)`.
-  The announced player mills `n` with `.mill (.fixed n) .target`.
+  The announced player mills `n` with `.mill (.fixed n) (.target .player)`.
   An illegal target mills nothing.
   The player who lost life mills that many with
   `.mill .thatManyLost .thatPlayer`.
@@ -3158,7 +3158,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     | .target =>
       { targeting := .of .opponent, resolution := .discard (.cards n (.target .opponent)) }
   | .millPlayer n =>
-    { targeting := .of .player, resolution := .mill (.fixed n) .target }
+    { targeting := .of .player, resolution := .mill (.fixed n) (.target .player) }
   | .investigate => { resolution := .investigate }
   | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
   | .searchLibrary => { resolution := .searchLibrary (.put .forest) }

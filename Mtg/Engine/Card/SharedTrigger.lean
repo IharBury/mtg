@@ -575,7 +575,7 @@ inductive SharedTrigger where
   `.opponentDiscards`. The announced opponent discards `n` is
   `.opponentDiscards n .target`. -/
   | opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each)
-  /-- Target player mills `n` cards. Resolves as `.mill (.fixed n) .target`. -/
+  /-- Target player mills `n` cards. Resolves as `.mill (.fixed n) (.target .player)`. -/
   | millPlayer (n : Nat)
   /-- Investigate (create a Clue). -/
   | investigate

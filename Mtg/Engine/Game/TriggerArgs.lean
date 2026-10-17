@@ -26,33 +26,35 @@ private def recordedCauseId (g : Game) : Option ObjectId :=
 
 /-- Players `who` names. `.opponentHasYou` is an offer, not a recipient.
 An announced player that was not chosen is `none`.
-`.target .player` and `.target .opponent` are that announced player.
-`.target .controller` is the controller the targeted permanent had. -/
+`.player`, `.opponent`, `.target .player`, and `.target .opponent` are that
+announced player. `.controller` and `.target .controller` are the controller
+the targeted permanent had. Any other `.target` restriction names nothing. -/
 def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.PlayerSelector) :
     Option (Array PlayerId) :=
   let controller := ctx.controller
   let one (pid : PlayerId) : Option (Array PlayerId) := some #[pid]
+  let announcedPlayer : Option (Array PlayerId) :=
+    match ctx.targets.findSome? fun
+      | Target.player pid => some pid
+      | _ => none with
+    | some pid => one pid
+    | none => none
+  let permanentController : Option (Array PlayerId) :=
+    match ctx.targets.findSome? fun
+      | Target.permanent oid => some oid
+      | _ => none with
+    | some oid =>
+      match g.findObject? (g.followMoved oid) with
+      | some o =>
+        one ((o.controller.orElse (fun _ => o.lastController)).getD o.owner)
+      | none => none
+    | none => none
   match who with
   | .you => one controller
   | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
-  | .target which =>
-    match which with
-    | .player | .opponent =>
-      match ctx.targets.findSome? fun
-        | Target.player pid => some pid
-        | _ => none with
-      | some pid => one pid
-      | none => none
-    | .controller =>
-      match ctx.targets.findSome? fun
-        | Target.permanent oid => some oid
-        | _ => none with
-      | some oid =>
-        match g.findObject? (g.followMoved oid) with
-        | some o =>
-          one ((o.controller.orElse (fun _ => o.lastController)).getD o.owner)
-        | none => none
-      | none => none
+  | .player | .opponent | .target .player | .target .opponent => announcedPlayer
+  | .controller | .target .controller => permanentController
+  | .target _ => none
   | .thatPlayer =>
     ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
   | .damagedPlayer =>
