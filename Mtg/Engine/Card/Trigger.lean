@@ -222,7 +222,9 @@ Exiling names which cards.
 Putting cards onto the battlefield names which cards.
 Which objects `NumberSelector.count` counts are these selectors.
 Which permanents `CostSelector.sacrifice` sacrifices are these selectors.
-Which cards `CostSelector.discard` discards are these selectors. -/
+Which cards `CostSelector.discard` discards are these selectors.
+An announced target is `.target`, and `which` is the `ObjectSelector`
+restricting it. The announced permanent is `.target` (`.any`). -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield.
   +P/+T is `.pump (.fixed p) (.fixed t) .source`.
@@ -243,8 +245,12 @@ inductive ObjectSelector where
   `.put .source (how := .asArtifact)`.
   Returned under its owner's control is `.put .source .underOwner`. -/
   | source
-  /-- The announced permanent for a pump. For damage, the announced target,
-  a player or a permanent.
+  /-- Any announced target. This is the restriction `.target` uses when the
+  printed target is not narrowed.
+  A pump of the announced permanent is `.pump (.fixed p) (.fixed t) .target`
+  (`.any`).
+  `n` damage to the announced target, a player or a permanent, is
+  `.dealDamage (.fixed n) .target`.
   It loses indestructible until end of turn is `.lose .indestructible`
   (`.target`). An illegal target is reported.
   It becomes an artifact until end of turn is `.becomeArtifact`
@@ -254,8 +260,95 @@ inductive ObjectSelector where
   `.setBasePT (.fixed p) (.fixed t)` (`.target`).
   Its owner puts it on top of their library is `.putOnLibrary .top`
   (`.target`). On the bottom is `.putOnLibrary .bottom`.
-  Exiling it is `.exile .target .forLater`. -/
-  | target
+  Exiling it is `.exile .target .forLater`.
+  Read on its own, this is that same target. A missing target names nothing. -/
+  | any
+  /-- The announced permanent, while the source is still on the battlefield.
+  This is the restriction `.target` uses for that permanent.
+  A source that already left is silent.
+  A counter on it is
+  `.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource)`.
+  It loses indestructible until end of turn is
+  `.lose .indestructible (.target .whileSource)`.
+  It becomes an artifact until end of turn is
+  `.becomeArtifact (.target .whileSource)`.
+  It becomes prepared is `.becomePrepared (.target .whileSource)`.
+  Its base power and toughness become `p`/`t` is
+  `.setBasePT (.fixed p) (.fixed t) (.target .whileSource)`.
+  Its owner puts it on top of their library is
+  `.putOnLibrary .top (.target .whileSource)`.
+  On the bottom is `.putOnLibrary .bottom (.target .whileSource)`.
+  Exiling it is `.exile (.target .whileSource) .forLater`.
+  Read on its own, this is that same permanent. -/
+  | whileSource
+  /-- The announced permanent, while it is still on the battlefield.
+  This is the restriction `.target` uses when a missing target is silent.
+  A missing target loses nothing.
+  It loses all abilities while the source remains is
+  `.lose .allAbilities (.target .ifPresent)`.
+  A source that has left leaves that permanent able.
+  Tapping it is `.tap (.target .ifPresent)`. A missing target taps nothing.
+  Read on its own, this is that same permanent. -/
+  | ifPresent
+  /-- A creature. This is the restriction `.target` uses for a creature.
+  The announced permanent, when it is a creature, is `.target .creature`.
+  An illegal target is reported.
+  A creature target is `.atLeast (.count (.target .creature)) (.fixed 1)`.
+  Read on its own, this is that same creature. A missing target names
+  nothing. -/
+  | creature
+  /-- The announced creature. When two targets were announced, the later one.
+  This is the restriction `.target` uses for that creature.
+  `.attach .source (.target .laterCreature)`.
+  Read on its own, this is that same creature. -/
+  | laterCreature
+  /-- A planeswalker. This is the restriction `.target` uses for a planeswalker.
+  The announced permanent, when it is a planeswalker, is
+  `.target .planeswalker`.
+  An illegal target is reported.
+  A planeswalker target is
+  `.atLeast (.count (.target .planeswalker)) (.fixed 1)`.
+  Read on its own, this is that same planeswalker. A missing target names
+  nothing. -/
+  | planeswalker
+  /-- Another permanent of this subtype. Not the source.
+  This is the restriction `.target` uses for that permanent.
+  Another Hero is `.target (.anotherSubtype "Hero")`.
+  `.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)`.
+  Read on its own, this is that same permanent. A missing target names
+  nothing. -/
+  | anotherSubtype (subtype : String)
+  /-- Each announced permanent.
+  This is the restriction `.target` uses for each of them.
+  Each one until the source leaves is
+  `.exile (.target .eachPermanent) .untilSourceLeaves`.
+  A source that has left exiles nothing.
+  Read on its own, this is those permanents. -/
+  | eachPermanent
+  /-- Each announced Equipment.
+  This is the restriction `.target` uses for that Equipment.
+  `.attach (.target .eachEquipment) .enchantedCreature`.
+  Read on its own, this is that Equipment. -/
+  | eachEquipment
+  /-- The announced target `which` names. `which` is an `ObjectSelector`.
+  The announced permanent is `.target` (`.any`).
+  For damage, that target is a player or a permanent.
+  It loses indestructible until end of turn is `.lose .indestructible`
+  (`.target`). An illegal target is reported.
+  Exiling it is `.exile .target .forLater`.
+  The announced permanent, while the source remains, is
+  `.target .whileSource`. A source that already left is silent.
+  The announced permanent, while it remains, is `.target .ifPresent`.
+  A missing target is silent.
+  The announced permanent, when it is a creature, is `.target .creature`.
+  When it is a planeswalker, `.target .planeswalker`.
+  Another permanent of this subtype is `.target (.anotherSubtype subtype)`.
+  Each announced permanent is `.target .eachPermanent`.
+  The later announced creature is `.target .laterCreature`.
+  Each announced Equipment is `.target .eachEquipment`.
+  Read on its own, a restriction names that same target.
+  Any other restriction names nothing. -/
+  | target (which : ObjectSelector := by exact .any)
   /-- The creature this Aura enchants. The Aura must still be on the battlefield.
   Nothing enchanted does nothing.
   A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .enchanted`.
@@ -269,21 +362,6 @@ inductive ObjectSelector where
   On the bottom is `.putOnLibrary .bottom .enchanted`.
   Exiling it is `.exile .enchanted .forLater`. -/
   | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent.
-  A counter on it is `.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource`.
-  It loses indestructible until end of turn is
-  `.lose .indestructible .targetWhileSource`.
-  It becomes an artifact until end of turn is
-  `.becomeArtifact .targetWhileSource`.
-  It becomes prepared is `.becomePrepared .targetWhileSource`.
-  Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`.
-  Its owner puts it on top of their library is
-  `.putOnLibrary .top .targetWhileSource`.
-  On the bottom is `.putOnLibrary .bottom .targetWhileSource`.
-  Exiling it is `.exile .targetWhileSource .forLater`. -/
-  | targetWhileSource
   /-- The creature that caused the trigger.
   Returned to its owner's hand is `.returnToHand .cause`.
   A token ceases to exist.
@@ -432,23 +510,12 @@ inductive ObjectSelector where
   reported and skipped. Announced permanents past that count are ignored.
   `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`. -/
   | eachUpToLastKnown
-  /-- The announced permanent, while it is still on the battlefield.
-  A missing target loses nothing.
-  It loses all abilities while the source remains is
-  `.lose .allAbilities .targetIfPresent`.
-  A source that has left leaves that permanent able. -/
-  | targetIfPresent
   /-- A card from the controller's hand.
   An empty hand skips the choice.
   Putting it on the bottom of that player's library is
   `.putOnLibrary .bottom .cardFromHand`.
   Putting it on top puts nothing. -/
   | cardFromHand
-  /-- Each announced permanent.
-  Each one until the source leaves is
-  `.exile .eachTarget .untilSourceLeaves`.
-  A source that has left exiles nothing. -/
-  | eachTarget
   /-- The top card of the controller's library.
   Playable until the end of your next turn is
   `.exile .top .playUntilNextTurn`.
@@ -611,15 +678,9 @@ inductive ObjectSelector where
   /-- The announced Equipment. An illegal Equipment does not move.
   `.attach .announcedEquipment .announcedCreature`. -/
   | announcedEquipment
-  /-- Each announced Equipment. Choosing none attaches nothing.
-  `.attach .eachTargetEquipment .enchantedCreature`. -/
-  | eachTargetEquipment
   /-- Up to one announced creature. A missing creature is reported.
   `.attach .target .optionalCreature`. -/
   | optionalCreature
-  /-- The announced creature. When two targets were announced, the later one.
-  `.attach .source .creatureTarget`. -/
-  | creatureTarget
   /-- The creature remembered with the artifact put from hand.
   `.attach .putArtifact .notedHost`. -/
   | notedHost
@@ -628,7 +689,7 @@ inductive ObjectSelector where
   | announcedCreature
   /-- The creature the source enchants. A missing creature leaves Equipment
   where it is.
-  `.attach .eachTargetEquipment .enchantedCreature`. -/
+  `.attach (.target .eachEquipment) .enchantedCreature`. -/
   | enchantedCreature
   /-- Each legendary creature the controller controls.
   You control one is
@@ -652,21 +713,9 @@ inductive ObjectSelector where
   That creature is `.atLeast (.count .equippedLegendary) (.fixed 1)`.
   A missing Equipment is reported. -/
   | equippedLegendary
-  /-- The announced permanent when it is a creature.
-  A creature target is `.atLeast (.count .targetCreature) (.fixed 1)`.
-  An illegal target is reported. -/
-  | targetCreature
-  /-- The announced permanent when it is a planeswalker.
-  A planeswalker target is `.atLeast (.count .targetPlaneswalker) (.fixed 1)`.
-  An illegal target is reported. -/
-  | targetPlaneswalker
   /-- Creature cards in the controller's graveyard.
   At least `n` is `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`. -/
   | creatureCardsInGraveyard
-  /-- The announced permanent when it has this subtype and is not the source.
-  Another Hero is
-  `.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)`. -/
-  | targetAnotherSubtype (subtype : String)
   /-- The artifact an earlier step put from hand, when it is Equipment.
   Equipment is `.atLeast (.count .putEquipment) (.fixed 1)`.
   An artifact that is not Equipment clears that note. -/
@@ -953,14 +1002,14 @@ inductive ConditionSelector where
   `.atLeast (.count .equippedLegendary) (.fixed 1)`.
   A missing Equipment is reported.
   The target is a creature is
-  `.atLeast (.count .targetCreature) (.fixed 1)`.
+  `.atLeast (.count (.target .creature)) (.fixed 1)`.
   The target is a planeswalker is
-  `.atLeast (.count .targetPlaneswalker) (.fixed 1)`.
+  `.atLeast (.count (.target .planeswalker)) (.fixed 1)`.
   An illegal target is reported.
   Your graveyard has at least `n` creature cards is
   `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`.
   The targeted permanent has this subtype and is not the source is
-  `.atLeast (.count (.targetAnotherSubtype subtype)) (.fixed 1)`.
+  `.atLeast (.count (.target (.anotherSubtype subtype))) (.fixed 1)`.
   The artifact an earlier step put from hand is Equipment is
   `.atLeast (.count .putEquipment) (.fixed 1)`.
   An artifact that is not Equipment clears that note.
@@ -1517,7 +1566,7 @@ deriving Repr, Inhabited, BEq
 The announced permanent can't be blocked this turn is `.beBlocked`.
 The source is `.beBlocked .source`.
 The enchanted creature is `.beBlocked .enchanted`.
-The target, while the source remains, is `.beBlocked .targetWhileSource`.
+The target, while the source remains, is `.beBlocked (.target .whileSource)`.
 Can't be blocked this turn except by creatures with haste is
 `.beBlockedExceptByHaste`.
 The announced permanent can't become untapped for as long as you control
@@ -1529,7 +1578,7 @@ inductive ActionSelector where
   The source is `.cant (.beBlocked .source)`.
   The enchanted creature is `.cant (.beBlocked .enchanted)`.
   The target, while the source remains, is
-  `.cant (.beBlocked .targetWhileSource)`.
+  `.cant (.beBlocked (.target .whileSource))`.
   Any other selector does nothing. -/
   | beBlocked (who : ObjectSelector := .target)
   /-- Can't be blocked this turn except by creatures with haste.
@@ -1595,7 +1644,7 @@ the source remains use those same constructors. `ofSource`, `ofEnchanted`,
 and `ofTargetWhileSource` map a `PermanentAction` onto them. +P/+T on the
 source is `.pump (.fixed p) (.fixed t) .source`. Tapping the creature this Aura enchants is
 `.tap .enchantedWhileSource`. Granting keywords to the target while the
-source remains is `.grant (.keywords k) .targetWhileSource`. -/
+source remains is `.grant (.keywords k) (.target .whileSource)`. -/
 inductive TriggerResolution where
   /-- Until end of turn, permanents of `who` get +`power`/+`toughness`.
   Each statistic reads its own bonus.
@@ -1867,9 +1916,9 @@ inductive TriggerResolution where
   The source is `.lose .indestructible .source`.
   The enchanted creature is `.lose .indestructible .enchanted`.
   The target, while the source remains, is
-  `.lose .indestructible .targetWhileSource`.
+  `.lose .indestructible (.target .whileSource)`.
   The announced permanent loses all abilities while the source remains is
-  `.lose .allAbilities .targetIfPresent`. A missing target loses nothing.
+  `.lose .allAbilities (.target .ifPresent)`. A missing target loses nothing.
   A source that has left leaves that permanent able.
   Any other permanent the selector names loses that ability. A card or a
   hand loses nothing. -/
@@ -1879,7 +1928,7 @@ inductive TriggerResolution where
   The source is `.cant (.beBlocked .source)`.
   The enchanted creature is `.cant (.beBlocked .enchanted)`.
   The target, while the source remains, is
-  `.cant (.beBlocked .targetWhileSource)`.
+  `.cant (.beBlocked (.target .whileSource))`.
   The announced permanent can't become untapped for as long as you control
   the source is `.cant .untapWhileYouControl`. An opponent's creature is
   the only recipient. A creature you control is left alone. A missing
@@ -1891,7 +1940,7 @@ inductive TriggerResolution where
   The source is `.becomeArtifact .source`.
   The enchanted creature is `.becomeArtifact .enchanted`.
   The target, while the source remains, is
-  `.becomeArtifact .targetWhileSource`.
+  `.becomeArtifact (.target .whileSource)`.
   Gaining indestructible as well is
   `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
   Any other permanent the selector names becomes an artifact until end of
@@ -1903,7 +1952,7 @@ inductive TriggerResolution where
   The source is `.becomePrepared .source`.
   The enchanted creature is `.becomePrepared .enchanted`.
   The target, while the source remains, is
-  `.becomePrepared .targetWhileSource`.
+  `.becomePrepared (.target .whileSource)`.
   Any other permanent the selector names becomes prepared. A creature that
   is already prepared, or has no prepare spell, does not. A card or a hand
   does not. -/
@@ -1914,7 +1963,7 @@ inductive TriggerResolution where
   The source is `.setBasePT (.fixed p) (.fixed t) .source`.
   The enchanted creature is `.setBasePT (.fixed p) (.fixed t) .enchanted`.
   The target, while the source remains, is
-  `.setBasePT (.fixed p) (.fixed t) .targetWhileSource`.
+  `.setBasePT (.fixed p) (.fixed t) (.target .whileSource)`.
   Another target creature becoming equal to this creature's power and
   toughness is `.setBasePT .equalSourcePower .equalSourceToughness`.
   A source that has left uses its last-known power and toughness.
@@ -1931,8 +1980,8 @@ inductive TriggerResolution where
   The enchanted creature is `.putOnLibrary .top .enchanted` or
   `.putOnLibrary .bottom .enchanted`.
   The target, while the source remains, is
-  `.putOnLibrary .top .targetWhileSource` or
-  `.putOnLibrary .bottom .targetWhileSource`.
+  `.putOnLibrary .top (.target .whileSource)` or
+  `.putOnLibrary .bottom (.target .whileSource)`.
   A card from your hand on the bottom of your library is
   `.putOnLibrary .bottom .cardFromHand`. An empty hand skips the choice.
   A card from your hand on top puts nothing.
@@ -1993,7 +2042,7 @@ inductive TriggerResolution where
   `.sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])]`.
   Grant keywords, then a +1/+1 counter if the target is a creature and a
   loyalty counter if it is a planeswalker, is
-  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`.
+  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`.
   The target gets +3/+0 and gains first strike until end of turn, is
   `.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords Keyword.firstStrike) .target]`.
   +P/+T and trample is
@@ -2107,7 +2156,7 @@ inductive TriggerResolution where
   `.may (.exile .top .playThisTurn .ifHero) (.sequence [])`.
   A missing source still exiles the card. An empty library exiles nothing.
   Each announced permanent until the source leaves is
-  `.exile .eachTarget .untilSourceLeaves`.
+  `.exile (.target .eachPermanent) .untilSourceLeaves`.
   The targeted permanent until the next end step is
   `.exile .target .nextEndStep`.
   Targeted lands, remembered so they return tapped, are
@@ -2128,7 +2177,7 @@ inductive TriggerResolution where
   The source is `.exile .source .forLater`.
   The enchanted creature is `.exile .enchanted .forLater`.
   The target, while the source remains, is
-  `.exile .targetWhileSource .forLater`.
+  `.exile (.target .whileSource) .forLater`.
   The announced nonland the controller still controls, other than the
   source, exiled and returned immediately, is
   `.exile .target .returnImmediately`. Choosing none does nothing.
@@ -2205,7 +2254,7 @@ inductive TriggerResolution where
   The creature the source enchants is `.tap .enchanted`.
   Nothing enchanted taps nothing. A missing source taps nothing.
   The announced permanent, if it is still on the battlefield, is
-  `.tap .targetIfPresent`. A missing target taps nothing.
+  `.tap (.target .ifPresent)`. A missing target taps nothing.
   The announced permanent, while it is still a legal target, is
   `.tap .target`. An illegal target is reported.
   Wrapping one in `may` is that tap.
@@ -2222,7 +2271,7 @@ inductive TriggerResolution where
   The enchanted creature is `.untap .enchanted`. Nothing enchanted untaps
   nothing.
   The announced permanent while the source remains is
-  `.untap .targetWhileSource`. A source that already left is silent.
+  `.untap (.target .whileSource)`. A source that already left is silent.
   Each attacking creature is `.untap .attackingCreatures`.
   Tap or untap is `.or [.tap .target, .untap]`.
   Any other permanent the selector names is untapped. A card or a hand
@@ -2242,7 +2291,7 @@ inductive TriggerResolution where
   `.destroy .target (note := .chosenToken)`.
   The source is `.destroy .source`.
   The enchanted creature is `.destroy .enchanted`.
-  The target, while the source remains, is `.destroy .targetWhileSource`.
+  The target, while the source remains, is `.destroy (.target .whileSource)`.
   Any other permanent the selector names is destroyed. A card or a hand
   is not. -/
   | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
@@ -2305,7 +2354,7 @@ inductive TriggerResolution where
   The source to the targeted permanent is `.attach .source .target`.
   Target Equipment to up to one target creature you control is
   `.attach .target .optionalCreature`.
-  The source to the creature target is `.attach .source .creatureTarget`.
+  The source to the creature target is `.attach .source (.target .laterCreature)`.
   Any number of Equipment you control to the target creature is
   `.attach .anyYouControl .target`.
   The token an earlier step remembered, attached to the source, is
@@ -2379,7 +2428,7 @@ inductive TriggerResolution where
   two otherwise, is
   `.ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`.
   Two +1/+1 counters when the target is another Hero, and one otherwise, is
-  `.ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
+  `.ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
   A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
   turn otherwise, is
   `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
@@ -2812,22 +2861,22 @@ where
     | .target => .permanent
     | .source => .source
     | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
+    | .targetWhileSource => .target .whileSource
   affectedWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
+    | .targetWhileSource => .target .whileSource
   tapWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchantedWhileSource
-    | .targetWhileSource => .targetWhileSource
+    | .targetWhileSource => .target .whileSource
   loseWho : TriggerAffected → ObjectSelector
     | .target => .target
     | .source => .source
     | .enchanted => .enchanted
-    | .targetWhileSource => .targetWhileSource
+    | .targetWhileSource => .target .whileSource
 
 /-- What `action` does to the source if it is still on the battlefield. -/
 def ofSource : PermanentAction → TriggerResolution :=
@@ -3297,7 +3346,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         { noun := "for each opponent, up to one target nonland permanent that player controls"
           nonland := true, controller := .eachOpponent })
       allowsZeroTargets := true
-      resolution := .exile .eachTarget .untilSourceLeaves }
+      resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
   | .plusOneEqualLastKnownMv =>
     { targeting := .of .creatureYouControl,
       resolution := .putCounters .plusOneLastKnownMv .permanent }
@@ -3403,7 +3452,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         { noun := "target creature you control", controller := .you, types := #[.creature] }
       ] #[1])
       resolution := .sequence
-        [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] }
+        [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] }
   | .damageTargetOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player (.target .opponent)) }
   | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
@@ -3509,8 +3558,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .permanentYouControl,
       resolution := .sequence
         [.grant (.keywords k) .target,
-         .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
-         .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] }
+         .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
+         .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] }
   | .destroyOppPermanentIfSixLands =>
     { targeting := .of .oppPermanent,
       resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
@@ -3573,7 +3622,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] }
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature,
-      resolution := .ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)))
+      resolution := .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
@@ -3634,7 +3683,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
-        [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent] }
+        [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)] }
   | .enter .revealDiscardFromHand =>
     { events := #[.entering], targeting := .of .player,
       resolution := .revealFromHand .onePlusCreatureCards
@@ -3784,7 +3833,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
       allowsZeroTargets := true, maxTargets := 1000,
-      resolution := .attach .eachTargetEquipment .enchantedCreature }
+      resolution := .attach (.target .eachEquipment) .enchantedCreature }
   | .watch .equippedAttacksAloneUntapScry =>
     { events := #[.equippedAttacksAlone],
       resolution := .sequence [.untap .equipped, .scry (.fixed 1)] }
@@ -3968,7 +4017,7 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .loseIndestructible ==
   .lose .indestructible .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
-  .lose .indestructible .targetWhileSource
+  .lose .indestructible (.target .whileSource)
 #guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked ==
   .cant .beBlocked
 #guard TriggeredAbility.TriggerResolution.ofPermanent .indestructibleCounter ==
@@ -3997,15 +4046,15 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnBottomOfLibrary ==
   .putOnLibrary .bottom .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnTopOfLibrary ==
-  .putOnLibrary .top .targetWhileSource
+  .putOnLibrary .top (.target .whileSource)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom .targetWhileSource
+  .putOnLibrary .bottom (.target .whileSource)
 #guard TriggeredAbility.TriggerResolution.ofPermanent .exile == .exile .target .forLater
 #guard TriggeredAbility.TriggerResolution.ofSource .exile == .exile .source .forLater
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .exile ==
   .exile .enchanted .forLater
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .exile ==
-  .exile .targetWhileSource .forLater
+  .exile (.target .whileSource) .forLater
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
   .pump .double .double .target
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
@@ -4019,10 +4068,10 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofEnchanted (.grantKeywords Keyword.firstStrike) ==
   .grant (.keywords Keyword.firstStrike) .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .untap ==
-  .untap .targetWhileSource
+  .untap (.target .whileSource)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource
     (.grantKeywords Keyword.indestructible) ==
-  .grant (.keywords Keyword.indestructible) .targetWhileSource
+  .grant (.keywords Keyword.indestructible) (.target .whileSource)
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==

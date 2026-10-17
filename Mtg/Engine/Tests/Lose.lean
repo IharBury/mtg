@@ -59,10 +59,10 @@ def indestructible : TriggeredAbility.TriggerResolution :=
   .lose .indestructible
 
 def abilities : TriggeredAbility.TriggerResolution :=
-  .lose .allAbilities .targetIfPresent
+  .lose .allAbilities (.target .ifPresent)
 
 def targetLose : TriggeredAbility.TriggerResolution :=
-  .sequence [.tap .targetIfPresent, abilities]
+  .sequence [.tap (.target .ifPresent), abilities]
 
 def flagged (g : Game) (name : String) : Bool :=
   (obj g name).status.untilEotLosesIndestructible
@@ -170,19 +170,19 @@ silent. An Aura that has left is reported. -/
 A source that has left is silent. An illegal target is reported while
 the source is still there. -/
 #guard
-  let g := step board (.lose .indestructible .targetWhileSource)
+  let g := step board (.lose .indestructible (.target .whileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   lostFlag g "Titan" && !flagged g "Bear"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.lose .indestructible .targetWhileSource)
+  let g := step g0 (.lose .indestructible (.target .whileSource))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   kept g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.lose .indestructible .targetWhileSource)
+  let g := step board (.lose .indestructible (.target .whileSource))
     (some (pid board "Bear"))
   kept g "Titan" && logContains g "The target is no longer legal"
 
@@ -256,8 +256,8 @@ source remains lose what the selector names. -/
     step g0 (.lose .allAbilities .hand) sid tgt]
   let announced := step g0 (.lose .allAbilities) sid tgt
   let fromSource := step g0 (.lose .allAbilities .source) sid tgt
-  let whileSource := step g0 (.lose .allAbilities .targetWhileSource) sid tgt
-  let dropped := step g0 (.lose .indestructible .targetIfPresent) sid tgt
+  let whileSource := step g0 (.lose .allAbilities (.target .whileSource)) sid tgt
+  let dropped := step g0 (.lose .indestructible (.target .ifPresent)) sid tgt
   quiet.all (fun g =>
     kept g "Titan" && g.hasFlying (obj g "Hawk") &&
       (obj g "Hawk").status.losesAbilitiesGrantedBy.isEmpty && g.log == g0.log) &&
@@ -274,7 +274,7 @@ source remains lose what the selector names. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .loseIndestructible ==
   .lose .indestructible .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
-  .lose .indestructible .targetWhileSource
+  .lose .indestructible (.target .whileSource)
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   targetLose
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
@@ -290,7 +290,7 @@ source remains lose what the selector names. -/
     { resolution := .lose .indestructible .enchanted } ==
   "enchanted creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible .targetWhileSource } ==
+    { resolution := .lose .indestructible (.target .whileSource) } ==
   "that creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase { resolution := abilities } ==
   "it loses all abilities for as long as this remains on the battlefield"
@@ -299,11 +299,11 @@ source remains lose what the selector names. -/
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .lose .allAbilities } == "lose"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible .targetIfPresent } == "lose"
+    { resolution := .lose .indestructible (.target .ifPresent) } == "lose"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
     resolution := .sequence
-      [.attach .source .target, .lose .indestructible .targetWhileSource] } ==
+      [.attach .source .target, .lose .indestructible (.target .whileSource)] } ==
   "attach it to target creature you control. That creature loses indestructible until end of turn"
 
 #guard TriggeredAbility.toNotation onCreature ==

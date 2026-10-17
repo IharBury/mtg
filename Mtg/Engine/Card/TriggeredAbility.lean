@@ -658,41 +658,41 @@ def affectedNoun (who : TriggerAffected) (targetNoun : String) : String :=
 creature. A compound action flattened into more than one step is `none`. -/
 def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   match r with
-  | .pump (.fixed p) (.fixed t) .targetWhileSource =>
+  | .pump (.fixed p) (.fixed t) (.target .whileSource) =>
     some s!"that creature gets {signedStat p}/{signedStat t} until end of turn"
-  | .pump .double .double .targetWhileSource =>
+  | .pump .double .double (.target .whileSource) =>
     some "double that creature's power and toughness until end of turn"
-  | .putCounters (.ofKind .plusOnePlusOne n) .targetWhileSource =>
+  | .putCounters (.ofKind .plusOnePlusOne n) (.target .whileSource) =>
     some s!"put {plusOnePlusOneCountersPhrase n} on that creature"
-  | .putCounters (.ofKind .indestructible n) .targetWhileSource =>
+  | .putCounters (.ofKind .indestructible n) (.target .whileSource) =>
     some s!"put {(.indestructible : CounterKind).countersPhrase n} on that creature"
-  | .putCounters (.ofKind .doubleStrike n) .targetWhileSource =>
+  | .putCounters (.ofKind .doubleStrike n) (.target .whileSource) =>
     some s!"put {(.doubleStrike : CounterKind).countersPhrase n} on that creature"
-  | .putCounters (.ofKind .burden n) .targetWhileSource =>
+  | .putCounters (.ofKind .burden n) (.target .whileSource) =>
     some s!"put {(.burden : CounterKind).countersPhrase n} on that creature"
-  | .putCounters (.ofKind .stun n) .targetWhileSource =>
+  | .putCounters (.ofKind .stun n) (.target .whileSource) =>
     some s!"put {(.stun : CounterKind).countersPhrase n} on that creature"
-  | .grant (.keywords k) .targetWhileSource =>
+  | .grant (.keywords k) (.target .whileSource) =>
     some s!"that creature gains {k.joinedAnd} until end of turn"
-  | .tap .targetWhileSource => some "tap that creature"
-  | .untap .targetWhileSource => some "untap that creature"
-  | .lose .indestructible .targetWhileSource =>
+  | .tap (.target .whileSource) => some "tap that creature"
+  | .untap (.target .whileSource) => some "untap that creature"
+  | .lose .indestructible (.target .whileSource) =>
     some "that creature loses indestructible until end of turn"
-  | .cant (.beBlocked .targetWhileSource) =>
+  | .cant (.beBlocked (.target .whileSource)) =>
     some "that creature can't be blocked this turn"
-  | .becomeArtifact .targetWhileSource =>
+  | .becomeArtifact (.target .whileSource) =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
-  | .becomePrepared .targetWhileSource => some "that creature becomes prepared"
-  | .setBasePT (.fixed p) (.fixed t) .targetWhileSource =>
+  | .becomePrepared (.target .whileSource) => some "that creature becomes prepared"
+  | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
-  | .putOnLibrary .top .targetWhileSource =>
+  | .putOnLibrary .top (.target .whileSource) =>
     some "that creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom .targetWhileSource =>
+  | .putOnLibrary .bottom (.target .whileSource) =>
     some "that creature's owner puts it on the bottom of their library"
-  | .destroy .targetWhileSource _ => some "destroy that creature"
-  | .dealDamage (.fixed n) .targetWhileSource .none =>
+  | .destroy (.target .whileSource) _ => some "destroy that creature"
+  | .dealDamage (.fixed n) (.target .whileSource) .none =>
     some s!"deals {n} damage to that creature"
-  | .exile .targetWhileSource .forLater .none => some "exile that creature"
+  | .exile (.target .whileSource) .forLater .none => some "exile that creature"
   | _ => none
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
@@ -736,9 +736,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"enchanted creature gets {signedStat power}/{signedStat toughness} until end of turn"
     | .double, .double, .enchanted =>
       "double enchanted creature's power and toughness until end of turn"
-    | .fixed power, .fixed toughness, .targetWhileSource =>
+    | .fixed power, .fixed toughness, (.target .whileSource) =>
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
-    | .double, .double, .targetWhileSource =>
+    | .double, .double, (.target .whileSource) =>
       "double that creature's power and toughness until end of turn"
     | .fixed power, .fixed toughness, .youControlSubtype subtype =>
       s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
@@ -752,9 +752,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "this creature loses indestructible until end of turn"
   | .lose .indestructible .enchanted =>
     "enchanted creature loses indestructible until end of turn"
-  | .lose .indestructible .targetWhileSource =>
+  | .lose .indestructible (.target .whileSource) =>
     "that creature loses indestructible until end of turn"
-  | .lose .allAbilities .targetIfPresent =>
+  | .lose .allAbilities (.target .ifPresent) =>
     "it loses all abilities for as long as this remains on the battlefield"
   | .lose _ _ =>
     "lose"
@@ -764,7 +764,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{affectedNoun .source noun} can't be blocked this turn"
   | .cant (.beBlocked .enchanted) =>
     s!"{affectedNoun .enchanted noun} can't be blocked this turn"
-  | .cant (.beBlocked .targetWhileSource) =>
+  | .cant (.beBlocked (.target .whileSource)) =>
     s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn"
   | .cant (.beBlockedExceptByHaste .target) =>
     s!"{affectedNoun .target noun} can't be blocked this turn except by creatures with haste"
@@ -772,7 +772,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{affectedNoun .source noun} can't be blocked this turn except by creatures with haste"
   | .cant (.beBlockedExceptByHaste .enchanted) =>
     s!"{affectedNoun .enchanted noun} can't be blocked this turn except by creatures with haste"
-  | .cant (.beBlockedExceptByHaste .targetWhileSource) =>
+  | .cant (.beBlockedExceptByHaste (.target .whileSource)) =>
     s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn except by creatures with haste"
   | .cant (.untapWhileYouControl .target) =>
     "that creature can't become untapped for as long as you control this creature"
@@ -784,7 +784,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until end of turn, this creature becomes an artifact in addition to its other types"
   | .becomeArtifact .enchanted =>
     "until end of turn, enchanted creature becomes an artifact in addition to its other types"
-  | .becomeArtifact .targetWhileSource =>
+  | .becomeArtifact (.target .whileSource) =>
     "until end of turn, that creature becomes an artifact in addition to its other types"
   | .becomeArtifact _ =>
     "becomes an artifact"
@@ -794,7 +794,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "this creature becomes prepared"
   | .becomePrepared .enchanted =>
     "enchanted creature becomes prepared"
-  | .becomePrepared .targetWhileSource =>
+  | .becomePrepared (.target .whileSource) =>
     "that creature becomes prepared"
   | .becomePrepared _ =>
     "becomes prepared"
@@ -804,7 +804,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"this creature has base power and toughness {p}/{t} until end of turn"
   | .setBasePT (.fixed p) (.fixed t) .enchanted =>
     s!"enchanted creature has base power and toughness {p}/{t} until end of turn"
-  | .setBasePT (.fixed p) (.fixed t) .targetWhileSource =>
+  | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
     s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .setBasePT _ _ _ =>
     "set base power and toughness"
@@ -820,9 +820,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature's owner puts it on top of their library"
   | .putOnLibrary .bottom .enchanted =>
     "enchanted creature's owner puts it on the bottom of their library"
-  | .putOnLibrary .top .targetWhileSource =>
+  | .putOnLibrary .top (.target .whileSource) =>
     "that creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom .targetWhileSource =>
+  | .putOnLibrary .bottom (.target .whileSource) =>
     "that creature's owner puts it on the bottom of their library"
   | .putOnLibrary .bottom .cardFromHand =>
     "put a card from your hand on the bottom of your library"
@@ -883,7 +883,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       counterOn "this creature" kind n
     | .ofKind kind n, .enchanted =>
       counterOn "enchanted creature" kind n
-    | .ofKind kind n, .targetWhileSource =>
+    | .ofKind kind n, (.target .whileSource) =>
       counterOn "that creature" kind n
     | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
       "put a +1/+1 counter on each of up to that many target creatures you control"
@@ -940,7 +940,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"deals {n} damage to this creature"
     | .enchanted, .fixed n, .none =>
       s!"deals {n} damage to enchanted creature"
-    | .targetWhileSource, .fixed n, .none =>
+    | (.target .whileSource), .fixed n, .none =>
       s!"deals {n} damage to that creature"
     | _, _, _ =>
       "deal damage"
@@ -1120,7 +1120,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
   | .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand .tapped _] =>
     "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
-  | .sequence [.putCounters .honePerOpponent .source, .attach .source .creatureTarget] =>
+  | .sequence [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] =>
     "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
   | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
     "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
@@ -1194,11 +1194,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .sequence [.tap .target, .cant (.untapWhileYouControl .target)] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
-  | .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent] =>
+  | .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)] =>
     "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
   | .sequence [.grant (.keywords k) .target,
-      .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
-      .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] =>
+      .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
+      .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] =>
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
@@ -1283,7 +1283,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
     | .top, .playThisTurn, .ifHero =>
       "exile the top card of your library. If it is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
-    | .eachTarget, .untilSourceLeaves, .none =>
+    | (.target .eachPermanent), .untilSourceLeaves, .none =>
       "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
     | .target, .nextEndStep, .none =>
       s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
@@ -1297,7 +1297,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "exile this creature"
     | .enchanted, .forLater, .none =>
       "exile enchanted creature"
-    | .targetWhileSource, .forLater, .none =>
+    | (.target .whileSource), .forLater, .none =>
       "exile that creature"
     | .top, .forLater, .impulse =>
       "exile cards from the top of their library until they exile an instant or sorcery card"
@@ -1361,7 +1361,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "destroy this creature"
   | .destroy .enchanted _ =>
     "destroy enchanted creature"
-  | .destroy .targetWhileSource _ =>
+  | .destroy (.target .whileSource) _ =>
     "destroy that creature"
   | .destroy _ _ =>
     "destroy it"
@@ -1428,7 +1428,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"attach it to {noun}"
     | .target, .optionalCreature =>
       "attach target Equipment you control to up to one target creature you control"
-    | .source, .creatureTarget =>
+    | .source, (.target .laterCreature) =>
       "attach this to up to one target creature you control"
     | .anyYouControl, .target =>
       "attach any number of Equipment you control to target creature you control"
@@ -1542,7 +1542,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"this creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .enchanted =>
       s!"enchanted creature gains {k.joinedAnd} until end of turn"
-    | .keywords k, .targetWhileSource =>
+    | .keywords k, (.target .whileSource) =>
       s!"that creature gains {k.joinedAnd} until end of turn"
     | .keywords k, .creaturesYouControl =>
       s!"creatures you control gain {k.joinedAnd} until end of turn"
@@ -1635,7 +1635,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
       (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
-  | .ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)))
+  | .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
@@ -1690,7 +1690,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you control three or more Bears, draw two cards"
   | .tap .enchanted | .tap .enchantedWhileSource => "tap enchanted creature"
   | .tap .source => "tap this creature"
-  | .tap .targetWhileSource => "tap that creature"
+  | .tap (.target .whileSource) => "tap that creature"
   | .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)]) =>
     "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
   | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
@@ -1720,7 +1720,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
     playThatCardUntilNextTurnPhrase
-  | .tap .targetIfPresent =>
+  | .tap (.target .ifPresent) =>
     "tap up to one target creature"
   | .tap .target =>
     s!"tap {noun}"
@@ -1732,13 +1732,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .target => s!"untap {affectedNoun .target noun}"
     | .source => s!"untap {affectedNoun .source noun}"
     | .enchanted => s!"untap {affectedNoun .enchanted noun}"
-    | .targetWhileSource => s!"untap {affectedNoun .targetWhileSource noun}"
+    | .target .whileSource => s!"untap {affectedNoun .targetWhileSource noun}"
     | .equipped => "untap equipped creature"
     | .firstThisTurn => "untap it"
     | _ => "untap it"
-  | .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
+  | .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
-  | .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent) =>
+  | .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent) =>
     "put a loyalty counter on it if it's a planeswalker"
   | .winTheGame =>
     "you win the game"

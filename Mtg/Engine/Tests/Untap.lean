@@ -188,7 +188,7 @@ that has left is reported. -/
 is silent. An illegal target is reported while the source is still there. -/
 #guard
   let g0 := mark (mark board "Titan") "Bear"
-  let g := step g0 (.untap .targetWhileSource)
+  let g := step g0 (.untap (.target .whileSource))
     (some (pid g0 "Bear")) #[Target.permanent (pid g0 "Titan")]
   !tapped g "Titan" && tapped g "Bear" && logContains g "Titan untaps"
 
@@ -196,17 +196,17 @@ is silent. An illegal target is reported while the source is still there. -/
   let g0 := mark board "Titan"
   let id := pid g0 "Bear"
   let (g1, newId) := g0.move id (.graveyard opp) none
-  let g := step g1 (.untap .targetWhileSource)
+  let g := step g1 (.untap (.target .whileSource))
     (some newId) #[Target.permanent (pid g1 "Titan")]
   tapped g "Titan" && g.log == g1.log
 
 #guard
   let g0 := mark board "Titan"
-  let g := step g0 (.untap .targetWhileSource) (some (pid g0 "Bear"))
+  let g := step g0 (.untap (.target .whileSource)) (some (pid g0 "Bear"))
   tapped g "Titan" && logContains g "The target is no longer legal"
 
 #guard
-  let g := step (mark board "Titan") (.untap .targetWhileSource)
+  let g := step (mark board "Titan") (.untap (.target .whileSource))
   tapped g "Titan" && g.log == (mark board "Titan").log
 
 /- Each attacking permanent untaps, including an opponent's creature and a
@@ -265,7 +265,7 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
 #guard TriggeredAbility.TriggerResolution.ofSource .untap == .untap .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .untap == .untap .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .untap ==
-  .untap .targetWhileSource
+  .untap (.target .whileSource)
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 12) ==
   .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 
@@ -277,7 +277,7 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := .untap .enchanted } ==
   "untap enchanted creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .untap .targetWhileSource } ==
+    { resolution := .untap (.target .whileSource) } ==
   "untap that creature"
 #guard TriggeredAbility.resolutionPhrase { resolution := attackers } ==
   "untap all attacking creatures"

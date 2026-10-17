@@ -59,7 +59,7 @@ def enchantedRemove : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 
 def targetLose : TriggeredAbility.TriggerResolution :=
-  .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]
+  .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
 
 def village : Game :=
   let g := addPermanent afterDraw folk caster caster
@@ -217,7 +217,7 @@ source to still be there. -/
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 (.may (.tap .targetIfPresent) (.sequence [])) (some (pid g0 "Wasp"))
+  let g := step g0 (.may (.tap (.target .ifPresent)) (.sequence [])) (some (pid g0 "Wasp"))
     #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
     g.pending == g0.pending
@@ -226,7 +226,7 @@ source to still be there. -/
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let hawk0 := obj g0 "Hawk"
   let g0 := g0.setObject { hawk0 with status := { hawk0.status with tapped := true } }
-  let g := step g0 (.tap .targetIfPresent) (some (pid g0 "Wasp"))
+  let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp"))
     #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && logContains g "already tapped"
 
@@ -256,18 +256,18 @@ source to still be there. -/
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 (.tap .targetIfPresent) (some (pid g0 "Wasp"))
+  let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp"))
     #[Target.permanent ⟨99999⟩]
   !(obj g "Hawk").status.tapped && g.log == g0.log
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 (.tap .targetIfPresent) (some (pid g0 "Wasp")) #[Target.player opp]
+  let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp")) #[Target.player opp]
   !(obj g "Hawk").status.tapped && g.log == g0.log
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 (.tap .targetIfPresent) (some (pid g0 "Wasp"))
+  let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp"))
     #[Target.card (pid g0 "Hawk")]
   !(obj g "Hawk").status.tapped && g.log == g0.log
 
@@ -290,7 +290,7 @@ source to still be there. -/
   "you may tap any number of untapped Humans you control"
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .enchanted } ==
   "tap enchanted creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .tap .targetIfPresent } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .tap (.target .ifPresent) } ==
   "tap up to one target creature"
 #guard TriggeredAbility.resolutionPhrase { resolution := .tap .attackingCreatures } ==
   "tap it"

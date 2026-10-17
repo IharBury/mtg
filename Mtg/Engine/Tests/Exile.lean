@@ -145,24 +145,24 @@ An Aura that has left is reported. -/
 /- The target is exiled only while the source remains. A source that has
 left is silent. An illegal target is reported while the source is still there. -/
 #guard
-  let g := step board (.exile .targetWhileSource .forLater)
+  let g := step board (.exile (.target .whileSource) .forLater)
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   exiled g "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.exile .targetWhileSource .forLater)
+  let g := step board (.exile (.target .whileSource) .forLater)
     (some (pid board "Titan")) #[Target.permanent (pid board "Bear")]
   exiled g "Bear" && !onBoard g "Bear" && onBoard g "Titan"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.exile .targetWhileSource .forLater)
+  let g := step g0 (.exile (.target .whileSource) .forLater)
     (some newId) #[Target.permanent (pid g0 "Titan")]
   onBoard g "Titan" && g.log == g0.log
 
 #guard
-  let g := step board (.exile .targetWhileSource .forLater)
+  let g := step board (.exile (.target .whileSource) .forLater)
     (some (pid board "Bear"))
   onBoard g "Titan" && logContains g "The target is no longer legal"
 
@@ -170,7 +170,7 @@ left is silent. An illegal target is reported while the source is still there. -
 A missing source exiles nothing. -/
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.exile .eachTarget .untilSourceLeaves)
+  let g := step g0 (.exile (.target .eachPermanent) .untilSourceLeaves)
     (some (pid g0 "Grasp"))
     #[Target.permanent (pid g0 "Titan"), Target.permanent (pid g0 "Bear")]
   exiled g "Titan" && exiled g "Bear" && onBoard g "Grasp" &&
@@ -178,7 +178,7 @@ A missing source exiles nothing. -/
     logContains g "Bear is exiled until the source leaves the battlefield"
 
 #guard
-  let g := step board (.exile .eachTarget .untilSourceLeaves)
+  let g := step board (.exile (.target .eachPermanent) .untilSourceLeaves)
     (targets := #[Target.permanent (pid board "Titan")])
   onBoard g "Titan" &&
     logContains g "The source has left the battlefield. Nothing is exiled."
@@ -277,7 +277,7 @@ controller's next turn. -/
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .exile ==
   .exile .enchanted .forLater
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .exile ==
-  .exile .targetWhileSource .forLater
+  .exile (.target .whileSource) .forLater
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := .exile .target .forLater } ==
@@ -289,13 +289,13 @@ controller's next turn. -/
     { resolution := .exile .enchanted .forLater } ==
   "exile enchanted creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .targetWhileSource .forLater } ==
+    { resolution := .exile (.target .whileSource) .forLater } ==
   "exile that creature"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .exile .top .playUntilNextTurn } ==
   "exile the top card of your library. Until the end of your next turn, you may play that card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .eachTarget .untilSourceLeaves } ==
+    { resolution := .exile (.target .eachPermanent) .untilSourceLeaves } ==
   "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .exile .landsYouControl .forLater .lands } ==

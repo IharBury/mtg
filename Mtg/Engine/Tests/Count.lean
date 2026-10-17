@@ -210,20 +210,40 @@ is reported. -/
   let other := (g.battlefield.filter (·.name == "Count Hero"))[1]!
   let bear := named g "Count Bear"
   let ab := TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
-  let (g, heroTarget) := holds g (.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))
+  let (g, heroTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
     (some src.id) #[Target.permanent other.id] (ab := ab)
-  let (g, self) := holds g (.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))
+  let (g, self) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
     (some src.id) #[Target.permanent src.id] (ab := ab)
-  let (g, bearTarget) := holds g (.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))
+  let (g, bearTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
-  let (g, creature) := holds g (.atLeast (.count .targetCreature) (.fixed 1))
+  let (g, creature) := holds g (.atLeast (.count (.target .creature)) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
-  let (g, walkerTarget) := holds g (.atLeast (.count .targetPlaneswalker) (.fixed 1))
+  let (g, walkerTarget) := holds g (.atLeast (.count (.target .planeswalker)) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
-  let (g, illegal) := holds g (.atLeast (.count .targetCreature) (.fixed 1))
+  let (g, illegal) := holds g (.atLeast (.count (.target .creature)) (.fixed 1))
     (some src.id) #[] (ab := ab)
   heroTarget && !self && !bearTarget && creature && !walkerTarget && !illegal &&
     logContains g "no longer legal"
+
+/- A restriction read on its own names that same target. `.target` is
+`.any`. Any other restriction names nothing. -/
+#guard
+  let g := addPermanent afterDraw hero caster caster
+  let g := addPermanent g bear caster caster
+  let src := (g.battlefield.filter (·.name == "Count Hero"))[0]!
+  let other := named g "Count Bear"
+  let ab := TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+  let (_, wrapped) := holds g (.atLeast (.count (.target .creature)) (.fixed 1))
+    (some src.id) #[Target.permanent other.id] (ab := ab)
+  let (_, bare) := holds g (.atLeast (.count .creature) (.fixed 1))
+    (some src.id) #[Target.permanent other.id] (ab := ab)
+  let (_, otherRestr) := holds g (.atLeast (.count (.target .source)) (.fixed 1))
+    (some src.id) #[Target.permanent other.id] (ab := ab)
+  let (_, bareHero) := holds g (.atLeast (.count (.anotherSubtype "Hero")) (.fixed 1))
+    (some src.id) #[Target.permanent src.id] (ab := ab)
+  wrapped && bare && !otherRestr && !bareHero &&
+    (.target : TriggeredAbility.ObjectSelector) == .target .any &&
+    .target .whileSource != (.target : TriggeredAbility.ObjectSelector)
 
 /- A fixed number, cards drawn this turn, and loyalty removed as last-known
 power. A number that cannot be read does not hold. -/

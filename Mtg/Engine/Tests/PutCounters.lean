@@ -182,10 +182,10 @@ once the source has left. -/
   let tgt := #[Target.permanent (pid g0 "Counter Bear")]
   let ab := TriggeredAbility.onEnterPlusOneOnCreature
   let sid := pid g0 "Counter Aura"
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource)
+  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource))
     (some sid) tgt ab
   let gone := step (leave g0 "Counter Aura")
-    (.putCounters (.ofKind .plusOnePlusOne) .targetWhileSource) (some sid) tgt ab
+    (.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource)) (some sid) tgt ab
   plus g "Counter Bear" == 1 && plus gone "Counter Bear" == 0
 
 /- The created token gets the noted count, and that note is consumed.

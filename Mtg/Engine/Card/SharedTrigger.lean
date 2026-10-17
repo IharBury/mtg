@@ -889,7 +889,7 @@ inductive SharedTrigger where
   /-- Target permanent you control gains these keywords until end of turn; a
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
-  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`. -/
+  `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`. -/
   | grantThenCounterByType (k : Keywords)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
@@ -949,7 +949,7 @@ inductive SharedTrigger where
   /-- Draw; if you control another Hero, gain 2 life. -/
   | drawGainLifeIfAnotherHero
   /-- +1/+1, or two if that creature is another Hero. Resolves as
-  `.ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
+  `.ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
   | plusOneOrTwoIfAnotherHero
   /-- You may sac an artifact or discard; if you do, draw.
   Resolves as `.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo`. -/
@@ -1036,7 +1036,7 @@ inductive SharedTrigger where
   Attaching the announced Equipment to the announced creature is
   `.attach .announcedEquipment .announcedCreature`.
   Attaching each announced Equipment to the enchanted creature is
-  `.attach .eachTargetEquipment .enchantedCreature`.
+  `.attach (.target .eachEquipment) .enchantedCreature`.
   Choosing a Soldier or a team pump from the last-known mode is
   `.chooseModes [.createTokens .soldier11white (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown`.
   Paying {1} up to three times is

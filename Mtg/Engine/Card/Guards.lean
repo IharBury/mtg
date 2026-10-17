@@ -1353,7 +1353,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterPlusOneOrTwoIfAnotherHero ==
   "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
 #guard TriggeredAbility.resolution .onEnterPlusOneOrTwoIfAnotherHero ==
-  .ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1)))
+  .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
     (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
     (.putCounters (.ofKind .plusOnePlusOne) .permanent)
 #guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
@@ -1628,8 +1628,8 @@ end CardDef
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
   .sequence [.grant (.keywords Keyword.hexproof) .target,
-    .«if» (.atLeast (.count .targetCreature) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
-    .«if» (.atLeast (.count .targetPlaneswalker) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
+    .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
+    .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
     .pump (.fixed 3) (.fixed 0) .target,
@@ -1651,7 +1651,7 @@ end CardDef
   .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
     .attach .createdToken .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
-  .sequence [.tap .targetIfPresent, .lose .allAbilities .targetIfPresent]
+  .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
 #guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==
