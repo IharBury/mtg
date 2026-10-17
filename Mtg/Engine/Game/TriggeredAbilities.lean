@@ -440,7 +440,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) =>
     (g, (g.permanentsOf controller).any (fun o =>
       g.hasSubtype o "Hero" && some o.id != sourceId))
-  | (.atLeast (.count .equippedLegendary) (.fixed 1)) =>
+  | (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The Equipment is no longer in play", false)
     | some eq =>
@@ -519,10 +519,6 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then (g.logMsg "Whiplash isn't equipped", false)
     else (g, true)
-  | (.atLeast (.count .attackingSource) (.fixed 1)) =>
-    match sourceId.bind g.findObject? with
-    | some o => (g, o.isOnBattlefield && o.status.attacking)
-    | none => (g, false)
   | .enrageGrantsCombat =>
     if g.enrageGrantsAdditionalCombat > 0 then
       ({ g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 }, true)
@@ -588,7 +584,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some src =>
           if src.isOnBattlefield then (g, some src.status.quest)
           else (g.logMsg s!"{src.name} is no longer on the battlefield", none)
-      | .equippedLegendary =>
+      | .intersection [.equipped, .legendaryCreaturesYouControl] =>
         match sourceId.bind g.findObject? with
         | none => (g.logMsg "The Equipment is no longer in play", some 0)
         | some eq =>
@@ -644,8 +640,10 @@ def failMayThen (g : Game) : Game :=
   { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
 
 /-- Permanents that can pay `CostSelector.sacrifice` of `what`.
-`.another` is each other creature. Every other selector is the permanents
-it names. A selector that does not name permanents names none. -/
+`.another` is each other creature. `.intersection` is the permanents every
+selector names. `.union` is the permanents any selector names. Every other
+selector is the permanents it names. A selector that does not name
+permanents names none. -/
 def sacrificeCostCandidates (g : Game) (ctx : TriggerRead)
     (what : TriggeredAbility.ObjectSelector) : Array GameObject :=
   match what with
@@ -653,19 +651,36 @@ def sacrificeCostCandidates (g : Game) (ctx : TriggerRead)
     match ctx.sourceId with
     | some sid => (g.creaturesControlledBy ctx.controller).filter (·.id != sid)
     | none => #[]
+  | .intersection sels =>
+    match sels with
+    | [] => #[]
+    | s :: rest =>
+      rest.foldl (fun acc t => intersectObjects acc (g.sacrificeCostCandidates ctx t))
+        (g.sacrificeCostCandidates ctx s)
+  | .union sels =>
+    sels.foldl (fun acc s => unionObjects acc (g.sacrificeCostCandidates ctx s)) #[]
   | _ =>
     (g.permanentsNamed ctx what).getD #[]
 
 /-- Cards in the controller's hand that can pay `CostSelector.discard` of `what`.
 `.card` is each card in that hand. `.nonland` is each nonland card.
-A selector that does not name cards in hand names none. A permanent is
-not discarded. -/
+`.intersection` is the cards every selector names. `.union` is the cards
+any selector names. A selector that does not name cards in hand names none.
+A permanent is not discarded. -/
 def discardCostCandidates (g : Game) (controller : PlayerId)
     (what : TriggeredAbility.ObjectSelector) : Array GameObject :=
   let hand := (g.player controller).hand.filterMap g.findObject?
   match what with
   | .card => hand
   | .nonland => hand.filter (!·.printed.isLand)
+  | .intersection sels =>
+    match sels with
+    | [] => #[]
+    | s :: rest =>
+      rest.foldl (fun acc t => intersectObjects acc (g.discardCostCandidates controller t))
+        (g.discardCostCandidates controller s)
+  | .union sels =>
+    sels.foldl (fun acc s => unionObjects acc (g.discardCostCandidates controller s)) #[]
   | _ => #[]
 
 /-- Whether `cost` can be paid as this ability resolves.
@@ -840,11 +855,6 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => g
   | .creaturesYouControl =>
     g.forEachControlledCreature controller pumpOne
-  | .othersOfSubtypes subtypes =>
-    g.foldBattlefield (fun o =>
-        o.isCreature && o.controlledBy controller && some o.id != sourceId &&
-          subtypes.any (fun s => g.hasSubtype o s))
-      pumpOne
   | .othersOfSubtype subtype =>
     let srcId? := (sourceId.bind g.findObject?).map (·.id)
     g.foldBattlefield (fun o =>
@@ -856,9 +866,6 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       pumpOne
   | .opponentsCreatures =>
     g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller) pumpOne
-  | .youControlSubtype subtype =>
-    g.forEachControlledCreature controller fun game o =>
-      if game.hasSubtype o subtype then pumpOne game o else game
   | who =>
     match g.permanentsNamed ctx who with
     | some objs => objs.foldl (fun game o => pumpOne game o) g
@@ -2712,9 +2719,6 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .keywords k, .creaturesYouControl =>
     g.forEachControlledCreature controller fun g o =>
       g.grantUntilEotLogged o k
-  | .keywords k, .youControlSubtype subtype =>
-    g.forEachControlledCreature controller fun g o =>
-      if g.hasSubtype o subtype then g.grantUntilEotLogged o k else g
   | .keywords k, .attackingAlone =>
     match g.attackingAlone? controller with
     | none => g.logMsg "No creature is attacking alone"

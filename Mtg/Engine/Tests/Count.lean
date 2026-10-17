@@ -151,13 +151,13 @@ four others. The cause's id is the last-known power. -/
   let host := named g "Count Bear"
   let eq := named g "Count Sword"
   let g := g.attachSourceTo eq host
-  let (g, bearHost) := holds g (.atLeast (.count .equippedLegendary) (.fixed 1)) (some eq.id)
+  let (g, bearHost) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (some eq.id)
   let spirits := logContains g "Spirit tokens"
   let g := addPermanent g hero caster caster
   let legend := named g "Count Hero"
   let g := g.attachSourceTo (named g "Count Sword") legend
-  let (g, legendHost) := holds g (.atLeast (.count .equippedLegendary) (.fixed 1)) (some eq.id)
-  let (g, missing) := holds g (.atLeast (.count .equippedLegendary) (.fixed 1)) none
+  let (g, legendHost) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (some eq.id)
+  let (g, missing) := holds g (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) none
   !bearHost && spirits && legendHost && !missing &&
     logContains g "no longer in play"
 
@@ -176,13 +176,13 @@ A harnessed source is reported when it is not. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
-  let (g, idle) := holds g (.atLeast (.count .attackingSource) (.fixed 1)) (some src.id)
+  let (g, idle) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let g := g.mapObjectStatus src (fun s => { s with attacking := true })
-  let (g, attacking) := holds g (.atLeast (.count .attackingSource) (.fixed 1)) (some src.id)
+  let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let g := g.mapObjectStatus (named g "Count Bear") (fun s => { s with harnessed := true })
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
-  let (_, gone) := holds g (.atLeast (.count .attackingSource) (.fixed 1)) none
+  let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
   !idle && attacking && !unharnessed && logContains g "not harnessed" && harnessed && !gone
 
 /- Equipment put from hand keeps the note. Another artifact clears it. -/
@@ -291,5 +291,67 @@ reported as Viv Vision's. Another threshold uses the generic report. -/
   let (_, leftLow) := holds g (.atLeast .equalSourcePower (.fixed 4))
     (some src.id) (lastKnownPower := some 1)
   !below4 && viv && at2 && !below3 && other && leftHigh && !leftLow
+
+/- `.intersection` names objects every selector names, in the first
+selector's order. `.union` names objects any selector names, once, in
+selector order. An empty list names nothing. A selector that does not
+name permanents names nothing in an intersection and adds nothing in a
+union. -/
+#guard
+  let g := addPermanent afterDraw bear caster caster
+  let src := named g "Count Bear"
+  let g := addPermanent g bear caster caster
+  let g := addPermanent g hero caster caster
+  let g := addPermanent g isle caster caster
+  let g := addPermanent g sword caster caster
+  let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
+  let names (what : TriggeredAbility.ObjectSelector) : Option (Array String) :=
+    (g.permanentsNamed ctx what).map (·.map (·.name))
+  let heroes := .intersection [.creaturesYouControl, .youControl (.subtype "Hero")]
+  let bearsAndHeroes := .union [.youControl (.subtype "Bear"), .youControl (.subtype "Hero")]
+  let others := .intersection
+    [.creaturesYouControl, .union [.othersOfSubtype "Bear", .othersOfSubtype "Hero"]]
+  let attacking := .intersection [.source, .attackingCreatures]
+  names heroes == some #["Count Hero"] &&
+    names bearsAndHeroes == some #["Count Bear", "Count Bear", "Count Hero"] &&
+    names others == some #["Count Bear", "Count Hero"] &&
+    names (.intersection []) == some #[] &&
+    names (.union []) == some #[] &&
+    names (.intersection [.card, .creaturesYouControl]) == none &&
+    names (.union [.card]) == none &&
+    names (.union [.card, .artifact]) == some #["Count Sword"] &&
+    g.countNamed ctx attacking == some 0 &&
+    g.countNamed ctx (.union [.source, .attackingCreatures]) == some 1 &&
+    (g.sacrificeCostCandidates ctx (.union [.another, .artifact])).map (·.name) ==
+      #["Count Bear", "Count Hero", "Count Sword"] &&
+    (g.sacrificeCostCandidates ctx (.intersection [.another, .artifact])).isEmpty
+
+/- An attacking source is the intersection of the source and the attacking
+creatures. Pumping creatures of a subtype leaves the other permanents. -/
+#guard
+  let g := addPermanent afterDraw bear caster caster
+  let src := named g "Count Bear"
+  let g := g.mapObjectStatus src (fun s => { s with attacking := true })
+  let g := addPermanent g hero caster caster
+  let g := g.mapObjectStatus (named g "Count Hero") (fun s => { s with attacking := true })
+  let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
+  let attacking := .intersection [.source, .attackingCreatures]
+  let pumped := g.applyTriggeredAbility caster (.onEnterDraw 1) (some src.id)
+    (resolutionOverride := some (.pump (.fixed 1) (.fixed 0)
+      (.intersection [.creaturesYouControl, .youControl (.subtype "Hero")])))
+  g.countNamed ctx attacking == some 1 &&
+    g.countNamed ctx (.union [.source, .attackingCreatures]) == some 2 &&
+    (named pumped "Count Hero").status.pumpPower == 1 &&
+    (named pumped "Count Bear").status.pumpPower == 0
+
+/- Discard candidates follow the same intersection and union. -/
+#guard
+  let cards := afterDraw.discardCostCandidates caster .card
+  let nonlands := afterDraw.discardCostCandidates caster .nonland
+  let both := afterDraw.discardCostCandidates caster (.intersection [.card, .nonland])
+  let either := afterDraw.discardCostCandidates caster (.union [.card, .nonland])
+  !cards.isEmpty &&
+    both.map (·.id) == nonlands.map (·.id) &&
+    either.map (·.id) == cards.map (·.id)
 
 end Mtg.Engine.CountTests
