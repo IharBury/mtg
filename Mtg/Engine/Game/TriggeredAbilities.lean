@@ -270,16 +270,20 @@ def resolvingCauseId (g : Game) : Option ObjectId :=
 action does not read are cleared here. -/
 def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) (lastKnownPower : Option Int)
-    (cond : TriggeredAbility.TriggerIf) : Game × Bool :=
+    (cond : TriggeredAbility.ConditionSelector) : Game × Bool :=
   match cond with
-  | .noLegendaryCreature => (g, !g.controlsLegendaryCreature controller)
+  | .controlsLegendaryCreature => (g, g.controlsLegendaryCreature controller)
+  | .not cond =>
+    let (g, holds) :=
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+    (g, !holds)
   | .removedHope =>
     let removed := g.removedHopeThisWay
     ({ g with removedHopeThisWay := false }, removed)
-  | .noHopeOnSource =>
+  | .hopeOnSource =>
     match sourceId.bind g.findObject? with
-    | some src => (g, src.isOnBattlefield && src.status.hope == 0)
-    | none => (g, false)
+    | some src => (g, !(src.isOnBattlefield && src.status.hope == 0))
+    | none => (g, true)
   | .drewAtLeast n => (g, (g.player controller).cardsDrawnThisTurn ≥ n)
   | .dealtDamageToSubtype subtype =>
     match g.permanentDealtDamageThisWay with
@@ -308,10 +312,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else g
       (g, false)
     else (g, true)
-  | .noPlaneswalker =>
+  | .controlsPlaneswalker =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
-      (g.logMsg "You control a planeswalker. The ability does nothing", false)
-    else (g, true)
+      (g.logMsg "You control a planeswalker. The ability does nothing", true)
+    else (g, false)
   | .otherForestsAtLeast n =>
     -- Rulings 818 / 819: count Forests other than the one that caused the
     -- trigger, whether or not that one is still on the battlefield.
@@ -376,7 +380,6 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .anotherHero =>
     (g, (g.permanentsOf controller).any (fun o =>
       g.hasSubtype o "Hero" && some o.id != sourceId))
-  | .libraryEmpty => (g, (g.player controller).library.isEmpty)
   | .libraryNotEmpty => (g, !(g.player controller).library.isEmpty)
   | .equippedLegendaryYouControl =>
     match sourceId.bind g.findObject? with

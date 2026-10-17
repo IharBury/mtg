@@ -808,14 +808,14 @@ namespace CardDef
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
-  .sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]
+  .sequence [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)]
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
   .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
+    .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
@@ -1623,7 +1623,7 @@ end CardDef
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
-  .sequence [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
+  .sequence [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==

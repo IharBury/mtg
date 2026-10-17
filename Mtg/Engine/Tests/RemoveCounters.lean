@@ -256,7 +256,7 @@ not announced clears the note and removes nothing. -/
 
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
+    .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, allFromEnchanted]
 
@@ -284,7 +284,7 @@ not announced clears the note and removes nothing. -/
 
 #guard (SharedTrigger.timing .removeHopeDrawSac).resolution ==
   .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
+    .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution ==
   .sequence [.tap .enchanted, allFromEnchanted]
 

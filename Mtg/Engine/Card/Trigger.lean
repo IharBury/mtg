@@ -47,14 +47,24 @@ inductive SacrificeSourceHow where
   | movedAsSacrificed
 deriving Repr, Inhabited, BEq
 
-/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch. -/
-inductive TriggerIf where
-  /-- You don't control a legendary creature. -/
-  | noLegendaryCreature
+/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
+`not` negates another condition. -/
+inductive ConditionSelector where
+  /-- You control a legendary creature.
+  Controlling none is `.not .controlsLegendaryCreature`. -/
+  | controlsLegendaryCreature
+  /-- `cond` does not hold.
+  Controlling no legendary creature is `.not .controlsLegendaryCreature`.
+  The source on the battlefield with no hope counters is `.not .hopeOnSource`.
+  Controlling no planeswalker is `.not .controlsPlaneswalker`.
+  An empty library is `.not .libraryNotEmpty`. -/
+  | not (cond : ConditionSelector)
   /-- An earlier step removed a hope counter. -/
   | removedHope
-  /-- The source is on the battlefield and has no hope counters. -/
-  | noHopeOnSource
+  /-- The source is missing, has left the battlefield, or has a hope counter.
+  On the battlefield with none, this does not hold.
+  No hope counters on that permanent is `.not .hopeOnSource`. -/
+  | hopeOnSource
   /-- You have drawn at least `n` cards this turn. -/
   | drewAtLeast (n : Nat)
   /-- An earlier step dealt damage to a permanent of this subtype. -/
@@ -66,8 +76,10 @@ inductive TriggerIf where
   | removedLoyaltyAtLeast (n : Nat)
   /-- You control at least `n` lands. -/
   | landsAtLeast (n : Nat)
-  /-- You don't control a planeswalker. -/
-  | noPlaneswalker
+  /-- You control a planeswalker.
+  Controlling one is reported.
+  Controlling none is `.not .controlsPlaneswalker`. -/
+  | controlsPlaneswalker
   /-- You control at least `n` Forests other than the one that caused this. -/
   | otherForestsAtLeast (n : Nat)
   /-- An earlier step returned a permanent to its owner's hand. -/
@@ -95,9 +107,8 @@ inductive TriggerIf where
   | opponentsMilled
   /-- You control a Hero other than the source. -/
   | anotherHero
-  /-- Your library has no cards. -/
-  | libraryEmpty
-  /-- Your library still has a card. -/
+  /-- Your library still has a card.
+  An empty library is `.not .libraryNotEmpty`. -/
   | libraryNotEmpty
   /-- This Equipment is attached to a legendary creature you control. -/
   | equippedLegendaryYouControl
@@ -1732,10 +1743,10 @@ inductive TriggerResolution where
   step (CR 608.2b). Return a graveyard card, then gain life equal to its
   power, is `.sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
-  `.sequence [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)]`.
+  `.sequence [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)]`.
   Remove a hope counter, draw if one was removed, then sacrifice and gain
   life if none remain, is
-  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`.
+  `.sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]`.
   A step that asks a player to choose pauses the later steps until that
   choice finishes; they are still part of this resolution. Tap any number
   of Humans, then draw that many, is
@@ -2138,7 +2149,7 @@ inductive TriggerResolution where
   | noteResolveThisTurn (limit : Nat)
   /-- Resolve `thenDo` when `cond` holds.
   Putting a card on the bottom when you control no legendary creature is
-  `.«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)`.
+  `.«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)`.
   Drawing when an earlier step removed a hope counter is
   `.«if» .removedHope (.draw (.fixed 1))`.
   Doing `thenDo` on the nth resolution this turn is
@@ -2159,7 +2170,7 @@ inductive TriggerResolution where
   No Equipment is reported.
   Discarding `n` cards when mana was spent to cast the triggering spell is
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
-  | «if» (cond : TriggerIf) (thenDo : TriggerResolution)
+  | «if» (cond : ConditionSelector) (thenDo : TriggerResolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
   two otherwise, is
@@ -2173,7 +2184,7 @@ inductive TriggerResolution where
   you control, and goes to your hand otherwise, with
   `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
   Outside `revealLibrary .untilCreature`, that condition does not hold. -/
-  | ifElse (cond : TriggerIf) (whenTrue whenFalse : TriggerResolution)
+  | ifElse (cond : ConditionSelector) (whenTrue whenFalse : TriggerResolution)
   /-- The controller chooses one of these resolutions.
   Tap an opposing creature or untap one you control is
   `.or [.tap .target, .untap]`.
@@ -3021,10 +3032,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
           .may (.pay (.mana #[.generic n])) (.draw (.fixed 1)) .ifYouDo }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
-        [.draw (.fixed 1), .«if» .noLegendaryCreature (.putOnLibrary .bottom .cardFromHand)] }
+        [.draw (.fixed 1), .«if» (.not .controlsLegendaryCreature) (.putOnLibrary .bottom .cardFromHand)] }
   | .removeHopeDrawSac =>
     { resolution := .sequence
-        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» .noHopeOnSource (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] }
+        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] }
   | .tapHumansDraw =>
     { resolution := .sequence
         [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman] }
@@ -3307,7 +3318,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.pump (.fixed 1) (.fixed 1) .target) }
   | .sacrificeSourceIfNoPlaneswalker =>
     { events := #[.eachEndStep],
-      resolution := .«if» .noPlaneswalker (.sacrifice (.sacrificedSource .controllerSacrifices)) }
+      resolution := .«if» (.not .controlsPlaneswalker) (.sacrifice (.sacrificedSource .controllerSacrifices)) }
   | .creaturesYouControlGet p t =>
     { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .putSourceCountersOnTarget =>
@@ -3320,7 +3331,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .addMana #[.colored .green] .perChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
-        [.draw (.fixed 2), .«if» .libraryEmpty .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
+        [.draw (.fixed 2), .«if» (.not .libraryNotEmpty) .winTheGame, .«if» .libraryNotEmpty .shuffleSource] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }
