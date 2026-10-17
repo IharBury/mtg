@@ -1396,7 +1396,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .sequence [.tap .target, .cant .untapWhileYouControl]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
-  .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
+  .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."

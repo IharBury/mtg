@@ -40,7 +40,7 @@ inductive EnterLeftover where
   | maySacAnotherThenDestroyOppNonland
   /-- You may sac an artifact or discard a nonland. When you do, 2 damage.
   Resolves as
-  `.may (.pay (.or [.artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`. -/
+  `.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo`. -/
   | maySacOrDiscardNonlandThenDamage
   /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
   | revealHandExileUntilLeaves
@@ -952,7 +952,7 @@ inductive SharedTrigger where
   `.ifElse ((.atLeast (.count (.targetAnotherSubtype "Hero")) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`. -/
   | plusOneOrTwoIfAnotherHero
   /-- You may sac an artifact or discard; if you do, draw.
-  Resolves as `.may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo`. -/
+  Resolves as `.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])) (.draw (.fixed 1)) .ifYouDo`. -/
   | maySacArtifactOrDiscardDraw
   /-- Leftover “when this enters” effect. -/
   | enter (e : EnterLeftover)

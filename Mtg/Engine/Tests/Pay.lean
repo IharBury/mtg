@@ -90,33 +90,48 @@ def payReturn : TriggeredAbility.TriggerResolution :=
     (.returnToHand .source) .ifYouDo
 
 def sacPower : TriggeredAbility.TriggerResolution :=
-  .may (.pay .anotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
+  .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
 
 def sacTreasure : TriggeredAbility.TriggerResolution :=
-  .may (.pay .anotherCreatureOrArtifact)
+  .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
     (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo
 
 def sacOrDiscard : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.artifact, .discard])) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard])) (.draw (.fixed 1)) .ifYouDo
 
 def sacDestroy : TriggeredAbility.TriggerResolution :=
-  .may (.pay .anotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
+  .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo
 
 def sacDamage : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.artifact, .discardNonland]))
+  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discardNonland]))
     (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo
 
 def sacOrDiscardReversed : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.discard, .artifact])) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (.or [.discard, .sacrifice (.fixed 1) .artifact])) (.draw (.fixed 1)) .ifYouDo
 
 def payArtifact : TriggeredAbility.TriggerResolution :=
-  .may (.pay .artifact) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (.sacrifice (.fixed 1) .artifact)) (.draw (.fixed 1)) .ifYouDo
 
 def payNonland : TriggeredAbility.TriggerResolution :=
   .may (.pay .discardNonland) (.draw (.fixed 1)) .ifYouDo
 
 def sacOrMana : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.artifact, .mana #[.generic 1]])) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .mana #[.generic 1]])) (.draw (.fixed 1)) .ifYouDo
+
+def relicTwo : CardDef := artifact "Relic Two" ManaCost.empty ""
+def wolf : CardDef := creature "Wolf" ManaCost.empty #[] 1 1
+
+def sacTwoArtifacts : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.sacrifice (.fixed 2) .artifact)) (.draw (.fixed 1)) .ifYouDo
+
+def sacPerOther : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.sacrifice .perOtherCreature .artifact)) (.draw (.fixed 1)) .ifYouDo
+
+def sacHand : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.sacrifice (.fixed 1) .hand)) (.draw (.fixed 1)) .ifYouDo
+
+def sacZero : TriggeredAbility.TriggerResolution :=
+  .may (.pay (.sacrifice (.fixed 0) .artifact)) (.draw (.fixed 1)) .ifYouDo
 
 def field : CardDef := land "Field" ""
 
@@ -137,7 +152,7 @@ def field : CardDef := land "Field" ""
 #guard phrase sacDamage ==
   "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
 #guard phrase (.pay (.mana #[.generic 1])) == "pay {1}"
-#guard phrase (.pay .anotherCreature) == "pay that cost"
+#guard phrase (.pay (.sacrifice (.fixed 1) .another)) == "pay that cost"
 
 /- `{1}` offers a generic payment. Declining skips the draw. Paying draws. -/
 #guard
@@ -401,5 +416,80 @@ reflexive. Nothing to pay queues nothing. -/
     (mustApply (step g0 sacOrMana (some (pid g0 "Relic"))) caster (.chooseMode 1))
     caster .payGeneric
   handSize g caster == before + 1 && onBoard g "Relic"
+
+/- Any other count sacrifices that many permanents the selector names.
+One artifact cannot pay for two. Declining sacrifices nothing. -/
+#guard phrase sacTwoArtifacts == "you may sacrifice that. If you do, do that"
+
+#guard
+  let g0 := addPermanent afterDraw relic caster caster
+  let g := step g0 sacTwoArtifacts (some (pid g0 "Relic"))
+  g.pending == .none && onBoard g "Relic" && logContains g "Nothing to sacrifice"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw relic caster caster) relicTwo caster caster
+  let g := step g0 sacTwoArtifacts (some (pid g0 "Relic"))
+  match g.pending with
+  | .fraChoice p (.maySacrificeThese n ids) =>
+    p == caster && n == 2 && ids.size == 2 &&
+      ids.any (· == pid g0 "Relic") && ids.any (· == pid g0 "Relic Two") &&
+      logContains g "may sacrifice 2 permanents"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw relic caster caster) relicTwo caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 sacTwoArtifacts (some (pid g0 "Relic"))) caster .decline
+  handSize g caster == before && onBoard g "Relic" && onBoard g "Relic Two"
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw relic caster caster) relicTwo caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 sacTwoArtifacts (some (pid g0 "Relic"))) caster
+    (.choosePermanents #[pid g0 "Relic", pid g0 "Relic Two"])
+  handSize g caster == before + 1 && buried g "Relic" && buried g "Relic Two"
+
+/- `.perOtherCreature` is how many artifacts are sacrificed. A hand is not
+a permanent, and zero pays nothing. -/
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g0 := addPermanent g0 relic caster caster
+  let g := step g0 sacPerOther (some (pid g0 "Bear"))
+  match g.pending with
+  | .fraChoice p (.maySacrificeThese n ids) =>
+    p == caster && n == 1 && ids.size == 1 && ids[0]? == some (pid g0 "Relic") &&
+      logContains g "may sacrifice a permanent"
+  | _ => false
+
+#guard
+  let g0 := addPermanent (addPermanent afterDraw bear caster caster) ox caster caster
+  let g0 := addPermanent g0 relic caster caster
+  let before := handSize g0 caster
+  let g := mustApply (step g0 sacPerOther (some (pid g0 "Bear"))) caster
+    (.choosePermanents #[pid g0 "Relic"])
+  handSize g caster == before + 1 && buried g "Relic" && onBoard g "Bear" && onBoard g "Ox"
+
+#guard
+  let g0 := addPermanent
+    (addPermanent (addPermanent afterDraw bear caster caster) ox caster caster) wolf caster caster
+  let g0 := addPermanent g0 relic caster caster
+  let before := handSize g0 caster
+  let g := step g0 sacPerOther (some (pid g0 "Bear"))
+  g.pending == .none && handSize g caster == before && onBoard g "Relic" &&
+    logContains g "Nothing to sacrifice"
+
+#guard
+  let g0 := addPermanent afterDraw relic caster caster
+  let before := handSize g0 caster
+  let g := step g0 sacHand (some (pid g0 "Relic"))
+  g.pending == .none && handSize g caster == before && onBoard g "Relic" &&
+    logContains g "Nothing to sacrifice"
+
+#guard
+  let g0 := addPermanent afterDraw relic caster caster
+  let before := handSize g0 caster
+  let g := step g0 sacZero (some (pid g0 "Relic"))
+  g.pending == .none && handSize g caster == before && onBoard g "Relic" &&
+    logContains g "Nothing to sacrifice"
 
 end Mtg.Engine.PayTests
