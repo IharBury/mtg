@@ -1,10 +1,10 @@
 import Mtg.Engine.Game.ResolutionEffects
 
 /-!
-# Modeled trigger resolution
+# Trigger and spell resolution helpers
 
-`applyModeledTrigger` — resolving the shared-trigger payloads — leftover
-rules-text effects, and boast, teamwork, and pay-or-counter helpers.
+Helpers used by `applyTriggeredAbility` and spell/ability resolution,
+including copy, flicker, modal, boast, teamwork, and pay-or-counter helpers.
 -/
 
 namespace Mtg.Engine
@@ -478,18 +478,6 @@ def returnCauseToOwnerHand (g : Game) (targets : Array Target) : Game :=
     else
       g.returnToHand o.id o.owner
 
-/-- Exile and return the announced permanent when the source is harnessed.
-A missing source does nothing. An unharnessed source is reported. -/
-def resolveHarnessedFlicker (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) : Game :=
-  match sourceId.bind g.findObject? with
-  | some src =>
-    if !src.status.harnessed then
-      g.logMsg "The Mind Stone is not harnessed"
-    else
-      g.flickerChosenNonland controller sourceId targets
-  | none => g
-
 /-- You may exile the top card of your library. A Hero card gives the source
 +2/+1 until end of turn, and the card may be played this turn (Daredevil). -/
 def offerExileTopHeroPump (g : Game) (controller : PlayerId)
@@ -669,131 +657,6 @@ def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal") g
-
-/-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
-Effects are applied from that structured payload — not from Oracle text. -/
-def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (sourceName : String := "This creature")
-    (lastKnownPower : Option Int := none) : Game :=
-  match t.shared with
-  | (.step .copyAbsorbingMan) =>
-    g.applyBecomeCopy controller sourceId targets .artifactEnchantmentOrLand
-  | (.step .copyTaskmaster) =>
-    g.applyBecomeCopy controller sourceId targets .creatureOrGraveyardCard
-  | (.casting .mayPayHasteUnblockable) =>
-    g.offerPayForReflexive controller sourceId #[.generic 1] 9
-  | (.youAttacking .exileTopHeroPump) =>
-    g.offerExileTopHeroPump controller sourceId
-  | (.youAttacking .pay2LifeToughness) =>
-    g.offerPay2LifeToughness controller
-  | (.death .attackingReturnHand) =>
-    g.returnCauseToOwnerHand targets
-  | (.death .villainReturnAsHero) =>
-    g.returnCauseUnderOwner controller targets (some "Villain")
-      [.additionalSubtype "Hero", .counter .finality]
-  | (.casting .villainToken) =>
-    g.createKindTokens controller .villain21menace 1
-  | (.resource .plusOneCreateInsectOnce) =>
-    g.createKindTokens controller .insect11green 1
-  | (.resource .plusOneOnHeroesCreateWall) =>
-    g.offerMayCreateWall controller
-  | (.resource .secondDrawBecome66) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with
-          setBasePT := some (6, 6)
-          untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.trample })
-        |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
-      "The source is no longer in play"
-  | (.casting .visionModes) =>
-    g.offerVisionModes controller t sourceId targets lastKnownPower sourceName
-  | (.casting .ironFistTap) =>
-    g.grantIronFistTap sourceId
-  | (.casting .drawPowerEqualHand) =>
-    (g.draw controller 1).grantHandSizePower sourceId
-  | (.step .hydeChoose) =>
-    match lastKnownPower with
-    | none => g.offerHydeChoice controller sourceId
-    | some mode => g.applyHydeMode controller sourceId mode.toNat targets
-  | (.resource .drawIfAnotherHeroDamage) =>
-    if (g.permanentsOf controller).any (fun o =>
-        g.hasSubtype o "Hero" && some o.id != sourceId) then
-      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid 1
-        | _ => g) sourceId none
-    else
-      g.logMsg "Human Torch's ability has no effect"
-  | (.step .drawToTen) =>
-    g.drawUpToHandSize controller 10
-  | (.step .harnessedFlicker) =>
-    g.resolveHarnessedFlicker controller sourceId targets
-  | (.youAttacking .lookSixCast) =>
-    g.offerLookSixCast controller
-  | (.step .enchantedControllerDraws) =>
-    g.drawForEnchantedController sourceId
-  | (.death .hellcatReturn) =>
-    g.returnSourceUnderOwner controller sourceId
-      [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
-  | (.death .deathtouchOppSac) =>
-    g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | (.casting .exileFlicker) =>
-    let kind := EffectTargetKind.filtered {
-      noun := "another target nonland, nontoken permanent"
-      nonland := true, nontoken := true, another := true }
-    g.withLegalKindPermanent controller kind targets (fun g o =>
-      let name := o.name
-      let (g, newId) := g.move o.id .exile none
-      { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
-        |>.logMsg s!"{name} is exiled until the beginning of the next end step")
-      sourceId (some "The target is no longer legal")
-  | (.casting .damageEqualMv) =>
-    let n := g.castSpellManaValue controller lastKnownPower
-    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
-  | (.casting .merfolkFromBlue) =>
-    g.createMerfolkForBlueSymbols controller lastKnownPower
-  | (.casting .plusOneEachOther) =>
-    g.forEachControlledCreature controller (fun g o =>
-      if some o.id != sourceId then g.addPlusOnePlusOneTo o 1 else g)
-  | (.casting .plusOneThis) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  | (.casting .plusOneScry) =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-        "The source is no longer in play"
-    g.beginScry controller 1
-  | (.casting .targetsGainFlying) =>
-    g.grantKeywordsToSpellCreatureTargets Keyword.flying
-  | (.casting .copyIfArtifactOrLand) =>
-    let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
-      "The source is no longer in play"
-    g.copyCastTriggerSpell controller
-  | (.casting .tapCreatureOrLand) =>
-    let kind := EffectTargetKind.filtered {
-      noun := "target creature or land",
-      types := #[.creature, .land] }
-    g.withLegalKindPermanent controller kind targets
-      (fun g o => g.applyPermanentAction o .tap) sourceId
-      (some "The target is no longer legal")
-  | (.resource .discardExilePlay) =>
-    g.offerMayExileDiscarded controller lastKnownPower
-  | (.resource .secondDrawPlusOneTarget) =>
-    g.withLegalKindPermanent controller .creature targets
-      (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
-      (some "The target is no longer legal")
-  | (.resource .secondDrawDrain) =>
-    let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
-    g.gainLife controller 1
-  | (.resource .gainLifePlusOnes) =>
-    g.putPlusOnesUpToLastKnown controller targets lastKnownPower
-  | (.resource .plusOneOnThisOnce) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  | _ =>
-    g.withSourceOnBattlefield sourceId (fun g _ => g)
-      s!"{sourceName} resolves"
 
 /-- Put the targeted creature into its owner's library, second from the top
 or on the bottom (Trickster's Stratagem). -/

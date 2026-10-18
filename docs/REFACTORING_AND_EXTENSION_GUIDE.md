@@ -35,21 +35,16 @@ The sections below document the remaining duplication left over from earlier per
 
 ### Priority 2: Unify the Resolution Interpreters (`EffectResolution.lean` vs. `TriggeredAbilities.lean`) & Remove Legacy Dispatchers
 - **Files**:
-  - `Mtg/Engine/Game/EffectResolution.lean` (`applyUnified` L847, `applyUnifiedAbility` L1597, `applyFraResolution?` L59)
-  - `Mtg/Engine/Game/TriggeredAbilities.lean` (`applyTriggeredAbility` L3777–4638)
+  - `Mtg/Engine/Game/EffectResolution.lean` (`applyUnified`, `applyUnifiedAbility`, `applyFraResolution?`)
+  - `Mtg/Engine/Game/TriggeredAbilities.lean` (`applyTriggeredAbility`)
   - `Mtg/Engine/Game/FraResolve.lean`, `Mtg/Engine/Game/FraAbilities.lean`, `Mtg/Engine/Game/FrcResolve.lean`
-  - `Mtg/Engine/Game/ModeledTriggers.lean` (L675–860)
-  - `Mtg/Engine/Game/Chapters.lean` (L130–215)
-- **What is duplicated / dead**:
-  1. **Dead & Test-Only Functions**:
-     - `Game.applyLeftoverTextEffect` (`ModeledTriggers.lean:799–860`) has **zero callers** anywhere in the repository and can be deleted immediately.
-     - `Game.applyModeledTrigger` (`ModeledTriggers.lean:675–797`) is **never called by the game engine** — it is only called directly by legacy unit tests in `CatalogModelTests.lean` (lines 1548–1613) and `MshOracleTests*.lean`. Migrating those ~35 test calls to `applyTriggeredAbility` (or normal stack resolution) allows deleting `applyModeledTrigger` (~125 lines).
-     - `Game.applyChapterEffect` (`Chapters.lean:130–215`) is **never called by the game engine** (Saga chapters resolve via `applyTriggeredAbility` in `SpellResolution.lean:128`). It is only called twice in `MshOracleTests2.lean` (lines 1119, 1126). Migrating those 2 test lines allows deleting `applyChapterEffect` (~85 lines).
-  2. **Duplicate Fallback Match in `TriggeredAbilities.lean`**:
-     - `applyTriggeredAbility` (`TriggeredAbilities.lean:4594–4638`) has a fallback `match ab.effect.resolution` with 13 arms (`.sequence`, `.shuffleSource`, `.draw`, `.scry`, `.onPermanent`, `.onSource`, `.gainLife`, `.recruit`, `.amass`, `.createTokens`, `.addMana`, `.discard`) that duplicate `applyTriggeredAbility`'s main match and `applyUnified`/`applyUnifiedAbility`.
-  3. **Duplicate Printed vs. Selector Arms in `TriggeredAbilities.lean`**:
-     - `TriggeredAbilities.lean` is **4,885 lines** because each `apply*` helper (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, `applyCreateTokens`, `applyExile`, `applySacrifice`, `applyDestroy`, `applyTriggerDraw`, `applyReturnToHand`, `applyPut`, `applyGrant`, `applyFight`, `applyMill`, `applyUntap`, `applyTap`, `applyLoseLife`, `applyGainLife`, `applyLose`, `applyCant`, `applySetBasePT`) has dozens of specialized pattern-match arms before falling back to the generic `TriggerArgs.lean` evaluators (`permanentsNamed`, `collectPlayers`, `triggerInt`, `triggerCount`). Collapsing arms whose behavior matches the generic `TriggerArgs` path will shrink `TriggeredAbilities.lean` by 1,500–2,000 lines.
-  4. **Converging on One `Resolution` Interpreter**:
+- **Completed**:
+  - Deleted dead `Game.applyLeftoverTextEffect`, `Game.applyModeledTrigger`, `Game.resolveHarnessedFlicker`, `Game.applyChapterEffect`, and unused `FraChoice.mayPutMilledPermanent`; migrated all test callers to `Game.applyTriggeredAbility`.
+  - Removed duplicate fallback arms (`.shuffleSource`, `.draw`, `.scry`, `.gainLife`, `.recruit`, `.amass`, `.createTokens`, `.addMana`, `.discard`, and `Resolution.toSpell`) from `applyTriggeredAbility` (`TriggeredAbilities.lean:4611–4625`), delegating directly to `applyUnifiedAbility`.
+- **Remaining**:
+  1. **Duplicate Printed vs. Selector Arms in `TriggeredAbilities.lean`**:
+     - `TriggeredAbilities.lean` is ~4,870 lines because each `apply*` helper (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, `applyCreateTokens`, `applyExile`, `applySacrifice`, `applyDestroy`, `applyTriggerDraw`, `applyReturnToHand`, `applyPut`, `applyGrant`, `applyFight`, `applyMill`, `applyUntap`, `applyTap`, `applyLoseLife`, `applyGainLife`, `applyLose`, `applyCant`, `applySetBasePT`) has dozens of specialized pattern-match arms before falling back to the generic `TriggerArgs.lean` evaluators (`permanentsNamed`, `collectPlayers`, `triggerInt`, `triggerCount`). Collapsing arms whose behavior matches the generic `TriggerArgs` path will shrink `TriggeredAbilities.lean` by 1,500–2,000 lines.
+  2. **Converging on One `Resolution` Interpreter**:
      - As Priority 1 replaces legacy spell/ability constructors with Stratum 1 compositional constructors, `applyUnified` and `applyUnifiedAbility` can delegate Stratum 1 constructors directly to the shared compositional handlers in `TriggeredAbilities.lean` (with `TriggerRead` populated from the spell/ability context).
 
 ---

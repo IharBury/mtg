@@ -62,14 +62,14 @@ The 58 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `LibrarySearch.lean` | `beginLibrarySearch`, `finishLibrarySearch`, `placeSearched`, `shuffleThen`. |
 | `ResolutionHelpers.lean` | Target legality wrappers (`withLegal*`), `applyPermanentAction`, `applyOnPermanent`, `beginSurveil`, `mill`. |
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
-| `ModeledTriggers.lean` | Shared MSH trigger helpers (`applyBecomeCopy`, `applyEnterMod`) plus legacy test-only `applyModeledTrigger` and dead `applyLeftoverTextEffect`. |
+| `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
 | `FraHelpers.lean` | Target slot legality, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
 | `FraAbilities.lean` | Reality Fracture activated/loyalty ability resolver (`applyFraAbility`). |
 | `FrcResolve.lean` | Reality Fracture Commander resolver (`applyFrc`, `applyDelayedSynthetic`). |
 | `FraResolve.lean` | Reality Fracture (`Resolution.isFra`) dispatcher (`applyFra`, delegating `.frc` to `applyFrc` and falling back to `applyFraAbility`). |
 | `EffectResolution.lean` | Unified `Effect` interpreters for spells (`applyUnified`, `applyEffect`) and activated abilities (`applyUnifiedAbility`, `applyAbilityEffect`), plus `applyFraResolution?` and `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
-| `Chapters.lean` | Saga chapter helpers, `interveningStillHolds` (CR 603.4), and legacy `applyChapterEffect`. |
+| `Chapters.lean` | Saga chapter helpers and `interveningStillHolds` (CR 603.4). |
 | `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
 | `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |
 | `SpellResolution.lean` | Top-of-stack resolution (`resolveTop`), Aura attachment (`resolveAuraSpell`), Adventure exile (`resolveAdventureSpell`), and CR 608.2b target checks (`fraAbilityTargetsAllIllegal`). |

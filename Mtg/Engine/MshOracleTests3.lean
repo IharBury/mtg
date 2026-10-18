@@ -112,7 +112,7 @@ def thunderboltsHeroTypeOk : Bool :=
   let (g, _) := g.move villain.id (.graveyard ⟨0⟩) none
   let gy := namedGraveyardCard g ⟨0⟩ "Agents of HYDRA"
   let before := g.waitingTriggers.size
-  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathVillainReturnAsHero)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathVillainReturnAsHero)
     (some (namedPermanent g "Thunderbolts Conspiracy").id) #[Target.card gy.id]
   let o := namedPermanent g "Agents of HYDRA"
   g.hasSubtype o "Hero" &&
@@ -316,9 +316,9 @@ def ironFistMultipleGrantsOk : Bool :=
   let g := addPermanent afterDraw ironFistLivingWeapon ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let fist := namedPermanent g "Iron Fist, Living Weapon"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingIronFistTap)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingIronFistTap)
     (some fist.id)
-  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingIronFistTap)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingIronFistTap)
     (some fist.id)
   (namedPermanent g "Iron Fist, Living Weapon").status.ironFistTapGrants == 2 &&
     (mshRuling 459).comment.contains "multiple instances"

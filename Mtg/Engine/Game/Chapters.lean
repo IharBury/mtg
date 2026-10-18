@@ -1,10 +1,10 @@
 import Mtg.Engine.Game.CastExtras
 
 /-!
-# Saga chapter resolution (CR 714.3)
+# Saga chapter helpers (CR 714.3)
 
-`applyChapterEffect` for chapter abilities and the intervening-if
-recheck used when their triggers resolve (CR 603.4).
+Helpers for chapter abilities and the intervening-if recheck used when
+triggered abilities resolve (CR 603.4).
 -/
 
 namespace Mtg.Engine
@@ -125,93 +125,6 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
         | none => g
       | _ => g) g)
     "The Super Hero Civil War has left the battlefield. You won't gain control."
-
-/-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
-def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
-    (sourceId : Option ObjectId) (targets : Array Target) : Game :=
-  match e.asChapter? with
-  | none => g.applyEffect controller e targets
-  | some ch =>
-  match ch with
-  | .dealDamageToOppCreature n =>
-    g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      g.dealDamageToPermanent o n) sourceId (some "The target is no longer legal")
-  | .destroyOppArtifact =>
-    g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
-      g.destroyPermanent o) sourceId (some "The target is no longer legal")
-  | .addMana mana =>
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add mana })
-      |>.logMsg s!"{(g.player controller).name} adds {mana}"
-  | .searchBasicLandToHand =>
-    g.resolveSearchBasicLandToHand controller
-  | .gainLandfallCreateElf =>
-    g.gainLandfallCreateElf sourceId
-  | .elvesGetVigilance p =>
-    g.elvesGetVigilance controller p
-  | .opponentDiscardsNonland =>
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.discardNonlandFrom controller pid)
-      sourceId (some "The target is no longer legal")
-  | .amass n =>
-    g.amassGoblins controller n
-  | .opponentLosesYouGain n =>
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.loseLife pid n |>.gainLife controller n)
-      sourceId (some "The target is no longer legal")
-  | .grantHexproofWhileRemains =>
-    g.grantHexproofWhileSource controller sourceId targets .creatureYouControl
-  | .preventDamageWhileRemains =>
-    g.preventDamageWhileSource controller sourceId targets .creature
-  | .draw n =>
-    g.draw controller n
-  | .searchBasicPlainsExileGainLife max life =>
-    g.resolveSearchBasicPlainsExile controller sourceId max life
-  | .returnLinkedExileToHand =>
-    g.returnLinkedExileToHand sourceId
-  | .grantAttackPumpPerPlainsThisTurn =>
-    g.attackPumpPerPlains controller
-  | .blinkUntilEndStep =>
-    g.withLegalKindPermanent controller .creatureOrLandYouControl targets
-      (fun g o => g.exileUntilNextEndStep o) sourceId none
-  | .treasureThenDragonIfFour =>
-    g.treasureThenDragon controller sourceId
-  | .recruit =>
-    g.beginRecruit controller
-  | .returnCreatureFromGyMvAtMost n =>
-    g.withLegalKindTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
-      (fun g t =>
-        match t with
-        | Target.card oid =>
-          match g.findObject? oid with
-          | none => g.logMsg "The target is no longer in the graveyard"
-          | some o =>
-            let name := o.name
-            let (g, newId) := g.putOntoBattlefield oid controller
-            g.logMsg s!"{name} returns to the battlefield"
-              |>.afterPermanentEnters (g.object! newId)
-        | _ => g.logMsg "The target is no longer legal")
-      sourceId (some "The target is no longer legal")
-  | .plusOneUpToOne =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      g.addPlusOnePlusOneTo o 1) sourceId none
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
-    g.gainControlWhileSource controller sourceId targets
-  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    let g :=
-      g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
-  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
-    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
-    g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.dealDamageToPlayer pid x)
-      sourceId (some "The target is no longer legal")
-  | .spell s =>
-    g.applyEffect controller {
-      targeting := s.targeting
-      allowsZeroTargets := s.allowsZeroTargets
-      phrase := s.phrase
-      resolution := Resolution.ofSpell s.resolution } targets
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/

@@ -784,7 +784,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .sphinxsApproach _ => "may exile five cards named Sphinx's Approach"
         | .extrapolateReveal => "may reveal two cards from outside the game"
         | .extrapolatePick _ _ => "choose one of the revealed cards"
-        | .mayPutMilledPermanent _ _ => "may put a milled permanent card into your hand"
         | .mayThen .. => "may do it (accept or decline)"
         | .mayPayThen n .. => s!"may pay \{{n}} (accept or decline)"
         | .mayDiscardThen .. => "may discard a card (choose or decline)"

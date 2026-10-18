@@ -438,8 +438,11 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let milled := g.opponentsMilledThisWay
     ({ g with opponentsMilledThisWay := false }, milled)
   | (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) =>
-    (g, (g.permanentsOf controller).any (fun o =>
-      g.hasSubtype o "Hero" && some o.id != sourceId))
+    if (g.permanentsOf controller).any (fun o =>
+        g.hasSubtype o "Hero" && some o.id != sourceId) then
+      (g, true)
+    else
+      (g.logMsg "Human Torch's ability has no effect", false)
   | (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The Equipment is no longer in play", false)
@@ -4084,7 +4087,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .chooseModes modes how =>
     match how with
     | .plusOneOrRemoveCounter =>
-      g.offerHydeChoice controller sourceId
+      match lastKnownPower with
+      | none => g.offerHydeChoice controller sourceId
+      | some mode => g.applyHydeMode controller sourceId mode.toNat targets
     | .alreadyChosen =>
       let chosen :=
         match sourceId.bind g.findObject? with
@@ -4608,36 +4613,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | [.shuffleSource, .draw (.fixed n)] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
         | steps =>
-          steps.foldl (fun g r =>
-            let step : TriggeredAbility :=
-              match ab with
-              | .triggered w _ opts =>
-                .triggered w { ab.effect with resolution := r } opts
-            g.applyTriggeredAbility controller step sourceId targets dividedDamage
-              lastKnownPower lastKnownToughness sourceName) g
-  | .shuffleSource =>
-    g.shuffleSourceIntoLibrary sourceId
-  | .draw (.fixed n) .you => g.draw controller n.toNat
-  | .scry (.fixed n) => g.beginScry controller n.toNat
+        steps.foldl (fun g r =>
+          let step : TriggeredAbility :=
+            match ab with
+            | .triggered w _ opts =>
+              .triggered w { ab.effect with resolution := r } opts
+          g.applyTriggeredAbility controller step sourceId targets dividedDamage
+            lastKnownPower lastKnownToughness sourceName) g
   | .onPermanent a =>
     g.applyOnPermanent controller ab.targetKind targets a sourceId
       (some "The target is no longer legal")
   | .onSource a => g.applyOnTriggerSource sourceId a
-  | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
-  | .recruit _ => g.beginRecruit controller
-  | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
-  | .createTokens kind (.fixed n) tapped .kind .you .none =>
-    g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .addMana types (.fixed 1) =>
-    g.addManaLogged controller types
-  | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
-    match Resolution.toSpell r with
-    | some _ =>
-      g.applyUnified controller ab.effect targets
-    | none =>
-      g.applyUnifiedAbility controller { ab.effect with resolution := r }
-        targets sourceId lastKnownPower
+    g.applyUnifiedAbility controller { ab.effect with resolution := r }
+      targets sourceId lastKnownPower
 
 /-- Finish trigger-sequence steps that waited on a pending choice.
 Those steps are still part of the resolution that opened the choice. -/

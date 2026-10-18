@@ -1545,14 +1545,14 @@ copy nothing. -/
     (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.kind (some (idOf g "Absorbing Man"))
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
-  let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
+  let g := g.applyTriggeredAbility me (.onStep Effect.stepCopyAbsorbingMan)
     (some (idOf g "Absorbing Man")) #[Target.permanent (idOf g "Forest")]
   let copied := namedPermanent g "Absorbing Man"
   forestOk && !bearOk && copied.printed.isLand && copied.name == "Absorbing Man" &&
     g.power copied == 4 && g.hasVigilance copied
 #guard
   let g := addPermanent afterDraw absorbingMan me me
-  let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
+  let g := g.applyTriggeredAbility me (.onStep Effect.stepCopyAbsorbingMan)
     (some (idOf g "Absorbing Man"))
   !(namedPermanent g "Absorbing Man").printed.isLand &&
     g.log.any (fun s => mentions s "doesn't become a copy")
@@ -1566,7 +1566,7 @@ line is Human Mercenary Villain. -/
     (g.player opp).graveyard.find? (fun id => (g.object! id).name == "Grizzly Bears")
   match bear with
   | some bearId =>
-    let g := g.applyModeledTrigger me (.onStep Effect.stepCopyTaskmaster)
+    let g := g.applyTriggeredAbility me (.onStep Effect.stepCopyTaskmaster)
       (some (idOf g "Taskmaster, Mercenary Mimic")) #[Target.card bearId]
     let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
     tm.name == "Taskmaster, Mercenary Mimic" &&
@@ -1577,7 +1577,7 @@ line is Human Mercenary Villain. -/
 /- Mister Hyde's upkeep ability asks which mode to use. -/
 #guard
   let g := addPermanent afterDraw misterHydeMonsterWithin me me
-  let g := g.applyModeledTrigger me (.onStep Effect.stepHydeChoose)
+  let g := g.applyTriggeredAbility me (.onStep Effect.stepHydeChoose)
     (some (idOf g "Mister Hyde, Monster Within"))
   let choosing :=
     match g.pending with
@@ -1599,7 +1599,7 @@ line is Human Mercenary Villain. -/
   let landOk := legal.contains (Target.permanent (idOf g "Forest"))
   let selfOk := legal.contains (Target.permanent (idOf g "The Mind Stone"))
   let bear := idOf g "Grizzly Bears"
-  let g := g.applyModeledTrigger me (.onStep Effect.stepHarnessedFlicker)
+  let g := g.applyTriggeredAbility me (.onStep Effect.stepHarnessedFlicker)
     (some (idOf g "The Mind Stone")) #[Target.permanent bear]
   bearOk && !landOk && !selfOk && onBattlefield g "Grizzly Bears" &&
     (namedPermanent g "The Mind Stone").linkedExile.isEmpty &&
@@ -1610,7 +1610,7 @@ line is Human Mercenary Villain. -/
   let g := addPermanent afterDraw hellcatUndyingVigilante me me
   let old := idOf g "Hellcat, Undying Vigilante"
   let g := g.destroyPermanent (namedPermanent g "Hellcat, Undying Vigilante")
-  let g := g.applyModeledTrigger me (.onDeath Effect.deathHellcatReturn) (some old)
+  let g := g.applyTriggeredAbility me (.onDeath Effect.deathHellcatReturn) (some old)
   onBattlefield g "Hellcat, Undying Vigilante" &&
     (namedPermanent g "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1 &&
     g.hasHaste (namedPermanent g "Hellcat, Undying Vigilante")

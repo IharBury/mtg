@@ -260,9 +260,6 @@ inductive FraChoice where
   | extrapolateReveal
   /-- Choose one of `ids` for `revealer` to put into their hand. -/
   | extrapolatePick (revealer : PlayerId) (ids : Array ObjectId)
-  /-- You may put one of the milled permanent cards `ids` into your hand;
-  then you gain `life` life. -/
-  | mayPutMilledPermanent (ids : Array ObjectId) (life : Nat)
   /-- You may do `next` (accept or decline). -/
   | mayThen (next : FraNext) (sourceId : Option ObjectId)
   /-- You may pay `{n}`; if you do, do `next`. -/

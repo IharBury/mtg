@@ -199,13 +199,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
-  | .mayPutMilledPermanent ids life, .objects #[id] =>
-    if !ids.contains id then throw "Choose a permanent card milled this way"
-    let g := g.returnToHand id p
-    return (g.gainLife p life).finishFraChoice
-  | .mayPutMilledPermanent _ life, .decline =>
-    return (g.gainLife p life).finishFraChoice
-  | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
   | .mayThen next sourceId, .accept =>
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayThen .., .decline => return g.finishFraChoice
@@ -1154,7 +1147,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       if acc.size < 2 && !acc.any (·.name == o.name) then acc.push o else acc) #[]
     .choosePermanents (picks.map (·.id))
   | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
-  | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
   | .mayThen .. => .accept
   | .mayPayThen n .. =>
     if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline

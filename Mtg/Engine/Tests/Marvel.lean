@@ -808,20 +808,12 @@ def chorusGrantsAnyColor : Game :=
   (chorusGrantsAnyColor.manaAbilitiesOf
     (namedPermanent chorusGrantsAnyColor "Grizzly Bears")).contains (.colored .red)
 
-/-- `applyModeledTrigger` resolves leftover constructors, not Oracle text.
-A shared `.draw` trigger must not draw via a `toNotation` fallback. -/
-def applyModeledTriggerIgnoresDrawText : Game :=
-  afterDraw.applyModeledTrigger ⟨0⟩ (.onEnterDraw 1) none
-
-#guard (applyModeledTriggerIgnoresDrawText.player ⟨0⟩).hand.size ==
-  (afterDraw.player ⟨0⟩).hand.size
-
-/-- Colleen Wing: +1/+1 and scry from the leftover constructor, not from
+/-- Colleen Wing: +1/+1 and scry from the trigger resolution, not from
 parsing “put a +1/+1 counter” ahead of “Scry”. -/
 def colleenWingPlusOneScry : Game :=
   let g := addPermanent afterDraw colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Colleen Wing, Street Samurai"
-  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneScry) (some src.id)
+  g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingPlusOneScry) (some src.id)
 
 #guard (namedPermanent colleenWingPlusOneScry "Colleen Wing, Street Samurai").status.plusOnePlusOne == 1
 #guard
@@ -836,7 +828,7 @@ def enchantedControllerDrawsForHost : Game :=
   let host := namedPermanent g "Grizzly Bears"
   let aura := namedPermanent g "Super Intelligence"
   let g := g.attachSourceTo aura host
-  g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepEnchantedControllerDraws)
+  g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepEnchantedControllerDraws)
     (some (namedPermanent g "Super Intelligence").id)
 
 #guard (enchantedControllerDrawsForHost.player ⟨1⟩).hand.size ==
@@ -858,7 +850,7 @@ def lukeCageAttacksAlone : Game :=
 def mockingbirdPlusOneThis : Game :=
   let g := addPermanent afterDraw mockingbirdAceAgent ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Mockingbird, Ace Agent"
-  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneThis) (some src.id)
+  g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingPlusOneThis) (some src.id)
 
 #guard (namedPermanent mockingbirdPlusOneThis "Mockingbird, Ace Agent").status.plusOnePlusOne == 1
 
@@ -878,7 +870,7 @@ def nontokenHeroModalPump : Game :=
 
 /-- Second-draw drain leftover: each opponent loses 1 and you gain 1. -/
 def secondDrawDrain : Game :=
-  afterDraw.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawDrain) none
+  afterDraw.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceSecondDrawDrain) none
 
 #guard (secondDrawDrain.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + 1
 #guard (secondDrawDrain.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 1
@@ -889,7 +881,7 @@ def hellcatReturns : Game :=
   let g := addPermanent afterDraw hellcatUndyingVigilante ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Hellcat, Undying Vigilante"
   let (g, gyId) := g.move src.id (.graveyard ⟨0⟩) none
-  g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some gyId)
+  g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some gyId)
 
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").isOnBattlefield
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1

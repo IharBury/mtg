@@ -95,7 +95,7 @@ def moonGirlOverwriteOk : Bool :=
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
   let g := g.mapObjectStatus mg (fun s => { s with setBasePT := some (1, 1), pump := (1, 1) })
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Moon Girl and Devil Dinosaur") 1
-  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawBecome66)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceSecondDrawBecome66)
     (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
   g.power mg == 8 && g.toughness mg == 8 &&
@@ -148,7 +148,7 @@ def tenRingsReplacementOk : Bool :=
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := { g with step := .end }
-  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
     (mshRuling 650).comment.contains "replacement effects"
 
@@ -260,7 +260,7 @@ def cosmicCubeAuraSetup : Game :=
 
 def cosmicCubeAuraPending : Game :=
   let cube := namedPermanent cosmicCubeAuraSetup "Cosmic Cube"
-  cosmicCubeAuraSetup.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
+  cosmicCubeAuraSetup.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
     (some cube.id)
 
 /-- Casting an Aura as Cosmic Cube resolves still asks for a target to
@@ -296,7 +296,7 @@ def cosmicCubeCastNonAuraEnchantmentOk : Bool :=
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g doomReignsSupreme ⟨0⟩
   let cube := namedPermanent g "Cosmic Cube"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
     (some cube.id)
   let plan := cosmicCubeLookedNamed g "Doom Reigns Supreme"
   !doomReignsSupreme.isAura &&
