@@ -117,7 +117,7 @@ def dealDamageLoseIndestructibleExile (amount : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def creatureYouControlDealsPowerToOppCreature : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.fight)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight .announced (.timesPower 1))
     (castKind := .fight)
 
 def playAdditionalLandThisTurn : Effect :=
@@ -131,7 +131,7 @@ def destroyArtifactOrLandNonflyersCantBlock : Effect :=
     phrase := "destroy target artifact or land. Creatures without flying can't block this turn" }
 
 def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
-  mkSpell (.of .creature) (.sequence [.onPermanent .destroy, .loseLife life .controllerOfTarget])
+  mkSpell (.of .creature) (.sequence [.onPermanent .destroy, .loseLife life (.controller .target)])
     (castKind := .destroyCreature)
     (preferAsDefaultMode := true)
 
@@ -145,7 +145,7 @@ def drawAndLoseLife (cards life : Nat) : Effect :=
 
 def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
   mkSpell (.of .player .selfPlayer)
-    (.sequence [.draw cards .targetPlayer, .loseLife life .targetPlayer])
+    (.sequence [.draw cards .player, .loseLife life .player])
     (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
@@ -185,7 +185,7 @@ def discardCards (n : Nat) : Effect :=
     phrase := s!"discard {cardPhrase n}" }
 
 def drawThenDiscard (n : Nat) : Effect :=
-  mkSpell (.of .none) (.sequence [.draw n, .discard 1])
+  mkSpell (.of .none) (.sequence [.draw n, .discard (.cards 1)])
     (castKind := .draw)
 
 def scry (n : Nat) : Effect :=
@@ -214,7 +214,7 @@ player gains `life`. Defaults are one +1/+1 counter (Meager Meal). -/
 def plusOneUpToOneAndPlayerGainsLife (life : Nat)
     (kind : CounterKind := .plusOnePlusOne) (counters : Nat := 1) : Effect :=
   mkSpell (.of .upToOneCreatureThenPlayer)
-    (.sequence [.countersOnCreatureTargets kind counters, .gainLife life .targetPlayers])
+    (.sequence [.countersOnCreatureTargets kind counters, .targetPlayersGainLife life])
     (castKind := .pump)
 
 def counterSpell : Effect :=
@@ -245,7 +245,7 @@ def untapPumpMaybeAttach (power toughness : Int) : Effect :=
     (.sequence [
       .onPermanent .untap,
       .onPermanent (.pump power toughness),
-      .«if» (.may .attachEquipment) (.subtype "Dwarf")])
+      .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))])
     (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=
@@ -298,7 +298,7 @@ def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
 The mana value includes `{X}` from when the spell was on the stack. -/
 def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
   mkSpell (.of .spell)
-    (.sequence [.counter, .«if» .recruit (.mvAtMost n)])
+    (.sequence [.counter, .«if» (.mvAtMost n) .recruit])
     (castKind := .counter)
 
 def plusOneThenFight (n : Nat) : Effect :=
@@ -313,22 +313,22 @@ def plusOneThenEachOtherIfFromGy : Effect :=
   mkSpell (.of .creatureYouControl)
     (.sequence [
       .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
-      .«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard])
+      .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)])
     (castKind := .pump)
 
 /-- Draw `n` cards, or `fromGy` cards if this spell was cast from a graveyard. -/
 def drawIfFromGy (n fromGy : Nat) : Effect :=
-  mkSpell (.of .none) (.ifElse (.draw fromGy) (.draw n) .castFromGraveyard)
+  mkSpell (.of .none) (.ifElse .castFromGraveyard (.draw fromGy) (.draw n))
     (castKind := .draw)
 
 /-- Amass Goblins `n`, or `fromGy` if this spell was cast from a graveyard. -/
 def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
   mkSpell (.of .none)
-    (.ifElse (.amass fromGy) (.amass n) .castFromGraveyard)
+    (.ifElse .castFromGraveyard (.amass fromGy) (.amass n))
     (castKind := .pump)
 
 def searchLegendaryCreatureToHand : Effect :=
-  mkSpell (.of .none) (.searchLibrary)
+  mkSpell (.of .none) (.searchCard)
     (castKind := .draw)
 
 def dealDamageToEachOppCreature (n : Nat) : Effect :=
@@ -339,7 +339,7 @@ def destroyTargetArtifact : Effect :=
   destroyTarget .artifact (spellKind := some .destroyArtifactOrLand)
 
 def targetPlayerDraw (n : Nat) : Effect :=
-  mkSpell (.of .player .selfPlayer) (.draw n .targetPlayer)
+  mkSpell (.of .player .selfPlayer) (.draw n .player)
     (castKind := .draw)
 
 def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
@@ -392,7 +392,7 @@ def exileAttackersSearchBasics : Effect :=
     (castKind := .destroyCreature)
 
 def createTokensX (kind : TokenKind) : Effect :=
-  mkSpell (.of .none) (.createTokens kind 0 (qty := .chosenX))
+  mkSpell (.of .none) (.createTokens kind .chosenX)
     (castKind := .extraLand)
 
 def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
@@ -401,7 +401,7 @@ def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
 
 def returnSpellCantCastIfGift : Effect :=
   mkSpell (.of .spell)
-    (.sequence [.returnTargetToHand, .«if» .playersCantCastThisTurn .giftPromised])
+    (.sequence [.returnTargetToHand, .«if» .giftPromised .playersCantCastThisTurn])
     (castKind := .counter)
 
 def exileTopXOppPlayForLife : Effect :=
@@ -441,26 +441,26 @@ def phaseOutKicker : Effect :=
 
 def dealDamageToAttackerOrBlocker (n teamworkN : Nat) : Effect :=
   mkSpell (.of .attackingOrBlockingCreature)
-    (.ifElse (.onPermanent (.dealDamage teamworkN)) (.onPermanent (.dealDamage n)) .teamwork)
+    (.ifElse .teamwork (.onPermanent (.dealDamage teamworkN)) (.onPermanent (.dealDamage n)))
     (castKind := .creatureDamage)
 
 def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
   mkSpell (.of .creature)
     (.sequence [
       .onPermanent (.dealDamage n),
-      .«if» (.dealDamageToControllerOfTarget extra) .teamwork])
+      .«if» .teamwork (.dealDamageToControllerOfTarget extra)])
     (castKind := .creatureDamage)
 
 def grantDoubleStrikeTeamworkTrample : Effect :=
   mkSpell (.of .creature)
     (.sequence [
       .onPermanent (.grantKeywords Keyword.doubleStrike),
-      .«if» (.onPermanent (.grantKeywords Keyword.trample)) .teamwork])
+      .«if» .teamwork (.onPermanent (.grantKeywords Keyword.trample))])
     (castKind := .pump)
 
 def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
   mkSpell (.of .spell)
-    (.ifElse (.unlessPays .counter teamworkN) (.unlessPays .counter n) .teamwork)
+    (.ifElse .teamwork (.unlessPays .counter teamworkN) (.unlessPays .counter n))
     (castKind := .counter)
 
 def exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat) : Effect :=
@@ -504,7 +504,7 @@ def plusOneOnCreature : Effect :=
     (castKind := .pump)
 
 def targetPlayerCreatesTokens (kind : TokenKind) (n : Nat) : Effect :=
-  mkSpell (.of .player) (.createTokens kind n .targetPlayer)
+  mkSpell (.of .player) (.createTokens kind n (who := .player))
     (castKind := .extraLand)
 
 def destroyCreatureSurveil : Effect :=
@@ -531,7 +531,7 @@ def dealDamageToEachCreature (n : Nat) : Effect :=
 
 def destroyLandSearchBasic : Effect :=
   mkSpell (.of .artifactOrLand)
-    (.sequence [.onPermanent .destroy, .searchLibrary .basic .land .ownerMayToBattlefield])
+    (.sequence [.onPermanent .destroy, .searchCard .basic .land .ownerMayToBattlefield])
     (castKind := .destroyArtifactOrLand)
 
 def doublePowerAndToughness : Effect :=
@@ -592,7 +592,7 @@ def pumpThenExileTopPlay (power toughness : Int) : Effect :=
     (castKind := .pump)
 
 def creatureYouControlDealsTwicePower (k : Nat := 2) : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.fight k)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight .announced (.timesPower k))
     (castKind := .fight)
 
 def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int) : Effect :=
@@ -600,7 +600,7 @@ def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int
     (castKind := .pump)
 
 def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  mkSpell (.of .none) (.createTokens kind 0 (qty := .perSubtype subtype))
+  mkSpell (.of .none) (.createTokens kind (.perSubtype subtype))
     (castKind := .extraLand)
 
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=

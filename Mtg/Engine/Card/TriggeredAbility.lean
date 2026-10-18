@@ -1808,6 +1808,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if that is true"
   | .or _ =>
     "choose one"
+  | r =>
+    SpellResolution.toPhrase r noun
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -1861,11 +1863,11 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
       [.onPermanent .untap,
-       .spell (.«if» (.onPermanent (.plusOne n)) (.subtype subtype))] =>
+       .spell (.«if» (.subtype subtype) (.onPermanent (.plusOne n)))] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
   | .sequence [.fra (.loseLife n), .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"
-  | .sequence [.fra .exileCardFromGraveyard, .spell (.loseLife n .eachOpponent)] =>
+  | .sequence [.fra .exileCardFromGraveyard, .spell (.loseLife (.fixed n) .eachOpponent)] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 

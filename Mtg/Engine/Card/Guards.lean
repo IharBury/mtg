@@ -53,13 +53,13 @@ namespace CardDef
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
 #guard (Effect.createTokens .treasure 1).spellResolution == .createTokens .treasure 1
 #guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).spellResolution ==
-  .createTokens .leviathan65hexproof 1 .targetPlayer
+  .createTokens .leviathan65hexproof 1 (who := .player)
 #guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).resolution ==
-  .spell (.createTokens .leviathan65hexproof 1 .targetPlayer)
-#guard SpellResolution.toPhrase (.createTokens .treasure 1 .you) "target player" ==
+  .spell (.createTokens .leviathan65hexproof 1 (who := .player))
+#guard SpellResolution.toPhrase (.createTokens .treasure 1) "target player" ==
   "create a Treasure token"
 #guard SpellResolution.toPhrase
-    (.createTokens .leviathan65hexproof 1 .targetPlayer) "target player" ==
+    (.createTokens .leviathan65hexproof 1 (who := .player)) "target player" ==
   "target player creates a 6/5 blue Leviathan creature token with hexproof"
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
@@ -80,18 +80,18 @@ namespace CardDef
   .sequence [
     .onPermanent .untap,
     .onPermanent (.pump 2 2),
-    .«if» (.may .attachEquipment) (.subtype "Dwarf")]
+    .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.draw 1) (.subtype "Elf")) "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.subtype "Elf") (.draw 1)) "target creature" ==
   "if target creature is an Elf, draw a card"
-#guard SpellResolution.toPhrase (.may (.gainLife 3)) "target creature" ==
+#guard SpellResolution.toPhrase (.may (.gainLife 3) (.sequence [])) "target creature" ==
   "you may gain 3 life"
-#guard SpellResolution.toPhrase (.may .attachEquipment) "target creature" ==
+#guard SpellResolution.toPhrase (.may .attachEquipment (.sequence [])) "target creature" ==
   "you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.may .attachEquipment) (.subtype "Dwarf")) "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))) "target creature" ==
   "if target creature is a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» .recruit (.mvAtMost 2)) "target spell" ==
+#guard SpellResolution.toPhrase (.«if» (.mvAtMost 2) .recruit) "target spell" ==
   "if that spell's mana value was 2 or less, recruit"
 #guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
   "draw a card or you gain 3 life"
@@ -129,7 +129,7 @@ namespace CardDef
 #guard (Effect.drawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard 1]
 #guard (Effect.drawThenDiscard 2).spellResolution ==
-  .sequence [.draw 2, .discard 1]
+  .sequence [.draw 2, .discard (.cards 1)]
 #guard (Effect.abilityDrawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard 1]
 #guard (Effect.ownerShuffleSourceDraw 3).resolution ==
@@ -171,9 +171,9 @@ namespace CardDef
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .sequence [.draw 1, .loseLife 1, .amass 2]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
-  .sequence [.counter, .«if» .recruit (.mvAtMost 2)]
+  .sequence [.counter, .«if» (.mvAtMost 2) .recruit]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
-  .sequence [.spell .counter, .spell (.«if» .recruit (.mvAtMost 2))]
+  .sequence [.spell .counter, .spell (.«if» (.mvAtMost 2) .recruit)]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).phrase ==
   "counter target spell. If that spell's mana value was 2 or less, recruit"
 #guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter
@@ -330,7 +330,7 @@ namespace CardDef
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard !(Effect.plusOneUpToOneAndPlayerGainsLife 2).allowsZeroTargets
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).spellResolution ==
-  .sequence [.countersOnCreatureTargets, .gainLife 2 .targetPlayers]
+  .sequence [.countersOnCreatureTargets, .targetPlayersGainLife 2]
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
 #guard SpellResolution.toPhrase (.countersOnCreatureTargets .stun 2) "target creature" ==
@@ -351,38 +351,38 @@ namespace CardDef
 #guard Effect.plusOneThenEachOtherIfFromGy.spellResolution ==
   .sequence [
     .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
-    .«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard]
+    .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)]
 #guard Effect.plusOneThenEachOtherIfFromGy.resolution ==
   .sequence [
     .spell (.countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl),
-    .spell (.«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard)]
+    .spell (.«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther))]
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
 #guard SpellResolution.toPhrase
-    (.«if» (.plusOneOnEachYouControl 1 .eachOther) .castFromGraveyard) "target creature" ==
+    (.«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)) "target creature" ==
   "if this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
 #guard (Effect.drawIfFromGy 1 2).spellResolution ==
-  .ifElse (.draw 2) (.draw 1) .castFromGraveyard
+  .ifElse .castFromGraveyard (.draw 2) (.draw 1)
 #guard (Effect.drawIfFromGy 1 2).resolution ==
-  .spell (.ifElse (.draw 2) (.draw 1) .castFromGraveyard)
+  .spell (.ifElse .castFromGraveyard (.draw 2) (.draw 1))
 #guard (Effect.drawIfFromGy 1 2).phrase ==
   "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
 #guard (Effect.amassGoblinsOrFromGy 1 3).spellResolution ==
-  .ifElse (.amass 3) (.amass 1) .castFromGraveyard
+  .ifElse .castFromGraveyard (.amass 3) (.amass 1)
 #guard (Effect.amassGoblinsOrFromGy 1 3).resolution ==
-  .spell (.ifElse (.amass 3) (.amass 1) .castFromGraveyard)
+  .spell (.ifElse .castFromGraveyard (.amass 3) (.amass 1))
 #guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
   "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
 #guard SpellResolution.toPhrase
-    (.ifElse (.gainLife 3) (.draw 1) (.subtype "Elf")) "target creature" ==
+    (.ifElse (.subtype "Elf") (.gainLife 3) (.draw 1)) "target creature" ==
   "draw a card. If target creature is an Elf, you gain 3 life instead"
 #guard SpellResolution.toPhrase
-    (.ifElse .recruit (.draw 1) (.mvAtMost 2)) "target spell" ==
+    (.ifElse (.mvAtMost 2) .recruit (.draw 1)) "target spell" ==
   "draw a card. If that spell's mana value was 2 or less, recruit instead"
 #guard SpellResolution.toPhrase (.plusOneOnEachYouControl 1 .eachOther) "target creature" ==
   "put a +1/+1 counter on each other creature you control"
 #guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
-#guard SpellResolution.toPhrase (.gainLife 2 .targetPlayers) "target player" ==
+#guard SpellResolution.toPhrase (.targetPlayersGainLife 2) "target player" ==
   "Target player gains 2 life"
 #guard SpellResolution.toPhrase .returnTargetToHand "target spell" ==
   "return target spell to its owner's hand"
@@ -402,7 +402,7 @@ namespace CardDef
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
-  .sequence [.returnTargetToHand, .«if» .playersCantCastThisTurn .giftPromised]
+  .sequence [.returnTargetToHand, .«if» .giftPromised .playersCantCastThisTurn]
 #guard SpellResolution.toPhrase (.creaturesPump 1 1) "target creature" ==
   "creatures you control get +1/+1 until end of turn"
 #guard SpellResolution.toPhrase (.creaturesPump (-4) (-4) .all) "" ==
@@ -458,20 +458,20 @@ namespace CardDef
 #guard (Effect.drawAndLoseLife 2 2).spellResolution ==
   .sequence [.draw 2, .loseLife 2 .you]
 #guard (Effect.draw 2).spellResolution == .draw 2
-#guard (Effect.targetPlayerDraw 2).spellResolution == .draw 2 .targetPlayer
+#guard (Effect.targetPlayerDraw 2).spellResolution == .draw 2 .player
 #guard (Effect.targetPlayerDraw 2).resolution == .targetPlayerDraw 2
 #guard SpellResolution.toPhrase (.draw 2 .you) "target player" == "draw 2 cards"
-#guard SpellResolution.toPhrase (.draw 2 .targetPlayer) "target player" ==
+#guard SpellResolution.toPhrase (.draw 2 .player) "target player" ==
   "target player draws 2 cards"
 #guard (Effect.targetPlayerDrawLoseLife 2 2).spellResolution ==
-  .sequence [.draw 2 .targetPlayer, .loseLife 2 .targetPlayer]
+  .sequence [.draw 2 .player, .loseLife 2 .player]
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).spellResolution ==
-  .sequence [.onPermanent .destroy, .loseLife 2 .controllerOfTarget]
+  .sequence [.onPermanent .destroy, .loseLife 2 (.controller .target)]
 #guard (Effect.eachOpponentLosesLife 2).spellResolution == .loseLife 2 .eachOpponent
 #guard SpellResolution.toPhrase (.loseLife 2 .you) "target player" == "lose 2 life"
-#guard SpellResolution.toPhrase (.loseLife 2 .targetPlayer) "target player" ==
+#guard SpellResolution.toPhrase (.loseLife 2 .player) "target player" ==
   "target player loses 2 life"
-#guard SpellResolution.toPhrase (.loseLife 2 .controllerOfTarget) "target creature" ==
+#guard SpellResolution.toPhrase (.loseLife 2 (.controller .target)) "target creature" ==
   "its controller loses 2 life"
 #guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
   "each opponent loses 2 life"
@@ -510,35 +510,36 @@ namespace CardDef
 #guard SpellResolution.toPhrase
     (.dealDamageToEachCreature 2 (.nonSubtype "Elf")) "target creature" ==
   "deals 2 damage to each non-Elf creature"
-#guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
-#guard Effect.creatureYouControlDealsTwicePower.spellResolution == .fight 2
+#guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution ==
+  .fight .announced (.timesPower 1)
+#guard Effect.creatureYouControlDealsTwicePower.spellResolution == .fight .announced (.timesPower 2)
 #guard Effect.fightUpToOne.spellResolution == .mutualFight .upToOne
 #guard (Effect.createTokensX .dwarf).spellResolution ==
-  .createTokens .dwarf 0 (qty := .chosenX)
+  .createTokens .dwarf .chosenX
 #guard (Effect.createTokensPerSubtype .treasure "Villain").spellResolution ==
-  .createTokens .treasure 0 (qty := .perSubtype "Villain")
+  .createTokens .treasure (.perSubtype "Villain")
 #guard Effect.damageOppCreaturesEqualOtherSpellsMv.spellResolution ==
   .dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue
 #guard (Effect.counterUnlessPaysTeamwork 2 4).spellResolution ==
-  .ifElse (.unlessPays .counter 4) (.unlessPays .counter 2) .teamwork
+  .ifElse .teamwork (.unlessPays .counter 4) (.unlessPays .counter 2)
 #guard (Effect.dealDamageToAttackerOrBlocker 2 4).spellResolution ==
-  .ifElse (.onPermanent (.dealDamage 4)) (.onPermanent (.dealDamage 2)) .teamwork
+  .ifElse .teamwork (.onPermanent (.dealDamage 4)) (.onPermanent (.dealDamage 2))
 #guard Effect.doublePowerAndToughness.spellResolution == .onPermanent .doublePowerAndToughness
 #guard (Effect.exileCreatureToughnessAtLeast 4).spellResolution == .onPermanent .exile
-#guard Effect.searchLegendaryCreatureToHand.spellResolution == .searchLibrary
+#guard Effect.searchLegendaryCreatureToHand.spellResolution == .searchCard
 #guard (Effect.destroyLandSearchBasic).spellResolution ==
-  .sequence [.onPermanent .destroy, .searchLibrary .basic .land .ownerMayToBattlefield]
-#guard SpellResolution.toPhrase (.fight 2) "target creature" ==
+  .sequence [.onPermanent .destroy, .searchCard .basic .land .ownerMayToBattlefield]
+#guard SpellResolution.toPhrase (.fight .announced (.timesPower 2)) "target creature" ==
   "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
 #guard SpellResolution.toPhrase (.mutualFight .upToOne) "target creature" ==
   "target creature you control fights up to one other target creature"
 #guard SpellResolution.toPhrase
     (.dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue) "target creature" ==
   "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
-#guard SpellResolution.toPhrase (.createTokens .dwarf 0 (qty := .chosenX)) "" ==
+#guard SpellResolution.toPhrase (.createTokens .dwarf .chosenX) "" ==
   "create X 2/2 red Dwarf creature tokens"
 #guard SpellResolution.toPhrase
-    (.createTokens .treasure 0 (qty := .perSubtype "Villain")) "" ==
+    (.createTokens .treasure (.perSubtype "Villain")) "" ==
   "Create a Treasure token for each Villain you control"
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)

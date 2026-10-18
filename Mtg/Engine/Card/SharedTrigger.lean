@@ -474,14 +474,6 @@ inductive AmassAmount where
   | notedPower
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Who the printed `SharedTrigger.recruit` names. -/
-inductive RecruitSubject where
-  /-- “recruit”. -/
-  | recruit
-  /-- “you recruit”. -/
-  | you
-deriving Repr, Inhabited, BEq, DecidableEq
-
 /-- Who `SharedTrigger.connive` makes connive. -/
 inductive ConniveSubject where
   /-- The trigger's source. -/
@@ -500,24 +492,6 @@ inductive OpponentDiscard where
   | each
   /-- The announced opponent. -/
   | target
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
-inductive YouControlPlusOne where
-  /-- Each creature you control. -/
-  | eachCreature
-  /-- Each permanent of this subtype you control. -/
-  | subtype (subtype : String)
-  /-- Each creature you control, or two counters with the city's blessing. -/
-  | citysBlessing
-deriving Repr, Inhabited, BEq
-
-/-- When `SharedTrigger.prepareSource` makes this creature prepared. -/
-inductive PrepareWhen where
-  /-- If it isn't prepared yet. -/
-  | ifNotPrepared
-  /-- If three or more creatures died this turn. -/
-  | ifThreeCreaturesDied
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by

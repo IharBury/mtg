@@ -613,6 +613,31 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.triggerInt ctx left, g.triggerInt ctx right with
     | some a, some b => (g, a ≥ b)
     | _, _ => (g, false)
+  | .subtype subtype =>
+    let holds :=
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some o => g.hasSubtype o subtype
+        | none => false
+      | some (Target.card id) =>
+        match g.findObject? id with
+        | some o => g.hasSubtype o subtype
+        | none => false
+      | _ => false
+    (g, holds)
+  | .mvAtMost n =>
+    match targets[0]? with
+    | some (Target.card id) =>
+      match g.findObject? (g.followMoved id) with
+      | some o =>
+        let mv := o.printed.manaValue + o.chosenX.getD 0
+        (g, mv ≤ n)
+      | none => (g, false)
+    | _ => (g, false)
+  | .teamwork => (g, g.resolvingTeamworkPaid)
+  | .castFromGraveyard => (g, false)
+  | .giftPromised => (g, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -2866,6 +2891,26 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
               phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
           g.putReflexiveTrigger controller (some hostId) effect
       | none => g
+  | .announced, .timesPower k =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      let srcOk := (g.legalCreatureYouControlTargets controller).contains
+        (Target.permanent srcId)
+      let destOk := (g.legalOppCreatureTargets controller).contains
+        (Target.permanent destId)
+      if srcOk && destOk then
+        let src := g.object! srcId
+        let dest := g.object! destId
+        if k == 1 then g.dealFightDamage src dest
+        else
+          let pw := g.power src
+          let n := if pw > 0 then pw * (k : Int) else 0
+          g.dealDamageFrom src.name dest n (source := some src)
+      else
+        let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
+          if ok then g else g.illegalAbilityTarget (Target.permanent id)
+        logIllegal (logIllegal g srcOk srcId) destOk destId
+    | _, _ => g.logMsg "The target is no longer legal"
   | who, how =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -2905,6 +2950,22 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
           fighters.foldl (fun g f =>
             if f.isOnBattlefield && f.isCreature && f.id != foe.id then
               g.fightCreatures f foe
+            else g) g
+        | none =>
+          fighters.foldl (fun g f =>
+            if f.isOnBattlefield && f.isCreature then
+              g.logMsg s!"{f.name} has nothing to fight"
+            else g) g
+      | .timesPower k =>
+        match foe? with
+        | some foe =>
+          fighters.foldl (fun g f =>
+            if f.isOnBattlefield && f.isCreature && f.id != foe.id then
+              if k == 1 then g.dealFightDamage f foe
+              else
+                let pw := g.power f
+                let n := if pw > 0 then pw * (k : Int) else 0
+                g.dealDamageFrom f.name foe n (source := some f)
             else g) g
         | none =>
           fighters.foldl (fun g f =>
@@ -4567,7 +4628,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         mayOnAccept := some action
         mayOnDecline := some follow
         mayContext := some ctx }.logMsg
-      s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}")
+      s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+  | _ => g)
   | r =>
     g.applyUnifiedAbility controller { ab.effect with resolution := r }
       targets sourceId lastKnownPower

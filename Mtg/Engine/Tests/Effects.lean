@@ -1380,7 +1380,7 @@ def ifDwarfPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 1 1)) (.subtype "Dwarf")))
+      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
@@ -1390,7 +1390,7 @@ def ifScoutPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 3 0)) (.subtype "Scout")))
+      (.«if» (.subtype "Scout") (.onPermanent (.pump 3 0))))
     #[Target.permanent id]
 
 #guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
@@ -1400,7 +1400,7 @@ def ifDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.onPermanent (.pump 1 1)) (.subtype "Dwarf")))
+      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
@@ -1408,7 +1408,7 @@ def ifDwarfSkipsBear : Game :=
 /-- `may` asks before resolving its resolution. Declining skips it. -/
 def mayGainLifeAsked : Game :=
   afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.may (.gainLife 3))) #[]
+    (Effect.mkSpell (.of .none) (.may (.gainLife 3) (.sequence []))) #[]
 
 #guard
   match mayGainLifeAsked.pending with
@@ -1422,7 +1422,7 @@ def mayGainLifeAsked : Game :=
   | _ => false
 #guard
   let g := afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.may (.loseLife 1))) #[]
+    (Effect.mkSpell (.of .none) (.may (.loseLife 1) (.sequence []))) #[]
   match Agent.choose g ⟨0⟩ with
   | some .decline => true
   | _ => false
@@ -1454,7 +1454,7 @@ def mayIfDwarfAsked : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.may (.gainLife 2)) (.subtype "Dwarf")))
+      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1471,7 +1471,7 @@ def mayIfDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.may (.gainLife 2)) (.subtype "Dwarf")))
+      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1485,7 +1485,7 @@ def ifElseDwarfGainsLife : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.gainLife 3) (.draw 1) (.subtype "Dwarf")))
+      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1497,7 +1497,7 @@ def ifElseBearDraws : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.gainLife 3) (.draw 1) (.subtype "Dwarf")))
+      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1511,7 +1511,7 @@ def ifElseMvAtMostDraws : Game :=
   let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .spell)
-      (.ifElse (.draw 1) (.gainLife 3) (.mvAtMost 1)))
+      (.ifElse (.mvAtMost 1) (.draw 1) (.gainLife 3)))
     #[Target.card spellId]
 
 #guard
@@ -1524,7 +1524,7 @@ def ifElseMvAboveGainsLife : Game :=
   let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .spell)
-      (.ifElse (.draw 1) (.gainLife 3) (.mvAtMost 0)))
+      (.ifElse (.mvAtMost 0) (.draw 1) (.gainLife 3)))
     #[Target.card spellId]
 
 #guard
@@ -1753,7 +1753,7 @@ def opponentsLoseTwo : Game :=
 
 def targetPlayerLosesThree : Game :=
   afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .player) (.loseLife 3 .targetPlayer))
+    (Effect.mkSpell (.of .player) (.loseLife 3 .player))
     #[Target.player ⟨1⟩]
 
 #guard

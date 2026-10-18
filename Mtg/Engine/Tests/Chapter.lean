@@ -100,7 +100,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
   .createTokens .villain21menace (.fixed 2) false
-#guard (timing (.spell { resolution := .createTokens .treasure 0 (qty := .perSubtype "Villain") })).resolution ==
+#guard (timing (.spell { resolution := .createTokens .treasure (.perSubtype "Villain") })).resolution ==
   .createTokens .treasure (.perSubtype "Villain") false
 #guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
   .fight .announced .upToOneOther

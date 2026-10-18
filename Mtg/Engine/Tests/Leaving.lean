@@ -191,7 +191,7 @@ def unlessPaysLeftUnpaid : Game :=
 /-- Leaving while `may` is pending skips the optional effect. -/
 def mayLeaveAsked : Game :=
   threeStarted.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.may (.gainLife 3))) #[]
+    (Effect.mkSpell (.of .none) (.may (.gainLife 3) (.sequence []))) #[]
 
 #guard
   match mayLeaveAsked.pending with

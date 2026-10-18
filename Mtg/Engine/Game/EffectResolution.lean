@@ -813,7 +813,7 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
 /-- Apply `whenHolds` when `cond` is true and `whenNot` otherwise.
 An illegal target applies neither (CR 608.2b). -/
 private def branchOnSpellIf (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (cond : SpellIf) (castFromGraveyard : Bool)
+    (targets : Array Target) (cond : TriggeredAbility.ConditionSelector) (castFromGraveyard : Bool)
     (whenHolds whenNot : Game → Game) (giftPromised : Bool := false) : Game :=
   match cond with
   | .subtype subtype =>
@@ -836,6 +836,7 @@ private def branchOnSpellIf (g : Game) (controller : PlayerId) (effect : Effect)
     if g.resolvingTeamworkPaid then whenHolds g else whenNot g
   | .giftPromised =>
     if giftPromised then whenHolds g else whenNot g
+  | _ => whenNot g
 
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
@@ -875,7 +876,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.applyOnPermanent controller effect.targetKind targets a
   | _ =>
   match effect.spellResolution with
-  | .fight k =>
+  | .fight .announced (.timesPower k) =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
       let srcOk := (g.legalCreatureYouControlTargets controller).contains
@@ -949,14 +950,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.exileCreaturesFromGraveyard controller pid ty)
-  | .draw n who =>
-    match who with
-    | .you => g.draw controller n
-    | .targetPlayer =>
-      g.withLegalKindPlayer controller effect.targetKind targets
-        (fun g pid => g.draw pid n)
-  | .scry n =>
-    g.beginScry controller n
+  | .draw (.fixed n) .you => g.draw controller n.toNat
+  | .draw (.fixed n) .player =>
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.draw pid n.toNat)
+  | .scry (.fixed n) =>
+    g.beginScry controller n.toNat
   | .tapTargets =>
     g.foldPermanentTargets targets (fun g o =>
       if o.isOnBattlefield && o.isCreature then g.applyPermanentAction o .tap else g)
@@ -983,17 +982,17 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginSpellOr controller effect targets rs
   | .attachEquipment =>
     g.beginMay controller effect targets .attachEquipment
-  | .may r =>
+  | .may r _ _ =>
     g.beginMay controller effect targets r
   | .recruit =>
     g.beginRecruit controller
-  | .«if» r cond =>
+  | .«if» cond r =>
     let run (g : Game) : Game :=
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
         (giftPromised := giftPromised) (chosenX := chosenX)
     g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised
-  | .ifElse whenTrue whenFalse cond =>
+  | .ifElse cond whenTrue whenFalse =>
     let run (r : SpellResolution) (g : Game) : Game :=
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
@@ -1058,25 +1057,23 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g := g.illegalAbilityTarget t
           | Target.player _ => pure ()
         return g
-  | .gainLife n who =>
-    match who with
-    | .you => g.gainLife controller n
-    | .targetPlayers =>
-      Id.run do
-        let playerLegal := g.legalTargetsForAtomicKind controller .player none
-        let mut g := g
-        for t in targets do
-          match t with
-          | Target.player pid =>
-            if playerLegal.contains t then
-              g := g.gainLife pid n
-            else
-              g := g.illegalAbilityTarget t
-          | _ => pure ()
-        return g
-  | .amass n subtype =>
-    g.amass controller subtype n
-  | .searchLibrary s ty how =>
+  | .gainLife (.fixed n) => g.gainLife controller n.toNat
+  | .targetPlayersGainLife n =>
+    Id.run do
+      let playerLegal := g.legalTargetsForAtomicKind controller .player none
+      let mut g := g
+      for t in targets do
+        match t with
+        | Target.player pid =>
+          if playerLegal.contains t then
+            g := g.gainLife pid n
+          else
+            g := g.illegalAbilityTarget t
+        | _ => pure ()
+      return g
+  | .amass (.fixed n) subtype =>
+    g.amass controller subtype n.toNat
+  | .searchCard s ty how =>
     let pred := fun c => c.hasType ty && c.hasSupertype s
     let card := s!"{s.oracleWord} {ty.oracleWord} card"
     match how with
@@ -1324,17 +1321,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens kind n who qty =>
+  | .createTokens kind amount _ _ who _ =>
     let pid := match who with
       | .you => controller
-      | .targetPlayer =>
+      | .player =>
         match targets[0]? with
         | some (Target.player p) => p
         | _ => controller
-    let count := match qty with
-      | .fixed => n
+      | _ => controller
+    let count := match amount with
+      | .fixed n => n.toNat
       | .chosenX => chosenX
       | .perSubtype subtype => g.countSubtype pid subtype
+      | _ => 0
     g.createKindTokens pid kind count
   | .returnOneOrTwoNonlands =>
     targets.foldl (fun g t =>
@@ -1388,8 +1387,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .discardTwoUnlessArtifact n ty =>
     let g := { g with thirstDiscardsLeft := n, thirstDiscardType := ty }
     g.beginDiscardCards #[controller]
-  | .loseLife n .eachOpponent =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
+  | .loseLife (.fixed n) .eachOpponent =>
+    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
   | .plusOneOnEachYouControl n which =>
     let exclude :=
       match which with

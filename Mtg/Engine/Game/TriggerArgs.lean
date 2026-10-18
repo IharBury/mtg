@@ -440,6 +440,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
   | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn
   | .libraryCards => some (g.player controller).library.size
+  | .chosenX => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
