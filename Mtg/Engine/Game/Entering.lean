@@ -63,7 +63,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
   let copiesSelf :=
     match spell.printed.spellEffect.map (·.resolution) with
-    | some (.spell (.copyThisSpellXTimesThenDamage _)) => !spell.isCopy
+    | some (.copyThisSpellXTimesThenDamage _) => !spell.isCopy
     | _ => false
   let g :=
     if copiesSelf then

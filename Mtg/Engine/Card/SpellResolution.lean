@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Counter
+import Mtg.Engine.Card.FraResolution
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.Token
@@ -8,8 +9,9 @@ import Mtg.Engine.TypeLine
 /-!
 # Resolutions (CR 608 / 603)
 
-One vocabulary for spell and trigger resolutions. `SpellResolution` is
-`TriggeredAbility.TriggerResolution`.
+One vocabulary for spells, triggered abilities, and activated abilities.
+`Resolution` is that inductive. `SpellResolution` and
+`TriggeredAbility.TriggerResolution` are abbreviations for it.
 -/
 
 namespace Mtg.Engine
@@ -1775,6 +1777,10 @@ inductive ActionSelector where
   | untapWhileYouControl (who : ObjectSelector := .target)
 deriving Repr, Inhabited, BEq
 
+end TriggeredAbility
+
+open TriggeredAbility
+
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, drawing, discarding, +1/+1 on the source, divided damage,
@@ -1827,8 +1833,10 @@ the source remains use those same constructors. `ofSource`, `ofEnchanted`,
 and `ofTargetWhileSource` map a `PermanentAction` onto them. +P/+T on the
 source is `.pump (.fixed p) (.fixed t) .source`. Tapping the creature this Aura enchants is
 `.tap .enchantedWhileSource`. Granting keywords to the target while the
-source remains is `.grant (.keywords k) (.target .whileSource)`. -/
-inductive TriggerResolution where
+source remains is `.grant (.keywords k) (.target .whileSource)`.
+Spell steps, trigger steps, and activated-ability steps are constructors of
+this inductive. `FraResolution` stays nested under `fra`. -/
+inductive Resolution where
   /-- Until end of turn, permanents of `who` get +`power`/+`toughness`.
   Each statistic reads its own bonus.
   The source by the greatest power among creatures you control is
@@ -1922,7 +1930,7 @@ inductive TriggerResolution where
   A creature card onto the battlefield is `.searchLibrary (.put .creatureCard)`.
   Any other follow-up is resolved on its own, and the library is not searched.
   `thenDo` on its own, outside `searchLibrary`, does what that resolution does. -/
-  | searchLibrary (thenDo : TriggerResolution)
+  | searchLibrary (thenDo : Resolution)
   /-- Discard cards, as `what` says.
   One card from the controller is `.discard` (`.cards`).
   Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
@@ -2065,7 +2073,7 @@ inductive TriggerResolution where
   That arms the attack trigger. It does not put an ability on the stack
   now. Any other follow-up is put on the stack and resolves as that
   follow-up. It keeps the targets this ability already has. -/
-  | queueReflexive (followup : TriggerResolution)
+  | queueReflexive (followup : Resolution)
   /-- Sacrifice a permanent. `what` says who sacrifices and which permanent.
   `note` says what a later step can read.
   The announced opponent sacrifices a creature of their choice with
@@ -2239,7 +2247,7 @@ inductive TriggerResolution where
   You may put an artifact from your hand onto the battlefield, then attach
   it to the source if it is Equipment, is
   `.sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []), .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]`. -/
-  | sequence (rs : List TriggerResolution)
+  | sequence (rs : List Resolution)
   /-- The controller may resolve `action`. `when` says which outcome resolves
   `follow`. `.ifYouDont` is the default: declining resolves `follow`, and
   performing `action` skips it. `.ifYouDo` resolves `follow` only when
@@ -2310,7 +2318,7 @@ inductive TriggerResolution where
   You may create a 0/4 Wall creature token with defender with
   `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`.
   Declining creates nothing. -/
-  | may (action follow : TriggerResolution) (when : TriggerMayWhen := .ifYouDont)
+  | may (action follow : Resolution) (when : TriggerMayWhen := .ifYouDont)
   /-- You gain life (CR 118.2), as `amount` says.
   You gain `n` life is `.gainLife (.fixed n)`.
   Life equal to the targeted card's power is `.gainLife .equalToTargetPower`.
@@ -2605,7 +2613,7 @@ inductive TriggerResolution where
   No Equipment is reported.
   Discarding `n` cards when mana was spent to cast the triggering spell is
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
-  | «if» (cond : ConditionSelector) (thenDo : TriggerResolution)
+  | «if» (cond : ConditionSelector) (thenDo : Resolution)
   /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
   A tapped Villain when your graveyard has two creature cards, and milling
   two otherwise, is
@@ -2619,7 +2627,7 @@ inductive TriggerResolution where
   you control, and goes to your hand otherwise, with
   `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
   Outside `revealLibrary .untilCreature`, that condition does not hold. -/
-  | ifElse (cond : ConditionSelector) (whenTrue whenFalse : TriggerResolution)
+  | ifElse (cond : ConditionSelector) (whenTrue whenFalse : Resolution)
   /-- The controller chooses one of these resolutions.
   Tap an opposing creature or untap one you control is
   `.or [.tap .target, .untap]`.
@@ -2632,7 +2640,7 @@ inductive TriggerResolution where
   +1/+1 counters on the creature targets, or returning an artifact or
   enchantment card from the graveyard, is
   `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]`. -/
-  | or (rs : List TriggerResolution)
+  | or (rs : List Resolution)
   /-- Resolve these modes, as `how` says.
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
   Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
@@ -2642,7 +2650,7 @@ inductive TriggerResolution where
   `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
   One unused Vision mode this turn is
   `.chooseModes TriggerResolution.visionModes .vision`. -/
-  | chooseModes (modes : List TriggerResolution) (how : TriggerModeHow)
+  | chooseModes (modes : List Resolution) (how : TriggerModeHow)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
   what happens to an instant or sorcery cast this way.
@@ -2727,7 +2735,7 @@ inductive TriggerResolution where
   Whose library is a `PlayerSelector`.
   Any other combination reveals the cards `how` and `who` name, then
   resolves `thenDo`. A player the selector does not name reveals nothing. -/
-  | revealLibrary (how : TriggerLibraryHow) (thenDo : TriggerResolution)
+  | revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
       (who : PlayerSelector := .you)
   /-- Mill cards (CR 701.13), as `amount` and `who` say. `note` says what a
   later step can read.
@@ -2795,7 +2803,7 @@ inductive TriggerResolution where
   `.revealFromHand .onePlusCreatureCards (.discard (.cards 1 (.target .opponent)))`.
   A smaller hand is revealed in full.
   Any other combination reveals that hand, then resolves `thenDo`. -/
-  | revealFromHand (count : TriggerRevealCount) (thenDo : TriggerResolution)
+  | revealFromHand (count : TriggerRevealCount) (thenDo : Resolution)
   /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
   Surveil 2 is `.surveil (.fixed 2)`. Any other count surveils that many
   cards. Surveil 0 looks at nothing. A count that cannot be read surveils
@@ -2899,7 +2907,7 @@ inductive TriggerResolution where
   | counter
   /-- Resolve `r` unless its controller pays `{n}`.
   Countering unless they pay is `.unlessPays .counter n`. -/
-  | unlessPays (r : TriggerResolution) (n : Nat)
+  | unlessPays (r : Resolution) (n : Nat)
   /-- Counter; exile a permanent spell and grant a free cast. -/
   | counterExilePermanentMayCast
   /-- Attach an Equipment you control to the targeted creature. -/
@@ -3046,7 +3054,183 @@ inductive TriggerResolution where
   | unrecognized
   /-- Each announced player target gains `n` life. -/
   | targetPlayersGainLife (n : Nat)
+  /-- Affect the source if it is still on the battlefield. -/
+  | onSource (action : PermanentAction)
+  /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
+  | searchBasicLand
+  /-- Search for a card with this land type, put it into your hand, then shuffle. -/
+  | searchLandTypeToHand (landType : String)
+  /-- Exile the top card and grant permission to play it. -/
+  | exileTop
+  /-- Become this subtype with lands-you-control P/T. -/
+  | becomeSubtypeWithLandsPT (subtype : String)
+  /-- Return the source from the graveyard to the battlefield tapped. -/
+  | returnFromGraveyardTapped
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnFromGraveyardToHand
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlPump (power toughness : Int)
+  /-- Add one mana of any color. -/
+  | addAnyColor
+  /-- Return from the graveyard attached to the targeted creature. -/
+  | returnFromGyAttach
+  /-- Search for a basic land and put it into hand. -/
+  | searchBasicLandToHand
+  /-- Create X tokens of this kind. -/
+  | createTokensX (kind : TokenKind)
+  /-- Search two basics; one tapped, one to hand. -/
+  | searchTwoBasicsSplit
+  /-- These subtypes you control gain menace. -/
+  | subtypesGainMenace (subtypes : Array String)
+  /-- Exile then return at the next end step. -/
+  | exileThenReturnNextEnd
+  /-- Search a basic tapped, then behold this subtype to untap it. -/
+  | searchBasicBeholdSubtypeUntap (subtype : String)
+  /-- Two players each draw. -/
+  | twoPlayersDraw
+  /-- Discard a same-name legendary; draw two. -/
+  | discardLegendarySameNameDraw
+  /-- Deal `n` to any target. -/
+  | dealDamageToAny (n : Nat)
+  /-- Draw cards equal to the ability's recorded power (a sacrificed creature). -/
+  | drawEqualToLastKnownPower
+  /-- Draw a card for each burden counter on the source. -/
+  | drawEqualToBurdenCounters
+  /-- Arwen share. -/
+  | arwenShare
+  /-- Grant a combat-damage Treasure trigger. -/
+  | grantCombatDamageCreateTreasure
+  /-- Put a shadow counter. -/
+  | putShadowCounter
+  /-- Damage each opponent. -/
+  | damageEachOpponent (n : Nat)
+  /-- Choose two, destroy the rest. -/
+  | chooseTwoDestroyRest
+  /-- Black Gate unblockable. -/
+  | blackGateUnblockable
+  /-- +1/+1 on each other permanent of this subtype. -/
+  | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
+  /-- Take an extra turn after this one. Power-up abilities can't be activated during it. -/
+  | extraTurn
+  /-- X +1/+1 counters on the source. -/
+  | plusOneX
+  /-- Each opponent discards; +1/+1 on the source. -/
+  | eachOppDiscardThenPlusOne
+  /-- Look at the top `n`; you may put a card of one of these types onto the battlefield. -/
+  | lookAtTopPutTypes (n : Nat) (types : Array String)
+  /-- Transform the source. -/
+  | transform
+  /-- Draw X cards. -/
+  | drawX
+  /-- Look at the top `n`; reveal an artifact to hand. -/
+  | lookAtTopRevealArtifact (n : Nat)
+  /-- Add one mana of any color, spendable only on this subtype's spells or sources. -/
+  | addAnyColorSpendOnlySubtype (subtype : String)
+  /-- Add one mana of any color, spendable only to cast an artifact spell. -/
+  | addAnyColorSpendOnlyArtifactSpell
+  /-- Add two mana of any one color, spendable only on creature-source abilities. -/
+  | addTwoAnyColorCreatureSources
+  /-- Add {U} that can't be spent to cast a nonartifact spell. -/
+  | addBlueCantNonartifact
+  /-- Add X mana of any one color, where X is this creature's power. -/
+  | addAnyColorEqualToSourcePower
+  /-- Add four mana in any combination of colors. -/
+  | addFourAnyCombination
+  /-- Add two mana of any one color, spendable only on Equipment spells or equip. -/
+  | addTwoAnyColorEquipment
+  /-- Draw a card for each card you've discarded this turn. -/
+  | drawPerDiscardedThisTurn
+  /-- Create that many tokens of this kind (X = removed +1/+1 counters). -/
+  | createTokensEqualRemovedPlusOnes (kind : TokenKind)
+  /-- Exile the top X cards; you may play them this turn. -/
+  | exileTopXPlayThisTurn
+  /-- Target player draws `n` cards. -/
+  | targetPlayerDraw (n : Nat)
+  /-- Copy target activated or triggered ability you control from this source type. -/
+  | copyControlledAbility (fromCreature : Bool)
+  /-- Create tokens equal to the number of permanents you control of this subtype. -/
+  | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
+  /-- For each kind of counter on target permanent or player, give another of that kind. -/
+  | proliferateEachKind
+  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
+  | equipmentBecomesConstructHero
+  /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
+  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
+  /-- Mill `n`. You may put a card of this subtype or an enchantment into your hand. -/
+  | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
+  /-- Create The Tiger God token. -/
+  | createTigerGod
+  /-- Choose odd or even. Destroy each other creature with that mana value. -/
+  | chooseOddOrEvenDestroy
+  /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
+  | returnFromGyFinalityAttach
+  /-- Reveal the top card. If it's an artifact, draw a card. -/
+  | revealTopDrawIfArtifact
+  /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
+  | copyArtifactYouControlNotLegendary
+  /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
+  | becomeTypes (types : Array String) (power toughness : Int) (k : Keywords)
+  /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
+  | nextInstantSorceryCopyIfMvAtMostSourcePower
+  /-- Harness this Infinity Stone. -/
+  | harnessInfinityStone
+  /-- Target permanent you control of this subtype connives. -/
+  | targetSubtypeConnives (subtype : String)
+  /-- Mill `n` cards (CR 701.13). -/
+  | millSelf (n : Nat)
+  /-- You may discard a card. If you do, draw `n` cards. -/
+  | mayDiscardDraw (n : Nat)
+  /-- Create X tokens, where X is the life you gained this turn. -/
+  | createTokensLifeGained (kind : TokenKind)
+  /-- The target opponent sacrifices a creature or planeswalker with the
+  greatest mana value among those they control. -/
+  | oppSacrificesGreatestMv
+  /-- Creatures without flying can't block this turn. -/
+  | creaturesWithoutFlyingCantBlock
+  /-- The targeted player loses `n` life. -/
+  | targetPlayerLoseLife (n : Nat)
+  /-- The controller of the targeted permanent loses `n` life. -/
+  | controllerOfTargetLosesLife (n : Nat)
+  /-- Return the targeted spell to its owner's hand. -/
+  | returnTargetSpell
+  /-- Each creature you control becomes prepared. -/
+  | eachCreatureYouControlBecomesPrepared
+  /-- Deal `n` damage to the target. If excess damage was dealt, empower Jace
+  that much. -/
+  | damageThenEmpowerExcess (n : Nat)
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers you control
+  may be activated any time you could cast an instant. -/
+  | jaceLoyaltyAtInstantSpeed
+  /-- The source becomes a copy of the target creature until end of turn, and
+  the legend rule doesn't apply to permanents you control this turn. -/
+  | becomeCopyLegendRuleOff
+  /-- For each creature the target player controls, create a token copy with
+  haste that is sacrificed at end step unless you control a planeswalker. -/
+  | copyEachCreatureOfTargetPlayer
+  /-- Proliferate X times, where X is the number of planeswalker types among
+  planeswalkers you control (Tam, the Possibility). -/
+  | proliferatePlaneswalkerTypesTimes
+  /-- When you next cast an instant or sorcery spell this turn, copy it. -/
+  | copyNextInstantSorceryThisTurn
+  /-- Return this card from your graveyard to the battlefield with a
+  finality counter on it. -/
+  | returnFromGyWithFinality
+  /-- The first target deals damage equal to its power (or loyalty) to the
+  second target, checked as the spell resolves (Compel Brutality). -/
+  | firstDealsStatDamageToSecond (useLoyalty : Bool)
+  /-- Exile the top card of your library. You may cast it. If you don't, this
+  deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
+  | exileTopMayCastElseDamageOpponents (n : Nat)
+  /-- You get an emblem with “Whenever you cast a spell, this emblem deals
+  `n` damage to any target.” -/
+  | emblemCastSpellDamage (n : Nat)
+  /-- Nested resolution kept off this inductive so the C runtime tag stays under the limit. -/
+  | fra (r : FraResolution)
 deriving Repr, Inhabited, BEq
+
+namespace TriggeredAbility
+
+abbrev TriggerResolution := Resolution
 
 namespace TriggerResolution
 
@@ -3279,12 +3463,12 @@ end TriggerResolution
 end TriggeredAbility
 
 /-- How a spell resolves (CR 608). The same inductive as a trigger resolution. -/
-abbrev SpellResolution := TriggeredAbility.TriggerResolution
+abbrev SpellResolution := Resolution
 
 namespace SpellResolution
 
 -- Constructors stay addressable as `SpellResolution.draw` and the rest.
-export TriggeredAbility.TriggerResolution (
+export Resolution (
   pump
   dealDamage
   scry

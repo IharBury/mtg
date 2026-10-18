@@ -574,7 +574,7 @@ def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option
     (followup : TriggeredAbility.TriggerResolution) : Game :=
   let src := g.abilitySourceFor controller sourceId
   let effect : Effect := {
-    resolution := .trigger (.draw 0)
+    resolution := .draw 0
     phrase := "when you do, that ability triggers" }
   let marker : TriggeredAbility := .triggered .enter effect {}
   let (g, obj) := g.putStackAbility src controller (triggeredAbility := some marker)

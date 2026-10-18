@@ -474,18 +474,11 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
 
 def takeResolution (r : Resolution) : ArgM Resolution := do
   match r with
-  | .draw n => return .draw (← takeNat n)
-  | .scry n => return .scry (← takeNat n)
-  | .onPermanent a => return .onPermanent (← takeAction a)
   | .onSource a => return .onSource (← takeAction a)
-  | .gainLife n => return .gainLife (← takeNat n)
-  | .amass n => return .amass (← takeNat n)
-  | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
-  | .discard n => return .discard (← takeNat n)
   | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
   | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
   | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
-  | .mill n => return .mill (← takeNat n)
+  | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
   | .subtypesGainMenace ss => return .subtypesGainMenace (← takeStrs ss)
   | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
   | .dealDamageToAny n => return .dealDamageToAny (← takeNat n)
@@ -495,7 +488,6 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
   | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeStr s)
-  | .dealDamageToEachCreature n => return .dealDamageToEachCreature (← takeNat n)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
   | .createTokensEqualSubtype k s => return .createTokensEqualSubtype k (← takeStr s)
   | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
@@ -504,10 +496,9 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .becomeTypes ts p t k =>
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
   | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)
-  | .empowerJace n => return .empowerJace (← takeNat n)
+  | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
-  | .surveil n => return .surveil (← takeNat n)
   | .millSelf n => return .millSelf (← takeNat n)
   | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
   | .targetPlayerLoseLife n => return .targetPlayerLoseLife (← takeNat n)
@@ -517,15 +508,18 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .fra (.damageAny n) => return .fra (.damageAny (← takeNat n))
   | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
-  | .spell s => return .spell (← takeSpell s)
-  | .trigger e => return .trigger (← takeTrigger e)
-  | r => return r
+  | r => takeSpell r
 end
 
 def takeEffect (e : Effect) : ArgM Effect := do
+  match e.sharedTrigger with
+  | some te =>
+    let te ← takeTrigger te
+    return { e with
+      sharedTrigger := some te
+      resolution := te.timing.resolution }
+  | none =>
   match e.resolution with
-  | .trigger te =>
-    return { e with resolution := .trigger (← takeTrigger te) }
   | .onPermanent .destroy =>
     let kind ← takeWholeKind e.targeting.kind
     return { e with targeting := { e.targeting with kind } }
@@ -1550,22 +1544,25 @@ def splicePhrase (phrase : String) (old new : Array SlotVal) : String :=
 def finishEffect (old new : Effect) : Effect :=
   let oldArgs := collectEffect old
   let newArgs := collectEffect new
-  match new.resolution with
-  | .trigger (.chapter k (.spell s)) =>
+  match new.sharedTrigger with
+  | some (.chapter k (.spell s)) =>
     let s := { s with phrase := splicePhrase s.phrase oldArgs newArgs }
     let ce : ChapterResolution := .spell s
     let rebuilt := Effect.ofChapter ce
-    { rebuilt with resolution := .trigger (.chapter k ce) }
-  | .trigger (.chapter k ce) =>
+    { rebuilt with sharedTrigger := some (.chapter k ce) }
+  | some (.chapter k ce) =>
     let rebuilt := Effect.ofChapter ce
-    { rebuilt with resolution := .trigger (.chapter k ce) }
-  | .trigger te =>
+    { rebuilt with sharedTrigger := some (.chapter k ce) }
+  | some te =>
     let t := te.timing
     { new with
       targeting := t.targeting
       allowsZeroTargets := t.allowsZeroTargets
       dividedDamage := t.dividedDamage
+      resolution := t.resolution
       phrase := "" }
+  | none =>
+  match new.resolution with
   | .onPermanent .destroy =>
     Effect.canonicalDestroy new.targeting.kind
   | .onPermanent (.plusOne n) =>
@@ -1634,7 +1631,7 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
+      (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
   | none => false
 
 /-- Refill `proto` from `query` and keep the resolution. -/
@@ -1656,13 +1653,13 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   "draw three cards. Then discard two cards unless you discard an artifact card"
 
 #guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
-  some (.spell (.amass 4 "Zombie"))
+  some ((.amass 4 "Zombie"))
 
 #guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
-  some (.spell (.riddlesInTheDark 6))
+  some ((.riddlesInTheDark 6))
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
-  some (.spell (.plusOneOnEachYouControl 3))
+  some ((.plusOneOnEachYouControl 3))
 
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
@@ -1674,8 +1671,8 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
     "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
   some (.sequence [
-    .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    .spell (.«if» .castFromGraveyard (.plusOneOnEachYouControl 3 .eachOther))])
+    (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
+    (.«if» .castFromGraveyard (.plusOneOnEachYouControl 3 .eachOther))])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
@@ -1705,31 +1702,31 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
-  some (.spell (.dealDamageToEachCreature 5 (.nonSubtype "Elf")))
+  some ((.dealDamageToEachCreature 5 (.nonSubtype "Elf")))
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
-  some (.spell (.searchCard .basic .land))
+  some ((.searchCard .basic .land))
 
 #guard refilled (Effect.creatureYouControlDealsTwicePower)
     "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
-  some (.spell (.fight .announced (.timesPower 3)))
+  some ((.fight .announced (.timesPower 3)))
 
 #guard refilled (Effect.drawThreeDiscardUnlessArtifact)
     "draw three cards. Then discard four cards unless you discard an enchantment card" ==
-  some (.sequence [.draw 3, .spell (.discardTwoUnlessArtifact 4 .enchantment)])
+  some (.sequence [.draw 3, (.discardTwoUnlessArtifact 4 .enchantment)])
 
 #guard refilled (Effect.becomeArtifactCreature44Flying)
     "until end of turn, target artifact or creature you control becomes an artifact creature with base power and toughness 2/3 and gains haste" ==
-  some (.spell (.becomeArtifactCreature44Flying 2 3 "Haste"))
+  some ((.becomeArtifactCreature44Flying 2 3 "Haste"))
 
 #guard refilled (Effect.mayDrawPerArtifactOppsDraw)
     "You may draw a card for each creature you control. If you do, each opponent draws a card" ==
-  some (.spell (.mayDrawPerArtifactOppsDraw .creature))
+  some ((.mayDrawPerArtifactOppsDraw .creature))
 
 #guard refilled (Effect.addRedPerOppArtifacts)
     "add {R} for each enchantment your opponents control" ==
-  some (.spell (.addRedPerOppArtifacts .enchantment))
+  some ((.addRedPerOppArtifacts .enchantment))
 
 #guard CardType.all.all fun t =>
   let ab := StaticAbility.typeSpellsCostLess .artifact 1
@@ -1757,7 +1754,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.spellsCostLessThisTurn (.supertype s) 3)
+      (.spellsCostLessThisTurn (.supertype s) 3)
   | none => false
 
 #guard
@@ -1803,7 +1800,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.ifElse .castFromGraveyard (.amass 4 "Zombie") (.amass 2 "Zombie"))
+      (.ifElse .castFromGraveyard (.amass 4 "Zombie") (.amass 2 "Zombie"))
   | none => false
 
 #guard

@@ -1197,7 +1197,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them."
     (.fra .drawTwoDiscardTwoStun),
   TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card, then discard a card."
-    (.sequence [.draw 1, .discard 1]),
+    (.sequence [.draw 1, .discard (.cards 1)]),
   TriggeredAbility.fra .dies "When this creature dies, if it isn't a token, create a token that's a copy of it."
     (.fra .copyTokenOfSourceIfNotToken) (cond := .sourceNotToken),
   TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, you gain 2 life." (.gainLife 2),
@@ -1306,7 +1306,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra (.fra .youCastPreparedSpell)
     "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy."
     (.fra .copyCauseSpell),
-  TriggeredAbility.fra .enter "When this artifact enters, draw a card, then discard a card." (.sequence [.draw 1, .discard 1]),
+  TriggeredAbility.fra .enter "When this artifact enters, draw a card, then discard a card." (.sequence [.draw 1, .discard (.cards 1)]),
   TriggeredAbility.fra .yourUpkeep
     "At the beginning of your upkeep, surveil 1. Then if there are seven or more cards in your graveyard, sacrifice this artifact, it deals 2 damage to each opponent, and you gain 2 life."
     (.fra .eyeOfJace),
@@ -1392,7 +1392,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra (.fra .youDiscardThis) "When you discard this card, you gain 3 life." (.gainLife 3),
   TriggeredAbility.fra .youActivateLoyaltyAbility
     "Whenever you activate a loyalty ability, you gain 1 life. You may play an additional land this turn."
-    (.sequence [.gainLife 1, .spell .extraLand]),
+    (.sequence [.gainLife 1, .extraLand]),
   TriggeredAbility.fra .enter
     "When this creature enters, another target creature you control fights up to one target creature an opponent controls."
     (.fra .firstFightsSecond)
@@ -1772,7 +1772,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       (.filtered { TargetFilter.creature with noun := "target nonlegendary creature", nonlegendary := true }))
     { mana := ManaCost.ofGeneric 6 },
   ActivatedAbility.fra "{T}: Draw a card, then discard a card."
-    (FraCandidates.ab (.sequence [.draw 1, .discard 1]) "Draw a card, then discard a card") { tap := true },
+    (FraCandidates.ab (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card") { tap := true },
   ActivatedAbility.fra "{2}{U}: Untap target creature."
     (FraCandidates.ab (.onPermanent .untap) "Untap target creature" (.filtered TargetFilter.creature))
     { mana := ⟨#[.generic 2, .colored .blue]⟩ },

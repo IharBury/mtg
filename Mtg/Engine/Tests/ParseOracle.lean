@@ -78,7 +78,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   let bogus : CardDef := {
     name := "Bogus"
     types := #[.instant]
-    spellEffect := some { resolution := .spell .unrecognized }
+    spellEffect := some { resolution := .unrecognized }
   }
   match bogus.modellingError? with
   | some e => e.contains "not fully modelled"
@@ -472,7 +472,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard Supertype.all.all fun s =>
   match parseOracleCard s!"Surge\n\{R}\nSorcery\n{s} spells you cast this turn cost \{{3}} less to cast." with
   | .ok c => c.spellEffect.map (·.resolution) ==
-      some (.spell (.spellsCostLessThisTurn (.supertype s) 3))
+      some (.spellsCostLessThisTurn (.supertype s) 3)
   | .error _ => false
 #guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.bind
     (fun c => c.activatedAbilities[0]?) ==
@@ -484,7 +484,7 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "Villain" 1)
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
     (fun c => c.spellEffect.map (·.resolution)) ==
-    some (.spell (.spellsCostLessThisTurn (.cardType .planeswalker) 2))
+    some (.spellsCostLessThisTurn (.cardType .planeswalker) 2)
 
 #guard artifactTypes.all fun s =>
   (parseTypeLine s!"Artifact — {s}").toOption == some (#[], #[.artifact], #[s])

@@ -468,7 +468,7 @@ def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
   match e.asChapter? with
   | some ch =>
     .triggered .sagaChapter
-      { e with resolution := Resolution.trigger (SharedTrigger.chapter n ch) }
+      { e with sharedTrigger := some (SharedTrigger.chapter n ch) }
   | none => .triggered .sagaChapter e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
@@ -1837,8 +1837,8 @@ def sequenceClause (e : Effect) : Option String :=
   match e.resolution with
   | .sequence [.draw 1, .fra (.loseLife 1)] =>
     some "you draw a card and lose 1 life"
-  | .sequence [.draw n, .discard 1] =>
-    some s!"draw {cardPhrase n}, then discard a card"
+  | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
+    some s!"draw {cardPhrase n.toNat}, then discard a card"
   | .sequence [.onSource (.pump p 0), .teamGain k] =>
     if k == Keyword.trample then
       some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
@@ -1863,11 +1863,11 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
       [.onPermanent .untap,
-       .spell (.«if» (.subtype subtype) (.onPermanent (.plusOne n)))] =>
+       .«if» (.subtype subtype) (.onPermanent (.plusOne n))] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
   | .sequence [.fra (.loseLife n), .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"
-  | .sequence [.fra .exileCardFromGraveyard, .spell (.loseLife (.fixed n) .eachOpponent)] =>
+  | .sequence [.fra .exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 

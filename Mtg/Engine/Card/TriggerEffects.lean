@@ -19,7 +19,8 @@ def ofTrigger (e : SharedTrigger) : Effect :=
     allowsZeroTargets := t.allowsZeroTargets
     maxTargets := t.maxTargets
     dividedDamage := t.dividedDamage
-    resolution := Resolution.ofSharedTrigger e
+    resolution := t.resolution
+    sharedTrigger := some e
     phrase := "" }
 
 /-- Leftover trigger constructors as unified `Effect` factories. -/
@@ -219,7 +220,7 @@ def seqDrawAndLoseLife : Effect :=
 
 /-- Draw `n` cards, then discard a card. -/
 def seqDrawThenDiscard (n : Nat) : Effect :=
-  { resolution := .sequence [.draw n, .discard 1] }
+  { resolution := .sequence [.draw n, .discard (.cards 1)] }
 
 /-- The source gets +P/+0 and creatures you control gain trample. -/
 def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
@@ -263,7 +264,7 @@ def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
   { targeting := .of .anotherCreatureYouControl
     resolution := .sequence
       [.onPermanent .untap,
-       .spell (.«if» (.subtype subtype) (.onPermanent (.plusOne 1)))] }
+       .«if» (.subtype subtype) (.onPermanent (.plusOne 1))] }
 
 /-- You lose 1 life and create a Treasure token. -/
 def seqLoseLifeCreateTreasure : Effect :=
@@ -274,7 +275,7 @@ def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
   { targeting := .of .oppGraveyardCard
     allowsZeroTargets := true
     resolution := .sequence
-      [.fra .exileCardFromGraveyard, .spell (.loseLife life .eachOpponent)] }
+      [.fra .exileCardFromGraveyard, .loseLife life .eachOpponent] }
 
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger
