@@ -41,13 +41,13 @@ namespace CardDef
 #guard (Effect.scry 1).resolution == Resolution.scry 1
 #guard (Effect.gainLife 3).resolution == .gainLife 3
 #guard Resolution.toPhrase (.gainLife 3) "target creature" == "You gain 3 life"
-#guard Resolution.toPhrase (.spell (.draw 2)) "target player" == "draw 2 cards"
-#guard Resolution.toPhrase (.sequence [.draw 1, .discard 1]) "target creature" ==
+#guard Resolution.toPhrase (.draw 2) "target player" == "Draw 2 cards"
+#guard Resolution.toPhrase (.sequence [.draw 1, .discard (.cards 1)]) "target creature" ==
   "Draw a card. Discard a card"
 #guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
   "Create a tapped Treasure token"
 #guard (Effect.drawLoseLifeThenAmass 2).resolution ==
-  Resolution.sequence [.draw 1, .fra (.loseLife 1), .spell (.amass 2)]
+  Resolution.sequence [.draw 1, .fra (.loseLife 1), .amass 2]
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
@@ -55,7 +55,7 @@ namespace CardDef
 #guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).spellResolution ==
   .createTokens .leviathan65hexproof 1 (who := .player)
 #guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).resolution ==
-  .spell (.createTokens .leviathan65hexproof 1 (who := .player))
+  .createTokens .leviathan65hexproof 1 (who := .player)
 #guard SpellResolution.toPhrase (.createTokens .treasure 1) "target player" ==
   "create a Treasure token"
 #guard SpellResolution.toPhrase
@@ -127,11 +127,11 @@ namespace CardDef
 #guard Effect.sourceGainsIndestructibleTap.phrase ==
   "Witch-king of Angmar gains indestructible until end of turn. Tap him"
 #guard (Effect.drawThenDiscard 2).resolution ==
-  Resolution.sequence [.draw 2, .discard 1]
+  Resolution.sequence [.draw 2, .discard (.cards 1)]
 #guard (Effect.drawThenDiscard 2).spellResolution ==
   .sequence [.draw 2, .discard (.cards 1)]
 #guard (Effect.abilityDrawThenDiscard 2).resolution ==
-  Resolution.sequence [.draw 2, .discard 1]
+  Resolution.sequence [.draw 2, .discard (.cards 1)]
 #guard (Effect.ownerShuffleSourceDraw 3).resolution ==
   Resolution.sequence [.shuffleSource, .draw 3]
 #guard (Effect.ownerShuffleSourceDraw 3).phrase ==
@@ -159,7 +159,7 @@ namespace CardDef
   "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
-    [.creaturesYouControlPump 1 0, .spell (.loseLife 1 .eachOpponent)]
+    [.creaturesYouControlPump 1 0, .loseLife 1 .eachOpponent]
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).resolution ==
@@ -173,20 +173,25 @@ namespace CardDef
 #guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
   .sequence [.counter, .«if» (.mvAtMost 2) .recruit]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
-  .sequence [.spell .counter, .spell (.«if» (.mvAtMost 2) .recruit)]
+  .sequence [.counter, .«if» (.mvAtMost 2) .recruit]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).phrase ==
   "counter target spell. If that spell's mana value was 2 or less, recruit"
 #guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter
 #guard Resolution.flatten
     (.sequence [.sequence [.draw 1, .gainLife 1], .amass 2]) ==
   [.draw 1, .gainLife 1, .amass 2]
-#guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
+#guard (Effect.ofTrigger (.scry 2)).resolution == .scry (.fixed 2)
+#guard (Effect.ofTrigger (.scry 2)).sharedTrigger == some (.scry 2)
 #guard (Effect.chapterRecruit).asChapter? == some .recruit
 #guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
 #guard (Effect.enterDealDamageUpToOne 4).allowsZeroTargets
-#guard Effect.watchHulk.resolution == Resolution.trigger (.watch .hulk)
-#guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
-  Resolution.trigger (.scry 2)
+#guard Effect.watchHulk.resolution ==
+  .sequence [
+    .putCounters (.ofKind .plusOnePlusOne) .source,
+    .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
+    .«if» .enrageGrantsCombat .additionalCombatPhase]
+#guard Effect.watchHulk.sharedTrigger == some (.watch .hulk)
+#guard (TriggeredAbility.onEnterScry 2).effect.resolution == .scry (.fixed 2)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
 #guard (Effect.pump 3 3).phrase == "target creature gets +3/+3 until end of turn"
 #guard Effect.destroyCreatureWithFlying.phrase ==
@@ -344,8 +349,8 @@ namespace CardDef
     .mutualFight]
 #guard (Effect.plusOneThenFight 2).resolution ==
   .sequence [
-    .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    .spell .mutualFight]
+    .countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl,
+    .mutualFight]
 #guard (Effect.plusOneThenFight 2).phrase ==
   "put 2 +1/+1 counters on target creature you control. Then it fights target creature an opponent controls"
 #guard Effect.plusOneThenEachOtherIfFromGy.spellResolution ==
@@ -354,8 +359,8 @@ namespace CardDef
     .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)]
 #guard Effect.plusOneThenEachOtherIfFromGy.resolution ==
   .sequence [
-    .spell (.countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl),
-    .spell (.«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther))]
+    .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
+    .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)]
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
 #guard SpellResolution.toPhrase
@@ -364,13 +369,13 @@ namespace CardDef
 #guard (Effect.drawIfFromGy 1 2).spellResolution ==
   .ifElse .castFromGraveyard (.draw 2) (.draw 1)
 #guard (Effect.drawIfFromGy 1 2).resolution ==
-  .spell (.ifElse .castFromGraveyard (.draw 2) (.draw 1))
+  .ifElse .castFromGraveyard (.draw 2) (.draw 1)
 #guard (Effect.drawIfFromGy 1 2).phrase ==
   "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
 #guard (Effect.amassGoblinsOrFromGy 1 3).spellResolution ==
   .ifElse .castFromGraveyard (.amass 3) (.amass 1)
 #guard (Effect.amassGoblinsOrFromGy 1 3).resolution ==
-  .spell (.ifElse .castFromGraveyard (.amass 3) (.amass 1))
+  .ifElse .castFromGraveyard (.amass 3) (.amass 1)
 #guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
   "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
 #guard SpellResolution.toPhrase
@@ -398,7 +403,7 @@ namespace CardDef
 #guard (Effect.returnCreatureFromGyThenAmass 3).spellResolution ==
   .sequence [.returnTargetToHand .graveyard, .amass 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).resolution ==
-  Resolution.sequence [.fra .returnFromGyToHand, .spell (.amass 3)]
+  Resolution.sequence [.fra .returnFromGyToHand, .amass 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
@@ -947,7 +952,7 @@ namespace CardDef
 #guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
   .triggered .sagaChapter
     { Effect.chapterRecruit with
-      resolution := Resolution.trigger (SharedTrigger.chapter 1 .recruit) }
+      sharedTrigger := some (SharedTrigger.chapter 1 .recruit) }
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
@@ -1445,7 +1450,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
 #guard TriggeredAbility.resolution .onEnterRecruit == .recruit
 #guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.resolution ==
-  .sequence [.draw 1, .discard 1]
+  .sequence [.draw 1, .discard (.cards 1)]
 #guard TriggeredAbility.resolution .onEnterEachOpponentDiscards ==
   .discard (.cards 1 .eachOpponent)
 #guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==

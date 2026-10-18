@@ -6,8 +6,8 @@ import Mtg.Engine.Card.TriggerEvent
 # Triggered-ability core (CR 603)
 
 The unified `TriggeredAbility` carrier plus its stack/resolution metadata:
-`TriggerResolution`, `TriggerTiming`, the events each shared trigger
-watches, and the timing of each shared trigger.
+`TriggerTiming`, the events each shared trigger watches, and the timing of
+each shared trigger. `TriggerResolution` names `Resolution`.
 -/
 
 namespace Mtg.Engine

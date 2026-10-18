@@ -181,7 +181,7 @@ def draw (n : Nat) : Effect :=
 /-- Discard `n` cards. The Oracle parser joins this with `draw` on “, then”,
 so “draw N cards, then discard a card” is not its own prototype. -/
 def discardCards (n : Nat) : Effect :=
-  { resolution := .discard n
+  { resolution := .discard (.cards n)
     phrase := s!"discard {cardPhrase n}" }
 
 def drawThenDiscard (n : Nat) : Effect :=
@@ -709,7 +709,7 @@ def destroyTargetColorlessNonland : Effect :=
   destroyTarget .colorlessNonland
 
 def attachToTargetCreatureYouControl : Effect :=
-  mkAbility (.of .creatureYouControl) (.attach)
+  mkAbility (.of .creatureYouControl) (.attach .source .target)
 
 def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
   mkAbility ({}) (.becomeSubtypeWithLandsPT subtype)
@@ -736,7 +736,7 @@ def destroyTargetArtifactOrEnchantment : Effect :=
   destroyTarget .artifactOrEnchantment
 
 def millPlayer (n : Nat) : Effect :=
-  mkAbility (.of .player) (.mill n)
+  mkAbility (.of .player) (.mill n .player)
 
 def addAnyColor : Effect :=
   mkAbility ({}) (.addAnyColor)
@@ -776,7 +776,7 @@ def searchTwoBasicsSplit : Effect :=
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
   { resolution := .sequence
       [.creaturesYouControlPump power toughness,
-       .spell (.loseLife life .eachOpponent)]
+       .loseLife life .eachOpponent]
     phrase :=
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
 
@@ -804,7 +804,7 @@ def dealDamageToAny (n : Nat) : Effect :=
 
 def drawEqualSacrificedPowerThenDiscard : Effect :=
   mkAbility ({})
-    (.sequence [.drawEqualToLastKnownPower, .discard 1])
+    (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)])
     (phraseOverride := some
       "Draw cards equal to the sacrificed creature's power, then discard a card")
 
@@ -1069,7 +1069,7 @@ def abilityDraw (n : Nat) : Effect :=
   mkAbility ({}) (.draw n)
 
 def abilityDrawThenDiscard (n : Nat) : Effect :=
-  { resolution := .sequence [.draw n, .discard 1]
+  { resolution := .sequence [.draw n, .discard (.cards 1)]
     phrase := s!"Draw {cardPhrase n}, then discard a card" }
 
 def abilityScry (n : Nat) : Effect :=
@@ -1577,7 +1577,7 @@ def untapTargetCreature : Effect :=
   fraSpell (.filtered TargetFilter.creature) (.onPermanent .untap) "Untap target creature"
 
 def drawThenDiscardOne : Effect :=
-  fraUntargeted (.sequence [.draw 1, .discard 1]) "Draw a card, then discard a card"
+  fraUntargeted (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card"
 
 def destroyNoncreatureNonland : Effect :=
   fraSpellOn { noun := "target noncreature, nonland permanent", noncreature := true, nonland := true }

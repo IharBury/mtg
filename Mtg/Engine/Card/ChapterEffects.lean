@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Effect
+import Mtg.Engine.Card.Trigger
 
 /-!
 # Saga-chapter effect constructors
@@ -17,7 +18,8 @@ def mkChapter (payload : ChapterResolution) (targeting : EffectTargeting := {})
     (allowsZeroTargets := false) (phrase : String) : Effect :=
   { targeting
     allowsZeroTargets
-    resolution := Resolution.trigger (SharedTrigger.chapter 0 payload)
+    resolution := (TriggeredAbility.chapterTiming payload).resolution
+    sharedTrigger := some (.chapter 0 payload)
     phrase }
 
 /-- Convert a printed Saga chapter to the unified `Effect`.

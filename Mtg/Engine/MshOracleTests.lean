@@ -4266,7 +4266,7 @@ def returnOneOrTwoPartialOk : Bool :=
 
 /-- A resolution that is not a spell shape does not play an additional land. -/
 def unrecognizedIsNotExtraLandOk : Bool :=
-  let e : Effect := { resolution := .mill 3 }
+  let e : Effect := { resolution := .unrecognized }
   let before := (afterDraw.player ⟨0⟩).additionalLandsThisTurn
   let g := afterDraw.applyEffect ⟨0⟩ e #[]
   e.spellResolution == .unrecognized &&

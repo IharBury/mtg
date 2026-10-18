@@ -254,7 +254,7 @@ def crewAbility (n : Nat) : ActivatedAbility :=
 /-- An equip ability (CR 702.6): attach to target creature you control,
 only as a sorcery. -/
 def isEquip (ab : ActivatedAbility) : Bool :=
-  ab.effect.resolution == .attach && ab.onlyAsSorcery && ab.otherModes.isEmpty
+  ab.effect.resolution == .attach .source .target && ab.onlyAsSorcery && ab.otherModes.isEmpty
 
 /-- Baron Helmut Zemo's boast ability (activate only if it attacked this turn
 and only once each turn). -/

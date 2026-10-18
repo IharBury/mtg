@@ -102,7 +102,11 @@ def onWatch (e : Effect) : TriggeredAbility :=
   TriggeredAbility.watchSentence .hulk
 #guard toString (onWatch Effect.watchHawkeyeModes) ==
   TriggeredAbility.watchSentence .hawkeyeModes
-#guard Effect.watchHulk.resolution == Resolution.trigger (.watch .hulk)
+#guard Effect.watchHulk.resolution ==
+  .sequence [
+    .putCounters (.ofKind .plusOnePlusOne) .source,
+    .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
+    .«if» .enrageGrantsCombat .additionalCombatPhase]
 
 /- Justice puts a +1/+1 counter on the source. A draw trigger draws one card.
 A declined token-enter draw leaves the hand unchanged. A creature attacking

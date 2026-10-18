@@ -1463,7 +1463,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     | .attachReflexive, some id =>
       g.putReflexiveTrigger controller (some id) {
         targeting := .of .creatureYouControl
-        resolution := .attach
+        resolution := .attach .source .target
         phrase := "Attach it to target creature you control" }
     | _, some _ =>
       g.logMsg "An Axe token is created"
@@ -1575,7 +1575,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
       | .attachReflexive, some id =>
         g.putReflexiveTrigger controller (some id) {
           targeting := .of .creatureYouControl
-          resolution := .attach
+          resolution := .attach .source .target
           phrase := "Attach it to target creature you control" }
       | _, _ => g
 
@@ -3783,47 +3783,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (sequencedCardPower : Option Nat := none) : Game :=
   if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
-  else
-  match ab.effect.resolution with
-  | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.onPermanent .tap, .scry scryN, .draw drawN] =>
-      g.resolveTapScryDraw controller ab.effect targets scryN drawN sourceId
-        (fizzle := fun g => g.logIllegalSequenceTargets targets)
-    | steps =>
-      if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
-        g.logIllegalSequenceTargets targets
-      else
-        match steps with
-        | [.shuffleSource, .draw n] =>
-          g.shuffleSourceIntoLibrary sourceId (.draw controller n)
-        | steps =>
-          steps.foldl (fun g r =>
-            let step : TriggeredAbility :=
-              match ab with
-              | .triggered w _ opts =>
-                .triggered w { ab.effect with resolution := r } opts
-            g.applyTriggeredAbility controller step sourceId targets dividedDamage
-              lastKnownPower lastKnownToughness sourceName) g
-  | .shuffleSource =>
-    g.shuffleSourceIntoLibrary sourceId
-  | .draw n => g.draw controller n
-  | .scry n => g.beginScry controller n
-  | .onPermanent a =>
-    g.applyOnPermanent controller ab.targetKind targets a sourceId
-      (some "The target is no longer legal")
-  | .onSource a => g.applyOnTriggerSource sourceId a
-  | .gainLife n => g.gainLife controller n
-  | .recruit => g.beginRecruit controller
-  | .amass n => g.amassGoblins controller n
-  | .createTokens kind n tapped =>
-    g.createKindTokens controller kind n (tapped := tapped)
-  | .addMana types =>
-    g.addManaLogged controller types
-  | .discard n => g.beginDiscardCards #[controller] n
-  | .spell r =>
-    g.applyUnified controller { ab.effect with resolution := .spell r } targets
-  | .trigger _ => (
+  else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then
   match resolutionOverride.getD ab.resolution with
   | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
@@ -4394,13 +4354,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       if times > 1 then
         g.offerPayForReflexive controller sourceId symbols kind times
       else
-        let follow := TriggeredAbility.TriggerResolution.queueReflexive followup
+        let follow := Resolution.queueReflexive followup
         let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
         g.applyTriggeredAbility controller ab sourceId targets dividedDamage
           lastKnownPower lastKnownToughness sourceName
           (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
     | _ =>
-      let follow := TriggeredAbility.TriggerResolution.queueReflexive followup
+      let follow := Resolution.queueReflexive followup
       let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
@@ -4629,10 +4589,52 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         mayOnDecline := some follow
         mayContext := some ctx }.logMsg
       s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
-  | _ => g)
+  | _ => g
+  else
+  match ab.effect.resolution with
+  | .sequence rs =>
+    match rs.flatMap Resolution.flatten with
+    | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+      g.resolveTapScryDraw controller ab.effect targets scryN.toNat drawN.toNat sourceId
+        (fizzle := fun g => g.logIllegalSequenceTargets targets)
+    | steps =>
+      if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
+        g.logIllegalSequenceTargets targets
+      else
+        match steps with
+        | [.shuffleSource, .draw (.fixed n)] =>
+          g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+        | steps =>
+          steps.foldl (fun g r =>
+            let step : TriggeredAbility :=
+              match ab with
+              | .triggered w _ opts =>
+                .triggered w { ab.effect with resolution := r } opts
+            g.applyTriggeredAbility controller step sourceId targets dividedDamage
+              lastKnownPower lastKnownToughness sourceName) g
+  | .shuffleSource =>
+    g.shuffleSourceIntoLibrary sourceId
+  | .draw (.fixed n) .you => g.draw controller n.toNat
+  | .scry (.fixed n) => g.beginScry controller n.toNat
+  | .onPermanent a =>
+    g.applyOnPermanent controller ab.targetKind targets a sourceId
+      (some "The target is no longer legal")
+  | .onSource a => g.applyOnTriggerSource sourceId a
+  | .gainLife (.fixed n) => g.gainLife controller n.toNat
+  | .recruit _ => g.beginRecruit controller
+  | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
+  | .createTokens kind (.fixed n) tapped .kind .you .none =>
+    g.createKindTokens controller kind n.toNat (tapped := tapped)
+  | .addMana types (.fixed 1) =>
+    g.addManaLogged controller types
+  | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
-    g.applyUnifiedAbility controller { ab.effect with resolution := r }
-      targets sourceId lastKnownPower
+    match Resolution.toSpell r with
+    | some _ =>
+      g.applyUnified controller ab.effect targets
+    | none =>
+      g.applyUnifiedAbility controller { ab.effect with resolution := r }
+        targets sourceId lastKnownPower
 
 /-- Finish trigger-sequence steps that waited on a pending choice.
 Those steps are still part of the resolution that opened the choice. -/
