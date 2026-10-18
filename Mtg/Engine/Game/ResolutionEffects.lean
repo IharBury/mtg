@@ -600,7 +600,7 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/
 def modeledReflexiveEffect (kind paid : Nat) : Effect :=
-  let base : Effect := { resolution := .fra (.mshReflexive kind paid) }
+  let base : Effect := { resolution := .mshReflexive kind paid }
   let creature (f : TargetFilter) : TargetFilter := { f with types := #[.creature] }
   match kind with
   | 0 =>
@@ -822,7 +822,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
 def hasModeledReflexiveOnStack (g : Game) : Bool :=
   g.stack.any (fun e =>
     match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
-    | some (Resolution.fra (FraResolution.mshReflexive _ _)) => true
+    | some (Resolution.mshReflexive _ _) => true
     | _ => false)
 
 /-- Resolve the newest MSH reflexive ability on the stack with `targets`
@@ -831,7 +831,7 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
     (division : Array Nat := #[]) : Game :=
   let found := g.stack.reverse.findSome? (fun e =>
     match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
-    | some (Resolution.fra (FraResolution.mshReflexive kind paid)) =>
+    | some (Resolution.mshReflexive kind paid) =>
       some (e.objectId, e.controller, kind, paid)
     | _ => none)
   match found with

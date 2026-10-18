@@ -74,7 +74,7 @@ private def manaTypesOf (s : String) : Array ManaType :=
     | _ => none
 
 private def frc (e : FrcEffect) (phrase : String) (kind : EffectTargetKind := .none) : Effect :=
-  { targeting := .of kind, resolution := .fra (.frc e), phrase }
+  { targeting := .of kind, resolution := .frc e, phrase }
 
 private def creature (noun : String := "target creature") : EffectTargetKind :=
   .filtered { noun, types := #[.creature] }
@@ -391,6 +391,6 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         | none => none
 where
   frcEffectChoose (phrase : String) : Effect :=
-    { resolution := .fra (.chooseTriggerModes 1), phrase }
+    { resolution := .chooseTriggerModes 1, phrase }
 
 end Mtg.Engine

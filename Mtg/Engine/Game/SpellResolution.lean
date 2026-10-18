@@ -57,9 +57,8 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
   let isFra :=
     obj.abilityEffect.isSome ||
       match t.effect.resolution with
-      | .fra _ => true
-      | .sequence rs => rs.any (fun r => match r with | .fra _ => true | _ => false)
-      | _ => !t.opts.printed.isEmpty
+      | .sequence rs => rs.any Resolution.isFra
+      | r => r.isFra || !t.opts.printed.isEmpty
   let e := obj.abilityEffect.getD t.effect
   let kind := e.targetKind
   isFra && !targets.isEmpty &&

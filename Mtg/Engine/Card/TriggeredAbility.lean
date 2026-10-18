@@ -1835,7 +1835,7 @@ in step with the printed line. -/
 def sequenceClause (e : Effect) : Option String :=
   let noun := e.targetKind.noun
   match e.resolution with
-  | .sequence [.draw 1, .fra (.loseLife 1)] =>
+  | .sequence [.draw 1, .loseLife 1] =>
     some "you draw a card and lose 1 life"
   | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
     some s!"draw {cardPhrase n.toNat}, then discard a card"
@@ -1859,15 +1859,15 @@ def sequenceClause (e : Effect) : Option String :=
     else none
   | .sequence [.onSource (.plusOne 1), .draw 1] =>
     some "put a +1/+1 counter on this and draw a card"
-  | .sequence [.onSource (.pump p t), .fra (.damageEachOpponent n)] =>
+  | .sequence [.onSource (.pump p t), .damageEachOpponent n] =>
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
       [.onPermanent .untap,
        .«if» (.subtype subtype) (.onPermanent (.plusOne n))] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
-  | .sequence [.fra (.loseLife n), .createTokens .treasure 1 false] =>
+  | .sequence [.loseLife (.fixed n) .you, .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"
-  | .sequence [.fra .exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
+  | .sequence [.exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 

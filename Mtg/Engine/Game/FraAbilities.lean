@@ -10,7 +10,7 @@ emblems and effects those create. `applyFra` delegates them here.
 namespace Mtg.Engine
 namespace Game
 
-/-- Keyword coded by `code` in `FraResolution.chooseKeyword`. -/
+/-- Keyword coded by `code` in `Resolution.chooseKeyword`. -/
 def fraKeywordOfCode : Nat → Keywords
   | 0 => Keyword.trample
   | 1 => Keyword.hexproof
@@ -92,7 +92,7 @@ def creaturesAttackingPlayer (g : Game) (p : PlayerId) : Array GameObject :=
       o.status.attackingPlaneswalker.isNone)
 
 /-- Resolve an FRA activated or loyalty ability resolution. -/
-def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : FraResolution)
+def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
@@ -243,7 +243,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       name := s!"{srcName} effect", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
         "Whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn."
-        (.fra (.causeGetsPump (-5) 0))] }
+        (.causeGetsPump (-5) 0)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
   | .exileOpponentLibrariesButBottom =>
@@ -290,7 +290,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
       name := s!"{srcName} effect", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent)
         "Whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn."
-        (.fra .attackersOfPlayerGetTwoTwoTrample)] }
+        (.attackersOfPlayerGetTwoTwoTrample)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
   | .plusOnePerLand =>
@@ -382,7 +382,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Fr
           g.beginFraChoice controller (.newTargetsForCopies copies)
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
-  | .gainLife n => g.gainLife controller n
   | .damageEqualSourcePower =>
     let n :=
       match sourceId.bind g.findObject? with

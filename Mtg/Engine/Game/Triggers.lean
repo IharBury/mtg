@@ -30,10 +30,10 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Create a Treasure token" }]
   | .enter .plusOnesOrReturnArtEnch =>
     #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
-        resolution := .fra (.plusOneOnEachTarget 1),
+        resolution := .plusOneOnEachTarget 1,
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
       { targeting := .of .artEnchCardInYourGraveyard,
-        resolution := .fra .returnFromGyToHand,
+        resolution := .returnFromGyToHand,
         phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
   | .watch .nontokenHeroModal =>
     #[{ resolution := .createTokens .soldier11white 1
@@ -97,7 +97,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let g := g.setObject obj
     let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
     match ab.effect.resolution with
-    | .fra (.chooseTriggerModes n) => g.beginTriggerModeChoice controller obj n
+    | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
     | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
@@ -351,7 +351,7 @@ def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility
           | .fra .equippedHuntersAxe =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-              (.fra (.chooseKeyword [0, 3])))
+              (.chooseKeyword [0, 3]))
           | .fra .equippedMedicsKitesail =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
@@ -546,7 +546,7 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   if o.status.faceDown then
     match o.printed.morph with
     | some cost =>
-      #[{ effect := { resolution := .fra (.frc .turnFaceUp), phrase := "Turn this face up." }
+      #[{ effect := { resolution := .frc .turnFaceUp, phrase := "Turn this face up." }
           cost := { mana := cost } }]
     | none => #[]
   else

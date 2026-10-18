@@ -3,7 +3,7 @@ import Mtg.Engine.Game.FraHelpers
 /-!
 # Reality Fracture Commander resolutions
 
-`applyFrc` performs `FraResolution.frc`. Choices that already exist
+`applyFrc` performs `Resolution.frc`. Choices that already exist
 (library search, random order) stay on those pendings.
 -/
 
@@ -71,7 +71,7 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
     { creatureTokenOf "Gingerbrute" #["Food", "Golem"] 1 1
         (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
       activatedAbilities := #[
-        { effect := { resolution := .fra (.frc .gingerDash), phrase := "This token can't be blocked this turn except by creatures with haste." }
+        { effect := { resolution := .frc .gingerDash, phrase := "This token can't be blocked this turn except by creatures with haste." }
           cost := { mana := ManaCost.ofGeneric 1 } },
         { effect := Effect.gainLife 3
           cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
@@ -83,7 +83,7 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
       types := #[.artifact]
       isToken := true
       activatedAbilities := #[
-        { effect := { resolution := .fra (.frc .explore), phrase := "You explore." }
+        { effect := { resolution := .frc .explore, phrase := "You explore." }
           cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
   | .treasure => treasureToken
   | .rogue => creatureTokenOf "Rogue" #["Rogue"] 2 2 (some .black)
@@ -92,7 +92,7 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
       types := #[.artifact]
       isToken := true
       activatedAbilities := #[
-        { effect := { resolution := .fra (.frc .transformIncubator), phrase := "Transform this token." }
+        { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
           cost := { mana := ManaCost.ofGeneric 2 } } ] }
 
 private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0) : Game :=

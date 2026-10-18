@@ -7,7 +7,7 @@ import Mtg.Engine.Card.Effect
 
 `Effect.mkSpell` / `Effect.mkAbility` plus the named constructors for every
 printed spell and activated-ability effect the engine models, including
-effects that resolve through the nested `FraResolution`.
+effects that resolve through the former Reality Fracture steps of `Resolution`.
 -/
 
 namespace Mtg.Engine
@@ -970,7 +970,7 @@ def plusOneAndDoubleStrikeCounter : Effect :=
 
 def plusOneThenFightUpToOne : Effect :=
   mkAbility (.of .oppCreature)
-    (.sequence [.onSource (.plusOne 1), .fra .sourceFightsTarget])
+    (.sequence [.onSource (.plusOne 1), .sourceFightsTarget])
     (allowsZeroTargets := true)
     (phraseOverride := some
       "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls")
@@ -1005,7 +1005,7 @@ def returnFromGyFinalityAttach : Effect :=
 
 def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
   mkAbility (.of .creatureCardInYourGraveyard)
-    (.sequence [.fra .returnFromGyToHand, .onSource (.plusOne n)])
+    (.sequence [.returnFromGyToHand, .onSource (.plusOne n)])
     (allowsZeroTargets := true)
     (phraseOverride := some
       s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature")
@@ -1177,7 +1177,7 @@ def canonicalPlusOne (n : Nat) (kind : EffectTargetKind) : Option Effect :=
 def becomeCopyLegendRuleOff : Effect :=
   mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
 
-/-! Effects that resolve through `Resolution.fra`. -/
+/-! Effects that resolve through former Reality Fracture steps of `Resolution`. -/
 
 /-- A spell effect with its printed wording. -/
 def fraSpell (kind : EffectTargetKind) (r : Resolution) (phrase : String)
@@ -1186,9 +1186,9 @@ def fraSpell (kind : EffectTargetKind) (r : Resolution) (phrase : String)
   { targeting := .of kind, resolution := r, phrase, spellCastKind := castKind
     maxTargets, allowsZeroTargets }
 
-def fraSpellOn (f : TargetFilter) (r : FraResolution) (phrase : String)
+def fraSpellOn (f : TargetFilter) (r : Resolution) (phrase : String)
     (castKind : SpellCastKind := .extraLand) : Effect :=
-  fraSpell (.filtered f) (.fra r) phrase castKind
+  fraSpell (.filtered f) r phrase castKind
 
 def fraUntargeted (r : Resolution) (phrase : String)
     (castKind : SpellCastKind := .extraLand) : Effect :=
@@ -1208,17 +1208,17 @@ def hexhavenBattalion : Effect :=
     (castKind := .draw)
 
 def kindredJudgment : Effect :=
-  fraUntargeted (.fra .destroyAllNotChosenType)
+  fraUntargeted (.destroyAllNotChosenType)
     "Choose a creature type. Destroy all creatures that aren't of the chosen type"
     (castKind := .destroyCreature)
 
 def loyalTutor : Effect :=
-  fraUntargeted (.fra .searchPlaneswalkerToTop)
+  fraUntargeted (.searchPlaneswalkerToTop)
     "Search your library for a planeswalker card, reveal it, then shuffle and put that card on top"
     (castKind := .draw)
 
 def predictivePreparations : Effect :=
-  fraSpell (.filtered TargetFilter.creature) (.fra (.plusOneOnEachTarget 1))
+  fraSpell (.filtered TargetFilter.creature) (.plusOneOnEachTarget 1)
     "Put a +1/+1 counter on each of one or two target creatures"
     (castKind := .pump) (maxTargets := 2)
 
@@ -1231,19 +1231,19 @@ def refuteDestiny : Effect :=
   fraSpell (.filtered { TargetFilter.creatureOrPlaneswalker with
       noun := "target creature or planeswalker that's green or blue"
       colors := #[.green, .blue] })
-    (.sequence [.fra .exile, .surveil 1])
+    (.sequence [.exileTarget, .surveil 1])
     "Exile target creature or planeswalker that's green or blue. Surveil 1"
     (castKind := .destroyCreature)
 
 def returnToTheLightRealms : Effect :=
-  fraUntargeted (.fra .returnAllNonlandPermanentsFromGy)
+  fraUntargeted (.returnAllNonlandPermanentsFromGy)
     "Return all nonland permanent cards from your graveyard to the battlefield"
     (castKind := .draw)
 
 def surgicalPrecisionDestroy : Effect :=
   fraSpell (.filtered { TargetFilter.creature with
       noun := "target creature with toughness 4 or greater", toughnessAtLeast := some 4 })
-    (.sequence [.fra .destroy, .gainLife 1])
+    (.sequence [.destroyTarget, .gainLife 1])
     "Destroy target creature with toughness 4 or greater. You gain 1 life"
     (castKind := .destroyCreature)
 
@@ -1256,17 +1256,17 @@ def yourFateEndsHere : Effect :=
   fraSpell (.filtered { TargetFilter.creatureOrPlaneswalker with
       noun := "target creature or planeswalker with mana value 3 or greater"
       mvAtLeast := some 3 })
-    (.sequence [.fra .destroy, .surveil 1])
+    (.sequence [.destroyTarget, .surveil 1])
     "Destroy target creature or planeswalker with mana value 3 or greater. Surveil 1"
     (castKind := .destroyCreature)
 
 /-! ## Blue -/
 
 def counterTargetSpell : Effect :=
-  fraSpellOn TargetFilter.spell .counter "Counter target spell" (castKind := .counter)
+  fraSpellOn TargetFilter.spell .counterTarget "Counter target spell" (castKind := .counter)
 
 def cruelCalculations : Effect :=
-  fraSpell .player (.fra .drawMilledThisTurn)
+  fraSpell .player (.drawMilledThisTurn)
     "Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn"
     (castKind := .draw)
 
@@ -1285,10 +1285,10 @@ def targetCreatureGets (p t : Int) : Effect :=
 def preciseRedaction : Effect :=
   fraSpellOn { noun := "target white or black spell", zone := .stack
                colors := #[.white, .black] }
-    .counter "Counter target white or black spell" (castKind := .counter)
+    .counterTarget "Counter target white or black spell" (castKind := .counter)
 
 def sphinxsApproach : Effect :=
-  fraUntargeted (.sequence [.draw 2, .fra .sphinxsApproach])
+  fraUntargeted (.sequence [.draw 2, .sphinxsApproach])
     "Draw two cards. Then you may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
     (castKind := .draw)
 
@@ -1300,35 +1300,35 @@ def unwindHistory : Effect :=
   fraSpell (.filtered { TargetFilter.creature with
       noun := "target creature an opponent controls with mana value 3 or less"
       controller := .opponent, mvAtMost := some 3 })
-    (.sequence [.fra .bounce, .surveil 1])
+    (.sequence [.bounce, .surveil 1])
     "Return target creature an opponent controls with mana value 3 or less to its owner's hand. Surveil 1"
     (castKind := .destroyCreature)
 
 def arcOfFortune : Effect :=
-  fraUntargeted (.fra (.eachPlayerMayWheel 7))
+  fraUntargeted (.eachPlayerMayWheel 7)
     "Each player may discard their hand and draw seven cards"
     (castKind := .draw)
 
 /-! ## Black -/
 
 def castAwayDoubt : Effect :=
-  fraUntargeted (.sequence [.draw 2, .fra (.damageEachPlayer 2)])
+  fraUntargeted (.sequence [.draw 2, .damageEachPlayer 2])
     "Draw two cards. This spell deals 2 damage to each player"
     (castKind := .draw)
 
 def extendedAbsence : Effect :=
   fraSpell (.filtered TargetFilter.creatureOrPlaneswalker)
-    (.sequence [.fra .exile, .fra (.damageEachOpponent 1), .gainLife 1])
+    (.sequence [.exileTarget, .damageEachOpponent 1, .gainLife 1])
     "Exile target creature or planeswalker. This spell deals 1 damage to each opponent and you gain 1 life"
     (castKind := .destroyCreature)
 
 def extrapolateTheImpossible : Effect :=
-  fraUntargeted (.fra .extrapolate)
+  fraUntargeted (.extrapolate)
     "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
     (castKind := .draw)
 
 def overwriteTheMultiverse : Effect :=
-  fraUntargeted (.fra .exileAllCreaturesEmpower)
+  fraUntargeted (.exileAllCreaturesEmpower)
     "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this way"
     (castKind := .destroyCreature)
 
@@ -1339,16 +1339,16 @@ def rewriteRegrets : Effect :=
     (castKind := .draw)
 
 def riseDraw : Effect :=
-  fraUntargeted (.fra .drawGreatestPowerLoseLife)
+  fraUntargeted (.drawGreatestPowerLoseLife)
     "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
     (castKind := .draw)
 
 def destroyTargetCreatureOrPlaneswalker : Effect :=
-  fraSpellOn TargetFilter.creatureOrPlaneswalker .destroy
+  fraSpellOn TargetFilter.creatureOrPlaneswalker .destroyTarget
     "Destroy target creature or planeswalker" (castKind := .destroyCreature)
 
 def solveForDisappointment : Effect :=
-  fraSpell .opponent (.fra (.revealHandDiscardNonland true))
+  fraSpell .opponent (.revealHandDiscardNonland true)
     "Target opponent reveals their hand. You choose a nonland permanent card from it. That player discards that card"
     (castKind := .draw)
 
@@ -1356,18 +1356,18 @@ def terminalCriticism : Effect :=
   fraSpell (.filtered { TargetFilter.creatureOrPlaneswalker with
       noun := "target creature or planeswalker that's blue or red"
       colors := #[.blue, .red] })
-    (.sequence [.fra .destroy, .gainLife 1])
+    (.sequence [.destroyTarget, .gainLife 1])
     "Destroy target creature or planeswalker that's blue or red. You gain 1 life"
     (castKind := .destroyCreature)
 
 def vraskasMercyDestroy : Effect :=
   fraSpell (.filtered TargetFilter.creatureOrPlaneswalker)
-    (.sequence [.fra (.loseLife 2), .fra .destroy])
+    (.sequence [.loseLife 2, .destroyTarget])
     "You lose 2 life. Destroy target creature or planeswalker"
     (castKind := .destroyCreature)
 
 def vraskasMercyEmpower : Effect :=
-  fraUntargeted (.sequence [.fra (.loseLife 2), .empowerJace 6])
+  fraUntargeted (.sequence [.loseLife 2, .empowerJace 6])
     "You lose 2 life. Empower Jace 6"
     (castKind := .draw)
 
@@ -1381,12 +1381,12 @@ def artifistAcumen : Effect :=
 def awakenTheInferno : Effect :=
   fraSpell (.multi #[TargetFilter.oppCreatureOrPlaneswalker,
       { TargetFilter.creatureYouControl with noun := "up to one target creature you control" }] #[1])
-    (.sequence [.fra (.damageSourceAt 0 6), .fra (.plusOneAt 1 1)])
+    (.sequence [.damageSourceAt 0 6, .plusOneAt 1 1])
     "This spell deals 6 damage to target creature or planeswalker an opponent controls. Put a +1/+1 counter on up to one target creature you control"
     (castKind := .creatureDamage)
 
 def commandTheStage : Effect :=
-  fraUntargeted (.sequence [.createTokens .cadet 1, .fra .plusOneOnWizardTokensExceptRecent])
+  fraUntargeted (.sequence [.createTokens .cadet 1, .plusOneOnWizardTokensExceptRecent])
     "Create a 2/2 colorless Wizard Soldier creature token named Cadet, then put a +1/+1 counter on each other Wizard token you control"
     (castKind := .draw)
 
@@ -1398,7 +1398,7 @@ def essenceBurn : Effect :=
     (castKind := .creatureDamage)
 
 def fulminousForteSweep : Effect :=
-  fraUntargeted (.fra (.damageEachOppCreatureAndPlaneswalker 1))
+  fraUntargeted (.damageEachOppCreatureAndPlaneswalker 1)
     "This spell deals 1 damage to each creature and planeswalker your opponents control"
     (castKind := .creatureDamage)
 
@@ -1408,14 +1408,14 @@ def damageToCreatureOrPlaneswalker (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def moltenTide : Effect :=
-  fraUntargeted (.fra .mountainsAddExtraRed)
+  fraUntargeted (.mountainsAddExtraRed)
     "Until end of turn, whenever you tap a Mountain for mana, add an additional {R}"
     (castKind := .draw)
 
 /-! ## Green -/
 
 def enroot : Effect :=
-  fraUntargeted (.fra .searchLandToGraveyard)
+  fraUntargeted (.searchLandToGraveyard)
     "Search your library for a land card, put it into your graveyard, then shuffle"
     (castKind := .draw)
 
@@ -1423,18 +1423,18 @@ def flourishingGrapple : Effect :=
   fraSpell (.multi #[{ TargetFilter.oppCreatureOrPlaneswalker with
         noun := "target creature or planeswalker an opponent controls that's red or white"
         colors := #[.red, .white] }, TargetFilter.creatureYouControl] #[])
-    (.sequence [.fra (.loseAbilitiesAt 0), .fra (.powerDamageFromTo 1 0)])
+    (.sequence [.loseAbilitiesAt 0, .powerDamageFromTo 1 0])
     "Target creature or planeswalker an opponent controls that's red or white loses all abilities until end of turn. Target creature you control deals damage equal to its power to that permanent"
     (castKind := .fight)
 
 def restoreWithEmpathy : Effect :=
   fraSpell (.filtered { noun := "target permanent card from your graveyard", zone := .yourGraveyard, permanentCard := true })
-    (.sequence [.fra .returnFromGyToHand, .gainLife 4])
+    (.sequence [.returnFromGyToHand, .gainLife 4])
     "Return target permanent card from your graveyard to your hand. You gain 4 life"
     (castKind := .draw)
 
 def somethingWorthSaving : Effect :=
-  fraUntargeted (.fra (.millMayPutPermanentGainLife 4 1))
+  fraUntargeted (.millMayPutPermanentGainLife 4 1)
     "Mill four cards. You may put a permanent card from among them into your hand. You gain 1 life"
     (castKind := .draw)
 
@@ -1465,7 +1465,7 @@ def clashOfElements : Effect :=
     (castKind := .destroyCreature)
 
 def entrustTheSpark : Effect :=
-  fraUntargeted (.fra .entrustTheSpark)
+  fraUntargeted (.entrustTheSpark)
     "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
     (castKind := .draw)
 
@@ -1500,7 +1500,7 @@ def addColorless (n : Nat) : Effect :=
 
 def recursiveRecruitment : Effect :=
   fraUntargeted
-    (.sequence [.createTokens .cadet 2, .fra .plusOnePerThreeGraveyardOnRecentIfFromGy])
+    (.sequence [.createTokens .cadet 2, .plusOnePerThreeGraveyardOnRecentIfFromGy])
     "Create two 2/2 colorless Wizard Soldier creature tokens named Cadet. If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
     (castKind := .draw)
 
@@ -1510,13 +1510,13 @@ def targetCreatureGains (k : Keywords) (words : String := k.joinedAnd) : Effect 
     (castKind := .pump)
 
 def cadetWithHaste : Effect :=
-  fraUntargeted (.sequence [.createTokens .cadet 1, .fra .grantHasteToRecentTokens])
+  fraUntargeted (.sequence [.createTokens .cadet 1, .grantHasteToRecentTokens])
     "Create a 2/2 colorless Wizard Soldier creature token named Cadet. It gains haste until end of turn"
     (castKind := .draw)
 
 def stingingVitriol : Effect :=
   fraSpell .opponent
-    (.sequence [.fra (.damageAny 2), .fra (.revealHandDiscardNonland false)])
+    (.sequence [.damageAny 2, .revealHandDiscardNonland false])
     "This spell deals 2 damage to target opponent. That player reveals their hand. You choose a nonland card from it. They discard that card"
     (castKind := .burn)
 
@@ -1532,14 +1532,14 @@ def millThenDraw (m d : Nat) : Effect :=
     (castKind := .draw)
 
 def twinnedVision : Effect :=
-  fraUntargeted (.fra .drawOneOrTwoIfNotFromHand)
+  fraUntargeted (.drawOneOrTwoIfNotFromHand)
     "Draw a card. If this spell wasn't cast from your hand, draw two cards instead"
     (castKind := .draw)
 
 def twistedFates : Effect :=
   fraSpell (.multi #[{ noun := "target nonland permanent", nonland := true },
       { noun := "target player", zone := .player }] #[])
-    (.sequence [.fra (.destroyAt 0), .fra (.plusOneOnCreaturesOfPlayerAt 1)])
+    (.sequence [.destroyAt 0, .plusOneOnCreaturesOfPlayerAt 1])
     "Destroy target nonland permanent. Put a +1/+1 counter on each creature target player controls"
     (castKind := .destroyCreature)
 
@@ -1581,7 +1581,7 @@ def drawThenDiscardOne : Effect :=
 
 def destroyNoncreatureNonland : Effect :=
   fraSpellOn { noun := "target noncreature, nonland permanent", noncreature := true, nonland := true }
-    .destroy "Destroy target noncreature, nonland permanent"
+    .destroyTarget "Destroy target noncreature, nonland permanent"
 
 def gainLifeMode (n : Nat) : Effect :=
   fraUntargeted (.gainLife n) s!"You gain {n} life"

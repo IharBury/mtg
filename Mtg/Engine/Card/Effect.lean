@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.AbilityResolution
-import Mtg.Engine.Card.FraResolution
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.StaticAbility
 
@@ -9,7 +8,7 @@ import Mtg.Engine.Card.StaticAbility
 The `Effect` structure shared by spells, activated abilities, Saga
 chapters, and triggered abilities. They resolve through `Resolution`
 (`SpellResolution` and `TriggeredAbility.TriggerResolution` name that
-inductive). `FraResolution` is nested under `Resolution.fra`.
+inductive).
 -/
 
 namespace Mtg.Engine
@@ -305,12 +304,12 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
   | .becomeCopyLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
-  | .fra r =>
-    FraResolution.toPhrase r noun
   | .sequence rs =>
     sequence rs
   | r =>
-    SpellResolution.toPhrase r noun
+    match r.fraPhrase? noun with
+    | some phrase => phrase
+    | none => SpellResolution.toPhrase r noun
 
 /-- Oracle-style reminder from targeting and resolution. Source-deals-damage
 uses the creature as the subject rather than the generic `PermanentAction`
@@ -325,11 +324,10 @@ themselves. A few spell shapes land on the activated-ability constructor
 that means the same thing. `sequence` is flattened by `ofSpell`. -/
 def ofSpellStep : SpellResolution → Resolution
   | .draw (.fixed n) .player => .targetPlayerDraw n.toNat
-  | .loseLife (.fixed n) .you => .fra (.loseLife n.toNat)
   | .loseLife (.fixed n) .player => .targetPlayerLoseLife n.toNat
   | .loseLife (.fixed n) (.controller .target) => .controllerOfTargetLosesLife n.toNat
   | .returnTargetToHand .spell => .returnTargetSpell
-  | .returnTargetToHand .graveyard => .fra .returnFromGyToHand
+  | .returnTargetToHand .graveyard => .returnFromGyToHand
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
   | .createTokens kind .chosenX false .kind .you .none => .createTokensX kind
   | .sequence rs => .sequence (rs.map ofSpellStep)
@@ -345,9 +343,7 @@ def ofSpell (r : SpellResolution) : Resolution :=
 Activated-ability constructors stay `none`, so `spellResolution` is
 `.unrecognized` for them. -/
 def toSpellStep : Resolution → Option SpellResolution
-  | .fra (.loseLife n) => some (.loseLife n)
-  | .fra .returnFromGyToHand => some (.returnTargetToHand .graveyard)
-  | .fra _ => none
+  | .returnFromGyToHand => some (.returnTargetToHand .graveyard)
   | .targetPlayerLoseLife n => some (.loseLife n .player)
   | .controllerOfTargetLosesLife n => some (.loseLife n (.controller .target))
   | .returnTargetSpell => some .returnTargetToHand
@@ -391,7 +387,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
   | .returnFromGyWithFinality | .firstDealsStatDamageToSecond _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ => none
-  | r => some r
+  | r => if r.isFra then none else some r
 
 /-- The spell view of `r`. A sequence is a spell sequence only when every
 step lifts; otherwise it stays unrecognized, as before. -/
@@ -414,8 +410,8 @@ def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
 partial def doesNothingAsSpell (r : Resolution) : Bool :=
   match r with
   | .sequence rs => rs.any doesNothingAsSpell
-  | .shuffleSource | .gainLife _ | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
-  | .fra _ | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
+  | .shuffleSource | .gainLife _ | .damageEachOpponent _ | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
+  | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
   | .createTokensLifeGained _ | .oppSacrificesGreatestMv
   | .createTigerGod | .extraTurn | .drawEqualToBurdenCounters
   | .creaturesWithoutFlyingCantBlock | .targetPlayerLoseLife _
@@ -428,7 +424,9 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .teamGain _ | .jaceLoyaltyAtInstantSpeed | .drawEqualToLastKnownPower => false
   | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
   | .unrecognized => true
-  | r => ({ resolution := r } : Effect).spellResolution == .unrecognized
+  | r =>
+    if r.isFra then false
+    else ({ resolution := r } : Effect).spellResolution == .unrecognized
 
 /-- True when resolving `r` as an activated ability would do nothing. -/
 partial def doesNothingAsActivated (r : Resolution) : Bool :=

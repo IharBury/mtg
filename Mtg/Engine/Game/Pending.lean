@@ -81,7 +81,7 @@ structure WardObligation where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What happens after a Reality Fracture choice is made. Each one is also a
-`FraResolution`, run through the same interpreter. -/
+`Resolution` step, run through the same interpreter. -/
 inductive FraNext where
   | searchBasicLandTapped
   | searchLandsTapped (n : Nat)
@@ -101,7 +101,7 @@ inductive FraNext where
   | returnSourceToHand
 deriving DecidableEq, Repr, Inhabited, BEq
 
-def FraNext.toResolution : FraNext → FraResolution
+def FraNext.toResolution : FraNext → Resolution
   | .searchBasicLandTapped => .searchBasicLandTapped
   | .searchLandsTapped n => .searchLandsTapped n
   | .searchEnchantmentToHand => .searchEnchantmentToHand

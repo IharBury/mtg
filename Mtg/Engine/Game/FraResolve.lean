@@ -4,15 +4,15 @@ import Mtg.Engine.Game.FrcResolve
 /-!
 # Reality Fracture effect resolution
 
-`applyFra` resolves `Resolution.fra` for spells, activated abilities, and
-triggered abilities. Choices made while one resolves leave a
-`Pending.fraChoice`; `FraChoices` finishes them.
+`applyFra` resolves former Reality Fracture steps of `Resolution` for
+spells, activated abilities, and triggered abilities. Choices made while
+one resolves leave a `Pending.fraChoice`; `FraChoices` finishes them.
 -/
 
 namespace Mtg.Engine
 namespace Game
 
-partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : FraResolution)
+partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
@@ -38,7 +38,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
           else g
         | none => g
       | Target.player _ => g) sourceId illegal
-  | .exile =>
+  | .exileTarget =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let (g, _) := g.move o.id .exile none
       g.logMsg s!"{o.name} is exiled") sourceId illegal
@@ -48,7 +48,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
       let ctrl := o.controller.getD o.owner
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
-  | .loseLife n => g.loseLife controller n
   | .damageEachPlayer n =>
     g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
   | .damageSourceAt index n =>
@@ -235,7 +234,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLandToGraveyard =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
-  | .counter =>
+  | .counterTarget =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id => g.counterStackSpell id
@@ -243,7 +242,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .counterUnlessPays n =>
     g.withLegalKindTarget controller kind targets (fun g _ =>
       g.beginPayOrLetCounter targets n) sourceId illegal
-  | .destroy =>
+  | .destroyTarget =>
     g.withLegalKindPermanent controller kind targets (fun g o => g.destroyPermanent o)
       sourceId illegal
   | .damageExileIfDies n =>
@@ -647,8 +646,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
           else g.illegalAbilityTarget t
         | none => g
       | _ => g) g
-  | .damageEachOpponent n =>
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
   | .damageAny n =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -672,7 +669,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
     g.beginSacrificeCreatures ((g.livingOpponents controller).map (·.id)) #[]
   | .reflexiveDamageAnyTarget n =>
     g.putReflexiveTrigger controller sourceId
-      { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
+      { targeting := .of .playerOrCreature, resolution := .damageAny n
         phrase := s!"This deals {n} damage to any target" }
   | .reflexiveDestroyPerOpponent =>
     g.putReflexiveTrigger controller sourceId
@@ -680,13 +677,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
           { noun := "up to one target creature or planeswalker that player controls"
             types := #[.creature, .planeswalker] })
         allowsZeroTargets := true
-        resolution := .fra .destroyEachTarget
+        resolution := .destroyEachTarget
         phrase := "For each opponent, destroy up to one target creature or planeswalker that player controls" }
   | .reflexiveReturnLandTapped =>
     g.putReflexiveTrigger controller sourceId
       { targeting := .of (.filtered { noun := "target land card from your graveyard"
                                       zone := .yourGraveyard, types := #[.land] })
-        resolution := .fra .returnFromGyToBattlefieldTapped
+        resolution := .returnFromGyToBattlefieldTapped
         phrase := "Return target land card from your graveyard to the battlefield tapped" }
 
   | .emrakulGrantMana
@@ -732,12 +729,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : F
   | .hawkeyeArrows _
   | .zemoBoastCopies
   | .copySourceSpellXTimes
-  | .gainLife _
   | .damageEqualSourcePower
   | .returnSourceToHand
   | .sarumanExileCopyMayCast
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
+  | _ => g
 
 end Game
 end Mtg.Engine
