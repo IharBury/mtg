@@ -373,9 +373,9 @@ where
         match o.printed.spellEffect with
         | some e =>
           match e.spellResolution with
-          | .sequence [.draw cards .you, .loseLife life .you] =>
-            (g.player p).life > (life : Int) &&
-              (g.player p).library.size >= cards
+          | .sequence [.draw (.fixed cards) .you, .loseLife (.fixed life) .you] =>
+            (g.player p).life > life &&
+              (g.player p).library.size >= cards.toNat
           | _ => true
         | none => true)
     let removal := playable.find? (fun o =>

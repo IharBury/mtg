@@ -248,28 +248,30 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .onPermanent a => return .onPermanent (← takeAction a)
   | .creaturesPump p t scope =>
     return .creaturesPump (← takeInt p) (← takeInt t) scope
-  | .draw n who => return .draw (← takeNat n) who
-  | .discard n => return .discard (← takeNat n)
-  | .loseLife n who => return .loseLife (← takeNat n) who
-  | .gainLife n who => return .gainLife (← takeNat n) who
-  | .scry n => return .scry (← takeNat n)
-  | .surveil n => return .surveil (← takeNat n)
+  | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
+  | .discard (.cards n) => return .discard (.cards (← takeNat n))
+  | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
+  | .gainLife (.fixed n) => return .gainLife (← takeNat n.toNat)
+  | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
+  | .scry (.fixed n) => return .scry (← takeNat n.toNat)
+  | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
-  | .may r => return .may (← takeSpell r)
-  | .«if» (.onPermanent (.grantKeywords kw)) .teamwork =>
+  | .may r _ _ => return .may (← takeSpell r) (.sequence [])
+  | .«if» .teamwork (.onPermanent (.grantKeywords kw)) =>
     let name ← takeStr kw.joinedAnd
     let kw := (Keywords.ofName? name).getD kw
-    return .«if» (.onPermanent (.grantKeywords kw)) .teamwork
-  | .«if» r cond =>
+    return .«if» .teamwork (.onPermanent (.grantKeywords kw))
+  | .«if» cond r =>
     let r ← takeSpell r
     match cond with
-    | .subtype s => return .«if» r (.subtype (← takeStr s))
-    | .mvAtMost n => return .«if» r (.mvAtMost (← takeNat n))
-    | .castFromGraveyard => return .«if» r .castFromGraveyard
-    | .teamwork => return .«if» r .teamwork
-    | .giftPromised => return .«if» r .giftPromised
-  | .ifElse whenTrue whenFalse cond =>
+    | .subtype s => return .«if» (.subtype (← takeStr s)) r
+    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
+    | .castFromGraveyard => return .«if» .castFromGraveyard r
+    | .teamwork => return .«if» .teamwork r
+    | .giftPromised => return .«if» .giftPromised r
+    | _ => return .«if» cond r
+  | .ifElse cond whenTrue whenFalse =>
     -- Printed order is the otherwise branch, then the condition, then the
     -- true branch.
     let whenFalse ← takeSpell whenFalse
@@ -283,14 +285,15 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
       | .castFromGraveyard => pure .castFromGraveyard
       | .teamwork => pure .teamwork
       | .giftPromised => pure .giftPromised
+      | c => pure c
     let whenTrue ← takeSpell whenTrue
-    return .ifElse whenTrue whenFalse cond
+    return .ifElse cond whenTrue whenFalse
   | .countersOnCreatureTargets kind n which =>
     return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
-  | .searchLibrary s ty how =>
-    return .searchLibrary (← takeSupertype s) (← takeCardType ty) how
+  | .searchCard s ty how =>
+    return .searchCard (← takeSupertype s) (← takeCardType ty) how
   | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
   | .addFourManaDragonSpells n s =>
     return .addFourManaDragonSpells (← takeNat n) (← takeStr s)
@@ -302,15 +305,15 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
   | .plusOneOnEachYouControl n which =>
     return .plusOneOnEachYouControl (← takeNat n) which
-  | .fight k =>
-    if k == 1 then return .fight
-    else return .fight (← takeNat k)
+  | .fight .announced (.timesPower k) =>
+    if k == 1 then return .fight .announced (.timesPower 1)
+    else return .fight .announced (.timesPower (← takeNat k))
   | .dealDamageToControllerOfTarget n =>
     return .dealDamageToControllerOfTarget (← takeNat n)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
   | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
-  | .amass n subtype =>
-    return .amass (← takeNat n) (← takeStr subtype)
+  | .amass (.fixed n) subtype =>
+    return .amass (← takeNat n.toNat) (← takeStr subtype)
   | .dealDamageToEachCreature n which amount =>
     match amount with
     | .otherSpellsManaValue =>
@@ -338,11 +341,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
   | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
   | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
-  | .createTokens k n who qty =>
-    match qty with
-    | .fixed => return .createTokens k (← takeNat n) who
-    | .chosenX => return .createTokens k n who .chosenX
-    | .perSubtype s => return .createTokens k n who (.perSubtype (← takeStr s))
+  | .createTokens k (.fixed n) tapped token who note =>
+    return .createTokens k (← takeNat n.toNat) tapped token who note
+  | .createTokens k .chosenX tapped token who note =>
+    return .createTokens k .chosenX tapped token who note
+  | .createTokens k (.perSubtype s) tapped token who note =>
+    return .createTokens k (.perSubtype (← takeStr s)) tapped token who note
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .millThenPutPermanentGainLife a b =>
@@ -1671,7 +1675,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
     "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
   some (.sequence [
     .spell (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    .spell (.«if» (.plusOneOnEachYouControl 3 .eachOther) .castFromGraveyard)])
+    .spell (.«if» .castFromGraveyard (.plusOneOnEachYouControl 3 .eachOther))])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
@@ -1705,11 +1709,11 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
-  some (.spell (.searchLibrary .basic .land))
+  some (.spell (.searchCard .basic .land))
 
 #guard refilled (Effect.creatureYouControlDealsTwicePower)
     "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
-  some (.spell (.fight 3))
+  some (.spell (.fight .announced (.timesPower 3)))
 
 #guard refilled (Effect.drawThreeDiscardUnlessArtifact)
     "draw three cards. Then discard four cards unless you discard an enchantment card" ==
@@ -1799,7 +1803,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      .spell (.ifElse (.amass 4 "Zombie") (.amass 2 "Zombie") .castFromGraveyard)
+      .spell (.ifElse .castFromGraveyard (.amass 4 "Zombie") (.amass 2 "Zombie"))
   | none => false
 
 #guard

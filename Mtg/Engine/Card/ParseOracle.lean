@@ -535,20 +535,20 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   let fallback :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   match e.spellResolution with
-  | .sequence [.onPermanent .tap, .scry scryN, .draw drawN .you] =>
+  | .sequence [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
     [s!"Tap target creature. Scry {scryN}.",
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
-  | .sequence [.returnTargetToHand .spell, .draw 1 .you] =>
+  | .sequence [.returnTargetToHand .spell, .draw (.fixed 1)] =>
     ["Return target spell to its owner's hand.", "Draw a card."]
-  | .sequence [.draw 1 .you, .loseLife 1 .you, .amass n subtype] =>
+  | .sequence [.draw (.fixed 1), .loseLife (.fixed 1), .amass (.fixed n) subtype] =>
     ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.returnTargetToHand .graveyard, .amass n subtype] =>
+  | .sequence [.returnTargetToHand .graveyard, .amass (.fixed n) subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",
       s!"Amass {pluralizeName subtype} {n}."]
   | .sequence [.dealDamageToEachCreature n (.nonSubtype sub) .fixed, .addFourManaDragonSpells m sub2] =>
     [s!"{cardName} deals {n} damage to each non-{sub} creature.",
       s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
-  | .sequence [.onPermanent (.grantKeywords k), .draw 1 .you] =>
+  | .sequence [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]
