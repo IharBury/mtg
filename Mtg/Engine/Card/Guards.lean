@@ -47,7 +47,7 @@ namespace CardDef
 #guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
   "Create a tapped Treasure token"
 #guard (Effect.drawLoseLifeThenAmass 2).resolution ==
-  Resolution.sequence [.draw 1, .fra (.loseLife 1), .amass 2]
+  Resolution.sequence [.draw 1, .loseLife 1, .amass 2]
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
     [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
@@ -403,7 +403,7 @@ namespace CardDef
 #guard (Effect.returnCreatureFromGyThenAmass 3).spellResolution ==
   .sequence [.returnTargetToHand .graveyard, .amass 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).resolution ==
-  Resolution.sequence [.fra .returnFromGyToHand, .amass 3]
+  Resolution.sequence [.returnFromGyToHand, .amass 3]
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==

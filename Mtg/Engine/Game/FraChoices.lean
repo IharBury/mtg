@@ -97,7 +97,7 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
     if m == 0 then "Net — Target creature can't block this turn"
     else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
     else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution := .fra (.hawkeyeArrows sorted.toList)
+  { targeting, resolution := .hawkeyeArrows sorted.toList
     phrase := String.intercalate ". " names }
 
 /-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
@@ -248,7 +248,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         g.putReflexiveTrigger p sourceId
           { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonland
-            allowsZeroTargets := true, resolution := .fra .tapAndStunPerOpponent
+            allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
             phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"

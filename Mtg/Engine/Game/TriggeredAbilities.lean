@@ -2887,7 +2887,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         else
           let effect : Effect :=
             { targeting := .of .creature, allowsZeroTargets := true
-              resolution := .fra .damageEqualSourcePower
+              resolution := .damageEqualSourcePower
               phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
           g.putReflexiveTrigger controller (some hostId) effect
       | none => g
@@ -2940,7 +2940,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
             else
               let effect : Effect :=
                 { targeting := .of .creature, allowsZeroTargets := true
-                  resolution := .fra .damageEqualSourcePower
+                  resolution := .damageEqualSourcePower
                   phrase :=
                     s!"{f.name} deals damage equal to its power to up to one target creature" }
               g.putReflexiveTrigger controller (some f.id) effect) g
@@ -4546,7 +4546,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | .damage n =>
       g.putReflexiveTrigger controller sourceId
-        { targeting := .of .playerOrCreature, resolution := .fra (.damageAny n)
+        { targeting := .of .playerOrCreature, resolution := .damageAny n
           phrase := s!"This deals {n} damage to any target" }
     | .copy =>
       let mv :=
@@ -4560,13 +4560,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           types := #[.enchantment, .instant, .sorcery]
           controller := .opponent
           mvAtMost := some mv })
-        resolution := .fra .sarumanExileCopyMayCast
+        resolution := .sarumanExileCopyMayCast
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
     | .divided amount =>
       g.putReflexiveTrigger controller sourceId {
         targeting := .of .playerOrCreature
         dividedDamage := some (amount, 2)
-        resolution := .fra (.mshReflexive 10 0)
+        resolution := .mshReflexive 10 0
         phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
     | .attackPump =>
       g.attackPumpPerPlains controller

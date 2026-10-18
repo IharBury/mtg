@@ -1157,7 +1157,7 @@ def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Arr
       if modes.isEmpty || effects.length != modes.length then none
       else
         let eff : Effect :=
-          { resolution := .fra (.chooseTriggerModes n)
+          { resolution := .chooseTriggerModes n
             phrase := if n == 2 then "choose two" else "choose one" }
         some (.triggered .enter eff, effects.toArray)
 

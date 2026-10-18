@@ -120,7 +120,7 @@ use `queueReflexive`. -/
     match stackEffect g with
     | some eff =>
       match eff.resolution with
-      | .fra (.mshReflexive 11 _) =>
+      | .mshReflexive 11 _ =>
         eff.phrase ==
           "Return up to two target instant and/or sorcery cards from your graveyard to your hand"
       | _ => false
@@ -165,7 +165,7 @@ use `queueReflexive`. -/
   | some eff =>
     eff.dividedDamage == some (7, 2) &&
       (match eff.resolution with
-       | .fra (.mshReflexive 10 _) => true
+       | .mshReflexive 10 _ => true
        | _ => false) &&
       eff.phrase == "It deals 7 damage divided as you choose among one or two targets" &&
       !g.planWasSacrificed
@@ -184,7 +184,7 @@ use `queueReflexive`. -/
   match stackEffect g with
   | some eff =>
     match eff.resolution with
-    | .fra .sarumanExileCopyMayCast =>
+    | .sarumanExileCopyMayCast =>
       logContains g "reflexive ability is put on the stack"
     | _ => false
   | none => false

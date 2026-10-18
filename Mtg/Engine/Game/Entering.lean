@@ -68,7 +68,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     if copiesSelf then
       g.putTriggeredAbilityOnStack caster spell
-        (.triggered .enter { resolution := .fra .copySourceSpellXTimes
+        (.triggered .enter { resolution := .copySourceSpellXTimes
                              phrase := "When you cast this spell, copy it X times. You may choose new targets for the copies" } {})
         "cast trigger"
     else g
@@ -150,7 +150,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     (g.permanentsOf caster).foldl (fun g o =>
       if o.staticAbilities.any (fun | .extort => true | _ => false) then
         g.queueTrigger caster o
-          (.triggered .enter { resolution := .fra .extort
+          (.triggered .enter { resolution := .extort
                                phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" } {})
           .youCastSpell
       else g) g

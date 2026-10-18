@@ -28,7 +28,7 @@ def spellFrc (c : CardDef) : Effect × FrcEffect :=
   match c.spellEffect with
   | some e =>
     match e.resolution with
-    | .fra (.frc fe) => (e, fe)
+    | .frc fe => (e, fe)
     | _ => panic! s!"{c.name} is not an FRC spell"
   | none => panic! s!"{c.name} has no spell"
 

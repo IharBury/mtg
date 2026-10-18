@@ -1,9 +1,8 @@
 /-!
 # Reality Fracture Commander effects
 
-Resolutions first printed in Reality Fracture Commander (FRC). Nested under
-`FraResolution.frc` so `Resolution` stays under the C runtime constructor
-limit. This module does not import `Effect`.
+Resolutions first printed in Reality Fracture Commander (FRC). They are
+the payload of `Resolution.frc`. This module does not import `Effect`.
 -/
 
 namespace Mtg.Engine

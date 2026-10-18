@@ -213,12 +213,17 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         let g := g.modifyPlayer controller (fun pl => { pl with legendRuleOffThisTurn := true })
         g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
         "The source is no longer in play") sourceId (some "The target is no longer legal"))
-  | .fra r => some (g.applyFra controller effect r targets sourceId)
+  | .loseLife (.fixed n) .you => some (g.loseLife controller n.toNat)
+  | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
+  | .damageEachOpponent n =>
+    let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+    some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
   | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
-  | _ => none
+  | r =>
+    if r.isFra then some (g.applyFra controller effect r targets sourceId) else none
 
 /-- Exile every card in `p`'s hand, then draw that many. Those cards may be
 played until the end of `p`'s next turn (Hex Magic; ruling 421). -/
@@ -1738,7 +1743,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
           g.putShadowCounter o) sourceId (some "The target is no longer legal")
       | .damageEachOpponent n =>
-        g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+        let src? := sourceId.bind g.findObject?
+        g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
       | .chooseTwoDestroyRest =>
         let creatures := (g.battlefield.filter (·.isCreature)).map (·.id)
         g.offerCardChoice controller creatures 2 .keepDestroyRest

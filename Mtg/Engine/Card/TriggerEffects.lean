@@ -216,7 +216,7 @@ already resolves them, so they are not `SharedTrigger` constructors.
 
 /-- Draw a card and lose 1 life. -/
 def seqDrawAndLoseLife : Effect :=
-  { resolution := .sequence [.draw 1, .fra (.loseLife 1)] }
+  { resolution := .sequence [.draw 1, .loseLife 1] }
 
 /-- Draw `n` cards, then discard a card. -/
 def seqDrawThenDiscard (n : Nat) : Effect :=
@@ -257,7 +257,7 @@ def seqPlusOneOnSourceAndDraw : Effect :=
 
 /-- The source gets +1/+1 until end of turn and deals `n` damage to each opponent. -/
 def seqPumpAndDamageOpponents (n : Nat) : Effect :=
-  { resolution := .sequence [.onSource (.pump 1 1), .fra (.damageEachOpponent n)] }
+  { resolution := .sequence [.onSource (.pump 1 1), .damageEachOpponent n] }
 
 /-- Untap another creature you control. If it has `subtype`, put a +1/+1 counter on it. -/
 def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
@@ -268,14 +268,14 @@ def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
 
 /-- You lose 1 life and create a Treasure token. -/
 def seqLoseLifeCreateTreasure : Effect :=
-  { resolution := .sequence [.fra (.loseLife 1), .createTokens .treasure 1] }
+  { resolution := .sequence [.loseLife 1, .createTokens .treasure 1] }
 
 /-- Exile up to one card from an opponent's graveyard. Each opponent loses `life`. -/
 def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
   { targeting := .of .oppGraveyardCard
     allowsZeroTargets := true
     resolution := .sequence
-      [.fra .exileCardFromGraveyard, .loseLife life .eachOpponent] }
+      [.exileCardFromGraveyard, .loseLife life .eachOpponent] }
 
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger
