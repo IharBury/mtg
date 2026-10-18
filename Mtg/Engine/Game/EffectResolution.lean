@@ -68,13 +68,13 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     else
       some ({ g with pending := .mayDiscardDraw controller n.toNat }.logMsg
         s!"{pl.name} may discard a card. If they do, they draw {n.toNat}")
-  | .createTokensLifeGained kind =>
+  | .createTokens kind .lifeGainedThisTurn _ _ _ _ =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
     some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
   | .oppSacrificesGreatestMv =>
     some (g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
-  | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ => some (g.createNamedToken controller tigerGodToken)
   | .extraTurn =>
     some ({ g with extraTurns := g.extraTurns.push controller }
       |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
@@ -106,7 +106,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .chooseOddOrEvenDestroy =>
     some ({ g with pending := .fraChoice controller (.oddOrEvenDestroy sourceId) }
       |>.logMsg s!"{(g.player controller).name} chooses odd or even")
-  | .eachCreatureYouControlBecomesPrepared =>
+  | .becomePrepared .creaturesYouControl =>
     some ((g.permanentsOf controller).foldl (fun g o =>
       if o.isCreature && o.printed.prepareFace.isSome then g.becomePrepared (g.object! o.id)
       else g) g)
@@ -214,8 +214,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
         "The source is no longer in play") sourceId (some "The target is no longer legal"))
   | .loseLife (.fixed n) .you => some (g.loseLife controller n.toNat)
-  | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
-  | .dealDamage (.fixed n) (.player .eachOpponent) _ =>
+  | .gainLife (.fixed n) .you => some (g.gainLife controller n.toNat)
+  | .dealDamage (.fixed n) (.player .eachOpponent) .none =>
     let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
     some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n.toNat (source := src?)))
   | .grant (.keywords k) .creaturesYouControl => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
@@ -869,7 +869,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               (giftPromised := giftPromised) (chosenX := chosenX)) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary none
-  | .gainLife (.fixed n) => g.gainLife controller n.toNat
+  | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
   | .grant (.keywords k) .creaturesYouControl =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .recruit _ => g.beginRecruit controller
@@ -938,20 +938,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match effect.resolution with
     | .searchBasicLand => g.resolveSearchBasicLandTapped controller
     | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
-    | .searchBasicLandToHand => g.resolveSearchBasicLandToHand controller
-    | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
+    | .searchLibrary (.returnToHand .basicLand) => g.resolveSearchBasicLandToHand controller
+    | .exile .top .playUntilNextTurn .. => g.resolveExileTopPlayUntilEndOfNextTurn controller
     | _ => g.logMsg "The effect does nothing"
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
-  | .creaturesPump p t scope =>
-    match scope with
-    | .youControl =>
-      g.pumpControlledCreatures controller p t
-    | .all =>
-      g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
-    | .ofTargetPlayer =>
-      g.withLegalKindPlayer controller effect.targetKind targets
-        (fun g pid => g.pumpControlledCreatures pid p t)
+  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
+    g.pumpControlledCreatures controller p t
+  | .pump (.fixed p) (.fixed t) .allCreatures =>
+    g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
+  | .pump (.fixed p) (.fixed t) .creaturesOfTargetPlayer =>
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.pumpControlledCreatures pid p t)
   | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.exileCreaturesFromGraveyard controller pid ty)
@@ -961,7 +959,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       (fun g pid => g.draw pid n.toNat)
   | .scry (.fixed n) =>
     g.beginScry controller n.toNat
-  | .tapTargets =>
+  | .tap (.target .eachPermanent) =>
     g.foldPermanentTargets targets (fun g o =>
       if o.isOnBattlefield && o.isCreature then g.applyPermanentAction o .tap else g)
   | .counter =>
@@ -1069,8 +1067,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             g := g.illegalAbilityTarget t
           | Target.player _ => pure ()
         return g
-  | .gainLife (.fixed n) => g.gainLife controller n.toNat
-  | .targetPlayersGainLife n =>
+  | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
+  | .gainLife (.fixed n) .player =>
     Id.run do
       let playerLegal := g.legalTargetsForAtomicKind controller .player none
       let mut g := g
@@ -1078,7 +1076,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         match t with
         | Target.player pid =>
           if playerLegal.contains t then
-            g := g.gainLife pid n
+            g := g.gainLife pid n.toNat
           else
             g := g.illegalAbilityTarget t
         | _ => pure ()
@@ -1099,19 +1097,27 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           g.beginLibrarySearch o.owner pred s!"a {card}" (.battlefield true) (optional := true)
         | none => g
       | _ => g
-  | .dealDamageToEachCreature n which amount =>
+  | .dealDamage amount .allCreatures _ =>
     let n := match amount with
-      | .fixed => n
+      | .fixed k => k.toNat
       | .otherSpellsManaValue => g.otherSpellsManaValue controller
-    let g := match which with
-      | .each => g.dealDamageToEachCreatureMatching n
-      | .opponentsControl =>
-        g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
-      | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype
-    match amount, which with
-    | .otherSpellsManaValue, .opponentsControl =>
-      g.logMsg s!"deals {n} damage to each opposing creature"
-    | _, _ => g
+      | _ => 0
+    g.dealDamageToEachCreatureMatching n
+  | .dealDamage amount .opponentsCreatures _ =>
+    let n := match amount with
+      | .fixed k => k.toNat
+      | .otherSpellsManaValue => g.otherSpellsManaValue controller
+      | _ => 0
+    let g := g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
+    match amount with
+    | .otherSpellsManaValue => g.logMsg s!"deals {n} damage to each opposing creature"
+    | _ => g
+  | .dealDamage amount (.nonSubtypeCreatures subtype) _ =>
+    let n := match amount with
+      | .fixed k => k.toNat
+      | .otherSpellsManaValue => g.otherSpellsManaValue controller
+      | _ => 0
+    g.dealDamageToEachNonDragon n subtype
   | .replace what instead =>
     match what, instead with
     | .diesThisTurn, .exile =>
@@ -1283,7 +1289,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | some o => g.phaseOut o
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
-  | .dealDamageToControllerOfTarget n =>
+  | .dealDamage (.fixed n) (.player (.controller .target)) _ =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? (g.followMoved id) with
@@ -1292,7 +1298,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           if o.zone == .battlefield then o.controller
           else o.lastController.orElse (fun _ => o.controller)
         match pid? with
-        | some pid => g.dealDamageToPlayer pid n
+        | some pid => g.dealDamageToPlayer pid n.toNat
         | none => g
       | none => g
     | _ => g
@@ -1655,7 +1661,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       match r with
       | .searchBasicLand => g.resolveSearchBasicLandTapped controller
       | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
-      | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
+      | .exile .top .playUntilNextTurn .. => g.resolveExileTopPlayUntilEndOfNextTurn controller
       | .onSource action =>
         g.applyOnSource sourceId action
       | .becomeSubtypeWithLandsPT subtype =>
@@ -1690,7 +1696,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
             g.afterPermanentEnters (g.object! newId))
             sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
-      | .searchBasicLandToHand =>
+      | .searchLibrary (.returnToHand .basicLand) =>
         g.resolveSearchBasicLandToHand controller
       | .searchTwoBasicsSplit =>
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
@@ -1827,9 +1833,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.modifyPlayer controller (fun pl =>
           { pl with manaPool :=
             pl.manaPool.add (.colored .white) 2 })
-      | .drawPerDiscardedThisTurn =>
+      | .draw .cardsDiscardedThisTurn _ =>
         g.draw controller (g.player controller).cardsDiscardedThisTurn
-      | .createTokensEqualRemovedPlusOnes kind =>
+      | .createTokens kind .removedPlusOnes _ _ _ _ =>
         g.createKindTokens controller kind chosenX
       | .exileTopXPlayThisTurn =>
         let x := g.sourcePowerNatAtResolution sourceId lastKnownPower

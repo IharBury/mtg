@@ -169,7 +169,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         (g.moveIdsInOrder #[id] (.library card.owner)).logMsg
           s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library"
       | _ => g) sourceId illegal
-  | .destroyAllCreatures =>
+  | .destroy .allCreatures =>
     (g.battlefield.filter (·.isCreature)).foldl (fun g o =>
       match g.findObject? o.id with
       | some o => if o.isOnBattlefield then g.destroyPermanent o else g
@@ -186,16 +186,16 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       (g.mapObjectStatus o (fun s =>
         { s with grantedTriggersUntilEot := s.grantedTriggersUntilEot.push ab })).logMsg
         s!"Until end of turn, whenever {o.name} deals combat damage to a player, {(g.player controller).name} draws two cards")
-  | .sourceGetsPowerPerArtifact =>
+  | .pump (.count .artifact) (.fixed 0) .source =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
     match source? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o n 0 else g
     | none => g
-  | .pumpPerArtifact =>
+  | .pump (.count .artifact) (.fixed 0) .target =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
     g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o n 0)
       sourceId illegal
-  | .plusOneOnEachWithPlusOne =>
+  | .putCounters (.ofKind .plusOnePlusOne 1) .creaturesWithPlusOne =>
     let ids := ((g.creaturesControlledBy controller).filter (·.status.plusOnePlusOne > 0)).map (·.id)
     ids.foldl (fun g id =>
       match g.findObject? id with
@@ -235,7 +235,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         "Whenever you cast a spell, draw a card." (.draw 1)] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
-  | .empowerJacePerIsland =>
+  | .empowerJace (.subtypeCount "Island") =>
     let n := ((g.permanentsOf controller).filter (fun o => g.hasSubtype o "Island")).size
     g.empowerJace controller n
   | .attackersGetMinusFiveUntilYourTurn =>
@@ -262,12 +262,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .eachOpponentDiscardsTwoDrawPerShort =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
-  | .damageEachCreatureExceptYourTokens n =>
+  | .dealDamage (.fixed n) .creaturesExceptYourTokens _ =>
     let victims := g.battlefield.filter (fun o =>
       o.isCreature && !(o.printed.isToken && o.controlledBy controller))
     victims.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) else g
+      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n.toNat (source := src?) else g
       | none => g) g
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
@@ -275,7 +275,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       staticAbilities := #[.fra .emblemCreaturesGetTwoTwo] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Creatures you control get +2/+2.\""
-  | .untapTargets =>
+  | .untap (.target .eachPermanent) =>
     (List.range targets.size).foldl (fun g i =>
       match targets[i]! with
       | t@(Target.permanent id) =>
@@ -293,7 +293,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         (.attackersOfPlayerGetTwoTwoTrample)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
-  | .plusOnePerLand =>
+  | .putCounters .plusOnePerLand .target =>
     let n := ((g.permanentsOf controller).filter (·.printed.isLand)).size
     g.withLegalKindPermanent controller kind targets (fun g o =>
       if n == 0 then g else g.addPlusOnePlusOneTo o n) sourceId illegal
@@ -314,8 +314,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           g.dealDamageToPlayer pid n (source := src?)
         else g.illegalAbilityTarget t
       | _ => g) g
-  | .beastToken => g.createKindTokens controller .beast44trample 1
-  | .putCauseCountersOnSource =>
+  | .createTokens .beast44trample (.fixed 1) false _ _ _ => g.createKindTokens controller .beast44trample 1
+  | .putCounters .causeCounters .source =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with
     | some st, some o =>
       if !o.isOnBattlefield then g

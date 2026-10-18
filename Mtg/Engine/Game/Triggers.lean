@@ -30,7 +30,7 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         phrase := "Create a Treasure token" }]
   | .enter .plusOnesOrReturnArtEnch =>
     #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
-        resolution := .plusOneOnEachTarget 1,
+        resolution := .putCounters (.ofKind .plusOnePlusOne 1) (.target .eachPermanent),
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
       { targeting := .of .artEnchCardInYourGraveyard,
         resolution := .returnTargetToHand .graveyard,
@@ -38,7 +38,7 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
   | .watch .nontokenHeroModal =>
     #[{ resolution := .createTokens .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },
-      { resolution := .creaturesPump 1 1 .youControl
+      { resolution := .pump (.fixed 1) (.fixed 1) .creaturesYouControl
         phrase := "Creatures you control get +1/+1 until end of turn" }]
   | _ => #[]
 

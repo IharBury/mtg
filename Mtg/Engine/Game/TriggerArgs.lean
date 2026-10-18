@@ -233,10 +233,33 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
       some ((g.permanentsOf controller).filter fun o =>
         o.id != sid && (o.isCreature || o.printed.isArtifact))
     | none => someEmpty
+  | .allCreatures =>
+    some (g.battlefield.filter (·.isCreature))
+  | .creaturesOfTargetPlayer =>
+    match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
+    | some pid => some (g.creaturesControlledBy pid)
+    | none => someEmpty
+  | .nonSubtypeCreatures subtype =>
+    some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
+  | .oppCreaturesAndPlaneswalkers =>
+    some (g.battlefield.filter fun o =>
+      !o.controlledBy controller && (o.isCreature || o.printed.isPlaneswalker))
+  | .creaturesExceptYourTokens =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && !(o.printed.isToken && o.controlledBy controller))
+  | .creaturesWithPlusOne =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && o.controlledBy controller && o.status.plusOnePlusOne > 0)
+  | .wizardTokensExceptRecent =>
+    some (g.battlefield.filter fun o =>
+      o.controlledBy controller && o.printed.isToken && g.hasSubtype o "Wizard" &&
+        !g.recentTokenIds.contains o.id)
+  | .tokensYouControl =>
+    some ((g.permanentsOf controller).filter (·.printed.isToken))
   | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
     | .graveyardCard | .graveyardPermanent | .milledSubtype _
     | .revealed | .basicLand | .linkedExile | .graveyardInstants _
-    | .opponentChosenCreature | .eachPlayersCreature | .leastPower
+    | .opponentChosenCreature | .eachPlayersCreature | .eachOpponentsCreature | .leastPower
     | .combatDamager | .another | .chosenNontokenCreature
     | .cardFromHand | .top | .basicUpTo _ _ | .discarded | .opponentTop _
     | .nonlandMvAtMost _ | .notedLands | .discardedLand | .landFromHand
@@ -301,6 +324,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   match who with
   | .you => one controller
   | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
+  | .eachPlayer => some (g.players.map (·.id))
   | .player | .opponent | .target .player | .target .opponent => announcedPlayer
   | .controller what => g.controllersNamed ctx what
   | .target _ => none
@@ -440,7 +464,19 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
   | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn
   | .libraryCards => some (g.player controller).library.size
-  | .chosenX => none
+  | .causePower =>
+    some ((g.recordedCauseId.bind g.findObject?).map g.power |>.getD 0)
+  | .minusGraveyardCards =>
+    some (-(Int.ofNat (g.player controller).graveyard.size))
+  | .lifeGainedThisTurn =>
+    some (g.player controller).lifeGainedThisTurn
+  | .cardsDiscardedThisTurn =>
+    some (g.player controller).cardsDiscardedThisTurn
+  | .milledByTargetPlayerThisTurn =>
+    match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
+    | some pid => some (g.player pid).cardsMilledThisTurn
+    | none => none
+  | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts | .chosenX => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

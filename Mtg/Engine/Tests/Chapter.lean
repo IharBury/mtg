@@ -125,7 +125,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) })).resolution ==
   .spellsCostLess (.cardType .artifact) (.fixed 1)
 #guard (timing (.spell {
-    resolution := .sequence [.creaturesPump 1 1, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
+    resolution := .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
   })).resolution ==
   .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
 #guard (timing (.spell {

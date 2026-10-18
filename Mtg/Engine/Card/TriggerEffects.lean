@@ -249,7 +249,7 @@ def seqDrawPlusOneSource : Effect :=
 /-- Creatures you control get +P/+0 and gain first strike until end of turn. -/
 def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
   { resolution := .sequence
-      [.creaturesPump power 0 .youControl, .grant (.keywords Keyword.firstStrike) .creaturesYouControl] }
+      [.pump (.fixed power) (.fixed 0) .creaturesYouControl, .grant (.keywords Keyword.firstStrike) .creaturesYouControl] }
 
 /-- Put a +1/+1 counter on the source and draw a card. -/
 def seqPlusOneOnSourceAndDraw : Effect :=

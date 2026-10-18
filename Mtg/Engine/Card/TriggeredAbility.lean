@@ -1264,7 +1264,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
   | .sequence _ =>
     "resolve each step"
-  | .gainLife amount =>
+  | .gainLife amount _ =>
     match amount with
     | .fixed n => s!"you gain {n} life"
     | .equalToTargetPower =>
@@ -1853,7 +1853,7 @@ def sequenceClause (e : Effect) : Option String :=
     some "this gets +1/+0 until end of turn and can't be blocked this turn"
   | .sequence [.draw 1, .onSource (.plusOne 1)] =>
     some "draw a card and put a +1/+1 counter on this"
-  | .sequence [.creaturesPump p 0 .youControl, .grant (.keywords k) .creaturesYouControl] =>
+  | .sequence [.pump (.fixed p) (.fixed 0) .creaturesYouControl, .grant (.keywords k) .creaturesYouControl] =>
     if k == Keyword.firstStrike then
       some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
     else none

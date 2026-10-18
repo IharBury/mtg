@@ -10,8 +10,8 @@ Recent commits have systematically moved the engine toward **one compositional I
 1. **Homogenized Selectors**:
    - Introduced and expanded `ObjectSelector` (including `.union`, `.intersection`, `.target (what : ObjectSelector)`), `PlayerSelector` (including `.target (who : PlayerSelector)`, `.controller (of : ObjectSelector)`), `NumberSelector`, `CostSelector` (`.mana`, `.sacrifice`, `.discard`, `.or`), `ConditionSelector` (`.and`, `.or`, `.not`, `.atLeast`, `.countAtLeast`), and `ActionSelector` in `Mtg/Engine/Card/SpellResolution.lean`.
 2. **Unified `Resolution` Inductive & Constructor Consolidation**:
-   - Merged `SpellResolution`, `TriggerResolution`, and `FraResolution` into a single `Resolution` inductive (`Mtg/Engine/Card/SpellResolution.lean:1832–3550`), with `SpellResolution` and `TriggerResolution` kept as `abbrev`s.
-   - Consolidated 36 redundant spell, ability, trigger, and FRA constructors (`targetPlayerDraw`, `targetPlayerLoseLife`, `controllerOfTargetLosesLife`, `returnTargetSpell`, `returnFromGyToHand`, `creaturesYouControlPump`, `createTokensX`, `mutualFight`, `teamGain`, `plusOneOnEachYouControl`, `plusOneOnCreatureN`, `destroyUpToOneNonland`, `createGalactus`, `nextFreeRGCreature`, `mayDrawPerArtifactOppsDraw`, `mayPutHeroMvOrDraw`, `spellsCostLessThisTurn`, `maySacArtifactOrDiscardDraw`, `mayDiscardDraw`, `createTokensEqualSubtype`, `dealDamageToAny`, `damageEachOpponent`, `plusOneOnEachOtherSubtype`, `drawX`, `drawEqualToLastKnownPower`, `drawEqualToBurdenCounters`, `millSelf`, `returnFromGraveyardToHand`, `returnSourceToHand`, `plusOneOnSource`, `plusOneOnEachCreatureYouControl`, `loyaltyOnEachPlaneswalkerYouControl`, `causeGains`, `causeGetsPump`, `sacrificeSource`, `untapSource`), deleted `Resolution.ofSpellStep` and `MutualFight`/`YouControlCounters`, and grouped all nullary constructors after `| frc (e : FrcEffect)`, reducing the maximum field-bearing constructor tag from **242** to **134** (freeing **109 field-bearing constructor slots**).
+   - Merged `SpellResolution`, `TriggerResolution`, and `FraResolution` into a single `Resolution` inductive (`Mtg/Engine/Card/SpellResolution.lean:1800–3272`), with `SpellResolution` and `TriggerResolution` kept as `abbrev`s.
+   - Consolidated **85 redundant spell, ability, trigger, and FRA constructors** across two batches into compositional `Resolution` + selector representations (`.pump`, `.dealDamage`, `.gainLife`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putCounters`, `.createTokens`, `.addMana`, `.tap`, `.fight`, `.becomePrepared`, `.searchBasicLand`, `.queueReflexive`), deleted `Resolution.ofSpellStep` and 5 redundant helper enums (`MutualFight`, `YouControlCounters`, `CreaturePumpScope`, `EachCreatureDamage`, `EachCreatureAmount`), and grouped all nullary constructors after `| frc (e : FrcEffect)`, reducing the maximum field-bearing constructor tag from **242** to **120** (freeing **123 field-bearing constructor slots**).
 
 The sections below document the remaining duplication left over from earlier per-set iterations (`HOB`, `MSH`, `FRA`, `FRC`) and how to complete this unification cleanly.
 
@@ -21,17 +21,17 @@ The sections below document the remaining duplication left over from earlier per
 
 ### Priority 1: Collapse Remaining `PermanentAction` and Target-Indexed FRA Constructors in `Resolution`
 - **Files**:
-  - `Mtg/Engine/Card/SpellResolution.lean` (lines 1832–3550, 3810–3900)
+  - `Mtg/Engine/Card/SpellResolution.lean` (lines 1800–3272, 3760–3870)
   - `Mtg/Engine/Card/PermanentAction.lean` (lines 1–111)
   - `Mtg/Engine/Card/Effect.lean` (lines 325–390)
 - **What remains duplicated**:
   1. **`.onPermanent (action : PermanentAction)` and `.onSource (action : PermanentAction)`**:
-     - `TriggerResolution.ofPermanent` and `TriggerResolution.ofSource` (`SpellResolution.lean:3854–3871`) already translate all 21 `PermanentAction` constructors into compositional Stratum 1 constructors (`.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`, `.grant`, `.putCounters`, `.putOnLibrary`, etc.).
+     - `TriggerResolution.ofPermanent` and `TriggerResolution.ofSource` (`SpellResolution.lean:3810–3827`) already translate all 21 `PermanentAction` constructors into compositional Stratum 1 constructors (`.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`, `.grant`, `.putCounters`, `.putOnLibrary`, etc.).
   2. **Remaining Legacy Spell / FRA Target Constructors**:
-     - `.creaturesPump p t scope`, `.countersOnCreatureTargets`, `.dealDamageToEachCreature`, `.bounce`, `.exileTarget`, `.destroyTarget`, `.destroyAllCreatures`, `.damageSourceAt`, `.plusOneAt`, `.destroyAt`.
+     - `.countersOnCreatureTargets`, `.returnTargetToHand`, `.bounce`, `.exileTarget`, `.destroyTarget`, `.destroyAllCreatures`, `.damageSourceAt`, `.plusOneAt`, `.destroyAt`.
 - **How to refactor**:
   1. Replace `.onPermanent action` and `.onSource action` with `TriggerResolution.ofPermanent action` and `TriggerResolution.ofSource action`, then delete `PermanentAction.lean`.
-  2. Replace `.creaturesPump` with `.pump` (`TriggerResolution.ofSpell` already maps `.creaturesPump p t .youControl => .pump (.fixed p) (.fixed t) .creaturesYouControl`), then eliminate `TriggerResolution.ofSpell`, `Resolution.toSpellStep`, and `Effect.spellResolution`.
+  2. Eliminate `TriggerResolution.ofSpell`, `Resolution.toSpellStep`, and `Effect.spellResolution`.
   3. Express remaining FRA target-indexed constructors (`.bounce`, `.exileTarget`, `.destroyTarget`, `.destroyAllCreatures`) using Stratum 1 constructors.
 
 ---

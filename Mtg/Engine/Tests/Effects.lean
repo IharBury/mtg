@@ -1847,7 +1847,7 @@ def eachCreatureTakesOne : Game :=
 
 def nonGoblinsTakeThree : Game :=
   bearAndGoblin.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype "Goblin"))) #[]
+    (Effect.mkSpell (.of .none) (.dealDamage (.fixed 3) (.nonSubtypeCreatures "Goblin"))) #[]
 
 #guard
   (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&

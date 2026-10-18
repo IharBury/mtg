@@ -246,13 +246,12 @@ def takeAction (a : PermanentAction) : ArgM PermanentAction := do
 def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   match r with
   | .onPermanent a => return .onPermanent (← takeAction a)
-  | .creaturesPump p t scope =>
-    return .creaturesPump (← takeInt p) (← takeInt t) scope
+  | .pump (.fixed p) (.fixed t) who =>
+    return .pump (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
   | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
   | .discard (.cards n) => return .discard (.cards (← takeNat n))
   | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
-  | .gainLife (.fixed n) => return .gainLife (← takeNat n.toNat)
-  | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
+  | .gainLife (.fixed n) who => return .gainLife (← takeNat n.toNat) who
   | .scry (.fixed n) => return .scry (← takeNat n.toNat)
   | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
@@ -326,21 +325,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .fight .announced (.timesPower k) =>
     if k == 1 then return .fight .announced (.timesPower 1)
     else return .fight .announced (.timesPower (← takeNat k))
-  | .dealDamageToControllerOfTarget n =>
-    return .dealDamageToControllerOfTarget (← takeNat n)
+  | .dealDamage (.fixed n) (.nonSubtypeCreatures subtype) note =>
+    return .dealDamage (.fixed (← takeNat n.toNat)) (.nonSubtypeCreatures (← takeStr subtype)) note
+  | .dealDamage (.fixed n) who note =>
+    return .dealDamage (.fixed (← takeNat n.toNat)) who note
   | .amass (.fixed n) subtype =>
     return .amass (← takeNat n.toNat) (← takeStr subtype)
-  | .dealDamageToEachCreature n which amount =>
-    match amount with
-    | .otherSpellsManaValue =>
-      return .dealDamageToEachCreature n which .otherSpellsManaValue
-    | .fixed =>
-      match which with
-      | .each => return .dealDamageToEachCreature (← takeNat n)
-      | .opponentsControl =>
-        return .dealDamageToEachCreature (← takeNat n) .opponentsControl
-      | .nonSubtype subtype =>
-        return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -494,7 +484,6 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
   | .subtypesGainMenace ss => return .subtypesGainMenace (← takeStrs ss)
   | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
-  | .dealDamage (.fixed n) who note => return .dealDamage (← takeNat n.toNat) who note
   | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
   | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeStr s)
@@ -1704,7 +1693,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
-  some ((.dealDamageToEachCreature 5 (.nonSubtype "Elf")))
+  some (.dealDamage (.fixed 5) (.nonSubtypeCreatures "Elf"))
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==

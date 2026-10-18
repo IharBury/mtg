@@ -1437,7 +1437,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .ofKind .. => g
+    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -1564,6 +1564,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         | .alien => g.spawnFace pids alien11redHasteToken n (tapped := tapped)
         | .galactus => g.spawnFace pids galactusToken n (tapped := tapped)
         | .sturdyShield => g.spawnFace pids sturdyShieldToken n (tapped := tapped)
+        | .tigerGod => g.spawnFace pids tigerGodToken n (tapped := tapped)
       match note, last with
       | .remember, some id => { g with createdTokenThisWay := some id }
       | .invasion, some id =>
@@ -3905,7 +3906,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             sourceName
             cardPower
             steps := combined } }
-  | .gainLife amount =>
+  | .gainLife amount .you =>
     g.applyGainLife controller ab sourceId targets amount sequencedCardPower
       lastKnownPower
   | .exile what how note =>
@@ -4620,7 +4621,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyOnPermanent controller ab.targetKind targets a sourceId
       (some "The target is no longer legal")
   | .onSource a => g.applyOnTriggerSource sourceId a
-  | .gainLife (.fixed n) => g.gainLife controller n.toNat
+  | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
   | .recruit _ => g.beginRecruit controller
   | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>

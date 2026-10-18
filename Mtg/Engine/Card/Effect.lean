@@ -107,12 +107,14 @@ private def phraseWith (r : Resolution) (noun : String)
     PermanentAction.toNotation action noun (sentence := true)
   | .onSource action =>
     PermanentAction.toNotation action "this creature" (sentence := true)
-  | .gainLife (.fixed n) =>
+  | .gainLife (.fixed n) .you =>
     s!"You gain {n} life"
   | .recruit _ =>
     "Recruit"
   | .amass (.fixed n) "Goblin" _ _ =>
     s!"Amass Goblins {n.toNat}"
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ =>
+    "Create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
   | .createTokens kind (.fixed n) tapped _ _ _ =>
     capitalizeAscii (TokenKind.createPhrase kind n.toNat (tapped := tapped))
   | .createTokens kind .chosenX _ _ _ _ =>
@@ -129,7 +131,7 @@ private def phraseWith (r : Resolution) (noun : String)
     capitalizeAscii (searchBasicLandTappedPhrase "your")
   | .searchLandTypeToHand t =>
     capitalizeAscii (searchLibraryToHandPhrase s!"a {t} card")
-  | .exileTop =>
+  | .exile .top .playUntilNextTurn =>
     "Exile the top card of your library. You may play it until the end of your next turn"
   | .attach .source .target =>
     s!"Attach this Equipment to {noun}"
@@ -139,7 +141,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Return this card from your graveyard to the battlefield tapped"
   | .returnToHand .source _ =>
     "Return this card from your graveyard to your hand"
-  | .creaturesPump p t .youControl =>
+  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .mill (.fixed n) .you .none =>
     s!"Mill {cardPhrase n.toNat}"
@@ -149,7 +151,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Add one mana of any color"
   | .returnFromGyAttach =>
     s!"Return this card from your graveyard to the battlefield attached to {noun}"
-  | .searchBasicLandToHand =>
+  | .searchLibrary (.returnToHand .basicLand) =>
     capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
@@ -217,11 +219,11 @@ private def phraseWith (r : Resolution) (noun : String)
     "Add four mana in any combination of colors"
   | .addTwoAnyColorEquipment =>
     "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
-  | .drawPerDiscardedThisTurn =>
+  | .draw .cardsDiscardedThisTurn _ =>
     "Draw a card for each card you've discarded this turn"
-  | .dealDamageToEachCreature n .each .fixed =>
+  | .dealDamage (.fixed n) .allCreatures _ =>
     s!"This deals {n} damage to each creature"
-  | .createTokensEqualRemovedPlusOnes kind =>
+  | .createTokens kind .removedPlusOnes _ _ _ _ =>
     s!"Create that many {kind.pluralNoun}"
   | .exileTopXPlayThisTurn =>
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
@@ -238,8 +240,6 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
   | .millThenPutSubtypeOrEnchantment n subtype =>
     s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
-  | .createTigerGod =>
-    "Create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
   | .chooseOddOrEvenDestroy =>
     "Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .returnFromGyFinalityAttach =>
@@ -267,7 +267,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Surveil {n}"
   | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
     s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
-  | .createTokensLifeGained kind =>
+  | .createTokens kind .lifeGainedThisTurn _ _ _ _ =>
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
   | .oppSacrificesGreatestMv =>
     s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
@@ -281,7 +281,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Return {noun} to its owner's hand"
   | .returnTargetToHand .graveyard =>
     s!"Return {noun} to your hand"
-  | .eachCreatureYouControlBecomesPrepared =>
+  | .becomePrepared .creaturesYouControl =>
     "Each creature you control becomes prepared"
   | .damageThenEmpowerExcess n =>
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
@@ -334,9 +334,9 @@ Activated-ability constructors stay `none`, so `spellResolution` is
 def toSpellStep : Resolution → Option SpellResolution
   | .unrecognized | .sequence _ => none
   | .onSource _ | .searchBasicLand | .searchLandTypeToHand _
-  | .exileTop | .becomeSubtypeWithLandsPT _
+  | .exile .top .playUntilNextTurn | .becomeSubtypeWithLandsPT _
   | .returnFromGraveyardTapped | .returnToHand .source _
-  | .addAnyColor | .returnFromGyAttach | .searchBasicLandToHand
+  | .addAnyColor | .returnFromGyAttach | .searchLibrary (.returnToHand .basicLand)
   | .searchTwoBasicsSplit | .subtypesGainMenace _
   | .exileThenReturnNextEnd | .searchBasicBeholdSubtypeUntap _
   | .twoPlayersDraw | .discardLegendarySameNameDraw
@@ -351,20 +351,20 @@ def toSpellStep : Resolution → Option SpellResolution
   | .addAnyColorSpendOnlySubtype _ | .addAnyColorSpendOnlyArtifactSpell
   | .addTwoAnyColorCreatureSources | .addBlueCantNonartifact
   | .addAnyColorEqualToSourcePower | .addFourAnyCombination
-  | .addTwoAnyColorEquipment | .drawPerDiscardedThisTurn
-  | .createTokensEqualRemovedPlusOnes _ | .exileTopXPlayThisTurn
+  | .addTwoAnyColorEquipment | .draw .cardsDiscardedThisTurn _
+  | .createTokens _ .removedPlusOnes _ _ _ _ | .exileTopXPlayThisTurn
   | .copyControlledAbility _
   | .proliferateEachKind | .equipmentBecomesConstructHero
   | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
-  | .createTigerGod | .chooseOddOrEvenDestroy
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .chooseOddOrEvenDestroy
   | .returnFromGyFinalityAttach | .revealTopDrawIfArtifact
   | .copyArtifactYouControlNotLegendary
   | .becomeTypes _ _ _ _ | .nextInstantSorceryCopyIfMvAtMostSourcePower
   | .harnessInfinityStone | .targetSubtypeConnives _
   | .mill _ .you _ | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokensLifeGained _
+  | .createTokens _ .lifeGainedThisTurn _ _ _ _
   | .oppSacrificesGreatestMv | .creaturesWithoutFlyingCantBlock
-  | .eachCreatureYouControlBecomesPrepared
+  | .becomePrepared .creaturesYouControl
   | .damageThenEmpowerExcess _ | .jaceLoyaltyAtInstantSpeed
   | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
@@ -394,22 +394,22 @@ def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
 partial def doesNothingAsSpell (r : Resolution) : Bool :=
   match r with
   | .sequence rs => rs.any doesNothingAsSpell
-  | .shuffleSource | .gainLife _ | .dealDamage _ _ _
+  | .shuffleSource | .gainLife _ _ | .dealDamage _ _ _
   | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
   | .empowerJace _ | .surveil _ | .mill _ .you _
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokensLifeGained _ | .oppSacrificesGreatestMv
-  | .createTigerGod | .extraTurn | .draw .perBurden _
+  | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .oppSacrificesGreatestMv
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .extraTurn | .draw .perBurden _
   | .creaturesWithoutFlyingCantBlock
   | .chooseOddOrEvenDestroy
-  | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
+  | .becomePrepared .creaturesYouControl | .damageThenEmpowerExcess _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
   | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
   | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
   | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
   | .grant (.keywords _) .creaturesYouControl
   | .jaceLoyaltyAtInstantSpeed | .draw .lastKnownPower _ => false
-  | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
+  | .searchBasicLand | .searchLandTypeToHand _ | .searchLibrary (.returnToHand .basicLand) | .exile .top .playUntilNextTurn => false
   | .unrecognized => true
   | r =>
     if r.isFra then false

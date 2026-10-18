@@ -102,17 +102,17 @@ inductive FraNext where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → Resolution
-  | .searchBasicLandTapped => .searchBasicLandTapped
+  | .searchBasicLandTapped => .searchBasicLand
   | .searchLandsTapped n => .searchLandsTapped n
   | .searchEnchantmentToHand => .searchEnchantmentToHand
-  | .tappedHeartwoods n => .tappedHeartwoods n
-  | .eachOpponentSacrificesCreature => .eachOpponentSacrificesCreature
+  | .tappedHeartwoods n => .createTokens .heartwood (.fixed n) true
+  | .eachOpponentSacrificesCreature => .sacrifice .eachOpponentsCreature
   | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
   | .eyeOfJaceCheck => .eyeOfJaceCheck
-  | .reflexiveDamageAnyTarget n => .reflexiveDamageAnyTarget n
-  | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
-  | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
-  | .beastToken => .beastToken
+  | .reflexiveDamageAnyTarget n => .queueReflexive (.dealDamage (.fixed n) .target)
+  | .reflexiveDestroyPerOpponent => .queueReflexive (.destroy (.target .eachPermanent))
+  | .reflexiveReturnLandTapped => .queueReflexive .returnFromGyToBattlefieldTapped
+  | .beastToken => .createTokens .beast44trample (.fixed 1) false
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid
   | .gainLife n => .gainLife n
