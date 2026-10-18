@@ -115,6 +115,10 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Amass Goblins {n.toNat}"
   | .createTokens kind (.fixed n) tapped _ _ _ =>
     capitalizeAscii (TokenKind.createPhrase kind n.toNat (tapped := tapped))
+  | .createTokens kind .chosenX _ _ _ _ =>
+    s!"Create X {kind.pluralNoun}"
+  | .createTokens kind (.perSubtype subtype) _ _ _ _ =>
+    s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .addMana types (.fixed 1) =>
     s!"Add {manaSymbolsText types}"
   | .discard (.cards n) =>
@@ -133,10 +137,12 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
   | .returnFromGraveyardTapped =>
     "Return this card from your graveyard to the battlefield tapped"
-  | .returnFromGraveyardToHand =>
+  | .returnToHand .source _ =>
     "Return this card from your graveyard to your hand"
-  | .creaturesYouControlPump p t =>
+  | .creaturesPump p t .youControl =>
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .mill (.fixed n) .you .none =>
+    s!"Mill {cardPhrase n.toNat}"
   | .mill (.fixed n) _ _ =>
     s!"{noun} mills {n} cards"
   | .addAnyColor =>
@@ -145,8 +151,6 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Return this card from your graveyard to the battlefield attached to {noun}"
   | .searchBasicLandToHand =>
     capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
-  | .createTokensX kind =>
-    s!"Create X {kind.pluralNoun}"
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .subtypesGainMenace subtypes =>
@@ -159,9 +163,9 @@ private def phraseWith (r : Resolution) (noun : String)
     "Two target players each draw a card"
   | .discardLegendarySameNameDraw =>
     "Draw two cards"
-  | .dealDamageToAny n =>
+  | .dealDamage (.fixed n) .target _ =>
     s!"This creature deals {n} damage to any target"
-  | .drawEqualToLastKnownPower =>
+  | .draw .lastKnownPower _ =>
     "Draw cards equal to the sacrificed creature's power"
   | .arwenShare =>
     "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
@@ -169,17 +173,17 @@ private def phraseWith (r : Resolution) (noun : String)
     "Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
   | .putShadowCounter =>
     "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
-  | .damageEachOpponent n =>
+  | .dealDamage (.fixed n) (.player .eachOpponent) _ =>
     s!"This deals {n} damage to each opponent"
   | .chooseTwoDestroyRest =>
     "Choose up to two creatures, then destroy the rest"
   | .blackGateUnblockable =>
     "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
-  | .drawEqualToBurdenCounters =>
+  | .draw .perBurden _ =>
     "Draw a card for each burden counter on this"
-  | .teamGain k =>
+  | .grant (.keywords k) .creaturesYouControl =>
     s!"Creatures you control gain {k.joinedAnd} until end of turn"
-  | .plusOneOnEachOtherSubtype subtype n =>
+  | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype) =>
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .extraTurn =>
     "Take an extra turn after this one. During that turn, power-up abilities can't be activated"
@@ -193,7 +197,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
   | .transform =>
     "Transform this"
-  | .drawX =>
+  | .draw .chosenX _ =>
     "Draw X cards"
   | .lookAtTopRevealArtifact n =>
     s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
@@ -221,13 +225,11 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Create that many {kind.pluralNoun}"
   | .exileTopXPlayThisTurn =>
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
-  | .targetPlayerDraw n =>
-    s!"{noun} draws {cardPhrase n}"
+  | .draw (.fixed n) .player =>
+    s!"{noun} draws {cardPhrase n.toNat}"
   | .copyControlledAbility fromCreature =>
     let src := if fromCreature then "a creature" else "an artifact"
     s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
-  | .createTokensEqualSubtype kind subtype =>
-    s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .proliferateEachKind =>
     "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
   | .equipmentBecomesConstructHero =>
@@ -263,22 +265,22 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Empower Jace {n}"
   | .surveil (.fixed n) =>
     s!"Surveil {n}"
-  | .millSelf n =>
-    s!"Mill {cardPhrase n}"
-  | .mayDiscardDraw n =>
-    s!"You may discard a card. If you do, draw {cardPhrase n}"
+  | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
+    s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
   | .createTokensLifeGained kind =>
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
   | .oppSacrificesGreatestMv =>
     s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
   | .creaturesWithoutFlyingCantBlock =>
     "Creatures without flying can't block this turn"
-  | .targetPlayerLoseLife n =>
+  | .loseLife (.fixed n) .player =>
     s!"{noun} loses {n} life"
-  | .controllerOfTargetLosesLife n =>
+  | .loseLife (.fixed n) (.controller .target) =>
     s!"Its controller loses {n} life"
-  | .returnTargetSpell =>
+  | .returnTargetToHand .spell =>
     s!"Return {noun} to its owner's hand"
+  | .returnTargetToHand .graveyard =>
+    s!"Return {noun} to your hand"
   | .eachCreatureYouControlBecomesPrepared =>
     "Each creature you control becomes prepared"
   | .damageThenEmpowerExcess n =>
@@ -319,59 +321,39 @@ def toPhrase (r : Resolution) (noun : String) : String :=
   | .sequence rs => String.intercalate ". " (rs.map (fun step => toPhrase step noun))
   | r => phraseWith r noun fun _ => ""
 
-/-- One spell step on the shared vocabulary. Names that already exist stay
-themselves. A few spell shapes land on the activated-ability constructor
-that means the same thing. `sequence` is flattened by `ofSpell`. -/
-def ofSpellStep : SpellResolution → Resolution
-  | .draw (.fixed n) .player => .targetPlayerDraw n.toNat
-  | .loseLife (.fixed n) .player => .targetPlayerLoseLife n.toNat
-  | .loseLife (.fixed n) (.controller .target) => .controllerOfTargetLosesLife n.toNat
-  | .returnTargetToHand .spell => .returnTargetSpell
-  | .returnTargetToHand .graveyard => .returnFromGyToHand
-  | .creaturesPump p t .youControl => .creaturesYouControlPump p t
-  | .createTokens kind .chosenX false .kind .you .none => .createTokensX kind
-  | .sequence rs => .sequence (rs.map ofSpellStep)
-  | r => r
-
-/-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
+/-- Lift a spell resolution onto the shared `Resolution` vocabulary, flattening
+nested sequences. -/
 def ofSpell (r : SpellResolution) : Resolution :=
   match r with
   | .sequence rs => .sequence ((rs.map ofSpell).flatMap flatten)
-  | r => ofSpellStep r
+  | r => r
 
 /-- A shared resolution as a spell step, when every part of it is one.
 Activated-ability constructors stay `none`, so `spellResolution` is
 `.unrecognized` for them. -/
 def toSpellStep : Resolution → Option SpellResolution
-  | .returnFromGyToHand => some (.returnTargetToHand .graveyard)
-  | .targetPlayerLoseLife n => some (.loseLife n .player)
-  | .controllerOfTargetLosesLife n => some (.loseLife n (.controller .target))
-  | .returnTargetSpell => some .returnTargetToHand
-  | .creaturesYouControlPump p t => some (.creaturesPump p t)
-  | .createTokensX kind => some (.createTokens kind .chosenX)
-  | .targetPlayerDraw n => some (.draw n .player)
   | .unrecognized | .sequence _ => none
   | .onSource _ | .searchBasicLand | .searchLandTypeToHand _
   | .exileTop | .becomeSubtypeWithLandsPT _
-  | .returnFromGraveyardTapped | .returnFromGraveyardToHand
+  | .returnFromGraveyardTapped | .returnToHand .source _
   | .addAnyColor | .returnFromGyAttach | .searchBasicLandToHand
   | .searchTwoBasicsSplit | .subtypesGainMenace _
   | .exileThenReturnNextEnd | .searchBasicBeholdSubtypeUntap _
   | .twoPlayersDraw | .discardLegendarySameNameDraw
-  | .dealDamageToAny _ | .drawEqualToLastKnownPower
-  | .drawEqualToBurdenCounters | .arwenShare
+  | .dealDamage _ .target _ | .draw .lastKnownPower _
+  | .draw .perBurden _ | .arwenShare
   | .grantCombatDamageCreateTreasure | .putShadowCounter
-  | .damageEachOpponent _ | .chooseTwoDestroyRest
-  | .blackGateUnblockable | .plusOneOnEachOtherSubtype _ _
+  | .dealDamage _ (.player .eachOpponent) _ | .chooseTwoDestroyRest
+  | .blackGateUnblockable | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
   | .extraTurn | .plusOneX | .eachOppDiscardThenPlusOne
-  | .lookAtTopPutTypes _ _ | .transform | .drawX
+  | .lookAtTopPutTypes _ _ | .transform | .draw .chosenX _
   | .lookAtTopRevealArtifact _
   | .addAnyColorSpendOnlySubtype _ | .addAnyColorSpendOnlyArtifactSpell
   | .addTwoAnyColorCreatureSources | .addBlueCantNonartifact
   | .addAnyColorEqualToSourcePower | .addFourAnyCombination
   | .addTwoAnyColorEquipment | .drawPerDiscardedThisTurn
   | .createTokensEqualRemovedPlusOnes _ | .exileTopXPlayThisTurn
-  | .copyControlledAbility _ | .createTokensEqualSubtype _ _
+  | .copyControlledAbility _
   | .proliferateEachKind | .equipmentBecomesConstructHero
   | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
   | .createTigerGod | .chooseOddOrEvenDestroy
@@ -379,7 +361,8 @@ def toSpellStep : Resolution → Option SpellResolution
   | .copyArtifactYouControlNotLegendary
   | .becomeTypes _ _ _ _ | .nextInstantSorceryCopyIfMvAtMostSourcePower
   | .harnessInfinityStone | .targetSubtypeConnives _
-  | .millSelf _ | .mayDiscardDraw _ | .createTokensLifeGained _
+  | .mill _ .you _ | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
+  | .createTokensLifeGained _
   | .oppSacrificesGreatestMv | .creaturesWithoutFlyingCantBlock
   | .eachCreatureYouControlBecomesPrepared
   | .damageThenEmpowerExcess _ | .jaceLoyaltyAtInstantSpeed
@@ -387,6 +370,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
   | .returnFromGyWithFinality | .firstDealsStatDamageToSecond _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ => none
+  | r@(.returnTargetToHand _) => some r
   | r => if r.isFra then none else some r
 
 /-- The spell view of `r`. A sequence is a spell sequence only when every
@@ -410,18 +394,21 @@ def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
 partial def doesNothingAsSpell (r : Resolution) : Bool :=
   match r with
   | .sequence rs => rs.any doesNothingAsSpell
-  | .shuffleSource | .gainLife _ | .damageEachOpponent _ | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
-  | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
+  | .shuffleSource | .gainLife _ | .dealDamage _ _ _
+  | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
+  | .empowerJace _ | .surveil _ | .mill _ .you _
+  | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokensLifeGained _ | .oppSacrificesGreatestMv
-  | .createTigerGod | .extraTurn | .drawEqualToBurdenCounters
-  | .creaturesWithoutFlyingCantBlock | .targetPlayerLoseLife _
-  | .controllerOfTargetLosesLife _ | .returnTargetSpell | .chooseOddOrEvenDestroy
+  | .createTigerGod | .extraTurn | .draw .perBurden _
+  | .creaturesWithoutFlyingCantBlock
+  | .chooseOddOrEvenDestroy
   | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
   | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
   | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
   | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
-  | .teamGain _ | .jaceLoyaltyAtInstantSpeed | .drawEqualToLastKnownPower => false
+  | .grant (.keywords _) .creaturesYouControl
+  | .jaceLoyaltyAtInstantSpeed | .draw .lastKnownPower _ => false
   | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
   | .unrecognized => true
   | r =>

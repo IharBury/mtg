@@ -634,7 +634,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     (.filtered { noun := "up to two target lands", types := #[.land] }) (allowsZeroTargets := true) (maxTargets := 2),
   FraCandidates.ab (.attackersGetTwoTwoTrampleUntilYourTurn)
     "Until your next turn, whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn",
-  FraCandidates.ab (.sequence [.damageEachOpponent 1, .gainLife 1])
+  FraCandidates.ab (.sequence [.dealDamage (.fixed 1) (.player .eachOpponent), .gainLife 1])
     "This planeswalker deals 1 damage to each opponent and you gain 1 life",
   FraCandidates.ab (.plusOnePerLand) "Put a +1/+1 counter on target creature for each land you control"
     (.filtered TargetFilter.creature),
@@ -1201,7 +1201,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra .dies "When this creature dies, if it isn't a token, create a token that's a copy of it."
     (.copyTokenOfSourceIfNotToken) (cond := .sourceNotToken),
   TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, you gain 2 life." (.gainLife 2),
-  TriggeredAbility.fra .enter "When this creature enters, mill three cards." (.millSelf 3),
+  TriggeredAbility.fra .enter "When this creature enters, mill three cards." (.mill 3),
   TriggeredAbility.fra (.fra .yourBeginCombatFromGraveyard)
     "At the beginning of combat on your turn, if two or more creatures died this turn, return this card from your graveyard to the battlefield."
     (.returnSourceFromGy false false 0) (cond := .twoCreaturesDiedThisTurn),
@@ -1212,16 +1212,16 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.deathtouch)])
     (.filtered TargetFilter.creature),
   TriggeredAbility.fra .attack "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 life."
-    (.sequence [.damageEachOpponent 1, .gainLife 1]),
+    (.sequence [.dealDamage 1 (.player .eachOpponent), .gainLife 1]),
   TriggeredAbility.fra .enter "When this enchantment enters, it deals X damage to any target." (.damageX) .playerOrCreature,
   TriggeredAbility.fra .youCastNoncreature "Whenever you cast a noncreature spell, put a +1/+1 counter on this creature."
-    (.plusOneOnSource 1),
+    (.putCounters (.ofKind .plusOnePlusOne 1) .source),
   TriggeredAbility.fra (.fra .eachUpkeepFromGraveyard)
     "At the beginning of each upkeep, if an opponent was dealt noncombat damage last turn, return this card from your graveyard to your hand."
     (.returnSourceFromGy true false 0) (cond := .opponentDealtNoncombatDamageLastTurn),
   TriggeredAbility.fra .enter
     "When this creature enters, creatures you control gain trample and get +X/+0 until end of turn, where X is the number of artifacts you control."
-    (.sequence [.creaturesGetPowerPerArtifact, .teamGain Keyword.trample]),
+    (.sequence [.creaturesGetPowerPerArtifact, .grant (.keywords Keyword.trample) .creaturesYouControl]),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
     (.searchCardThenDiscardRandom),
@@ -1229,7 +1229,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.createTokens .cadet 1),
   TriggeredAbility.fra (.fra .opponentsDealtNoncombatDamage)
     "Whenever one or more opponents are dealt noncombat damage, creatures you control get +1/+0 until end of turn."
-    (.creaturesYouControlPump 1 0),
+    (.creaturesPump 1 0 .youControl),
   TriggeredAbility.fra .enter
     "When this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost."
     (.grantFlashbackUntilEot)
@@ -1238,7 +1238,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.mayDiscardThenDamage 2),
   TriggeredAbility.fra .combatDamageToPlayer
     "Whenever this creature deals combat damage to a player, return target land card from your graveyard to your hand."
-    (.returnFromGyToHand)
+    (.returnTargetToHand .graveyard)
     (.filtered { noun := "target land card from your graveyard", zone := .yourGraveyard, types := #[.land] }),
   TriggeredAbility.fra .anotherCreatureYouControlEnters "Whenever another creature you control enters, you gain 1 life."
     (.gainLife 1),
@@ -1248,7 +1248,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra .enter "When this creature enters, create a Heartwood token." (.createTokens .heartwood 1),
   TriggeredAbility.fra (.fra .youPutLoyaltyCounters)
     "Whenever you put one or more loyalty counters on a planeswalker, put a +1/+1 counter on this creature."
-    (.plusOneOnSource 1),
+    (.putCounters (.ofKind .plusOnePlusOne 1) .source),
   TriggeredAbility.fra .enter
     "When this creature enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
     (.maySearchBasicLandTapped),
@@ -1259,11 +1259,11 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra .youGainLife "Whenever you gain life, draw a card. This ability triggers only once each turn."
     (.draw 1) (once := true),
   TriggeredAbility.fra .youScryOrSurveil "Whenever you scry or surveil, put a +1/+1 counter on each creature you control."
-    (.plusOneOnEachCreatureYouControl),
+    (.putCounters (.ofKind .plusOnePlusOne) .youControl),
   TriggeredAbility.fra (.fra .enchantedDies)
     "When enchanted creature dies, return that card to the battlefield tapped under its owner's control."
     (.returnCauseTapped),
-  TriggeredAbility.fra .eachEndStep "At the beginning of the end step, sacrifice this creature." (.sacrificeSource),
+  TriggeredAbility.fra .eachEndStep "At the beginning of the end step, sacrifice this creature." (.sacrifice .source),
   TriggeredAbility.fra (.fra .creatureYouControlAttacks)
     "Whenever a creature you control attacks, that creature deals 1 damage to each opponent."
     (.causeDealsDamageToEachOpponent 1),
@@ -1319,12 +1319,12 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "Whenever you scry or surveil, create a 1/1 colorless Thopter artifact creature token with flying. This ability triggers only once each turn."
     (.createTokens .thopter 1) (once := true),
   TriggeredAbility.fra .youGainLife "Whenever you gain life, put a loyalty counter on each planeswalker you control."
-    (.loyaltyOnEachPlaneswalkerYouControl),
+    (.putCounters (.ofKind .loyalty) .planeswalkersYouControl),
   TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
     "Whenever a creature you control attacks a player alone, it gains double strike until end of turn."
-    (.causeGains Keyword.doubleStrike),
+    (.grant (.keywords Keyword.doubleStrike) .cause),
   TriggeredAbility.fra (.fra .anotherNontokenCreatureYouControlEnters)
-    "Whenever another nontoken creature you control enters, untap this creature." (.untapSource),
+    "Whenever another nontoken creature you control enters, untap this creature." (.untap .source),
   TriggeredAbility.fra .enter
     "When this creature enters, for each opponent, tap up to one target creature that player controls. Put a stun counter on each of those creatures."
     (.tapAndStunPerOpponent) (.filtered { noun := "up to one target creature that player controls", types := #[.creature], controller := .eachOpponent })
@@ -1339,7 +1339,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "Whenever an opponent activates a loyalty ability, this creature deals 1 damage to that player."
     (.damageCauseController 1),
   TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlEnters)
-    "Whenever another creature or planeswalker you control enters, mill two cards." (.millSelf 2),
+    "Whenever another creature or planeswalker you control enters, mill two cards." (.mill 2),
   TriggeredAbility.fra .enter "When this creature enters, remove up to three counters from another target creature or planeswalker."
     (.removeUpToCounters 3)
     (.filtered { TargetFilter.creatureOrPlaneswalker with noun := "another target creature or planeswalker", another := true }),
@@ -1348,13 +1348,13 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.sequence [.damageAny 1, .gainLife 1]) .opponent,
   TriggeredAbility.fra (.fra .opponentDealtNoncombatDamage)
     "Whenever an opponent is dealt noncombat damage, put a +1/+1 counter on this creature."
-    (.plusOneOnSource 1),
+    (.putCounters (.ofKind .plusOnePlusOne 1) .source),
   TriggeredAbility.fra (.fra .playerDiscards)
     "Whenever a player discards one or more cards, this creature deals 1 damage to each opponent."
-    (.damageEachOpponent 1),
+    (.dealDamage 1 (.player .eachOpponent)),
   TriggeredAbility.fra .creatureYouControlDies
     "Whenever a creature you control dies, put a loyalty counter on each planeswalker you control."
-    (.loyaltyOnEachPlaneswalkerYouControl),
+    (.putCounters (.ofKind .loyalty) .planeswalkersYouControl),
   TriggeredAbility.fra .enter
     "When this creature enters, you may sacrifice a creature or planeswalker. When you do, each opponent sacrifices a creature of their choice."
     (.maySacrificeThenEdict),
@@ -1376,7 +1376,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.damageCauseController 1),
   TriggeredAbility.fra .yourEndStep
     "At the beginning of your end step, if you didn't cast a spell this turn, put two +1/+1 counters on this creature."
-    (.plusOneOnSource 2) (cond := .castNoSpellThisTurn),
+    (.putCounters (.ofKind .plusOnePlusOne 2) .source) (cond := .castNoSpellThisTurn),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for up to X basic land cards with different names, reveal them, put them into your hand, then shuffle."
     (.fblthpSearch),
@@ -1419,7 +1419,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "Whenever you cast a noncreature spell, create a 1/1 colorless Thopter artifact creature token with flying."
     (.createTokens .thopter 1),
   TriggeredAbility.fra (.fra .youCastArtifactOrCreature) "Whenever you cast an artifact or creature spell, untap this creature."
-    (.untapSource),
+    (.untap .source),
   TriggeredAbility.fra (.fra .creatureYouControlLeaves)
     "Whenever a creature you control leaves the battlefield, if it had counters on it, put those counters on this artifact."
     (.putCauseCountersOnSource) (cond := .causeHadCounters),
@@ -1646,7 +1646,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       (.filtered { noun := "target land", types := #[.land] }))
     { mana := ManaCost.ofGeneric 3, fra := .exileSourceFromHand } (activateFromHand := true),
   ActivatedAbility.fra "{4}{W}: Creatures you control get +1/+1 until end of turn."
-    (FraCandidates.ab (.creaturesYouControlPump 1 1) "Creatures you control get +1/+1 until end of turn")
+    (FraCandidates.ab (.creaturesPump 1 1 .youControl) "Creatures you control get +1/+1 until end of turn")
     { mana := ⟨#[.generic 4, .colored .white]⟩ },
   ActivatedAbility.fra "{3}{U}{U}, Exile this card from your graveyard: Draw two cards."
     (FraCandidates.ab (.draw 2) "Draw two cards")
@@ -1661,7 +1661,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     (FraCandidates.ab (.onSource (.pump 1 (-1))) "This creature gets +1/-1 until end of turn")
     { mana := ManaCost.ofGeneric 2 },
   ActivatedAbility.fra "{3}{B}, Exile this card from your graveyard: Return another target creature card from your graveyard to your hand."
-    (FraCandidates.ab (.returnFromGyToHand) "Return another target creature card from your graveyard to your hand"
+    (FraCandidates.ab (.returnTargetToHand .graveyard) "Return another target creature card from your graveyard to your hand"
       (.filtered { noun := "another target creature card from your graveyard", zone := .yourGraveyard
                    types := #[.creature], another := true }))
     { mana := ⟨#[.generic 3, .colored .black]⟩, exileSourceFromGraveyard := true }
@@ -1681,10 +1681,10 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { sacrificeSource := true } (onlyAsSorcery := true),
   ActivatedAbility.fra
     "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
-    (FraCandidates.ab (.sequence [.plusOneOnSource 1, .chooseKeyword [0, 1, 2]]) "Put a +1/+1 counter on this creature")
+    (FraCandidates.ab (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .chooseKeyword [0, 1, 2]]) "Put a +1/+1 counter on this creature")
     { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact },
   ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
-    (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
+    (FraCandidates.ab (.returnToHand .source) "Return this card from your graveyard to your hand")
     { mana := ⟨#[.generic 4, .colored .green]⟩ } (activateFromGraveyard := true),
   ActivatedAbility.fra "{3}{G}, Discard this card: Destroy target creature with flying."
     (FraCandidates.ab (.destroyTarget) "Destroy target creature with flying"
@@ -1699,7 +1699,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       "Create a Heartwood token")
     { mana := ManaCost.ofGeneric 6 },
   ActivatedAbility.fra "{2}{W/B}: Return this card from your graveyard to your hand."
-    (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
+    (FraCandidates.ab (.returnToHand .source) "Return this card from your graveyard to your hand")
     { mana := ⟨#[.generic 2, .hybrid .white .black]⟩ } (activateFromGraveyard := true),
   ActivatedAbility.fra "{4}{G}{W}: Target creature gains trample and lifelink until end of turn."
     (FraCandidates.ab (.onPermanent (.grantKeywords (Keyword.trample.merge Keyword.lifelink)))
@@ -1707,7 +1707,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { mana := ⟨#[.generic 4, .colored .green, .colored .white]⟩ },
   ActivatedAbility.fra
     "{4}: Create a 2/2 colorless Wizard Soldier creature token named Cadet. Then creatures you control gain haste until end of turn."
-    (FraCandidates.ab (.sequence [.createTokens .cadet 1, .teamGain Keyword.haste]) "Create a Cadet")
+    (FraCandidates.ab (.sequence [.createTokens .cadet 1, .grant (.keywords Keyword.haste) .creaturesYouControl]) "Create a Cadet")
     { mana := ManaCost.ofGeneric 4 },
   ActivatedAbility.fra "{2}: Put target card from your graveyard on the bottom of your library."
     (FraCandidates.ab (.graveyardCardToLibraryBottom) "Put target card from your graveyard on the bottom of your library"
@@ -1817,7 +1817,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     (FraCandidates.ab (.plusOneOnEachWithPlusOne) "Put a +1/+1 counter on each creature you control with a +1/+1 counter on it")
     { mana := ⟨#[.generic 4, .colored .green]⟩ },
   ActivatedAbility.fra "{2}: Return target land card from your graveyard to your hand."
-    (FraCandidates.ab (.returnFromGyToHand) "Return target land card from your graveyard to your hand"
+    (FraCandidates.ab (.returnTargetToHand .graveyard) "Return target land card from your graveyard to your hand"
       (.filtered { noun := "target land card from your graveyard", zone := .yourGraveyard, types := #[.land] }))
     { mana := ManaCost.ofGeneric 2 },
   ActivatedAbility.fra

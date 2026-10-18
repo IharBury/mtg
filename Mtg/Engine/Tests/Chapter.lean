@@ -102,30 +102,30 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .createTokens .villain21menace (.fixed 2) false
 #guard (timing (.spell { resolution := .createTokens .treasure (.perSubtype "Villain") })).resolution ==
   .createTokens .treasure (.perSubtype "Villain") false
-#guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
+#guard (timing (.spell { resolution := .fight .announced .upToOneOther })).resolution ==
   .fight .announced .upToOneOther
-#guard (timing (.spell { resolution := .createGalactus })).resolution ==
+#guard (timing (.spell { resolution := .createTokens .treasure (.fixed 1) false .galactus })).resolution ==
   .createTokens .treasure (.fixed 1) false .galactus
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .createTokens .treasure .perOtherCreature false } ==
   "create a token"
-#guard (timing (.spell { resolution := .nextFreeRGCreature })).resolution ==
+#guard (timing (.spell { resolution := .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying })).resolution ==
   .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
-#guard (timing (.spell { resolution := .plusOneOnEachYouControl })).resolution ==
+#guard (timing (.spell { resolution := .putCounters (.ofKind .plusOnePlusOne) .youControl })).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
-#guard (timing (.spell { resolution := .plusOneOnCreatureN 3 })).resolution ==
+#guard (timing (.spell { resolution := .putCounters (.ofKind .plusOnePlusOne 3) .permanent })).resolution ==
   .putCounters (.ofKind .plusOnePlusOne 3) .permanent
 #guard (timing (.spell { resolution := .loseLife 2 .eachOpponent })).resolution ==
   .loseLife (.fixed 2) .eachOpponent
-#guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
-#guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
+#guard (timing (.spell { resolution := .destroy .target })).resolution == .destroy .target
+#guard (timing (.spell { resolution := .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1)) })).resolution ==
   .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))
-#guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
+#guard (timing (.spell { resolution := .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo })).resolution ==
   .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
-#guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
+#guard (timing (.spell { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) })).resolution ==
   .spellsCostLess (.cardType .artifact) (.fixed 1)
 #guard (timing (.spell {
-    resolution := .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
+    resolution := .sequence [.creaturesPump 1 1, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
   })).resolution ==
   .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
 #guard (timing (.spell {

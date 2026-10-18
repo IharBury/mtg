@@ -243,7 +243,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       name := s!"{srcName} effect", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
         "Whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn."
-        (.causeGetsPump (-5) 0)] }
+        (.pump (.fixed (-5)) (.fixed 0) .cause)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
   | .exileOpponentLibrariesButBottom =>
@@ -391,7 +391,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     g.withLegalKindPermanent controller .creature targets (fun g o =>
       g.dealDamageFrom srcName o n (source := sourceId.bind g.findObject?))
       sourceId (some "The target is no longer legal")
-  | .returnSourceToHand =>
+  | .returnToHand .source _ =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
@@ -445,7 +445,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     else
       { g with pending := .chooseProliferate controller times }.logMsg
         s!"{(g.player controller).name} proliferates {times} time(s)"
-  | .causeGetsPump p t =>
+  | .pump (.fixed p) (.fixed t) (.cause none) =>
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g
     | none => g

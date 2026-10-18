@@ -304,7 +304,7 @@ def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
 def plusOneThenFight (n : Nat) : Effect :=
   mkSpell (.of .creatureYouControlThenOppCreature)
     (.sequence [.countersOnCreatureTargets .plusOnePlusOne n .firstYouControl,
-      .mutualFight])
+      .fight .announced .mutual])
     (castKind := .fight)
 
 /-- Put a +1/+1 counter on the targeted creature you control. If this spell
@@ -313,7 +313,7 @@ def plusOneThenEachOtherIfFromGy : Effect :=
   mkSpell (.of .creatureYouControl)
     (.sequence [
       .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
-      .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)])
+      .«if» .castFromGraveyard (.putCounters (.ofKind .plusOnePlusOne 1) .eachOther)])
     (castKind := .pump)
 
 /-- Draw `n` cards, or `fromGy` cards if this spell was cast from a graveyard. -/
@@ -566,20 +566,20 @@ def eachOpponentLosesLife (n : Nat) : Effect :=
     (castKind := .burn)
 
 def fight : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.mutualFight)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight .announced .mutual)
     (castKind := .fight)
 
 def fightUpToOne : Effect :=
-  mkSpell (.of .creatureYouControlThenOppCreature) (.mutualFight .upToOne)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight .announced .upToOneOther)
     (castKind := .fight)
     (allowsZeroTargets := true)
 
 def plusOneOnEachYouControl : Effect :=
-  mkSpell (.of .none) (.plusOneOnEachYouControl)
+  mkSpell (.of .none) (.putCounters (.ofKind .plusOnePlusOne) .youControl)
     (castKind := .pump)
 
 def plusOneOnCreatureN (n : Nat) : Effect :=
-  mkSpell (.of .creatureYouControl) (.plusOneOnCreatureN n)
+  mkSpell (.of .creatureYouControl) (.putCounters (.ofKind .plusOnePlusOne n) .permanent)
     (castKind := .pump)
 
 def pumpThenDraw (power toughness : Int) : Effect :=
@@ -604,16 +604,16 @@ def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
     (castKind := .extraLand)
 
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
-  mkSpell (.of .none) (.sequence [.creaturesPump power toughness, .teamGain k])
+  mkSpell (.of .none) (.sequence [.creaturesPump power toughness, .grant (.keywords k) .creaturesYouControl])
     (castKind := .massPump)
 
 def destroyUpToOneNonland : Effect :=
-  mkSpell (.of .nonland) (.destroyUpToOneNonland)
+  mkSpell (.of .nonland) (.destroy .target)
     (castKind := .destroyArtifactOrLand)
     (allowsZeroTargets := true)
 
 def createGalactus : Effect :=
-  mkSpell (.of .none) (.createGalactus)
+  mkSpell (.of .none) (.createTokens .treasure (.fixed 1) false .galactus)
     (castKind := .extraLand)
 
 def worldsWithinWorlds : Effect :=
@@ -645,7 +645,7 @@ def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
     (castKind := .draw)
 
 def nextFreeRGCreature : Effect :=
-  mkSpell (.of .none) (.nextFreeRGCreature)
+  mkSpell (.of .none) (.mayCast .nextRedOrGreenCreature .unlimited .withoutPaying)
     (castKind := .extraLand)
 
 def ownerPutsLibraryThenConnive : Effect :=
@@ -657,15 +657,15 @@ def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def mayDrawPerArtifactOppsDraw : Effect :=
-  mkSpell (.of .none) (.mayDrawPerArtifactOppsDraw)
+  mkSpell (.of .none) (.may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo)
     (castKind := .draw)
 
 def mayPutHeroMvOrDraw (n : Nat) : Effect :=
-  mkSpell (.of .none) (.mayPutHeroMvOrDraw n)
+  mkSpell (.of .none) (.may (.put (.creatureFromHand "Hero" n)) (.draw (.fixed 1)))
     (castKind := .draw)
 
 def maySacArtifactOrDiscardDraw (cards : Nat) : Effect :=
-  mkSpell (.of .none) (.maySacArtifactOrDiscardDraw cards)
+  mkSpell (.of .none) (.may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed cards)) .ifYouDo)
     (castKind := .draw)
 
 def chooseTargetDoubleAndTrample : Effect :=
@@ -685,11 +685,11 @@ def returnUpToTwoGyModal : Effect :=
     (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
-  mkSpell (.of .none) (.spellsCostLessThisTurn (.cardType .artifact) n)
+  mkSpell (.of .none) (.spellsCostLess (.cardType .artifact) (.fixed n))
     (castKind := .extraLand)
 
 def supertypeSpellsCostLessThisTurn (n : Nat) : Effect :=
-  mkSpell (.of .none) (.spellsCostLessThisTurn (.supertype .legendary) n)
+  mkSpell (.of .none) (.spellsCostLess (.supertype .legendary) (.fixed n))
     (castKind := .extraLand)
 
 def searchBasicLandTapped : Effect :=
@@ -730,7 +730,7 @@ def returnFromGraveyardTapped : Effect :=
   mkAbility ({}) (.returnFromGraveyardTapped)
 
 def returnFromGraveyardToHand : Effect :=
-  mkAbility ({}) (.returnFromGraveyardToHand)
+  mkAbility ({}) (.returnToHand .source)
 
 def destroyTargetArtifactOrEnchantment : Effect :=
   destroyTarget .artifactOrEnchantment
@@ -775,7 +775,7 @@ def searchTwoBasicsSplit : Effect :=
 
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
   { resolution := .sequence
-      [.creaturesYouControlPump power toughness,
+      [.creaturesPump power toughness .youControl,
        .loseLife life .eachOpponent]
     phrase :=
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
@@ -799,12 +799,12 @@ def discardLegendarySameNameDraw : Effect :=
   mkAbility ({}) (.discardLegendarySameNameDraw)
 
 def dealDamageToAny (n : Nat) : Effect :=
-  mkAbility (.of .playerOrCreature) (.dealDamageToAny n)
+  mkAbility (.of .playerOrCreature) (.dealDamage n .target)
     (castKind := .creatureDamage)
 
 def drawEqualSacrificedPowerThenDiscard : Effect :=
   mkAbility ({})
-    (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)])
+    (.sequence [.draw .lastKnownPower, .discard (.cards 1)])
     (phraseOverride := some
       "Draw cards equal to the sacrificed creature's power, then discard a card")
 
@@ -818,7 +818,7 @@ def putShadowCounter : Effect :=
   mkAbility (.of .creature) (.putShadowCounter)
 
 def damageEachOpponent (n : Nat) : Effect :=
-  mkAbility ({}) (.damageEachOpponent n)
+  mkAbility ({}) (.dealDamage n (.player .eachOpponent))
 
 def chooseTwoDestroyRest : Effect :=
   mkAbility (.of .none) (.chooseTwoDestroyRest)
@@ -828,12 +828,12 @@ def blackGateUnblockable : Effect :=
 
 def burdenThenDraw : Effect :=
   mkAbility ({})
-    (.sequence [.onSource .burdenCounter, .drawEqualToBurdenCounters])
+    (.sequence [.onSource .burdenCounter, .draw .perBurden])
     (phraseOverride := some
       "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring")
 
 def teamGain (k : Keywords) : Effect :=
-  mkAbility ({}) (.teamGain k)
+  mkAbility ({}) (.grant (.keywords k) .creaturesYouControl)
 
 def teamGainDoubleStrike : Effect :=
   teamGain Keyword.doubleStrike
@@ -845,7 +845,7 @@ def sourceGainsIndestructibleTap : Effect :=
       "Witch-king of Angmar gains indestructible until end of turn. Tap him")
 
 def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
-  mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)
+  mkAbility ({}) (.putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype))
 
 def plusOneAndIndestructibleCounter : Effect :=
   mkAbility ({})
@@ -885,7 +885,7 @@ def transform : Effect :=
   mkAbility ({}) (.transform)
 
 def drawX : Effect :=
-  mkAbility ({}) (.drawX)
+  mkAbility ({}) (.draw .chosenX)
 
 def lookAtTopRevealArtifact (n : Nat) : Effect :=
   mkAbility ({}) (.lookAtTopRevealArtifact n)
@@ -934,7 +934,7 @@ def copyControlledAbility (fromCreature : Bool) : Effect :=
              else .stackAbilityFromArtifactSource)) (.copyControlledAbility fromCreature)
 
 def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  mkAbility ({}) (.createTokensEqualSubtype kind subtype)
+  mkAbility ({}) (.createTokens kind (.perSubtype subtype))
 
 def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
   mkAbility ({}) (.createTokens kind n (tapped := true))
@@ -1005,7 +1005,7 @@ def returnFromGyFinalityAttach : Effect :=
 
 def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
   mkAbility (.of .creatureCardInYourGraveyard)
-    (.sequence [.returnFromGyToHand, .onSource (.plusOne n)])
+    (.sequence [.returnTargetToHand .graveyard, .onSource (.plusOne n)])
     (allowsZeroTargets := true)
     (phraseOverride := some
       s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature")
@@ -1056,10 +1056,10 @@ def abilityCreateTokens (kind : TokenKind) (n : Nat) : Effect :=
   mkAbility ({}) (.createTokens kind n)
 
 def abilityCreateTokensX (kind : TokenKind) : Effect :=
-  mkAbility ({}) (.createTokensX kind)
+  mkAbility ({}) (.createTokens kind .chosenX)
 
 def abilityCreaturesYouControlGet (power toughness : Int) : Effect :=
-  mkAbility ({}) (.creaturesYouControlPump power toughness)
+  mkAbility ({}) (.creaturesPump power toughness .youControl)
 
 def abilityDealDamageToEachCreature (n : Nat) : Effect :=
   mkAbility ({}) (.dealDamageToEachCreature n)
@@ -1076,7 +1076,7 @@ def abilityScry (n : Nat) : Effect :=
   mkAbility ({}) (.scry n)
 
 def abilityTargetPlayerDraw (n : Nat) : Effect :=
-  mkAbility (.of .player) (.targetPlayerDraw n)
+  mkAbility (.of .player) (.draw n .player)
 
 /-- Reality Fracture effects. -/
 
@@ -1102,10 +1102,10 @@ def damageTargetOpponent (n : Nat) : Effect :=
       with spellCastKind := .burn }
 
 def millSelf (n : Nat) : Effect :=
-  mkAbility ({}) (.millSelf n)
+  mkAbility ({}) (.mill n)
 
 def mayDiscardDraw (n : Nat) : Effect :=
-  { mkAbility ({}) (.mayDiscardDraw n) with spellCastKind := .draw }
+  { mkAbility ({}) (.may (.discard (.cards 1)) (.draw n) .ifYouDo) with spellCastKind := .draw }
 
 def createTokensThenSurveil (kind : TokenKind) (n s : Nat) : Effect :=
   mkAbility ({}) (.sequence [.createTokens kind n, .surveil s])
@@ -1318,7 +1318,7 @@ def castAwayDoubt : Effect :=
 
 def extendedAbsence : Effect :=
   fraSpell (.filtered TargetFilter.creatureOrPlaneswalker)
-    (.sequence [.exileTarget, .damageEachOpponent 1, .gainLife 1])
+    (.sequence [.exileTarget, .dealDamage 1 (.player .eachOpponent), .gainLife 1])
     "Exile target creature or planeswalker. This spell deals 1 damage to each opponent and you gain 1 life"
     (castKind := .destroyCreature)
 
@@ -1374,7 +1374,7 @@ def vraskasMercyEmpower : Effect :=
 /-! ## Red -/
 
 def artifistAcumen : Effect :=
-  fraUntargeted (.sequence [.teamGain Keyword.firstStrike, .draw 1])
+  fraUntargeted (.sequence [.grant (.keywords Keyword.firstStrike) .creaturesYouControl, .draw 1])
     "Creatures you control gain first strike until end of turn.\nDraw a card"
     (castKind := .pump)
 
@@ -1429,7 +1429,7 @@ def flourishingGrapple : Effect :=
 
 def restoreWithEmpathy : Effect :=
   fraSpell (.filtered { noun := "target permanent card from your graveyard", zone := .yourGraveyard, permanentCard := true })
-    (.sequence [.returnFromGyToHand, .gainLife 4])
+    (.sequence [.returnTargetToHand .graveyard, .gainLife 4])
     "Return target permanent card from your graveyard to your hand. You gain 4 life"
     (castKind := .draw)
 
@@ -1448,7 +1448,7 @@ def tethermagesAdvantage : Effect :=
 /-! ## Multicolor -/
 
 def creaturesYouControlGetUntilEot (p t : Int) : Effect :=
-  fraUntargeted (.creaturesYouControlPump p t)
+  fraUntargeted (.creaturesPump p t .youControl)
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
     (castKind := .pump)
 
@@ -1527,7 +1527,7 @@ def theorixCounter : Effect :=
     (castKind := .counter)
 
 def millThenDraw (m d : Nat) : Effect :=
-  fraUntargeted (.sequence [.millSelf m, .draw d])
+  fraUntargeted (.sequence [.mill m, .draw d])
     s!"Mill {englishNumber m} cards, then draw {cardPhrase d}"
     (castKind := .draw)
 
@@ -1561,7 +1561,7 @@ def tamsResistance : Effect := plusOneThenGrant 1 Keyword.vigilance (upToOne := 
 
 def returnLegendaryCardToHand : Effect :=
   fraSpellOn { noun := "target legendary card from your graveyard", zone := .yourGraveyard, legendary := true }
-    .returnFromGyToHand "Return target legendary card from your graveyard to your hand"
+    (.returnTargetToHand .graveyard) "Return target legendary card from your graveyard to your hand"
 
 def plusOneVigilanceIndestructible : Effect :=
   fraSpell (.filtered TargetFilter.creature)

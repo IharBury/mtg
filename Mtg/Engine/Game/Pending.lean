@@ -116,7 +116,7 @@ def FraNext.toResolution : FraNext → Resolution
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid
   | .gainLife n => .gainLife n
-  | .returnSourceToHand => .returnSourceToHand
+  | .returnSourceToHand => .returnToHand .source
 
 /-- Where cards found by a library search go (CR 701.19). -/
 inductive SearchDest where

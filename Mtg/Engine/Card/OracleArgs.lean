@@ -257,6 +257,16 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
   | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
   | .or rs => return .or (← rs.mapM takeSpell)
+  | .may (.draw (.perControlled ty)) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+    return .may (.draw (.perControlled (← takeCardType ty))) (.draw (.fixed 1) .eachOpponent) .ifYouDo
+  | .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont =>
+    let n ← takeNat n
+    let s ← takeStr s
+    return .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed n)) .ifYouDo =>
+    return .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed (← takeNat n.toNat))) .ifYouDo
+  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
+    return .may (.discard (.cards 1)) (.draw (← takeNat n.toNat)) .ifYouDo
   | .may r _ _ => return .may (← takeSpell r) (.sequence [])
   | .«if» .teamwork (.onPermanent (.grantKeywords kw)) =>
     let name ← takeStr kw.joinedAnd
@@ -303,15 +313,21 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
   | .discardTwoUnlessArtifact n ty =>
     return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
-  | .plusOneOnEachYouControl n which =>
-    return .plusOneOnEachYouControl (← takeNat n) which
+  | .putCounters (.ofKind .plusOnePlusOne n) .youControl =>
+    return .putCounters (.ofKind .plusOnePlusOne (← takeNat n)) .youControl
+  | .putCounters (.ofKind .plusOnePlusOne n) .eachOther =>
+    return .putCounters (.ofKind .plusOnePlusOne (← takeNat n)) .eachOther
+  | .putCounters (.ofKind .plusOnePlusOne n) .permanent =>
+    return .putCounters (.ofKind .plusOnePlusOne (← takeNat n)) .permanent
+  | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype s) =>
+    let s ← takeStr s
+    let n ← takeNat n
+    return .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype s)
   | .fight .announced (.timesPower k) =>
     if k == 1 then return .fight .announced (.timesPower 1)
     else return .fight .announced (.timesPower (← takeNat k))
   | .dealDamageToControllerOfTarget n =>
     return .dealDamageToControllerOfTarget (← takeNat n)
-  | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
-  | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
   | .amass (.fixed n) subtype =>
     return .amass (← takeNat n.toNat) (← takeStr subtype)
   | .dealDamageToEachCreature n which amount =>
@@ -348,18 +364,16 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .createTokens k (.perSubtype s) tapped token who note =>
     return .createTokens k (.perSubtype (← takeStr s)) tapped token who note
   | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
-  | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .millThenPutPermanentGainLife a b =>
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
-  | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
-  | .spellsCostLessThisTurn which n =>
+  | .spellsCostLess which (.fixed n) =>
     match which with
     | .cardType ty =>
-      return .spellsCostLessThisTurn (.cardType (← takeCardType ty)) (← takeNat n)
+      return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
     | .supertype s =>
-      return .spellsCostLessThisTurn (.supertype (← takeSupertype s)) (← takeNat n)
+      return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
   | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
@@ -477,19 +491,13 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .onSource a => return .onSource (← takeAction a)
   | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
   | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
-  | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
   | .subtypesGainMenace ss => return .subtypesGainMenace (← takeStrs ss)
   | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
-  | .dealDamageToAny n => return .dealDamageToAny (← takeNat n)
-  | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
-  | .plusOneOnEachOtherSubtype s n =>
-    return .plusOneOnEachOtherSubtype (← takeStr s) (← takeNat n)
+  | .dealDamage (.fixed n) who note => return .dealDamage (← takeNat n.toNat) who note
   | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
   | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeStr s)
-  | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
-  | .createTokensEqualSubtype k s => return .createTokensEqualSubtype k (← takeStr s)
   | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
   | .millThenPutSubtypeOrEnchantment n s =>
     return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeStr s)
@@ -499,10 +507,6 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
-  | .millSelf n => return .millSelf (← takeNat n)
-  | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
-  | .targetPlayerLoseLife n => return .targetPlayerLoseLife (← takeNat n)
-  | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
   | .damageAny n => return .damageAny (← takeNat n)
   | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
@@ -1629,7 +1633,7 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
+      (.spellsCostLess (.cardType .planeswalker) (.fixed 3))
   | none => false
 
 /-- Refill `proto` from `query` and keep the resolution. -/
@@ -1657,7 +1661,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some ((.riddlesInTheDark 6))
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
-  some ((.plusOneOnEachYouControl 3))
+  some ((.putCounters (.ofKind .plusOnePlusOne 3) .youControl))
 
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
@@ -1670,7 +1674,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
     "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
   some (.sequence [
     (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    (.«if» .castFromGraveyard (.plusOneOnEachYouControl 3 .eachOther))])
+    (.«if» .castFromGraveyard (.putCounters (.ofKind .plusOnePlusOne 3) .eachOther))])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
@@ -1720,7 +1724,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.mayDrawPerArtifactOppsDraw)
     "You may draw a card for each creature you control. If you do, each opponent draws a card" ==
-  some ((.mayDrawPerArtifactOppsDraw .creature))
+  some ((.may (.draw (.perControlled .creature)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo))
 
 #guard refilled (Effect.addRedPerOppArtifacts)
     "add {R} for each enchantment your opponents control" ==
@@ -1752,7 +1756,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      (.spellsCostLessThisTurn (.supertype s) 3)
+      (.spellsCostLess (.supertype s) (.fixed 3))
   | none => false
 
 #guard

@@ -224,7 +224,7 @@ def seqDrawThenDiscard (n : Nat) : Effect :=
 
 /-- The source gets +P/+0 and creatures you control gain trample. -/
 def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
-  { resolution := .sequence [.onSource (.pump power 0), .teamGain Keyword.trample] }
+  { resolution := .sequence [.onSource (.pump power 0), .grant (.keywords Keyword.trample) .creaturesYouControl] }
 
 /-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
 def seqPlusOneAndLifelink (kind : EffectTargetKind) : Effect :=
@@ -249,7 +249,7 @@ def seqDrawPlusOneSource : Effect :=
 /-- Creatures you control get +P/+0 and gain first strike until end of turn. -/
 def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
   { resolution := .sequence
-      [.creaturesYouControlPump power 0, .teamGain Keyword.firstStrike] }
+      [.creaturesPump power 0 .youControl, .grant (.keywords Keyword.firstStrike) .creaturesYouControl] }
 
 /-- Put a +1/+1 counter on the source and draw a card. -/
 def seqPlusOneOnSourceAndDraw : Effect :=
@@ -257,7 +257,7 @@ def seqPlusOneOnSourceAndDraw : Effect :=
 
 /-- The source gets +1/+1 until end of turn and deals `n` damage to each opponent. -/
 def seqPumpAndDamageOpponents (n : Nat) : Effect :=
-  { resolution := .sequence [.onSource (.pump 1 1), .damageEachOpponent n] }
+  { resolution := .sequence [.onSource (.pump 1 1), .dealDamage n (.player .eachOpponent)] }
 
 /-- Untap another creature you control. If it has `subtype`, put a +1/+1 counter on it. -/
 def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=

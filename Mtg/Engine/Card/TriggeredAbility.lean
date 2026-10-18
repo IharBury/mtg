@@ -1839,7 +1839,7 @@ def sequenceClause (e : Effect) : Option String :=
     some "you draw a card and lose 1 life"
   | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
     some s!"draw {cardPhrase n.toNat}, then discard a card"
-  | .sequence [.onSource (.pump p 0), .teamGain k] =>
+  | .sequence [.onSource (.pump p 0), .grant (.keywords k) .creaturesYouControl] =>
     if k == Keyword.trample then
       some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
     else none
@@ -1853,13 +1853,13 @@ def sequenceClause (e : Effect) : Option String :=
     some "this gets +1/+0 until end of turn and can't be blocked this turn"
   | .sequence [.draw 1, .onSource (.plusOne 1)] =>
     some "draw a card and put a +1/+1 counter on this"
-  | .sequence [.creaturesYouControlPump p 0, .teamGain k] =>
+  | .sequence [.creaturesPump p 0 .youControl, .grant (.keywords k) .creaturesYouControl] =>
     if k == Keyword.firstStrike then
       some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
     else none
   | .sequence [.onSource (.plusOne 1), .draw 1] =>
     some "put a +1/+1 counter on this and draw a card"
-  | .sequence [.onSource (.pump p t), .damageEachOpponent n] =>
+  | .sequence [.onSource (.pump p t), .dealDamage (.fixed n) (.player .eachOpponent)] =>
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
       [.onPermanent .untap,

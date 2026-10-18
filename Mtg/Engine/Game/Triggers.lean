@@ -33,12 +33,12 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
         resolution := .plusOneOnEachTarget 1,
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
       { targeting := .of .artEnchCardInYourGraveyard,
-        resolution := .returnFromGyToHand,
+        resolution := .returnTargetToHand .graveyard,
         phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
   | .watch .nontokenHeroModal =>
     #[{ resolution := .createTokens .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },
-      { resolution := .creaturesYouControlPump 1 1
+      { resolution := .creaturesPump 1 1 .youControl
         phrase := "Creatures you control get +1/+1 until end of turn" }]
   | _ => #[]
 

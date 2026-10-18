@@ -65,7 +65,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let (g, newId) := g.returnCardToBattlefield controller id plusOnes
         g.afterPermanentEnters (g.object! newId)
       | _ => g) sourceId illegal
-  | .returnFromGyToHand =>
+  | .returnTargetToHand .graveyard =>
     -- `none` so an “up to one” sequence with no target still continues.
     -- An announced illegal target is reported by `withLegalTarget`.
     g.withLegalKindTarget controller kind targets (fun g t =>
@@ -381,7 +381,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.afterPermanentEnters (g.object! newId)
       else g.logMsg s!"{card.name} is no longer in the graveyard"
     | none => g.logMsg "The card is no longer in the graveyard"
-  | .sacrificeSource =>
+  | .sacrifice .source _ =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
@@ -487,12 +487,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
           g.drainOpponents controller 2 (some o)
       | none => g
-  | .loyaltyOnEachPlaneswalkerYouControl => g.loyaltyOnEachPlaneswalkerOf controller
-  | .causeGains k =>
+  | .putCounters (.ofKind .loyalty _) .planeswalkersYouControl => g.loyaltyOnEachPlaneswalkerOf controller
+  | .grant (.keywords k) (.cause none) =>
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.grantKeywordsUntilEot o k else g
     | none => g
-  | .untapSource =>
+  | .untap .source =>
     match sourceId.bind g.findObject? with
     | some o => if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
     | none => g
@@ -612,8 +612,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let n : Int := Int.ofNat (g.player controller).graveyard.size
     g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
       sourceId illegal
-  | .plusOneOnEachCreatureYouControl => g.plusOneOnEachCreatureOf controller
-  | .plusOneOnSource n =>
+  | .putCounters (.ofKind .plusOnePlusOne n) .source =>
     match sourceId.bind g.findObject? with
     | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o n else g
     | none => g
@@ -717,7 +716,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .maySacrificeCreatureForBeast
   | .damageUpToOneAndPlayer _
   | .beastToken
-  | .causeGetsPump _ _
+  | .pump (.fixed _) (.fixed _) (.cause none)
   | .attackersOfPlayerGetTwoTwoTrample
   | .putCauseCountersOnSource
   | .mayMoveSourceCountersToTarget
@@ -730,7 +729,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .zemoBoastCopies
   | .copySourceSpellXTimes
   | .damageEqualSourcePower
-  | .returnSourceToHand
+  | .returnToHand .source _
   | .sarumanExileCopyMayCast
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
