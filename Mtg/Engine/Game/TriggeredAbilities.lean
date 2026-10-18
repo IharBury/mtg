@@ -637,7 +637,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | _ => (g, false)
   | .teamwork => (g, g.resolvingTeamworkPaid)
   | .castFromGraveyard => (g, false)
-  | .giftPromised => (g, false)
+  | .giftPromised | .notFromHand => (g, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1437,7 +1437,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters => g
+    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -2888,7 +2888,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         else
           let effect : Effect :=
             { targeting := .of .creature, allowsZeroTargets := true
-              resolution := .damageEqualSourcePower
+              resolution := .dealDamage (.power .source) .target
               phrase := s!"{host.name} deals damage equal to its power to up to one target creature" }
           g.putReflexiveTrigger controller (some hostId) effect
       | none => g
@@ -2941,7 +2941,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
             else
               let effect : Effect :=
                 { targeting := .of .creature, allowsZeroTargets := true
-                  resolution := .damageEqualSourcePower
+                  resolution := .dealDamage (.power .source) .target
                   phrase :=
                     s!"{f.name} deals damage equal to its power to up to one target creature" }
               g.putReflexiveTrigger controller (some f.id) effect) g
@@ -3162,6 +3162,7 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
           let o := g.object! o.id
           let g := g.setObject { o with status := o.status.withoutCounters }
           g.logMsg s!"counters are removed from {o.name}") g
+      | .upTo _ => g
 
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is lost by
@@ -3648,6 +3649,7 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let sid := sourceId.getD ⟨0⟩
           g.mapObjectStatus (g.object! o.id) (fun s =>
             { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
+  | .block _ => g
 where
   asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
     | .any | .target .any => some .target
@@ -4547,7 +4549,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | .damage n =>
       g.putReflexiveTrigger controller sourceId
-        { targeting := .of .playerOrCreature, resolution := .damageAny n
+        { targeting := .of .playerOrCreature, resolution := .dealDamage (.fixed n) .target
           phrase := s!"This deals {n} damage to any target" }
     | .copy =>
       let mv :=

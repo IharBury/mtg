@@ -111,7 +111,7 @@ def FraNext.toResolution : FraNext → Resolution
   | .eyeOfJaceCheck => .eyeOfJaceCheck
   | .reflexiveDamageAnyTarget n => .queueReflexive (.dealDamage (.fixed n) .target)
   | .reflexiveDestroyPerOpponent => .queueReflexive (.destroy (.target .eachPermanent))
-  | .reflexiveReturnLandTapped => .queueReflexive .returnFromGyToBattlefieldTapped
+  | .reflexiveReturnLandTapped => .queueReflexive (.put .landCard .tapped)
   | .beastToken => .createTokens .beast44trample (.fixed 1) false
   | .proliferate n => .proliferate n
   | .mshReflexive k paid => .queueMshReflexive k paid

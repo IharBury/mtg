@@ -256,6 +256,26 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
         !g.recentTokenIds.contains o.id)
   | .tokensYouControl =>
     some ((g.permanentsOf controller).filter (·.printed.isToken))
+  | .targetAt idx =>
+    match ctx.targets[idx]? with
+    | some (Target.permanent id) =>
+      match onBf id with
+      | some o => some #[o]
+      | none => someEmpty
+    | _ => someEmpty
+  | .creaturesControlledBy (.targetAt idx) =>
+    match ctx.targets[idx]? with
+    | some (Target.player pid) => some (g.creaturesControlledBy pid)
+    | _ => someEmpty
+  | .creaturesControlledBy _ => none
+  | .creatureTargets =>
+    some (permanentTargets.filter (·.isCreature))
+  | .firstTargetCreatureYouControl =>
+    match permanentTargets.find? (fun o => o.isCreature && o.controlledBy controller) with
+    | some o => some #[o]
+    | none => someEmpty
+  | .creaturesWithoutFlying =>
+    some (g.battlefield.filter fun o => o.isCreature && !g.hasKeyword o (·.flying))
   | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
     | .graveyardCard | .graveyardPermanent | .milledSubtype _
     | .revealed | .basicLand | .linkedExile | .graveyardInstants _
@@ -266,7 +286,9 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .artifactFromHand | .randomCreature | .forest | .basicLandOnTop
     | .dragon | .creatureMvAtMost _ | .creatureFromHand _ _
     | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
-    | .card | .nonland =>
+    | .card | .nonland | .targetSpell | .graveyardSubtype _
+    | .allNonlandPermanentsInGraveyard | .chosenNonlandPermanent | .topPower
+    | .land | .creatureOrPlaneswalker | .landCard =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -326,6 +348,15 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   | .eachOpponent => some ((g.livingOpponents controller).map (·.id))
   | .eachPlayer => some (g.players.map (·.id))
   | .player | .opponent | .target .player | .target .opponent => announcedPlayer
+  | .targetAt idx =>
+    match ctx.targets[idx]? with
+    | some (Target.player pid) => one pid
+    | _ => none
+  | .targetPlayers =>
+    let pids := ctx.targets.filterMap fun
+      | Target.player pid => some pid
+      | _ => none
+    if pids.isEmpty then none else some pids
   | .controller what => g.controllersNamed ctx what
   | .target _ => none
   | .thatPlayer =>
@@ -476,6 +507,10 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
     | some pid => some (g.player pid).cardsMilledThisTurn
     | none => none
+  | .power of =>
+    match g.permanentsNamed ctx of with
+    | some #[o] => some (g.power o)
+    | _ => none
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts | .chosenX => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/

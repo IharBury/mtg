@@ -101,18 +101,18 @@ Recent refactorings unified trigger and spell parameters around six composable s
   - `.exile`, `.mayCast`, `.put`.
 
 ### 2.4 The Four Strata Inside `Resolution` (`Mtg/Engine/Card/SpellResolution.lean:1800–3272`)
-`SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. Because the codebase merged `TriggerResolution`, `SpellResolution`, and `FraResolution` into `Resolution` and consolidated 85 duplicate constructors across spell, ability, trigger, and FRA strata, `Resolution` currently contains four historical strata of constructors:
+`SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. Because the codebase merged `TriggerResolution`, `SpellResolution`, and `FraResolution` into `Resolution` and consolidated 138 duplicate constructors across spell, ability, trigger, and FRA strata, `Resolution` currently contains four historical strata of constructors:
 
 1. **Stratum 1 — Compositional Selector IR (lines 1800–2838)**:
    - Takes `ObjectSelector`, `PlayerSelector`, `NumberSelector`, `CostSelector`, and `ConditionSelector` arguments.
-   - Examples: `.pump`, `.dealDamage`, `.scry`, `.surveil`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.amass`, `.recruit`, `.searchLibrary`, `.revealLibrary`, `.revealFromHand`, `.mill`, `.gainLife`, `.loseLife`, `.addMana`, `.tap`, `.untap`, `.attach`, `.fight`, `.connive`, `.grant`, `.lose`, `.cant`, `.setBasePT`, `.becomePT`, `.becomeArtifact`, `.becomePrepared`, `.becomeCopy`, `.mayCast`, `.pay`, `.queueReflexive`, `.sequence`, `.may`, `.«if»`, `.ifElse`, `.or`, `.chooseModes`, `.empowerJace`, `.spellsCostLess`.
+   - Examples: `.pump`, `.dealDamage`, `.scry`, `.surveil`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.amass`, `.recruit`, `.searchLibrary`, `.revealLibrary`, `.revealFromHand`, `.mill`, `.gainLife`, `.loseLife`, `.addMana`, `.tap`, `.untap`, `.attach`, `.fight`, `.connive`, `.grant`, `.lose`, `.cant`, `.setBasePT`, `.becomePT`, `.becomeArtifact`, `.becomePrepared`, `.becomeCopy`, `.mayCast`, `.pay`, `.queueReflexive`, `.sequence`, `.may`, `.«if»`, `.ifElse`, `.or`, `.chooseModes`, `.empowerJace`, `.spellsCostLess`, `.replace`.
 2. **Stratum 2 — Legacy Spell Constructors (lines 2839–2910)**:
-   - Older HOB/MSH spell constructors such as `.onPermanent (action : PermanentAction)`, `.countersOnCreatureTargets`, `.returnTargetToHand`, `.unlessPays`.
+   - Older HOB/MSH spell constructors such as `.onPermanent (action : PermanentAction)` and `.unlessPays`.
 3. **Stratum 3 — Legacy Activated-Ability Constructors (lines 2911–2950)**:
-   - Older activated-ability constructors such as `.onSource (action : PermanentAction)`, `.lookAtTopPutTypes`.
+   - Older activated-ability constructors such as `.onSource (action : PermanentAction)` and `.lookAtTopPutTypes`.
    - Filtered via `Resolution.toSpellStep` (`Effect.lean`).
 4. **Stratum 4 — FRA & FRC Set-Specific Constructors & Nullary Block (lines 2951–3272 & `FrcEffect.lean`)**:
-   - All field-bearing constructors are placed before `| frc (e : FrcEffect)` (max field-bearing constructor tag = **120**, leaving **123 field-bearing constructor slots** of headroom below Lean's 243 limit), and all nullary constructors are grouped after `| frc (e : FrcEffect)`.
+   - All field-bearing constructors are placed before `| frc (e : FrcEffect)` (max field-bearing constructor tag = **98**, leaving **145 field-bearing constructor slots** of headroom below Lean's 243 limit), and all nullary constructors are grouped after `| frc (e : FrcEffect)`.
 
 ---
 

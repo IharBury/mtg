@@ -107,7 +107,7 @@ target is chosen then, and only that creature is dealt damage. -/
   let g := step { g0 with equipmentAttachedHost := some alphaId } hostDamage
   match (g.object! g.stack.back!.objectId).abilityEffect with
   | some e =>
-    e.resolution == .damageEqualSourcePower && e.allowsZeroTargets &&
+    e.resolution == .dealDamage (.power .source) .target && e.allowsZeroTargets &&
       e.phrase == "Alpha deals damage equal to its power to up to one target creature" &&
       (g.object! g.stack.back!.objectId).sourceId == some alphaId
   | none => false

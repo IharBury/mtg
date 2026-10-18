@@ -137,7 +137,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Attach this Equipment to {noun}"
   | .becomeSubtypeWithLandsPT subtype =>
     s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-  | .returnFromGraveyardTapped =>
+  | .put .source .tapped _ =>
     "Return this card from your graveyard to the battlefield tapped"
   | .returnToHand .source _ =>
     "Return this card from your graveyard to your hand"
@@ -155,17 +155,16 @@ private def phraseWith (r : Resolution) (noun : String)
     capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
-  | .subtypesGainMenace subtypes =>
+  | .grant (.keywords _) (.intersection [.creaturesYouControl, .union what]) =>
+    let subtypes := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
     s!"{StaticAbility.joinedSubtypes subtypes StaticAbility.pluralSubtype} you control gain menace until end of turn"
-  | .exileThenReturnNextEnd =>
+  | .exile (.target .eachPermanent) .nextEndStep _ =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
   | .searchBasicBeholdSubtypeUntap subtype =>
     s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold {indefinite subtype} {subtype}. If you do, untap that land"
-  | .twoPlayersDraw =>
+  | .draw (.fixed 1) .targetPlayers =>
     "Two target players each draw a card"
-  | .discardLegendarySameNameDraw =>
-    "Draw two cards"
-  | .dealDamage (.fixed n) .target _ =>
+  | .dealDamage (.fixed n) .target .none =>
     s!"This creature deals {n} damage to any target"
   | .draw .lastKnownPower _ =>
     "Draw cards equal to the sacrificed creature's power"
@@ -189,9 +188,9 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .extraTurn =>
     "Take an extra turn after this one. During that turn, power-up abilities can't be activated"
-  | .plusOneX =>
+  | .putCounters .plusOneChosenX .source =>
     "Put X +1/+1 counters on this"
-  | .eachOppDiscardThenPlusOne =>
+  | .sequence [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
     "Each opponent discards a card. Put a +1/+1 counter on this"
   | .lookAtTopPutTypes n types =>
     let listed := orJoin types.toList
@@ -225,7 +224,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to each creature"
   | .createTokens kind .removedPlusOnes _ _ _ _ =>
     s!"Create that many {kind.pluralNoun}"
-  | .exileTopXPlayThisTurn =>
+  | .exile .topPower .playThisTurn _ =>
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
   | .draw (.fixed n) .player =>
     s!"{noun} draws {cardPhrase n.toNat}"
@@ -271,20 +270,22 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
   | .oppSacrificesGreatestMv =>
     s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
-  | .creaturesWithoutFlyingCantBlock =>
+  | .cant (.block .creaturesWithoutFlying) =>
     "Creatures without flying can't block this turn"
   | .loseLife (.fixed n) .player =>
     s!"{noun} loses {n} life"
   | .loseLife (.fixed n) (.controller .target) =>
     s!"Its controller loses {n} life"
-  | .returnTargetToHand .spell =>
+  | .returnToHand .targetSpell _ =>
     s!"Return {noun} to its owner's hand"
-  | .returnTargetToHand .graveyard =>
+  | .returnToHand (.target .graveyardCard) _ =>
     s!"Return {noun} to your hand"
   | .becomePrepared .creaturesYouControl =>
     "Each creature you control becomes prepared"
-  | .damageThenEmpowerExcess n =>
+  | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
+  | .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
+    s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
   | .jaceLoyaltyAtInstantSpeed =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
   | .exileTopMayCastElseDamageOpponents n =>
@@ -296,7 +297,7 @@ private def phraseWith (r : Resolution) (noun : String)
       "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
     else
       "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
-  | .returnFromGyWithFinality =>
+  | .put .source .asPrinted (.entering [.counter .finality 1 false]) =>
     "Return this card from your graveyard to the battlefield with a finality counter on it"
   | .copyNextInstantSorceryThisTurn =>
     "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
@@ -317,9 +318,7 @@ private def phraseWith (r : Resolution) (noun : String)
 uses the creature as the subject rather than the generic `PermanentAction`
 wording. -/
 def toPhrase (r : Resolution) (noun : String) : String :=
-  match r with
-  | .sequence rs => String.intercalate ". " (rs.map (fun step => toPhrase step noun))
-  | r => phraseWith r noun fun _ => ""
+  phraseWith r noun fun rs => String.intercalate ". " (rs.map (fun step => phraseWith step noun fun _ => ""))
 
 /-- Lift a spell resolution onto the shared `Resolution` vocabulary, flattening
 nested sequences. -/
@@ -334,25 +333,25 @@ Activated-ability constructors stay `none`, so `spellResolution` is
 def toSpellStep : Resolution → Option SpellResolution
   | .unrecognized | .sequence _ => none
   | .onSource _ | .searchBasicLand | .searchLandTypeToHand _
-  | .exile .top .playUntilNextTurn | .becomeSubtypeWithLandsPT _
-  | .returnFromGraveyardTapped | .returnToHand .source _
+  | .exile .top .playUntilNextTurn _ | .becomeSubtypeWithLandsPT _
+  | .put .source .tapped _ | .returnToHand .source _
   | .addAnyColor | .returnFromGyAttach | .searchLibrary (.returnToHand .basicLand)
-  | .searchTwoBasicsSplit | .subtypesGainMenace _
-  | .exileThenReturnNextEnd | .searchBasicBeholdSubtypeUntap _
-  | .twoPlayersDraw | .discardLegendarySameNameDraw
+  | .searchTwoBasicsSplit | .grant (.keywords _) (.intersection [.creaturesYouControl, .union _])
+  | .exile (.target .eachPermanent) .nextEndStep _ | .searchBasicBeholdSubtypeUntap _
+  | .draw (.fixed 1) .targetPlayers
   | .dealDamage _ .target _ | .draw .lastKnownPower _
   | .draw .perBurden _ | .arwenShare
   | .grantCombatDamageCreateTreasure | .putShadowCounter
   | .dealDamage _ (.player .eachOpponent) _ | .chooseTwoDestroyRest
   | .blackGateUnblockable | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
-  | .extraTurn | .plusOneX | .eachOppDiscardThenPlusOne
+  | .extraTurn | .putCounters .plusOneChosenX .source
   | .lookAtTopPutTypes _ _ | .transform | .draw .chosenX _
   | .lookAtTopRevealArtifact _
   | .addAnyColorSpendOnlySubtype _ | .addAnyColorSpendOnlyArtifactSpell
   | .addTwoAnyColorCreatureSources | .addBlueCantNonartifact
   | .addAnyColorEqualToSourcePower | .addFourAnyCombination
   | .addTwoAnyColorEquipment | .draw .cardsDiscardedThisTurn _
-  | .createTokens _ .removedPlusOnes _ _ _ _ | .exileTopXPlayThisTurn
+  | .createTokens _ .removedPlusOnes _ _ _ _ | .exile .topPower .playThisTurn _
   | .copyControlledAbility _
   | .proliferateEachKind | .equipmentBecomesConstructHero
   | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
@@ -363,14 +362,14 @@ def toSpellStep : Resolution → Option SpellResolution
   | .harnessInfinityStone | .targetSubtypeConnives _
   | .mill _ .you _ | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _
-  | .oppSacrificesGreatestMv | .creaturesWithoutFlyingCantBlock
+  | .oppSacrificesGreatestMv | .cant (.block .creaturesWithoutFlying)
   | .becomePrepared .creaturesYouControl
-  | .damageThenEmpowerExcess _ | .jaceLoyaltyAtInstantSpeed
+  | .jaceLoyaltyAtInstantSpeed
   | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
   | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
-  | .returnFromGyWithFinality | .firstDealsStatDamageToSecond _
+  | .put .source .asPrinted (.entering [.counter .finality 1 false]) | .firstDealsStatDamageToSecond _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ => none
-  | r@(.returnTargetToHand _) => some r
+  | r@(.returnToHand .targetSpell _) | r@(.returnToHand (.target .graveyardCard) _) => some r
   | r => if r.isFra then none else some r
 
 /-- The spell view of `r`. A sequence is a spell sequence only when every
@@ -400,16 +399,16 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .oppSacrificesGreatestMv
   | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .extraTurn | .draw .perBurden _
-  | .creaturesWithoutFlyingCantBlock
+  | .cant (.block .creaturesWithoutFlying)
   | .chooseOddOrEvenDestroy
-  | .becomePrepared .creaturesYouControl | .damageThenEmpowerExcess _
+  | .becomePrepared .creaturesYouControl
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
-  | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
+  | .firstDealsStatDamageToSecond _ | .put .source .asPrinted (.entering [.counter .finality 1 false])
   | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
   | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
   | .grant (.keywords _) .creaturesYouControl
   | .jaceLoyaltyAtInstantSpeed | .draw .lastKnownPower _ => false
-  | .searchBasicLand | .searchLandTypeToHand _ | .searchLibrary (.returnToHand .basicLand) | .exile .top .playUntilNextTurn => false
+  | .searchBasicLand | .searchLandTypeToHand _ | .searchLibrary (.returnToHand .basicLand) | .exile .top .playUntilNextTurn _ => false
   | .unrecognized => true
   | r =>
     if r.isFra then false

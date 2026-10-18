@@ -373,7 +373,7 @@ legendary permanent you control. -/
 #guard
   let g := addPermanent (addPermanent afterDraw keyToTheSideDoor me me) mistyKnightHeroForHire me me
   let g := addToHand (addToHand g mistyKnightHeroForHire me) roninShadowStalker me
-  let g := activateNamed g "Key to the Side-Door" "Draw two"
+  let g := activateNamed g "Key to the Side-Door" "Draw"
   let before := handSize g me
   let g' := resolved (pick g #[(handObj g me "Misty Knight, Hero for Hire").id])
   pickRejected g #[(handObj g me "Ronin, Shadow Stalker").id] &&

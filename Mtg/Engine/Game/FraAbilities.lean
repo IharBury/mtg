@@ -161,7 +161,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       if legendaryEnchantment then g.draw controller 1 else g) sourceId illegal
   | .chooseKeyword options =>
     onSource (fun g o => g.beginChooseKeyword controller o.id options.toArray)
-  | .graveyardCardToLibraryBottom =>
+  | .putOnLibrary .bottom .graveyardCard =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
@@ -169,7 +169,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         (g.moveIdsInOrder #[id] (.library card.owner)).logMsg
           s!"{card.name} is put on the bottom of {(g.player card.owner).name}'s library"
       | _ => g) sourceId illegal
-  | .destroy .allCreatures =>
+  | .destroy .allCreatures _ =>
     (g.battlefield.filter (·.isCreature)).foldl (fun g o =>
       match g.findObject? o.id with
       | some o => if o.isOnBattlefield then g.destroyPermanent o else g
@@ -201,7 +201,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       match g.findObject? id with
       | some o => g.addPlusOnePlusOneTo o 1
       | none => g) g
-  | .bounceEachTarget =>
+  | .returnToHand (.target .eachPermanent) _ =>
     (List.range targets.size).foldl (fun g i =>
       match targets[i]! with
       | t@(Target.permanent id) =>
@@ -297,7 +297,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     let n := ((g.permanentsOf controller).filter (·.printed.isLand)).size
     g.withLegalKindPermanent controller kind targets (fun g o =>
       if n == 0 then g else g.addPlusOnePlusOneTo o n) sourceId illegal
-  | .maySacrificeCreatureForBeast =>
+  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo =>
     if (g.creaturesControlledBy controller).isEmpty then g
     else
       g.beginFraChoice controller (.maySacrificeThen .creature .beastToken sourceId)
@@ -333,7 +333,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             s!"{(g.player controller).name} may move all counters from {src.name} onto {o.name}"
         else g) sourceId illegal
     | none => g
-  | .mayPayThenProliferate pay times =>
+  | .may (.pay (.mana #[.generic pay])) (.proliferate times) .ifYouDo =>
     g.beginFraChoice controller (.mayPayThen pay (.proliferate times) sourceId)
       s!"{(g.player controller).name} may pay \{{pay}}"
   | .becomeArtifactCreatureUntilEot =>
@@ -382,7 +382,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           g.beginFraChoice controller (.newTargetsForCopies copies)
             s!"{(g.player controller).name} may choose new targets for the copies"
     | none => g
-  | .damageEqualSourcePower =>
+  | .dealDamage .equalSourcePower .target _ | .dealDamage (.power .source) .target _ =>
     let n :=
       match sourceId.bind g.findObject? with
       | some o => (g.power o).toNat

@@ -1867,7 +1867,7 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
   | .sequence [.loseLife (.fixed n) .you, .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"
-  | .sequence [.exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
+  | .sequence [.exile .graveyardCard .forLater, .loseLife (.fixed n) .eachOpponent] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 

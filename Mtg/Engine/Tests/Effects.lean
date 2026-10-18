@@ -1580,7 +1580,7 @@ def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .creature) (.countersOnCreatureTargets kind n) (maxTargets := 2))
+    (Effect.mkSpell (.of .creature) (.putCounters (.ofKind kind n) .creatureTargets) (maxTargets := 2))
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1623,7 +1623,7 @@ def plusOneCreatureAndLife : Game :=
   (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
     (g.player ⟨0⟩).lifeGainedThisTurn == 1
 
-/-- `.firstYouControl` puts counters only on the first creature you control.
+/-- `.firstTargetCreatureYouControl` puts counters only on the first creature you control.
 A later opposing creature is left alone. +1/+1 still uses the counter triggers. -/
 def countersOnFirstYouControl : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
@@ -1631,7 +1631,7 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl))
+      (.putCounters (.ofKind .plusOnePlusOne 2) .firstTargetCreatureYouControl))
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1645,18 +1645,18 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   let g := g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.countersOnCreatureTargets .stun 2 .firstYouControl))
+      (.putCounters (.ofKind .stun 2) .firstTargetCreatureYouControl))
     #[Target.permanent bears.id, Target.permanent baloth.id]
   (namedPermanent g "Grizzly Bears").status.stun == 2 &&
     (namedPermanent g "Rumbling Baloth").status.stun == 0
 
-/- A first target you do not control is illegal for `.firstYouControl`. -/
+/- A first target you do not control is illegal for `.firstTargetCreatureYouControl`. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creature)
-      (.countersOnCreatureTargets .stun 1 .firstYouControl))
+      (.putCounters (.ofKind .stun 1) .firstTargetCreatureYouControl))
     #[Target.permanent bears.id]
   (namedPermanent g "Grizzly Bears").status.stun == 0
 

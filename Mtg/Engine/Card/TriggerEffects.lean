@@ -275,7 +275,7 @@ def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
   { targeting := .of .oppGraveyardCard
     allowsZeroTargets := true
     resolution := .sequence
-      [.exileCardFromGraveyard, .loseLife life .eachOpponent] }
+      [.exile .graveyardCard .forLater, .loseLife life .eachOpponent] }
 
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger

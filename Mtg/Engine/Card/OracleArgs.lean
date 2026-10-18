@@ -297,8 +297,10 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
       | c => pure c
     let whenTrue ← takeSpell whenTrue
     return .ifElse cond whenTrue whenFalse
-  | .countersOnCreatureTargets kind n which =>
-    return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
+  | .putCounters (.ofKind kind n) .creatureTargets =>
+    return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .creatureTargets
+  | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
+    return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .firstTargetCreatureYouControl
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
   | .searchCard s ty how =>
@@ -353,7 +355,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .createTokens k .chosenX tapped token who note
   | .createTokens k (.perSubtype s) tapped token who note =>
     return .createTokens k (.perSubtype (← takeStr s)) tapped token who note
-  | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
+  | .returnToHand (.graveyardSubtype s) note =>
+    return .returnToHand (.graveyardSubtype (← takeStr s)) note
   | .millThenPutPermanentGainLife a b =>
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
@@ -482,7 +485,11 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
   | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
-  | .subtypesGainMenace ss => return .subtypesGainMenace (← takeStrs ss)
+  | .grant (.keywords k) (.intersection [.creaturesYouControl, .union what]) =>
+    let ss := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
+    let ss ← takeStrs ss
+    return .grant (.keywords k)
+      (.intersection [.creaturesYouControl, .union (ss.toList.map (fun s => .youControl (.subtype s)))])
   | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
   | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
@@ -496,8 +503,6 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
-  | .damageAny n => return .damageAny (← takeNat n)
-  | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | r => takeSpell r
 end
@@ -1662,7 +1667,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
     "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
   some (.sequence [
-    (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
+    (.putCounters (.ofKind .plusOnePlusOne 2) .firstTargetCreatureYouControl),
     (.«if» .castFromGraveyard (.putCounters (.ofKind .plusOnePlusOne 3) .eachOther))])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
