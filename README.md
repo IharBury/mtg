@@ -122,6 +122,7 @@ player view. With `--interactive`, that player is the first named player; with
 | `Mtg/Engine/Tests/` | Compile-time engine smoke tests, one file per topic. |
 | `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
 | `Mtg/OracleRoundtrip.lean` | `lake exe oracle-roundtrip`: parses sample printed cards with the compiled Oracle parser. |
+| `docs/` | Developer documentation: [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md), [`CARD_MODEL_AND_PARSER.md`](./docs/CARD_MODEL_AND_PARSER.md), [`GAME_ENGINE.md`](./docs/GAME_ENGINE.md), and [`REFACTORING_AND_EXTENSION_GUIDE.md`](./docs/REFACTORING_AND_EXTENSION_GUIDE.md). |
 
 ## Current coverage
 
