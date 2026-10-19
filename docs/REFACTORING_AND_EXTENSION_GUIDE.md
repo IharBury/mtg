@@ -9,9 +9,10 @@ This document details the ongoing refactoring trajectory of `Mtg.Engine`, concre
 Recent commits have systematically moved the engine toward **one compositional IR** shared by spells, activated abilities, triggered abilities, and Saga chapters:
 1. **Homogenized Selectors**:
    - Introduced and expanded `ObjectSelector` (including `.union`, `.intersection`, `.target (what : ObjectSelector)`), `PlayerSelector` (including `.target (who : PlayerSelector)`, `.controller (of : ObjectSelector)`), `NumberSelector`, `CostSelector` (`.mana`, `.sacrifice`, `.discard`, `.or`), `ConditionSelector` (`.and`, `.or`, `.not`, `.atLeast`, `.countAtLeast`), and `ActionSelector` in `Mtg/Engine/Card/SpellResolution.lean`.
-2. **Unified `Resolution` Inductive & Constructor Consolidation**:
-   - Merged `SpellResolution`, `TriggerResolution`, `FraResolution`, and `FrcEffect` into a single `Resolution` inductive (`Mtg/Engine/Card/SpellResolution.lean:2125–3265`), with `SpellResolution` and `TriggerResolution` kept as `abbrev`s.
-   - Consolidated **302 redundant spell, ability, trigger, FRA, and FRC constructors** across nine batches into compositional `Resolution` + selector representations (`.pump`, `.dealDamage`, `.gainLife`, `.loseLife`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.addMana`, `.tap`, `.untap`, `.fight`, `.lose`, `.cant`, `.becomePrepared`, `.becomeCopy`, `.gainControl`, `.attach`, `.revealLibrary`, `.chooseModes`, `.searchLibrary`, `.connive`, `.proliferate`, `.grant`, `.mayCast`, `.queueReflexive`, `.may`, `.mill`, `.investigate`, `.scry`, `.surveil`, `.setBasePT`), deleted `Mtg/Engine/Card/FrcEffect.lean` (`FrcEffect` and `FrcToken`), `Resolution.ofSpellStep`, and 8 redundant helper enums (`LibrarySearch`, `MutualFight`, `YouControlCounters`, `CreaturePumpScope`, `EachCreatureDamage`, `EachCreatureAmount`, `ReturnTwoCreaturesOrLands`, `ReturnOneOrTwoNonlands`), and grouped all nullary constructors at the end of `Resolution`, reducing `Resolution` to **62 total constructors** with **56 field-bearing constructors** and **6 nullary constructors** (maximum field-bearing constructor tag reduced from **242** to **55**, freeing **188 field-bearing constructor slots**).
+2. **Unified `Resolution` Inductive, Token Unification & Constructor Consolidation**:
+   - Merged `SpellResolution`, `TriggerResolution`, `FraResolution`, and `FrcEffect` into a single `Resolution` inductive (`Mtg/Engine/Card/SpellResolution.lean:2097–3222`), with `SpellResolution` and `TriggerResolution` kept as `abbrev`s.
+   - Unified all 23 constructors of `TriggeredAbility.TriggerToken` into `TokenKind` (`Mtg/Engine/Card/Token.lean`, CR 111), removed the duplicate `token` parameter from `Resolution.createTokens`, and consolidated token printed definitions in `Game.tokenPrinted` (`Mtg/Engine/Game/Tokens.lean`).
+   - Consolidated **303 redundant spell, ability, trigger, FRA, and FRC constructors** across ten batches into compositional `Resolution` + selector representations (`.pump`, `.dealDamage`, `.gainLife`, `.loseLife`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.addMana`, `.tap`, `.untap`, `.fight`, `.lose`, `.cant`, `.becomePrepared`, `.becomeCopy`, `.gainControl`, `.attach`, `.revealLibrary`, `.chooseModes`, `.searchLibrary`, `.connive`, `.proliferate`, `.grant`, `.mayCast`, `.queueReflexive`, `.may`, `.mill`, `.investigate`, `.scry`, `.surveil`, `.setBasePT`, `.onPermanent`), deleted `Mtg/Engine/Card/FrcEffect.lean` (`FrcEffect` and `FrcToken`), `Resolution.ofSpellStep`, `TriggerToken`, and 8 redundant helper enums (`LibrarySearch`, `MutualFight`, `YouControlCounters`, `CreaturePumpScope`, `EachCreatureDamage`, `EachCreatureAmount`, `ReturnTwoCreaturesOrLands`, `ReturnOneOrTwoNonlands`), and grouped all nullary constructors at the end of `Resolution`, reducing `Resolution` to **61 total constructors** with **55 field-bearing constructors** and **6 nullary constructors** (maximum field-bearing constructor tag reduced from **242** to **54**, freeing **189 field-bearing constructor slots**).
 
 The sections below document the remaining duplication left over from earlier per-set iterations (`HOB`, `MSH`, `FRA`, `FRC`) and how to complete this unification cleanly.
 
@@ -19,16 +20,16 @@ The sections below document the remaining duplication left over from earlier per
 
 ## 2. Prioritized Refactoring Opportunities
 
-### Priority 1: Collapse Remaining `PermanentAction` Constructors in `Resolution`
+### Priority 1: Collapse `PermanentAction` (`Resolution.onPermanent`) into Compositional `Resolution` Steps
 - **Files**:
-  - `Mtg/Engine/Card/SpellResolution.lean` (lines 2056–3197, 3446–3541)
+  - `Mtg/Engine/Card/SpellResolution.lean` (lines 2097–3222, 3495–3588)
   - `Mtg/Engine/Card/PermanentAction.lean` (lines 1–111)
-  - `Mtg/Engine/Card/Effect.lean` (lines 325–390)
+  - `Mtg/Engine/Card/Effect.lean` (lines 325–405)
 - **What remains duplicated**:
-  - **`.onPermanent (action : PermanentAction)` and `.onSource (action : PermanentAction)`**:
-    - `TriggerResolution.ofPermanent` and `TriggerResolution.ofSource` (`SpellResolution.lean:3548–3624`) already translate all 21 `PermanentAction` constructors into compositional Stratum 1 constructors (`.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`, `.grant`, `.putCounters`, `.putOnLibrary`, etc.).
+  - **`.onPermanent (action : PermanentAction) (who : ObjectSelector := .target)`** (and `@[match_pattern] abbrev onSource (action : PermanentAction) : Resolution := .onPermanent action .source`):
+    - `TriggerResolution.ofPermanent` and `TriggerResolution.ofSource` (`SpellResolution.lean:3495–3571`) already translate all 21 `PermanentAction` constructors into compositional Stratum 1 constructors (`.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`, `.grant`, `.putCounters`, `.putOnLibrary`, etc.).
 - **How to refactor**:
-  1. Replace `.onPermanent action` and `.onSource action` with `TriggerResolution.ofPermanent action` and `TriggerResolution.ofSource action`, then delete `PermanentAction.lean`.
+  1. Replace `.onPermanent action who` with `TriggerResolution.ofPermanent action` / `TriggerResolution.ofSource action`, then delete `PermanentAction.lean`.
   2. Eliminate `TriggerResolution.ofSpell`, `Resolution.toSpellStep`, and `Effect.spellResolution`.
 
 ---
@@ -108,7 +109,7 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 7: Encapsulate `CardDef` Flags, `Game` Scratchpad Fields, `ManaPool` Restrictions, and Token Enums
+### Priority 7: Encapsulate `CardDef` Flags, `Game` Scratchpad Fields, and `ManaPool` Restrictions
 1. **`CardDef` (`Mtg/Engine/Card/CardDef.lean:48–460`)**:
    - Group the ~21 `tapAdd*` fields into structured mana ability definitions, the ~15 `entersTapped*`/`entersWith*` fields into an ETB modifier list, and the ~17 `costReduction*`/`additionalCost*` fields into a spell cost modifier list.
 2. **`Game` & `Player` Per-Turn / Per-Resolution State (`Mtg/Engine/Game/Core.lean`, `Player.lean`, `Turns.lean`)**:
@@ -116,8 +117,6 @@ The sections below document the remaining duplication left over from earlier per
    - Extract the ~25 `*ThisWay` fields on `Game` (`milledIdsThisWay`, `exiledIdsThisWay`, `sacrificedPowerThisWay`, etc., `Core.lean:310–395`) into `g.thisWay : ResolutionNotes` reset at the start of each resolution.
 3. **`ManaPool` (`Mtg/Engine/Mana.lean:285–795`)**:
    - Merge the 23 hardcoded LOTR/MSH restricted mana counters (`elfWhite`..`creatureColorless`) into `fraRestricted : Array (ManaType × FraManaUse)` (renamed to `restricted : Array (ManaType × ManaRestriction)`), cutting ~350 lines from `ManaPool.spendOne?`.
-4. **Token Enums (`Token.lean`, `SpellResolution.lean:1330`)**:
-   - Merge `TriggerToken` into `TokenKind` (or a unified `TokenSpec` struct).
 
 ---
 

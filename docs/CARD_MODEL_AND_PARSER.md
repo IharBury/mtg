@@ -100,19 +100,14 @@ Recent refactorings unified trigger and spell parameters around six composable s
 - **`ActionSelector`**:
   - `.exile`, `.mayCast`, `.put`.
 
-### 2.4 The Four Strata Inside `Resolution` (`Mtg/Engine/Card/SpellResolution.lean:1800–3272`)
-`SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. Because the codebase merged `TriggerResolution`, `SpellResolution`, and `FraResolution` into `Resolution` and consolidated 138 duplicate constructors across spell, ability, trigger, and FRA strata, `Resolution` currently contains four historical strata of constructors:
+### 2.4 `Resolution` Structure (`Mtg/Engine/Card/SpellResolution.lean:2097–3222`)
+`SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. After consolidating **303 redundant spell, ability, trigger, FRA, and FRC constructors** across ten batches into compositional selector-parameterized constructors, `Resolution` has **61 total constructors** (**55 field-bearing** + **6 nullary**):
 
-1. **Stratum 1 — Compositional Selector IR (lines 1800–2838)**:
+1. **Compositional Selector IR (lines 2097–3209)**:
    - Takes `ObjectSelector`, `PlayerSelector`, `NumberSelector`, `CostSelector`, and `ConditionSelector` arguments.
-   - Examples: `.pump`, `.dealDamage`, `.scry`, `.surveil`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.amass`, `.recruit`, `.searchLibrary`, `.revealLibrary`, `.revealFromHand`, `.mill`, `.gainLife`, `.loseLife`, `.addMana`, `.tap`, `.untap`, `.attach`, `.fight`, `.connive`, `.grant`, `.lose`, `.cant`, `.setBasePT`, `.becomePT`, `.becomeArtifact`, `.becomePrepared`, `.becomeCopy`, `.mayCast`, `.pay`, `.queueReflexive`, `.sequence`, `.may`, `.«if»`, `.ifElse`, `.or`, `.chooseModes`, `.empowerJace`, `.spellsCostLess`, `.replace`.
-2. **Stratum 2 — Legacy Spell Constructors (lines 2839–2910)**:
-   - Older HOB/MSH spell constructors such as `.onPermanent (action : PermanentAction)` and `.unlessPays`.
-3. **Stratum 3 — Legacy Activated-Ability Constructors (lines 2911–2950)**:
-   - Older activated-ability constructors such as `.onSource (action : PermanentAction)` and `.lookAtTopPutTypes`.
-   - Filtered via `Resolution.toSpellStep` (`Effect.lean`).
-4. **Stratum 4 — FRA & FRC Set-Specific Constructors & Nullary Block (lines 2951–3272 & `FrcEffect.lean`)**:
-   - All field-bearing constructors are placed before `| frc (e : FrcEffect)` (max field-bearing constructor tag = **98**, leaving **145 field-bearing constructor slots** of headroom below Lean's 243 limit), and all nullary constructors are grouped after `| frc (e : FrcEffect)`.
+   - Includes `.pump`, `.dealDamage`, `.scry`, `.surveil`, `.draw`, `.discard`, `.sacrifice`, `.destroy`, `.exile`, `.returnToHand`, `.put`, `.putOnLibrary`, `.putCounters`, `.removeCounters`, `.createTokens`, `.amass`, `.recruit`, `.searchLibrary`, `.revealLibrary`, `.revealFromHand`, `.mill`, `.gainLife`, `.loseLife`, `.addMana`, `.tap`, `.untap`, `.attach`, `.fight`, `.connive`, `.proliferate`, `.investigate`, `.grant`, `.gainControl`, `.lose`, `.cant`, `.setBasePT`, `.becomeArtifact`, `.becomePrepared`, `.becomeCopy`, `.mayCast`, `.pay`, `.queueReflexive`, `.sequence`, `.may`, `.«if»`, `.ifElse`, `.or`, `.chooseModes`, `.empowerJace`, `.spellsCostLess`, `.replace`, `.unlessPays`, `.noteResolveThisTurn`, `.mshReflexive`, and `.onPermanent (action : PermanentAction) (who : ObjectSelector := .target)` (with `@[match_pattern] abbrev onSource (action : PermanentAction) : Resolution := .onPermanent action .source`).
+2. **Nullary Block (lines 3210–3222)**:
+   - All 55 field-bearing constructors are placed before the nullary block (max field-bearing constructor tag = **54**, leaving **189 field-bearing constructor slots** of headroom below Lean's 243 limit), and all 6 nullary constructors (`.cascade`, `.ringTempts`, `.additionalCombatPhase`, `.winTheGame`, `.counter`, `.unrecognized`) are grouped at the end of `Resolution`.
 
 ---
 

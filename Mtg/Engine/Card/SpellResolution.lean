@@ -3177,9 +3177,10 @@ inductive Resolution where
   what the source copies. A missing source copies nothing. A card or a hand
   copies nothing. -/
   | becomeCopy (of : ObjectSelector)
-  /-- Affect a still-legal target. Damage can hit a player or a creature;
+  /-- Affect a still-legal permanent (by default `.target`, or `.source` if the
+  source is still on the battlefield). Damage can hit a player or a creature;
   other actions require a permanent. -/
-  | onPermanent (action : PermanentAction)
+  | onPermanent (action : PermanentAction) (who : ObjectSelector := .target)
   /-- Resolve `r` unless its controller pays `{n}`.
   Countering unless they pay is `.unlessPays .counter n`. -/
   | unlessPays (r : Resolution) (n : Nat)
@@ -3190,8 +3191,6 @@ inductive Resolution where
   Damage, losing indestructible, and that replacement are
   `.sequence [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile]`. -/
   | replace (what : ReplaceEvent) (instead : ReplaceInstead)
-  /-- Affect the source if it is still on the battlefield. -/
-  | onSource (action : PermanentAction)
   /-
   Field-bearing constructors must keep a runtime tag ≤ 243.
   Nullary constructors follow this block. Former `FraResolution`
@@ -3223,6 +3222,10 @@ inductive Resolution where
 deriving Repr, Inhabited, BEq
 
 namespace Resolution
+
+/-- Affect the source if it is still on the battlefield. -/
+@[match_pattern] abbrev onSource (action : PermanentAction) : Resolution :=
+  .onPermanent action .source
 
 /-- A step that used to be a `FraResolution` constructor. -/
 def isFra : Resolution → Bool
@@ -3378,6 +3381,8 @@ namespace TriggeredAbility
 abbrev TriggerResolution := Resolution
 
 namespace TriggerResolution
+
+export Resolution (onSource)
 
 /-- What `queueReflexive` does with a follow-up resolution.
 `.modeled` queues that MSH reflexive. `times` is how many times a mana
@@ -3650,6 +3655,7 @@ export Resolution (
   winTheGame
   becomeCopy
   onPermanent
+  onSource
   counter
   unlessPays
   replace
