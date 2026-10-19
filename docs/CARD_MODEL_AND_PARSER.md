@@ -24,7 +24,7 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `Text.lean` | Shared English number/phrase formatting helpers (`englishNumber`, `timesPhrase`, `indefinite`, `signedStat`, etc.). |
 | `Counter.lean` | `CounterKind` (29 counter kinds) with `oracleName`, `countersPhrase`, and token matcher `matchPhrase`. |
 | `Token.lean` | `TokenKind` (37 predefined token kinds for HOB/HOC/MSH/FRA) and `createPhrase`. |
-| `Targeting.lean` | `TargetZone`, `TargetController`, `TargetFilter` (28-field compositional filter), `TargetPreference`, and `EffectTargetKind` (70 named target kinds + `.filtered`, `.multi`, `.pair`). |
+| `Targeting.lean` | `TargetZone`, `TargetController`, `TargetFilter` (28-field compositional filter), `TargetPreference`, and unified CR 115 `EffectTargetKind` (9 constructors: 8 field-bearing over 5 CR 115 target-category sub-inductives `BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget` + `.filtered`, `.multi`, `.pair` + 1 nullary `.none`). |
 | `PermanentAction.lean` | `PermanentAction` (21 single-permanent actions such as `.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`). |
 | `AbilityResolution.lean` | `AbilityCastKind` heuristic categories for activated abilities. |
 | `SpellResolution.lean` | Defines the compositional selector ASTs (`PlayerSelector`, `ObjectSelector`, `NumberSelector`, `CostSelector`, `ConditionSelector`, `ActionSelector`), modifier enums, and the unified `Resolution` inductive (`SpellResolution` and `TriggerResolution` are `abbrev`s for `Resolution`), plus `SpellResolution.toPhrase`. |
@@ -137,6 +137,18 @@ Recent refactorings unified trigger and spell parameters around six composable s
 - `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects
 - `.keyword (which : KeywordStatic)` — CR 702 / CR 303.4 / CR 605 keyword, enchant, and intrinsic mana static abilities
 - `.printed (text : String)` — fallback printed text for unmodeled lines
+
+### 2.7 `EffectTargetKind` Structure (`Mtg/Engine/Card/Targeting.lean`)
+`TriggerTargetKind` is a type alias (`abbrev`) for `EffectTargetKind`. After grouping its 75 named targeting shapes into 5 CR 115 target-category sub-inductives (`BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget`) with `@[match_pattern] abbrev` aliases, `EffectTargetKind` has **9 total constructors** (**8 field-bearing** + **1 nullary**):
+- `.none` — untargeted (CR 115.1)
+- `.battlefield (t : BattlefieldTarget)` — permanent targets on the battlefield (CR 115.1 / 110.1)
+- `.graveyard (t : GraveyardTarget)` — card targets in a graveyard (CR 115.1 / 404.1)
+- `.stack (t : StackTarget)` — spell and ability targets on the stack (CR 115.1 / 405.1)
+- `.playerTarget (t : PlayerTarget)` — player and cross-category targets including "any target" (CR 115.1 / 115.4)
+- `.sequence (t : MultiTarget)` — multi-target and sequential-slot targeting shapes (CR 115.1 / 601.2c)
+- `.filtered (f : TargetFilter)` — one instance of "target" described by a `TargetFilter`
+- `.multi (fs : Array TargetFilter) (optional : Array Nat)` — sequential instances of "target" per filter
+- `.pair (a b : EffectTargetKind)` — combined target instances of two chosen modes (CR 700.2)
 
 ---
 

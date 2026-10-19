@@ -72,6 +72,7 @@ Because nearly all tests in this repository are **compile-time `#guard` assertio
   - `Resolution` (`Mtg/Engine/Card/SpellResolution.lean`) has 39 constructors (33 field-bearing + 6 nullary) parameterized by compositional selectors (`ObjectSelector`, `PlayerSelector`, `NumberSelector`, `CostSelector`, `ConditionSelector`).
   - `StaticAbility` (`Mtg/Engine/Card/StaticAbility.lean`) has 9 field-bearing constructors aligned with CR 604 / CR 613 / CR 614 categories (`TypeStatic`, `AbilityStatic`, `CdaStatic`, `PtStatic`, `CombatStatic`, `CostCastStatic`, `RuleStatic`, `KeywordStatic`, and `.printed`).
   - `TriggerEvent` (`Mtg/Engine/Card/TriggerEvent.lean`) has 14 constructors (12 field-bearing + 2 nullary) aligned with CR 603 categories (`EntersEvent`, `LeavesEvent`, `StepEvent`, `CastEvent`, `CombatEvent`, `DamageEvent`, `DrawEvent`, `DiscardEvent`, `TapEvent`, `CounterEvent`, `ActionEvent`, `.or`, `.cascade`, `.fromEffect`).
+  - `EffectTargetKind` (`Mtg/Engine/Card/Targeting.lean`) has 9 constructors (8 field-bearing + 1 nullary) aligned with CR 115 categories (`BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget`, `.filtered`, `.multi`, `.pair`, `.none`).
   - `SharedTrigger` (`Mtg/Engine/Card/SharedTrigger.lean`) groups MSH leftover triggers into 9 `*Leftover` sub-inductives.
   - `Pending` (`Mtg/Engine/Game/Pending.lean`) nests 74 newer interactive choice kinds inside `.fraChoice (player : PlayerId) (choice : FraChoice)`.
 

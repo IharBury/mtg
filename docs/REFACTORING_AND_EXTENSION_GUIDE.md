@@ -17,6 +17,8 @@ Recent commits have systematically moved the engine toward **one compositional I
    - Merged the three separate trigger-event inductives — `TriggerEvent` (111 constructors), `FraEvent` (34 constructors), and `SharedTriggerWhen` (90 constructors), totaling **235 constructors across 3 inductives** — into a single CR 603-aligned `TriggerEvent` inductive (`Mtg/Engine/Card/TriggerEvent.lean`) with **14 total constructors** (**12 field-bearing** over 11 CR 603 event-filter sub-inductives `EntersEvent`..`ActionEvent` + `.or` + **2 nullary** `.cascade`, `.fromEffect`), with `FraEvent` and `SharedTriggerWhen` kept as `abbrev`s for `TriggerEvent` and `@[match_pattern] abbrev` aliases for all existing event names.
 4. **Unified `StaticAbility` Inductive (CR 604 / CR 613 / CR 614)**:
    - Merged the three separate static-ability inductives — `StaticAbility` (109 constructors), `FraStatic` (43 constructors), and `StaticShape` (103 constructors), totaling **255 constructors across 3 inductives** — into a single CR 604 / CR 613 / CR 614-aligned `StaticAbility` inductive (`Mtg/Engine/Card/StaticAbility.lean`) with **9 field-bearing constructors** (`typeChange`, `ability`, `cda`, `pt`, `combat`, `costCast`, `rule`, `keyword`, `printed`), with `FraStatic` and `StaticShape` kept as `abbrev`s for `StaticAbility` and `@[match_pattern] abbrev` aliases for all existing constructor names.
+5. **Unified `EffectTargetKind` Inductive (CR 115)**:
+   - Grouped the 75 hardcoded targeting constructors of `EffectTargetKind` (`Mtg/Engine/Card/Targeting.lean`) into 5 CR 115 target-category sub-inductives (`BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget`) with `@[match_pattern] abbrev` aliases, reducing `EffectTargetKind` from **79** to **9 constructors** (**8 field-bearing** + **1 nullary** `.none`) and factoring both `EffectTargetKind.spec` (`Card/Targeting.lean`) and `Game.legalTargetsForAtomicKind` (`Game/Targeting.lean`) by CR 115 target category.
 
 The sections below document the remaining duplication left over from earlier per-set iterations (`HOB`, `MSH`, `FRA`, `FRC`) and how to complete this unification cleanly.
 
@@ -101,15 +103,15 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 6: Unify `EffectTargetKind` Around `TargetFilter`
+### Priority 6: Further Unify `EffectTargetKind` Sub-Inductives into `TargetFilter`
 - **Files**:
-  - `Mtg/Engine/Card/Targeting.lean` (lines 48–642)
-  - `Mtg/Engine/Game/Targeting.lean` (lines 108–425)
-  - `Mtg/Engine/Card/OracleArgs.lean` (lines 215–233, 775–840)
-- **Problem**:
-  - `EffectTargetKind` has 70 hardcoded constructors (`.creature`, `.creatureWithFlying`, `.oppCreaturePowerAtMost`, etc.) alongside `.filtered (f : TargetFilter)`, `.multi`, and `.pair`. Each hardcoded constructor is duplicated in `EffectTargetKind.spec` (305 lines in `Card/Targeting.lean:321–626`) and `legalTargetsForAtomicKind` (200 lines in `Game/Targeting.lean:183–386`).
-- **How to refactor**:
-  - Turn the 70 hardcoded constructors into `abbrev` smart constructors that build `.filtered { ... }` (or `.multi` / `.pair`), leaving only `.none`, `.filtered`, `.multi`, and `.pair` on `EffectTargetKind`.
+  - `Mtg/Engine/Card/Targeting.lean`
+  - `Mtg/Engine/Game/Targeting.lean`
+  - `Mtg/Engine/Card/OracleArgs.lean`
+- **Completed**:
+  - Grouped the 75 named targeting constructors into 5 CR 115 target-category sub-inductives (`BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget`), reducing `EffectTargetKind` to 9 constructors (`.none`, `.battlefield`, `.graveyard`, `.stack`, `.playerTarget`, `.sequence`, `.filtered`, `.multi`, `.pair`).
+- **Remaining**:
+  - Extend `TargetFilter` with power/snapshot-power bounds, teamwork mana-value bypass, and stack-ability source predicates so the remaining sub-inductive constructors can be expressed as `.filtered { ... }` or `.multi`.
 
 ---
 
