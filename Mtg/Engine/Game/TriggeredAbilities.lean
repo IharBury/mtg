@@ -1455,7 +1455,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
     | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
-    | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty => g
+    | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
+    | .plusOnePerDiscardAfterDraw => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -1800,7 +1801,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | .anyManaThisTurn => g.grantWidowCast controller (some newId)
           | .empowerJace => g.empowerJace controller 1
           | .none | .gainLifeIfTeamwork _ | .controllerMaySearchBasic
-            | .thenDrawThree => g.logMsg s!"{name} is exiled"
+            | .thenDrawThree | .counteredPermanentMayCast
+            | .worldsWithinWorlds | .revealUntilCreatureOrPlaneswalker => g.logMsg s!"{name} is exiled"
         | .returnImmediately =>
           let owner := o.owner
           let name := o.name
@@ -1921,13 +1923,13 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match note with
         | .noted => { g with sourceWasSacrificed := false }
         | .forReflexive => { g with planWasSacrificed := false }
-        | .none | .ifYouDoCreateBeast => g
+        | .none | .ifYouDoCreateBeast | .eyeOfJaceIfSevenInGy => g
       objs.foldl (fun g o =>
         let g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
         match note with
         | .noted => { g with sourceWasSacrificed := true }
         | .forReflexive => { g with planWasSacrificed := true }
-        | .none | .ifYouDoCreateBeast => g) g
+        | .none | .ifYouDoCreateBeast | .eyeOfJaceIfSevenInGy => g) g
 
 /-- Resolve `TriggerResolution.attach`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2182,6 +2184,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
           (o.printed.isEnchantment || o.printed.isInstantOrSorcery) && within o
       offer g eligible
         s!"{(g.player controller).name} may cast a spell from among the milled cards"
+    | .uldarosGraveyardTypes | .boastExiled => g
 
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other selector amasses
@@ -2533,12 +2536,12 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let g :=
         match note with
         | .returnedPermanent => { g with returnedPermanentThisWay := false }
-        | .none => g
+        | .none | .delayedBirds => g
       objs.foldl (fun g o =>
         let g := g.returnToHand o.id o.owner
         match note with
         | .returnedPermanent => { g with returnedPermanentThisWay := true }
-        | .none => g) g
+        | .none | .delayedBirds => g) g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
 the behavior of the constructor it replaced. A graveyard card, the top
@@ -2882,7 +2885,8 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .combatDamageCreateTreasure | .combatDamageDrawTwo | .flashback
         | .jaceLoyaltyAtInstantSpeed | .mountainsAddExtraRed
         | .emrakulManaAndCast | .emblemDrawOnCast | .emblemCreaturesGetTwoTwo
-        | .nextSpellCopy _ => g
+        | .nextSpellCopy _ | .attacking | .newTargets | .extraLand | .extraTurn
+        | .transformed | .harnessed | .arwenShare | .phaseOutKicker => g
     match g.permanentsNamed ctx who with
     | some objs => objs.foldl grantOne g
     | none => g
@@ -3373,6 +3377,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           match hit with
           | some id => found := found.push id
           | none => pure ()
+        | .topNumber _ => pure ()
       return { g with revealedIdsThisWay := found }
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
@@ -3786,7 +3791,7 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       else
         { g with pending := .putOnBottom controller 1 }.logMsg
           s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-    | .top | .topOrBottom | .shuffled => g
+    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2 => g
   | _, what =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what with
@@ -3795,7 +3800,7 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 where
   action : PermanentAction :=
     match place with
-    | .top | .topOrBottom | .shuffled => .putOnTopOfLibrary
+    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2 => .putOnTopOfLibrary
     | .bottom => .putOnBottomOfLibrary
   put (who : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets who fun g o =>
@@ -3851,6 +3856,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
       power toughness who
+  | .dealDamage (.fixed 0) .target .preallocated =>
+    Id.run do
+      let mut g := g
+      for i in [0:targets.size] do
+        let t := targets[i]!
+        let n := dividedDamage[i]?.getD 0
+        if n > 0 then
+          g := g.applyEffect controller (Effect.dealDamage n) #[t]
+      return g
   | .dealDamage amount who note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       amount who note
@@ -3887,15 +3901,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       power toughness who
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
-  | .dividedDamage =>
-    Id.run do
-      let mut g := g
-      for i in [0:targets.size] do
-        let t := targets[i]!
-        let n := dividedDamage[i]?.getD 0
-        if n > 0 then
-          g := g.applyEffect controller (Effect.dealDamage n) #[t]
-      return g
   | .sequence rs =>
     -- One legality check for the whole sequence (CR 608.2b). Power is read
     -- before any step moves the card, then each step runs in order. A step
@@ -4000,7 +4005,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .addMana types amount _ =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower
       lastKnownToughness
-  | .becomePT power toughness =>
+  | .may (.setBasePT power toughness .source) (.sequence []) _ =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
       sequencedCardPower }
@@ -4014,7 +4019,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         else g
       | none => g
     | _, _ => g
-  | .lookAtTopRevealTypes amount types =>
+  | .revealLibrary (.topNumber amount) (.returnToHand (.lookedTypes types) _) _ =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
       sequencedCardPower }
@@ -4082,8 +4087,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match sourceId.bind g.findObject? with
     | some o =>
       if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
-    else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
-    else g.becomePrepared o
+      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+      else g.becomePrepared o
     | none => g.logMsg "The source is no longer on the battlefield"
   | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
     if g.battlefieldCreaturesToGyThisTurn.size < 3 then
@@ -4137,7 +4142,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           (triggerOrLog (g.player controller).name rs)
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
-  | .markRecentTokensAttacking =>
+  | .grant .attacking .createdToken =>
     let dest := some g.defendingPlayer
     let g :=
       g.recentTokenIds.foldl (fun g id =>
@@ -4191,6 +4196,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .mill amount who note =>
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
       amount who note
+  | .grant .newTargets .causingSpell =>
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match g.resolvingCauseId.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
   | .grant what who =>
     g.applyGrant controller ab sourceId targets what who
   | .revealLibrary how thenDo who =>
@@ -4284,7 +4301,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})") g
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
-  | .surveil amount =>
+  | .surveil (.fixed 0) .armReturnLifeGained =>
+    -- Ruling 750: the following surveil reads life gained as this ability resolves.
+    { g with armSurveilReturn := true }
+  | .surveil amount _ =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
       sequencedCardPower }
@@ -4307,9 +4327,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.triggerCount ctx amount with
     | some n => g.empowerJace controller n
     | none => g
-  | .armSurveilReturnLifeGained =>
-    -- Ruling 750: the following surveil reads life gained as this ability resolves.
-    { g with armSurveilReturn := true }
   | .becomeCopy of =>
     match of with
     | .sourceTwoNonlegendaryTokens =>
@@ -4324,6 +4341,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let (g, _) := g.createToken controller face
           let (g, _) := g.createToken controller face
           g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
+    | .causingSpell =>
+      g.copyCastTriggerSpell controller
     | .noted | .cause none | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
       g.applyBecomeCopy controller sourceId targets of
     | of =>
@@ -4339,25 +4358,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             | none => g
           | none => g
       | none => g
-  | .retargetCause =>
-    let targetingSource (e : StackEntry) : Bool :=
-      e.targets.any (fun t =>
-        match t, sourceId with
-        | Target.permanent id, some sid => id == sid
-        | _, _ => false)
-    let fromStack :=
-      g.stack.foldl (fun acc e =>
-        if targetingSource e then some e.objectId else acc) none
-    match g.resolvingCauseId.orElse (fun _ => fromStack) with
-    | none => g
-    | some spellId => g.offerSpellRetarget controller spellId 0
   | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     g.offerPay2LifeToughness controller
   | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
     g.offerExileTopHeroPump controller sourceId
-  | .copyCause =>
-    g.copyCastTriggerSpell controller
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     g.offerMayExileDiscarded controller lastKnownPower
   | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
@@ -4376,9 +4381,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let amt := lastKnownPower.getD 0
         { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
-  | .may .retargetCause (.sequence []) .ifYouDo =>
+  | .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo =>
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName (some .retargetCause)
+      lastKnownPower lastKnownToughness sourceName (some (.grant .newTargets .causingSpell))
       sequencedCardPower
   | .may (.pay (.mana symbols)) (.queueReflexive followup) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
@@ -4593,7 +4598,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           types := #[.enchantment, .instant, .sorcery]
           controller := .opponent
           mvAtMost := some mv })
-        resolution := .sarumanExileCopyMayCast
+        resolution := .mayCast .milledSpell .causingSpell .withoutPaying
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
     | .divided amount =>
       g.putReflexiveTrigger controller sourceId {

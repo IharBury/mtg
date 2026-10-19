@@ -107,8 +107,8 @@ def FraNext.toResolution : FraNext → Resolution
   | .searchEnchantmentToHand => .searchLibrary (.returnToHand .enchantmentCard)
   | .tappedHeartwoods n => .createTokens .heartwood (.fixed n) true
   | .eachOpponentSacrificesCreature => .sacrifice .eachOpponentsCreature
-  | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
-  | .eyeOfJaceCheck => .eyeOfJaceCheck
+  | .drawThenCountersPerDiscard => .putCounters .plusOnePerDiscardAfterDraw .cause
+  | .eyeOfJaceCheck => .sacrifice .source .eyeOfJaceIfSevenInGy
   | .reflexiveDamageAnyTarget n => .queueReflexive (.dealDamage (.fixed n) .target)
   | .reflexiveDestroyPerOpponent => .queueReflexive (.destroy (.target .eachPermanent))
   | .reflexiveReturnLandTapped => .queueReflexive (.put .landCard .tapped)

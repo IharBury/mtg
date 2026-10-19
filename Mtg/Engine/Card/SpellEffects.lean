@@ -121,7 +121,7 @@ def creatureYouControlDealsPowerToOppCreature : Effect :=
     (castKind := .fight)
 
 def playAdditionalLandThisTurn : Effect :=
-  mkSpell (.of .none) (.extraLand)
+  mkSpell (.of .none) (.grant .extraLand .youIfCast)
     (castKind := .extraLand)
 
 def destroyArtifactOrLandNonflyersCantBlock : Effect :=
@@ -231,7 +231,7 @@ def counterCreatureSpellPTAtMost (n : Nat) : Effect :=
     (castKind := .counter)
 
 def counterExilePermanentMayCast : Effect :=
-  mkSpell (.of .spell) (.counterExilePermanentMayCast)
+  mkSpell (.of .spell) (.exile .targetSpell .forLater .counteredPermanentMayCast)
     (castKind := .counter)
 
 /-- The owner puts the targeted creature on the top or bottom of their library. -/
@@ -359,11 +359,11 @@ def dealDamageToEachNonDragon (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def chooseTypeReturnOthers : Effect :=
-  mkSpell (.of .none) (.chooseTypeReturnOthers)
+  mkSpell (.of .none) (.returnToHand .creaturesNotChosenType)
     (castKind := .counter)
 
 def drawEqualToughnessThenPutCreatures : Effect :=
-  mkSpell (.of .none) (.drawEqualToughnessThenPutCreatures)
+  mkSpell (.of .none) (.draw .greatestToughnessThenPutCreatures)
     (castKind := .draw)
 
 def millThenPutInstantOrSorcery (n : Nat) : Effect :=
@@ -418,7 +418,7 @@ def supperForSpiders : Effect :=
 
 def eaglesAreComing : Effect :=
   mkSpell (.of (.filtered { noun := "target creature you own", types := #[.creature], ownedByYou := true }))
-    (.eaglesAreComing)
+    (.returnToHand .ownedCreaturesKicker .delayedBirds)
     (castKind := .draw)
 
 def lookAtTopLandsGainLife (n life : Nat) : Effect :=
@@ -436,7 +436,7 @@ def damageOppCreaturesEqualOtherSpellsMv : Effect :=
     (castKind := .creatureDamage)
 
 def phaseOutKicker : Effect :=
-  mkSpell (.of .creature) (.phaseOutKicker)
+  mkSpell (.of .creature) (.grant .phaseOutKicker .target)
     (castKind := .counter)
 
 def dealDamageToAttackerOrBlocker (n teamworkN : Nat) : Effect :=
@@ -617,7 +617,7 @@ def createGalactus : Effect :=
     (castKind := .extraLand)
 
 def worldsWithinWorlds : Effect :=
-  mkSpell (.of .none) (.worldsWithinWorlds)
+  mkSpell (.of .none) (.exile .allCreatures .forLater .worldsWithinWorlds)
     (castKind := .extraLand)
 
 def exileHandDrawPlayUntilNext : Effect :=
@@ -650,7 +650,7 @@ def nextFreeRGCreature : Effect :=
     (castKind := .extraLand)
 
 def ownerPutsLibraryThenConnive : Effect :=
-  mkSpell (.of .oppCreatureThenUpToOneCreatureYouControl) (.ownerPutsLibraryThenConnive)
+  mkSpell (.of .oppCreatureThenUpToOneCreatureYouControl) (.putOnLibrary .secondOrBottomThenConnive .target)
     (castKind := .counter)
 
 def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
@@ -810,7 +810,7 @@ def drawEqualSacrificedPowerThenDiscard : Effect :=
       "Draw cards equal to the sacrificed creature's power, then discard a card")
 
 def arwenShare : Effect :=
-  mkAbility (.of .anotherCreature) (.arwenShare)
+  mkAbility (.of .anotherCreature) (.grant .arwenShare .target)
 
 def grantCombatDamageCreateTreasure : Effect :=
   mkAbility (.of .creature) (.grant .combatDamageCreateTreasure .target)
@@ -861,7 +861,7 @@ def plusOneAndDraw (plus cards : Nat) : Effect :=
 
 def plusOneAndExtraTurn : Effect :=
   mkAbility ({})
-    (.sequence [.onSource (.plusOne 1), .extraTurn])
+    (.sequence [.onSource (.plusOne 1), .grant .extraTurn .youIfCast])
     (phraseOverride := some
       "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated")
 
@@ -883,7 +883,7 @@ def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
   lookAtTopPutTypes n #["Hero", "Equipment", "Vehicle"]
 
 def transform : Effect :=
-  mkAbility ({}) (.transform)
+  mkAbility ({}) (.grant .transformed .source)
 
 def drawX : Effect :=
   mkAbility ({}) (.draw .chosenX)
@@ -1031,7 +1031,7 @@ def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
   mkAbility ({}) (.grant (.nextSpellCopy true) .source)
 
 def harnessInfinityStone : Effect :=
-  mkAbility ({}) (.harnessInfinityStone)
+  mkAbility ({}) (.grant .harnessed .source)
 
 def destroyTargetNoncreatureArtOrEnch : Effect :=
   destroyTarget .noncreatureArtifactOrEnchantment
@@ -1289,7 +1289,7 @@ def preciseRedaction : Effect :=
     .counter "Counter target white or black spell" (castKind := .counter)
 
 def sphinxsApproach : Effect :=
-  fraUntargeted (.sequence [.draw 2, .sphinxsApproach])
+  fraUntargeted (.sequence [.draw 2, .exile .sphinxsApproach .forLater])
     "Draw two cards. Then you may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
     (castKind := .draw)
 
@@ -1324,7 +1324,7 @@ def extendedAbsence : Effect :=
     (castKind := .destroyCreature)
 
 def extrapolateTheImpossible : Effect :=
-  fraUntargeted (.extrapolate)
+  fraUntargeted (.returnToHand .outsideGameOpponentChoice)
     "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
     (castKind := .draw)
 
@@ -1461,7 +1461,7 @@ def chargeTheSanctumPump : Effect :=
     (castKind := .pump)
 
 def clashOfElements : Effect :=
-  fraSpellOn { noun := "target nonland permanent", nonland := true } .clashOfElements
+  fraSpellOn { noun := "target nonland permanent", nonland := true } (.putOnLibrary .topOrBottomDamage2 .target)
     "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this spell deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
     (castKind := .destroyCreature)
 

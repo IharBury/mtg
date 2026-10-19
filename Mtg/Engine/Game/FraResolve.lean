@@ -38,7 +38,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           else g
         | none => g
       | Target.player _ => g) sourceId illegal
-  | .exile .target .forLater _ =>
+  | .exile .target .forLater .none =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let (g, _) := g.move o.id .exile none
       g.logMsg s!"{o.name} is exiled") sourceId illegal
@@ -149,7 +149,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
   | .draw (.perControlled .creature) _ =>
     g.draw controller (g.creaturesControlledBy controller).size
-  | .extrapolate =>
+  | .returnToHand .outsideGameOpponentChoice _ =>
     let g := g.materializeSideboard controller
     let names := (g.outsideCards controller).foldl (fun acc o =>
       if acc.contains o.name then acc else acc.push o.name) (#[] : Array String)
@@ -158,7 +158,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.beginFraChoice controller .extrapolateReveal
         s!"{(g.player controller).name} may reveal two cards with different names from outside the game"
-  | .sphinxsApproach =>
+  | .exile .sphinxsApproach .forLater _ =>
     match g.resolvingSpell.bind g.findObject? with
     | some spell =>
       if spell.zone == .stack && !spell.isCopy &&
@@ -204,7 +204,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.dealDamageFrom striker.name (g.object! victim.id) (Int.ofNat striker.status.loyaltyCounters)
           (source := some striker)
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
-  | .clashOfElements =>
+  | .putOnLibrary .topOrBottomDamage2 .target =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
         s!"{(g.player o.owner).name} may put {o.name} on top of their library") sourceId illegal
@@ -296,7 +296,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.beginFraChoice o.owner (.topOrBottomDamage o.id 0)
           s!"{(g.player o.owner).name} puts {o.name} on the top or bottom of their library")
         sourceId illegal
-  | .drawTwoDiscardTwoStun =>
+  | .discard .drawTwoDiscardTwoStun =>
     let g := g.draw controller 2
     let n := Nat.min 2 (g.player controller).hand.size
     if n == 0 then g
@@ -389,7 +389,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.afterPermanentEnters (g.object! newId)
       else g.logMsg s!"{card.name} is no longer in the graveyard"
     | none => g.logMsg "The card is no longer in the graveyard"
-  | .sacrifice .source _ =>
+  | .sacrifice .source .none =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
@@ -413,7 +413,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginFraChoice controller (.maySacrificeThen .land (.tappedHeartwoods 2) sourceId)
         s!"{(g.player controller).name} may sacrifice a land"
     else g
-  | .uldarosCopies =>
+  | .mayCast .uldarosGraveyardTypes .unlimited .withoutPaying _ =>
     -- Exile the still-legal targets (one card per card type, no card twice).
     -- One card for each card type: each chosen card needs a type no earlier
     -- card used.
@@ -424,7 +424,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         match g.findObject? id with
         | some o =>
           if ids.contains id || o.zone != .graveyard controller || o.printed.isLand then acc
-        else
+          else
             match o.printed.types.find? (fun ty => !used.contains ty) with
             | some ty => (ids.push id, used.push ty)
             | none => acc
@@ -458,7 +458,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           let (g, _) := g.move id .exile none
           g.logMsg s!"{name} is exiled"
         | _ => g) sourceId illegal
-  | .copyCause =>
+  | .becomeCopy .causingSpell =>
     match g.fraCause? with
     | some spell =>
       if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
@@ -477,12 +477,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           | _, _ => g
         g.logMsg s!"A copy of {spell.name} is created"
     | none => g.logMsg "The spell is no longer on the stack"
-  | .eyeOfJace =>
+  | .surveil (.fixed 1) .eyeOfJace =>
     let g := g.beginSurveil controller 1
     match g.pending with
     | .surveil .. => { g with fraAfterLook := some (controller, sourceId, .eyeOfJaceCheck) }
-    | _ => g.applyFra controller effect .eyeOfJaceCheck targets sourceId
-  | .eyeOfJaceCheck =>
+    | _ => g.applyFra controller effect (.sacrifice .source .eyeOfJaceIfSevenInGy) targets sourceId
+  | .sacrifice .source .eyeOfJaceIfSevenInGy =>
     if (g.player controller).graveyard.size < 7 then g
     else
       match sourceId.bind g.findObject? with
@@ -534,21 +534,21 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match sourceId.bind g.findObject? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o x 0 else g
     | none => g
-  | .jiangYangguAlone =>
+  | .discard .lootThenCountersPerDiscard =>
     if (g.player controller).hand.isEmpty then
-      g.applyFra controller effect .drawThenCountersPerDiscard targets sourceId
+      g.applyFra controller effect (.putCounters .plusOnePerDiscardAfterDraw .cause) targets sourceId
     else
       g.beginFraChoice controller
         (.discardThen .drawThenCountersPerDiscard sourceId
           (g.resolvingAbilityObject?.bind (·.fraCauseId)))
         s!"{(g.player controller).name} discards a card"
-  | .drawThenCountersPerDiscard =>
+  | .putCounters .plusOnePerDiscardAfterDraw .cause =>
     let g := g.draw controller 1
     let n := (g.player controller).cardsDiscardedThisTurn
     match g.fraCause? with
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g
-  | .kothGeomancer =>
+  | .dealDamage (.fixed 1) (.player .eachOpponent) .addRedIfMountain =>
     let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
     match g.fraCause? with
     | some land => if g.hasSubtype land "Mountain" then g.addManaLogged controller #[.colored .red] else g
@@ -688,7 +688,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
 
   | .grant .emrakulManaAndCast .target
   | .cant (.beCountered .nextSpellThisTurn)
-  | .identityEcho
+  | .exile .target .forLater .revealUntilCreatureOrPlaneswalker
   | .destroy .target .drawIfLegendaryEnchantment
   | .grant (.choiceOfKeywords _) .source
   | .putOnLibrary .bottom .graveyardCard
@@ -699,7 +699,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .pump (.count .artifact) (.fixed 0) .target
   | .putCounters (.ofKind .plusOnePlusOne 1) .creaturesWithPlusOne
   | .returnToHand (.target .eachPermanent) _
-  | .surveilReturnNoncreatureNonland
+  | .surveil (.fixed 1) .returnNoncreatureNonland
   | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell
   | .putCounters .stunRemovedLoyalty .target
   | .grant .emblemDrawOnCast .youIfCast
@@ -708,7 +708,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .exile .opponentLibrariesButBottom .forLater _
   | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn)
   | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast
-  | .eachOpponentDiscardsTwoDrawPerShort
+  | .discard .eachOpponentTwoDrawPerNonlandShortfall
   | .dealDamage (.fixed _) .creaturesExceptYourTokens _
   | .grant .emblemCreaturesGetTwoTwo .youIfCast
   | .untap (.target .eachPermanent)
@@ -726,12 +726,12 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .queueReflexive (.mshReflexive _ _)
   | .mshReflexive _ _
   | .chooseModes _ (.hawkeyeIndices _)
-  | .zemoBoastCopies
+  | .mayCast .boastExiled .unlimited .withoutPaying _
   | .becomeCopy .sourceSpellXTimes
   | .dealDamage .equalSourcePower .target _ | .dealDamage (.power .source) .target _
   | .returnToHand .source _
-  | .sarumanExileCopyMayCast
-  | .extort =>
+  | .mayCast .milledSpell .causingSpell .withoutPaying _
+  | .loseLife (.fixed 1) .extort =>
     g.applyFraAbility controller effect r targets sourceId
   | _ => g
 

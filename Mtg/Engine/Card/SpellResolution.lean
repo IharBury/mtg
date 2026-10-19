@@ -285,6 +285,8 @@ inductive PlayerSelector where
   | targetAt (index : Nat)
   /-- Each targeted player. -/
   | targetPlayers
+  /-- Each opponent loses 1 life and you gain that much life, if {W/B} is paid (CR 702.101). -/
+  | extort
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -983,6 +985,20 @@ inductive ObjectSelector where
   | upToTwoGyModal
   /-- Creature cards in opponents' graveyards that were put there from the battlefield this turn. -/
   | creaturesDiedThisTurn
+  /-- The spell that caused this trigger. -/
+  | causingSpell
+  /-- Target creature you own, or any number of target creatures you own if kicked. -/
+  | ownedCreaturesKicker
+  /-- Two cards you own from outside the game, one chosen by an opponent. -/
+  | outsideGameOpponentChoice
+  /-- This spell and four cards named Sphinx's Approach in your graveyard. -/
+  | sphinxsApproach
+  /-- Draw two cards, then discard two cards, tapping and stunning up to that many target creatures for nonlands discarded. -/
+  | drawTwoDiscardTwoStun
+  /-- Two cards from each opponent, drawing a card for each opponent who didn't discard two nonland cards. -/
+  | eachOpponentTwoDrawPerNonlandShortfall
+  /-- Discard a card, then draw a card and put a +1/+1 counter on the triggering creature for each card discarded this turn. -/
+  | lootThenCountersPerDiscard
 deriving Repr, Inhabited, BEq
 
 end
@@ -1181,6 +1197,8 @@ inductive NumberSelector where
   | creaturesDiedThisTurn
   /-- Greatest power among creatures you control, losing life equal to cards drawn. -/
   | greatestPowerAndLoseLife
+  /-- Greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield. -/
+  | greatestToughnessThenPutCreatures
 deriving Repr, Inhabited, BEq
 
 instance : Coe Nat NumberSelector where
@@ -1431,6 +1449,10 @@ inductive TriggerDamageNote where
   | divided
   /-- The creature that caused this trigger deals the damage. -/
   | fromCause
+  /-- Pre-allocated divided damage (CR 601.2d). -/
+  | preallocated
+  /-- If the land that caused this is a Mountain, add {R}. -/
+  | addRedIfMountain
 deriving Repr, Inhabited, BEq
 
 /-- Which permanent an effect uses when several recipients share one constructor.
@@ -1489,6 +1511,8 @@ inductive CounterSelector where
   | minusOneGreatestGraveyardMv
   /-- Tap and put X stun counters, where X is the loyalty removed to activate this ability. -/
   | stunRemovedLoyalty
+  /-- Draw a card, then put a +1/+1 counter for each card you've discarded this turn. -/
+  | plusOnePerDiscardAfterDraw
 deriving Repr, Inhabited, BEq
 
 /-- Which token `TriggerResolution.createTokens` creates.
@@ -1603,6 +1627,12 @@ inductive TriggerExileNote where
   | controllerMaySearchBasic
   /-- Draw that many cards after exiling your hand. -/
   | thenDrawThree
+  /-- Counter the spell; if a permanent spell is countered this way, exile it and you may cast it without paying its mana cost. -/
+  | counteredPermanentMayCast
+  /-- Each player may put any number of creature cards from their hand onto the battlefield, then return all cards exiled this way to their owners' hands and exile the resolving spell. -/
+  | worldsWithinWorlds
+  /-- Reveal from the top of your library until a creature or planeswalker card, put it onto the battlefield, and put the rest on the bottom in a random order. -/
+  | revealUntilCreatureOrPlaneswalker
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.sacrifice` can read. -/
@@ -1617,6 +1647,8 @@ inductive TriggerSacrificeNote where
   | noted
   /-- If you sacrifice a creature this way, create a 4/4 Beast. -/
   | ifYouDoCreateBeast
+  /-- If seven or more cards are in your graveyard, sacrifice the source, deal 2 damage to each opponent, and gain 2 life. -/
+  | eyeOfJaceIfSevenInGy
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.mayCast` finds the spell. -/
@@ -1642,6 +1674,10 @@ inductive TriggerCastFrom where
   no spell is recorded. No legal card removes the reflexive ability.
   Outside `queueReflexive`, this casts nothing. -/
   | milledSpell
+  /-- Exile up to one target nonland card of each card type from your graveyard, copy them, and cast copies with total mana value 6 or less without paying their mana costs. -/
+  | uldarosGraveyardTypes
+  /-- Copy the cards exiled to pay this boast activation and cast up to three of the copies without paying their mana costs. -/
+  | boastExiled
 deriving Repr, Inhabited, BEq
 
 /-- The mana-value limit of `TriggerResolution.mayCast`.
@@ -1685,6 +1721,8 @@ inductive TriggerReturnNote where
   | none
   /-- Whether a permanent was actually returned. -/
   | returnedPermanent
+  /-- At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way. -/
+  | delayedBirds
 deriving Repr, Inhabited, BEq
 
 /-- How a card `TriggerResolution.put` changes as it enters. -/
@@ -1865,6 +1903,22 @@ inductive TriggerGrantWhat where
   | emblemCreaturesGetTwoTwo
   /-- Copy the next instant or sorcery spell you cast this turn (optionally limited to source's power). -/
   | nextSpellCopy (mvAtMostSourcePower : Bool := false)
+  /-- Mark tokens created by an earlier step attacking. -/
+  | attacking
+  /-- Choose new targets for the spell. -/
+  | newTargets
+  /-- Play an additional land this turn. -/
+  | extraLand
+  /-- Take an extra turn after this one; power-up abilities can't be activated during it. -/
+  | extraTurn
+  /-- Transform the permanent. -/
+  | transformed
+  /-- Harness this Infinity Stone. -/
+  | harnessed
+  /-- Put an indestructible counter and a +1/+1 counter on the target. -/
+  | arwenShare
+  /-- Phase out the target, or each creature target player controls if kicked. -/
+  | phaseOutKicker
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
@@ -1897,6 +1951,8 @@ deriving Repr, Inhabited, BEq
 inductive TriggerLibraryHow where
   /-- The top `n` cards. Looking at zero cards finds nothing. -/
   | top (n : Nat)
+  /-- The top `n` cards, where `n` is a `NumberSelector`. -/
+  | topNumber (n : NumberSelector)
   /-- Cards until a creature card. An empty library finds nothing. -/
   | untilCreature
   /-- Cards until a Saga card. An empty library finds nothing. -/
@@ -1927,6 +1983,22 @@ inductive TriggerLibraryPlace where
   | topOrBottom
   /-- Shuffled into the owner's library (CR 701.24). -/
   | shuffled
+  /-- Second from the top or on the bottom of its owner's library, then up to one target creature you control connives. -/
+  | secondOrBottomThenConnive
+  /-- Its owner may put it on top of their library; if they do, deal 2 damage to them, otherwise put it on the bottom. -/
+  | topOrBottomDamage2
+deriving Repr, Inhabited, BEq
+
+/-- What a later step of `TriggerResolution.surveil` can read or do. -/
+inductive TriggerSurveilNote where
+  /-- Surveil only. -/
+  | none
+  /-- Arm the following surveil to return a card with mana value at most the life gained this turn. -/
+  | armReturnLifeGained
+  /-- Put a noncreature, nonland card put into your graveyard this way into your hand. -/
+  | returnNoncreatureNonland
+  /-- Then if seven or more cards are in your graveyard, sacrifice the source, deal 2 damage to each opponent, and gain 2 life. -/
+  | eyeOfJace
 deriving Repr, Inhabited, BEq
 
 /-- Which outcome of `TriggerResolution.may` resolves `follow`. -/
@@ -2782,18 +2854,6 @@ inductive Resolution where
   nothing. A count that cannot be read adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
       (note : ManaSpendNote := .none)
-  /-- Set the source's base power and toughness, as the selectors say.
-  `.fixed` is that number. Both printed numbers are `.fixed`.
-  Base power `p` and toughness `t` is `.becomePT (.fixed p) (.fixed t)`.
-  Any other counts offer those base values. A count that is not a number
-  changes nothing. -/
-  | becomePT (power toughness : NumberSelector)
-  /-- Look at the top cards, as `n` says, and you may reveal a listed type.
-  `.fixed` is that many cards.
-  The top `n` is `.lookAtTopRevealTypes (.fixed n) types`.
-  Any other count looks at that many cards. A count that cannot be read
-  looks at nothing. -/
-  | lookAtTopRevealTypes (n : NumberSelector) (types : Array String)
   /-- Gain control of the announced permanents, as `how` says.
   Until end of turn, then untap and haste, is `.gainControl .untilEndOfTurn`.
   While the source remains is `.gainControl .whileSourceRemains`.
@@ -3011,11 +3071,11 @@ inductive Resolution where
   A smaller hand is revealed in full.
   Any other combination reveals that hand, then resolves `thenDo`. -/
   | revealFromHand (count : TriggerRevealCount) (thenDo : Resolution)
-  /-- Surveil, as `n` says (CR 701.25). `.fixed` is that many cards.
+  /-- Surveil, as `n` and `note` say (CR 701.25). `.fixed` is that many cards.
   Surveil 2 is `.surveil (.fixed 2)`. Any other count surveils that many
-  cards. Surveil 0 looks at nothing. A count that cannot be read surveils
-  nothing. -/
-  | surveil (n : NumberSelector)
+  cards. Surveil 0 looks at nothing (unless `note` is `.armReturnLifeGained`).
+  A count that cannot be read surveils nothing. -/
+  | surveil (n : NumberSelector) (note : TriggerSurveilNote := .none)
   /-- Empower Jace, as `n` says (Reality Fracture).
   `.fixed` is that many loyalty counters.
   Empower Jace `n` is `.empowerJace (.fixed n)`.
@@ -3089,111 +3149,18 @@ inductive Resolution where
   Nullary steps. A constructor with fields appended after this point
   exceeds the runtime tag limit.
   -/
-  /-- Deal previously divided damage to the announced targets. -/
-  | dividedDamage
   /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
   | cascade
   /-- The Ring tempts you. -/
   | ringTempts
-  /-- Mark tokens from the previous step attacking. -/
-  | markRecentTokensAttacking
   /-- There is an additional combat phase after this one. -/
   | additionalCombatPhase
   /-- You win the game. -/
   | winTheGame
-  /-- The following surveil returns a card with mana value at most the life
-  you gained this turn. -/
-  | armSurveilReturnLifeGained
-  /-- Choose new targets for the spell that caused this trigger.
-  The recorded cause is used when one was chosen. Otherwise the spell on
-  the stack that targets the source. A spell that has left changes nothing.
-  You may do so with `.may .retargetCause (.sequence []) .ifYouDo`.
-  Declining a target leaves it unchanged and asks about the next one. -/
-  | retargetCause
-  /-- Copy the spell that caused this trigger. You may choose new targets
-  for the copy. A spell that has left the stack is reported. No recorded
-  spell copies nothing. Two +1/+1 counters on the source, then that copy, is
-  `.sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]`.
-  A missing source still copies the spell. -/
-  | copyCause
-  /-- You may play an additional land this turn. -/
-  | extraLand
   /-- Counter the targeted spell. -/
   | counter
-  /-- Counter; exile a permanent spell and grant a free cast. -/
-  | counterExilePermanentMayCast
-  /-- Choose a creature type and bounce the rest. -/
-  | chooseTypeReturnOthers
-  /-- Draw equal to greatest toughness, then put creatures onto the battlefield. -/
-  | drawEqualToughnessThenPutCreatures
-  /-- Bounce owned creatures; delayed Bird Soldiers. -/
-  | eaglesAreComing
-  /-- Phase out the target, or each of a player's creatures if kicked. -/
-  | phaseOutKicker
-  /-- Worlds Within Worlds. -/
-  | worldsWithinWorlds
-  /-- Owner puts the creature into their library; you may connive. -/
-  | ownerPutsLibraryThenConnive
   /-- A resolution that is not a spell shape. It does not play an extra land. -/
   | unrecognized
-  /-- Arwen share. -/
-  | arwenShare
-  /-- Take an extra turn after this one. Power-up abilities can't be activated during it. -/
-  | extraTurn
-  /-- Transform the source. -/
-  | transform
-  /-- Harness this Infinity Stone. -/
-  | harnessInfinityStone
-  /-- Reveal two cards from outside the game; an opponent chooses one to put
-  into your hand (Extrapolate the Impossible). -/
-  | extrapolate
-  /-- Draw two cards, then you may exile this spell and four cards named
-  Sphinx's Approach from your graveyard to search for a Sphinx creature card
-  and put it onto the battlefield. -/
-  | sphinxsApproach
-  /-- The owner of the target may put it on top of their library; if they do,
-  this deals 2 damage to them. Otherwise they put it on the bottom. -/
-  | clashOfElements
-  /-- Draw two cards, then discard two. Tap up to that many target creatures
-  as nonland cards were discarded and stun them (Seasoned Cryomancer). -/
-  | drawTwoDiscardTwoStun
-  /-- Exile up to one target nonland card of each card type from your
-  graveyard, copy them, and cast copies with total mana value 6 or less
-  free (Uldaros Theorix). -/
-  | uldarosCopies
-  /-- Surveil 1. Then if seven or more cards are in your graveyard, sacrifice
-  the source, deal 2 damage to each opponent, and gain 2 life. -/
-  | eyeOfJace
-  /-- Discard a card, then draw a card; then put a +1/+1 counter on the
-  attacking creature for each card you've discarded this turn. -/
-  | jiangYangguAlone
-  /-- This deals 1 damage to each opponent. If the land is a Mountain, add {R}. -/
-  | kothGeomancer
-  /-- Extort: you may pay {W/B}. If you do, each opponent loses 1 life and
-  you gain that much life (CR 702.101). -/
-  | extort
-  /-- Copy the cards exiled to pay this boast activation; you may cast up to
-  three of the copies without paying their mana costs (Baron Helmut Zemo). -/
-  | zemoBoastCopies
-  /-- Exile the targeted enchantment, instant, or sorcery. Copy it. You may
-  cast the copy without paying its mana cost (Saruman of Many Colors). -/
-  | sarumanExileCopyMayCast
-  /-- Exile the target creature or planeswalker you control; reveal until a
-  creature or planeswalker card, put it onto the battlefield, and the rest on
-  the bottom in a random order (Identity Echo). -/
-  | identityEcho
-  /-- Surveil 1. A noncreature, nonland card put into your graveyard this way
-  goes to your hand. -/
-  | surveilReturnNoncreatureNonland
-  /-- Each opponent discards two cards; draw a card for each opponent who
-  didn't discard two nonland cards. -/
-  | eachOpponentDiscardsTwoDrawPerShort
-  /-- Draw a card; then put a +1/+1 counter on the creature that triggered
-  this for each card you've discarded this turn (Jiang Yanggu, Alone). -/
-  | drawThenCountersPerDiscard
-  /-- If seven or more cards are in your graveyard, sacrifice the source, deal
-  2 damage to each opponent, and gain 2 life (Eye of Jace). -/
-  | eyeOfJaceCheck
 deriving Repr, Inhabited, BEq
 
 namespace Resolution
@@ -3202,25 +3169,25 @@ namespace Resolution
 def isFra : Resolution → Bool
   | .destroy .target .drawIfNotAttacking | .destroy .creaturesNotChosenType _ => true
   | .exile .allCreatures .forLater .empowerJace | .draw .greatestPowerAndLoseLife _ => true
-  | .extrapolate .. | .sphinxsApproach .. => true
-  | .clashOfElements .. | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken | .grant (.keywords _) .createdToken => true
+  | .returnToHand .outsideGameOpponentChoice _ | .exile .sphinxsApproach .forLater _ => true
+  | .putOnLibrary .topOrBottomDamage2 .target | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken | .grant (.keywords _) .createdToken => true
   | .exile .target (.returnBrieflyIfMvAtMost _) _ | .discard (.mayWheel _ _) | .grant .mountainsAddExtraRed .landsYouControl => true
   | .may (.removeCounters (.upTo 1) .source) (.putCounters (.ofKind .plusOnePlusOne 1) .eachOther) .ifYouDo => true
-  | .becomePrepared .enchanted false | .putOnLibrary .topOrBottom .target | .drawTwoDiscardTwoStun .. | .becomeCopy .sourceIfNotToken => true
+  | .becomePrepared .enchanted false | .putOnLibrary .topOrBottom .target | .discard .drawTwoDiscardTwoStun | .becomeCopy .sourceIfNotToken => true
   | .put .source .asPrinted .none | .put .source _ (.entering [.counter .plusOnePlusOne _ _]) | .grant .flashback .target => true
-  | .revealFromHand .hand (.exile .chosenNonland .untilSourceLeaves _) | .uldarosCopies .. => true
-  | .eyeOfJace .. | .putCounters (.ofKind .stun _) (.creaturesControlledBy .eachOpponent) | .jiangYangguAlone .. => true
-  | .kothGeomancer .. | .putCounters .minusOneGreatestGraveyardMv (.creaturesControlledBy .eachOpponent) | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo => true
-  | .proliferate (.fixed _) .youControl | .grant .artifactCreatureVehicle .source | .extort .. => true
-  | .queueReflexive (.mshReflexive _ _) | .mshReflexive .. | .chooseModes _ (.hawkeyeIndices _) | .zemoBoastCopies .. | .becomeCopy .sourceSpellXTimes => true
-  | .sarumanExileCopyMayCast .. | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample | .grant .emrakulManaAndCast .target => true
-  | .cant (.beCountered .nextSpellThisTurn) | .identityEcho .. | .destroy .target .drawIfLegendaryEnchantment | .grant (.choiceOfKeywords _) .source => true
+  | .revealFromHand .hand (.exile .chosenNonland .untilSourceLeaves _) | .mayCast .uldarosGraveyardTypes .unlimited .withoutPaying _ => true
+  | .surveil (.fixed 1) .eyeOfJace | .putCounters (.ofKind .stun _) (.creaturesControlledBy .eachOpponent) | .discard .lootThenCountersPerDiscard => true
+  | .dealDamage (.fixed 1) (.player .eachOpponent) .addRedIfMountain | .putCounters .minusOneGreatestGraveyardMv (.creaturesControlledBy .eachOpponent) | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo => true
+  | .proliferate (.fixed _) .youControl | .grant .artifactCreatureVehicle .source | .loseLife (.fixed 1) .extort => true
+  | .queueReflexive (.mshReflexive _ _) | .mshReflexive .. | .chooseModes _ (.hawkeyeIndices _) | .mayCast .boastExiled .unlimited .withoutPaying _ | .becomeCopy .sourceSpellXTimes => true
+  | .mayCast .milledSpell .causingSpell .withoutPaying _ | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample | .grant .emrakulManaAndCast .target => true
+  | .cant (.beCountered .nextSpellThisTurn) | .exile .target .forLater .revealUntilCreatureOrPlaneswalker | .destroy .target .drawIfLegendaryEnchantment | .grant (.choiceOfKeywords _) .source => true
   | .putOnLibrary .shuffled .target | .grant .combatDamageDrawTwo .source => true
-  | .surveilReturnNoncreatureNonland .. | .putCounters .stunRemovedLoyalty .target | .grant .emblemDrawOnCast .youIfCast => true
+  | .surveil (.fixed 1) .returnNoncreatureNonland | .putCounters .stunRemovedLoyalty .target | .grant .emblemDrawOnCast .youIfCast => true
   | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn | .exile .opponentLibrariesButBottom .forLater _ | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn) => true
-  | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast | .eachOpponentDiscardsTwoDrawPerShort .. | .grant .emblemCreaturesGetTwoTwo .youIfCast => true
+  | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast | .discard .eachOpponentTwoDrawPerNonlandShortfall | .grant .emblemCreaturesGetTwoTwo .youIfCast => true
   | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn => true
-  | .drawThenCountersPerDiscard .. | .eyeOfJaceCheck .. | .chooseModes _ (.fraTrigger _) | .frc .. => true
+  | .putCounters .plusOnePerDiscardAfterDraw .cause | .sacrifice .source .eyeOfJaceIfSevenInGy | .chooseModes _ (.fraTrigger _) | .frc .. => true
   | .searchLibrary (.putOnLibrary .top .planeswalkerCard) | .searchLibrary (.mill (.fixed 1) _ _) => true
   | .searchLibrary (.returnToHand .basicLandsDifferentNamesX _) | .searchLibrary (.put (.landsUpTo _) .tapped _) => true
   | .searchLibrary (.returnToHand .enchantmentCard _) | .searchLibrary (.returnToHand .card _) => true
@@ -3268,7 +3235,7 @@ def isFra : Resolution → Bool
   | .empowerJace (.count .creaturesYouControl) | .empowerJace (.subtypeCount "Island") => true
   | .draw (.perControlled .creature) _ | .draw .milledByTargetPlayerThisTurn _ | .draw .colorsAmongOtherArtifacts _ => true
   | .untap (.target .eachPermanent) | .untap .landsYouControl | .untap .tokensYouControl => true
-  | .fight .source .mutual | .copyCause => true
+  | .fight .source .mutual | .becomeCopy .causingSpell => true
   | _ => false
 
 /-- Oracle wording for a former `FraResolution` step. `none` for every other step. -/
@@ -3297,13 +3264,13 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
     some (s!"{capitalizeAscii noun} reveals their hand. You choose a nonland card from it. That player discards that card")
   | .discard .hand => some ("Discard your hand")
   | .draw (.perControlled .creature) _ => some ("Draw a card for each creature you control")
-  | .extrapolate => some ("You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand")
-  | .sphinxsApproach => some ("You may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle")
+  | .returnToHand .outsideGameOpponentChoice _ => some ("You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand")
+  | .exile .sphinxsApproach .forLater _ => some ("You may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle")
   | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent => some ("Put a +1/+1 counter on each other Wizard token you control")
   | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ => some (s!"This deals {n} damage to each creature and planeswalker your opponents control")
   | .lose .allAbilities (.targetAt _) => some (s!"{capitalizeAscii noun} loses all abilities until end of turn")
   | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none => some ("Target creature you control deals damage equal to its power to that permanent")
-  | .clashOfElements => some ("Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom")
+  | .putOnLibrary .topOrBottomDamage2 .target => some ("Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom")
   | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo => some ("You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle")
   | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken => some ("If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard")
   | .grant (.keywords _) .createdToken => some ("It gains haste until end of turn")
@@ -3564,7 +3531,6 @@ export Resolution (
   becomePrepared
   setBasePT
   putOnLibrary
-  dividedDamage
   sequence
   may
   gainLife
@@ -3579,8 +3545,6 @@ export Resolution (
   createTokens
   attach
   addMana
-  becomePT
-  lookAtTopRevealTypes
   gainControl
   cascade
   noteResolveThisTurn
@@ -3600,26 +3564,14 @@ export Resolution (
   revealFromHand
   surveil
   empowerJace
-  markRecentTokensAttacking
   additionalCombatPhase
   loseLife
   winTheGame
-  armSurveilReturnLifeGained
   becomeCopy
-  retargetCause
-  copyCause
-  extraLand
   onPermanent
   counter
   unlessPays
-  counterExilePermanentMayCast
   replace
-  chooseTypeReturnOthers
-  drawEqualToughnessThenPutCreatures
-  eaglesAreComing
-  phaseOutKicker
-  worldsWithinWorlds
-  ownerPutsLibraryThenConnive
   unrecognized
 )
 
@@ -3661,7 +3613,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "target creature you control fights target creature an opponent controls"
   | .fight .announced .upToOneOther =>
     "target creature you control fights up to one other target creature"
-  | .extraLand => "you may play an additional land this turn"
+  | .grant .extraLand .youIfCast => "you may play an additional land this turn"
   | .unrecognized => "this effect does nothing"
   | .sequence _ => ""
   | .discard (.cards n) => s!"discard {cardPhrase n}"
@@ -3671,7 +3623,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .loseLife (.fixed n) .eachOpponent => s!"each opponent loses {n} life"
   | .gainLife (.fixed n) .you => s!"you gain {n} life"
   | .gainLife (.fixed n) .player => s!"Target player gains {n} life"
-  | .surveil (.fixed n) => s!"surveil {n}"
+  | .surveil (.fixed n) .none => s!"surveil {n}"
   | .grant (.keywords k) .creaturesYouControl => s!"creatures you control gain {k.joinedAnd} until end of turn"
   | .returnToHand .targetSpell _ => s!"return {noun} to its owner's hand"
   | .returnToHand (.target .graveyardCard) _ => s!"return up to one {noun} to your hand"
@@ -3694,7 +3646,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     let base := if base.endsWith "." then (base.dropEnd 1).toString else base
     if base.isEmpty then s!"unless its controller pays \{{n}}"
     else s!"{base} unless its controller pays \{{n}}"
-  | .counterExilePermanentMayCast =>
+  | .exile .targetSpell .forLater .counteredPermanentMayCast =>
     s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
   | .or _ => ""
   | .attach .equipmentYouControl .target =>
@@ -3757,9 +3709,9 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"{replaceWhatClause what noun}, {replaceInsteadClause instead}"
   | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
-  | .chooseTypeReturnOthers =>
+  | .returnToHand .creaturesNotChosenType _ =>
     "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
-  | .drawEqualToughnessThenPutCreatures =>
+  | .draw .greatestToughnessThenPutCreatures _ =>
     "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
   | .mill (.fixed n) _ (.toHand (.oneOf a b)) =>
     s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
@@ -3783,13 +3735,13 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"look at the top {englishNumber n} cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
   | .put .creaturesDiedThisTurn .tapped .asFood =>
     "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
-  | .eaglesAreComing =>
+  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
     "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
   | .revealLibrary (.top n) (.sequence [.put .landsYouControl .tapped _, .gainLife (.fixed life) _]) _ =>
     s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
   | .gainControl .oppArtifacts =>
     "for each opponent, gain control of up to one target artifact that player controls"
-  | .phaseOutKicker =>
+  | .grant .phaseOutKicker .target =>
     "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
   | .dealDamage (.fixed n) (.player (.controller .target)) _ =>
     s!"it also deals {n} damage to that creature's controller"
@@ -3835,7 +3787,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
   | .destroy .target _ =>
     "Destroy up to one target nonland permanent"
-  | .worldsWithinWorlds =>
+  | .exile .allCreatures .forLater .worldsWithinWorlds =>
     "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
   | .exile .hand .playUntilNextTurn .thenDrawThree =>
     "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
@@ -3847,7 +3799,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
   | .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying _ =>
     "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .ownerPutsLibraryThenConnive =>
+  | .putOnLibrary .secondOrBottomThenConnive .target =>
     "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
   | .returnToHand .upToTwoGyModal _ =>
     "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
@@ -3888,7 +3840,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife (.fixed n) .you] =>
     s!"destroy {noun}. You gain {n} life"
-  | [.onPermanent .destroy, .surveil (.fixed 1)] =>
+  | [.onPermanent .destroy, .surveil (.fixed 1) .none] =>
     s!"destroy {noun}. Surveil 1"
   | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
     s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN.toNat}"

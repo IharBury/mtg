@@ -184,7 +184,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This creature deals {n} damage to any target"
   | .draw .lastKnownPower _ =>
     "Draw cards equal to the sacrificed creature's power"
-  | .arwenShare =>
+  | .grant .arwenShare .target =>
     "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
   | .grant .combatDamageCreateTreasure .target =>
     "Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
@@ -202,7 +202,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Creatures you control gain {k.joinedAnd} until end of turn"
   | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype) =>
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
-  | .extraTurn =>
+  | .grant .extraTurn .youIfCast =>
     "Take an extra turn after this one. During that turn, power-up abilities can't be activated"
   | .putCounters .plusOneChosenX .source =>
     "Put X +1/+1 counters on this"
@@ -212,7 +212,7 @@ private def phraseWith (r : Resolution) (noun : String)
     let listed := orJoin types.toList
     let art := indefinite (types[0]?.getD "")
     s!"Look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
-  | .transform =>
+  | .grant .transformed .source =>
     "Transform this"
   | .draw .chosenX _ =>
     "Draw X cards"
@@ -256,13 +256,13 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Until end of turn, this becomes {art} {typeWords} with base power and toughness {p}/{t} and gains {joined}"
   | .grant (.nextSpellCopy true) .source =>
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
-  | .harnessInfinityStone =>
+  | .grant .harnessed .source =>
     "Harness this"
   | .connive (.target (.youControl (.subtype subtype))) =>
     s!"Target {subtype} you control connives"
   | .empowerJace (.fixed n) =>
     s!"Empower Jace {n}"
-  | .surveil (.fixed n) =>
+  | .surveil (.fixed n) .none =>
     s!"Surveil {n}"
   | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
     s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
@@ -340,12 +340,12 @@ def toSpellStep : Resolution → Option SpellResolution
   | .exile (.target .eachPermanent) .nextEndStep _ | .searchLibrary (.put (.basicBeholdUntap _) .tapped _)
   | .draw (.fixed 1) .targetPlayers
   | .dealDamage _ .target _ | .draw .lastKnownPower _
-  | .draw .perBurden _ | .arwenShare
+  | .draw .perBurden _ | .grant .arwenShare .target
   | .grant .combatDamageCreateTreasure .target | .putCounters (.ofKind .shadow _) .target
   | .dealDamage _ (.player .eachOpponent) _ | .destroy .allCreaturesExceptTwoChosen _
   | .cant (.beBlockedByMostLifePlayer .target) | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
-  | .extraTurn | .putCounters .plusOneChosenX .source
-  | .revealLibrary (.top _) (.put (.lookedTypes _) _ _) _ | .transform | .draw .chosenX _
+  | .grant .extraTurn .youIfCast | .putCounters .plusOneChosenX .source
+  | .revealLibrary (.top _) (.put (.lookedTypes _) _ _) _ | .grant .transformed .source | .draw .chosenX _
   | .revealLibrary (.top _) (.returnToHand .artifact _) _
   | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities _) | .addMana #[] (.fixed 1) .artifactSpell
   | .addMana #[] (.fixed 2) .creatureSources | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact
@@ -359,7 +359,7 @@ def toSpellStep : Resolution → Option SpellResolution
   | .put .source .asPrinted (.entering [.counter .finality 1 true]) | .revealLibrary (.top 1) (.draw (.fixed 1) _) _
   | .becomeCopy .secondArtifactTargetNotLegendary
   | .grant (.typesPTAndKeywords _ _ _ _) .source | .grant (.nextSpellCopy _) .source
-  | .harnessInfinityStone | .connive (.target (.youControl (.subtype _)))
+  | .grant .harnessed .source | .connive (.target (.youControl (.subtype _)))
   | .mill _ .you .none | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _
   | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ | .cant (.block .creaturesWithoutFlying)
@@ -397,10 +397,10 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .sequence rs => rs.any doesNothingAsSpell
   | .putOnLibrary .shuffled .source | .gainLife _ _ | .dealDamage _ _ _
   | .recruit _ | .addMana _ _ _ | .discard _ | .onSource _ => false
-  | .empowerJace _ | .surveil _ | .mill _ .you _
+  | .empowerJace _ | .surveil _ _ | .mill _ .you _
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .extraTurn | .draw .perBurden _
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .grant .extraTurn .youIfCast | .draw .perBurden _
   | .cant (.block .creaturesWithoutFlying)
   | .destroy .otherCreaturesOddOrEvenMv _
   | .becomePrepared .creaturesYouControl _

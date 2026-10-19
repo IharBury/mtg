@@ -60,12 +60,12 @@ Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
   match e.resolution with
-  | .eaglesAreComing =>
+  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
     { e with
       targeting := .of (.filtered
         { noun := "any number of target creatures you own", types := #[.creature], ownedByYou := true })
       allowsZeroTargets := true, maxTargets := 100 }
-  | .phaseOutKicker => { e with targeting := .of .player }
+  | .grant .phaseOutKicker .target => { e with targeting := .of .player }
   | _ => e
 
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2).

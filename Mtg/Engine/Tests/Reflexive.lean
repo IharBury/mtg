@@ -184,7 +184,7 @@ use `queueReflexive`. -/
   match stackEffect g with
   | some eff =>
     match eff.resolution with
-    | .sarumanExileCopyMayCast =>
+    | .mayCast .milledSpell .causingSpell .withoutPaying _ =>
       logContains g "reflexive ability is put on the stack"
     | _ => false
   | none => false

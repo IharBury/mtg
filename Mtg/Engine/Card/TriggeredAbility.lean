@@ -843,8 +843,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a card from your hand on the bottom of your library"
   | .putOnLibrary _ _ =>
     "put on library"
-  | .surveil (.fixed n) => s!"surveil {n}"
-  | .surveil _ => "surveil"
+  | .surveil (.fixed 0) .armReturnLifeGained =>
+    "if you gained life this turn"
+  | .surveil (.fixed n) _ => s!"surveil {n}"
+  | .surveil _ _ => "surveil"
   | .empowerJace (.fixed n) => s!"empower Jace {n}"
   | .empowerJace _ => "empower Jace"
   | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
@@ -925,6 +927,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
   | .dealDamage amount who note =>
     match who, amount, note with
+    | .target, .fixed 0, .preallocated =>
+      match t.dividedDamage with
+      | some (amount, maxTargets) =>
+        s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
+      | none => "it deals damage divided as you choose"
     | .blockers, .fixed n, _ =>
       s!"it deals {n} damage to each creature blocking it"
     | .permanent, .lastKnownPower, .excess =>
@@ -1017,8 +1024,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
     "you may have this deal that much damage"
-  | .may .retargetCause (.sequence []) .ifYouDo =>
+  | .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo =>
     "you may choose new targets for that spell"
+  | .may (.setBasePT (.fixed p) (.fixed t) .source) (.sequence []) _ =>
+    s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .may (.setBasePT _ _ .source) (.sequence []) _ =>
+    "you may have this creature's base power and toughness become those values until end of turn"
   | .may (.pay (.mana symbols)) (.queueReflexive follow) .ifYouDo =>
     let times :=
       match TriggerResolution.queuedReflexive follow with
@@ -1076,11 +1087,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
     | _ =>
       "sacrifice it"
-  | .dividedDamage =>
-    match t.dividedDamage with
-    | some (amount, maxTargets) =>
-      s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
-    | none => "it deals damage divided as you choose"
   | .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] =>
     s!"return {noun} to your hand. You gain life equal to that card's power"
   | .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] =>
@@ -1121,7 +1127,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
   | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
+  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
   | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
@@ -1225,7 +1231,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
-  | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
+  | .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1) _] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
@@ -1265,7 +1271,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
   | .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)] =>
     "put a +1/+1 counter on this creature. Scry 1"
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .becomeCopy .causingSpell] =>
     "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
   | .sequence _ =>
     "resolve each step"
@@ -1472,20 +1478,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
       "choose one — tap target creature an opponent controls; untap target creature you control"
-  | .becomePT (.fixed p) (.fixed t) =>
-    s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
-  | .becomePT _ _ =>
-    "you may have this creature's base power and toughness become those values until end of turn"
   | .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source) =>
     "if you do, put a +1/+1 counter on this creature"
-  | .lookAtTopRevealTypes (.fixed n) types =>
-    let joined :=
-      match types.toList with
-      | [a, b] => s!"a {a} or {b} card"
-      | xs => s!"a {String.intercalate " or " xs} card"
-    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-  | .lookAtTopRevealTypes _ _ =>
-    "look at the top cards of your library"
   | .gainControl .untilEndOfTurn =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
   | .gainControl .whileSourceRemains =>
@@ -1553,6 +1547,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may cast a spell"
   | .grant what who =>
     match what, who with
+    | .attacking, .createdToken =>
+      "those tokens enter tapped and attacking"
+    | .newTargets, .causingSpell =>
+      "choose new targets for that spell"
     | .doubleStrike, .equippedAttackers =>
       "each equipped attacking creature gains double strike until end of turn"
     | .protectionEverything, .youIfCast =>
@@ -1591,6 +1589,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "grant"
   | .revealLibrary how thenDo who =>
     match how, thenDo, who with
+    | .topNumber (.fixed n), .returnToHand (.lookedTypes types) _, _ =>
+      let joined :=
+        match types.toList with
+        | [a, b] => s!"a {a} or {b} card"
+        | xs => s!"a {String.intercalate " or " xs} card"
+      s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
+    | .topNumber _, .returnToHand (.lookedTypes _) _, _ =>
+      "look at the top cards of your library"
     | .top n, .put .randomCreature .asPrinted .none, .you =>
       s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
     | .untilCreature,
@@ -1697,9 +1703,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
     else
       "you may tap this creature. When you do, that ability triggers"
-  | .markRecentTokensAttacking =>
-    "those tokens enter tapped and attacking"
-  | .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking =>
+  | .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken) =>
     "those tokens are tapped and attacking if that creature is legendary"
   | .additionalCombatPhase =>
     "after this phase, there is an additional combat phase"
@@ -1765,8 +1769,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if your library has no cards in it, you win the game"
   | .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source) =>
     "Fblthp's owner shuffles him into their library"
-  | .armSurveilReturnLifeGained =>
-    "if you gained life this turn"
   | .becomeCopy .artifactEnchantmentOrLand =>
     "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
   | .becomeCopy .creatureOrGraveyardCard =>
@@ -1777,14 +1779,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a token that's a copy of the artifact that caused this"
   | .becomeCopy .sourceTwoNonlegendaryTokens =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
+  | .becomeCopy .causingSpell =>
+    "copy that spell. You may choose new targets for the copy"
   | .becomeCopy _ =>
     "become a copy"
   | .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) =>
     "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .retargetCause =>
-    "choose new targets for that spell"
-  | .copyCause =>
-    "copy that spell. You may choose new targets for the copy"
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
   | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>

@@ -77,7 +77,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingTargetsGainFlying) ==
   .grant (.keywords Keyword.flying) .spellTargets
 #guard TriggeredAbility.resolution (casting Effect.castingCopyIfArtifactOrLand) ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .becomeCopy .causingSpell]
 #guard TriggeredAbility.resolution (casting Effect.castingTapCreatureOrLand) ==
   .tap .target
 

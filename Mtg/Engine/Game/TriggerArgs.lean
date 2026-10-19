@@ -304,7 +304,10 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .opponentLibrariesButBottom | .oppGreatestMvCreatureOrPlaneswalker
     | .nextSpellThisTurn | .untilYourNextTurn | .attackersOfCauseControllerWithTrample
     | .attackersAgainstYouUntilYourTurn | .attackersAgainstOpponentsUntilYourTurn
-    | .equipmentYouControl | .upToTwoGyModal | .creaturesDiedThisTurn =>
+    | .equipmentYouControl | .upToTwoGyModal | .creaturesDiedThisTurn
+    | .causingSpell | .ownedCreaturesKicker | .outsideGameOpponentChoice
+    | .sphinxsApproach | .drawTwoDiscardTwoStun
+    | .eachOpponentTwoDrawPerNonlandShortfall | .lootThenCountersPerDiscard =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -388,7 +391,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
       | some idx => one ⟨idx.toNat⟩
       | none => none
-  | .opponentHasYou => none
+  | .opponentHasYou | .extort => none
 
 /-- How many objects `what` names.
 `none` means `what` does not name a counted set. An empty set is `some 0`.
@@ -533,7 +536,8 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     | _ => none
   | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
-  | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife => none
+  | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife
+  | .greatestToughnessThenPutCreatures => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

@@ -125,7 +125,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .cant (.beCountered .nextSpellThisTurn) =>
     (g.modifyPlayer controller (fun pl => { pl with nextSpellCantBeCountered := true })).logMsg
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
-  | .identityEcho =>
+  | .exile .target .forLater .revealUntilCreatureOrPlaneswalker =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let (g, _) := g.move o.id .exile none
       let g := g.logMsg s!"{o.name} is exiled"
@@ -211,7 +211,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           | none => g
         else g.illegalAbilityTarget t
       | _ => g) g
-  | .surveilReturnNoncreatureNonland =>
+  | .surveil (.fixed 1) .returnNoncreatureNonland =>
     let g := g.beginSurveil controller 1
     match g.pending with
     | .surveil .. => { g with surveilReturnNoncreatureNonland := true }
@@ -260,7 +260,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           s!"{o.name} gets -4/-1 until {(g.player controller).name}'s next turn") sourceId illegal
   | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast =>
     g.continueSacrificeEach controller g.apnapOrder #[]
-  | .eachOpponentDiscardsTwoDrawPerShort =>
+  | .discard .eachOpponentTwoDrawPerNonlandShortfall =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
   | .dealDamage (.fixed n) .creaturesExceptYourTokens _ =>
     let victims := g.battlefield.filter (fun o =>
@@ -385,7 +385,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       if o.zone == .graveyard o.owner then g.returnToHand o.id o.owner
       else g.logMsg s!"{o.name} is no longer in the graveyard"
     | none => g.logMsg "The ability's source is no longer in the graveyard"
-  | .sarumanExileCopyMayCast =>
+  | .mayCast .milledSpell .causingSpell .withoutPaying =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
@@ -405,7 +405,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
               s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
-  | .zemoBoastCopies =>
+  | .mayCast .boastExiled .unlimited .withoutPaying =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
@@ -425,7 +425,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     else
       g.beginFraChoice controller (.castCopiesFree copies 1000 3)
         s!"{(g.player controller).name} may cast up to three of the copies without paying their mana costs"
-  | .extort =>
+  | .loseLife (.fixed 1) .extort =>
     g.beginFraChoice controller (.mayPayExtort sourceId)
       s!"{(g.player controller).name} may pay \{W/B} (extort)"
   | .proliferate (.fixed times) _ =>

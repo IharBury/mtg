@@ -261,7 +261,7 @@ and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
   { cost := { fra := .zemoBoast }
     printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
-    effect := { resolution := .zemoBoastCopies
+    effect := { resolution := .mayCast .boastExiled .unlimited .withoutPaying
                 phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs" } }
 
 /-- Every mode of this ability; a non-modal ability is a singleton. -/

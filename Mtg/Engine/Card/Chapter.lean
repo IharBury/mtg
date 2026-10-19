@@ -14,7 +14,7 @@ structure ChapterSpell where
   targeting : EffectTargeting := .of .none
   allowsZeroTargets : Bool := false
   phrase : String := ""
-  resolution : SpellResolution := .extraLand
+  resolution : SpellResolution := .grant .extraLand .youIfCast
 deriving Repr, Inhabited, BEq
 
 /-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog

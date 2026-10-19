@@ -460,7 +460,7 @@ namespace CardDef
 #guard (Effect.pump 3 3).spellResolution == .onPermanent (.pump 3 3)
 #guard Effect.destroyCreatureWithFlying.spellResolution == .onPermanent .destroy
 #guard Effect.destroyCreature.spellResolution == .onPermanent .destroy
-#guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
+#guard Effect.playAdditionalLandThisTurn.spellResolution == .grant .extraLand .youIfCast
 #guard (Effect.drawAndLoseLife 2 2).spellResolution ==
   .sequence [.draw 2, .loseLife 2 .you]
 #guard (Effect.draw 2).spellResolution == .draw 2
@@ -1310,13 +1310,13 @@ namespace CardDef
     { resolution := .spellsCostLess (.cardType .artifact) .perOtherCreature } ==
   "spells you cast this turn cost less to cast"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePT (.fixed 2) (.fixed 2) } ==
+    { resolution := .may (.setBasePT (.fixed 2) (.fixed 2) .source) (.sequence []) } ==
   "you may have this creature's base power and toughness become 2/2 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePT .perOtherCreature (.fixed 2) } ==
+    { resolution := .may (.setBasePT .perOtherCreature (.fixed 2) .source) (.sequence []) } ==
   "you may have this creature's base power and toughness become those values until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lookAtTopRevealTypes .perOtherCreature #["Dwarf"] } ==
+    { resolution := .revealLibrary (.topNumber .perOtherCreature) (.returnToHand (.lookedTypes #["Dwarf"])) } ==
   "look at the top cards of your library"
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
@@ -1539,9 +1539,9 @@ namespace CardDef
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
   .pump (.fixed 1) (.fixed 1) .source
-#guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
+#guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dealDamage (.fixed 0) .target .preallocated
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
-  .dividedDamage
+  .dealDamage (.fixed 0) .target .preallocated
 #guard TriggeredAbility.resolution .onDiesDealDamageEqualToPowerToOppCreature ==
   .dealDamage .lastKnownPower .permanent
 #guard TriggeredAbility.resolution (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
@@ -1584,7 +1584,7 @@ end CardDef
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
     .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]
+  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
@@ -1634,7 +1634,7 @@ end CardDef
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
   .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
-  .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
+  .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
   .sequence [.grant (.keywords Keyword.hexproof) .target,
     .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),

@@ -274,7 +274,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
-      dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
+      dividedDamage := some (amount, maxTargets), resolution := .dealDamage (.fixed 0) .target .preallocated }
   | .gainLife n => { resolution := .gainLife (.fixed n) }
   | .connive who =>
     match who with
@@ -339,7 +339,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
          .gainLife .perOtherCreature] }
-  | .becomePT p t => { resolution := .becomePT (.fixed p) (.fixed t) }
+  | .becomePT p t => { resolution := .may (.setBasePT (.fixed p) (.fixed t) .source) (.sequence []) }
   | .pumpTargetPerPlains =>
     { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
@@ -425,7 +425,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.returnToHand .permanent .returnedPermanent,
          .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
-    { resolution := .lookAtTopRevealTypes (.fixed n) types }
+    { resolution := .revealLibrary (.topNumber (.fixed n)) (.returnToHand (.lookedTypes types)) }
   | .createTappedTreasuresEqualOppArtifacts =>
     { resolution := .createTokens .treasure .oppArtifacts true }
   | .putNonlandMvAtMostFromGy mv =>
@@ -512,7 +512,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
          .amass .notedExcess] }
   | .createSpiritsForEquipped =>
     { resolution := .sequence
-        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] }
+        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)] }
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     { resolution :=
         .createTokens .treasure .damagedPlayerArtifacts false }
@@ -695,7 +695,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
-      resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }
+      resolution := .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1)] }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
       resolution := .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) }
@@ -897,7 +897,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
       resolution := .sequence [
-        .pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo] }
+        .pump (.fixed 2) (.fixed 2) .source, .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo] }
   | .watch .anyPlayerSecondDraw =>
     { events := #[.anyPlayerDrawsSecond], resolution := .draw (.fixed 1) }
   | .watch .youTargetDrawOnce =>
@@ -1025,7 +1025,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .casting .copyIfArtifactOrLand =>
     { events := #[.youCastInstantSorceryTargetingArtifactOrLand],
       resolution := .sequence [
-        .putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] }
+        .putCounters (.ofKind .plusOnePlusOne 2) .source, .becomeCopy .causingSpell] }
   | .casting .tapCreatureOrLand =>
     { events := #[.youCastNoncreature],
       targeting := .of (.filtered {

@@ -611,7 +611,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     (allowsZeroTargets := true),
   FraCandidates.ab (.sequence [.draw 3, .putCounters .plusOneEqualToHand .creaturesYouControl])
     "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
-  FraCandidates.ab (.surveilReturnNoncreatureNonland)
+  FraCandidates.ab (.surveil (.fixed 1) .returnNoncreatureNonland)
     "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
   FraCandidates.ab (.addMana #[.colored .blue] (.fixed 1) .noncreatureSpell) "Add {U}. Spend this mana only to cast a noncreature spell",
   FraCandidates.ab (.putCounters .stunRemovedLoyalty .target) "Tap target artifact or creature. Put X stun counters on it"
@@ -625,7 +625,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     (.filtered { TargetFilter.creature with noun := "up to one target creature" }) (allowsZeroTargets := true),
   FraCandidates.ab (.sacrifice .eachPlayersCreature .ifYouDoCreateBeast)
     "Each player sacrifices a creature of their choice. If you sacrificed a creature this way, create a 4/4 green Beast creature token with trample",
-  FraCandidates.ab (.eachOpponentDiscardsTwoDrawPerShort)
+  FraCandidates.ab (.discard .eachOpponentTwoDrawPerNonlandShortfall)
     "Each opponent discards two cards. For each opponent who didn't discard two nonland cards this way, you draw a card",
   FraCandidates.ab (.sequence [.discard .hand, .draw (.perControlled .creature)]) "Discard your hand, then draw a card for each creature you control",
   FraCandidates.ab (.dealDamage (.fixed 4) .creaturesExceptYourTokens) "This deals 4 damage to each creature except for tokens you control",
@@ -1195,7 +1195,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (allowsZeroTargets := true),
   TriggeredAbility.fra .enter
     "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them."
-    (.drawTwoDiscardTwoStun),
+    (.discard .drawTwoDiscardTwoStun),
   TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card, then discard a card."
     (.sequence [.draw 1, .discard (.cards 1)]),
   TriggeredAbility.fra .dies "When this creature dies, if it isn't a token, create a token that's a copy of it."
@@ -1293,7 +1293,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true) .ifYouDo),
   TriggeredAbility.fra .enter
     "When this creature enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs."
-    (.uldarosCopies)
+    (.mayCast .uldarosGraveyardTypes .unlimited .withoutPaying)
     (.filtered { noun := "up to one target nonland card of each card type from your graveyard"
                  zone := .yourGraveyard, nonland := true })
     (allowsZeroTargets := true) (maxTargets := 8) (cond := .sourceWasCast),
@@ -1305,11 +1305,11 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (allowsZeroTargets := true),
   TriggeredAbility.fra (.fra .youCastPreparedSpell)
     "Whenever you cast a prepared spell, copy it. You may choose new targets for the copy."
-    (.copyCause),
+    (.becomeCopy .causingSpell),
   TriggeredAbility.fra .enter "When this artifact enters, draw a card, then discard a card." (.sequence [.draw 1, .discard (.cards 1)]),
   TriggeredAbility.fra .yourUpkeep
     "At the beginning of your upkeep, surveil 1. Then if there are seven or more cards in your graveyard, sacrifice this artifact, it deals 2 damage to each opponent, and you gain 2 life."
-    (.eyeOfJace),
+    (.surveil (.fixed 1) .eyeOfJace),
   TriggeredAbility.fra (.fra .youCastEquipmentOrTargetingCreatureYouControl)
     "Whenever you cast an Equipment spell or a spell that targets a creature you control, draw a card. This ability triggers only once each turn."
     (.draw 1) (once := true),
@@ -1363,12 +1363,12 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.pump .causePower (.fixed 0) .source),
   TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
     "Whenever a creature you control attacks a player alone, discard a card, then draw a card. Then put a +1/+1 counter on that creature for each card you've discarded this turn."
-    (.jiangYangguAlone),
+    (.discard .lootThenCountersPerDiscard),
   TriggeredAbility.fra .enter "When this creature enters, create a 5/5 red Dragon creature token with flying."
     (.createTokens .dragon55flying 1),
   TriggeredAbility.fra .landYouControlEnters
     "Whenever a land you control enters, this creature deals 1 damage to each opponent. If that land is a Mountain, add {R}."
-    (.kothGeomancer),
+    (.dealDamage (.fixed 1) (.player .eachOpponent) .addRedIfMountain),
   TriggeredAbility.fra .enter "When this creature enters, create a 1/1 colorless Thopter artifact creature token with flying."
     (.createTokens .thopter 1),
   TriggeredAbility.fra (.fra .opponentSmallCreatureBlocks)
@@ -1392,7 +1392,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra (.fra .youDiscardThis) "When you discard this card, you gain 3 life." (.gainLife 3),
   TriggeredAbility.fra .youActivateLoyaltyAbility
     "Whenever you activate a loyalty ability, you gain 1 life. You may play an additional land this turn."
-    (.sequence [.gainLife 1, .extraLand]),
+    (.sequence [.gainLife 1, .grant .extraLand .youIfCast]),
   TriggeredAbility.fra .enter
     "When this creature enters, another target creature you control fights up to one target creature an opponent controls."
     (.fight .announced .upToOneOther)
@@ -1670,7 +1670,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { tap := true, discardACard := true },
   ActivatedAbility.fra
     "{3}{R}: Exile target creature or planeswalker you control. Reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. Activate only as a sorcery."
-    (FraCandidates.ab (.identityEcho) "Exile target creature or planeswalker you control"
+    (FraCandidates.ab (.exile .target .forLater .revealUntilCreatureOrPlaneswalker) "Exile target creature or planeswalker you control"
       (.filtered { TargetFilter.creatureOrPlaneswalker with
         noun := "target creature or planeswalker you control", controller := .you }))
     { mana := ⟨#[.generic 3, .colored .red]⟩ } (onlyAsSorcery := true),
