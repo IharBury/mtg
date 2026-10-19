@@ -1584,6 +1584,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         | .galactus => g.spawnFace pids galactusToken n (tapped := tapped)
         | .sturdyShield => g.spawnFace pids sturdyShieldToken n (tapped := tapped)
         | .tigerGod => g.spawnFace pids tigerGodToken n (tapped := tapped)
+        | .citizen | .warrior | .insect | .myr | .kobold | .mite | .shark
+        | .gingerbrute | .angel | .human | .goblin | .map | .rogue | .incubator => (g, none)
       match note, last with
       | .remember, some id => { g with createdTokenThisWay := some id }
       | .invasion, some id =>
@@ -1802,7 +1804,9 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | .empowerJace => g.empowerJace controller 1
           | .none | .gainLifeIfTeamwork _ | .controllerMaySearchBasic
             | .thenDrawThree | .counteredPermanentMayCast
-            | .worldsWithinWorlds | .revealUntilCreatureOrPlaneswalker => g.logMsg s!"{name} is exiled"
+            | .worldsWithinWorlds | .revealUntilCreatureOrPlaneswalker
+            | .despark | .controllerGainsLifePower | .incubateCount
+            | .revealCreaturesToBattlefield | .revealCreaturesAtEndStep => g.logMsg s!"{name} is exiled"
         | .returnImmediately =>
           let owner := o.owner
           let name := o.name
@@ -2379,7 +2383,8 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             amassYouControlledThisWay := o.controller == some controller }
       | .chosenToken =>
         objs.foldl (fun g o => if o.printed.isToken then g.destroyPermanent o else g) g
-      | .none | .drawIfNotAttacking | .drawIfLegendaryEnchantment =>
+      | .none | .drawIfNotAttacking | .drawIfLegendaryEnchantment
+        | .controllerCreatesHuman | .gainLifeEach =>
         objs.foldl (fun g o => g.destroyPermanent o) g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
@@ -2886,7 +2891,9 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .jaceLoyaltyAtInstantSpeed | .mountainsAddExtraRed
         | .emrakulManaAndCast | .emblemDrawOnCast | .emblemCreaturesGetTwoTwo
         | .nextSpellCopy _ | .attacking | .newTargets | .extraLand | .extraTurn
-        | .transformed | .harnessed | .arwenShare | .phaseOutKicker => g
+        | .transformed | .harnessed | .arwenShare | .phaseOutKicker
+        | .animateLand .. | .emblemCreaturesGetTwoTwoFlying | .monarch
+        | .teferisReproach | .explored | .transformedIncubator | .faceUp => g
     match g.permanentsNamed ctx who with
     | some objs => objs.foldl grantOne g
     | none => g
@@ -3377,7 +3384,8 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           match hit with
           | some id => found := found.push id
           | none => pure ()
-        | .topNumber _ => pure ()
+        | .topNumber _ | .untilCreaturesPerOpponent | .untilHistoric
+        | .firstResolveUntilCreature => pure ()
       return { g with revealedIdsThisWay := found }
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
@@ -3713,7 +3721,7 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.mapObjectStatus (g.object! o.id) (fun s =>
             { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
   | .block _ | .castSpellsThisTurn _ | .beCountered _
-    | .beBlockedByMostLifePlayer _ => g
+    | .beBlockedByMostLifePlayer _ | .attackJaces _ => g
 where
   asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
     | .any | .target .any => some .target
@@ -3791,7 +3799,8 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       else
         { g with pending := .putOnBottom controller 1 }.logMsg
           s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2 => g
+    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2
+      | .topAfterDraw _ _ | .bottomRevealCreature | .bottomAfterDrawTwo => g
   | _, what =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what with
@@ -3800,8 +3809,9 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 where
   action : PermanentAction :=
     match place with
-    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2 => .putOnTopOfLibrary
-    | .bottom => .putOnBottomOfLibrary
+    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2
+      | .topAfterDraw _ _ => .putOnTopOfLibrary
+    | .bottom | .bottomRevealCreature | .bottomAfterDrawTwo => .putOnBottomOfLibrary
   put (who : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets who fun g o =>
       g.applyPermanentAction o action

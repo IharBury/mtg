@@ -307,7 +307,12 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .equipmentYouControl | .upToTwoGyModal | .creaturesDiedThisTurn
     | .causingSpell | .ownedCreaturesKicker | .outsideGameOpponentChoice
     | .sphinxsApproach | .drawTwoDiscardTwoStun
-    | .eachOpponentTwoDrawPerNonlandShortfall | .lootThenCountersPerDiscard =>
+    | .eachOpponentTwoDrawPerNonlandShortfall | .lootThenCountersPerDiscard
+    | .drawAndDiscardXCreateSpiritPerType | .basicSubtypesUntapAt _ _
+    | .archonCruelty | .oppTappedCreatures | .creaturesPowerAtLeast4
+    | .combatDamagerIfMonarch | .targetSpellTwice
+    | .targetPermanentTwoTokensHasteSacrifice | .drawOneDiscardOne
+    | .anyCreatureOnBattlefieldWithHaste | .factOrFiction =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -391,7 +396,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
       | some idx => one ⟨idx.toNat⟩
       | none => none
-  | .opponentHasYou | .extort => none
+  | .opponentHasYou | .extort | .eachOpponentAndYouGain1 | .youLose1Life => none
 
 /-- How many objects `what` names.
 `none` means `what` does not name a counted set. An empty set is `some 0`.
@@ -537,7 +542,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
   | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife
-  | .greatestToughnessThenPutCreatures => none
+  | .greatestToughnessThenPutCreatures | .lifeLostThisTurn => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
@@ -575,7 +580,8 @@ def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.Tri
 def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n : Nat)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
   match note with
-  | .none | .toHand _ | .permanentAndGainLife _ | .subtypeOrEnchantmentToHand _ =>
+  | .none | .toHand _ | .permanentAndGainLife _ | .subtypeOrEnchantmentToHand _
+  | .freeCastFromGraveyard =>
     pids.foldl (fun g pid => g.mill pid n) g
   | .milledCards =>
     let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]

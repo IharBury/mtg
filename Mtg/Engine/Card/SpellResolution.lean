@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.Counter
-import Mtg.Engine.Card.FrcEffect
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.Token
@@ -287,6 +286,10 @@ inductive PlayerSelector where
   | targetPlayers
   /-- Each opponent loses 1 life and you gain that much life, if {W/B} is paid (CR 702.101). -/
   | extort
+  /-- Each opponent loses 1 life and you gain 1 life. -/
+  | eachOpponentAndYouGain1
+  /-- You lose 1 life and amass. -/
+  | youLose1Life
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -999,6 +1002,28 @@ inductive ObjectSelector where
   | eachOpponentTwoDrawPerNonlandShortfall
   /-- Discard a card, then draw a card and put a +1/+1 counter on the triggering creature for each card discarded this turn. -/
   | lootThenCountersPerDiscard
+  /-- Draw X cards, then discard X cards and create a 1/1 white Spirit token with flying for each card type discarded this way. -/
+  | drawAndDiscardXCreateSpiritPerType
+  /-- A basic land card of one of `kinds`, untapped if the controller controls at least `untapAt` lands. -/
+  | basicSubtypesUntapAt (kinds : Array String) (untapAt : Nat)
+  /-- Target opponent sacrifices a creature or planeswalker, discards a card, and loses 3 life; you draw a card and gain 3 life. -/
+  | archonCruelty
+  /-- All tapped creatures opponents control. -/
+  | oppTappedCreatures
+  /-- All creatures with power 4 or greater. -/
+  | creaturesPowerAtLeast4
+  /-- Creatures that dealt combat damage to the controller, while the controller is the monarch. -/
+  | combatDamagerIfMonarch
+  /-- Target instant or sorcery spell an opponent controls, copied twice. -/
+  | targetSpellTwice
+  /-- Target permanent an opponent controls, copied as two tokens with haste sacrificed at the next end step. -/
+  | targetPermanentTwoTokensHasteSacrifice
+  /-- Draw a card, then discard a card. -/
+  | drawOneDiscardOne
+  /-- A creature on the battlefield, copied until end of turn with haste. -/
+  | anyCreatureOnBattlefieldWithHaste
+  /-- One pile into hand and the other into graveyard from the top five cards (Fact or Fiction). -/
+  | factOrFiction
 deriving Repr, Inhabited, BEq
 
 end
@@ -1199,6 +1224,8 @@ inductive NumberSelector where
   | greatestPowerAndLoseLife
   /-- Greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield. -/
   | greatestToughnessThenPutCreatures
+  /-- The amount of life that player lost this turn. -/
+  | lifeLostThisTurn
 deriving Repr, Inhabited, BEq
 
 instance : Coe Nat NumberSelector where
@@ -1540,6 +1567,34 @@ inductive TriggerToken where
   | merfolk
   /-- The Tiger God, a legendary 4/4 white God creature token. -/
   | tigerGod
+  /-- A 1/1 green and white Citizen creature token. -/
+  | citizen
+  /-- A 1/1 white Warrior creature token. -/
+  | warrior
+  /-- A 2/1 white Insect creature token with flying. -/
+  | insect
+  /-- A 1/1 colorless Myr artifact creature token. -/
+  | myr
+  /-- A 0/1 red Kobold creature token named Kobolds of Kher Keep. -/
+  | kobold
+  /-- A 1/1 colorless Phyrexian Mite artifact creature token with toxic 1 that can't block. -/
+  | mite
+  /-- An X/X blue Shark creature token with flying. -/
+  | shark
+  /-- A 1/1 colorless Food Golem artifact creature token named Gingerbrute with haste. -/
+  | gingerbrute
+  /-- A 4/4 white Angel creature token with flying. -/
+  | angel
+  /-- A 1/1 white Human creature token. -/
+  | human
+  /-- A 1/1 red Goblin creature token. -/
+  | goblin
+  /-- A colorless Map artifact token. -/
+  | map
+  /-- A 2/2 black Rogue creature token. -/
+  | rogue
+  /-- A colorless Incubator artifact token. -/
+  | incubator
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
@@ -1552,6 +1607,22 @@ inductive TriggerTokenNote where
   | remember
   /-- Remember the token and how many invasion counters the source had. -/
   | invasion
+  /-- Creatures you control gain indestructible until end of turn. -/
+  | teamIndestructible
+  /-- If X is 5 or more, destroy all other creatures. -/
+  | destroyOthersIfXAtLeast5
+  /-- Gain X life first, and if X is 5 or more, destroy all other creatures. -/
+  | gainXLifeAndDestroyOthersIf5
+  /-- Only if you gained life this turn. -/
+  | ifGainedLife
+  /-- Only if you are the monarch. -/
+  | ifMonarch
+  /-- If the source is not Mardu, create the Goblin and grant lifelink and haste until end of turn. -/
+  | ifNotMarduLifelinkHaste
+  /-- Put a card exiled with the source into its owner's graveyard, then create a Treasure if it was a land or a Rogue otherwise. -/
+  | currencyReturn
+  /-- Lose 1 life first. -/
+  | lose1Life
 deriving Repr, Inhabited, BEq
 
 /-- How long `TriggerResolution.exile` lasts. -/
@@ -1633,6 +1704,16 @@ inductive TriggerExileNote where
   | worldsWithinWorlds
   /-- Reveal from the top of your library until a creature or planeswalker card, put it onto the battlefield, and put the rest on the bottom in a random order. -/
   | revealUntilCreatureOrPlaneswalker
+  /-- Exile target permanent or card; log when Despark has no legal target. -/
+  | despark
+  /-- Its controller gains life equal to its power (Swords to Plowshares). -/
+  | controllerGainsLifePower
+  /-- Incubate X, where X is the number of creatures exiled this way (Sunfall). -/
+  | incubateCount
+  /-- Reveal creature cards from the top of your library until that many are revealed, put them onto the battlefield, and shuffle the rest into your library. -/
+  | revealCreaturesToBattlefield
+  /-- At the beginning of the next end step, reveal creature cards from the top of your library until that many are revealed and put them onto the battlefield. -/
+  | revealCreaturesAtEndStep
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.sacrifice` can read. -/
@@ -1750,6 +1831,8 @@ inductive TriggerPutHow where
   | asArtifact
   /-- Under the card's owner's control. -/
   | underOwner
+  /-- At the beginning of the next end step. -/
+  | atNextEndStep
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.put` can read, or how the
@@ -1824,6 +1907,10 @@ inductive TriggerDestroyNote where
   | drawIfNotAttacking
   /-- If it was a legendary enchantment, draw a card. -/
   | drawIfLegendaryEnchantment
+  /-- Its controller creates a 1/1 white Human creature token. -/
+  | controllerCreatesHuman
+  /-- You gain 1 life for each creature destroyed this way. -/
+  | gainLifeEach
 deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.fight` uses that creature. -/
@@ -1919,6 +2006,20 @@ inductive TriggerGrantWhat where
   | arwenShare
   /-- Phase out the target, or each creature target player controls if kicked. -/
   | phaseOutKicker
+  /-- Animate the source land as a `power`/`toughness` creature until end of turn. -/
+  | animateLand (power toughness : Nat) (flying firstStrike : Bool)
+  /-- Emblem with "Creatures you control get +2/+2 and have flying." -/
+  | emblemCreaturesGetTwoTwoFlying
+  /-- You become the monarch (CR 724). -/
+  | monarch
+  /-- Protection from everything, life total can't change, and nonland permanents phase out until next turn. -/
+  | teferisReproach
+  /-- Explore (CR 701.40). -/
+  | explored
+  /-- Transform an Incubator token into a 0/0 Phyrexian artifact creature (CR 701.51). -/
+  | transformedIncubator
+  /-- Turn the source face up (CR 702.37). -/
+  | faceUp
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
@@ -1935,6 +2036,8 @@ inductive TriggerMillNote where
   | permanentAndGainLife (life : Nat)
   /-- You may put a `subtype` or enchantment card from among the milled cards into your hand. -/
   | subtypeOrEnchantmentToHand (subtype : String)
+  /-- Each player may cast an instant or sorcery card milled this way without paying its mana cost. -/
+  | freeCastFromGraveyard
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.removeCounters` removes. -/
@@ -1961,6 +2064,12 @@ inductive TriggerLibraryHow where
   | untilInstantOrSorcery
   /-- Cards until a nonland card. An empty library finds nothing. -/
   | untilNonland
+  /-- Cards until one creature card per opponent, put under each opponent's control and goaded. -/
+  | untilCreaturesPerOpponent
+  /-- Cards until a historic permanent card, put onto the battlefield and you lose life equal to its mana value. -/
+  | untilHistoric
+  /-- Draw a card, then on the first resolution this turn reveal until a creature card and put it onto the battlefield. -/
+  | firstResolveUntilCreature
 deriving Repr, Inhabited, BEq
 
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
@@ -1987,6 +2096,12 @@ inductive TriggerLibraryPlace where
   | secondOrBottomThenConnive
   /-- Its owner may put it on top of their library; if they do, deal 2 damage to them, otherwise put it on the bottom. -/
   | topOrBottomDamage2
+  /-- Draw `drawN` cards, then put `putN` cards from your hand on top of your library. -/
+  | topAfterDraw (drawN putN : Nat)
+  /-- On the bottom of its owner's library, then its controller reveals until a creature card and puts it onto the battlefield. -/
+  | bottomRevealCreature
+  /-- Draw two cards, then put a card from your hand on the bottom of your library. -/
+  | bottomAfterDrawTwo
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.surveil` can read or do. -/
@@ -2064,6 +2179,8 @@ inductive ActionSelector where
   | beCountered (who : ObjectSelector := .target)
   /-- Can't be blocked this turn by creatures controlled by a chosen player with the most life. -/
   | beBlockedByMostLifePlayer (who : ObjectSelector := .target)
+  /-- Can't attack Jaces this turn unless their controller pays {1} for each creature. -/
+  | attackJaces (who : ObjectSelector := .opponentsCreatures)
 deriving Repr, Inhabited, BEq
 
 end TriggeredAbility
@@ -3143,8 +3260,6 @@ inductive Resolution where
   | proliferate (amount : NumberSelector := .fixed 1) (who : ObjectSelector := .youControl)
   /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
   | mshReflexive (kind paid : Nat)
-  /-- A Reality Fracture Commander resolution. -/
-  | frc (e : FrcEffect)
   /-
   Nullary steps. A constructor with fields appended after this point
   exceeds the runtime tag limit.
@@ -3187,7 +3302,29 @@ def isFra : Resolution → Bool
   | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn | .exile .opponentLibrariesButBottom .forLater _ | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn) => true
   | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast | .discard .eachOpponentTwoDrawPerNonlandShortfall | .grant .emblemCreaturesGetTwoTwo .youIfCast => true
   | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn => true
-  | .putCounters .plusOnePerDiscardAfterDraw .cause | .sacrifice .source .eyeOfJaceIfSevenInGy | .chooseModes _ (.fraTrigger _) | .frc .. => true
+  | .putCounters .plusOnePerDiscardAfterDraw .cause | .sacrifice .source .eyeOfJaceIfSevenInGy | .chooseModes _ (.fraTrigger _) => true
+  | .putOnLibrary (.topAfterDraw _ _) .cardFromHand | .exile .target .forLater .despark => true
+  | .exile .target .forLater .controllerMaySearchBasic | .exile .target .forLater .controllerGainsLifePower => true
+  | .destroy .target .controllerCreatesHuman | .discard .drawAndDiscardXCreateSpiritPerType => true
+  | .createTokens _ _ _ .citizen _ _ | .createTokens _ _ _ .warrior _ _ | .createTokens _ _ _ .insect _ _ => true
+  | .createTokens _ _ _ .myr _ _ | .createTokens _ _ _ .kobold _ _ | .createTokens _ _ _ .mite _ _ => true
+  | .createTokens _ _ _ .shark _ _ | .createTokens _ _ _ .gingerbrute _ _ | .createTokens _ _ _ .angel _ _ => true
+  | .createTokens _ _ _ .human _ _ | .createTokens _ _ _ .goblin _ _ | .createTokens _ _ _ .map _ _ => true
+  | .createTokens _ _ _ .rogue _ _ | .createTokens _ _ _ .incubator _ _ | .createTokens _ _ _ _ _ .destroyOthersIfXAtLeast5 => true
+  | .exile .allCreatures .forLater .incubateCount | .exile .creaturesYouControl .forLater .revealCreaturesToBattlefield => true
+  | .exile .creaturesYouControl .forLater .revealCreaturesAtEndStep | .searchLibrary (.put (.basicSubtypesUntapAt _ _) _ _) => true
+  | .putOnLibrary .bottomRevealCreature .target | .grant (.animateLand _ _ _ _) .source | .sacrifice .archonCruelty _ => true
+  | .put (.cause none) .atNextEndStep _ | .revealLibrary .untilCreaturesPerOpponent _ _ | .revealLibrary .untilHistoric _ _ => true
+  | .revealLibrary .firstResolveUntilCreature _ _ | .may (.loseLife .lastKnownPower _) (.draw .lastKnownPower _) .ifYouDo => true
+  | .loseLife (.fixed 1) .eachOpponentAndYouGain1 | .destroy .oppTappedCreatures .gainLifeEach | .destroy .creaturesPowerAtLeast4 _ => true
+  | .grant .emblemCreaturesGetTwoTwoFlying .youIfCast | .putOnLibrary .bottomAfterDrawTwo .cardFromHand => true
+  | .exile (.target .another) .forLater .revealUntilCreatureOrPlaneswalker | .cant (.attackJaces _) | .grant .monarch .youIfCast => true
+  | .putCounters (.ofKind .stun _) .combatDamagerIfMonarch | .grant .teferisReproach (.player (.target .opponent)) => true
+  | .mill .lastKnownPower .eachPlayer .freeCastFromGraveyard | .becomeCopy .targetSpellTwice | .becomeCopy .targetPermanentTwoTokensHasteSacrifice => true
+  | .putCounters (.ofKind .story _) .source | .exile (.cause none) .untilSourceLeaves _ | .discard .drawOneDiscardOne => true
+  | .becomeCopy .anyCreatureOnBattlefieldWithHaste | .loseLife .lifeLostThisTurn .eachOpponent | .amass (.fixed 1) "Zombie" false .youLose1Life => true
+  | .revealLibrary (.top 5) (.returnToHand .factOrFiction _) _ | .grant .explored .source | .grant .transformedIncubator .source => true
+  | .grant .faceUp .source | .cant (.beBlockedExceptByHaste .source) => true
   | .searchLibrary (.putOnLibrary .top .planeswalkerCard) | .searchLibrary (.mill (.fixed 1) _ _) => true
   | .searchLibrary (.returnToHand .basicLandsDifferentNamesX _) | .searchLibrary (.put (.landsUpTo _) .tapped _) => true
   | .searchLibrary (.returnToHand .enchantmentCard _) | .searchLibrary (.returnToHand .card _) => true

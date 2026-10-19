@@ -14,12 +14,14 @@ namespace Game
 
 partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
+  match g.applyFrc? controller effect r targets sourceId with
+  | some g => g
+  | none =>
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
   let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
   match r with
-  | .frc e => g.applyFrc controller effect e targets sourceId
   | .returnToHand .target _ =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with

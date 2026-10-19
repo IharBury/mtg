@@ -546,7 +546,7 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   if o.status.faceDown then
     match o.printed.morph with
     | some cost =>
-      #[{ effect := { resolution := .frc .turnFaceUp, phrase := "Turn this face up." }
+      #[{ effect := { resolution := .grant .faceUp .source, phrase := "Turn this face up." }
           cost := { mana := cost } }]
     | none => #[]
   else
