@@ -62,15 +62,6 @@ inductive SpellCostLess where
   | supertype (s : Supertype)
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- How `SpellResolution.searchLibrary` searches. -/
-inductive LibrarySearch where
-  /-- The controller searches their library and puts the card into their hand. -/
-  | youToHand
-  /-- The targeted permanent's owner may search and put the card onto the
-  battlefield tapped. -/
-  | ownerMayToBattlefield
-deriving Repr, Inhabited, BEq, DecidableEq
-
 /-- The event `SpellResolution.replace` replaces. -/
 inductive ReplaceEvent where
   /-- The targeted permanent dying this turn. -/
@@ -110,6 +101,30 @@ inductive PrepareWhen where
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggeredAbility
+
+/-- Spending restriction or color choice for `Resolution.addMana` (CR 106.4). -/
+inductive ManaSpendNote where
+  /-- No spending restriction; `types` are added directly. -/
+  | none
+  /-- Mana of any one color (`types` is `#[]`). -/
+  | anyColor
+  /-- Mana in any combination of colors (`types` is `#[]`). -/
+  | anyCombination
+  /-- Spend this mana only to cast spells of `subtype`. -/
+  | subtypeSpells (subtype : String)
+  /-- Spend this mana only to cast `subtype` spells or activate abilities of `subtype` sources. -/
+  | subtypeSpellsOrAbilities (subtype : String)
+  /-- Spend this mana only to cast an artifact spell. -/
+  | artifactSpell
+  /-- Spend this mana only to activate abilities of creature sources. -/
+  | creatureSources
+  /-- This mana can't be spent to cast a nonartifact spell. -/
+  | cantNonartifact
+  /-- Spend this mana only to cast Equipment spells or activate equip abilities. -/
+  | equipment
+  /-- Spend this mana only to cast a noncreature spell. -/
+  | noncreatureSpell
+deriving Repr, Inhabited, BEq
 
 /-- How `TriggerResolution.sacrifice` moves the source when `what` is
 `.source` or `.sacrificedSource`. -/
@@ -890,6 +905,28 @@ inductive ObjectSelector where
   | creatureOrPlaneswalker
   /-- The targeted land card in the controller's graveyard. -/
   | landCard
+  /-- Permanents of type `ty` opponents control. -/
+  | oppPermanents (ty : CardType := .artifact)
+  /-- Up to `n` land cards. -/
+  | landsUpTo (n : Nat)
+  /-- Up to that many land cards, where that many is the damage dealt. -/
+  | landsEqualDamage
+  /-- A planeswalker card. -/
+  | planeswalkerCard
+  /-- An enchantment card. -/
+  | enchantmentCard
+  /-- A card with supertype `s` and card type `ty`. -/
+  | supertypeCard (s : Supertype := .legendary) (ty : CardType := .creature)
+  /-- A card with land subtype `subtype`. -/
+  | landSubtype (subtype : String)
+  /-- A basic land card; you may behold `subtype` to untap it. -/
+  | basicBeholdUntap (subtype : String)
+  /-- Up to X basic land cards with different names. -/
+  | basicLandsDifferentNamesX
+  /-- An artifact creature card with mana value X or less from library and/or graveyard. -/
+  | artifactCreatureX
+  /-- A card at random from the controller's hand. -/
+  | random
 deriving Repr, Inhabited, BEq
 
 end
@@ -1080,6 +1117,10 @@ inductive NumberSelector where
   | colorsAmongOtherArtifacts
   /-- The power of `of`. -/
   | power (of : ObjectSelector)
+  /-- The loyalty counters on `of`. -/
+  | loyalty (of : ObjectSelector := .source)
+  /-- The number of planeswalker types among planeswalkers the controller controls. -/
+  | planeswalkerTypes
 deriving Repr, Inhabited, BEq
 
 instance : Coe Nat NumberSelector where
@@ -2573,7 +2614,8 @@ inductive Resolution where
   Any other pair attaches each permanent `what` names to the first permanent
   `host` names. A card or a hand attaches nothing. -/
   | attach (what host : ObjectSelector)
-  /-- Add mana, as `amount` says. `types` is the printed mana.
+  /-- Add mana, as `amount` says. `types` is the printed mana, and `note`
+  describes any color choice or spending restriction.
   Adding those types once is `.addMana types`.
   Adding them `n` times is `.addMana types (.fixed n)`.
   Zero times adds nothing.
@@ -2583,6 +2625,7 @@ inductive Resolution where
   Any other count adds the printed types that many times. Zero adds
   nothing. A count that cannot be read adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
+      (note : ManaSpendNote := .none)
   /-- Set the source's base power and toughness, as the selectors say.
   `.fixed` is that number. Both printed numbers are `.fixed`.
   Base power `p` and toughness `t` is `.becomePT (.fixed p) (.fixed t)`.
@@ -2871,12 +2914,6 @@ inductive Resolution where
   /-- Resolve `r` unless its controller pays `{n}`.
   Countering unless they pay is `.unlessPays .counter n`. -/
   | unlessPays (r : Resolution) (n : Nat)
-  /-- Search a library for a `s` `ty` card, as `how` says.
-  The controller, into their hand, is `.searchCard` (`.youToHand`).
-  The targeted permanent's owner, who may put it onto the battlefield tapped,
-  is `.searchCard .basic .land .ownerMayToBattlefield`. -/
-  | searchCard (s : Supertype := .legendary) (ty : CardType := .creature)
-      (how : LibrarySearch := .youToHand)
   /-- If `what` would happen, `instead` happens in its place.
   The targeted creature dying this turn, exiled instead, is
   `.replace .diesThisTurn .exile`. A pump and that replacement are
@@ -2884,15 +2921,11 @@ inductive Resolution where
   Damage, losing indestructible, and that replacement are
   `.sequence [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile]`. -/
   | replace (what : ReplaceEvent) (instead : ReplaceInstead)
-  /-- Add {R} for each permanent of type `ty` opponents control. -/
-  | addRedPerOppArtifacts (ty : CardType := .artifact)
   /-- Mill `n`, then put cards from among them into your hand as `which` says.
   Up to one instant or sorcery is `.millThenPut n (.oneOf .instant .sorcery)`.
   Up to `max` lands is `.millThenPut n (.upTo max .land)`.
   Every instant or sorcery is `.millThenPut n (.allOf .instant .sorcery)`. -/
   | millThenPut (n : Nat) (which : MilledToHand)
-  /-- Add `n` mana in any combination of colors, spendable only on `subtype` spells. -/
-  | addFourManaDragonSpells (n : Nat := 4) (subtype : String := "Dragon")
   /-- Exile the top `n`; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
   /-- Separate the top `n` cards into two piles (Riddles in the Dark). -/
@@ -2905,8 +2938,6 @@ inductive Resolution where
   | returnGyCreatureMvAtMostOrAny (n : Nat)
   /-- Reveal the top `n` and put creatures onto the battlefield. -/
   | revealTopPutCreatures (n : Nat)
-  /-- Apply `action` to the creature among the announced targets. -/
-  | onCreatureAmongTargets (action : PermanentAction)
   /-- Become a P/T artifact creature and gain `kw`. -/
   | becomeArtifactCreature44Flying (p : Int := 4) (t : Int := 4) (kw : String := "flying")
   /-- Discard `n` cards unless a card of type `ty` is discarded. -/
@@ -2921,18 +2952,12 @@ inductive Resolution where
   | copyThisSpellXTimesThenDamage (n : Nat)
   /-- Affect the source if it is still on the battlefield. -/
   | onSource (action : PermanentAction)
-  /-- Search for a card with this land type, put it into your hand, then shuffle. -/
-  | searchLandTypeToHand (landType : String)
   /-- Become this subtype with lands-you-control P/T. -/
   | becomeSubtypeWithLandsPT (subtype : String)
-  /-- Search a basic tapped, then behold this subtype to untap it. -/
-  | searchBasicBeholdSubtypeUntap (subtype : String)
   /-- Look at the top `n`; you may put a card of one of these types onto the battlefield. -/
   | lookAtTopPutTypes (n : Nat) (types : Array String)
   /-- Look at the top `n`; reveal an artifact to hand. -/
   | lookAtTopRevealArtifact (n : Nat)
-  /-- Add one mana of any color, spendable only on this subtype's spells or sources. -/
-  | addAnyColorSpendOnlySubtype (subtype : String)
   /-- Copy target activated or triggered ability you control from this source type. -/
   | copyControlledAbility (fromCreature : Bool)
   /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
@@ -2941,11 +2966,6 @@ inductive Resolution where
   | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
   /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
   | becomeTypes (types : Array String) (power toughness : Int) (k : Keywords)
-  /-- Target permanent you control of this subtype connives. -/
-  | targetSubtypeConnives (subtype : String)
-  /-- The first target deals damage equal to its power (or loyalty) to the
-  second target, checked as the spell resolves (Compel Brutality). -/
-  | firstDealsStatDamageToSecond (useLoyalty : Bool)
   /-- Exile the top card of your library. You may cast it. If you don't, this
   deals `n` damage to each opponent (Chandra, Torch of Defiance). -/
   | exileTopMayCastElseDamageOpponents (n : Nat)
@@ -2965,8 +2985,9 @@ inductive Resolution where
   /-- Return the source card from your graveyard to your hand, or to the
   battlefield (tapped if `tapped`, with `plusOnes` +1/+1 counters). -/
   | returnSourceFromGy (toHand : Bool) (tapped : Bool) (plusOnes : Nat)
-  /-- Proliferate `times` times (CR 701.34). -/
-  | proliferate (times : Nat)
+  /-- Proliferate `amount` times (CR 701.34), or give `who` another counter
+  of each kind on it. -/
+  | proliferate (amount : NumberSelector := .fixed 1) (who : ObjectSelector := .youControl)
   /-- Put the reflexive triggered ability `kind` of an MSH card on the stack
   (“When you do, …”; MSH 359–369). `paid` is how many times its cost was
   paid. -/
@@ -2979,12 +3000,6 @@ inductive Resolution where
   /-- The source gains your choice of the keywords coded in `options` until
   end of turn. -/
   | chooseKeyword (options : List Nat)
-  /-- This deals `n` damage to up to one target creature or planeswalker and
-  `n` damage to target player. -/
-  | damageUpToOneAndPlayer (n : Nat)
-  /-- Search for up to `n` land cards and put them onto the battlefield
-  tapped. -/
-  | searchLandsTapped (n : Nat)
   /-- Choose `count` modes of this triggered ability as it is put on the
   stack; the modes are `CardDef.fraTriggerModes`. -/
   | chooseTriggerModes (count : Nat)
@@ -3072,22 +3087,14 @@ inductive Resolution where
   | copyNontokenCreaturesYouControl
   /-- Gain control until EOT or next turn if a bigger Villain. -/
   | gainControlUntilEotOrNextIfVillain
-  /-- Search library or graveyard for an artifact creature. -/
-  | searchLibraryOrGyArtifactCreatureX
   /-- Owner puts the creature into their library; you may connive. -/
   | ownerPutsLibraryThenConnive
   /-- Return up to two modal graveyard cards. -/
   | returnUpToTwoGyModal
   /-- A resolution that is not a spell shape. It does not play an extra land. -/
   | unrecognized
-  /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
-  | searchBasicLand
-  /-- Add one mana of any color. -/
-  | addAnyColor
   /-- Return from the graveyard attached to the targeted creature. -/
   | returnFromGyAttach
-  /-- Search two basics; one tapped, one to hand. -/
-  | searchTwoBasicsSplit
   /-- Arwen share. -/
   | arwenShare
   /-- Grant a combat-damage Treasure trigger. -/
@@ -3102,20 +3109,6 @@ inductive Resolution where
   | extraTurn
   /-- Transform the source. -/
   | transform
-  /-- Add one mana of any color, spendable only to cast an artifact spell. -/
-  | addAnyColorSpendOnlyArtifactSpell
-  /-- Add two mana of any one color, spendable only on creature-source abilities. -/
-  | addTwoAnyColorCreatureSources
-  /-- Add {U} that can't be spent to cast a nonartifact spell. -/
-  | addBlueCantNonartifact
-  /-- Add X mana of any one color, where X is this creature's power. -/
-  | addAnyColorEqualToSourcePower
-  /-- Add four mana in any combination of colors. -/
-  | addFourAnyCombination
-  /-- Add two mana of any one color, spendable only on Equipment spells or equip. -/
-  | addTwoAnyColorEquipment
-  /-- For each kind of counter on target permanent or player, give another of that kind. -/
-  | proliferateEachKind
   /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
   | equipmentBecomesConstructHero
   /-- Choose odd or even. Destroy each other creature with that mana value. -/
@@ -3142,9 +3135,6 @@ inductive Resolution where
   /-- For each creature the target player controls, create a token copy with
   haste that is sacrificed at end step unless you control a planeswalker. -/
   | copyEachCreatureOfTargetPlayer
-  /-- Proliferate X times, where X is the number of planeswalker types among
-  planeswalkers you control (Tam, the Possibility). -/
-  | proliferatePlaneswalkerTypesTimes
   /-- When you next cast an instant or sorcery spell this turn, copy it. -/
   | copyNextInstantSorceryThisTurn
   /-- Destroy the target creature. If it wasn't attacking, its controller
@@ -3152,8 +3142,6 @@ inductive Resolution where
   | destroyDrawIfNotAttacking
   /-- Choose a creature type. Destroy all creatures that aren't of it. -/
   | destroyAllNotChosenType
-  /-- Search for a planeswalker card, reveal it, shuffle, and put it on top. -/
-  | searchPlaneswalkerToTop
   /-- Exile all creatures. Empower Jace that many. -/
   | exileAllCreaturesEmpower
   /-- Draw cards equal to the greatest power among creatures you control,
@@ -3180,8 +3168,6 @@ inductive Resolution where
   /-- Until end of turn, whenever you tap a Mountain for mana, add an
   additional {R}. -/
   | mountainsAddExtraRed
-  /-- Search for a land card, put it into your graveyard, then shuffle. -/
-  | searchLandToGraveyard
   /-- You may remove a +1/+1 counter from the source. If you do, put a +1/+1
   counter on each other creature you control. -/
   | mayMovePlusOneToEachOther
@@ -3195,17 +3181,9 @@ inductive Resolution where
   | drawTwoDiscardTwoStun
   /-- If the source wasn't a token, create a token that's a copy of it. -/
   | copyTokenOfSourceIfNotToken
-  /-- This deals X damage to the target, where X is the source's X. -/
-  | damageX
-  /-- Search for a card, put it into your hand, shuffle, then discard a card
-  at random. -/
-  | searchCardThenDiscardRandom
   /-- The target instant or sorcery card in your graveyard gains flashback
   until end of turn; the flashback cost is its mana cost. -/
   | grantFlashbackUntilEot
-  /-- You may search for up to that many land cards (the damage dealt) and put
-  them onto the battlefield tapped. -/
-  | maySearchLandsEqualDamage
   /-- The target opponent reveals their hand; you exile a nonland card from it
   until the source leaves the battlefield (Null Summoner). -/
   | exileFromHandUntilLeaves
@@ -3224,9 +3202,6 @@ inductive Resolution where
   | jiangYangguAlone
   /-- This deals 1 damage to each opponent. If the land is a Mountain, add {R}. -/
   | kothGeomancer
-  /-- Search for up to X basic land cards with different names, where X is
-  the value paid for the source's X, reveal them, and put them into your hand. -/
-  | fblthpSearch
   /-- For each opponent, put X minus-one counters on up to one target creature
   that player controls, where X is the greatest mana value among cards in
   your graveyard. -/
@@ -3271,8 +3246,6 @@ inductive Resolution where
   /-- Surveil 1. A noncreature, nonland card put into your graveyard this way
   goes to your hand. -/
   | surveilReturnNoncreatureNonland
-  /-- Add {U} that can be spent only to cast a noncreature spell. -/
-  | addBlueNoncreatureOnly
   /-- Tap the target. Put X stun counters on it (X of the loyalty cost). -/
   | tapAndStunX
   /-- You get an emblem with “Whenever you cast a spell, draw a card.” -/
@@ -3294,8 +3267,6 @@ inductive Resolution where
   /-- Until your next turn, whenever one or more creatures attack one of your
   opponents, they get +2/+2 and gain trample until end of turn. -/
   | attackersGetTwoTwoTrampleUntilYourTurn
-  /-- Search for an enchantment card, reveal it, and put it into your hand. -/
-  | searchEnchantmentToHand
   /-- Draw a card; then put a +1/+1 counter on the creature that triggered
   this for each card you've discarded this turn (Jiang Yanggu, Alone). -/
   | drawThenCountersPerDiscard
@@ -3308,35 +3279,38 @@ namespace Resolution
 
 /-- A step that used to be a `FraResolution` constructor. -/
 def isFra : Resolution → Bool
-  | .destroyDrawIfNotAttacking .. | .destroyAllNotChosenType .. | .searchPlaneswalkerToTop .. => true
+  | .destroyDrawIfNotAttacking .. | .destroyAllNotChosenType .. => true
   | .exileAllCreaturesEmpower .. | .drawGreatestPowerLoseLife .. => true
   | .extrapolate .. | .sphinxsApproach .. => true
   | .clashOfElements .. | .entrustTheSpark .. | .plusOnePerThreeGraveyardOnRecentIfFromGy .. | .grantHasteToRecentTokens .. => true
-  | .exileReturnBrieflyIfMvAtMost .. | .eachPlayerMayWheel .. | .mountainsAddExtraRed .. | .searchLandToGraveyard .. => true
+  | .exileReturnBrieflyIfMvAtMost .. | .eachPlayerMayWheel .. | .mountainsAddExtraRed .. => true
   | .mayMovePlusOneToEachOther .. => true
   | .tapEnchantedUnprepare .. | .ownerPutsOnTopOrBottom .. | .drawTwoDiscardTwoStun .. | .copyTokenOfSourceIfNotToken .. => true
-  | .returnSourceFromGy .. | .damageX .. => true
-  | .searchCardThenDiscardRandom .. | .grantFlashbackUntilEot .. | .maySearchLandsEqualDamage .. => true
+  | .returnSourceFromGy .. | .grantFlashbackUntilEot .. => true
   | .exileFromHandUntilLeaves .. | .uldarosCopies .. => true
   | .eyeOfJace .. | .tapAndStunPerOpponent .. | .jiangYangguAlone .. => true
-  | .kothGeomancer .. | .fblthpSearch .. | .minusOnesPerOpponent .. | .mayMoveSourceCountersToTarget .. => true
-  | .proliferate .. | .becomeArtifactCreatureUntilEot .. | .extort .. => true
+  | .kothGeomancer .. | .minusOnesPerOpponent .. | .mayMoveSourceCountersToTarget .. => true
+  | .proliferate (.fixed _) .youControl | .becomeArtifactCreatureUntilEot .. | .extort .. => true
   | .queueMshReflexive .. | .mshReflexive .. | .hawkeyeArrows .. | .zemoBoastCopies .. | .copySourceSpellXTimes .. => true
   | .sarumanExileCopyMayCast .. | .attackersOfPlayerGetTwoTwoTrample .. | .emrakulGrantMana .. => true
   | .nextSpellCantBeCountered .. | .identityEcho .. | .destroyDrawIfLegendaryEnchantment .. | .chooseKeyword .. => true
   | .ownerShufflesIntoLibrary .. | .grantCombatDamageDrawTwo .. => true
-  | .surveilReturnNoncreatureNonland .. | .addBlueNoncreatureOnly .. | .tapAndStunX .. | .emblemDrawOnCast .. => true
+  | .surveilReturnNoncreatureNonland .. | .tapAndStunX .. | .emblemDrawOnCast .. => true
   | .attackersGetMinusFiveUntilYourTurn .. | .exileOpponentLibrariesButBottom .. | .minusFourMinusOneUntilYourTurn .. => true
   | .eachPlayerSacrificesThenBeast .. | .eachOpponentDiscardsTwoDrawPerShort .. | .emblemCreaturesGetTwoTwo .. => true
-  | .attackersGetTwoTwoTrampleUntilYourTurn .. | .damageUpToOneAndPlayer .. => true
-  | .searchLandsTapped .. | .searchEnchantmentToHand .. => true
+  | .attackersGetTwoTwoTrampleUntilYourTurn .. => true
   | .drawThenCountersPerDiscard .. | .eyeOfJaceCheck .. | .chooseTriggerModes .. | .frc .. => true
+  | .searchLibrary (.putOnLibrary .top .planeswalkerCard) | .searchLibrary (.mill (.fixed 1) _ _) => true
+  | .searchLibrary (.returnToHand .basicLandsDifferentNamesX _) | .searchLibrary (.put (.landsUpTo _) .tapped _) => true
+  | .searchLibrary (.returnToHand .enchantmentCard _) | .searchLibrary (.returnToHand .card _) => true
+  | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell => true
   | .returnToHand .target .none | .returnToHand (.target .eachPermanent) .none => true
   | .returnToHand (.target .graveyardCard) .none | .returnToHand .source _ => true
   | .exile .target .forLater .none | .exile .target .returnImmediately .none | .exile .target .untilSourceLeaves .none => true
   | .exile .graveyardCard .forLater .none | .exile (.target .graveyardCard) .forLater .none => true
-  | .dealDamage (.fixed _) (.targetAt _) .none | .dealDamage (.power (.targetAt _)) (.targetAt _) .none => true
+  | .dealDamage (.fixed _) (.targetAt _) .none | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none => true
   | .dealDamage .equalSourcePower .target .none | .dealDamage (.power .source) .target .none => true
+  | .dealDamage .chosenX .target .none => true
   | .dealDamage (.fixed _) (.player .eachPlayer) _ | .dealDamage (.fixed _) .oppCreaturesAndPlaneswalkers _ => true
   | .dealDamage (.fixed _) .creaturesExceptYourTokens _ | .dealDamage (.fixed _) (.player (.controller .cause)) _ => true
   | .dealDamage (.fixed _) (.player .eachOpponent) .fromCause => true
@@ -3348,19 +3322,20 @@ def isFra : Resolution → Bool
   | .putCounters (.ofKind .plusOnePlusOne _) .creaturesWithPlusOne | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent => true
   | .put .graveyardCard .asPrinted _ | .put .allNonlandPermanentsInGraveyard .asPrinted .none => true
   | .put .cause .tapped .none | .put .landCard .tapped .none => true
-  | .discard .chosenNonland | .discard .chosenNonlandPermanent | .discard .hand => true
+  | .discard .chosenNonland | .discard .chosenNonlandPermanent | .discard .hand | .discard .random => true
   | .lose .allAbilities (.targetAt _) => true
   | .destroy (.targetAt _) .none | .destroy .allCreatures .none | .destroy (.target .eachPermanent) .none => true
   | .removeCounters (.upTo _) .target => true
   | .putOnLibrary .bottom .graveyardCard => true
-  | .may .searchBasicLand (.sequence []) .ifYouDo => true
+  | .may (.searchLibrary (.put .basicLand .tapped _)) (.sequence []) _ => true
+  | .may (.searchLibrary (.put .landsEqualDamage .tapped _)) (.sequence []) _ => true
   | .may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true _ _ _) .ifYouDo => true
   | .may (.sacrifice .creatureOrPlaneswalker) (.sacrifice .eachOpponentsCreature _) .ifYouDo => true
   | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo => true
-  | .may (.discard (.cards 1 .you)) .searchEnchantmentToHand .ifYouDo => true
+  | .may (.discard (.cards 1 .you)) (.searchLibrary (.returnToHand .enchantmentCard _)) .ifYouDo => true
   | .may (.discard (.cards 1 .you)) (.queueReflexive (.dealDamage (.fixed _) .target _)) .ifYouDo => true
   | .may (.pay (.mana #[.generic _])) (.queueReflexive (.destroy (.target .eachPermanent) _)) .ifYouDo => true
-  | .may (.pay (.mana #[.generic _])) (.proliferate _) .ifYouDo => true
+  | .may (.pay (.mana #[.generic _])) (.proliferate _ _) .ifYouDo => true
   | .queueReflexive (.dealDamage (.fixed _) .target _) => true
   | .queueReflexive (.destroy (.target .eachPermanent) _) => true
   | .queueReflexive (.put .landCard .tapped .none) => true
@@ -3389,7 +3364,7 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .put .graveyardCard .asPrinted (.entering [.counter .plusOnePlusOne _ true]) =>
     some (s!"Return {noun} to the battlefield with an additional +1/+1 counter on it")
   | .destroyAllNotChosenType => some ("Choose a creature type. Destroy all creatures that aren't of the chosen type")
-  | .searchPlaneswalkerToTop => some ("Search your library for a planeswalker card, reveal it, then shuffle and put that card on top")
+  | .searchLibrary (.putOnLibrary .top .planeswalkerCard) => some ("Search your library for a planeswalker card, reveal it, then shuffle and put that card on top")
   | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) => some (s!"Put {plusOnePlusOneCountersPhrase n} on each of {noun}")
   | .put .allNonlandPermanentsInGraveyard .asPrinted .none => some ("Return all nonland permanent cards from your graveyard to the battlefield")
   | .draw .milledByTargetPlayerThisTurn _ => some ("Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn")
@@ -3406,7 +3381,7 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent => some ("Put a +1/+1 counter on each other Wizard token you control")
   | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ => some (s!"This deals {n} damage to each creature and planeswalker your opponents control")
   | .lose .allAbilities (.targetAt _) => some (s!"{capitalizeAscii noun} loses all abilities until end of turn")
-  | .dealDamage (.power (.targetAt _)) (.targetAt _) .none => some ("Target creature you control deals damage equal to its power to that permanent")
+  | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none => some ("Target creature you control deals damage equal to its power to that permanent")
   | .clashOfElements => some ("Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom")
   | .entrustTheSpark => some ("You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle")
   | .plusOnePerThreeGraveyardOnRecentIfFromGy => some ("If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard")
@@ -3417,7 +3392,7 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .exileReturnBrieflyIfMvAtMost n => some (s!"Exile {noun}. If that permanent's mana value was {n} or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step")
   | .eachPlayerMayWheel n => some (s!"Each player may discard their hand and draw {englishNumber n} cards")
   | .mountainsAddExtraRed => some ("Until end of turn, whenever you tap a Mountain for mana, add an additional {R}")
-  | .searchLandToGraveyard => some ("Search your library for a land card, put it into your graveyard, then shuffle")
+  | .searchLibrary (.mill (.fixed 1) _ _) => some ("Search your library for a land card, put it into your graveyard, then shuffle")
   | .counter => some (s!"Counter {noun}")
   | .unlessPays .counter n => some (s!"Counter {noun} unless its controller pays \{{n}}")
   | .destroy .target .none => some (s!"Destroy {noun}")
@@ -3726,13 +3701,10 @@ export Resolution (
   counterExilePermanentMayCast
   attachEquipment
   exchangeControl
-  searchCard
   replace
-  addRedPerOppArtifacts
   chooseTypeReturnOthers
   drawEqualToughnessThenPutCreatures
   millThenPut
-  addFourManaDragonSpells
   exileAttackersSearchBasics
   exileTopPlayIfYouControlSubtype
   playersCantCastThisTurn
@@ -3747,7 +3719,6 @@ export Resolution (
   returnGyCreatureMvAtMostOrAny
   revealTopPutCreatures
   targetPlayerInvestigates
-  onCreatureAmongTargets
   becomeArtifactCreature44Flying
   discardTwoUnlessArtifact
   exileTopPlayUntilNext
@@ -3756,7 +3727,6 @@ export Resolution (
   copyNontokenCreaturesYouControl
   gainControlUntilEotOrNextIfVillain
   millThenPutPermanentGainLife
-  searchLibraryOrGyArtifactCreatureX
   gainLifeSearchBasicPlusOne
   ownerPutsLibraryThenConnive
   copyThisSpellXTimesThenDamage
@@ -3876,10 +3846,12 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {kind.countersPhrase n} on target creature you control"
   | .amass (.fixed n) subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .searchCard s ty .youToHand =>
+  | .searchLibrary (.returnToHand (.supertypeCard s ty) _) =>
     searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .searchCard s ty .ownerMayToBattlefield =>
+  | .searchLibrary (.put (.supertypeCard s ty) .tapped _) =>
     s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
+  | .searchLibrary (.put .artifactCreatureX _ _) =>
+    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
   | .dealDamage .otherSpellsManaValue .opponentsCreatures _ =>
     "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
   | .dealDamage (.fixed n) .allCreatures _ =>
@@ -3894,7 +3866,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
   | .replace what instead =>
     s!"{replaceWhatClause what noun}, {replaceInsteadClause instead}"
-  | .addRedPerOppArtifacts ty =>
+  | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
   | .chooseTypeReturnOthers =>
     "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
@@ -3908,8 +3880,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
   | .exile .eachPermanent .returnImmediately _ =>
     "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
-  | .addFourManaDragonSpells n subtype =>
-    s!"add {englishNumber n} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
+  | .addMana #[] (.fixed n) (.subtypeSpells subtype) =>
+    s!"add {englishNumber n.toNat} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
   | .exileAttackersSearchBasics =>
     s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
   | .exileTopPlayIfYouControlSubtype n subtype =>
@@ -3952,8 +3924,12 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "return one or two target nonland permanents to their owners' hands"
   | .targetPlayerInvestigates =>
     "target player investigates"
-  | .onCreatureAmongTargets action =>
-    PermanentAction.toNotation action "target creature"
+  | .grant (.keywords k) .creatureTargets =>
+    PermanentAction.toNotation (.grantKeywords k) "target creature"
+  | .untap .creatureTargets =>
+    PermanentAction.toNotation .untap "target creature"
+  | .pump (.fixed p) (.fixed t) .creatureTargets =>
+    PermanentAction.toNotation (.pump p t) "target creature"
   | .returnToHand (.graveyardSubtype subtype) _ =>
     s!"return target {subtype} card from your graveyard to your hand"
   | .becomeArtifactCreature44Flying p t kw =>
@@ -3980,8 +3956,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
   | .millThenPutPermanentGainLife n life =>
     s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
-  | .searchLibraryOrGyArtifactCreatureX =>
-    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
   | .gainLifeSearchBasicPlusOne life =>
     s!"Target player gains {life} life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
   | .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying _ =>
@@ -4055,8 +4029,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.putCounters (.ofKind kind k) .firstTargetCreatureYouControl,
      .«if» .castFromGraveyard (.putCounters (.ofKind .plusOnePlusOne m) .eachOther)] =>
     s!"put {kind.countersPhrase k} on target creature you control. If this spell was cast from a graveyard, also put {plusOnePlusOneCountersPhrase m} on each other creature you control"
-  | [.dealDamage (.fixed n) (.nonSubtypeCreatures sub) _, .addFourManaDragonSpells m sub2] =>
-    s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
+  | [.dealDamage (.fixed n) (.nonSubtypeCreatures sub) _, .addMana #[] (.fixed m) (.subtypeSpells sub2)] =>
+    s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m.toNat} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnToHand .targetSpell _, .«if» .giftPromised .playersCantCastThisTurn] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
   | [.onPermanent (.dealDamage n), .«if» .teamwork (.dealDamage (.fixed extra) (.player (.controller .target)) _)] =>
@@ -4067,16 +4041,16 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.targetPlayerInvestigates,
-     .onCreatureAmongTargets (.grantKeywords k),
-     .onCreatureAmongTargets .untap,
-     .onCreatureAmongTargets (.pump 1 0)] =>
+     .grant (.keywords k) .creatureTargets,
+     .untap .creatureTargets,
+     .pump (.fixed 1) (.fixed 0) .creatureTargets] =>
     if k == Keyword.flying then
       "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.putCounters (.ofKind kind k) .creatureTargets, .gainLife (.fixed n) .player] =>
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
-  | [.onPermanent .destroy, .searchCard s ty .ownerMayToBattlefield] =>
+  | [.onPermanent .destroy, .searchLibrary (.put (.supertypeCard s ty) .tapped _)] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw (.fixed 3), .discardTwoUnlessArtifact n ty] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"

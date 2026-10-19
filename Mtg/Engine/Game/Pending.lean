@@ -102,9 +102,9 @@ inductive FraNext where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def FraNext.toResolution : FraNext → Resolution
-  | .searchBasicLandTapped => .searchBasicLand
-  | .searchLandsTapped n => .searchLandsTapped n
-  | .searchEnchantmentToHand => .searchEnchantmentToHand
+  | .searchBasicLandTapped => .searchLibrary (.put .basicLand .tapped)
+  | .searchLandsTapped n => .searchLibrary (.put (.landsUpTo n) .tapped)
+  | .searchEnchantmentToHand => .searchLibrary (.returnToHand .enchantmentCard)
   | .tappedHeartwoods n => .createTokens .heartwood (.fixed n) true
   | .eachOpponentSacrificesCreature => .sacrifice .eachOpponentsCreature
   | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
@@ -113,7 +113,7 @@ def FraNext.toResolution : FraNext → Resolution
   | .reflexiveDestroyPerOpponent => .queueReflexive (.destroy (.target .eachPermanent))
   | .reflexiveReturnLandTapped => .queueReflexive (.put .landCard .tapped)
   | .beastToken => .createTokens .beast44trample (.fixed 1) false
-  | .proliferate n => .proliferate n
+  | .proliferate n => .proliferate (.fixed n)
   | .mshReflexive k paid => .queueMshReflexive k paid
   | .gainLife n => .gainLife n
   | .returnSourceToHand => .returnToHand .source

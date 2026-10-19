@@ -613,7 +613,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     "Draw three cards. Then put X +1/+1 counters on each creature you control, where X is the number of cards in your hand",
   FraCandidates.ab (.surveilReturnNoncreatureNonland)
     "Surveil 1. If you put a noncreature, nonland card into your graveyard this way, put that card into your hand",
-  FraCandidates.ab (.addBlueNoncreatureOnly) "Add {U}. Spend this mana only to cast a noncreature spell",
+  FraCandidates.ab (.addMana #[.colored .blue] (.fixed 1) .noncreatureSpell) "Add {U}. Spend this mana only to cast a noncreature spell",
   FraCandidates.ab (.tapAndStunX) "Tap target artifact or creature. Put X stun counters on it"
     (.filtered { noun := "target artifact or creature", types := #[.artifact, .creature] }),
   FraCandidates.ab (.emblemDrawOnCast) "You get an emblem with \"Whenever you cast a spell, draw a card.\"",
@@ -640,7 +640,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
     (.filtered TargetFilter.creature),
   FraCandidates.ab (.may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false) .ifYouDo)
     "You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample",
-  FraCandidates.ab (.damageUpToOneAndPlayer 2)
+  FraCandidates.ab (.sequence [.dealDamage (.fixed 2) (.targetAt 0), .dealDamage (.fixed 2) (.targetAt 1)])
     "This planeswalker deals 2 damage to up to one target creature or planeswalker and 2 damage to target player"
     (.multi #[{ TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
       { noun := "target player", zone := .player }] #[0]),
@@ -1213,7 +1213,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.filtered TargetFilter.creature),
   TriggeredAbility.fra .attack "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 life."
     (.sequence [.dealDamage 1 (.player .eachOpponent), .gainLife 1]),
-  TriggeredAbility.fra .enter "When this enchantment enters, it deals X damage to any target." (.damageX) .playerOrCreature,
+  TriggeredAbility.fra .enter "When this enchantment enters, it deals X damage to any target." (.dealDamage .chosenX .target) .playerOrCreature,
   TriggeredAbility.fra .youCastNoncreature "Whenever you cast a noncreature spell, put a +1/+1 counter on this creature."
     (.putCounters (.ofKind .plusOnePlusOne 1) .source),
   TriggeredAbility.fra (.fra .eachUpkeepFromGraveyard)
@@ -1224,7 +1224,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.sequence [.pump (.count .artifact) (.fixed 0) .creaturesYouControl, .grant (.keywords Keyword.trample) .creaturesYouControl]),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
-    (.searchCardThenDiscardRandom),
+    (.sequence [.searchLibrary (.returnToHand .card), .discard .random]),
   TriggeredAbility.fra .enter "When this creature enters, create a 2/2 colorless Wizard Soldier creature token named Cadet."
     (.createTokens .cadet 1),
   TriggeredAbility.fra (.fra .opponentsDealtNoncombatDamage)
@@ -1244,14 +1244,14 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.gainLife 1),
   TriggeredAbility.fra .sourceDealtDamage
     "Whenever this creature is dealt damage, you may search your library for up to that many land cards, put them onto the battlefield tapped, then shuffle."
-    (.maySearchLandsEqualDamage),
+    (.may (.searchLibrary (.put .landsEqualDamage .tapped)) (.sequence []) .ifYouDo),
   TriggeredAbility.fra .enter "When this creature enters, create a Heartwood token." (.createTokens .heartwood 1),
   TriggeredAbility.fra (.fra .youPutLoyaltyCounters)
     "Whenever you put one or more loyalty counters on a planeswalker, put a +1/+1 counter on this creature."
     (.putCounters (.ofKind .plusOnePlusOne 1) .source),
   TriggeredAbility.fra .enter
     "When this creature enters, you may search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-    (.may .searchBasicLand (.sequence []) .ifYouDo),
+    (.may (.searchLibrary (.put .basicLand .tapped)) (.sequence []) .ifYouDo),
   TriggeredAbility.fra .enter "When this creature enters, put three +1/+1 counters on target creature."
     (.onPermanent (.plusOne 3)) (.filtered TargetFilter.creature),
   TriggeredAbility.fra (.or .enter .dies) "When this creature enters or dies, create a Heartwood token."
@@ -1379,7 +1379,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.putCounters (.ofKind .plusOnePlusOne 2) .source) (cond := .castNoSpellThisTurn),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for up to X basic land cards with different names, reveal them, put them into your hand, then shuffle."
-    (.fblthpSearch),
+    (.searchLibrary (.returnToHand .basicLandsDifferentNamesX)),
   TriggeredAbility.fra (.fra (.creatureYouControlPowerAtLeastEnters 4))
     "Whenever a creature you control with power 4 or greater enters, draw a card." (.draw 1),
   TriggeredAbility.fra .enter "When this creature enters, create Mowu, a legendary 3/3 green Dog creature token."
@@ -1388,7 +1388,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.untap .tokensYouControl),
   TriggeredAbility.fra .enter
     "When this creature enters, you may discard a card. If you do, search your library for an enchantment card, reveal it, put it into your hand, then shuffle."
-    (.may (.discard (.cards 1 .you)) .searchEnchantmentToHand .ifYouDo),
+    (.may (.discard (.cards 1 .you)) (.searchLibrary (.returnToHand .enchantmentCard)) .ifYouDo),
   TriggeredAbility.fra (.fra .youDiscardThis) "When you discard this card, you gain 3 life." (.gainLife 3),
   TriggeredAbility.fra .youActivateLoyaltyAbility
     "Whenever you activate a loyalty ability, you gain 1 life. You may play an additional land this turn."
@@ -1427,7 +1427,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "At the beginning of combat on your turn, if this artifact has counters on it, you may move all counters from this artifact onto target creature."
     (.mayMoveSourceCountersToTarget) (.filtered TargetFilter.creature) (cond := .sourceHasCounters),
   TriggeredAbility.fra .enter "When this creature enters, you may pay {3}. If you do, proliferate twice."
-    (.may (.pay (.mana #[.generic 3])) (.proliferate 2) .ifYouDo),
+    (.may (.pay (.mana #[.generic 3])) (.proliferate (.fixed 2)) .ifYouDo),
   TriggeredAbility.fra (.fra .youProliferate) "Whenever you proliferate, draw a card." (.draw 1),
 ]
 

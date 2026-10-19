@@ -224,17 +224,18 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       let with_ (out : ManaOutput) (r : ManaRestriction := .none) :=
         some { base with output := out, restriction := r }
       match ab.effect.resolution with
-      | .addMana types => with_ (.fixed types)
-      | .addAnyColor => with_ (.oneOf anyColorMana 1)
-      | .addAnyColorSpendOnlySubtype s =>
+      | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact =>
+        with_ (.fixed #[.colored .blue]) .cantNonartifact
+      | .addMana types (.fixed 1) .none => with_ (.fixed types)
+      | .addMana #[] (.fixed 1) .anyColor => with_ (.oneOf anyColorMana 1)
+      | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities s) =>
         with_ (.oneOf anyColorMana 1)
           (if s == "Hero" then .hero else if s == "Villain" then .villain else .none)
-      | .addAnyColorSpendOnlyArtifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
-      | .addTwoAnyColorCreatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
-      | .addBlueCantNonartifact => with_ (.fixed #[.colored .blue]) .cantNonartifact
-      | .addAnyColorEqualToSourcePower => with_ (.oneOf anyColorMana power)
-      | .addFourAnyCombination => with_ (.combination anyColorMana 4)
-      | .addTwoAnyColorEquipment => with_ (.oneOf anyColorMana 2) (.fra .equipmentOrEquip)
+      | .addMana #[] (.fixed 1) .artifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
+      | .addMana #[] (.fixed 2) .creatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
+      | .addMana #[] .equalSourcePower .anyColor => with_ (.oneOf anyColorMana power)
+      | .addMana #[] (.fixed 4) .anyCombination => with_ (.combination anyColorMana 4)
+      | .addMana #[] (.fixed 2) .equipment => with_ (.oneOf anyColorMana 2) (.fra .equipmentOrEquip)
       | _ => none)
 
 /-- Mana abilities other permanents grant `o`, and Reality Fracture mana

@@ -991,8 +991,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .searchLibrary (.put .dragon .asPrinted .none) =>
     "search your hand and/or library for a Dragon card and put it onto the battlefield"
-  | .searchLibrary _ =>
-    "search your library"
+  | .searchLibrary thenDo =>
+    let s := SpellResolution.toPhrase (.searchLibrary thenDo) noun
+    if s.isEmpty then "search your library" else s
   | .discard what =>
     match what with
     | .cards n .you =>
@@ -1456,7 +1457,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "attach it"
   | .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none) =>
     s!"if a {subtype} is dealt damage this way, destroy it"
-  | .addMana types amount =>
+  | .addMana types amount _ =>
     match amount with
     | .perChargeCounter =>
       s!"add {manaSymbolsText types} for each charge counter on this enchantment"

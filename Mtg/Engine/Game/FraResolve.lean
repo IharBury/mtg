@@ -51,9 +51,26 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .dealDamage (.fixed n) (.player .eachPlayer) _ =>
     g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n.toNat (source := src?)) g
   | .dealDamage (.fixed n) (.targetAt index) _ =>
-    match g.legalPermanentAt? controller kind targets index sourceId with
-    | some o => g.dealDamageFrom srcName o n.toNat (source := src?)
-    | none => g.logMsg "The target is no longer legal"
+    if kind.isOptionalSlot 0 then
+      match index with
+      | 0 =>
+        match targets.find? (fun | Target.permanent _ => true | _ => false) with
+        | some t@(Target.permanent id) =>
+          if g.targetLegalAt controller kind 0 t sourceId then
+            g.dealDamageFrom srcName (g.object! id) n.toNat (source := src?)
+          else g.illegalAbilityTarget t
+        | _ => g
+      | _ =>
+        match targets.find? (fun | Target.player _ => true | _ => false) with
+        | some t@(Target.player pid) =>
+          if g.targetLegalAt controller kind index t sourceId then
+            g.dealDamageToPlayer pid n.toNat (source := src?)
+          else g.illegalAbilityTarget t
+        | _ => g
+    else
+      match g.legalPermanentAt? controller kind targets index sourceId with
+      | some o => g.dealDamageFrom srcName o n.toNat (source := src?)
+      | none => g.logMsg "The target is no longer legal"
   | .putCounters (.ofKind .plusOnePlusOne n) (.targetAt index) =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | some o => g.addPlusOnePlusOneTo o n
@@ -86,7 +103,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       match g.findObject? o.id with
       | some o => g.destroyPermanent o
       | none => g) g
-  | .searchPlaneswalkerToTop =>
+  | .searchLibrary (.putOnLibrary .top .planeswalkerCard) =>
     g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
   | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) =>
     targets.foldl (fun g t =>
@@ -178,6 +195,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.dealDamageFrom striker.name (g.object! victim.id) (max (g.power striker) 0)
           (source := some striker)
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
+  | .dealDamage (.loyalty (.targetAt fromIdx)) (.targetAt toIdx) _ =>
+    match g.legalPermanentAt? controller kind targets toIdx sourceId with
+    | none => g.logMsg "The target is no longer legal. No damage is dealt"
+    | some victim =>
+      match g.legalPermanentAt? controller kind targets fromIdx sourceId with
+      | some striker =>
+        g.dealDamageFrom striker.name (g.object! victim.id) (Int.ofNat striker.status.loyaltyCounters)
+          (source := some striker)
+      | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
@@ -235,7 +261,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let g := g.modifyPlayer controller (fun pl =>
       { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + 1 })
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
-  | .searchLandToGraveyard =>
+  | .searchLibrary (.mill (.fixed 1) _ _) =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
   | .chooseTriggerModes _ => g
   | .untap .landsYouControl =>
@@ -299,7 +325,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .may (.pay (.mana #[.generic n])) (.queueReflexive (.destroy (.target .eachPermanent) _)) .ifYouDo =>
     g.beginFraChoice controller (.mayPayThen n .reflexiveDestroyPerOpponent sourceId)
       s!"{(g.player controller).name} may pay \{{n}}"
-  | .damageX | .dealDamage .chosenX .target _ =>
+  | .dealDamage .chosenX .target _ =>
     let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -318,8 +344,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         match g.findObject? id with
         | some o => g.addPlusOnePlusOneTo o x
         | none => g) g
-  | .searchCardThenDiscardRandom =>
-    let g := g.resolveLibrarySearchToHand controller (fun _ => true) "card"
+  | .searchLibrary (.returnToHand .card _) =>
+    g.resolveLibrarySearchToHand controller (fun _ => true) "card"
+  | .discard .random =>
     let hand := (g.player controller).hand
     if hand.isEmpty then g
     else
@@ -341,13 +368,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.beginFraChoice controller (.mayDiscardThen (.reflexiveDamageAnyTarget n.toNat) sourceId)
         s!"{(g.player controller).name} may discard a card"
-  | .maySearchLandsEqualDamage =>
+  | .may (.searchLibrary (.put .landsEqualDamage .tapped _)) (.sequence []) _ =>
     let n := (g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0 |>.toNat
     if n == 0 then g
     else
       g.beginFraChoice controller (.mayThen (.searchLandsTapped n) sourceId)
         s!"{(g.player controller).name} may search for up to {n} land cards"
-  | .may .searchBasicLand (.sequence []) .ifYouDo =>
+  | .may (.searchLibrary (.put .basicLand .tapped _)) (.sequence []) .ifYouDo =>
     g.beginFraChoice controller (.mayThen .searchBasicLandTapped sourceId)
       s!"{(g.player controller).name} may search for a basic land card"
   | .put .cause .tapped _ =>
@@ -523,7 +550,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.fraCause? with
     | some land => if g.hasSubtype land "Mountain" then g.addManaLogged controller #[.colored .red] else g
     | none => g
-  | .fblthpSearch =>
+  | .searchLibrary (.returnToHand .basicLandsDifferentNamesX _) =>
     let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
     let (g, _) := (g.player controller).library.foldl (fun (acc : Game × Array String) id =>
       let (g, names) := acc
@@ -542,7 +569,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     (g.permanentsOf controller).foldl (fun g o =>
       if o.printed.isToken && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
       else g) g
-  | .may (.discard (.cards 1 .you)) .searchEnchantmentToHand .ifYouDo =>
+  | .may (.discard (.cards 1 .you)) (.searchLibrary (.returnToHand .enchantmentCard _)) .ifYouDo =>
     if (g.player controller).hand.isEmpty then g
     else
       g.beginFraChoice controller (.mayDiscardThen .searchEnchantmentToHand sourceId)
@@ -629,10 +656,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let (g, newId) := g.returnCardToBattlefield controller id 0 (tapped := true)
         g.afterLandEnters (g.object! newId)
       | _ => g) sourceId illegal
-  | .searchBasicLand => g.resolveSearchBasicLandTapped controller
-  | .searchLandsTapped n =>
+  | .searchLibrary (.put .basicLand .tapped _) => g.resolveSearchBasicLandTapped controller
+  | .searchLibrary (.put (.landsUpTo n) .tapped _) =>
     g.beginLibrarySearch controller (·.isLand) "a land card" (.battlefield true) (count := n)
-  | .searchEnchantmentToHand =>
+  | .searchLibrary (.returnToHand .enchantmentCard _) =>
     g.resolveLibrarySearchToHand controller (·.isEnchantment) "enchantment card"
   | .createTokens .heartwood (.fixed n) true _ _ _ => g.createKindTokens controller .heartwood n.toNat (tapped := true)
   | .sacrifice .eachOpponentsCreature _ =>
@@ -670,7 +697,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .putCounters (.ofKind .plusOnePlusOne 1) .creaturesWithPlusOne
   | .returnToHand (.target .eachPermanent) _
   | .surveilReturnNoncreatureNonland
-  | .addBlueNoncreatureOnly
+  | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell
   | .tapAndStunX
   | .emblemDrawOnCast
   | .empowerJace (.subtypeCount "Island")
@@ -685,14 +712,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .attackersGetTwoTwoTrampleUntilYourTurn
   | .putCounters .plusOnePerLand .target
   | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo
-  | .damageUpToOneAndPlayer _
   | .createTokens .beast44trample (.fixed 1) false _ _ _
   | .pump (.fixed _) (.fixed _) (.cause none)
   | .attackersOfPlayerGetTwoTwoTrample
   | .putCounters .causeCounters .source
   | .mayMoveSourceCountersToTarget
-  | .may (.pay (.mana #[.generic _])) (.proliferate _) .ifYouDo
-  | .proliferate _
+  | .may (.pay (.mana #[.generic _])) (.proliferate (.fixed _) _) .ifYouDo
+  | .proliferate (.fixed _) .youControl
   | .becomeArtifactCreatureUntilEot
   | .queueMshReflexive _ _
   | .mshReflexive _ _

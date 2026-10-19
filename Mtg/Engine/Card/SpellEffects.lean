@@ -328,7 +328,7 @@ def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
     (castKind := .pump)
 
 def searchLegendaryCreatureToHand : Effect :=
-  mkSpell (.of .none) (.searchCard)
+  mkSpell (.of .none) (.searchLibrary (.returnToHand (.supertypeCard .legendary .creature)))
     (castKind := .draw)
 
 def dealDamageToEachOppCreature (n : Nat) : Effect :=
@@ -351,7 +351,7 @@ def destroyArtifactToken : Effect :=
   destroyTarget .artifactToken (spellKind := some .destroyArtifactOrLand)
 
 def addRedPerOppArtifacts : Effect :=
-  mkSpell (.of .none) (.addRedPerOppArtifacts)
+  mkSpell (.of .none) (.addMana #[.colored .red] (.count (.oppPermanents .artifact)))
     (castKind := .draw)
 
 def dealDamageToEachNonDragon (n : Nat) : Effect :=
@@ -380,7 +380,7 @@ def exileThenReturnYouControl : Effect :=
 
 def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
   mkSpell (.of .none)
-    (.sequence [.dealDamage (.fixed n) (.nonSubtypeCreatures "Dragon"), .addFourManaDragonSpells])
+    (.sequence [.dealDamage (.fixed n) (.nonSubtypeCreatures "Dragon"), .addMana #[] (.fixed 4) (.subtypeSpells "Dragon")])
     (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
@@ -515,9 +515,9 @@ def investigatePumpFlyingUntap : Effect :=
   mkSpell (.of .playerThenCreature)
     (.sequence [
       .targetPlayerInvestigates,
-      .onCreatureAmongTargets (.grantKeywords Keyword.flying),
-      .onCreatureAmongTargets .untap,
-      .onCreatureAmongTargets (.pump 1 0)])
+      .grant (.keywords Keyword.flying) .creatureTargets,
+      .untap .creatureTargets,
+      .pump (.fixed 1) (.fixed 0) .creatureTargets])
     (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
@@ -531,7 +531,7 @@ def dealDamageToEachCreature (n : Nat) : Effect :=
 
 def destroyLandSearchBasic : Effect :=
   mkSpell (.of .artifactOrLand)
-    (.sequence [.onPermanent .destroy, .searchCard .basic .land .ownerMayToBattlefield])
+    (.sequence [.onPermanent .destroy, .searchLibrary (.put (.supertypeCard .basic .land) .tapped)])
     (castKind := .destroyArtifactOrLand)
 
 def doublePowerAndToughness : Effect :=
@@ -637,7 +637,7 @@ def millThenPutPermanentGainLife (n life : Nat) : Effect :=
     (castKind := .draw)
 
 def searchLibraryOrGyArtifactCreatureX : Effect :=
-  mkSpell (.of .none) (.searchLibraryOrGyArtifactCreatureX)
+  mkSpell (.of .none) (.searchLibrary (.put .artifactCreatureX))
     (castKind := .extraLand)
 
 def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
@@ -693,10 +693,10 @@ def supertypeSpellsCostLessThisTurn (n : Nat) : Effect :=
     (castKind := .extraLand)
 
 def searchBasicLandTapped : Effect :=
-  mkAbility ({}) (.searchBasicLand)
+  mkAbility ({}) (.searchLibrary (.put .basicLand .tapped))
 
 def searchLandTypeToHand (landType : String) : Effect :=
-  mkAbility ({}) (.searchLandTypeToHand landType)
+  mkAbility ({}) (.searchLibrary (.returnToHand (.landSubtype landType)))
 
 def exileTopPlayUntilEndOfNextTurn : Effect :=
   mkAbility ({}) (.exile .top .playUntilNextTurn)
@@ -739,7 +739,7 @@ def millPlayer (n : Nat) : Effect :=
   mkAbility (.of .player) (.mill n .player)
 
 def addAnyColor : Effect :=
-  mkAbility ({}) (.addAnyColor)
+  mkAbility ({}) (.addMana #[] (.fixed 1) .anyColor)
 
 def destroyTargetPermanent : Effect :=
   destroyTarget .permanent
@@ -771,7 +771,7 @@ def searchBasicLandToHand : Effect :=
   mkAbility ({}) (.searchLibrary (.returnToHand .basicLand))
 
 def searchTwoBasicsSplit : Effect :=
-  mkAbility ({}) (.searchTwoBasicsSplit)
+  mkAbility ({}) (.searchLibrary (.sequence [.put .basicLand .tapped, .returnToHand .basicLand]))
 
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
   { resolution := .sequence
@@ -787,7 +787,7 @@ def exileThenReturnNextEnd : Effect :=
   mkAbility (.of .twoCreaturesOrLandsYouControl) (.exile (.target .eachPermanent) .nextEndStep)
 
 def searchBasicBeholdSubtypeUntap (subtype : String) : Effect :=
-  mkAbility ({}) (.searchBasicBeholdSubtypeUntap subtype)
+  mkAbility ({}) (.searchLibrary (.put (.basicBeholdUntap subtype) .tapped))
 
 def searchBasicBeholdElfUntap : Effect :=
   searchBasicBeholdSubtypeUntap "Elf"
@@ -894,7 +894,7 @@ def connive : Effect :=
   mkAbility ({}) (.connive)
 
 def addAnyColorSpendOnlySubtype (subtype : String) : Effect :=
-  mkAbility ({}) (.addAnyColorSpendOnlySubtype subtype)
+  mkAbility ({}) (.addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities subtype))
 
 def addAnyColorSpendOnlyHero : Effect :=
   addAnyColorSpendOnlySubtype "Hero"
@@ -903,22 +903,22 @@ def addAnyColorSpendOnlyVillain : Effect :=
   addAnyColorSpendOnlySubtype "Villain"
 
 def addAnyColorSpendOnlyArtifactSpell : Effect :=
-  mkAbility ({}) (.addAnyColorSpendOnlyArtifactSpell)
+  mkAbility ({}) (.addMana #[] (.fixed 1) .artifactSpell)
 
 def addTwoAnyColorCreatureSources : Effect :=
-  mkAbility ({}) (.addTwoAnyColorCreatureSources)
+  mkAbility ({}) (.addMana #[] (.fixed 2) .creatureSources)
 
 def addBlueCantNonartifact : Effect :=
-  mkAbility ({}) (.addBlueCantNonartifact)
+  mkAbility ({}) (.addMana #[.colored .blue] (.fixed 1) .cantNonartifact)
 
 def addAnyColorEqualToSourcePower : Effect :=
-  mkAbility ({}) (.addAnyColorEqualToSourcePower)
+  mkAbility ({}) (.addMana #[] .equalSourcePower .anyColor)
 
 def addFourAnyCombination : Effect :=
-  mkAbility ({}) (.addFourAnyCombination)
+  mkAbility ({}) (.addMana #[] (.fixed 4) .anyCombination)
 
 def addTwoAnyColorEquipment : Effect :=
-  mkAbility ({}) (.addTwoAnyColorEquipment)
+  mkAbility ({}) (.addMana #[] (.fixed 2) .equipment)
 
 def drawPerDiscardedThisTurn : Effect :=
   mkAbility ({}) (.draw .cardsDiscardedThisTurn)
@@ -948,7 +948,7 @@ def destroyUpToOneThenPlusOne : Effect :=
       "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this" }
 
 def proliferateEachKind : Effect :=
-  mkAbility (.of .permanentOrPlayer) (.proliferateEachKind)
+  mkAbility (.of .permanentOrPlayer) (.proliferate (.fixed 1) .target)
 
 def equipmentBecomesConstructHero : Effect :=
   mkAbility ({}) (.equipmentBecomesConstructHero)
@@ -1036,7 +1036,7 @@ def destroyTargetNoncreatureArtOrEnch : Effect :=
   destroyTarget .noncreatureArtifactOrEnchantment
 
 def targetSubtypeConnives (subtype : String) : Effect :=
-  mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives subtype)
+  mkAbility (.of (.creatureYouControlSubtype subtype)) (.connive (.target (.youControl (.subtype subtype))))
 
 def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
   mkAbility (.of .anotherCreatureYouControl)
@@ -1143,7 +1143,7 @@ def returnFromGyWithFinality : Effect :=
 def firstDealsStatDamageToSecond (useLoyalty : Bool) : Effect :=
   { mkAbility (.of (if useLoyalty then .planeswalkerYouControlThenOppCreatureOrPlaneswalker
         else .creatureYouControlThenOppCreatureOrPlaneswalker))
-      (.firstDealsStatDamageToSecond useLoyalty)
+      (.dealDamage (if useLoyalty then .loyalty (.targetAt 0) else .power (.targetAt 0)) (.targetAt 1))
       with spellCastKind := .fight }
 
 def tapAndStunTargetCreature : Effect :=
@@ -1153,7 +1153,7 @@ def copyNextInstantSorceryThisTurn : Effect :=
   mkAbility ({}) (.copyNextInstantSorceryThisTurn)
 
 def proliferatePlaneswalkerTypesTimes : Effect :=
-  mkAbility ({}) (.proliferatePlaneswalkerTypesTimes)
+  mkAbility ({}) (.proliferate .planeswalkerTypes .youControl)
 
 def copyEachCreatureOfTargetPlayer : Effect :=
   { mkAbility (.of .player) (.copyEachCreatureOfTargetPlayer)
@@ -1213,7 +1213,7 @@ def kindredJudgment : Effect :=
     (castKind := .destroyCreature)
 
 def loyalTutor : Effect :=
-  fraUntargeted (.searchPlaneswalkerToTop)
+  fraUntargeted (.searchLibrary (.putOnLibrary .top .planeswalkerCard))
     "Search your library for a planeswalker card, reveal it, then shuffle and put that card on top"
     (castKind := .draw)
 
@@ -1415,7 +1415,7 @@ def moltenTide : Effect :=
 /-! ## Green -/
 
 def enroot : Effect :=
-  fraUntargeted (.searchLandToGraveyard)
+  fraUntargeted (.searchLibrary (.mill (.fixed 1)))
     "Search your library for a land card, put it into your graveyard, then shuffle"
     (castKind := .draw)
 

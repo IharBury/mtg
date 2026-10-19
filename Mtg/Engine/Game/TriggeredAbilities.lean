@@ -3511,6 +3511,8 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
   | .put .forest .asPrinted .none => some (g.resolveSearchForest controller)
   | .put .forest how _ =>
     some (g.resolveSearchLibrary controller isForestCard (how == .tapped) "a Forest card")
+  | .put .basicLand how _ =>
+    some (g.resolveSearchLibrary controller isBasicLandCard (how == .tapped) "a basic land card")
   | .returnToHand .basicLand _ => some (g.resolveSearchBasicLandToHand controller)
   | .returnToHand .forest _ =>
     some (g.resolveLibrarySearchToHand controller isForestCard "a Forest card")
@@ -3940,7 +3942,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       kind amount tapped token who note (lastKnownToughness := lastKnownToughness)
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
-  | .addMana types amount =>
+  | .addMana types amount _ =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower
       lastKnownToughness
   | .becomePT power toughness =>

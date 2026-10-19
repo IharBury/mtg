@@ -121,15 +121,31 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Create X {kind.pluralNoun}"
   | .createTokens kind (.perSubtype subtype) _ _ _ _ =>
     s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
-  | .addMana types (.fixed 1) =>
+  | .addMana types (.fixed 1) .none =>
     s!"Add {manaSymbolsText types}"
+  | .addMana #[] (.fixed 1) .anyColor =>
+    "Add one mana of any color"
+  | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities subtype) =>
+    s!"Add one mana of any color. Spend this mana only to cast {indefinite subtype} {subtype} spell or to activate an ability of {indefinite subtype} {subtype} source"
+  | .addMana #[] (.fixed 1) .artifactSpell =>
+    "Add one mana of any color. Spend this mana only to cast an artifact spell"
+  | .addMana #[] (.fixed 2) .creatureSources =>
+    "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
+  | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact =>
+    "Add {U}. This mana can't be spent to cast a nonartifact spell"
+  | .addMana #[] .equalSourcePower .anyColor =>
+    "Add X mana of any one color, where X is this creature's power"
+  | .addMana #[] (.fixed 4) .anyCombination =>
+    "Add four mana in any combination of colors"
+  | .addMana #[] (.fixed 2) .equipment =>
+    "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
   | .discard (.cards n) =>
     s!"Discard {cardPhrase n}"
   | .shuffleSource =>
     "Shuffle this into its owner's library"
-  | .searchBasicLand =>
+  | .searchLibrary (.put .basicLand .tapped _) =>
     capitalizeAscii (searchBasicLandTappedPhrase "your")
-  | .searchLandTypeToHand t =>
+  | .searchLibrary (.returnToHand (.landSubtype t) _) =>
     capitalizeAscii (searchLibraryToHandPhrase s!"a {t} card")
   | .exile .top .playUntilNextTurn =>
     "Exile the top card of your library. You may play it until the end of your next turn"
@@ -147,20 +163,18 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Mill {cardPhrase n.toNat}"
   | .mill (.fixed n) _ _ =>
     s!"{noun} mills {n} cards"
-  | .addAnyColor =>
-    "Add one mana of any color"
   | .returnFromGyAttach =>
     s!"Return this card from your graveyard to the battlefield attached to {noun}"
-  | .searchLibrary (.returnToHand .basicLand) =>
+  | .searchLibrary (.returnToHand .basicLand _) =>
     capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
-  | .searchTwoBasicsSplit =>
+  | .searchLibrary (.sequence [.put .basicLand .tapped _, .returnToHand .basicLand _]) =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .grant (.keywords _) (.intersection [.creaturesYouControl, .union what]) =>
     let subtypes := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
     s!"{StaticAbility.joinedSubtypes subtypes StaticAbility.pluralSubtype} you control gain menace until end of turn"
   | .exile (.target .eachPermanent) .nextEndStep _ =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
-  | .searchBasicBeholdSubtypeUntap subtype =>
+  | .searchLibrary (.put (.basicBeholdUntap subtype) .tapped _) =>
     s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold {indefinite subtype} {subtype}. If you do, untap that land"
   | .draw (.fixed 1) .targetPlayers =>
     "Two target players each draw a card"
@@ -204,20 +218,6 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
   | .connive .source =>
     "This creature connives"
-  | .addAnyColorSpendOnlySubtype subtype =>
-    s!"Add one mana of any color. Spend this mana only to cast {indefinite subtype} {subtype} spell or to activate an ability of {indefinite subtype} {subtype} source"
-  | .addAnyColorSpendOnlyArtifactSpell =>
-    "Add one mana of any color. Spend this mana only to cast an artifact spell"
-  | .addTwoAnyColorCreatureSources =>
-    "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
-  | .addBlueCantNonartifact =>
-    "Add {U}. This mana can't be spent to cast a nonartifact spell"
-  | .addAnyColorEqualToSourcePower =>
-    "Add X mana of any one color, where X is this creature's power"
-  | .addFourAnyCombination =>
-    "Add four mana in any combination of colors"
-  | .addTwoAnyColorEquipment =>
-    "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
   | .draw .cardsDiscardedThisTurn _ =>
     "Draw a card for each card you've discarded this turn"
   | .dealDamage (.fixed n) .allCreatures _ =>
@@ -231,7 +231,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .copyControlledAbility fromCreature =>
     let src := if fromCreature then "a creature" else "an artifact"
     s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
-  | .proliferateEachKind =>
+  | .proliferate (.fixed 1) .target =>
     "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
   | .equipmentBecomesConstructHero =>
     "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
@@ -258,7 +258,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
   | .harnessInfinityStone =>
     "Harness this"
-  | .targetSubtypeConnives subtype =>
+  | .connive (.target (.youControl (.subtype subtype))) =>
     s!"Target {subtype} you control connives"
   | .empowerJace (.fixed n) =>
     s!"Empower Jace {n}"
@@ -292,16 +292,15 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
   | .emblemCastSpellDamage n =>
     s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
-  | .firstDealsStatDamageToSecond useLoyalty =>
-    if useLoyalty then
-      "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
-    else
-      "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
+  | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _ =>
+    "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
+  | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ =>
+    "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
   | .put .source .asPrinted (.entering [.counter .finality 1 false]) =>
     "Return this card from your graveyard to the battlefield with a finality counter on it"
   | .copyNextInstantSorceryThisTurn =>
     "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
-  | .proliferatePlaneswalkerTypesTimes =>
+  | .proliferate .planeswalkerTypes .youControl =>
     "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
   | .copyEachCreatureOfTargetPlayer =>
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
@@ -332,12 +331,13 @@ Activated-ability constructors stay `none`, so `spellResolution` is
 `.unrecognized` for them. -/
 def toSpellStep : Resolution → Option SpellResolution
   | .unrecognized | .sequence _ => none
-  | .onSource _ | .searchBasicLand | .searchLandTypeToHand _
+  | .onSource _ | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _)
   | .exile .top .playUntilNextTurn _ | .becomeSubtypeWithLandsPT _
   | .put .source .tapped _ | .returnToHand .source _
-  | .addAnyColor | .returnFromGyAttach | .searchLibrary (.returnToHand .basicLand)
-  | .searchTwoBasicsSplit | .grant (.keywords _) (.intersection [.creaturesYouControl, .union _])
-  | .exile (.target .eachPermanent) .nextEndStep _ | .searchBasicBeholdSubtypeUntap _
+  | .addMana #[] (.fixed 1) .anyColor | .returnFromGyAttach | .searchLibrary (.returnToHand .basicLand _)
+  | .searchLibrary (.sequence [.put .basicLand .tapped _, .returnToHand .basicLand _])
+  | .grant (.keywords _) (.intersection [.creaturesYouControl, .union _])
+  | .exile (.target .eachPermanent) .nextEndStep _ | .searchLibrary (.put (.basicBeholdUntap _) .tapped _)
   | .draw (.fixed 1) .targetPlayers
   | .dealDamage _ .target _ | .draw .lastKnownPower _
   | .draw .perBurden _ | .arwenShare
@@ -347,27 +347,28 @@ def toSpellStep : Resolution → Option SpellResolution
   | .extraTurn | .putCounters .plusOneChosenX .source
   | .lookAtTopPutTypes _ _ | .transform | .draw .chosenX _
   | .lookAtTopRevealArtifact _
-  | .addAnyColorSpendOnlySubtype _ | .addAnyColorSpendOnlyArtifactSpell
-  | .addTwoAnyColorCreatureSources | .addBlueCantNonartifact
-  | .addAnyColorEqualToSourcePower | .addFourAnyCombination
-  | .addTwoAnyColorEquipment | .draw .cardsDiscardedThisTurn _
+  | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities _) | .addMana #[] (.fixed 1) .artifactSpell
+  | .addMana #[] (.fixed 2) .creatureSources | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact
+  | .addMana #[] .equalSourcePower .anyColor | .addMana #[] (.fixed 4) .anyCombination
+  | .addMana #[] (.fixed 2) .equipment | .draw .cardsDiscardedThisTurn _
   | .createTokens _ .removedPlusOnes _ _ _ _ | .exile .topPower .playThisTurn _
   | .copyControlledAbility _
-  | .proliferateEachKind | .equipmentBecomesConstructHero
+  | .proliferate (.fixed 1) .target | .equipmentBecomesConstructHero
   | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
   | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .chooseOddOrEvenDestroy
   | .returnFromGyFinalityAttach | .revealTopDrawIfArtifact
   | .copyArtifactYouControlNotLegendary
   | .becomeTypes _ _ _ _ | .nextInstantSorceryCopyIfMvAtMostSourcePower
-  | .harnessInfinityStone | .targetSubtypeConnives _
+  | .harnessInfinityStone | .connive (.target (.youControl (.subtype _)))
   | .mill _ .you _ | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _
   | .oppSacrificesGreatestMv | .cant (.block .creaturesWithoutFlying)
   | .becomePrepared .creaturesYouControl
   | .jaceLoyaltyAtInstantSpeed
   | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
-  | .put .source .asPrinted (.entering [.counter .finality 1 false]) | .firstDealsStatDamageToSecond _
+  | .proliferate .planeswalkerTypes .youControl | .copyNextInstantSorceryThisTurn
+  | .put .source .asPrinted (.entering [.counter .finality 1 false])
+  | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ => none
   | r@(.returnToHand .targetSpell _) | r@(.returnToHand (.target .graveyardCard) _) => some r
   | r => if r.isFra then none else some r
@@ -394,7 +395,7 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   match r with
   | .sequence rs => rs.any doesNothingAsSpell
   | .shuffleSource | .gainLife _ _ | .dealDamage _ _ _
-  | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
+  | .recruit _ | .addMana _ _ _ | .discard _ | .onSource _ => false
   | .empowerJace _ | .surveil _ | .mill _ .you _
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .oppSacrificesGreatestMv
@@ -403,12 +404,12 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .chooseOddOrEvenDestroy
   | .becomePrepared .creaturesYouControl
   | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
-  | .firstDealsStatDamageToSecond _ | .put .source .asPrinted (.entering [.counter .finality 1 false])
-  | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
+  | .put .source .asPrinted (.entering [.counter .finality 1 false])
+  | .copyNextInstantSorceryThisTurn | .proliferate .planeswalkerTypes .youControl
   | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
   | .grant (.keywords _) .creaturesYouControl
   | .jaceLoyaltyAtInstantSpeed | .draw .lastKnownPower _ => false
-  | .searchBasicLand | .searchLandTypeToHand _ | .searchLibrary (.returnToHand .basicLand) | .exile .top .playUntilNextTurn _ => false
+  | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _) | .searchLibrary (.returnToHand .basicLand _) | .exile .top .playUntilNextTurn _ => false
   | .unrecognized => true
   | r =>
     if r.isFra then false

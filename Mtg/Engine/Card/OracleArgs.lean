@@ -303,13 +303,15 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .firstTargetCreatureYouControl
   | .exileGraveyardCreaturesGrantCast ty =>
     return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
-  | .searchCard s ty how =>
-    return .searchCard (← takeSupertype s) (← takeCardType ty) how
-  | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
-  | .addFourManaDragonSpells n s =>
-    return .addFourManaDragonSpells (← takeNat n) (← takeStr s)
+  | .searchLibrary (.returnToHand (.supertypeCard s ty) note) =>
+    return .searchLibrary (.returnToHand (.supertypeCard (← takeSupertype s) (← takeCardType ty)) note)
+  | .searchLibrary (.put (.supertypeCard s ty) how note) =>
+    return .searchLibrary (.put (.supertypeCard (← takeSupertype s) (← takeCardType ty)) how note)
+  | .addMana types (.count (.oppPermanents ty)) note =>
+    return .addMana types (.count (.oppPermanents (← takeCardType ty))) note
+  | .addMana types (.fixed n) (.subtypeSpells s) =>
+    return .addMana types (.fixed (← takeNat n.toNat)) (.subtypeSpells (← takeStr s))
   | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
-  | .onCreatureAmongTargets a => return .onCreatureAmongTargets (← takeAction a)
   | .becomeArtifactCreature44Flying p t kw =>
     return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
   | .discardTwoUnlessArtifact n ty =>
@@ -482,7 +484,8 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
 def takeResolution (r : Resolution) : ArgM Resolution := do
   match r with
   | .onSource a => return .onSource (← takeAction a)
-  | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
+  | .searchLibrary (.returnToHand (.landSubtype s) note) =>
+    return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
   | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
   | .grant (.keywords k) (.intersection [.creaturesYouControl, .union what]) =>
@@ -490,16 +493,19 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
     let ss ← takeStrs ss
     return .grant (.keywords k)
       (.intersection [.creaturesYouControl, .union (ss.toList.map (fun s => .youControl (.subtype s)))])
-  | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
+  | .searchLibrary (.put (.basicBeholdUntap s) how note) =>
+    return .searchLibrary (.put (.basicBeholdUntap (← takeStr s)) how note)
   | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
-  | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeStr s)
+  | .addMana types amount (.subtypeSpellsOrAbilities s) =>
+    return .addMana types amount (.subtypeSpellsOrAbilities (← takeStr s))
   | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
   | .millThenPutSubtypeOrEnchantment n s =>
     return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeStr s)
   | .becomeTypes ts p t k =>
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
-  | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)
+  | .connive (.target (.youControl (.subtype s))) =>
+    return .connive (.target (.youControl (.subtype (← takeStr s))))
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
@@ -1702,7 +1708,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
-  some ((.searchCard .basic .land))
+  some (.searchLibrary (.returnToHand (.supertypeCard .basic .land)))
 
 #guard refilled (Effect.creatureYouControlDealsTwicePower)
     "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
@@ -1722,7 +1728,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.addRedPerOppArtifacts)
     "add {R} for each enchantment your opponents control" ==
-  some ((.addRedPerOppArtifacts .enchantment))
+  some (.addMana #[.colored .red] (.count (.oppPermanents .enchantment)))
 
 #guard CardType.all.all fun t =>
   let ab := StaticAbility.typeSpellsCostLess .artifact 1

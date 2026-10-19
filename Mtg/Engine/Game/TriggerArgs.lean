@@ -276,6 +276,8 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .creaturesWithoutFlying =>
     some (g.battlefield.filter fun o => o.isCreature && !g.hasKeyword o (·.flying))
+  | .oppPermanents ty =>
+    some (g.battlefield.filter fun o => !o.controlledBy controller && o.types.contains ty)
   | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
     | .graveyardCard | .graveyardPermanent | .milledSubtype _
     | .revealed | .basicLand | .linkedExile | .graveyardInstants _
@@ -288,7 +290,10 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
     | .card | .nonland | .targetSpell | .graveyardSubtype _
     | .allNonlandPermanentsInGraveyard | .chosenNonlandPermanent | .topPower
-    | .land | .creatureOrPlaneswalker | .landCard =>
+    | .land | .creatureOrPlaneswalker | .landCard
+    | .landsUpTo _ | .landsEqualDamage | .planeswalkerCard | .enchantmentCard
+    | .supertypeCard _ _ | .landSubtype _ | .basicBeholdUntap _
+    | .basicLandsDifferentNamesX | .artifactCreatureX | .random =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -511,7 +516,12 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     match g.permanentsNamed ctx of with
     | some #[o] => some (g.power o)
     | _ => none
-  | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts | .chosenX => none
+  | .loyalty of =>
+    match g.permanentsNamed ctx of with
+    | some #[o] => some (Int.ofNat o.status.loyaltyCounters)
+    | _ => none
+  | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
+  | .chosenX | .planeswalkerTypes => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

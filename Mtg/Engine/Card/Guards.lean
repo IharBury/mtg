@@ -532,9 +532,10 @@ namespace CardDef
   .ifElse .teamwork (.onPermanent (.dealDamage 4)) (.onPermanent (.dealDamage 2))
 #guard Effect.doublePowerAndToughness.spellResolution == .onPermanent .doublePowerAndToughness
 #guard (Effect.exileCreatureToughnessAtLeast 4).spellResolution == .onPermanent .exile
-#guard Effect.searchLegendaryCreatureToHand.spellResolution == .searchCard
+#guard Effect.searchLegendaryCreatureToHand.spellResolution ==
+  .searchLibrary (.returnToHand (.supertypeCard .legendary .creature))
 #guard (Effect.destroyLandSearchBasic).spellResolution ==
-  .sequence [.onPermanent .destroy, .searchCard .basic .land .ownerMayToBattlefield]
+  .sequence [.onPermanent .destroy, .searchLibrary (.put (.supertypeCard .basic .land) .tapped)]
 #guard SpellResolution.toPhrase (.fight .announced (.timesPower 2)) "target creature" ==
   "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
 #guard SpellResolution.toPhrase (.fight .announced .upToOneOther) "target creature" ==
@@ -573,7 +574,7 @@ namespace CardDef
   "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
 #guard !(Effect.searchLandTypeToHand "Mountain").requiresTarget
 #guard (Effect.searchLandTypeToHand "Swamp").resolution ==
-  .searchLandTypeToHand "Swamp"
+  .searchLibrary (.returnToHand (.landSubtype "Swamp"))
 #guard Effect.addAnyColorSpendOnlyHero.phrase ==
   "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
 #guard Effect.addAnyColorSpendOnlyVillain.phrase ==
@@ -649,13 +650,13 @@ namespace CardDef
 #guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
   "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
 #guard (Effect.searchBasicBeholdSubtypeUntap "Elf").resolution ==
-  .searchBasicBeholdSubtypeUntap "Elf"
+  .searchLibrary (.put (.basicBeholdUntap "Elf") .tapped)
 #guard (Effect.searchBasicBeholdSubtypeUntap "Orc").phrase.endsWith
   "You may behold an Orc. If you do, untap that land"
 #guard Effect.addAnyColorSpendOnlyHero.resolution ==
-  .addAnyColorSpendOnlySubtype "Hero"
+  .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities "Hero")
 #guard Effect.addAnyColorSpendOnlyVillain.resolution ==
-  .addAnyColorSpendOnlySubtype "Villain"
+  .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities "Villain")
 #guard (Effect.teamGain Keyword.doubleStrike).phrase ==
   "Creatures you control gain double strike until end of turn"
 #guard (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5
@@ -665,7 +666,7 @@ namespace CardDef
   "Mill 4 cards. You may put a Hero or enchantment card from among those cards into your hand"
 #guard (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]).phrase.startsWith
   "Put two +1/+1 counters on this, then look at the top 7 cards"
-#guard Effect.searchBasicLandTapped.resolution == .searchBasicLand
+#guard Effect.searchBasicLandTapped.resolution == .searchLibrary (.put .basicLand .tapped)
 #guard !Effect.searchBasicLandTapped.requiresTarget
 #guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget
 #guard (Effect.abilityDrawThenDiscard 1).phrase ==

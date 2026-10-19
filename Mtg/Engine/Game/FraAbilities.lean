@@ -216,7 +216,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match g.pending with
     | .surveil .. => { g with surveilReturnNoncreatureNonland := true }
     | _ => g
-  | .addBlueNoncreatureOnly =>
+  | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell =>
     (g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .blue) 1 (fra := some .noncreatureSpell) })).logMsg
       s!"{(g.player controller).name} adds \{U} (noncreature spells only)"
@@ -302,18 +302,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     else
       g.beginFraChoice controller (.maySacrificeThen .creature .beastToken sourceId)
         s!"{(g.player controller).name} may sacrifice a creature"
-  | .damageUpToOneAndPlayer n =>
-    targets.foldl (fun g t =>
-      match t with
-      | Target.permanent id =>
-        if g.targetLegalAt controller kind 0 t sourceId then
-          g.dealDamageFrom srcName (g.object! id) n (source := src?)
-        else g.illegalAbilityTarget t
-      | Target.player pid =>
-        if g.targetLegalAt controller kind 1 t sourceId then
-          g.dealDamageToPlayer pid n (source := src?)
-        else g.illegalAbilityTarget t
-      | _ => g) g
   | .createTokens .beast44trample (.fixed 1) false _ _ _ => g.createKindTokens controller .beast44trample 1
   | .putCounters .causeCounters .source =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with
@@ -333,8 +321,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             s!"{(g.player controller).name} may move all counters from {src.name} onto {o.name}"
         else g) sourceId illegal
     | none => g
-  | .may (.pay (.mana #[.generic pay])) (.proliferate times) .ifYouDo =>
-    g.beginFraChoice controller (.mayPayThen pay (.proliferate times) sourceId)
+  | .may (.pay (.mana #[.generic pay])) (.proliferate (.fixed times) _) .ifYouDo =>
+    g.beginFraChoice controller (.mayPayThen pay (.proliferate times.toNat) sourceId)
       s!"{(g.player controller).name} may pay \{{pay}}"
   | .becomeArtifactCreatureUntilEot =>
     onSource (fun g o =>
@@ -440,11 +428,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .extort =>
     g.beginFraChoice controller (.mayPayExtort sourceId)
       s!"{(g.player controller).name} may pay \{W/B} (extort)"
-  | .proliferate times =>
-    if times == 0 then g
+  | .proliferate (.fixed times) _ =>
+    if times ≤ 0 then g
     else
-      { g with pending := .chooseProliferate controller times }.logMsg
-        s!"{(g.player controller).name} proliferates {times} time(s)"
+      { g with pending := .chooseProliferate controller times.toNat }.logMsg
+        s!"{(g.player controller).name} proliferates {times.toNat} time(s)"
   | .pump (.fixed p) (.fixed t) (.cause none) =>
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g

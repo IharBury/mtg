@@ -493,8 +493,7 @@ def simpleTapAddMana (c : CardDef) : Array ManaType :=
 def mshTapAddMana (c : CardDef) : Array ManaType :=
   c.activatedAbilities.foldl (fun acc ab =>
     match ab.effect.resolution with
-    | .addMana types => acc ++ types
-    | .addBlueCantNonartifact => acc ++ #[.colored .blue]
+    | .addMana types (.fixed 1) .none | .addMana types (.fixed 1) .cantNonartifact => acc ++ types
     | _ => acc) #[]
 
 /-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
@@ -510,10 +509,7 @@ def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
 def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
   c.activatedAbilities.any (fun ab =>
     match ab.effect.resolution with
-    | .addAnyColor | .addAnyColorSpendOnlySubtype _
-    | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
-    | .addTwoAnyColorCreatureSources | .addFourAnyCombination
-    | .addTwoAnyColorEquipment => true
+    | .addMana #[] _ note => note != .none
     | _ => false)
 
 /-- All `{T}: Add` mana types this card can produce. -/
@@ -664,7 +660,7 @@ def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
 def activatedNotation (ab : ActivatedAbility) : String :=
   if ab.activateFromHand && ab.cost.discardSource then
     match ab.effect.resolution with
-    | .searchLandTypeToHand t =>
+    | .searchLibrary (.returnToHand (.landSubtype t) _) =>
       if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
     | _ => ab.toNotation
   else

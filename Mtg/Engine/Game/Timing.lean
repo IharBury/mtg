@@ -58,10 +58,7 @@ effect adds mana. -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
   !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
     match ab.effect.resolution with
-    | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
-    | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
-    | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
-    | .addFourAnyCombination | .addTwoAnyColorEquipment => true
+    | .addMana .. => true
     | _ => false
 
 def hasPriority (g : Game) (p : PlayerId) : Bool :=

@@ -468,7 +468,7 @@ def isEquipAbility (ab : ActivatedAbility) : Bool :=
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.activateFromHand && ab.cost.discardSource then
     match ab.effect.resolution with
-    | .searchLandTypeToHand t => if t == "Plan" then none else some t
+    | .searchLibrary (.returnToHand (.landSubtype t) _) => if t == "Plan" then none else some t
     | _ => none
   else none
 
@@ -545,9 +545,9 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | .sequence [.returnToHand (.target .graveyardCard), .amass (.fixed n) subtype] =>
     ["Return up to one target creature card from your graveyard to your hand.",
       s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.dealDamage (.fixed n) (.nonSubtypeCreatures sub), .addFourManaDragonSpells m sub2] =>
+  | .sequence [.dealDamage (.fixed n) (.nonSubtypeCreatures sub), .addMana #[] (.fixed m) (.subtypeSpells sub2)] =>
     [s!"{cardName} deals {n} damage to each non-{sub} creature.",
-      s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
+      s!"Add {englishNumber m.toNat} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
   | .sequence [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
