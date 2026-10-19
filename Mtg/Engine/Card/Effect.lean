@@ -113,13 +113,13 @@ private def phraseWith (r : Resolution) (noun : String)
     "Recruit"
   | .amass (.fixed n) "Goblin" _ _ =>
     s!"Amass Goblins {n.toNat}"
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ =>
+  | .createTokens .tigerGod (.fixed 1) false _ _ =>
     "Create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .createTokens kind (.fixed n) tapped _ _ _ =>
+  | .createTokens kind (.fixed n) tapped _ _ =>
     capitalizeAscii (TokenKind.createPhrase kind n.toNat (tapped := tapped))
-  | .createTokens kind .chosenX _ _ _ _ =>
+  | .createTokens kind .chosenX _ _ _ =>
     s!"Create X {kind.pluralNoun}"
-  | .createTokens kind (.perSubtype subtype) _ _ _ _ =>
+  | .createTokens kind (.perSubtype subtype) _ _ _ =>
     s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .addMana types (.fixed 1) .none =>
     s!"Add {manaSymbolsText types}"
@@ -224,7 +224,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Draw a card for each card you've discarded this turn"
   | .dealDamage (.fixed n) .allCreatures _ =>
     s!"This deals {n} damage to each creature"
-  | .createTokens kind .removedPlusOnes _ _ _ _ =>
+  | .createTokens kind .removedPlusOnes _ _ _ =>
     s!"Create that many {kind.pluralNoun}"
   | .exile .topPower .playThisTurn _ =>
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
@@ -266,7 +266,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Surveil {n}"
   | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
     s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
-  | .createTokens kind .lifeGainedThisTurn _ _ _ _ =>
+  | .createTokens kind .lifeGainedThisTurn _ _ _ =>
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
   | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ =>
     s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
@@ -351,17 +351,17 @@ def toSpellStep : Resolution → Option SpellResolution
   | .addMana #[] (.fixed 2) .creatureSources | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact
   | .addMana #[] .equalSourcePower .anyColor | .addMana #[] (.fixed 4) .anyCombination
   | .addMana #[] (.fixed 2) .equipment | .draw .cardsDiscardedThisTurn _
-  | .createTokens _ .removedPlusOnes _ _ _ _ | .exile .topPower .playThisTurn _
+  | .createTokens _ .removedPlusOnes _ _ _ | .exile .topPower .playThisTurn _
   | .becomeCopy (.stackAbility _)
   | .proliferate (.fixed 1) .target | .grant .constructHero .source
   | .revealLibrary (.top _) (.returnToHand (.milledSubtype _) _) _ | .mill _ .you (.subtypeOrEnchantmentToHand _)
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .destroy .otherCreaturesOddOrEvenMv _
+  | .createTokens .tigerGod (.fixed 1) false _ _ | .destroy .otherCreaturesOddOrEvenMv _
   | .put .source .asPrinted (.entering [.counter .finality 1 true]) | .revealLibrary (.top 1) (.draw (.fixed 1) _) _
   | .becomeCopy .secondArtifactTargetNotLegendary
   | .grant (.typesPTAndKeywords _ _ _ _) .source | .grant (.nextSpellCopy _) .source
   | .grant .harnessed .source | .connive (.target (.youControl (.subtype _)))
   | .mill _ .you .none | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokens _ .lifeGainedThisTurn _ _ _ _
+  | .createTokens _ .lifeGainedThisTurn _ _ _
   | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ | .cant (.block .creaturesWithoutFlying)
   | .becomePrepared .creaturesYouControl _
   | .grant .jaceLoyaltyAtInstantSpeed .youIfCast
@@ -399,8 +399,8 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .recruit _ | .addMana _ _ _ | .discard _ | .onSource _ => false
   | .empowerJace _ | .surveil _ _ | .mill _ .you _
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .grant .extraTurn .youIfCast | .draw .perBurden _
+  | .createTokens _ .lifeGainedThisTurn _ _ _ | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _
+  | .createTokens .tigerGod (.fixed 1) false _ _ | .grant .extraTurn .youIfCast | .draw .perBurden _
   | .cant (.block .creaturesWithoutFlying)
   | .destroy .otherCreaturesOddOrEvenMv _
   | .becomePrepared .creaturesYouControl _

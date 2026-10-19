@@ -136,7 +136,7 @@ def reproach : Game :=
 
 def monarchGinger : Game :=
   let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with isMonarch := true })
-  g.applyEffect ⟨0⟩ { resolution := .createTokens .treasure (.fixed 1) false .gingerbrute .you .ifMonarch } #[]
+  g.applyEffect ⟨0⟩ { resolution := .createTokens .gingerbrute (.fixed 1) false .you .ifMonarch } #[]
 
 #guard monarchGinger.battlefield.any (fun o => o.name == "Gingerbrute" && o.printed.isToken)
 

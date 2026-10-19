@@ -1465,16 +1465,15 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (lastKnownPower : Option Int) (kind : TokenKind)
     (amount : TriggeredAbility.NumberSelector) (tapped : Bool)
-    (token : TriggeredAbility.TriggerToken)
     (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerTokenNote)
     (lastKnownToughness : Option Int := none) : Game :=
   let ctx : TriggerRead :=
     { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
   let counted := g.triggerCount ctx amount
-  let recipients (token : TriggeredAbility.TriggerToken) (who : TriggeredAbility.PlayerSelector) :=
-    g.tokenRecipients ctx token who
-  match token, who, amount, note with
+  let recipients (kind : TokenKind) (who : TriggeredAbility.PlayerSelector) :=
+    g.tokenRecipients ctx kind who
+  match kind, who, amount, note with
   | .axe, who, _, note =>
     let n := counted.getD 0
     let (g, last) := g.spawnFace (recipients .axe who) axeToken n (tapped := tapped)
@@ -1487,32 +1486,6 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     | _, some _ =>
       g.logMsg "An Axe token is created"
     | _, none => g
-  | .kind, .you, .oppArtifacts, _ =>
-    let n := g.countOpponentArtifacts controller
-    g.createTreasureTokens controller n (tapped := true)
-  | .kind, .you, .damagedPlayerArtifacts, _ =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    let n := g.countArtifactsControlledBy pid
-    g.createTreasureTokens controller n |>.logMsg
-      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
-  | .kind, .you, .lastKnownPower, _ =>
-    if kind == .birdSoldier then
-      let n := lastKnownPower.getD 0
-      g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
-        s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
-    else
-      let n := (lastKnownPower.getD 0).toNat
-      g.createTreasureTokens controller n
-  | .kind, .you, .perSubtype subtype, _ =>
-    g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
-  | .kind, .you, .chosenCreatureType, _ =>
-    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
-    if types.isEmpty then
-      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
-    else
-      g.beginFraChoice controller (.chooseCreatureType types)
-        s!"{(g.player controller).name} chooses a creature type"
   | .zabu, who, _, _ =>
     (g.spawnFace (recipients .zabu who) zabuToken (counted.getD 0) (tapped := tapped)).1
   | .theVoid, who, _, _ =>
@@ -1544,9 +1517,47 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     | none => g
   | .merfolk, _, .blueManaSymbols, _ =>
     g.createMerfolkForBlueSymbols controller lastKnownPower
-  | .kind, .you, .fixed n, _ =>
+  | .merfolk, who, _, note =>
+    let n := counted.getD 0
+    let pids := recipients .merfolk who
+    if n == 0 || pids.isEmpty then g
+    else
+      let (g, last) := g.spawnFace pids merfolk11blueToken n (tapped := tapped)
+      match note, last with
+      | .remember, some id => { g with createdTokenThisWay := some id }
+      | _, _ => g
+  | .tigerGod, who, _, _ =>
+    (g.spawnFace (recipients .tigerGod who) tigerGodToken (counted.getD 0)
+      (tapped := tapped)).1
+  | _, .you, .oppArtifacts, _ =>
+    let n := g.countOpponentArtifacts controller
+    g.createTreasureTokens controller n (tapped := true)
+  | _, .you, .damagedPlayerArtifacts, _ =>
+    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let n := g.countArtifactsControlledBy pid
+    g.createTreasureTokens controller n |>.logMsg
+      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
+  | _, .you, .lastKnownPower, _ =>
+    if kind == .birdSoldier then
+      let n := lastKnownPower.getD 0
+      g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
+        s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
+    else
+      let n := (lastKnownPower.getD 0).toNat
+      g.createTreasureTokens controller n
+  | _, .you, .perSubtype subtype, _ =>
+    g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
+  | _, .you, .chosenCreatureType, _ =>
+    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
+      o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
+    if types.isEmpty then
+      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
+    else
+      g.beginFraChoice controller (.chooseCreatureType types)
+        s!"{(g.player controller).name} chooses a creature type"
+  | _, .you, .fixed n, _ =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .kind, .controller .target, _, _ =>
+  | _, .controller .target, _, _ =>
     -- Destroy may already have moved the permanent. The controller who
     -- creates the token is the one it had on the battlefield.
     let n := counted.getD 0
@@ -1555,7 +1566,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
       if kind == .treasure && !tapped then g.createTreasureTokens pid n
       else g.createKindTokens pid kind n (tapped := tapped)
     | none => g
-  | .kind, _who, .chosenCreatureType, _ =>
+  | _, _who, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
     if types.isEmpty then
@@ -1563,29 +1574,14 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     else
       g.beginFraChoice controller (.chooseCreatureType types)
         s!"{(g.player controller).name} chooses a creature type"
-  | token, who, _, note =>
+  | kind, who, _, note =>
     let n := counted.getD 0
-    let pids := recipients token who
+    let pids := recipients kind who
     if n == 0 || pids.isEmpty then g
     else
-      let (g, last) :=
-        match token with
-        | .kind =>
-          let g : Game := pids.foldl (fun (g : Game) (pid : PlayerId) =>
-            g.createKindTokens pid kind n (tapped := tapped)) g
-          (g, g.recentTokenIds.back?)
-        | .merfolk =>
-          g.spawnFace pids merfolk11blueToken n (tapped := tapped)
-        | .axe => g.spawnFace pids axeToken n (tapped := tapped)
-        | .zabu => g.spawnFace pids zabuToken n (tapped := tapped)
-        | .theVoid => g.spawnFace pids theVoidToken n (tapped := tapped)
-        | .redwing => g.spawnFace pids redwingToken n (tapped := tapped)
-        | .alien => g.spawnFace pids alien11redHasteToken n (tapped := tapped)
-        | .galactus => g.spawnFace pids galactusToken n (tapped := tapped)
-        | .sturdyShield => g.spawnFace pids sturdyShieldToken n (tapped := tapped)
-        | .tigerGod => g.spawnFace pids tigerGodToken n (tapped := tapped)
-        | .citizen | .warrior | .insect | .myr | .kobold | .mite | .shark
-        | .gingerbrute | .angel | .human | .goblin | .map | .rogue | .incubator => (g, none)
+      let g : Game := pids.foldl (fun (g : Game) (pid : PlayerId) =>
+        g.createKindTokens pid kind n (tapped := tapped)) g
+      let last := g.recentTokenIds.back?
       match note, last with
       | .remember, some id => { g with createdTokenThisWay := some id }
       | .invasion, some id =>
@@ -4007,9 +4003,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
-  | .createTokens kind amount tapped token who note =>
+  | .createTokens kind amount tapped who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind amount tapped token who note (lastKnownToughness := lastKnownToughness)
+      kind amount tapped who note (lastKnownToughness := lastKnownToughness)
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount _ =>

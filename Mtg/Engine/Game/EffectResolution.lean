@@ -68,13 +68,13 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     else
       some ({ g with pending := .mayDiscardDraw controller n.toNat }.logMsg
         s!"{pl.name} may discard a card. If they do, they draw {n.toNat}")
-  | .createTokens kind .lifeGainedThisTurn _ _ _ _ =>
+  | .createTokens kind .lifeGainedThisTurn _ _ _ =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
     some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
   | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ =>
     some (g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ => some (g.createNamedToken controller tigerGodToken)
+  | .createTokens .tigerGod (.fixed 1) false _ _ => some (g.createNamedToken controller tigerGodToken)
   | .grant .extraTurn .youIfCast =>
     some ({ g with extraTurns := g.extraTurns.push controller }
       |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
@@ -1354,9 +1354,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens _ _ _ .galactus _ _ =>
+  | .createTokens .galactus _ _ _ _ =>
     g.createNamedToken controller galactusToken
-  | .createTokens kind amount tapped _ who _ =>
+  | .createTokens kind amount tapped who _ =>
     let pid := match who with
       | .you => controller
       | .player =>
@@ -1875,7 +1875,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             pl.manaPool.add (.colored .white) 2 })
       | .draw .cardsDiscardedThisTurn _ =>
         g.draw controller (g.player controller).cardsDiscardedThisTurn
-      | .createTokens kind .removedPlusOnes _ _ _ _ =>
+      | .createTokens kind .removedPlusOnes _ _ _ =>
         g.createKindTokens controller kind chosenX
       | .exile .topPower .playThisTurn _ =>
         let x := g.sourcePowerNatAtResolution sourceId lastKnownPower

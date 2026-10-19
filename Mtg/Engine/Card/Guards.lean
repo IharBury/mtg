@@ -1395,7 +1395,7 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
@@ -1460,9 +1460,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe ==
-  .createTokens .treasure (.fixed 1) false .axe
+  .createTokens .axe (.fixed 1) false
 #guard TriggeredAbility.resolution .onEnterCreateAxeAttach ==
-  .createTokens .treasure (.fixed 1) false .axe (note := .attachReflexive)
+  .createTokens .axe (.fixed 1) false (note := .attachReflexive)
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
@@ -1628,7 +1628,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
+  .sequence [.createTokens .alien (.fixed 1) false (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
@@ -1657,7 +1657,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
-  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]

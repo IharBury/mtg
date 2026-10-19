@@ -74,6 +74,52 @@ inductive TokenKind where
   | illusion11blue
   /-- An 8/8 blue Leviathan creature token with hexproof (FRA). -/
   | leviathan88hexproof
+  /-- A colorless Equipment artifact token named Axe. -/
+  | axe
+  /-- Zabu, a legendary 2/2 green Cat. -/
+  | zabu
+  /-- The Void, a legendary 5/5 black Horror Villain. -/
+  | theVoid
+  /-- Redwing, a legendary 1/1 blue Bird Scout. -/
+  | redwing
+  /-- A 1/1 red Alien creature token with haste. -/
+  | alien
+  /-- A colorless Equipment artifact token named Sturdy Shield. -/
+  | sturdyShield
+  /-- Galactus, a legendary 16/16 black Elder Alien with flying and trample. -/
+  | galactus
+  /-- A 1/1 blue Merfolk creature token. -/
+  | merfolk
+  /-- The Tiger God, a legendary 4/4 green Cat God creature token. -/
+  | tigerGod
+  /-- A 1/1 green and white Citizen creature token. -/
+  | citizen
+  /-- A 1/1 white Warrior creature token. -/
+  | warrior
+  /-- A 2/1 white Insect creature token with flying. -/
+  | insect
+  /-- A 1/1 colorless Myr artifact creature token. -/
+  | myr
+  /-- A 0/1 red Kobold creature token named Kobolds of Kher Keep. -/
+  | kobold
+  /-- A 1/1 colorless Phyrexian Mite artifact creature token with toxic 1 that can't block. -/
+  | mite
+  /-- An X/X blue Shark creature token with flying. -/
+  | shark
+  /-- A 1/1 colorless Food Golem artifact creature token named Gingerbrute with haste. -/
+  | gingerbrute
+  /-- A 4/4 white Angel creature token with flying. -/
+  | angel
+  /-- A 1/1 white Human creature token. -/
+  | human
+  /-- A 1/1 red Goblin creature token. -/
+  | goblin
+  /-- A colorless Map artifact token. -/
+  | map
+  /-- A 2/2 black Rogue creature token. -/
+  | rogue
+  /-- A colorless Incubator artifact token. -/
+  | incubator
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TokenKind
@@ -119,6 +165,34 @@ def oracleNoun : TokenKind → String
   | .angel33blue => "3/3 blue Angel creature token with flying"
   | .illusion11blue => "1/1 blue Illusion creature token"
   | .leviathan88hexproof => "8/8 blue Leviathan creature token with hexproof"
+  | .axe => "colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+  | .zabu =>
+    "Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+  | .theVoid =>
+    "The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+  | .redwing =>
+    "Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
+  | .alien => "1/1 red Alien creature token with haste"
+  | .sturdyShield => "colorless Equipment artifact token named Sturdy Shield"
+  | .galactus => "Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
+  | .merfolk => "1/1 blue Merfolk creature token"
+  | .tigerGod =>
+    "The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  | .citizen => "1/1 green and white Citizen creature token"
+  | .warrior => "1/1 white Warrior creature token"
+  | .insect => "2/1 white Insect creature token with flying"
+  | .myr => "1/1 colorless Myr artifact creature token"
+  | .kobold => "0/1 red Kobold creature token named Kobolds of Kher Keep"
+  | .mite =>
+    "1/1 colorless Phyrexian Mite artifact creature token with toxic 1 and \"This token can't block.\""
+  | .shark => "X/X blue Shark creature token with flying"
+  | .gingerbrute => "1/1 colorless Food Golem artifact creature token named Gingerbrute with haste"
+  | .angel => "4/4 white Angel creature token with flying"
+  | .human => "1/1 white Human creature token"
+  | .goblin => "1/1 red Goblin creature token"
+  | .map => "Map token"
+  | .rogue => "2/2 black Rogue creature token"
+  | .incubator => "Incubator token"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

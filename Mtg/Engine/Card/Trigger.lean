@@ -357,7 +357,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .addMana types => { resolution := .addMana types }
   | .createAxe attach =>
     { resolution :=
-        .createTokens .treasure (.fixed 1) false .axe
+        .createTokens .axe (.fixed 1) false
           (note := if attach then .attachReflexive else .none) }
   | .tapOppOrUntapYours =>
     { resolution := .or [.tap .target, .untap] }
@@ -490,7 +490,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .pump .equalSourcePower (.fixed 0) .target }
   | .createAlienPerInvasion =>
     { resolution := .sequence
-        [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
+        [.createTokens .alien (.fixed 1) false (note := .invasion),
          .putCounters .plusOneNoted .createdToken,
          .putCounters (.ofKind .invasion) .source] }
   | .mayPutArtifactAttachEquipment =>
@@ -746,14 +746,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
       resolution := .returnToHand .permanent .returnedPermanent }
   | .enter .createZabu =>
-    { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .zabu }
+    { events := #[.entering], resolution := .createTokens .zabu (.fixed 1) false }
   | .enter .oppCreatesTheVoid =>
     { events := #[.entering], targeting := .of .opponent,
-      resolution := .createTokens .treasure (.fixed 1) false .theVoid (.target .opponent) }
+      resolution := .createTokens .theVoid (.fixed 1) false (.target .opponent) }
   | .enter .createSturdyShieldAttach =>
     { events := #[.entering],
       resolution := .sequence
-        [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+        [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
          .attach .createdToken .source] }
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
@@ -796,7 +796,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .revealFromHand .onePlusCreatureCards
         (.discard (.cards 1 (.target .opponent))) }
   | .enter .createRedwing =>
-    { events := #[.entering], resolution := .createTokens .treasure (.fixed 1) false .redwing }
+    { events := #[.entering], resolution := .createTokens .redwing (.fixed 1) false }
   | .step .enchantedControllerDraws =>
     { events := #[.enchantedControllerUpkeep]
       resolution := .draw (.fixed 1) (who := .controller .enchanted) }
@@ -988,7 +988,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .villain21menace (.fixed 1) false }
   | .casting .merfolkFromBlue =>
     { events := #[.youCastNoncreature],
-      resolution := .createTokens .treasure .blueManaSymbols false .merfolk }
+      resolution := .createTokens .merfolk .blueManaSymbols false }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
       resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo }

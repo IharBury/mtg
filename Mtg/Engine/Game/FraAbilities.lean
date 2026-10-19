@@ -297,12 +297,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     let n := ((g.permanentsOf controller).filter (·.printed.isLand)).size
     g.withLegalKindPermanent controller kind targets (fun g o =>
       if n == 0 then g else g.addPlusOnePlusOneTo o n) sourceId illegal
-  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo =>
+  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _) .ifYouDo =>
     if (g.creaturesControlledBy controller).isEmpty then g
     else
       g.beginFraChoice controller (.maySacrificeThen .creature .beastToken sourceId)
         s!"{(g.player controller).name} may sacrifice a creature"
-  | .createTokens .beast44trample (.fixed 1) false _ _ _ => g.createKindTokens controller .beast44trample 1
+  | .createTokens .beast44trample (.fixed 1) false _ _ => g.createKindTokens controller .beast44trample 1
   | .putCounters .causeCounters .source =>
     match g.resolvingAbilityObject?.bind (·.fraCauseStatus), source? with
     | some st, some o =>

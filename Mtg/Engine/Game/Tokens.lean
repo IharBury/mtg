@@ -424,6 +424,55 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     let g := if k > 0 then g.queueLoyaltyPutTriggers controller else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
+/-- Named MSH tokens that carry extra rules text. -/
+def zabuToken : CardDef :=
+  { (creatureToken "Zabu" #["Cat"] 2 2 (some .green)) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne] }
+
+def redwingToken : CardDef :=
+  { (creatureToken "Redwing" #["Bird", "Scout"] 1 1 (some .blue) Keyword.flying) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.onAttackScry 1] }
+
+def theVoidToken : CardDef :=
+  { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
+      ((Keyword.flying).merge Keyword.indestructible)) with
+    supertypes := #[.legendary]
+    staticAbilities := #[.attacksEachCombatIfAble] }
+
+def galactusAttackTrigger : Effect := {
+  targeting := .of (.filtered { noun := "target land", types := #[.land] })
+  resolution := .onPermanent .destroy
+  phrase := "Whenever Galactus attacks, destroy target land."
+}
+
+def galactusToken : CardDef :=
+  { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
+      ((Keyword.flying).merge Keyword.trample)) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
+
+def tigerGodToken : CardDef :=
+  { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
+    supertypes := #[.legendary]
+    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
+
+def sturdyShieldToken : CardDef :=
+  { name := "Sturdy Shield"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[.equippedCreatureGets 1 2]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 2 }
+        effect := Effect.attachToTargetCreatureYouControl
+        onlyAsSorcery := true }]
+    isToken := true }
+
+/-- 1/1 blue Merfolk creature token (Namora / similar leftover cast triggers). -/
+def merfolk11blueToken : CardDef :=
+  creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
+
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
@@ -467,6 +516,53 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .illusion11blue => creatureToken "Illusion" #["Illusion"] 1 1 (some .blue)
   | .leviathan88hexproof =>
     creatureToken "Leviathan" #["Leviathan"] 8 8 (some .blue) (keywords := Keyword.hexproof)
+  | .axe => axeToken
+  | .zabu => zabuToken
+  | .theVoid => theVoidToken
+  | .redwing => redwingToken
+  | .alien => alien11redHasteToken
+  | .sturdyShield => sturdyShieldToken
+  | .galactus => galactusToken
+  | .merfolk => merfolk11blueToken
+  | .tigerGod => tigerGodToken
+  | .citizen =>
+    { creatureToken "Citizen" #["Citizen"] 1 1 with
+      colorIndicator := some (ColorSet.ofList [.green, .white]) }
+  | .warrior => creatureToken "Warrior" #["Warrior"] 1 1 (some .white)
+  | .insect => creatureToken "Insect" #["Insect"] 2 1 (some .white) (keywords := Keyword.flying)
+  | .myr => creatureToken "Myr" #["Myr"] 1 1 (types := #[.artifact, .creature])
+  | .kobold => creatureToken "Kobolds of Kher Keep" #["Kobold"] 0 1 (some .red)
+  | .mite =>
+    { creatureToken "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
+        (types := #[.artifact, .creature]) with
+      toxic := 1, cantBlock := true }
+  | .shark => creatureToken "Shark" #["Shark"] 0 0 (some .blue) (keywords := Keyword.flying)
+  | .gingerbrute =>
+    { creatureToken "Gingerbrute" #["Food", "Golem"] 1 1
+        (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
+      activatedAbilities := #[
+        { effect := { resolution := .cant (.beBlockedExceptByHaste .source), phrase := "This token can't be blocked this turn except by creatures with haste." }
+          cost := { mana := ManaCost.ofGeneric 1 } },
+        { effect := Effect.gainLife 3
+          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
+  | .angel => creatureToken "Angel" #["Angel"] 4 4 (some .white) (keywords := Keyword.flying)
+  | .human => creatureToken "Human" #["Human"] 1 1 (some .white)
+  | .goblin => creatureToken "Goblin" #["Goblin"] 1 1 (some .red)
+  | .map => {
+      name := "Map"
+      types := #[.artifact]
+      isToken := true
+      activatedAbilities := #[
+        { effect := { resolution := .grant .explored .source, phrase := "You explore." }
+          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
+  | .rogue => creatureToken "Rogue" #["Rogue"] 2 2 (some .black)
+  | .incubator => {
+      name := "Incubator"
+      types := #[.artifact]
+      isToken := true
+      activatedAbilities := #[
+        { effect := { resolution := .grant .transformedIncubator .source, phrase := "Transform this token." }
+          cost := { mana := ManaCost.ofGeneric 2 } } ] }
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)

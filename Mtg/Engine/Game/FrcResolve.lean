@@ -51,51 +51,13 @@ private def creatureTokenOf (name : String) (subtypes : Array String) (p t : Int
     (types : Array CardType := #[.creature]) (toxic : Nat := 0) (cantBlock : Bool := false) : CardDef :=
   { creatureToken name subtypes p t color keywords types with toxic, cantBlock }
 
-private def frcPrinted (k : TriggeredAbility.TriggerToken) (x : Nat) : CardDef :=
+private def frcPrinted (k : TokenKind) (x : Nat) : CardDef :=
   match k with
-  | .citizen =>
-    { creatureTokenOf "Citizen" #["Citizen"] 1 1 with
-      colorIndicator := some (ColorSet.ofList [.green, .white]) }
-  | .warrior => creatureTokenOf "Warrior" #["Warrior"] 1 1 (some .white)
-  | .insect => creatureTokenOf "Insect" #["Insect"] 2 1 (some .white) Keyword.flying
-  | .myr =>
-    creatureTokenOf "Myr" #["Myr"] 1 1 (types := #[.artifact, .creature])
-  | .kobold =>
-    { creatureTokenOf "Kobolds of Kher Keep" #["Kobold"] 0 1 (some .red) with name := "Kobolds of Kher Keep" }
-  | .mite =>
-    creatureTokenOf "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
-      (types := #[.artifact, .creature]) (toxic := 1) (cantBlock := true)
   | .shark =>
     creatureTokenOf "Shark" #["Shark"] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
-  | .gingerbrute =>
-    { creatureTokenOf "Gingerbrute" #["Food", "Golem"] 1 1
-        (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
-      activatedAbilities := #[
-        { effect := { resolution := .cant (.beBlockedExceptByHaste .source), phrase := "This token can't be blocked this turn except by creatures with haste." }
-          cost := { mana := ManaCost.ofGeneric 1 } },
-        { effect := Effect.gainLife 3
-          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
-  | .angel => creatureTokenOf "Angel" #["Angel"] 4 4 (some .white) Keyword.flying
-  | .human => creatureTokenOf "Human" #["Human"] 1 1 (some .white)
-  | .goblin => creatureTokenOf "Goblin" #["Goblin"] 1 1 (some .red)
-  | .map => {
-      name := "Map"
-      types := #[.artifact]
-      isToken := true
-      activatedAbilities := #[
-        { effect := { resolution := .grant .explored .source, phrase := "You explore." }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
-  | .rogue => creatureTokenOf "Rogue" #["Rogue"] 2 2 (some .black)
-  | .incubator => {
-      name := "Incubator"
-      types := #[.artifact]
-      isToken := true
-      activatedAbilities := #[
-        { effect := { resolution := .grant .transformedIncubator .source, phrase := "Transform this token." }
-          cost := { mana := ManaCost.ofGeneric 2 } } ] }
-  | _ => treasureToken
+  | _ => tokenPrinted k
 
-private def makeFrc (g : Game) (p : PlayerId) (k : TriggeredAbility.TriggerToken) (n : Nat := 1) (x : Nat := 0) : Game :=
+private def makeFrc (g : Game) (p : PlayerId) (k : TokenKind) (n : Nat := 1) (x : Nat := 0) : Game :=
   if n == 0 || (g.player p).lost then { g with recentTokenIds := #[] }
   else
     Id.run do
@@ -214,10 +176,10 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
           g.makeFrc owner .human
         | none => g
       | _ => g
-  | .createTokens _ .chosenX false .citizen _ .teamIndestructible =>
+  | .createTokens .citizen .chosenX false _ .teamIndestructible =>
     let g := g.makeFrc controller .citizen (g.spellX)
     some (g.grantUntilEotToControlledCreatures controller Keyword.indestructible "indestructible")
-  | .createTokens .soldier11white .chosenX false .kind _ .destroyOthersIfXAtLeast5 =>
+  | .createTokens .soldier11white .chosenX false _ .destroyOthersIfXAtLeast5 =>
     let x := g.spellX
     let g := g.createKindTokens controller .soldier11white x
     some <|
@@ -225,7 +187,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
         g.destroyIds (g.battlefield.filter (·.isCreature) |>.map (·.id))
           (fun o => !g.recentTokenIds.contains o.id)
       else g
-  | .createTokens _ .chosenX false .mite _ .gainXLifeAndDestroyOthersIf5 =>
+  | .createTokens .mite .chosenX false _ .gainXLifeAndDestroyOthersIf5 =>
     let x := g.spellX
     let g := g.gainLife controller x
     let g := g.makeFrc controller .mite x
@@ -297,7 +259,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
           (additionalCreature := true)
         if first then g.mapObjectStatus (g.object! o.id) (fun s => { s with firstStrikeOnYourTurn := true })
         else g
-  | .createTokens _ (.fixed 1) false .map _ _ =>
+  | .createTokens .map (.fixed 1) false _ _ =>
     some (g.makeFrc controller .map)
   | .sacrifice .archonCruelty _ =>
     some <|
@@ -390,7 +352,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
         | none => false) |>.map (·.id)
     let g := g.destroyIds ids
     some (g.gainLife controller ids.size)
-  | .createTokens _ (.fixed 1) false .angel _ .ifGainedLife =>
+  | .createTokens .angel (.fixed 1) false _ .ifGainedLife =>
     some (if (g.player controller).lifeGainedThisTurn > 0 then g.makeFrc controller .angel else g)
   | .destroy .creaturesPowerAtLeast4 _ =>
     some (g.destroyIds (g.battlefield.filter (fun o => o.isCreature && g.snapshotPower o >= 4) |>.map (·.id)))
@@ -426,7 +388,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
       else g) g
     some (g.modifyPlayer controller (fun q => { q with isMonarch := true })
       |>.logMsg s!"{pl.name} becomes the monarch")
-  | .createTokens _ (.fixed 1) false .gingerbrute _ .ifMonarch =>
+  | .createTokens .gingerbrute (.fixed 1) false _ .ifMonarch =>
     some (if (g.player controller).isMonarch then g.makeFrc controller .gingerbrute else g)
   | .putCounters (.ofKind .stun _) .combatDamagerIfMonarch =>
     some <|
@@ -503,7 +465,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
             return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
         | none => g
       | _ => g
-  | .createTokens _ (.fixed 1) false .goblin _ .ifNotMarduLifelinkHaste =>
+  | .createTokens .goblin (.fixed 1) false _ .ifNotMarduLifelinkHaste =>
     some <|
       match g.srcObj? sourceId with
       | some src =>
@@ -537,7 +499,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
   | .discard .drawOneDiscardOne =>
     let g := g.draw controller
     some (g.handDiscard controller)
-  | .createTokens _ (.fixed 1) false .rogue _ .currencyReturn =>
+  | .createTokens .rogue (.fixed 1) false _ .currencyReturn =>
     some <|
       match g.srcObj? sourceId with
       | none => g
@@ -552,7 +514,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
             let (g, _) := g.move id (.graveyard card.owner) none
             let g := g.setObject { (g.object! src.id) with
               linkedExile := src.linkedExile.filter (· != id) }
-            if land then g.makeFrc controller .kind else g.makeFrc controller .rogue
+            if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
   | .becomeCopy .anyCreatureOnBattlefieldWithHaste =>
     some <|
       match g.srcObj? sourceId with
@@ -569,19 +531,19 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
       g.loseLife pid (g.player pid).lifeLostThisTurn)
   | .amass (.fixed 1) "Zombie" false .youLose1Life =>
     some ((g.loseLife controller 1).amassZombies controller 1)
-  | .createTokens _ (.fixed n) false .myr _ _ =>
+  | .createTokens .myr (.fixed n) false _ _ =>
     some (g.makeFrc controller .myr n.toNat)
-  | .createTokens _ .spellManaValue false .shark _ _ =>
+  | .createTokens .shark .spellManaValue false _ _ =>
     let x :=
       match g.frcCause? with
       | some spell => g.objectManaValue spell
       | none => 0
     some (g.makeFrc controller .shark 1 x)
-  | .createTokens _ .lastKnownPower false .shark _ _ =>
+  | .createTokens .shark .lastKnownPower false _ _ =>
     some (g.makeFrc controller .shark 1 g.knownN)
-  | .createTokens _ (.fixed 1) false .mite _ .lose1Life =>
+  | .createTokens .mite (.fixed 1) false _ .lose1Life =>
     some ((g.loseLife controller 1).makeFrc controller .mite)
-  | .createTokens _ (.fixed n) false .insect _ _ =>
+  | .createTokens .insect (.fixed n) false _ _ =>
     some (g.makeFrc controller .insect n.toNat)
   | .revealLibrary (.top 5) (.returnToHand .factOrFiction _) _ =>
     let lib := (g.player controller).library
@@ -607,11 +569,11 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
         let (g, _) := g.move id (.graveyard controller) none
         g.logMsg s!"{o.name} goes to {pl.name}'s graveyard"
       | none => g) g)
-  | .createTokens _ (.fixed 1) false .kobold _ _ =>
+  | .createTokens .kobold (.fixed 1) false _ _ =>
     some (g.makeFrc controller .kobold)
-  | .createTokens _ .chosenX false .warrior _ _ =>
+  | .createTokens .warrior .chosenX false _ _ =>
     some (g.makeFrc controller .warrior (g.spellX))
-  | .createTokens _ .chosenX false .citizen _ .none =>
+  | .createTokens .citizen .chosenX false _ .none =>
     some (g.makeFrc controller .citizen (g.spellX))
   | .grant .explored .source =>
     let lib := (g.player controller).library

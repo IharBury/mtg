@@ -1542,61 +1542,6 @@ inductive CounterSelector where
   | plusOnePerDiscardAfterDraw
 deriving Repr, Inhabited, BEq
 
-/-- Which token `TriggerResolution.createTokens` creates.
-`.kind` uses the `kind` argument. -/
-inductive TriggerToken where
-  /-- The `kind` argument. -/
-  | kind
-  /-- A colorless Equipment artifact token named Axe. -/
-  | axe
-  /-- Zabu, a legendary 2/2 green Cat. -/
-  | zabu
-  /-- The Void, a legendary 5/5 black Horror Villain. -/
-  | theVoid
-  /-- Redwing, a legendary 1/1 blue Bird Scout. -/
-  | redwing
-  /-- A 1/1 red Alien creature token with haste. -/
-  | alien
-  /-- A colorless Equipment artifact token named Sturdy Shield. -/
-  | sturdyShield
-  /-- Galactus, a legendary 16/16 black Elder Alien with flying and trample. -/
-  | galactus
-  /-- A 1/1 blue Merfolk creature token. With amount `.blueManaSymbols`,
-  the count is the blue mana symbols in the spell that caused this.
-  No blue symbol creates nothing. -/
-  | merfolk
-  /-- The Tiger God, a legendary 4/4 white God creature token. -/
-  | tigerGod
-  /-- A 1/1 green and white Citizen creature token. -/
-  | citizen
-  /-- A 1/1 white Warrior creature token. -/
-  | warrior
-  /-- A 2/1 white Insect creature token with flying. -/
-  | insect
-  /-- A 1/1 colorless Myr artifact creature token. -/
-  | myr
-  /-- A 0/1 red Kobold creature token named Kobolds of Kher Keep. -/
-  | kobold
-  /-- A 1/1 colorless Phyrexian Mite artifact creature token with toxic 1 that can't block. -/
-  | mite
-  /-- An X/X blue Shark creature token with flying. -/
-  | shark
-  /-- A 1/1 colorless Food Golem artifact creature token named Gingerbrute with haste. -/
-  | gingerbrute
-  /-- A 4/4 white Angel creature token with flying. -/
-  | angel
-  /-- A 1/1 white Human creature token. -/
-  | human
-  /-- A 1/1 red Goblin creature token. -/
-  | goblin
-  /-- A colorless Map artifact token. -/
-  | map
-  /-- A 2/2 black Rogue creature token. -/
-  | rogue
-  /-- A colorless Incubator artifact token. -/
-  | incubator
-deriving Repr, Inhabited, BEq
-
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
 inductive TriggerTokenNote where
   /-- The tokens only. -/
@@ -2909,12 +2854,12 @@ inductive Resolution where
   | amass (amount : NumberSelector) (subtype : String := "Goblin")
       (attachSource : Bool := false) (who : PlayerSelector := .you)
   /-- Create tokens. How many is `amount`. Who receives them is a
-  `PlayerSelector`. `token` says which token, and `note` says what a later
+  `PlayerSelector`. `kind` says which token, and `note` says what a later
   step can read.
   `n` of `kind` is `.createTokens kind (.fixed n) tapped`.
-  An Axe is `.createTokens .treasure (.fixed 1) false .axe`.
+  An Axe is `.createTokens .axe (.fixed 1) false`.
   Attaching that Axe is
-  `.createTokens .treasure (.fixed 1) false .axe (note := .attachReflexive)`.
+  `.createTokens .axe (.fixed 1) false (note := .attachReflexive)`.
   Tapped Treasures equal to opposing artifacts are
   `.createTokens .treasure .oppArtifacts true`.
   A Treasure for each artifact the damaged player controls is
@@ -2925,24 +2870,23 @@ inductive Resolution where
   `.createTokens .treasure .lastKnownPower false`.
   Treasures for each creature of a chosen type are
   `.createTokens .treasure .chosenCreatureType false`.
-  Zabu is `.createTokens .treasure (.fixed 1) false .zabu`.
+  Zabu is `.createTokens .zabu (.fixed 1) false`.
   The announced opponent creates The Void with
-  `.createTokens .treasure (.fixed 1) false .theVoid (.target .opponent)`.
-  Redwing is `.createTokens .treasure (.fixed 1) false .redwing`.
+  `.createTokens .theVoid (.fixed 1) false (.target .opponent)`.
+  Redwing is `.createTokens .redwing (.fixed 1) false`.
   An Alien, remembering invasion counters, is
-  `.createTokens .treasure (.fixed 1) false .alien (note := .invasion)`.
+  `.createTokens .alien (.fixed 1) false (note := .invasion)`.
   A Sturdy Shield, remembered for a later attach, is
-  `.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember)`.
+  `.createTokens .sturdyShield (.fixed 1) false (note := .remember)`.
   The target's controller creates a Treasure with
   `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
-  this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
+  this is `.createTokens .merfolk .blueManaSymbols false`.
   Any other count creates that many of the named token for the players
   the selector names. Zero creates nothing. A count that cannot be read
   creates nothing. -/
   | createTokens (kind : TokenKind) (amount : NumberSelector) (tapped : Bool := false)
-      (token : TriggerToken := .kind) (who : PlayerSelector := .you)
-      (note : TriggerTokenNote := .none)
+      (who : PlayerSelector := .you) (note : TriggerTokenNote := .none)
   /-- Attach `what` to `host`.
   The source to the token created by the previous step is
   `.attach .source .createdToken`.
@@ -3306,11 +3250,11 @@ def isFra : Resolution → Bool
   | .putOnLibrary (.topAfterDraw _ _) .cardFromHand | .exile .target .forLater .despark => true
   | .exile .target .forLater .controllerMaySearchBasic | .exile .target .forLater .controllerGainsLifePower => true
   | .destroy .target .controllerCreatesHuman | .discard .drawAndDiscardXCreateSpiritPerType => true
-  | .createTokens _ _ _ .citizen _ _ | .createTokens _ _ _ .warrior _ _ | .createTokens _ _ _ .insect _ _ => true
-  | .createTokens _ _ _ .myr _ _ | .createTokens _ _ _ .kobold _ _ | .createTokens _ _ _ .mite _ _ => true
-  | .createTokens _ _ _ .shark _ _ | .createTokens _ _ _ .gingerbrute _ _ | .createTokens _ _ _ .angel _ _ => true
-  | .createTokens _ _ _ .human _ _ | .createTokens _ _ _ .goblin _ _ | .createTokens _ _ _ .map _ _ => true
-  | .createTokens _ _ _ .rogue _ _ | .createTokens _ _ _ .incubator _ _ | .createTokens _ _ _ _ _ .destroyOthersIfXAtLeast5 => true
+  | .createTokens .citizen _ _ _ _ | .createTokens .warrior _ _ _ _ | .createTokens .insect _ _ _ _ => true
+  | .createTokens .myr _ _ _ _ | .createTokens .kobold _ _ _ _ | .createTokens .mite _ _ _ _ => true
+  | .createTokens .shark _ _ _ _ | .createTokens .gingerbrute _ _ _ _ | .createTokens .angel _ _ _ _ => true
+  | .createTokens .human _ _ _ _ | .createTokens .goblin _ _ _ _ | .createTokens .map _ _ _ _ => true
+  | .createTokens .rogue _ _ _ _ | .createTokens .incubator _ _ _ _ | .createTokens _ _ _ _ .destroyOthersIfXAtLeast5 => true
   | .exile .allCreatures .forLater .incubateCount | .exile .creaturesYouControl .forLater .revealCreaturesToBattlefield => true
   | .exile .creaturesYouControl .forLater .revealCreaturesAtEndStep | .searchLibrary (.put (.basicSubtypesUntapAt _ _) _ _) => true
   | .putOnLibrary .bottomRevealCreature .target | .grant (.animateLand _ _ _ _) .source | .sacrifice .archonCruelty _ => true
@@ -3354,9 +3298,9 @@ def isFra : Resolution → Bool
   | .putOnLibrary .bottom .graveyardCard => true
   | .may (.searchLibrary (.put .basicLand .tapped _)) (.sequence []) _ => true
   | .may (.searchLibrary (.put .landsEqualDamage .tapped _)) (.sequence []) _ => true
-  | .may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true _ _ _) .ifYouDo => true
+  | .may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true _ _) .ifYouDo => true
   | .may (.sacrifice .creatureOrPlaneswalker) (.sacrifice .eachOpponentsCreature _) .ifYouDo => true
-  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo => true
+  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _) .ifYouDo => true
   | .may (.discard (.cards 1 .you)) (.searchLibrary (.returnToHand .enchantmentCard _)) .ifYouDo => true
   | .may (.discard (.cards 1 .you)) (.queueReflexive (.dealDamage (.fixed _) .target _)) .ifYouDo => true
   | .may (.pay (.mana #[.generic _])) (.queueReflexive (.destroy (.target .eachPermanent) _)) .ifYouDo => true
@@ -3888,15 +3832,15 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
   | .revealLibrary (.top n) (.put .creaturesYouControl _ _) _ =>
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | .createTokens kind .chosenX _ _ _ _ =>
+  | .createTokens kind .chosenX _ _ _ =>
     s!"create X {kind.pluralNoun}"
-  | .createTokens kind (.perSubtype subtype) _ _ _ _ =>
+  | .createTokens kind (.perSubtype subtype) _ _ _ =>
     s!"Create a {kind.oracleNoun} for each {subtype} you control"
-  | .createTokens .treasure (.fixed 1) false .galactus .you .none =>
+  | .createTokens .galactus (.fixed 1) false .you .none =>
     "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-  | .createTokens kind (.fixed n) _ .kind .you _ =>
+  | .createTokens kind (.fixed n) _ .you _ =>
     TokenKind.createPhrase kind n.toNat
-  | .createTokens kind (.fixed n) _ .kind .player _ =>
+  | .createTokens kind (.fixed n) _ .player _ =>
     s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
   | .returnToHand .eachPermanent _ =>
     "return one or two target nonland permanents to their owners' hands"
@@ -3972,7 +3916,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw (.fixed 1), .loseLife (.fixed 1), .amass (.fixed n) subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind (.fixed n) _ .kind .you _, .pump (.fixed p) (.fixed t) .creaturesYouControl] =>
+  | [.createTokens kind (.fixed n) _ .you _, .pump (.fixed p) (.fixed t) .creaturesYouControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n.toNat)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife (.fixed n) .you] =>

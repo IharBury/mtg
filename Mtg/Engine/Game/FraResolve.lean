@@ -410,7 +410,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else
         g.beginFraChoice controller (.exileFromRevealedHand pid sourceId)
           s!"{(g.player controller).name} chooses a nonland card to exile") sourceId illegal
-  | .may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true _ _ _) .ifYouDo =>
+  | .may (.sacrifice .land) (.createTokens .heartwood (.fixed 2) true _ _) .ifYouDo =>
     if (g.permanentsOf controller).any (·.printed.isLand) then
       g.beginFraChoice controller (.maySacrificeThen .land (.tappedHeartwoods 2) sourceId)
         s!"{(g.player controller).name} may sacrifice a land"
@@ -666,7 +666,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.beginLibrarySearch controller (·.isLand) "a land card" (.battlefield true) (count := n)
   | .searchLibrary (.returnToHand .enchantmentCard _) =>
     g.resolveLibrarySearchToHand controller (·.isEnchantment) "enchantment card"
-  | .createTokens .heartwood (.fixed n) true _ _ _ => g.createKindTokens controller .heartwood n.toNat (tapped := true)
+  | .createTokens .heartwood (.fixed n) true _ _ => g.createKindTokens controller .heartwood n.toNat (tapped := true)
   | .sacrifice .eachOpponentsCreature _ =>
     g.beginSacrificeCreatures ((g.livingOpponents controller).map (·.id)) #[]
   | .queueReflexive (.dealDamage (.fixed n) .target _) =>
@@ -716,8 +716,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .untap (.target .eachPermanent)
   | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn
   | .putCounters .plusOnePerLand .target
-  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo
-  | .createTokens .beast44trample (.fixed 1) false _ _ _
+  | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _) .ifYouDo
+  | .createTokens .beast44trample (.fixed 1) false _ _
   | .pump (.fixed _) (.fixed _) (.cause none)
   | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample
   | .putCounters .causeCounters .source

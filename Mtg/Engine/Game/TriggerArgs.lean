@@ -565,9 +565,9 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
 
 /-- Recipients of a created token. The Void with no announced opponent is
 created for the controller. -/
-def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.TriggerToken)
+def tokenRecipients (g : Game) (ctx : TriggerRead) (kind : TokenKind)
     (who : TriggeredAbility.PlayerSelector) : Array PlayerId :=
-  match who, token with
+  match who, kind with
   | .target .opponent, .theVoid =>
     match ctx.targets.findSome? fun
       | Target.player pid => some pid

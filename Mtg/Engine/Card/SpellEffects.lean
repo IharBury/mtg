@@ -613,7 +613,7 @@ def destroyUpToOneNonland : Effect :=
     (allowsZeroTargets := true)
 
 def createGalactus : Effect :=
-  mkSpell (.of .none) (.createTokens .treasure (.fixed 1) false .galactus)
+  mkSpell (.of .none) (.createTokens .galactus (.fixed 1) false)
     (castKind := .extraLand)
 
 def worldsWithinWorlds : Effect :=
@@ -986,7 +986,7 @@ def plusOneAndGrant (k : Keywords) : Effect :=
 
 def plusOneAndCreateTigerGod : Effect :=
   mkAbility ({})
-    (.sequence [.onSource (.plusOne 1), .createTokens .treasure (.fixed 1) false .tigerGod])
+    (.sequence [.onSource (.plusOne 1), .createTokens .tigerGod (.fixed 1) false])
     (phraseOverride := some
       "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\"")
 

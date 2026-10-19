@@ -32,10 +32,6 @@ def lastStackSpell? (g : Game) : Option GameObject :=
       if o.triggeredAbility.isNone && o.abilityEffect.isNone then some o else acc
     | none => acc) none
 
-/-- 1/1 blue Merfolk creature token (Namora / similar leftover cast triggers). -/
-def merfolk11blueToken : CardDef :=
-  creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
-
 /-- Exile from `pid`'s library until a nonland is exiled. -/
 def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option ObjectId :=
   Id.run do
