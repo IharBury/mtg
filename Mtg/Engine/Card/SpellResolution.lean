@@ -1240,6 +1240,110 @@ namespace ObjectSelector
 end ObjectSelector
 
 
+/-- Characteristic, power/toughness, mana value, and counter numbers (CR 202.3 / CR 208). -/
+inductive StatNumber where
+  /-- The source's toughness. -/
+  | equalSourceToughness
+  /-- The source's power. -/
+  | equalSourcePower
+  /-- This statistic's current value, which doubles it. -/
+  | double
+  /-- The source's last-known power. -/
+  | lastKnownPower
+  /-- The greatest mana value among artifacts the controller controls. -/
+  | greatestArtifactMv
+  /-- The mana value of the spell that caused this, including the chosen value of X. -/
+  | spellManaValue
+  /-- X cards, where X is the mana spent to cast the triggering spell. -/
+  | equalToManaSpent
+  /-- The number of +1/+1 counters on the source. -/
+  | plusOneCounters
+  /-- The targeted card's power. -/
+  | equalToTargetPower
+  /-- One life for each burden counter on the source. -/
+  | perBurden
+  /-- The printed mana types, once for each charge counter on the source. -/
+  | perChargeCounter
+  /-- One 1/1 blue Merfolk for each blue mana symbol in the spell that caused this. -/
+  | blueManaSymbols
+  /-- X, chosen as the spell was cast. -/
+  | chosenX
+  /-- The power of the creature that caused this trigger. -/
+  | causePower
+  /-- Greatest power among creatures you control, losing life equal to cards drawn. -/
+  | greatestPowerAndLoseLife
+  /-- Greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield. -/
+  | greatestToughnessThenPutCreatures
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Zone, permanent, subtype, and feature counts (CR 109 / CR 400). -/
+inductive CountNumber where
+  /-- One for each other creature the controller controls. -/
+  | perOtherCreature
+  /-- One for each Plains the controller controls. -/
+  | perPlains
+  /-- How many permanents of this subtype the controller controls. -/
+  | subtypeCount (subtype : String)
+  /-- One card for each graveyard with seven or more cards. -/
+  | perFatGraveyard
+  /-- One card for each permanent of this type the controller controls. -/
+  | perControlled (ty : CardType)
+  /-- Enough cards that the controller's hand has `n` cards. -/
+  | upToHandSize (n : Nat)
+  /-- One for each Equipment attached to the source. -/
+  | attachedEquipment
+  /-- One tapped Treasure for each artifact opponents control. -/
+  | oppArtifacts
+  /-- One Treasure for each artifact the damaged player controls. -/
+  | damagedPlayerArtifacts
+  /-- One Treasure for each creature the controller controls of a chosen type. -/
+  | chosenCreatureType
+  /-- One token for each permanent of this subtype the controller controls. -/
+  | perSubtype (subtype : String)
+  /-- How many cards are in the controller's library. -/
+  | libraryCards
+  /-- Minus X, where X is the number of cards in the controller's graveyard. -/
+  | minusGraveyardCards
+  /-- The number of colors among other artifacts the controller controls. -/
+  | colorsAmongOtherArtifacts
+  /-- The number of planeswalker types among planeswalkers the controller controls. -/
+  | planeswalkerTypes
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Step-noted and turn-history numbers (CR 608 / CR 700). -/
+inductive TurnEventNumber where
+  /-- One for each card looked at while scrying. -/
+  | perLookedAt
+  /-- How many cards an earlier step discarded from the controller's hand. -/
+  | discardedHand
+  /-- One card for each Human tapped by an earlier step. -/
+  | forEachTappedHuman
+  /-- One for each permanent an earlier step destroyed. -/
+  | forEachDestroyedThisWay
+  /-- The life that player lost. -/
+  | thatManyLost
+  /-- Excess damage an earlier step recorded. -/
+  | notedExcess
+  /-- The power an earlier step recorded when it destroyed a creature. -/
+  | notedPower
+  /-- How many cards the controller has drawn this turn. -/
+  | cardsDrawnThisTurn
+  /-- The total mana value of other spells the controller has cast this turn. -/
+  | otherSpellsManaValue
+  /-- The number of +1/+1 counters removed to activate this ability. -/
+  | removedPlusOnes
+  /-- The amount of life the controller gained this turn. -/
+  | lifeGainedThisTurn
+  /-- The number of cards the controller has discarded this turn. -/
+  | cardsDiscardedThisTurn
+  /-- The number of cards put into the targeted player's graveyard from their library this turn. -/
+  | milledByTargetPlayerThisTurn
+  /-- The number of creatures that died this turn. -/
+  | creaturesDiedThisTurn
+  /-- The amount of life that player lost this turn. -/
+  | lifeLostThisTurn
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards
 `TriggerResolution.scry` looks at, how many cards `TriggerResolution.draw`
@@ -1268,177 +1372,79 @@ and toughness `TriggerResolution.becomePT` sets, how many permanents
 inductive NumberSelector where
   /-- The greatest power among creatures the controller controls. -/
   | greatestPower
-  /-- One for each card looked at while scrying. -/
-  | perLookedAt
-  /-- One for each other creature the controller controls.
-  The source is not included.
-  +1/+1 is `.pump .perOtherCreature .perOtherCreature .source`.
-  1 life is `.gainLife .perOtherCreature`. -/
-  | perOtherCreature
-  /-- One for each Plains the controller controls. -/
-  | perPlains
   /-- A fixed bonus of `n`, `n` damage, scry `n`, draw `n`, a base of `n`,
   `n` life gained, `n` life lost, mill `n`, amass `n`, or add mana
-  `n` times.
-  A base of `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
-  You gain `n` life is `.gainLife (.fixed n)`.
-  You lose `n` life is `.loseLife (.fixed n)`.
-  You mill `n` cards is `.mill (.fixed n)`.
-  You amass Goblins `n` is `.amass (.fixed n)`.
-  Adding the printed mana `n` times is `.addMana types (.fixed n)`.
-  Once is `.addMana types`.
-  Discarding `n` cards is `.discard (.fixed n) .card`.
-  Discarding `n` nonland cards is `.discard (.fixed n) .nonland`. -/
+  `n` times. -/
   | fixed (n : Int)
-  /-- The source's toughness.
-  Another creature's base toughness becomes this toughness with
-  `.setBasePT .equalSourcePower .equalSourceToughness`. -/
-  | equalSourceToughness
-  /-- The source's power.
-  Another creature's base power becomes this power with
-  `.setBasePT .equalSourcePower .equalSourceToughness`. -/
-  | equalSourcePower
-  /-- This statistic's current value, which doubles it.
-  Doubling the announced permanent is `.pump .double .double .target`. -/
-  | double
-  /-- The source's last-known power.
-  Amass that many is `.amass .lastKnownPower`.
-  A missing power is zero. -/
-  | lastKnownPower
-  /-- How many permanents of this subtype the controller controls. -/
-  | subtypeCount (subtype : String)
-  /-- How many cards an earlier step discarded from the controller's hand.
-  Damage to each opponent is `.dealDamage .discardedHand (.player .eachOpponent)`.
-  Drawing that many is `.draw .discardedHand`. -/
-  | discardedHand
-  /-- The greatest mana value among artifacts the controller controls. -/
-  | greatestArtifactMv
-  /-- The mana value of the spell that caused this, including the chosen
-  value of X. A spell that has left the stack uses the trigger's last-known
-  power, then the newest spell on the stack, then a mana value recorded
-  for this turn. None of those is zero. -/
-  | spellManaValue
-  /-- One card for each Human tapped by an earlier step.
-  `.draw .forEachTappedHuman`. -/
-  | forEachTappedHuman
-  /-- One card for each graveyard with seven or more cards.
-  `.draw .perFatGraveyard`. -/
-  | perFatGraveyard
-  /-- X cards, where X is the mana spent to cast the triggering spell.
-  Spending none skips the later steps of a draw sequence.
-  `.draw .equalToManaSpent`. -/
-  | equalToManaSpent
-  /-- One card for each permanent of this type the controller controls.
-  `.draw (.perControlled ty)`. -/
-  | perControlled (ty : CardType)
-  /-- Enough cards that the controller's hand has `n` cards.
-  A hand that already has `n` draws nothing.
-  `.draw (.upToHandSize n)`. -/
-  | upToHandSize (n : Nat)
-  /-- The number of +1/+1 counters on the source.
-  A source that has left queues no reflexive damage from this amount.
-  `.dealDamage .plusOneCounters .target`. -/
-  | plusOneCounters
-  /-- The targeted card's power.
-  Inside `sequence`, that power is read when the sequence starts, before an
-  earlier step moves the card.
-  `.gainLife .equalToTargetPower`. -/
-  | equalToTargetPower
-  /-- One for each permanent an earlier step destroyed.
-  Indestructible permanents and shield counters do not count.
-  `.gainLife .forEachDestroyedThisWay`. -/
-  | forEachDestroyedThisWay
-  /-- One for each Equipment attached to the source.
-  A source that has left uses its last-known power as that count.
-  Zero gains nothing.
-  `.gainLife .attachedEquipment`.
-  Each opponent loses that much with `.loseLife .attachedEquipment .eachOpponent`. -/
-  | attachedEquipment
-  /-- One life for each burden counter on the source.
-  A source that can no longer be found loses nothing.
-  `.loseLife .perBurden`. -/
-  | perBurden
-  /-- The life that player lost. The amount is the trigger's last-known
-  power. A missing amount mills nothing.
-  `.mill .thatManyLost .thatPlayer`. -/
-  | thatManyLost
-  /-- Excess damage an earlier step recorded. Zero excess amasses nothing.
-  `.amass .notedExcess`. -/
-  | notedExcess
-  /-- The power an earlier step recorded when it destroyed a creature.
-  No destruction amasses nothing.
-  The noted controller amasses that many with
-  `.amass .notedPower (who := .controller .target)`. -/
-  | notedPower
-  /-- The printed mana types, once for each charge counter on the source.
-  A source that has left uses its last-known charge counters.
-  Zero counters add nothing.
-  `.addMana #[.colored .green] .perChargeCounter`. -/
-  | perChargeCounter
-  /-- One tapped Treasure for each artifact opponents control.
-  `.createTokens .treasure .oppArtifacts true`. -/
-  | oppArtifacts
-  /-- One Treasure for each artifact the damaged player controls.
-  `.createTokens .treasure .damagedPlayerArtifacts false`. -/
-  | damagedPlayerArtifacts
-  /-- One Treasure for each creature the controller controls of a chosen type.
-  `.createTokens .treasure .chosenCreatureType false`. -/
-  | chosenCreatureType
-  /-- One token for each permanent of this subtype the controller controls.
-  `.createTokens kind (.perSubtype subtype) false`. -/
-  | perSubtype (subtype : String)
-  /-- One 1/1 blue Merfolk for each blue mana symbol in the spell that
-  caused this. No such spell, or no blue symbol, creates nothing.
-  `.createTokens .treasure .blueManaSymbols false .merfolk`. -/
-  | blueManaSymbols
-  /-- How many objects `what` names.
-  A selector that does not name a counted set is not a number.
-  Quest counters are counted only while the source is on the battlefield.
-  A missing source, or one that has left, is not a number.
-  At least one legendary creature you control is
-  `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`. -/
+  /-- How many objects `what` names. -/
   | count (what : ObjectSelector)
-  /-- How many cards the controller has drawn this turn.
-  At least two is `.atLeast .cardsDrawnThisTurn (.fixed 2)`. -/
-  | cardsDrawnThisTurn
-  /-- How many cards are in the controller's library.
-  A card remains is `.atLeast .libraryCards (.fixed 1)`.
-  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`. -/
-  | libraryCards
-  /-- X, chosen as the spell was cast.
-  `.createTokens kind .chosenX`. -/
-  | chosenX
-  /-- The power of the creature that caused this trigger. -/
-  | causePower
-  /-- Minus X, where X is the number of cards in the controller's graveyard. -/
-  | minusGraveyardCards
-  /-- The total mana value of other spells the controller has cast this turn. -/
-  | otherSpellsManaValue
-  /-- The number of +1/+1 counters removed to activate this ability. -/
-  | removedPlusOnes
-  /-- The amount of life the controller gained this turn. -/
-  | lifeGainedThisTurn
-  /-- The number of cards the controller has discarded this turn. -/
-  | cardsDiscardedThisTurn
-  /-- The number of cards put into the targeted player's graveyard from their library this turn. -/
-  | milledByTargetPlayerThisTurn
-  /-- The number of colors among other artifacts the controller controls. -/
-  | colorsAmongOtherArtifacts
   /-- The power of `of`. -/
   | power (of : ObjectSelector)
   /-- The loyalty counters on `of`. -/
   | loyalty (of : ObjectSelector := .source)
-  /-- The number of planeswalker types among planeswalkers the controller controls. -/
-  | planeswalkerTypes
-  /-- The number of creatures that died this turn. -/
-  | creaturesDiedThisTurn
-  /-- Greatest power among creatures you control, losing life equal to cards drawn. -/
-  | greatestPowerAndLoseLife
-  /-- Greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield. -/
-  | greatestToughnessThenPutCreatures
-  /-- The amount of life that player lost this turn. -/
-  | lifeLostThisTurn
+  /-- Characteristic, power/toughness, mana value, or counter number (CR 202.3 / CR 208). -/
+  | stat (s : StatNumber)
+  /-- Zone, permanent, subtype, or feature count (CR 109 / CR 400). -/
+  | countKind (c : CountNumber)
+  /-- Step-noted or turn-history number (CR 608 / CR 700). -/
+  | turnEvent (e : TurnEventNumber)
 deriving Repr, Inhabited, BEq
+
+namespace NumberSelector
+
+-- StatNumber aliases
+@[match_pattern] abbrev equalSourceToughness : NumberSelector := .stat .equalSourceToughness
+@[match_pattern] abbrev equalSourcePower : NumberSelector := .stat .equalSourcePower
+@[match_pattern] abbrev double : NumberSelector := .stat .double
+@[match_pattern] abbrev lastKnownPower : NumberSelector := .stat .lastKnownPower
+@[match_pattern] abbrev greatestArtifactMv : NumberSelector := .stat .greatestArtifactMv
+@[match_pattern] abbrev spellManaValue : NumberSelector := .stat .spellManaValue
+@[match_pattern] abbrev equalToManaSpent : NumberSelector := .stat .equalToManaSpent
+@[match_pattern] abbrev plusOneCounters : NumberSelector := .stat .plusOneCounters
+@[match_pattern] abbrev equalToTargetPower : NumberSelector := .stat .equalToTargetPower
+@[match_pattern] abbrev perBurden : NumberSelector := .stat .perBurden
+@[match_pattern] abbrev perChargeCounter : NumberSelector := .stat .perChargeCounter
+@[match_pattern] abbrev blueManaSymbols : NumberSelector := .stat .blueManaSymbols
+@[match_pattern] abbrev chosenX : NumberSelector := .stat .chosenX
+@[match_pattern] abbrev causePower : NumberSelector := .stat .causePower
+@[match_pattern] abbrev greatestPowerAndLoseLife : NumberSelector := .stat .greatestPowerAndLoseLife
+@[match_pattern] abbrev greatestToughnessThenPutCreatures : NumberSelector := .stat .greatestToughnessThenPutCreatures
+
+-- CountNumber aliases
+@[match_pattern] abbrev perOtherCreature : NumberSelector := .countKind .perOtherCreature
+@[match_pattern] abbrev perPlains : NumberSelector := .countKind .perPlains
+@[match_pattern] abbrev subtypeCount (subtype : String) : NumberSelector := .countKind (.subtypeCount subtype)
+@[match_pattern] abbrev perFatGraveyard : NumberSelector := .countKind .perFatGraveyard
+@[match_pattern] abbrev perControlled (ty : CardType) : NumberSelector := .countKind (.perControlled ty)
+@[match_pattern] abbrev upToHandSize (n : Nat) : NumberSelector := .countKind (.upToHandSize n)
+@[match_pattern] abbrev attachedEquipment : NumberSelector := .countKind .attachedEquipment
+@[match_pattern] abbrev oppArtifacts : NumberSelector := .countKind .oppArtifacts
+@[match_pattern] abbrev damagedPlayerArtifacts : NumberSelector := .countKind .damagedPlayerArtifacts
+@[match_pattern] abbrev chosenCreatureType : NumberSelector := .countKind .chosenCreatureType
+@[match_pattern] abbrev perSubtype (subtype : String) : NumberSelector := .countKind (.perSubtype subtype)
+@[match_pattern] abbrev libraryCards : NumberSelector := .countKind .libraryCards
+@[match_pattern] abbrev minusGraveyardCards : NumberSelector := .countKind .minusGraveyardCards
+@[match_pattern] abbrev colorsAmongOtherArtifacts : NumberSelector := .countKind .colorsAmongOtherArtifacts
+@[match_pattern] abbrev planeswalkerTypes : NumberSelector := .countKind .planeswalkerTypes
+
+-- TurnEventNumber aliases
+@[match_pattern] abbrev perLookedAt : NumberSelector := .turnEvent .perLookedAt
+@[match_pattern] abbrev discardedHand : NumberSelector := .turnEvent .discardedHand
+@[match_pattern] abbrev forEachTappedHuman : NumberSelector := .turnEvent .forEachTappedHuman
+@[match_pattern] abbrev forEachDestroyedThisWay : NumberSelector := .turnEvent .forEachDestroyedThisWay
+@[match_pattern] abbrev thatManyLost : NumberSelector := .turnEvent .thatManyLost
+@[match_pattern] abbrev notedExcess : NumberSelector := .turnEvent .notedExcess
+@[match_pattern] abbrev notedPower : NumberSelector := .turnEvent .notedPower
+@[match_pattern] abbrev cardsDrawnThisTurn : NumberSelector := .turnEvent .cardsDrawnThisTurn
+@[match_pattern] abbrev otherSpellsManaValue : NumberSelector := .turnEvent .otherSpellsManaValue
+@[match_pattern] abbrev removedPlusOnes : NumberSelector := .turnEvent .removedPlusOnes
+@[match_pattern] abbrev lifeGainedThisTurn : NumberSelector := .turnEvent .lifeGainedThisTurn
+@[match_pattern] abbrev cardsDiscardedThisTurn : NumberSelector := .turnEvent .cardsDiscardedThisTurn
+@[match_pattern] abbrev milledByTargetPlayerThisTurn : NumberSelector := .turnEvent .milledByTargetPlayerThisTurn
+@[match_pattern] abbrev creaturesDiedThisTurn : NumberSelector := .turnEvent .creaturesDiedThisTurn
+@[match_pattern] abbrev lifeLostThisTurn : NumberSelector := .turnEvent .lifeLostThisTurn
+
+end NumberSelector
 
 instance : Coe Nat NumberSelector where
   coe n := .fixed (Int.ofNat n)
@@ -1458,206 +1464,48 @@ inductive CostSelector where
   `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
   `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
   | mana (symbols : Array ManaSymbol)
-  /-- Sacrifice `n` permanents `what` names.
-  Sacrificing another creature is `.sacrifice (.fixed 1) .another`.
-  Its power is noted for
-  `TriggerResolution.putCounters .plusOneSacrificedPower`.
-  Sacrificing another creature or artifact is
-  `.sacrifice (.fixed 1) .anotherCreatureOrArtifact`.
-  Sacrificing an artifact is `.sacrifice (.fixed 1) .artifact`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other positive count offers that many permanents `what` names.
-  A count that is not a positive number pays nothing.
-  Fewer permanents than that count pays nothing.
-  A selector that does not name permanents pays nothing.
-  A card or a hand is not sacrificed. -/
+  /-- Sacrifice `n` permanents `what` names. -/
   | sacrifice (n : NumberSelector) (what : ObjectSelector)
-  /-- Discard `n` cards `what` names.
-  Discarding a card is `.discard (.fixed 1) .card`.
-  Discarding a nonland card is `.discard (.fixed 1) .nonland`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other positive count offers that many cards `what` names.
-  A count that is not a positive number pays nothing.
-  Fewer cards than that count pays nothing.
-  A selector that does not name cards in hand pays nothing.
-  A permanent is not discarded. -/
+  /-- Discard `n` cards `what` names. -/
   | discard (n : NumberSelector) (what : ObjectSelector)
-  /-- Pay any one of `costs`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other list offers each cost that can be paid. One payable cost
-  is that cost. Several are a choice of which to pay. None pays nothing. -/
+  /-- Pay any one of `costs`. -/
   | or (costs : List CostSelector)
 deriving Repr, Inhabited, BEq
 
-/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
-`not` negates another condition. `or` holds when any of its conditions hold.
-`atLeast` holds when its first number is at least its second. -/
-inductive ConditionSelector where
-  /-- The first number is at least the second.
-  Each number is a `NumberSelector`. `.fixed` is a printed number.
-  `.count` is how many objects an `ObjectSelector` names.
-  You control a legendary creature is
-  `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`.
-  Controlling none is
-  `.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))`.
-  You control at least `n` lands is
-  `.atLeast (.count .landsYouControl) (.fixed n)`.
-  Fewer than six is reported.
-  You control a planeswalker is
-  `.atLeast (.count .planeswalkersYouControl) (.fixed 1)`.
-  Controlling one is reported.
-  Controlling none is
-  `.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))`.
-  You control at least `n` Forests other than the one that caused this is
-  `.atLeast (.count .forestsExceptCause) (.fixed n)`.
-  Fewer than five is reported.
-  You control at least `n` Bears is
-  `.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed n)`.
-  You control at least `n` permanents of this subtype is
-  `.atLeast (.count (.youControl (.subtype subtype))) (.fixed n)`.
-  The source has at least `n` quest counters is
-  `.atLeast (.count .questCounters) (.fixed n)`.
-  A missing source is reported. A source that has left is reported.
-  You control a Hero other than the source is
-  `.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)`.
-  This Equipment is attached to a legendary creature you control is
-  `.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)`.
-  A missing Equipment is reported.
-  The target is a creature is
-  `.atLeast (.count (.target .creature)) (.fixed 1)`.
-  The target is a planeswalker is
-  `.atLeast (.count (.target .planeswalker)) (.fixed 1)`.
-  An illegal target is reported.
-  Your graveyard has at least `n` creature cards is
-  `.atLeast (.count .creatureCardsInGraveyard) (.fixed n)`.
-  The targeted permanent has this subtype and is not the source is
-  `.atLeast (.count (.target (.anotherSubtype subtype))) (.fixed 1)`.
-  The artifact an earlier step put from hand is Equipment is
-  `.atLeast (.count .putEquipment) (.fixed 1)`.
-  An artifact that is not Equipment clears that note.
-  The source is harnessed is
-  `.atLeast (.count .harnessedSource) (.fixed 1)`.
-  An unharnessed source is reported. A missing source does nothing.
-  The source is on the battlefield and attacking is
-  `.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)`.
-  A missing source does not hold.
-  Any other counted selector is the number of objects it names.
-  A count that cannot be read does not hold.
-  A selector that does not name a counted set does not hold.
-  You have drawn at least `n` cards this turn is
-  `.atLeast .cardsDrawnThisTurn (.fixed n)`.
-  At least `n` loyalty counters were removed to activate this ability is
-  `.atLeast .lastKnownPower (.fixed n)`.
-  That count is the ability's last-known power. A missing power is zero.
-  Your library still has a card is
-  `.atLeast .libraryCards (.fixed 1)`.
-  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`.
-  The source's power as this ability resolves is at least `n` is
-  `.atLeast .equalSourcePower (.fixed n)`.
-  A source that has left uses its last-known power.
-  Power below 4 is reported as Viv Vision's.
-  Any other pair compares the two numbers.
-  A number that cannot be read does not hold. -/
-  | atLeast (left right : NumberSelector)
-  /-- `cond` does not hold.
-  Controlling no legendary creature is
-  `.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))`.
-  The source on the battlefield with no hope counters is `.not .hopeOnSource`.
-  Controlling no planeswalker is
-  `.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))`.
-  An empty library is `.not (.atLeast .libraryCards (.fixed 1))`. -/
-  | not (cond : ConditionSelector)
-  /-- Any of `conds` holds. Once one holds, later conditions are not checked.
-  Attacking with a Hero, or a Hero entering, is
-  `.or [.attackedWithSubtype "Hero", .subtypeEntered "Hero"]`.
-  Having scried or surveilled is
-  `.or [.scriedThisTurn, .surveilledThisTurn]`.
-  Greater power or toughness is
-  `.or [.causeGreaterPower, .causeGreaterToughness]`. -/
-  | or (conds : List ConditionSelector)
-  /-- An earlier step removed a hope counter. -/
-  | removedHope
-  /-- The source is missing, has left the battlefield, or has a hope counter.
-  On the battlefield with none, this does not hold.
-  No hope counters on that permanent is `.not .hopeOnSource`. -/
+/-- Permanent, source, and target state conditions (CR 110 / CR 205 / CR 208). -/
+inductive StateCondition where
+  /-- The source is missing, has left the battlefield, or has a hope counter. -/
   | hopeOnSource
-  /-- An earlier step dealt damage to a permanent of this subtype. -/
-  | dealtDamageToSubtype (subtype : String)
-  /-- You attacked with a permanent of this subtype this turn.
-  A Hero that left after attacking still counts.
-  Attacking with a Hero, or a Hero entering, is
-  `.or [.attackedWithSubtype "Hero", .subtypeEntered "Hero"]`. -/
-  | attackedWithSubtype (subtype : String)
-  /-- A permanent of this subtype entered under your control this turn.
-  A Hero that left after entering still counts. -/
-  | subtypeEntered (subtype : String)
-  /-- An earlier step returned a permanent to its owner's hand. -/
-  | returnedPermanent
-  /-- `noteResolveThisTurn` recorded ordinal `n`. -/
-  | nthResolve (n : Nat)
-  /-- You controlled the creature an earlier step destroyed. -/
-  | youControlledDestroyed
-  /-- You have an enduring story, and an earlier step discarded your hand. -/
-  | enduringStoryNoted
-  /-- An earlier `.sacrifice .source .noted` sacrificed the source. -/
-  | sourceWasSacrificed
-  /-- An earlier `.sacrifice .plan .forReflexive` sacrificed the Plan.
-  Checking this consumes that note. -/
-  | planWasSacrificed
-  /-- An earlier step attached Equipment to a creature that is still in play. -/
-  | equipmentAttached
-  /-- `.mill` noted `.opponentsMilled`: an opponent milled a card. -/
-  | opponentsMilled
-  /-- You have scried this turn.
-  Scry 0 does not count.
-  Having scried or surveilled is
-  `.or [.scriedThisTurn, .surveilledThisTurn]`. -/
-  | scriedThisTurn
-  /-- You have surveilled this turn.
-  Surveil 0 does not count. -/
-  | surveilledThisTurn
-  /-- The card `revealLibrary .untilCreature` revealed has mana value at
-  most the lands the controller controls. Outside that resolution, the
-  condition does not hold. -/
-  | revealedManaValueAtMostLands
-  /-- An artifact entered the battlefield under your control this turn.
-  None did is reported. -/
-  | artifactEnteredThisTurn
-  /-- Equipment is attached to the source, or its last-known power is
-  positive when the source has left. None is reported. -/
+  /-- Equipment is attached to the source, or its last-known power is positive when the source has left. -/
   | attachedEquipment
-  /-- An earlier Enrage trigger noted an additional combat phase.
-  Checking this consumes that note. -/
-  | enrageGrantsCombat
-  /-- The creature that caused this has greater power than the source.
-  An announced permanent is used when one was chosen; otherwise the
-  recorded cause. A missing source is reported. No cause does not hold.
-  The source itself does not hold.
-  Greater power or toughness is
-  `.or [.causeGreaterPower, .causeGreaterToughness]`. -/
+  /-- The creature that caused this has greater power than the source. -/
   | causeGreaterPower
-  /-- The creature that caused this has greater toughness than the source.
-  An announced permanent is used when one was chosen; otherwise the
-  recorded cause. A missing source is reported. No cause does not hold.
-  The source itself does not hold. -/
+  /-- The creature that caused this has greater toughness than the source. -/
   | causeGreaterToughness
-  /-- Mana was spent to cast the triggering spell.
-  Spending none does not hold. -/
-  | manaSpent
   /-- The targeted permanent has this subtype. -/
   | subtype (subtype : String)
-  /-- The targeted spell's mana value was this much or less.
-  That value includes `{X}` from when the spell was on the stack (CR 202.3e). -/
+  /-- The targeted spell's mana value was this much or less (CR 202.3e). -/
   | mvAtMost (n : Nat)
+  /-- The source is already prepared. -/
+  | preparedSource
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Turn history and spell cast conditions (CR 601.2 / CR 603). -/
+inductive TurnHistoryCondition where
+  /-- You attacked with a permanent of this subtype this turn. -/
+  | attackedWithSubtype (subtype : String)
+  /-- A permanent of this subtype entered under your control this turn. -/
+  | subtypeEntered (subtype : String)
+  /-- `noteResolveThisTurn` recorded ordinal `n`. -/
+  | nthResolve (n : Nat)
+  /-- You have scried this turn. -/
+  | scriedThisTurn
+  /-- You have surveilled this turn. -/
+  | surveilledThisTurn
+  /-- An artifact entered the battlefield under your control this turn. -/
+  | artifactEnteredThisTurn
+  /-- Mana was spent to cast the triggering spell. -/
+  | manaSpent
   /-- The resolving spell was cast from a graveyard. -/
   | castFromGraveyard
   /-- The resolving spell was cast using teamwork. -/
@@ -1666,9 +1514,91 @@ inductive ConditionSelector where
   | giftPromised
   /-- The resolving spell was not cast from your hand. -/
   | notFromHand
-  /-- The source is already prepared. -/
-  | preparedSource
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Earlier-step resolution note conditions (CR 608.2c). -/
+inductive StepNoteCondition where
+  /-- An earlier step removed a hope counter. -/
+  | removedHope
+  /-- An earlier step dealt damage to a permanent of this subtype. -/
+  | dealtDamageToSubtype (subtype : String)
+  /-- An earlier step returned a permanent to its owner's hand. -/
+  | returnedPermanent
+  /-- You controlled the creature an earlier step destroyed. -/
+  | youControlledDestroyed
+  /-- You have an enduring story, and an earlier step discarded your hand. -/
+  | enduringStoryNoted
+  /-- An earlier `.sacrifice .source .noted` sacrificed the source. -/
+  | sourceWasSacrificed
+  /-- An earlier `.sacrifice .plan .forReflexive` sacrificed the Plan. -/
+  | planWasSacrificed
+  /-- An earlier step attached Equipment to a creature that is still in play. -/
+  | equipmentAttached
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled a card. -/
+  | opponentsMilled
+  /-- The card `revealLibrary .untilCreature` revealed has mana value at most the lands the controller controls. -/
+  | revealedManaValueAtMostLands
+  /-- An earlier Enrage trigger noted an additional combat phase. -/
+  | enrageGrantsCombat
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
+`not` negates another condition. `or` holds when any of its conditions hold.
+`atLeast` holds when its first number is at least its second. -/
+inductive ConditionSelector where
+  /-- The first number is at least the second. -/
+  | atLeast (left right : NumberSelector)
+  /-- `cond` does not hold. -/
+  | not (cond : ConditionSelector)
+  /-- Any of `conds` holds. Once one holds, later conditions are not checked. -/
+  | or (conds : List ConditionSelector)
+  /-- Permanent, source, or target state condition (CR 110 / CR 205 / CR 208). -/
+  | state (s : StateCondition)
+  /-- Turn history or spell cast condition (CR 601.2 / CR 603). -/
+  | turnHistory (t : TurnHistoryCondition)
+  /-- Earlier-step resolution note condition (CR 608.2c). -/
+  | stepNote (n : StepNoteCondition)
 deriving Repr, Inhabited, BEq
+
+namespace ConditionSelector
+
+-- StateCondition aliases
+@[match_pattern] abbrev hopeOnSource : ConditionSelector := .state .hopeOnSource
+@[match_pattern] abbrev attachedEquipment : ConditionSelector := .state .attachedEquipment
+@[match_pattern] abbrev causeGreaterPower : ConditionSelector := .state .causeGreaterPower
+@[match_pattern] abbrev causeGreaterToughness : ConditionSelector := .state .causeGreaterToughness
+@[match_pattern] abbrev subtype (subtype : String) : ConditionSelector := .state (.subtype subtype)
+@[match_pattern] abbrev mvAtMost (n : Nat) : ConditionSelector := .state (.mvAtMost n)
+@[match_pattern] abbrev preparedSource : ConditionSelector := .state .preparedSource
+
+-- TurnHistoryCondition aliases
+@[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.attackedWithSubtype subtype)
+@[match_pattern] abbrev subtypeEntered (subtype : String) : ConditionSelector := .turnHistory (.subtypeEntered subtype)
+@[match_pattern] abbrev nthResolve (n : Nat) : ConditionSelector := .turnHistory (.nthResolve n)
+@[match_pattern] abbrev scriedThisTurn : ConditionSelector := .turnHistory .scriedThisTurn
+@[match_pattern] abbrev surveilledThisTurn : ConditionSelector := .turnHistory .surveilledThisTurn
+@[match_pattern] abbrev artifactEnteredThisTurn : ConditionSelector := .turnHistory .artifactEnteredThisTurn
+@[match_pattern] abbrev manaSpent : ConditionSelector := .turnHistory .manaSpent
+@[match_pattern] abbrev castFromGraveyard : ConditionSelector := .turnHistory .castFromGraveyard
+@[match_pattern] abbrev teamwork : ConditionSelector := .turnHistory .teamwork
+@[match_pattern] abbrev giftPromised : ConditionSelector := .turnHistory .giftPromised
+@[match_pattern] abbrev notFromHand : ConditionSelector := .turnHistory .notFromHand
+
+-- StepNoteCondition aliases
+@[match_pattern] abbrev removedHope : ConditionSelector := .stepNote .removedHope
+@[match_pattern] abbrev dealtDamageToSubtype (subtype : String) : ConditionSelector := .stepNote (.dealtDamageToSubtype subtype)
+@[match_pattern] abbrev returnedPermanent : ConditionSelector := .stepNote .returnedPermanent
+@[match_pattern] abbrev youControlledDestroyed : ConditionSelector := .stepNote .youControlledDestroyed
+@[match_pattern] abbrev enduringStoryNoted : ConditionSelector := .stepNote .enduringStoryNoted
+@[match_pattern] abbrev sourceWasSacrificed : ConditionSelector := .stepNote .sourceWasSacrificed
+@[match_pattern] abbrev planWasSacrificed : ConditionSelector := .stepNote .planWasSacrificed
+@[match_pattern] abbrev equipmentAttached : ConditionSelector := .stepNote .equipmentAttached
+@[match_pattern] abbrev opponentsMilled : ConditionSelector := .stepNote .opponentsMilled
+@[match_pattern] abbrev revealedManaValueAtMostLands : ConditionSelector := .stepNote .revealedManaValueAtMostLands
+@[match_pattern] abbrev enrageGrantsCombat : ConditionSelector := .stepNote .enrageGrantsCombat
+
+end ConditionSelector
+
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
 inductive TriggerDamageNote where
@@ -2162,8 +2092,28 @@ inductive ActionSelector where
   | attackJaces (who : ObjectSelector := .opponentsCreatures)
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.grant` grants. -/
-inductive TriggerGrantWhat where
+/-- Layer 4 type-changing and animation grants (CR 613.1d). -/
+inductive Layer4TypeGrant where
+  /-- Become an artifact in addition to its other types (CR 613.1d Layer 4). -/
+  | artifact
+  /-- Become a Bear in addition to its other types. -/
+  | bearType
+  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying. -/
+  | constructHero
+  /-- The source Vehicle becomes an artifact creature until end of turn (crew, CR 702.122). -/
+  | artifactCreatureVehicle
+  /-- Become a `p`/`t` artifact creature and gain `kw` until end of turn. -/
+  | artifactCreature (p : Int := 4) (t : Int := 4) (kw : String := "flying")
+  /-- Become a creature of `subtype` with power and toughness equal to lands you control. -/
+  | subtypeWithLandsPT (subtype : String)
+  /-- Become `types` with base power and toughness `power`/`toughness` and gain `k` until end of turn. -/
+  | typesPTAndKeywords (types : Array String) (power toughness : Int) (k : Keywords)
+  /-- Animate the source land as a `power`/`toughness` creature until end of turn. -/
+  | animateLand (power toughness : Nat) (flying firstStrike : Bool)
+deriving Repr, Inhabited, BEq
+
+/-- Layer 6 ability-adding, keyword, ability-removing, and restriction grants (CR 613.1f). -/
+inductive Layer6AbilityGrant where
   /-- Double strike until end of turn. -/
   | doubleStrike
   /-- Protection from everything until that player's next turn. -/
@@ -2172,104 +2122,90 @@ inductive TriggerGrantWhat where
   | keywords (k : Keywords)
   /-- Hexproof for as long as the source remains on the battlefield. -/
   | hexproofWhileSource
-  /-- Prevent all damage this permanent would deal for as long as the
-  source remains. Choosing none prevents nothing. -/
-  | preventDamageWhileSource
-  /-- Landfall: create a 1/1 green Elf whenever a land you control enters. -/
-  | landfallCreateElf
-  /-- Until end of turn, creatures with toughness greater than their power
-  assign combat damage equal to their toughness rather than their power.
-  Power is unchanged. -/
-  | assignCombatDamageEqualToughness
-  /-- Until end of turn, the source's base power is the number of cards in
-  its controller's hand. A missing source changes nothing. -/
-  | basePowerEqualHand
-  /-- Until end of turn, the source gains "{T}: This deals damage equal to
-  its power to any other target." Each resolution adds one such ability.
-  A missing source gains nothing. -/
-  | ironFistTap
-  /-- Become a `p`/`t` artifact creature and gain `kw` until end of turn. -/
-  | artifactCreature (p : Int := 4) (t : Int := 4) (kw : String := "flying")
-  /-- Become a creature of `subtype` with power and toughness equal to lands you control. -/
-  | subtypeWithLandsPT (subtype : String)
-  /-- Become `types` with base power and toughness `power`/`toughness` and gain `k` until end of turn. -/
-  | typesPTAndKeywords (types : Array String) (power toughness : Int) (k : Keywords)
-  /-- Become a Bear in addition to its other types. -/
-  | bearType
-  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying. -/
-  | constructHero
-  /-- The source Vehicle becomes an artifact creature until end of turn (crew, CR 702.122). -/
-  | artifactCreatureVehicle
   /-- Your choice of the keywords coded in `options` until end of turn. -/
   | choiceOfKeywords (options : List Nat)
-  /-- You may play the exiled card until the end of your next turn. -/
-  | playNotedUntilNextTurn
+  /-- Landfall: create a 1/1 green Elf whenever a land you control enters. -/
+  | landfallCreateElf
+  /-- Until end of turn, the source gains "{T}: This deals damage equal to its power to any other target." -/
+  | ironFistTap
   /-- Until end of turn, "Whenever this creature deals combat damage to a player, create a Treasure token." -/
   | combatDamageCreateTreasure
   /-- Until end of turn, "Whenever this creature deals combat damage to a player, draw two cards." -/
   | combatDamageDrawTwo
   /-- Flashback until end of turn equal to its mana cost. -/
   | flashback
+  /-- "{T}: Add {C}{C}" until the exiled source is cast, and you may cast the source while exiled. -/
+  | emrakulManaAndCast
+  /-- Lose `what` abilities (CR 613.1f Layer 6). -/
+  | lose (what : AbilitySelector)
+  /-- Prevent `action` (CR 613.1f / CR 508 / CR 509). -/
+  | cant (action : ActionSelector)
+deriving Repr, Inhabited, BEq
+
+/-- Layer 7 power/toughness and combat damage assignment grants (CR 613.1g / CR 510.1c). -/
+inductive Layer7PtGrant where
+  /-- Set base power and toughness to `power`/`toughness` (CR 613.4b Layer 7b). -/
+  | basePT (power toughness : NumberSelector)
+  /-- Until end of turn, the source's base power is the number of cards in its controller's hand. -/
+  | basePowerEqualHand
+  /-- Until end of turn, creatures with toughness greater than their power assign combat damage equal to their toughness. -/
+  | assignCombatDamageEqualToughness
+deriving Repr, Inhabited, BEq
+
+/-- Replacement, prevention, permission, cost-reduction, turn, and emblem grants (CR 614 / CR 615 / CR 114). -/
+inductive RuleEffectGrant where
+  /-- Replacement effect: if `what` would happen, `instead` happens instead (CR 614.1). -/
+  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
+  /-- Prevent all damage this permanent would deal for as long as the source remains (CR 615). -/
+  | preventDamageWhileSource
+  /-- Spells of `which` cost `n` less to cast this turn (CR 601.2f). -/
+  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
+  /-- You may play the exiled card until the end of your next turn. -/
+  | playNotedUntilNextTurn
   /-- Until end of turn, loyalty abilities of Jace planeswalkers you control may be activated at instant speed. -/
   | jaceLoyaltyAtInstantSpeed
   /-- Until end of turn, whenever you tap a Mountain for mana, add an additional {R}. -/
   | mountainsAddExtraRed
-  /-- "{T}: Add {C}{C}" until the exiled source is cast, and you may cast the source while exiled. -/
-  | emrakulManaAndCast
   /-- Emblem with "Whenever you cast a spell, this emblem deals `n` damage to any target." -/
   | emblemCastSpellDamage (n : Nat)
   /-- Emblem with "Whenever you cast a spell, draw a card." -/
   | emblemDrawOnCast
   /-- Emblem with "Creatures you control get +2/+2." -/
   | emblemCreaturesGetTwoTwo
+  /-- Emblem with "Creatures you control get +2/+2 and have flying." -/
+  | emblemCreaturesGetTwoTwoFlying
   /-- Copy the next instant or sorcery spell you cast this turn (optionally limited to source's power). -/
   | nextSpellCopy (mvAtMostSourcePower : Bool := false)
+  /-- Play an additional land this turn (CR 305.2). -/
+  | extraLand
+  /-- Take an extra turn after this one; power-up abilities can't be activated during it (CR 500.7). -/
+  | extraTurn
+  /-- Protection from everything, life total can't change, and nonland permanents phase out until next turn. -/
+  | teferisReproach
+deriving Repr, Inhabited, BEq
+
+/-- One-shot keyword actions and permanent state changes (CR 701 / CR 702 / CR 724). -/
+inductive ActionStateGrant where
   /-- Mark tokens created by an earlier step attacking. -/
   | attacking
-  /-- Choose new targets for the spell. -/
+  /-- Choose new targets for the spell (CR 115.7). -/
   | newTargets
-  /-- Play an additional land this turn. -/
-  | extraLand
-  /-- Take an extra turn after this one; power-up abilities can't be activated during it. -/
-  | extraTurn
-  /-- Transform the permanent. -/
+  /-- Transform the permanent (CR 701.28). -/
   | transformed
-  /-- Harness this Infinity Stone. -/
+  /-- Harness this Infinity Stone (MSH). -/
   | harnessed
   /-- Put an indestructible counter and a +1/+1 counter on the target. -/
   | arwenShare
-  /-- Phase out the target, or each creature target player controls if kicked. -/
+  /-- Phase out the target, or each creature target player controls if kicked (CR 702.26). -/
   | phaseOutKicker
-  /-- Animate the source land as a `power`/`toughness` creature until end of turn. -/
-  | animateLand (power toughness : Nat) (flying firstStrike : Bool)
-  /-- Emblem with "Creatures you control get +2/+2 and have flying." -/
-  | emblemCreaturesGetTwoTwoFlying
   /-- You become the monarch (CR 724). -/
   | monarch
-  /-- Protection from everything, life total can't change, and nonland permanents phase out until next turn. -/
-  | teferisReproach
   /-- Explore (CR 701.40). -/
   | explored
   /-- Transform an Incubator token into a 0/0 Phyrexian artifact creature (CR 701.51). -/
   | transformedIncubator
   /-- Turn the source face up (CR 702.37). -/
   | faceUp
-  /-- Become a copy of `of` (CR 613.1a Layer 1). -/
-  | copy (of : ObjectSelector)
-  /-- Gain control as `how` says (CR 613.1b Layer 2). -/
-  | control (how : TriggerControlHow)
-  /-- Become an artifact in addition to its other types (CR 613.1d Layer 4). -/
-  | artifact
-  /-- Lose `what` abilities (CR 613.1f Layer 6). -/
-  | lose (what : AbilitySelector)
-  /-- Prevent `action` (CR 613.1f / CR 508 / CR 509). -/
-  | cant (action : ActionSelector)
-  /-- Set base power and toughness to `power`/`toughness` (CR 613.4b Layer 7b). -/
-  | basePT (power toughness : NumberSelector)
-  /-- Replacement effect: if `what` would happen, `instead` happens instead (CR 614.1). -/
-  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
-  /-- Spells of `which` cost `n` less to cast this turn (CR 601.2f). -/
-  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Become prepared (or unprepared if `prepared == false`). -/
   | prepared (prepared : Bool := true)
   /-- Investigate (CR 701.36). -/
@@ -2283,6 +2219,96 @@ inductive TriggerGrantWhat where
   /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
   | mshReflexive (kind paid : Nat)
 deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.grant` grants, organized by CR 613 layers, CR 614/615 rule effects, and CR 701 actions. -/
+inductive TriggerGrantWhat where
+  /-- Layer 6 ability-adding, keyword, ability-removing, or restriction effect (CR 613.1f). -/
+  | layer6Ability (g : Layer6AbilityGrant)
+  /-- Become a copy of `of` (CR 613.1a Layer 1). -/
+  | copy (of : ObjectSelector)
+  /-- Gain control as `how` says (CR 613.1b Layer 2). -/
+  | control (how : TriggerControlHow)
+  /-- Layer 4 type-changing or animation effect (CR 613.1d). -/
+  | layer4Type (g : Layer4TypeGrant)
+  /-- Layer 7 power/toughness or combat damage assignment effect (CR 613.1g). -/
+  | layer7PT (g : Layer7PtGrant)
+  /-- Replacement, prevention, permission, cost-reduction, turn, or emblem effect (CR 614 / CR 615 / CR 114). -/
+  | ruleEffect (g : RuleEffectGrant)
+  /-- One-shot keyword action or permanent state change (CR 701 / CR 702 / CR 724). -/
+  | actionState (g : ActionStateGrant)
+deriving Repr, Inhabited, BEq
+
+namespace TriggerGrantWhat
+
+-- Layer4TypeGrant aliases
+@[match_pattern] abbrev artifact : TriggerGrantWhat := .layer4Type .artifact
+@[match_pattern] abbrev bearType : TriggerGrantWhat := .layer4Type .bearType
+@[match_pattern] abbrev constructHero : TriggerGrantWhat := .layer4Type .constructHero
+@[match_pattern] abbrev artifactCreatureVehicle : TriggerGrantWhat := .layer4Type .artifactCreatureVehicle
+@[match_pattern] abbrev artifactCreature (p : Int := 4) (t : Int := 4) (kw : String := "flying") : TriggerGrantWhat :=
+  .layer4Type (.artifactCreature p t kw)
+@[match_pattern] abbrev subtypeWithLandsPT (subtype : String) : TriggerGrantWhat := .layer4Type (.subtypeWithLandsPT subtype)
+@[match_pattern] abbrev typesPTAndKeywords (types : Array String) (power toughness : Int) (k : Keywords) : TriggerGrantWhat :=
+  .layer4Type (.typesPTAndKeywords types power toughness k)
+@[match_pattern] abbrev animateLand (power toughness : Nat) (flying firstStrike : Bool) : TriggerGrantWhat :=
+  .layer4Type (.animateLand power toughness flying firstStrike)
+
+-- Layer6AbilityGrant aliases
+@[match_pattern] abbrev doubleStrike : TriggerGrantWhat := .layer6Ability .doubleStrike
+@[match_pattern] abbrev protectionEverything : TriggerGrantWhat := .layer6Ability .protectionEverything
+@[match_pattern] abbrev keywords (k : Keywords) : TriggerGrantWhat := .layer6Ability (.keywords k)
+@[match_pattern] abbrev hexproofWhileSource : TriggerGrantWhat := .layer6Ability .hexproofWhileSource
+@[match_pattern] abbrev choiceOfKeywords (options : List Nat) : TriggerGrantWhat := .layer6Ability (.choiceOfKeywords options)
+@[match_pattern] abbrev landfallCreateElf : TriggerGrantWhat := .layer6Ability .landfallCreateElf
+@[match_pattern] abbrev ironFistTap : TriggerGrantWhat := .layer6Ability .ironFistTap
+@[match_pattern] abbrev combatDamageCreateTreasure : TriggerGrantWhat := .layer6Ability .combatDamageCreateTreasure
+@[match_pattern] abbrev combatDamageDrawTwo : TriggerGrantWhat := .layer6Ability .combatDamageDrawTwo
+@[match_pattern] abbrev flashback : TriggerGrantWhat := .layer6Ability .flashback
+@[match_pattern] abbrev emrakulManaAndCast : TriggerGrantWhat := .layer6Ability .emrakulManaAndCast
+@[match_pattern] abbrev lose (what : AbilitySelector) : TriggerGrantWhat := .layer6Ability (.lose what)
+@[match_pattern] abbrev cant (action : ActionSelector) : TriggerGrantWhat := .layer6Ability (.cant action)
+
+-- Layer7PtGrant aliases
+@[match_pattern] abbrev basePT (power toughness : NumberSelector) : TriggerGrantWhat := .layer7PT (.basePT power toughness)
+@[match_pattern] abbrev basePowerEqualHand : TriggerGrantWhat := .layer7PT .basePowerEqualHand
+@[match_pattern] abbrev assignCombatDamageEqualToughness : TriggerGrantWhat := .layer7PT .assignCombatDamageEqualToughness
+
+-- RuleEffectGrant aliases
+@[match_pattern] abbrev replace (what : ReplaceEvent) (instead : ReplaceInstead) : TriggerGrantWhat := .ruleEffect (.replace what instead)
+@[match_pattern] abbrev preventDamageWhileSource : TriggerGrantWhat := .ruleEffect .preventDamageWhileSource
+@[match_pattern] abbrev spellsCostLess (which : SpellCostLess) (n : NumberSelector) : TriggerGrantWhat := .ruleEffect (.spellsCostLess which n)
+@[match_pattern] abbrev playNotedUntilNextTurn : TriggerGrantWhat := .ruleEffect .playNotedUntilNextTurn
+@[match_pattern] abbrev jaceLoyaltyAtInstantSpeed : TriggerGrantWhat := .ruleEffect .jaceLoyaltyAtInstantSpeed
+@[match_pattern] abbrev mountainsAddExtraRed : TriggerGrantWhat := .ruleEffect .mountainsAddExtraRed
+@[match_pattern] abbrev emblemCastSpellDamage (n : Nat) : TriggerGrantWhat := .ruleEffect (.emblemCastSpellDamage n)
+@[match_pattern] abbrev emblemDrawOnCast : TriggerGrantWhat := .ruleEffect .emblemDrawOnCast
+@[match_pattern] abbrev emblemCreaturesGetTwoTwo : TriggerGrantWhat := .ruleEffect .emblemCreaturesGetTwoTwo
+@[match_pattern] abbrev emblemCreaturesGetTwoTwoFlying : TriggerGrantWhat := .ruleEffect .emblemCreaturesGetTwoTwoFlying
+@[match_pattern] abbrev nextSpellCopy (mvAtMostSourcePower : Bool := false) : TriggerGrantWhat := .ruleEffect (.nextSpellCopy mvAtMostSourcePower)
+@[match_pattern] abbrev extraLand : TriggerGrantWhat := .ruleEffect .extraLand
+@[match_pattern] abbrev extraTurn : TriggerGrantWhat := .ruleEffect .extraTurn
+@[match_pattern] abbrev teferisReproach : TriggerGrantWhat := .ruleEffect .teferisReproach
+
+-- ActionStateGrant aliases
+@[match_pattern] abbrev attacking : TriggerGrantWhat := .actionState .attacking
+@[match_pattern] abbrev newTargets : TriggerGrantWhat := .actionState .newTargets
+@[match_pattern] abbrev transformed : TriggerGrantWhat := .actionState .transformed
+@[match_pattern] abbrev harnessed : TriggerGrantWhat := .actionState .harnessed
+@[match_pattern] abbrev arwenShare : TriggerGrantWhat := .actionState .arwenShare
+@[match_pattern] abbrev phaseOutKicker : TriggerGrantWhat := .actionState .phaseOutKicker
+@[match_pattern] abbrev monarch : TriggerGrantWhat := .actionState .monarch
+@[match_pattern] abbrev explored : TriggerGrantWhat := .actionState .explored
+@[match_pattern] abbrev transformedIncubator : TriggerGrantWhat := .actionState .transformedIncubator
+@[match_pattern] abbrev faceUp : TriggerGrantWhat := .actionState .faceUp
+@[match_pattern] abbrev prepared (prepared : Bool := true) : TriggerGrantWhat := .actionState (.prepared prepared)
+@[match_pattern] abbrev investigate : TriggerGrantWhat := .actionState .investigate
+@[match_pattern] abbrev empowerJace (n : NumberSelector) : TriggerGrantWhat := .actionState (.empowerJace n)
+@[match_pattern] abbrev recruit (who : RecruitSubject := .recruit) : TriggerGrantWhat := .actionState (.recruit who)
+@[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : TriggerGrantWhat := .actionState (.noteResolveThisTurn limit)
+@[match_pattern] abbrev mshReflexive (kind paid : Nat) : TriggerGrantWhat := .actionState (.mshReflexive kind paid)
+
+end TriggerGrantWhat
+
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
 inductive TriggerMillNote where

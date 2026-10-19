@@ -93,16 +93,15 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 5: Consolidate `Pending` (43 Constructors) and `FraChoice` (74 Constructors)
+### Priority 5: Further Parameterize `Pending` (6 Constructors) and `FraChoice` (4 Constructors) Sub-Inductives
 - **Files**:
-  - `Mtg/Engine/Game/Pending.lean` (lines 246–639)
+  - `Mtg/Engine/Game/Pending.lean`
   - `Mtg/Engine/Game/Decisions.lean`, `Mtg/Engine/Game/FraChoices.lean`, `Mtg/Engine/Game/Actions.lean`, `Mtg/Engine/Game/Leaving.lean`, `Mtg/Engine/Game.lean`
-- **Problem**:
-  - Top-level `Pending` has 43 constructors and `FraChoice` has 74 constructors, with heavy overlap across sacrifice prompts (13 variants), discard prompts (13 variants), optional mana payment prompts (7 variants), and may-cast prompts (9 variants).
-  - Every top-level `Pending` constructor requires boilerplate arms in `Actions.actor` (`Actions.lean:119–180`), `Leaving.redirectPendingAfterLeave` (`Leaving.lean:89–194`), `Actions.applyAction`, `Decisions.lean`, `Demo/Render.lean`, and `Game.applyIdle`.
-- **How to refactor**:
-  1. Factor the deciding `PlayerId` to the top level (or move legacy card-specific `Pending` variants into `FraChoice` / a unified `ChoiceKind` payload paired with `player : PlayerId`), shrinking `Actions.actor` and `redirectPendingAfterLeave` to a few lines.
-  2. Replace card-specific sacrifice/discard/pay/cast choice constructors with parameterized choice primitives (`selectObjects`, `mayPayCost`, `mayConfirm`, `mayCast`) composed with the pause-aware `.sequence` runner (Priority 4).
+- **Completed**:
+  - Grouped `Pending` from **45 constructors (42 field-bearing)** into **6 constructors (5 field-bearing + 1 nullary)**: `.none`, `.turnCombat (step : TurnCombatPending)`, `.cast (player : PlayerId) (step : CastPending)`, `.resolve (player : PlayerId) (choice : ResolvePending)`, `.fraChoice (player : PlayerId) (choice : FraChoice)`, and `.resolveRandom (req : RandomRequest)`, factoring `player : PlayerId` onto `.cast` and `.resolve` with `@[match_pattern] abbrev` aliases, and simplified `Actions.actor` (`Actions.lean`) and `Leaving.redirectPendingAfterLeave` (`Leaving.lean`) to match `.cast p _`, `.resolve p _`, and `.fraChoice p _` directly.
+  - Grouped `FraChoice` from **93 constructors (89 field-bearing)** into **4 field-bearing constructors** aligned with CR zones and choice kinds: `.handGraveyard (c : HandGraveyardChoice)`, `.library (c : LibraryChoice)`, `.battlefield (c : BattlefieldChoice)`, and `.costMode (c : CostModeChoice)` with `@[match_pattern] abbrev` aliases.
+- **Remaining**:
+  1. Replace card-specific sacrifice/discard/pay/cast choice constructors inside `HandGraveyardChoice`, `LibraryChoice`, `BattlefieldChoice`, `CostModeChoice`, and `ResolvePending` with parameterized choice primitives (`selectObjects`, `mayPayCost`, `mayConfirm`, `mayCast`) composed with the pause-aware `.sequence` runner (Priority 4).
 
 ---
 

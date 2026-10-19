@@ -160,20 +160,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         |>.logMsg
           s!"{(g.player (g.nextLiving p)).name} assigns combat damage (CR 800.4h)"
     else g
-  | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
-  | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
-  | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
-    if q == p then { g with pending := .none, proposedSpell := none } else g
-  | .sacrificePermanent q _ | .discardForAdditionalCost q
-  | .sacrificeCreature q | .scry q _ | .surveil q _
-  | .mayDiscardDraw q _ | .mayAttachEquipment q _
-  | .recruitDiscard q | .chooseRingBearer q
-  | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
-  | .mayPutLandFromHand q
-  | .maySacArtifactOrDiscard q _
-  | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
-  | .fraChoice q _ =>
+  | .sacrificePermanent q _ | .discardForAdditionalCost q =>
     if q == p then { g with pending := .none, chooseModesRest := none } else g
+  | .cast q _ =>
+    if q == p then { g with pending := .none, proposedSpell := none } else g
   | .mayCastExiledElseDamage q _ _ =>
     if q == p then { g with pending := .none } else g
   | .chooseTriggerOr q =>
@@ -190,6 +180,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q == p then { g with pending := .none }.clearMay else g
   | .chooseLibraryPlacement q _ =>
     if q == p then { g with pending := .none }.clearSpellOr else g
+  | .putOnBottom q _ | .declareMulligan q | .resolve q _ | .fraChoice q _ =>
+    if q == p then { g with pending := .none, chooseModesRest := none } else g
   | .resolveRandom _ => g
 
 /-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave

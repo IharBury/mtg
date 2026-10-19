@@ -90,14 +90,16 @@ Recent refactorings unified trigger and spell parameters around six composable s
   - Announced targets & source: `.source`, `.any`, `.target (which : ObjectSelector := .any)`, `.targetObj (o : TargetObject)`.
   - CR 400 Zone & Object Categories: `.battlefield (o : BattlefieldObject)`, `.graveyardExile (o : GraveyardExileObject)`, `.libraryHand (o : LibraryHandObject)`, `.sacrificeStack (o : SacrificeStackObject)`.
   - Player-parameterized object selectors: `.player (who : PlayerSelector)`, `.cards (n : Nat := 1) (who : PlayerSelector := .you)`, `.creaturesControlledBy (who : PlayerSelector)`, `.graveyardCardsOfType (ty : CardType) (who : PlayerSelector)`, `.mayWheel (n : Nat) (who : PlayerSelector := .eachPlayer)`.
-- **`NumberSelector`** (51 constructors):
-  - `.fixed (n : Int)`, `.count (of : ObjectSelector)`, `.power (of : ObjectSelector)`, `.toughness (of : ObjectSelector)`, `.manaValue (of : ObjectSelector)`, `.cardsDrawnThisTurn`, `.chosenX`, `.greatestPower`, etc.
-- **`CostSelector`**:
+- **`NumberSelector`** (**8 constructors**: 7 field-bearing + 1 nullary, down from 51 constructors by grouping 46 leaf selectors into 3 CR-aligned sub-inductives `StatNumber`, `CountNumber`, and `TurnEventNumber` with `@[match_pattern] abbrev` aliases):
+  - `.greatestPower`, `.fixed (n : Int)`, `.count (what : ObjectSelector)`, `.power (of : ObjectSelector)`, `.loyalty (of : ObjectSelector := .source)`, `.stat (s : StatNumber)`, `.countKind (c : CountNumber)`, `.turnEvent (e : TurnEventNumber)`.
+- **`CostSelector`** (4 constructors):
   - `.mana (cost : Array ManaSymbol)`, `.sacrifice (count : NumberSelector) (what : ObjectSelector)`, `.discard (count : NumberSelector) (what : ObjectSelector)`, `.or (cs : List CostSelector)`.
-- **`ConditionSelector`** (32 constructors):
-  - `.and`, `.or`, `.not`, `.atLeast (actual min : NumberSelector)`, `.subtype`, etc.
-- **`ActionSelector`**:
-  - `.beBlocked`, `.beBlockedExceptByHaste`, `.untapWhileYouControl`, `.beCountered`, `.attackJaces`.
+- **`ConditionSelector`** (**6 constructors**: all 6 field-bearing, down from 32 constructors by grouping 29 leaf conditions into 3 CR-aligned sub-inductives `StateCondition`, `TurnHistoryCondition`, and `StepNoteCondition` with `@[match_pattern] abbrev` aliases):
+  - `.atLeast (left right : NumberSelector)`, `.not (cond : ConditionSelector)`, `.or (conds : List ConditionSelector)`, `.state (s : StateCondition)`, `.turnHistory (t : TurnHistoryCondition)`, `.stepNote (n : StepNoteCondition)`.
+- **`TriggerGrantWhat`** (**7 constructors**: all 7 field-bearing, down from 56 constructors by grouping 54 leaf/layer grants into 5 CR 613 / CR 614 / CR 701 sub-inductives `Layer4TypeGrant`, `Layer6AbilityGrant`, `Layer7PtGrant`, `RuleEffectGrant`, and `ActionStateGrant` with `@[match_pattern] abbrev` aliases):
+  - `.layer6Ability (g : Layer6AbilityGrant)`, `.copy (of : ObjectSelector)`, `.control (how : TriggerControlHow)`, `.layer4Type (g : Layer4TypeGrant)`, `.layer7PT (g : Layer7PtGrant)`, `.ruleEffect (g : RuleEffectGrant)`, `.actionState (g : ActionStateGrant)`.
+- **`ActionSelector`** (8 constructors):
+  - `.beBlocked`, `.beBlockedExceptByHaste`, `.untapWhileYouControl`, `.block`, `.castSpellsThisTurn`, `.beCountered`, `.beBlockedByMostLifePlayer`, `.attackJaces`.
 
 ### 2.4 `Resolution` Structure (`Mtg/Engine/Card/SpellResolution.lean:2228–3149`)
 `SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. After consolidating **325 redundant spell, ability, trigger, FRA, and FRC constructors** across eleven batches into compositional selector-parameterized constructors and CR-aligned `@[match_pattern] abbrev` aliases, `Resolution` has **39 total constructors** (**33 field-bearing** + **6 nullary**):
