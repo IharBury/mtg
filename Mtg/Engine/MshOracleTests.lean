@@ -154,7 +154,7 @@ def teamworkPaidOk : Bool :=
 /-- Ruling 365: a copy of a teamwork spell is also cast using teamwork. -/
 def teamworkCopyOk : Bool :=
   let (g, src) := afterDraw.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.setObject { src with teamworkPaid := true }
+  let g := g.setObject { src with castState := { src.castState with teamworkPaid := true } }
   let g := g.copyStackSpell (g.object! src.id) ⟨0⟩
   let copies := g.objects.filter (fun o =>
     o.name == "Helicarrier Strike" && o.zone == .stack && o.isCopy)
@@ -3574,8 +3574,8 @@ def tooEvilTeamworkEntersOk : Bool :=
         #[Target.card bear.id]
      let returned := namedPermanent gBear "Grizzly Bears"
      returned.status.enteredThisTurn) &&
-    (let paid := g.setObject { (namedGraveyardCard g ⟨0⟩ "Grizzly Bears") with
-        teamworkPaid := true }
+    (let gb := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+     let paid := g.setObject { gb with castState := { gb.castState with teamworkPaid := true } }
      let paid := { paid with resolvingSpell := some bear.id }
      let paid := paid.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
        #[Target.card dino.id]
@@ -3601,7 +3601,7 @@ def cruelAllianceTeamworkOk : Bool :=
     (let gMiss := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
         #[Target.permanent giant.id]
      gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
-    (let paid := g.setObject { bears with teamworkPaid := true }
+    (let paid := g.setObject { bears with castState := { bears.castState with teamworkPaid := true } }
      let paid := { paid with resolvingSpell := some bears.id }
      let wide := paid.legalTargetsForKind ⟨0⟩ kind
      wide.contains (Target.permanent giant.id) &&
@@ -3646,7 +3646,8 @@ def callForthCountsOtherSpellsOk : Bool :=
      (namedPermanent dealt0 "Hill Giant").status.damage == 0) &&
     (let gCopy := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
      let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
-     let gCopy := gCopy.setObject { (gCopy.object! spellC.id) with isCopy := true }
+     let curC := gCopy.object! spellC.id
+     let gCopy := gCopy.setObject { curC with castState := { curC.castState with isCopy := true } }
      let gCopy := gCopy.modifyPlayer ⟨0⟩ (fun pl => { pl with castManaValuesThisTurn := #[2] })
      let gCopy := { gCopy with resolvingSpell := some spellC.id }
      let dealtC := gCopy.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
@@ -3767,7 +3768,8 @@ def earthsMightiestChoosesOk : Bool :=
        | _ => false) &&
       (let two := addToLibraryTop base hillGiant ⟨0⟩
        let (two, spell) := two.allocObject earthSMightiestHeroes ⟨0⟩ .stack (some ⟨0⟩)
-       let two := two.setObject { (two.object! spell.id) with teamworkPaid := true }
+       let curS := two.object! spell.id
+       let two := two.setObject { curS with castState := { curS.castState with teamworkPaid := true } }
        let two := { two with resolvingSpell := some spell.id }
        let gTeam := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
        match gTeam.pending with
@@ -4462,7 +4464,7 @@ def hostKeywordChecksOk : Bool :=
   let armed := namedPermanent g3 "Grizzly Bears"
   let g3 := g3.setObject { armed with status :=
     { armed.status with attacking := true, attackingWhom := some ⟨1⟩ } }
-  let g3 := { g3 with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] }
+  let g3 := { g3 with combat := { g3.combat with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] } }
   let g3 := g3.dealAssignedCombatDamage
   g.hasMenace mail && g.power mail == 3 &&
     g2.hasIndestructible coat &&

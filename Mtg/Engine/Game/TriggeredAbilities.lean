@@ -19,7 +19,7 @@ def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) 
 /-- Scry first when there are cards to look at; otherwise ask immediately. -/
 def schedulePalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
   match g.pending with
-  | .scry _ _ => { g with palantirAfterScry := some (controller, opp, sid) }
+  | .scry _ _ => { g with afterScrySurveil := { g.afterScrySurveil with palantirAfterScry := some (controller, opp, sid) } }
   | _ => g.offerPalantirChoice controller opp sid
 
 /-- Each opponent sacrifices a creature that dealt combat damage to
@@ -527,7 +527,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     else (g, true)
   | .enrageGrantsCombat =>
     if g.enrageGrantsAdditionalCombat > 0 then
-      ({ g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 }, true)
+      ({ g with combat := { g.combat with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 } }, true)
     else (g, false)
   | .causeGreaterPower =>
     let (g, stats?) := g.causeAndSourcePT? sourceId targets
@@ -672,7 +672,7 @@ def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String
 /-- The optional action of `mayThen` cannot be performed. Skip the conditional
 steps still in this sequence. -/
 def failMayThen (g : Game) : Game :=
-  { g with mayThenSkip := g.mayThenDrop, mayThenDrop := 0, mayThenConditional := none }
+  { g with mayThen := { g.mayThen with skip := g.mayThenDrop, drop := 0, conditional := none } }
 
 /-- Permanents that can pay `CostSelector.sacrifice` of `what`.
 `.another` is each other creature. `.intersection` is the permanents every
@@ -888,19 +888,6 @@ def applyTriggerPump (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller) with
     | some o => pumpOne g o
     | none => g
-  | .creaturesYouControl =>
-    g.forEachControlledCreature controller pumpOne
-  | .othersOfSubtype subtype =>
-    let srcId? := (sourceId.bind g.findObject?).map (·.id)
-    g.foldBattlefield (fun o =>
-        o.controlledBy controller &&
-          (match srcId? with
-           | some sid => o.id != sid
-           | none => true) &&
-          g.hasSubtype o subtype)
-      pumpOne
-  | .opponentsCreatures =>
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller) pumpOne
   | who =>
     match g.permanentsNamed ctx who with
     | some objs => objs.foldl (fun game o => pumpOne game o) g
@@ -1787,7 +1774,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             match sourceId.bind g.findObject? with
             | some src =>
               let src := g.object! src.id
-              g.setObject { src with linkedExile := src.linkedExile.push newId }
+              g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push newId } }
             | none => g
           | .ifHero =>
             if g.hasSubtype o "Hero" then
@@ -2431,23 +2418,8 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     | none => g
     | some (c, opp, sid) =>
       ({ g with palantirChoiceReady := none }).offerPalantirChoice c opp sid
-  | .you, .perControlled ty =>
-    let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
-    if n == 0 then g else g.draw controller n
-  | .eachOpponent, .fixed n =>
-    g.forEachOpponent controller (fun g pid => g.draw pid n.toNat)
-  | .you, .fixed n =>
-    g.draw controller n.toNat
-  | .you, .forEachTappedHuman =>
-    let n := g.humansTappedThisWay
-    let g := { g with humansTappedThisWay := 0 }
-    if n == 0 then g else g.draw controller n
   | .you, .perFatGraveyard =>
     g.drawPerSevenCardGraveyard controller
-  | .you, .discardedHand =>
-    match g.handDiscardedThisWay with
-    | some n => if n == 0 then g else g.draw controller n
-    | none => g
   | .you, .equalToManaSpent =>
     let spent :=
       ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
@@ -3036,38 +3008,19 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (amount : TriggeredAbility.NumberSelector)
     (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
-  match amount, who, note with
-  | .fixed n, .you, .none =>
-    g.mill controller n.toNat
-  | .fixed n, .you, .milledCards =>
-    let before := (g.player controller).graveyard
-    let g := g.mill controller n.toNat
-    let after := (g.player controller).graveyard
-    { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
-  | .fixed n, .target .player, .none =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n.toNat)
-  | .thatManyLost, .thatPlayer, .none =>
-    match lastKnownPower, lastKnownToughness with
-    | some k, some idx => g.mill ⟨idx.toNat⟩ k.toNat
-    | _, _ => g
-  | .fixed n, .eachOpponent, .opponentsMilled =>
-    let opps := (g.livingOpponents controller).map (·.id)
-    let (g, milled) := g.millThenReflexive opps n.toNat
-    { g with opponentsMilledThisWay := milled }
-  | amount, who, note =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness }
-    match g.triggerCount ctx amount with
-    | none => g
-    | some n =>
-      match who with
-      | .target .player | .target .opponent =>
-        g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
-          g.millCollected controller #[pid] n note
-      | _ =>
-        match g.collectPlayers ctx who with
-        | some pids => g.millCollected controller pids n note
-        | none => g
+  let ctx : TriggerRead := {
+    controller, sourceId, targets, lastKnownPower, lastKnownToughness }
+  match g.triggerCount ctx amount with
+  | none => g
+  | some n =>
+    match who with
+    | .target .player | .target .opponent =>
+      g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
+        g.millCollected controller #[pid] n note
+    | _ =>
+      match g.collectPlayers ctx who with
+      | some pids => g.millCollected controller pids n note
+      | none => g
 
 /-- Resolve `TriggerResolution.untap`. Each printed combination keeps
 the behavior of the constructor it replaced. A stun counter is removed
@@ -3076,13 +3029,6 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (who : TriggeredAbility.ObjectSelector) : Game :=
   match who with
-  | .attackingCreatures =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.status.attacking then
-          g := g.applyPermanentAction o .untap
-      return g
   | .target =>
     g.withAffected controller ab sourceId targets .target fun g o =>
       g.applyPermanentAction o .untap
@@ -3103,12 +3049,6 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
     | none =>
       { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
-  | .firstThisTurn =>
-    let id := g.resolvingCauseId.orElse (fun _ => g.lastBecameTapped)
-    match id.bind g.findObject? with
-    | some o =>
-      if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
-    | none => g
   | who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
@@ -3132,14 +3072,6 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match src.attachedTo.bind g.findObject? with
       | none => g.logMsg "Nothing is enchanted"
       | some host => g.applyPermanentAction host .tap
-  | .ifPresent | .target .ifPresent =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some tgt =>
-        if tgt.isOnBattlefield then g.applyPermanentAction tgt .tap else g
-      | none => g
-    | _ => g
   | .target =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.applyPermanentAction o .tap) sourceId (some "The target is no longer legal")
@@ -3179,11 +3111,14 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
   match what, who with
   | .hope, .source =>
     let g := { g with removedHopeThisWay := false }
-    g.withTriggerSource sourceId fun g src =>
-      if src.status.hope == 0 then g
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The source is no longer in play"
+    | some o =>
+      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
+      else if o.status.hope == 0 then g
       else
-        let g := g.setObject { src with status := { src.status with hope := src.status.hope - 1 } }
-        let g := g.logMsg s!"{src.name} loses a hope counter"
+        let g := g.setObject { o with status := { o.status with hope := o.status.hope - 1 } }
+        let g := g.logMsg s!"{o.name} loses a hope counter"
         { g with removedHopeThisWay := true }
   | .all, .enchanted =>
     match sourceId.bind g.findObject? with
@@ -3224,36 +3159,19 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (amount : TriggeredAbility.NumberSelector)
     (who : TriggeredAbility.PlayerSelector)
     (lastKnownPower : Option Int := none) : Game :=
-  match amount, who with
-  | .fixed n, .you =>
-    g.loseLife controller n.toNat
-  | .fixed n, .target .opponent =>
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.loseLife pid n.toNat)
-  | .fixed n, .eachOpponent =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
-  | .perBurden, .you =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src => g.loseLife controller src.status.burden
-  | .attachedEquipment, .eachOpponent =>
-    let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
-    if x == 0 then g
-    else g.forEachOpponent controller (fun g pid => g.loseLife pid x)
-  | amount, who =>
-    let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
-    match g.triggerCount ctx amount with
-    | none => g
-    | some n =>
-      match who with
-      | .target .player | .target .opponent =>
-        g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
-          g.loseLife pid n
-      | _ =>
-        match g.collectPlayers ctx who with
-        | some pids => pids.foldl (fun g pid => g.loseLife pid n) g
-        | none => g
+  let ctx : TriggerRead :=
+    { controller, sourceId, targets, lastKnownPower }
+  match g.triggerCount ctx amount with
+  | none => g
+  | some n =>
+    match who with
+    | .target .player | .target .opponent =>
+      g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
+        g.loseLife pid n
+    | _ =>
+      match g.collectPlayers ctx who with
+      | some pids => pids.foldl (fun g pid => g.loseLife pid n) g
+      | none => g
 
 /-- Resolve `TriggerResolution.gainLife`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is gained.
@@ -3263,12 +3181,9 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (amount : TriggeredAbility.NumberSelector)
     (sequencedCardPower : Option Nat)
     (lastKnownPower : Option Int := none) : Game :=
+  let ctx : TriggerRead := {
+    controller, sourceId, targets, lastKnownPower, sequencedCardPower }
   match amount with
-  | .fixed n =>
-    g.gainLife controller n.toNat
-  | .attachedEquipment =>
-    let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
-    if x == 0 then g else g.gainLife controller x
   | .equalToTargetPower =>
     match sequencedCardPower with
     | some k => g.gainLife controller k
@@ -3281,25 +3196,13 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | none => g.logMsg "The target is no longer in the graveyard"
         | _ => g.logMsg "The target is no longer legal"
   | .forEachDestroyedThisWay =>
-    let k := g.permanentsDestroyedThisWay
+    let k := (g.triggerCount ctx amount).getD 0
     let g := { g with permanentsDestroyedThisWay := 0 }
-    if k == 0 then g else g.gainLife controller k
-  | .perOtherCreature =>
-    let k :=
-      ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
-    if k == 0 then g else g.gainLife controller k
-  | amount =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, sequencedCardPower }
-    match amount with
-    | .forEachDestroyedThisWay =>
-      let k := (g.triggerCount ctx amount).getD 0
-      let g := { g with permanentsDestroyedThisWay := 0 }
-      g.gainLife controller k
-    | _ =>
-      match g.triggerCount ctx amount with
-      | some k => g.gainLife controller k
-      | none => g
+    g.gainLife controller k
+  | _ =>
+    match g.triggerCount ctx amount with
+    | some k => g.gainLife controller k
+    | none => g
 
 /-- Reveal cards from the top of a library until `stop`, or `fuel` runs out.
 Non-matching cards are exiled and returned in `rest`. -/
@@ -3921,7 +3824,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             else if paused then
               (g, waiting ++ [step], true, false)
             else if g.mayThenSkip > 0 then
-              ({ g with mayThenSkip := g.mayThenSkip - 1 }, waiting, false, false)
+              ({ g with mayThen := { g.mayThen with skip := g.mayThenSkip - 1 } }, waiting, false, false)
             else
               let pendingBefore := g.pending
               let g :=
@@ -3948,12 +3851,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | some stored => stored.steps
         | none => []
       let combined := already ++ rest
-      let g := { g with triggerSequenceRest := none, mayThenSkip := 0 }
+      let g := { g with triggerSequenceRest := none, mayThen := { g.mayThen with skip := 0 } }
       let g :=
         if combined.isEmpty && usesNth then { g with nthResolveThisWay := none } else g
       let g :=
         if combined.isEmpty && g.pending == .none then
-          { g with mayThenDrop := 0, mayThenConditional := none }
+          { g with mayThen := { g.mayThen with drop := 0, conditional := none } }
         else g
       if combined.isEmpty then g
       else
@@ -4043,7 +3946,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | .duringNextTurn =>
       g.withLegalKindPlayer controller .opponent targets (fun g pid =>
         let g := g.setPlayerControl controller pid
-        { g with controlOnNextTakenTurn := true })
+        { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
         sourceId (some "The target is no longer legal")
     | .oppArtifacts | .untilEotOrNextIfVillain | .exchangeTargets => g
   | .cascade =>
@@ -4147,7 +4050,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.logMsg
       s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
   | .additionalCombatPhase =>
-    { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
+    { g with combat := { g.combat with additionalCombatPhases := g.additionalCombatPhases + 1 } }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .returnToHand what note =>
     g.applyReturnToHand controller ab sourceId targets what note
@@ -4244,7 +4147,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
   | .surveil (.fixed 0) .armReturnLifeGained =>
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
-    { g with armSurveilReturn := true }
+    { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := true } }
   | .surveil amount _ =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
@@ -4254,11 +4157,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | some n =>
       let armed := g.armSurveilReturn
       let life := (g.player controller).lifeGainedThisTurn
-      let g := { g with armSurveilReturn := false }
+      let g := { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := false } }
       let g := g.beginSurveil controller n
       if armed then
         match g.pending with
-        | .surveil _ _ => { g with surveilReturnMvAtMost := some life }
+        | .surveil _ _ => { g with afterScrySurveil := { g.afterScrySurveil with surveilReturnMvAtMost := some life } }
         | _ => g
       else g
   | .empowerJace amount =>
@@ -4334,13 +4237,13 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.offerPayForReflexive controller sourceId symbols kind times
       else
         let follow := Resolution.queueReflexive followup
-        let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
+        let g := { g with mayThen := { g.mayThen with drop := 1, conditional := some follow } }
         g.applyTriggeredAbility controller ab sourceId targets dividedDamage
           lastKnownPower lastKnownToughness sourceName
           (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
     | _ =>
       let follow := Resolution.queueReflexive followup
-      let g := { g with mayThenDrop := 1, mayThenConditional := some follow }
+      let g := { g with mayThen := { g.mayThen with drop := 1, conditional := some follow } }
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
@@ -4348,7 +4251,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.offerMayCreateWall controller
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
-    let g := { g with mayThenDrop := cond.length, mayThenConditional := some conditional }
+    let g := { g with mayThen := { g.mayThen with drop := cond.length, conditional := some conditional } }
     g.applyTriggeredAbility controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName
       (some (.sequence (optional :: cond))) sequencedCardPower

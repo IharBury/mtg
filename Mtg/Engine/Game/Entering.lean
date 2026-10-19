@@ -237,11 +237,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn - 1 })
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.setObject { copy with
-        kicked := spell.kicked
-        giftPromisedTo := spell.giftPromisedTo
-        teamworkPaid := spell.teamworkPaid
+        castState := { copy.castState with
+          kicked := spell.kicked
+          giftPromisedTo := spell.giftPromisedTo
+          teamworkPaid := spell.teamworkPaid
+          isCopy := true }
         chosenX := spell.chosenX
-        isCopy := true
         adventurerCard := spell.adventurerCard }
       let g := g.putStackEntry caster copy.id
       let g :=
@@ -274,7 +275,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.setObject { copy with
         chosenX := spell.chosenX
-        isCopy := true }
+        castState := { copy.castState with isCopy := true } }
       let g := g.putStackEntry caster copy.id
       { g with pendingLokiCopy := none }
         |>.logMsg s!"A copy of {spell.name} is created (Loki)"

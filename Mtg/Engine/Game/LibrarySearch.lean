@@ -95,7 +95,7 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
     let g :=
       match source.bind g.findObject? with
       | some src =>
-        g.setObject { src with linkedExile := src.linkedExile.push newId }
+        g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push newId } }
       | none => g
     g.logMsg s!"{(g.player p).name} exiles {name}"
 

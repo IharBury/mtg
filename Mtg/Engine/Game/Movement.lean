@@ -433,7 +433,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g :=
     if died && old.status.attacking then
-      { g with lastDiedAttacker := some newId }
+      { g with lastEvent := { g.lastEvent with lastDiedAttacker := some newId } }
     else g
   let g :=
     if exileInstead then
@@ -563,13 +563,13 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
           | none => acc) (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers := g.waitingTriggers ++ extra
-    suppressCreatureCardsToGy := true }
+    batchMove := { g.batchMove with suppressCreatureCardsToGy := true } }
   let g :=
     objs.foldl (fun g o =>
       match g.findObject? o.id with
       | some o => g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
       | none => g) g
-  { g with suppressCreatureCardsToGy := false }
+  { g with batchMove := { g.batchMove with suppressCreatureCardsToGy := false } }
 
 /-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
 and optional attachment. `applyHope` applies Arwen-style enter-with-counters

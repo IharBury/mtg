@@ -194,7 +194,9 @@ def resolveTop (g : Game) : Game :=
             (summoningSick := sick)
           -- The permanent remembers X (CR 107.3m) and whether it was cast.
           let o := g.object! newId
-          let g := g.setObject { o with chosenX := obj.chosenX, wasCast := !obj.isCopy }
+          let g := g.setObject { o with
+            chosenX := obj.chosenX
+            castState := { o.castState with wasCast := !obj.isCopy } }
           let o := g.object! newId
           let g :=
             if sneak then

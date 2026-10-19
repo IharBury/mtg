@@ -430,7 +430,7 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
     : Game × GameObject :=
   let (g, tok) := g.createToken controller src.printed
-  let tok := { tok with kicked := false }
+  let tok := { tok with castState := { tok.castState with kicked := false } }
   (g.setObject tok, tok)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/

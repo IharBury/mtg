@@ -67,7 +67,8 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
   let (g, newId) := g.move id .stack (some p)
-  let g := g.setObject { (g.object! newId) with isCopy := true }
+  let cur := g.object! newId
+  let g := g.setObject { cur with castState := { cur.castState with isCopy := true } }
   let g := g.putStackEntry p newId
   let g := { g with pending := .none, pendingFreeCopies := some (p, rest, budget - mv, castsLeft - 1) }
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
@@ -676,7 +677,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (g, acc.2.push ex)) (g, #[])
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
     let g := match g.findObject? abilityId with
-      | some ab => g.setObject { ab with boastExiled := exiled }
+      | some ab => g.setObject { ab with exileLinks := { ab.exileLinks with boastExiled := exiled } }
       | none => g
     let g := match g.findObject? sourceId with
       | some src => g.markBoastUsed src

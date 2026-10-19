@@ -140,7 +140,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
       kicked := true, kickerAnnounced := true, cost } }
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
-    let g := g.setObject { spell with kicked := true }
+    let g := g.setObject { spell with castState := { spell.castState with kicked := true } }
     let start :=
       if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
         ManaCost.empty
@@ -159,7 +159,7 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
   if prop.giftTo.isSome && to.isSome then
     throw "You can't pay a gift cost more than once"
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  let g := g.setObject { spell with giftPromisedTo := to }
+  let g := g.setObject { spell with castState := { spell.castState with giftPromisedTo := to } }
   return { g with proposedSpell := some { prop with
     giftTo := to, giftAnnounced := true } }
 
@@ -274,7 +274,7 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         g := g.applyPermanentAction o .tap
         g := g.putMatchingSourceTriggers p (g.object! id) .tappedForTeamwork
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    g := g.setObject { spell with teamworkPaid := true }
+    g := g.setObject { spell with castState := { spell.castState with teamworkPaid := true } }
     g := { g with
       pending := .none
       proposedSpell := some { prop with teamworkPaid := true, teamworkAnnounced := true } }

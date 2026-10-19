@@ -67,6 +67,54 @@ structure CopyEffect where
   duration : CopyDuration := .permanent
 deriving Repr, Inhabited
 
+/-- Spell cast-origin and additional-cost-paid metadata (CR 601.2 / CR 702 / CR 706). -/
+structure CastOriginState where
+  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
+  castFromGraveyard : Bool := false
+  /-- An instant or sorcery cast this way is exiled instead of being put into
+  its owner's graveyard (Bilbo, Thief in the Night). -/
+  exileInstantSorceryInstead : Bool := false
+  /-- This spell was cast from its owner's hand. -/
+  castFromHand : Bool := false
+  /-- This permanent entered the battlefield as a spell that was cast
+  (“if you cast it”). -/
+  wasCast : Bool := false
+  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
+  spell”). -/
+  isPreparedSpell : Bool := false
+  /-- This spell's kicker cost was paid (CR 702.32). -/
+  kicked : Bool := false
+  /-- This spell's teamwork cost was paid (CR 702.194). -/
+  teamworkPaid : Bool := false
+  /-- This creature spell's sneak cost was paid (MSH sneak). -/
+  sneakPaid : Bool := false
+  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
+  sneakAttackWhom : Option PlayerId := none
+  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
+  giftPromisedTo : Option PlayerId := none
+  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
+  isCopy : Bool := false
+  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
+  legendary spell, so it can't be countered. Copies do not inherit this. -/
+  uncounterableThisCast : Bool := false
+  /-- Mana from a Treasure was spent to cast this spell. -/
+  treasureManaSpent : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
+structure LinkedExileState where
+  /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
+  linkedExile : Array ObjectId := #[]
+  /-- Zone a linked-exiled card returns to when the source leaves
+  (Cloak and Dagger; MSH 234). `none` means the battlefield. -/
+  returnToZone : Option Zone := none
+  /-- Cards this permanent exiled that a leave trigger may return (Fiend
+  Hunter). Unlike `linkedExile`, these do not return automatically. -/
+  leaveTriggerExile : Array ObjectId := #[]
+  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
+  boastExiled : Array ObjectId := #[]
+deriving Repr, Inhabited, BEq
+
 /-- An object currently in the game (CR 109). -/
 structure GameObject where
   id : ObjectId
@@ -104,27 +152,10 @@ structure GameObject where
   /-- Normal characteristics of an adventurer card, set while the spell is on
   the stack as an Adventure (CR 715.3b). -/
   adventurerCard : Option CardDef := none
-  /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
-  linkedExile : Array ObjectId := #[]
-  /-- Zone a linked-exiled card returns to when the source leaves
-  (Cloak and Dagger; MSH 234). `none` means the battlefield. -/
-  returnToZone : Option Zone := none
-  /-- Cards this permanent exiled that a leave trigger may return (Fiend
-  Hunter). Unlike `linkedExile`, these do not return automatically. -/
-  leaveTriggerExile : Array ObjectId := #[]
-  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
-  castFromGraveyard : Bool := false
-  /-- An instant or sorcery cast this way is exiled instead of being put into
-  its owner's graveyard (Bilbo, Thief in the Night). -/
-  exileInstantSorceryInstead : Bool := false
-  /-- This spell was cast from its owner's hand. -/
-  castFromHand : Bool := false
-  /-- This permanent entered the battlefield as a spell that was cast
-  (“if you cast it”). -/
-  wasCast : Bool := false
-  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
-  spell”). -/
-  isPreparedSpell : Bool := false
+  /-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
+  exileLinks : LinkedExileState := {}
+  /-- Spell cast-origin and additional-cost-paid metadata (CR 601.2 / CR 702 / CR 706). -/
+  castState : CastOriginState := {}
   /-- For a triggered ability on the stack: snapshot of the object whose event
   caused it to trigger (CR 603.2 / CR 603.7c / CR 608.2c). -/
   triggerCause : TriggerCause := {}
@@ -137,27 +168,8 @@ structure GameObject where
   /-- The instant or sorcery card in a graveyard has flashback until end of
   turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
   flashbackUntilEot : Bool := false
-  /-- This spell's kicker cost was paid (CR 702.32). -/
-  kicked : Bool := false
-  /-- This spell's teamwork cost was paid (CR 702.194). -/
-  teamworkPaid : Bool := false
-  /-- This creature spell's sneak cost was paid (MSH sneak). -/
-  sneakPaid : Bool := false
-  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
-  sneakAttackWhom : Option PlayerId := none
-  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
-  giftPromisedTo : Option PlayerId := none
-  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
-  isCopy : Bool := false
-  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
-  legendary spell, so it can't be countered. Copies do not inherit this. -/
-  uncounterableThisCast : Bool := false
-  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
-  boastExiled : Array ObjectId := #[]
   /-- Its entering has been processed (enters triggers queued). -/
   enterProcessed : Bool := false
-  /-- Mana from a Treasure was spent to cast this spell. -/
-  treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
@@ -179,6 +191,25 @@ structure CreatureCombatAssignment where
 deriving Repr, Inhabited, BEq
 
 namespace GameObject
+
+def linkedExile (o : GameObject) : Array ObjectId := o.exileLinks.linkedExile
+def returnToZone (o : GameObject) : Option Zone := o.exileLinks.returnToZone
+def leaveTriggerExile (o : GameObject) : Array ObjectId := o.exileLinks.leaveTriggerExile
+def boastExiled (o : GameObject) : Array ObjectId := o.exileLinks.boastExiled
+
+def castFromGraveyard (o : GameObject) : Bool := o.castState.castFromGraveyard
+def exileInstantSorceryInstead (o : GameObject) : Bool := o.castState.exileInstantSorceryInstead
+def castFromHand (o : GameObject) : Bool := o.castState.castFromHand
+def wasCast (o : GameObject) : Bool := o.castState.wasCast
+def isPreparedSpell (o : GameObject) : Bool := o.castState.isPreparedSpell
+def kicked (o : GameObject) : Bool := o.castState.kicked
+def teamworkPaid (o : GameObject) : Bool := o.castState.teamworkPaid
+def sneakPaid (o : GameObject) : Bool := o.castState.sneakPaid
+def sneakAttackWhom (o : GameObject) : Option PlayerId := o.castState.sneakAttackWhom
+def giftPromisedTo (o : GameObject) : Option PlayerId := o.castState.giftPromisedTo
+def isCopy (o : GameObject) : Bool := o.castState.isCopy
+def uncounterableThisCast (o : GameObject) : Bool := o.castState.uncounterableThisCast
+def treasureManaSpent (o : GameObject) : Bool := o.castState.treasureManaSpent
 
 def fraCauseId (o : GameObject) : Option ObjectId := o.triggerCause.id
 def fraCauseController (o : GameObject) : Option PlayerId := o.triggerCause.controller

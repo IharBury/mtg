@@ -98,10 +98,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if g.currentBlockersPlayer == p then
       let rest := g.blockersQueue.extract 1 g.blockersQueue.size
       if rest.isEmpty then
-        { g with pending := .none, blockersQueue := #[] }
+        { g with pending := .none, combat := { g.combat with blockersQueue := #[] } }
           |>.logMsg "no active player remains to declare blockers (CR 800.4j)"
       else
-        { g with pending := .declareBlockers, blockersQueue := rest }
+        { g with pending := .declareBlockers, combat := { g.combat with blockersQueue := rest } }
     else g
   | .payOrLetCounter q _ spellId =>
     if q == p then
@@ -144,10 +144,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q != p then g
     else
       match remaining.find? (fun r => g.stillInGame r) with
-      | none => { g with pending := .none, pendingDiscardsLeft := 0 }
+      | none => { g with pending := .none, discardReq := { g.discardReq with pendingDiscardsLeft := 0 } }
       | some np =>
         { g with
-          pendingDiscardsLeft := 0
+          discardReq := { g.discardReq with pendingDiscardsLeft := 0 }
           pending := .chooseDiscardCard np
             (remaining.filter (fun r => r != np && g.stillInGame r)) }
   | .chooseTriggerToStack q =>

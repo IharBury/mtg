@@ -442,7 +442,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let (g, copy) := g.allocObject { printed with isToken := printed.isPermanentCard }
         controller .exile (some controller)
       let g := g.setObject { copy with
-        isCopy := true
+        castState := { copy.castState with isCopy := true }
         playPermission := some { player := controller, turnEndsRemaining := 0
                                  whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
       (g, cs.push copy.id)) (g, #[])
@@ -467,7 +467,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else
         let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
         let g := g.setObject { copy with
-          chosenX := spell.chosenX, isCopy := true, adventurerCard := spell.adventurerCard }
+          chosenX := spell.chosenX
+          castState := { copy.castState with isCopy := true }
+          adventurerCard := spell.adventurerCard }
         let g := g.putStackEntry controller copy.id
         let g :=
           match g.stack.find? (fun e => e.objectId == spell.id),
@@ -482,7 +484,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .surveil (.fixed 1) .eyeOfJace =>
     let g := g.beginSurveil controller 1
     match g.pending with
-    | .surveil .. => { g with fraAfterLook := some (controller, sourceId, .eyeOfJaceCheck) }
+    | .surveil .. => { g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := some (controller, sourceId, .eyeOfJaceCheck) } }
     | _ => g.applyFra controller effect (.sacrifice .source .eyeOfJaceIfSevenInGy) targets sourceId
   | .sacrifice .source .eyeOfJaceIfSevenInGy =>
     if (g.player controller).graveyard.size < 7 then g
@@ -635,7 +637,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.withLegalKindPermanent controller kind targets (fun g o =>
           let (g, ex) := g.move o.id .exile none
           let src := g.object! src.id
-          let g := g.setObject { src with linkedExile := src.linkedExile.push ex }
+          let g := g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push ex } }
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroy (.target .eachPermanent) _ =>

@@ -320,7 +320,7 @@ Choosing no creature for prevention changes nothing. -/
   let g0 := insertObject withSaga lost caster .exile
   let card := pid g0 "Lost"
   let src := obj g0 "Saga"
-  let g0 := g0.setObject { src with linkedExile := #[card] }
+  let g0 := g0.setObject { src with exileLinks := { src.exileLinks with linkedExile := #[card] } }
   let g := step g0 Effect.chapterReturnLinkedExileToHand
     (sourceId := some src.id)
   (obj g "Lost").zone == .hand caster &&

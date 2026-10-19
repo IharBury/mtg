@@ -421,7 +421,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
           | none => g) g
         match g.resolvingSpell.bind g.findObject? with
         | some spell =>
-          g.setObject { spell with exileInstantSorceryInstead := true }
+          g.setObject { spell with castState := { spell.castState with exileInstantSorceryInstead := true } }
             |>.logMsg s!"{spell.name} will be exiled"
         | none => g
       | _ => g
@@ -516,8 +516,9 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
           | some card =>
             let land := card.printed.isLand
             let (g, _) := g.move id (.graveyard card.owner) none
-            let g := g.setObject { (g.object! src.id) with
-              linkedExile := src.linkedExile.filter (· != id) }
+            let cur := g.object! src.id
+            let g := g.setObject { cur with exileLinks :=
+              { cur.exileLinks with linkedExile := src.linkedExile.filter (· != id) } }
             if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
   | .becomeCopy .anyCreatureOnBattlefieldWithHaste =>
     some <|

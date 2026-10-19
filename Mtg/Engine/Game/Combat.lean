@@ -138,9 +138,9 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   g := g.putBlockedTriggersOnStack assignments
   let rest := g.blockersQueue.extract 1 g.blockersQueue.size
   if rest.isEmpty then
-    return { g with pending := .none, blockersQueue := #[] } |>.receivePriority g.activePlayer
+    return { g with pending := .none, combat := { g.combat with blockersQueue := #[] } } |>.receivePriority g.activePlayer
   else
-    return { g with pending := .declareBlockers, blockersQueue := rest }
+    return { g with pending := .declareBlockers, combat := { g.combat with blockersQueue := rest } }
 
 /-- Sum of combat damage this assignment sends to creatures. -/
 def creatureDamageTotal (asgn : CreatureCombatAssignment) : Int :=
@@ -355,7 +355,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if asgn.toPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
         match src.controller with
         | some pid =>
-          g := { g with lastCombatDamagePlayer := some defn }
+          g := { g with lastEvent := { g.lastEvent with lastCombatDamagePlayer := some defn } }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
             (lastKnownToughness := some (Int.ofNat defn.idx))
           if g.hasSubtype src "Hero" then
@@ -398,11 +398,12 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         g.firstStrikeAssignedThisCombat ++ g.assignedCombatDamage.map (·.source)
       else g.firstStrikeAssignedThisCombat
     g := { g with
-      assignedCombatDamage := #[]
       pending := .none
-      firstStrikeDamageDone := g.firstStrikeDamageDone || g.combatHasFirstStrike
-      pendingRegularCombatDamage := pendingRegular
-      firstStrikeAssignedThisCombat := assignedFs }
+      combat := { g.combat with
+        assignedCombatDamage := #[]
+        firstStrikeDamageDone := g.firstStrikeDamageDone || g.combatHasFirstStrike
+        pendingRegularCombatDamage := pendingRegular
+        firstStrikeAssignedThisCombat := assignedFs } }
     return g.receivePriority g.activePlayer
 
 /-- Record a legal assignment batch and append it for later dealing. -/
@@ -410,7 +411,7 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
     (listed : Array CreatureCombatAssignment) : Except String Game := do
   let batch ← g.completeCombatAssignments forAttackers listed
   let _ ← checkCombatAssignmentBatch g forAttackers batch
-  return { g with assignedCombatDamage := g.assignedCombatDamage ++ batch }
+  return { g with combat := { g.combat with assignedCombatDamage := g.assignedCombatDamage ++ batch } }
 
 /-- After attackers have assigned, the defending player assigns (CR 510.1d)
 or damage is dealt if they have no division to announce. -/
@@ -426,7 +427,7 @@ def finishAttackerCombatAssignment (g : Game) : Game :=
 
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
-  let g := { g with assignedCombatDamage := #[], pending := .none }
+  let g := { g with pending := .none, combat := { g.combat with assignedCombatDamage := #[] } }
   if g.needsCombatDamageChoice true then
     { g with pending := .assignCombatDamage g.activePlayer true }
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"
@@ -455,11 +456,11 @@ def announceCombatDamage (g : Game) (p : PlayerId)
 
 def clearCombat (g : Game) : Game :=
   Id.run do
-    let mut g := { g with
+    let mut g := { g with combat := { g.combat with
       firstStrikeDamageDone := false
       pendingRegularCombatDamage := false
       firstStrikeAssignedThisCombat := #[]
-      blockersQueue := #[] }
+      blockersQueue := #[] } }
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
         g := g.setObject { o with

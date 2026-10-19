@@ -37,8 +37,9 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   let whom := attacker.status.attackingWhom
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
-  let g := g.setObject { (g.object! spellId) with
-    sneakPaid := true, sneakAttackWhom := whom }
+  let cur := g.object! spellId
+  let g := g.setObject { cur with castState :=
+    { cur.castState with sneakPaid := true, sneakAttackWhom := whom } }
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
@@ -78,10 +79,13 @@ def finishProposedSpell (g : Game) : Except String Game := do
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>
       if spent .legendarySpell then
-        (paid.setObject { o with treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
-                                 uncounterableThisCast := true }).logMsg
+        (paid.setObject { o with castState :=
+          { o.castState with
+            treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
+            uncounterableThisCast := true } }).logMsg
           s!"{o.name} can't be countered (Delighted Halfling)"
-      else paid.setObject { o with treasureManaSpent := spent .fromTreasure }
+      else paid.setObject { o with castState :=
+        { o.castState with treasureManaSpent := spent .fromTreasure } }
     | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)

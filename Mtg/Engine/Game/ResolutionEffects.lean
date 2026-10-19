@@ -59,13 +59,14 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
   else
     let (g, copy) := g.allocObject src.printed controller .stack (some controller)
     let g := g.setObject { copy with
-      kicked := src.kicked
-      giftPromisedTo := src.giftPromisedTo
-      teamworkPaid := src.teamworkPaid
-      sneakPaid := src.sneakPaid
-      sneakAttackWhom := src.sneakAttackWhom
+      castState := { copy.castState with
+        kicked := src.kicked
+        giftPromisedTo := src.giftPromisedTo
+        teamworkPaid := src.teamworkPaid
+        sneakPaid := src.sneakPaid
+        sneakAttackWhom := src.sneakAttackWhom
+        isCopy := true }
       chosenX := src.chosenX
-      isCopy := true
       adventurerCard := src.adventurerCard }
     let g := g.putStackEntry controller copy.id
     let g :=
@@ -131,10 +132,11 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p)
-      let g := g.setObject { (g.object! newId) with
+      let cur := g.object! newId
+      let g := g.setObject { cur with castState := { cur.castState with
         castFromGraveyard := fromGy
         exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy
-        isCopy := wasCopy }
+        isCopy := wasCopy } }
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
@@ -325,11 +327,11 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
   let fromZone := o.zone
   let (g, newId) := g.move o.id .exile none
   let o := g.object! newId
-  let g := g.setObject { o with returnToZone := some fromZone }
+  let g := g.setObject { o with exileLinks := { o.exileLinks with returnToZone := some fromZone } }
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
-      g.setObject { src with linkedExile := src.linkedExile.push newId }
+      g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push newId } }
     | none => g
   g.logMsg s!"{name} is exiled until the source leaves the battlefield"
 
@@ -342,7 +344,7 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
-      g.setObject { src with leaveTriggerExile := src.leaveTriggerExile.push newId }
+      g.setObject { src with exileLinks := { src.exileLinks with leaveTriggerExile := src.leaveTriggerExile.push newId } }
     | none => g
   g.logMsg s!"{name} is exiled"
 
@@ -729,7 +731,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
   | 4 =>
     g.withLegalKindPlayer controller tkind targets (fun g pid =>
       let g := g.setPlayerControl controller pid
-      { g with controlOnNextTakenTurn := true })
+      { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
       sourceId illegal
   | 5 =>
     g.withLegalKindPlayer controller tkind targets
@@ -881,8 +883,7 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       (lastKnownToughness := src.lastKnownToughness)
     let g := g.setObject { copy with
       chosenX := src.chosenX
-      isCopy := true
-      teamworkPaid := src.teamworkPaid }
+      castState := { copy.castState with isCopy := true, teamworkPaid := src.teamworkPaid } }
     let g := g.putStackEntry controller copy.id
     let g :=
       match g.stack.findIdx? (fun e => e.objectId == src.id) with

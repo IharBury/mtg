@@ -58,8 +58,7 @@ def clearTurnActivations (g : Game) : Game :=
       creatureDiedThisTurn := false
       creatureDeathsThisTurn := 0
       battlefieldCreaturesToGyThisTurn := #[]
-      lastLifeLost := none
-      lastNoncombatDamage := none
+      lastEvent := { g.lastEvent with lastLifeLost := none, lastNoncombatDamage := none }
       sheHulkDamageUsedThisTurn := false
       pendingFreeRGCreature := none }
     -- Stingcaster Mage: flashback granted until end of turn ends.
@@ -152,13 +151,14 @@ def startNextTurn (g : Game) : Game :=
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-        g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
+        g := { g with turnControl := { g.turnControl with extraTurns := g.extraTurns.extract 1 g.extraTurns.size } }
     match g.extraTurns[0]? with
     | some q =>
       g := { g with
-        extraTurns := g.extraTurns.extract 1 g.extraTurns.size
+        turnControl := { g.turnControl with
+          extraTurns := g.extraTurns.extract 1 g.extraTurns.size
+          powerUpsForbidden := true }
         activePlayer := q
-        powerUpsForbidden := true
         turnNumber := g.turnNumber + 1
         isFirstTurn := false
         cleanupGivesPriority := false }
@@ -172,7 +172,7 @@ def startNextTurn (g : Game) : Game :=
         else
           g := { g with
             activePlayer := q
-            powerUpsForbidden := false
+            turnControl := { g.turnControl with powerUpsForbidden := false }
             turnNumber := g.turnNumber + 1
             isFirstTurn := false
             cleanupGivesPriority := false }
@@ -245,7 +245,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let queue :=
         let ps := g.defendingPlayers
         if ps.isEmpty then #[g.opponent g.activePlayer] else ps
-      { g with pending := .declareBlockers, blockersQueue := queue }
+      { g with pending := .declareBlockers, combat := { g.combat with blockersQueue := queue } }
   | .combatDamage =>
       g.beginCombatDamageAssignment
   | .upkeep =>
@@ -418,10 +418,10 @@ def advanceStep (g : Game) : Game :=
     else if g.step == .declareBlockers && attackers.isEmpty then
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
-      { g with pendingRegularCombatDamage := false }.beginCombatDamageAssignment
+      { g with combat := { g.combat with pendingRegularCombatDamage := false } }.beginCombatDamageAssignment
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
       let g := g.clearCombat
-      let g := { g with additionalCombatPhases := g.additionalCombatPhases - 1 }
+      let g := { g with combat := { g.combat with additionalCombatPhases := g.additionalCombatPhases - 1 } }
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else

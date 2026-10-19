@@ -214,7 +214,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .surveil (.fixed 1) .returnNoncreatureNonland =>
     let g := g.beginSurveil controller 1
     match g.pending with
-    | .surveil .. => { g with surveilReturnNoncreatureNonland := true }
+    | .surveil .. => { g with afterScrySurveil := { g.afterScrySurveil with surveilReturnNoncreatureNonland := true } }
     | _ => g
   | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell =>
     (g.modifyPlayer controller (fun pl =>
@@ -400,7 +400,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             let g := g.logMsg s!"{name} is exiled"
             let card := g.object! exId
             let (g, copy) := g.allocObject card.printed controller .exile (some controller)
-            let g := g.setObject { copy with isCopy := true }
+            let g := g.setObject { copy with castState := { copy.castState with isCopy := true } }
             g.beginFraChoice controller (.mayCastCopy copy.id)
               s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
         | none => g.logMsg "The target is no longer legal"
@@ -416,7 +416,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           let (g, copy) := g.allocObject { card.printed with isToken := card.printed.isPermanentCard }
             controller .exile (some controller)
           let g := g.setObject { copy with
-            isCopy := true
+            castState := { copy.castState with isCopy := true }
             playPermission := some { player := controller, turnEndsRemaining := 0
                                      whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
           (g, cs.push copy.id)

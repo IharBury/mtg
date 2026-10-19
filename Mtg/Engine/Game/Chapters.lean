@@ -74,8 +74,8 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
         let name := card.name
         let (g, _) := g.move eid (.hand owner) none
         let src := g.object! src.id
-        let g := g.setObject { src with
-          linkedExile := src.linkedExile.filter (· != eid) }
+        let g := g.setObject { src with exileLinks :=
+          { src.exileLinks with linkedExile := src.linkedExile.filter (· != eid) } }
         g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
 
 /-- Whenever the controller attacks this turn, a creature they control

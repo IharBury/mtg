@@ -145,7 +145,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
       let o := g.object! newId
-      let g := g.setObject { o with isCopy := true, isPreparedSpell := true }
+      let g := g.setObject { o with castState :=
+        { o.castState with isCopy := true, isPreparedSpell := true } }
       match g.findObject? src with
       | some perm =>
         (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
@@ -161,10 +162,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g :=
     if fromGraveyard then
       let o := g.object! newId
-      g.setObject { o with castFromGraveyard := true }
+      g.setObject { o with castState := { o.castState with castFromGraveyard := true } }
     else if original.zone == .hand original.owner then
       let o := g.object! newId
-      g.setObject { o with castFromHand := true }
+      g.setObject { o with castState := { o.castState with castFromHand := true } }
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal

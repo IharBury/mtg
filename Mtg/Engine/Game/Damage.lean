@@ -89,16 +89,16 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
             | .watch .hulk => true
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
-          { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
+          { g with combat := { g.combat with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 } }
         else g
       | none => g
     else g
   let g := g.queueCreatureYouControlDealtDamage o n
   if n > 0 && !combat then
     match o.controller with
-    | none => { g with lastNoncombatDamage := some (o.id, n.toNat) }
+    | none => { g with lastEvent := { g.lastEvent with lastNoncombatDamage := some (o.id, n.toNat) } }
     | some p =>
-      let g := { g with lastNoncombatDamage := some (o.id, n.toNat) }
+      let g := { g with lastEvent := { g.lastEvent with lastNoncombatDamage := some (o.id, n.toNat) } }
       g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
         (some n)
   else g

@@ -38,24 +38,25 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
 /-- Clear the finished scry or surveil, draw any follow-up cards, offer
 Palantír's opponent their choice, and give the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
-  let g := { g with pending := .none, surveilReturnMvAtMost := none
-                    surveilReturnNoncreatureNonland := false }
+  let g := { g with pending := .none, afterScrySurveil := { g.afterScrySurveil with
+    surveilReturnMvAtMost := none
+    surveilReturnNoncreatureNonland := false } }
   let g :=
     match g.fraAfterLook with
     | some (c, src, next) =>
-      ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
+      ({ g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := none } }).applyFra c default next.toResolution #[] src
     | none => g
   let g :=
     match g.pendingDrawAfterScry with
     | some (q, n) =>
-      let g := { g with pendingDrawAfterScry := none }
+      let g := { g with afterScrySurveil := { g.afterScrySurveil with pendingDrawAfterScry := none } }
       g.draw q n
     | none => g
   if g.pending != .none then g
   else
     match g.palantirAfterScry with
     | some (controller, opp, sid) =>
-      ({ g with palantirAfterScry := none }).offerPalantirChoice controller opp sid
+      ({ g with afterScrySurveil := { g.afterScrySurveil with palantirAfterScry := none } }).offerPalantirChoice controller opp sid
     | none =>
       let g := g.resumeTriggerSequence
       if g.pending != .none then g else g.receivePriority g.activePlayer
@@ -268,9 +269,7 @@ def resumeSequenceThenPriority (g : Game) : Game :=
 def acceptMayThen (g : Game) : Game :=
   let g := { g with
     pending := .none
-    mayThenDrop := 0
-    mayThenConditional := none
-    mayThenResume := false }
+    mayThen := { g.mayThen with drop := 0, conditional := none, resume := false } }
   g.resumeSequenceThenPriority
 
 /-- The optional action of `mayThen` was declined. Skip its conditional and
@@ -279,10 +278,8 @@ def declineMayThen (g : Game) : Game :=
   let n := g.mayThenDrop
   let g := { g with
     pending := .none
-    mayThenDrop := 0
-    mayThenConditional := none
     sacrificedPowerThisWay := none
-    mayThenResume := false }
+    mayThen := { g.mayThen with drop := 0, conditional := none, resume := false } }
   let g :=
     match g.triggerSequenceRest with
     | none => g
@@ -330,14 +327,14 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     if g.thirstDiscardsLeft > 0 then
       let left :=
         if card.printed.hasType g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
-      let g := { g with thirstDiscardsLeft := left }
+      let g := { g with discardReq := { g.discardReq with thirstDiscardsLeft := left } }
       if left == 0 then
         return ({ g with pending := .none }).resumeSequenceThenPriority
       else
         return g.beginDiscardCards #[p]
     if g.pendingDiscardsLeft > 0 then
       let left := g.pendingDiscardsLeft - 1
-      let g := { g with pendingDiscardsLeft := left }
+      let g := { g with discardReq := { g.discardReq with pendingDiscardsLeft := left } }
       if left == 0 then
         g.continueAfterDiscard remaining
       else

@@ -799,7 +799,7 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
   let g :=
     if clearExileFields then
       let ex := g.object! newId
-      g.setObject { ex with playPermission := none, linkedExile := #[] }
+      g.setObject { ex with playPermission := none, exileLinks := { ex.exileLinks with linkedExile := #[] } }
     else g
   let (g, retId) := g.move newId .battlefield (some owner)
   let ret := g.object! retId

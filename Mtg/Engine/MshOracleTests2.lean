@@ -456,7 +456,7 @@ def controlAnotherPlayerOk : Bool :=
     (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
     g.resourcesFor ⟨1⟩ == ⟨1⟩ &&
     (let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
-     let g := { g with controlOnNextTakenTurn := true }
+     let g := { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } }
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
     (mshRuling 573).comment.contains "next turn they actually take" &&
     (mshRuling 611).comment.contains "overwrite each other" &&
@@ -796,7 +796,7 @@ def boastOncePerTurnOk : Bool :=
     (let g := g.markBoastUsed z
      let z := namedPermanent g "Baron Helmut Zemo"
      !g.canActivateBoast z &&
-       (let g := { g with additionalCombatPhases := 1 }
+       (let g := { g with combat := { g.combat with additionalCombatPhases := 1 } }
         !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
     (mshRuling 526).comment.contains "only once"
 
@@ -811,9 +811,9 @@ def okoyeFirstStrikeLossOk : Bool :=
     attacking := true, attackingWhom := some ⟨1⟩ } }
   let tok := g.object! tok.id
   g.hasFirstStrike tok &&
-    (let g := { g with
+    (let g := { g with combat := { g.combat with
         firstStrikeDamageDone := true
-        firstStrikeAssignedThisCombat := #[tok.id] }
+        firstStrikeAssignedThisCombat := #[tok.id] } }
      let (g, _) := g.move (namedPermanent g "Okoye, Dora Milaje Leader").id
        (.graveyard ⟨0⟩) none
      let tok := g.object! tok.id

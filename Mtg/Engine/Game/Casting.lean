@@ -575,7 +575,8 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g :=
     if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
       let g := g.modifyPlayer p (fun pl => { pl with nextSpellCantBeCountered := false })
-      (g.setObject { (g.object! spell.id) with uncounterableThisCast := true }).logMsg
+      let cur := g.object! spell.id
+      (g.setObject { cur with castState := { cur.castState with uncounterableThisCast := true } }).logMsg
         s!"{spell.name} can't be countered"
     else g
   let g :=

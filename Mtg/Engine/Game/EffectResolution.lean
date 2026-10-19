@@ -76,7 +76,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
   | .createTokens .tigerGod (.fixed 1) false _ _ => some (g.createNamedToken controller tigerGodToken)
   | .grant .extraTurn .youIfCast =>
-    some ({ g with extraTurns := g.extraTurns.push controller }
+    some ({ g with turnControl := { g.turnControl with extraTurns := g.extraTurns.push controller } }
       |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
   | .draw .perBurden _ =>
     some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)
@@ -1437,7 +1437,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{o.name} becomes a {p}/{t} artifact creature with {kw} until end of turn"
         (additionalCreature := true) (additionalArtifact := true))
   | .discard (.cardsUnlessType n ty) =>
-    let g := { g with thirstDiscardsLeft := n, thirstDiscardType := ty }
+    let g := { g with discardReq := { g.discardReq with thirstDiscardsLeft := n, thirstDiscardType := ty } }
     g.beginDiscardCards #[controller]
   | .loseLife (.fixed n) .eachOpponent =>
     g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
@@ -1622,7 +1622,7 @@ def finishPlusOneAfterDiscards (g : Game) : Game :=
   match g.plusOneAfterDiscards with
   | none => g
   | some id =>
-    let g := { g with plusOneAfterDiscards := none }
+    let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := none } }
     match g.findObject? (g.followMoved id) with
     | some o =>
       if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
@@ -1643,7 +1643,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         (fizzle := fun g => g.logIllegalSequenceTargets targets)
     | [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
       let opps := (g.livingOpponents controller).map (·.id)
-      let g := { g with plusOneAfterDiscards := sourceId }
+      let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := sourceId } }
       let g := g.beginDiscardCards opps
       if g.pending == .none then
         (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
