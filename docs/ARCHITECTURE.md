@@ -70,11 +70,12 @@ Because nearly all tests in this repository are **compile-time `#guard` assertio
 - Lean 4's runtime and C code generator restrict any `inductive` type to at most **243 constructors that carry fields** (`tag <= 243`). Nullary constructors (no arguments) may follow field-bearing constructors without limit.
 - Keep this constraint in mind when editing large sum types:
   - `Resolution` (`Mtg/Engine/Card/SpellResolution.lean`) has 39 constructors (33 field-bearing + 6 nullary) parameterized by compositional selectors (`ObjectSelector`, `PlayerSelector`, `NumberSelector`, `CostSelector`, `ConditionSelector`).
+  - `ObjectSelector` (`Mtg/Engine/Card/SpellResolution.lean`) has 15 constructors (13 field-bearing + 2 nullary) aligned with CR 109 / CR 400 zone and object categories (`TargetObject`, `BattlefieldObject`, `GraveyardExileObject`, `LibraryHandObject`, `SacrificeStackObject`, plus target/player/set combinators).
   - `StaticAbility` (`Mtg/Engine/Card/StaticAbility.lean`) has 9 field-bearing constructors aligned with CR 604 / CR 613 / CR 614 categories (`TypeStatic`, `AbilityStatic`, `CdaStatic`, `PtStatic`, `CombatStatic`, `CostCastStatic`, `RuleStatic`, `KeywordStatic`, and `.printed`).
   - `TriggerEvent` (`Mtg/Engine/Card/TriggerEvent.lean`) has 14 constructors (12 field-bearing + 2 nullary) aligned with CR 603 categories (`EntersEvent`, `LeavesEvent`, `StepEvent`, `CastEvent`, `CombatEvent`, `DamageEvent`, `DrawEvent`, `DiscardEvent`, `TapEvent`, `CounterEvent`, `ActionEvent`, `.or`, `.cascade`, `.fromEffect`).
   - `EffectTargetKind` (`Mtg/Engine/Card/Targeting.lean`) has 9 constructors (8 field-bearing + 1 nullary) aligned with CR 115 categories (`BattlefieldTarget`, `GraveyardTarget`, `StackTarget`, `PlayerTarget`, `MultiTarget`, `.filtered`, `.multi`, `.pair`, `.none`).
-  - `SharedTrigger` (`Mtg/Engine/Card/SharedTrigger.lean`) groups MSH leftover triggers into 9 `*Leftover` sub-inductives.
-  - `Pending` (`Mtg/Engine/Game/Pending.lean`) nests 74 newer interactive choice kinds inside `.fraChoice (player : PlayerId) (choice : FraChoice)`.
+  - `SharedTrigger` (`Mtg/Engine/Card/SharedTrigger.lean`) has 10 field-bearing constructors aligned with CR 603 / CR 608 / CR 701 effect categories (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`, `.chapter`, `.mayTo`, `.may`).
+  - `Pending` (`Mtg/Engine/Game/Pending.lean`) nests newer interactive choice kinds inside `.fraChoice (player : PlayerId) (choice : FraChoice)`.
 
 ---
 

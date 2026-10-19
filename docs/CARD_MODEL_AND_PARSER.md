@@ -35,8 +35,8 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `ActivatedAbility.lean` & `OracleActivate.lean` | `LoyaltySymbol`, `FraCost`, `FraActivationCondition`, `ActivationCost` (21 fields), `ActivatedAbility` (23 fields), and builder functions (`OracleActivate.activated`, `equipAbility`, `typecyclingAbility`). |
 | `StaticAbility.lean` | Unified CR 604 / CR 613 / CR 614 `StaticAbility` inductive (9 field-bearing constructors over 8 CR category sub-inductives `TypeStatic`, `AbilityStatic`, `CdaStatic`, `PtStatic`, `CombatStatic`, `CostCastStatic`, `RuleStatic`, `KeywordStatic` + `.printed`), `FraStatic` and `StaticShape` as `abbrev`s for `StaticAbility`, `StaticMeta`/`StaticAbility.spec`, and `StaticAbility.toNotation`. |
 | `TriggerEvent.lean` | Unified CR 603 `TriggerEvent` inductive (14 constructors: 12 field-bearing over 11 CR 603 event-filter sub-inductives `EntersEvent`..`ActionEvent` + `.or` + 2 nullary `.cascade`, `.fromEffect`), `FraEvent` and `SharedTriggerWhen` as `abbrev`s for `TriggerEvent`, `@[match_pattern] abbrev` aliases, `TriggerEvent.events`, and `TriggerEvent.spec`. |
-| `SharedTrigger.lean` | 9 MSH `*Leftover` enums, `SharedTrigger` (116 constructors), `FraCondition`, and `SharedTriggerOpts`. |
-| `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming`, `TriggeredAbility.chapterTiming`, and `SharedTrigger.timing` (compiles `SharedTrigger` into `Resolution`). |
+| `SharedTrigger.lean` | 9 MSH `*Leftover` enums, 7 CR-aligned trigger-effect sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`), unified `SharedTrigger` (10 field-bearing constructors + `@[match_pattern] abbrev` aliases), `FraCondition`, and `SharedTriggerOpts`. |
+| `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming`, `TriggeredAbility.chapterTiming`, and category-factored `SharedTrigger.timing` (`LibraryTrigger.timing`, `TokenCounterTrigger.timing`, `CombatDamageTrigger.timing`, `ZoneChangeTrigger.timing`, `ContinuousTrigger.timing`, `PermanentTrigger.timing`, `EventLeftover.timing`). |
 | `TriggerEffects.lean` | `Effect.ofTrigger` and 92 `Effect.*` leftover trigger wrappers. |
 | `TriggeredAbility.lean` | ~180 `TriggeredAbility.on*` catalog builders, `TriggeredAbility.fra`, and the Oracle text renderer (`TriggeredAbility.toNotation`). |
 | `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `CardDef` (~118 fields), `structuredAbilityLines`, and `modellingError?`. |
@@ -81,23 +81,23 @@ structure Effect where
   phrase             : String := ""
 ```
 
-### 2.3 Compositional Selectors (`Mtg/Engine/Card/SpellResolution.lean:118–1128`)
+### 2.3 Compositional Selectors (`Mtg/Engine/Card/SpellResolution.lean:202–1250`)
 Recent refactorings unified trigger and spell parameters around six composable selector inductives:
 - **`PlayerSelector`** (mutual with `ObjectSelector`):
-  - `.you`, `.eachPlayer`, `.eachOpponent`, `.activePlayer`, `.defendingPlayer`, `.attackedPlayer`, `.target (who : PlayerSelector)`, `.thatPlayer`, `.controller (of : ObjectSelector)`, `.owner (of : ObjectSelector)`.
-- **`ObjectSelector`** (81 constructors):
-  - Set combinators: `.union (a b : ObjectSelector)`, `.intersection (a b : ObjectSelector)`, `.other (of : ObjectSelector)`.
-  - Announced targets: `.target (what : ObjectSelector)` (where `what` specifies the restriction, e.g. `.creatures`, `.Spells`, `.permanents`).
-  - Contextual objects: `.source`, `.cause`, `.enchanted`, `.equipped`, `.it`, `.lookedAt`, `.revealed`, `.exiledWithSource`.
-  - Battlefield/zone filters: `.youControl`, `.opponentsControl`, `.creatures`, `.artifacts`, `.lands`, `.nonlandPermanents`, `.ofSubtype (s : String)`, `.othersOfSubtype (s : String)`, `.withCounter (c : CounterKind)`, `.powerAtMost (n : NumberSelector)`, `.manaValueAtMost (n : NumberSelector)`, `.cardsInHand (who : PlayerSelector)`, `.cardsInGraveyard (who : PlayerSelector)`, etc.
-- **`NumberSelector`** (36 constructors):
-  - `.fixed (n : Int)`, `.negated (a : NumberSelector)`, `.count (of : ObjectSelector)`, `.power (of : ObjectSelector)`, `.toughness (of : ObjectSelector)`, `.manaValue (of : ObjectSelector)`, `.countersOn (c : CounterKind) (of : ObjectSelector)`, `.lifeGainedThisTurn`, `.cardsDrawnThisTurn`, `.xValue`, `.greatestPower (among : ObjectSelector)`, etc.
+  - `.you`, `.eachPlayer`, `.eachOpponent`, `.opponent`, `.player`, `.target (which : PlayerSelector)`, `.thatPlayer`, `.damagedPlayer`, `.announced`, `.controller (what : ObjectSelector)`, `.targetAt`, `.targetPlayers`, `.extort`, `.eachOpponentAndYouGain1`, `.youLose1Life`.
+- **`ObjectSelector`** (**15 constructors**: 13 field-bearing + 2 nullary, down from 177 constructors by grouping 167 non-recursive leaf selectors into 5 CR 109 / CR 400 zone & object-category sub-inductives `TargetObject`, `BattlefieldObject`, `GraveyardExileObject`, `LibraryHandObject`, `SacrificeStackObject` with `@[match_pattern] abbrev` aliases):
+  - Set combinators: `.union (what : List ObjectSelector)`, `.intersection (what : List ObjectSelector)`.
+  - Announced targets & source: `.source`, `.any`, `.target (which : ObjectSelector := .any)`, `.targetObj (o : TargetObject)`.
+  - CR 400 Zone & Object Categories: `.battlefield (o : BattlefieldObject)`, `.graveyardExile (o : GraveyardExileObject)`, `.libraryHand (o : LibraryHandObject)`, `.sacrificeStack (o : SacrificeStackObject)`.
+  - Player-parameterized object selectors: `.player (who : PlayerSelector)`, `.cards (n : Nat := 1) (who : PlayerSelector := .you)`, `.creaturesControlledBy (who : PlayerSelector)`, `.graveyardCardsOfType (ty : CardType) (who : PlayerSelector)`, `.mayWheel (n : Nat) (who : PlayerSelector := .eachPlayer)`.
+- **`NumberSelector`** (51 constructors):
+  - `.fixed (n : Int)`, `.count (of : ObjectSelector)`, `.power (of : ObjectSelector)`, `.toughness (of : ObjectSelector)`, `.manaValue (of : ObjectSelector)`, `.cardsDrawnThisTurn`, `.chosenX`, `.greatestPower`, etc.
 - **`CostSelector`**:
-  - `.mana (cost : Array ManaSymbol)`, `.sacrifice (count : NumberSelector) (what : ObjectSelector)`, `.discard (count : NumberSelector) (what : ObjectSelector)`, `.or (a b : CostSelector)`.
-- **`ConditionSelector`** (29 constructors):
-  - `.and`, `.or`, `.not`, `.atLeast (actual min : NumberSelector)`, `.countAtLeast (what : ObjectSelector) (min : Int)`, `.controlsSubtype`, `.isYourTurn`, `.attackedThisTurn`, `.gainedLifeThisTurn`, `.lostLifeThisTurn`, `.wasCast`, etc.
+  - `.mana (cost : Array ManaSymbol)`, `.sacrifice (count : NumberSelector) (what : ObjectSelector)`, `.discard (count : NumberSelector) (what : ObjectSelector)`, `.or (cs : List CostSelector)`.
+- **`ConditionSelector`** (32 constructors):
+  - `.and`, `.or`, `.not`, `.atLeast (actual min : NumberSelector)`, `.subtype`, etc.
 - **`ActionSelector`**:
-  - `.exile`, `.mayCast`, `.put`.
+  - `.beBlocked`, `.beBlockedExceptByHaste`, `.untapWhileYouControl`, `.beCountered`, `.attackJaces`.
 
 ### 2.4 `Resolution` Structure (`Mtg/Engine/Card/SpellResolution.lean:2228–3149`)
 `SpellResolution` and `TriggerResolution` are both type aliases (`abbrev`) for `Resolution`. After consolidating **325 redundant spell, ability, trigger, FRA, and FRC constructors** across eleven batches into compositional selector-parameterized constructors and CR-aligned `@[match_pattern] abbrev` aliases, `Resolution` has **39 total constructors** (**33 field-bearing** + **6 nullary**):
@@ -149,6 +149,18 @@ Recent refactorings unified trigger and spell parameters around six composable s
 - `.filtered (f : TargetFilter)` — one instance of "target" described by a `TargetFilter`
 - `.multi (fs : Array TargetFilter) (optional : Array Nat)` — sequential instances of "target" per filter
 - `.pair (a b : EffectTargetKind)` — combined target instances of two chosen modes (CR 700.2)
+
+### 2.8 `SharedTrigger` Structure (`Mtg/Engine/Card/SharedTrigger.lean`)
+After grouping its 166 effect and leftover constructors into 7 CR 603 / CR 608 / CR 701 effect-category sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`) with `@[match_pattern] abbrev` aliases, `SharedTrigger` has **10 total constructors** (all 10 field-bearing):
+- `.library (t : LibraryTrigger)` — CR 121 / CR 701.13 / CR 701.18 / CR 701.20 / CR 701.25 / CR 701.48 draw, scry, surveil, mill, search/reveal library, connive, and cascade effects
+- `.tokenCounter (t : TokenCounterTrigger)` — CR 111 / CR 122 / CR 701.36 / CR 701.47 token creation, amass, recruit, investigate, counter placement/removal, Ring tempts, and Plan effects
+- `.combatDamage (t : CombatDamageTrigger)` — CR 119 / CR 120 / CR 506 / CR 701.3 / CR 701.12 damage, life gain/loss, P/T modification, Equipment attachment, fight, and extra combat effects
+- `.zoneChange (t : ZoneChangeTrigger)` — CR 400 / CR 701.8 / CR 701.9 / CR 701.17 exile, return from graveyard/exile, put onto battlefield, sacrifice, destroy, and discard effects
+- `.continuous (t : ContinuousTrigger)` — CR 611 / CR 700.2 / CR 701.21 / CR 706 continuous grants, tap/untap, control change, mana production, spell cast/copy, modal, and prepare effects
+- `.permanent (t : PermanentTrigger)` — `PermanentAction` applied to target, source, enchanted, or attached permanent
+- `.leftover (t : EventLeftover)` — event-specific leftover families (`enter`, `step`, `death`, `thisAttack`, `enterOrAttack`, `watch`, `youAttacking`, `casting`, `resource`)
+- `.chapter (n : Nat) (e : ChapterResolution)` — CR 714 Saga chapter effects
+- `.mayTo (can thenDo : SharedTrigger)` and `.may (action : SharedTrigger)` — CR 603.5 optional/reflexive trigger combinators
 
 ---
 

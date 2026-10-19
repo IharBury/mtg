@@ -148,132 +148,25 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
 
 end TriggeredAbility
 
-namespace SharedTrigger
-
-/-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
-def timing : SharedTrigger → TriggeredAbility.TriggerTiming
+/-- Targeting, divided-damage parameters, and resolution for `LibraryTrigger`. -/
+def LibraryTrigger.timing : LibraryTrigger → TriggeredAbility.TriggerTiming
   | .scry n => { resolution := .scry (.fixed n) }
   | .draw n => { resolution := .draw (.fixed n) }
-  | .createTokens kind n tapped => { resolution := .createTokens kind (.fixed n) tapped }
-  | .amass n subtype amount attachSource =>
-    let resolved : TriggeredAbility.NumberSelector :=
-      match amount with
-      | .fixed => .fixed n
-      | .sourcePower => .lastKnownPower
-      | .notedExcess => .notedExcess
-      | .notedPower => .notedPower
-    { resolution := .amass resolved subtype attachSource }
-  | .recruit who => { resolution := .recruit who }
-  | .dividedDamage amount maxTargets =>
-    { targeting := .of .playerOrCreature,
-      dividedDamage := some (amount, maxTargets), resolution := .dealDamage (.fixed 0) .target .preallocated }
-  | .gainLife n => { resolution := .gainLife (.fixed n) }
   | .connive who =>
     match who with
     | .source => { resolution := .connive .source }
     | .target kind => { targeting := .of kind, resolution := .connive .target }
     | .enteringVillain => { resolution := .connive .enteringVillain }
-  | .exileUntilLeaves kind =>
-    { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
-  | .damageEachOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player .eachOpponent) }
-  | .attachTo kind =>
-    { targeting := .of kind, resolution := .attach .source .target }
-  | .opponentSacrificesCreature =>
-    { targeting := .of .opponent,
-      resolution := .sacrifice .opponentChosenCreature }
-  | .onPermanent kind action =>
-    { targeting := .of kind
-      resolution := TriggeredAbility.TriggerResolution.ofPermanent action }
-  | .onSource action =>
-    { resolution := TriggeredAbility.TriggerResolution.ofSource action }
-  | .exileTop => { resolution := .exile .top .playUntilNextTurn }
-  | .discard n => { resolution := .discard (.cards n) }
-  | .mayTo can thenDo =>
-    let left := timing can
-    let right := timing thenDo
-    { targeting :=
-        if left.targeting.kind == .none then right.targeting else left.targeting
-      allowsZeroTargets := left.allowsZeroTargets || right.allowsZeroTargets
-      maxTargets :=
-        if left.targeting.kind == .none then right.maxTargets else left.maxTargets
-      dividedDamage :=
-        match left.dividedDamage with
-        | some d => some d
-        | none => right.dividedDamage
-      resolution := .may left.resolution right.resolution .ifYouDo }
-  | .may action =>
-    let inner := timing action
-    { inner with resolution := .may inner.resolution (.sequence []) }
-  | .opponentDiscards n who =>
-    match who with
-    | .each => { resolution := .discard (.cards n .eachOpponent) }
-    | .target =>
-      { targeting := .of .opponent, resolution := .discard (.cards n (.target .opponent)) }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .mill (.fixed n) (.target .player) }
-  | .investigate => { resolution := .investigate }
-  | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
   | .searchLibrary => { resolution := .searchLibrary (.put .forest) }
   | .searchBasicLandToHand =>
     { resolution := .searchLibrary (.returnToHand .basicLand) }
-  | .eachPlayerSacrificesCreature =>
-    { resolution := .sacrifice .eachPlayersCreature }
-  | .exileTarget kind =>
-    { targeting := .of kind, resolution := .exile .target .leaveTrigger }
-  | .returnCreatureFromGyToHand =>
-    { targeting := .of .creatureCardInYourGraveyard,
-      resolution := .returnToHand .graveyardCard }
-  | .plusOneEachYouControl which =>
-    { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
-  | .honeEachEquipment => { resolution := .putCounters (.ofKind .hone 1) (.youControl (.subtype "Equipment")) }
-  | .plusOneEachOtherGainLife =>
-    { resolution := .sequence
-        [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
-         .gainLife .perOtherCreature] }
-  | .becomePT p t => { resolution := .may (.setBasePT (.fixed p) (.fixed t) .source) (.sequence []) }
-  | .pumpTargetPerPlains =>
-    { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
   | .mayDiscardHandDraw n =>
     { resolution := .may (.discard .hand) (.draw (.fixed n)) .ifYouDo }
-  | .pumpByLookedAt => { resolution := .pump .perLookedAt .perLookedAt .source }
-  | .pumpGreatestPower => { resolution := .pump .greatestPower (.fixed 0) .source }
-  | .pumpForEachOtherCreature =>
-    { resolution := .pump .perOtherCreature .perOtherCreature .source }
-  | .damageBlockers n => { resolution := .dealDamage (.fixed n) .blockers }
-  | .returnLinkedExile => { resolution := .put .linkedExile }
-  | .createThenAttach kind =>
-    { resolution := .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] }
-  | .gainLifeSearchBasicOnTop n =>
-    { resolution := .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)] }
-  | .addMana types => { resolution := .addMana types }
-  | .createAxe attach =>
-    { resolution :=
-        .createTokens .axe (.fixed 1) false
-          (note := if attach then .attachReflexive else .none) }
-  | .tapOppOrUntapYours =>
-    { resolution := .or [.tap .target, .untap] }
-  | .gainControlOppUntilEot =>
-    { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
-  | .payReturnFromGy =>
-    { resolution := .may
-        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
-  | .targetOpponentLosesLife n =>
-    { targeting := .of .opponent, resolution := .loseLife (.fixed n) (.target .opponent) }
   | .drawXDiscard n =>
     { resolution := .sequence
         [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards n))] }
-  | .ringTempts => { resolution := .ringTempts }
-  | .setOtherBasePT =>
-    { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
-      resolution := .setBasePT .equalSourcePower .equalSourceToughness }
-  | .returnElfGainLife =>
-    { targeting := .of .elfInYourGraveyard
-      resolution := .sequence
-        [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] }
-  | .damageFromLastKnownPower =>
-    { targeting := .of .oppCreature,
-      resolution := .dealDamage .lastKnownPower .permanent }
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
@@ -284,81 +177,17 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
         [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] }
-  | .removeHopeDrawSac =>
-    { resolution := .sequence
-        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] }
   | .tapHumansDraw =>
     { resolution := .sequence
         [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman] }
-  | .destroyOppArtifactsEnchantmentsGainLife =>
-    { resolution := .sequence
-        [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
-         .gainLife .forEachDestroyedThisWay] }
-  | .damageEqualSubtypeToEachOpponent subtype =>
-    { resolution := .dealDamage (.subtypeCount subtype) (.player .eachOpponent) }
-  | .damageEqualTreasures =>
-    { targeting := .of .playerOrCreature,
-      resolution := .dealDamage (.subtypeCount "Treasure") .target }
-  | .dealDamageDestroyIfSubtype n subtype =>
-    { targeting := .of .playerOrCreature,
-      resolution := .sequence
-        [.dealDamage (.fixed n) .target .markedPermanent,
-         .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
-  | .attachEquipmentToCreature =>
-    { targeting := .of .equipmentYouControlThenCreatureYouControl,
-      allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
-  | .defenderSacsLeastPower =>
-    { resolution := .sacrifice .leastPower }
-  | .returnOtherPlusOne =>
-    { targeting := .of (.filtered { noun := "up to one other target permanent you control"
-                                    controller := .you, another := true })
-      allowsZeroTargets := true
-      resolution := .sequence
-        [.returnToHand .permanent .returnedPermanent,
-         .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
   | .lookAtTopRevealTypes n types =>
     { resolution := .revealLibrary (.topNumber (.fixed n)) (.returnToHand (.lookedTypes types)) }
-  | .createTappedTreasuresEqualOppArtifacts =>
-    { resolution := .createTokens .treasure .oppArtifacts true }
-  | .putNonlandMvAtMostFromGy mv =>
-    { targeting := .of (.filtered
-        { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
-          zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
-      allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
-  | .othersGetAndOppsGet subtypes p t oppP oppT =>
-    { resolution := .sequence
-        [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]),
-         .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] }
-  | .wolfPlusOneOrTreasure =>
-    { resolution := .or
-        [.putCounters (.ofKind .plusOnePlusOne) .permanent,
-         .createTokens .treasure (.fixed 1) false] }
-  | .trampleCounterBecomeBear =>
-    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
-      resolution := .sequence
-        [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
         [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
-  | .exileOppNonlandEachUntilLeaves =>
-    { targeting := .of (.filtered
-        { noun := "for each opponent, up to one target nonland permanent that player controls"
-          nonland := true, controller := .eachOpponent })
-      allowsZeroTargets := true
-      resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
-  | .plusOneEqualLastKnownMv =>
-    { targeting := .of .creatureYouControl,
-      resolution := .putCounters .plusOneLastKnownMv .permanent }
-  | .mountainQuestDragon =>
-    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
-  | .treasuresPerChosenType =>
-    { resolution := .createTokens .treasure .chosenCreatureType false }
   | .revealUntilCreature =>
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
-  | .attackSacPlusOneEqualPower =>
-    { resolution := .may (.pay (.sacrifice (.fixed 1) .another))
-        (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
         [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)] }
@@ -366,108 +195,17 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .mill .thatManyLost .thatPlayer }
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
-  | .maySacDrawTreasure =>
-    { resolution := .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
-        (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo }
-  | .castInstantSorceryFromHand =>
-    { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
-  | .castInstantSorceryMvAtMost =>
-    { resolution := .mayCast .hand .lastKnown .withoutPaying }
   | .millThenCopy =>
     { resolution := .sequence
         [.mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
          .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] }
-  | .pumpTargetBySourcePower =>
-    { targeting := .of .anotherCreatureYouControl,
-      resolution := .pump .equalSourcePower (.fixed 0) .target }
-  | .createAlienPerInvasion =>
-    { resolution := .sequence
-        [.createTokens .alien (.fixed 1) false (note := .invasion),
-         .putCounters .plusOneNoted .createdToken,
-         .putCounters (.ofKind .invasion) .source] }
-  | .mayPutArtifactAttachEquipment =>
-    { resolution := .sequence
-        [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
-         .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] }
   | .cascade => { resolution := .cascade }
-  | .belladonnaTokenReward =>
-    { resolution := .sequence [
-        .noteResolveThisTurn 3,
-        .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
-        .«if» (.nthResolve 2) (.draw (.fixed 1)),
-        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] }
-  | .bolgMaySacrifice => { resolution := .may (.sacrifice .another) (.sequence []) }
-  | .bolgDealSacrificedPower =>
-    { targeting := .of .anotherCreature,
-      resolution := .sequence
-        [.dealDamage .lastKnownPower .permanent .excess,
-         .amass .notedExcess] }
-  | .createSpiritsForEquipped =>
-    { resolution := .sequence
-        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)] }
-  | .createTreasuresEqualDamagedPlayerArtifacts =>
-    { resolution :=
-        .createTokens .treasure .damagedPlayerArtifacts false }
-  | .deal1ThenAmassOrcs =>
-    { targeting := .of .playerOrCreature,
-      resolution := .sequence
-        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"] }
-  | .untapAttackersExtraCombat _n =>
-    { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
-  | .eaglesCreateBirds =>
-    { resolution := .createTokens .birdSoldier .lastKnownPower false }
-  | .allianceMode =>
-    { resolution := .chooseModes TriggeredAbility.TriggerResolution.allianceModes
-        .oneUnusedThisTurn }
-  | .destroyOtherAmassControllerPower =>
-    { targeting := .of .anotherCreature, allowsZeroTargets := true,
-      resolution := .sequence
-        [.destroy .target (note := .forAmass),
-         .amass .notedPower (who := .controller .target),
-         .«if» .youControlledDestroyed (.draw (.fixed 1))] }
-  | .gollumMode =>
-    { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes
-        .oneUnused }
   | .discardHandDrawDamageIfStory =>
     { resolution := .sequence
         [.may (.discard .hand) (.sequence []), .draw .discardedHand,
          .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] }
-  | .castFromGyArtifactInstantSorcery =>
-    { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
-  | .equippedAttackersGainDoubleStrike =>
-    { resolution := .grant .doubleStrike .equippedAttackers }
-  | .tapEnchantedRemoveCounters =>
-    { resolution := .sequence [.tap .enchanted, .removeCounters .all .enchanted] }
   | .revealTopPutRandomCreature n =>
     { resolution := .revealLibrary (.top n) (.put .randomCreature) }
-  | .beginCombatIfDrawnTwoPump =>
-    { targeting := .of .anotherCreatureYouControl,
-      resolution := .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
-        .pump (.fixed 3) (.fixed 0) .target,
-        .grant (.keywords Keyword.firstStrike) .target]) }
-  | .honePerOppAttach =>
-    { targeting := .of (.multi #[
-        { noun := "target opponent", zone := .player, controller := .opponent },
-        { noun := "target creature you control", controller := .you, types := #[.creature] }
-      ] #[1])
-      resolution := .sequence
-        [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] }
-  | .damageTargetOpponent n =>
-    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player (.target .opponent)) }
-  | .copySelfNonlegendary => { resolution := .becomeCopy .sourceTwoNonlegendaryTokens }
-  | .attachEquipmentThenFight =>
-    { targeting := .of .creatureYouControl,
-      resolution := .sequence [.attach .anyYouControl .target,
-        .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] }
-  | .returnAsArtifact => { resolution := .put .source (how := .asArtifact) }
-  | .exileLandsThenReturnTapped =>
-    { targeting := .of (.filtered {
-        noun := "up to three target lands you control"
-        types := #[.land], controller := .you })
-      allowsZeroTargets := true, maxTargets := 3
-      resolution := .sequence
-        [.exile .landsYouControl .forLater .lands,
-         .put .notedLands (how := .tapped)] }
   | .grimaImpulse =>
     { resolution := .sequence
         [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
@@ -477,24 +215,110 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence
         [.putCounters (.ofKind .influence) .source, .scry (.fixed 2),
          .may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence [])] }
-  | .treasuresEqualLastKnown =>
-    { resolution := .createTokens .treasure .lastKnownPower false }
-  | .protectionEverything =>
-    { resolution := .grant .protectionEverything .youIfCast }
-  | .loseLifePerBurden => { resolution := .loseLife .perBurden }
   | .revealSaga =>
     { resolution := .revealLibrary .untilSaga (.put .revealed) }
-  | .sacDamagersRingTempts =>
-    { resolution := .sequence [.sacrifice .combatDamager, .ringTempts] }
-  | .chapter _n e =>
-    TriggeredAbility.chapterTiming e
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .«if»
         (.or [.attackedWithSubtype subtype, .subtypeEntered subtype])
         (.draw (.fixed 1)) }
-  | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    { resolution := .pump .equalSourceToughness .equalSourceToughness
-        (.othersOfSubtype subtype) }
+  | .surveil n => { resolution := .surveil (.fixed n) }
+  | .drawIfRemovedTwoLoyalty =>
+    { resolution := .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) }
+  | .drawTwoWinIfEmptyShuffleSource =>
+    { resolution := .sequence
+        [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] }
+  | .surveilReturnIfGainedLife =>
+    { events := #[.yourEndStep],
+      resolution := .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1)] }
+  | .drawMayPutLandTapped =>
+    { resolution := .sequence
+        [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }
+  | .drawGainLifeIfAnotherHero =>
+    { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] }
+  | .maySacArtifactOrDiscardDraw =>
+    { resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo }
+
+/-- Targeting, divided-damage parameters, and resolution for `TokenCounterTrigger`. -/
+def TokenCounterTrigger.timing : TokenCounterTrigger → TriggeredAbility.TriggerTiming
+  | .createTokens kind n tapped => { resolution := .createTokens kind (.fixed n) tapped }
+  | .amass n subtype amount attachSource =>
+    let resolved : TriggeredAbility.NumberSelector :=
+      match amount with
+      | .fixed => .fixed n
+      | .sourcePower => .lastKnownPower
+      | .notedExcess => .notedExcess
+      | .notedPower => .notedPower
+    { resolution := .amass resolved subtype attachSource }
+  | .recruit who => { resolution := .recruit who }
+  | .investigate => { resolution := .investigate }
+  | .plusOneEachYouControl which =>
+    { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
+  | .honeEachEquipment => { resolution := .putCounters (.ofKind .hone 1) (.youControl (.subtype "Equipment")) }
+  | .plusOneEachOtherGainLife =>
+    { resolution := .sequence
+        [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
+         .gainLife .perOtherCreature] }
+  | .createThenAttach kind =>
+    { resolution := .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] }
+  | .createAxe attach =>
+    { resolution :=
+        .createTokens .axe (.fixed 1) false
+          (note := if attach then .attachReflexive else .none) }
+  | .ringTempts => { resolution := .ringTempts }
+  | .removeHopeDrawSac =>
+    { resolution := .sequence
+        [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)), .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] }
+  | .createTappedTreasuresEqualOppArtifacts =>
+    { resolution := .createTokens .treasure .oppArtifacts true }
+  | .wolfPlusOneOrTreasure =>
+    { resolution := .or
+        [.putCounters (.ofKind .plusOnePlusOne) .permanent,
+         .createTokens .treasure (.fixed 1) false] }
+  | .trampleCounterBecomeBear =>
+    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
+      resolution := .sequence
+        [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
+  | .plusOneEqualLastKnownMv =>
+    { targeting := .of .creatureYouControl,
+      resolution := .putCounters .plusOneLastKnownMv .permanent }
+  | .mountainQuestDragon =>
+    { resolution := .sequence [.putCounters (.ofKind .quest) .source, .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon)])] }
+  | .treasuresPerChosenType =>
+    { resolution := .createTokens .treasure .chosenCreatureType false }
+  | .attackSacPlusOneEqualPower =>
+    { resolution := .may (.pay (.sacrifice (.fixed 1) .another))
+        (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
+  | .maySacDrawTreasure =>
+    { resolution := .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
+        (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo }
+  | .createAlienPerInvasion =>
+    { resolution := .sequence
+        [.createTokens .alien (.fixed 1) false (note := .invasion),
+         .putCounters .plusOneNoted .createdToken,
+         .putCounters (.ofKind .invasion) .source] }
+  | .belladonnaTokenReward =>
+    { resolution := .sequence [
+        .noteResolveThisTurn 3,
+        .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
+        .«if» (.nthResolve 2) (.draw (.fixed 1)),
+        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] }
+  | .createSpiritsForEquipped =>
+    { resolution := .sequence
+        [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)] }
+  | .createTreasuresEqualDamagedPlayerArtifacts =>
+    { resolution :=
+        .createTokens .treasure .damagedPlayerArtifacts false }
+  | .eaglesCreateBirds =>
+    { resolution := .createTokens .birdSoldier .lastKnownPower false }
+  | .honePerOppAttach =>
+    { targeting := .of (.multi #[
+        { noun := "target opponent", zone := .player, controller := .opponent },
+        { noun := "target creature you control", controller := .you, types := #[.creature] }
+      ] #[1])
+      resolution := .sequence
+        [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] }
+  | .treasuresEqualLastKnown =>
+    { resolution := .createTokens .treasure .lastKnownPower false }
   | .scryAndPlan n =>
     { resolution := .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] }
   | .lootAndPlan =>
@@ -543,14 +367,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.sacrifice .plan .forReflexive,
          .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] }
-  | .surveil n => { resolution := .surveil (.fixed n) }
   | .empowerJace n => { resolution := .empowerJace (.fixed n) }
-  | .prepareSource .ifNotPrepared =>
-    { events := #[.yourUpkeep], resolution := .«if» (.not .preparedSource) (.becomePrepared .source) }
-  | .prepareSource .ifThreeCreaturesDied =>
-    { events := #[.eachEndStep], resolution := .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source) }
-  | .drawIfRemovedTwoLoyalty =>
-    { resolution := .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) }
   | .loyaltyOnSource =>
     { resolution := .putCounters (.ofKind .loyalty) .source }
   | .grantThenCounterByType k =>
@@ -559,45 +376,192 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.grant (.keywords k) .target,
          .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
          .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] }
-  | .destroyOppPermanentIfSixLands =>
-    { targeting := .of .oppPermanent,
-      resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
-        .destroy .target,
-        .createTokens .treasure (.fixed 1) false (who := .controller .target)]) }
   | .pumpOrCounterIfScried =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
         (.putCounters (.ofKind .plusOnePlusOne) .permanent)
         (.pump (.fixed 1) (.fixed 1) .target) }
-  | .sacrificeSourceIfNoPlaneswalker =>
-    { events := #[.eachEndStep],
-      resolution := .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) }
-  | .creaturesYouControlGet p t =>
-    { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .putSourceCountersOnTarget =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .putCounters .sourceCounters .permanent }
   | .chargeCounterOnSource =>
     { resolution := .putCounters (.ofKind .charge) .source }
-  | .addGreenPerChargeCounter =>
-    { events := #[.yourFirstMain],
-      resolution := .addMana #[.colored .green] .perChargeCounter }
-  | .drawTwoWinIfEmptyShuffleSource =>
+  | .createFoodOrTreasure =>
+    { resolution := .or
+        [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] }
+  | .villainIfGyElseMill =>
+    { resolution := .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
+        (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) }
+  | .plusOneOrTwoIfAnotherHero =>
+    { targeting := .of .creature,
+      resolution := .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
+        (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
+        (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
+
+/-- Targeting, divided-damage parameters, and resolution for `CombatDamageTrigger`. -/
+def CombatDamageTrigger.timing : CombatDamageTrigger → TriggeredAbility.TriggerTiming
+  | .dividedDamage amount maxTargets =>
+    { targeting := .of .playerOrCreature,
+      dividedDamage := some (amount, maxTargets), resolution := .dealDamage (.fixed 0) .target .preallocated }
+  | .gainLife n => { resolution := .gainLife (.fixed n) }
+  | .damageEachOpponent n =>
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player .eachOpponent) }
+  | .attachTo kind =>
+    { targeting := .of kind, resolution := .attach .source .target }
+  | .pumpCause p t => { resolution := .pump (.fixed p) (.fixed t) .cause }
+  | .becomePT p t => { resolution := .may (.setBasePT (.fixed p) (.fixed t) .source) (.sequence []) }
+  | .pumpTargetPerPlains =>
+    { targeting := .of .creatureYouControl, resolution := .pump .perPlains .perPlains .target }
+  | .pumpByLookedAt => { resolution := .pump .perLookedAt .perLookedAt .source }
+  | .pumpGreatestPower => { resolution := .pump .greatestPower (.fixed 0) .source }
+  | .pumpForEachOtherCreature =>
+    { resolution := .pump .perOtherCreature .perOtherCreature .source }
+  | .damageBlockers n => { resolution := .dealDamage (.fixed n) .blockers }
+  | .gainLifeSearchBasicOnTop n =>
+    { resolution := .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)] }
+  | .targetOpponentLosesLife n =>
+    { targeting := .of .opponent, resolution := .loseLife (.fixed n) (.target .opponent) }
+  | .setOtherBasePT =>
+    { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
+      resolution := .setBasePT .equalSourcePower .equalSourceToughness }
+  | .damageFromLastKnownPower =>
+    { targeting := .of .oppCreature,
+      resolution := .dealDamage .lastKnownPower .permanent }
+  | .damageEqualSubtypeToEachOpponent subtype =>
+    { resolution := .dealDamage (.subtypeCount subtype) (.player .eachOpponent) }
+  | .damageEqualTreasures =>
+    { targeting := .of .playerOrCreature,
+      resolution := .dealDamage (.subtypeCount "Treasure") .target }
+  | .dealDamageDestroyIfSubtype n subtype =>
+    { targeting := .of .playerOrCreature,
+      resolution := .sequence
+        [.dealDamage (.fixed n) .target .markedPermanent,
+         .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
+  | .attachEquipmentToCreature =>
+    { targeting := .of .equipmentYouControlThenCreatureYouControl,
+      allowsZeroTargets := true, resolution := .attach .target .optionalCreature }
+  | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
-        [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] }
-  | .surveilReturnIfGainedLife =>
-    { events := #[.yourEndStep],
-      resolution := .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1)] }
+        [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]),
+         .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] }
+  | .pumpTargetBySourcePower =>
+    { targeting := .of .anotherCreatureYouControl,
+      resolution := .pump .equalSourcePower (.fixed 0) .target }
+  | .bolgDealSacrificedPower =>
+    { targeting := .of .anotherCreature,
+      resolution := .sequence
+        [.dealDamage .lastKnownPower .permanent .excess,
+         .amass .notedExcess] }
+  | .deal1ThenAmassOrcs =>
+    { targeting := .of .playerOrCreature,
+      resolution := .sequence
+        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"] }
+  | .untapAttackersExtraCombat _n =>
+    { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
+  | .beginCombatIfDrawnTwoPump =>
+    { targeting := .of .anotherCreatureYouControl,
+      resolution := .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
+        .pump (.fixed 3) (.fixed 0) .target,
+        .grant (.keywords Keyword.firstStrike) .target]) }
+  | .damageTargetOpponent n =>
+    { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player (.target .opponent)) }
+  | .attachEquipmentThenFight =>
+    { targeting := .of .creatureYouControl,
+      resolution := .sequence [.attach .anyYouControl .target,
+        .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] }
+  | .loseLifePerBurden => { resolution := .loseLife .perBurden }
+  | .othersOfSubtypeGetEqualSourceToughness subtype =>
+    { resolution := .pump .equalSourceToughness .equalSourceToughness
+        (.othersOfSubtype subtype) }
+  | .creaturesYouControlGet p t =>
+    { resolution := .pump (.fixed p) (.fixed t) .creaturesYouControl }
   | .pumpIfFiveOtherForests =>
     { targeting := .of .creatureYouControl,
       resolution := .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) }
-  | .onEnchanted action =>
-    { resolution := TriggeredAbility.TriggerResolution.ofEnchanted action }
-  | .attachThen followup =>
-    { targeting := .of .creatureYouControl,
+
+/-- Targeting, divided-damage parameters, and resolution for `ZoneChangeTrigger`. -/
+def ZoneChangeTrigger.timing : ZoneChangeTrigger → TriggeredAbility.TriggerTiming
+  | .exileUntilLeaves kind =>
+    { targeting := .of kind, resolution := .exile .target .untilSourceLeaves }
+  | .opponentSacrificesCreature =>
+    { targeting := .of .opponent,
+      resolution := .sacrifice .opponentChosenCreature }
+  | .exileTop => { resolution := .exile .top .playUntilNextTurn }
+  | .discard n => { resolution := .discard (.cards n) }
+  | .opponentDiscards n who =>
+    match who with
+    | .each => { resolution := .discard (.cards n .eachOpponent) }
+    | .target =>
+      { targeting := .of .opponent, resolution := .discard (.cards n (.target .opponent)) }
+  | .eachPlayerSacrificesCreature =>
+    { resolution := .sacrifice .eachPlayersCreature }
+  | .exileTarget kind =>
+    { targeting := .of kind, resolution := .exile .target .leaveTrigger }
+  | .returnCreatureFromGyToHand =>
+    { targeting := .of .creatureCardInYourGraveyard,
+      resolution := .returnToHand .graveyardCard }
+  | .returnLinkedExile => { resolution := .put .linkedExile }
+  | .payReturnFromGy =>
+    { resolution := .may
+        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
+  | .returnElfGainLife =>
+    { targeting := .of .elfInYourGraveyard
       resolution := .sequence
-        ([.attach .source .target] ++
-          (TriggeredAbility.TriggerResolution.ofTargetWhileSource followup).flatten) }
+        [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] }
+  | .destroyOppArtifactsEnchantmentsGainLife =>
+    { resolution := .sequence
+        [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
+         .gainLife .forEachDestroyedThisWay] }
+  | .defenderSacsLeastPower =>
+    { resolution := .sacrifice .leastPower }
+  | .returnOtherPlusOne =>
+    { targeting := .of (.filtered { noun := "up to one other target permanent you control"
+                                    controller := .you, another := true })
+      allowsZeroTargets := true
+      resolution := .sequence
+        [.returnToHand .permanent .returnedPermanent,
+         .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)] }
+  | .putNonlandMvAtMostFromGy mv =>
+    { targeting := .of (.filtered
+        { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
+          zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
+      allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
+  | .exileOppNonlandEachUntilLeaves =>
+    { targeting := .of (.filtered
+        { noun := "for each opponent, up to one target nonland permanent that player controls"
+          nonland := true, controller := .eachOpponent })
+      allowsZeroTargets := true
+      resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
+  | .mayPutArtifactAttachEquipment =>
+    { resolution := .sequence
+        [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
+         .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] }
+  | .bolgMaySacrifice => { resolution := .may (.sacrifice .another) (.sequence []) }
+  | .destroyOtherAmassControllerPower =>
+    { targeting := .of .anotherCreature, allowsZeroTargets := true,
+      resolution := .sequence
+        [.destroy .target (note := .forAmass),
+         .amass .notedPower (who := .controller .target),
+         .«if» .youControlledDestroyed (.draw (.fixed 1))] }
+  | .returnAsArtifact => { resolution := .put .source (how := .asArtifact) }
+  | .exileLandsThenReturnTapped =>
+    { targeting := .of (.filtered {
+        noun := "up to three target lands you control"
+        types := #[.land], controller := .you })
+      allowsZeroTargets := true, maxTargets := 3
+      resolution := .sequence
+        [.exile .landsYouControl .forLater .lands,
+         .put .notedLands (how := .tapped)] }
+  | .sacDamagersRingTempts =>
+    { resolution := .sequence [.sacrifice .combatDamager, .ringTempts] }
+  | .destroyOppPermanentIfSixLands =>
+    { targeting := .of .oppPermanent,
+      resolution := .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
+        .destroy .target,
+        .createTokens .treasure (.fixed 1) false (who := .controller .target)]) }
+  | .sacrificeSourceIfNoPlaneswalker =>
+    { events := #[.eachEndStep],
+      resolution := .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) }
   | .exileOtherCopyEnchanted =>
     { targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -605,27 +569,61 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileUntilNextEndStep =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .exile .target .nextEndStep }
+
+/-- Targeting, divided-damage parameters, and resolution for `ContinuousTrigger`. -/
+def ContinuousTrigger.timing : ContinuousTrigger → TriggeredAbility.TriggerTiming
+  | .addMana types => { resolution := .addMana types }
+  | .tapOppOrUntapYours =>
+    { resolution := .or [.tap .target, .untap] }
+  | .gainControlOppUntilEot =>
+    { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
+  | .castInstantSorceryFromHand =>
+    { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
+  | .castInstantSorceryMvAtMost =>
+    { resolution := .mayCast .hand .lastKnown .withoutPaying }
+  | .allianceMode =>
+    { resolution := .chooseModes TriggeredAbility.TriggerResolution.allianceModes
+        .oneUnusedThisTurn }
+  | .gollumMode =>
+    { resolution := .chooseModes TriggeredAbility.TriggerResolution.gollumModes
+        .oneUnused }
+  | .castFromGyArtifactInstantSorcery =>
+    { resolution := .mayCast .graveyard .unlimited .pay .exileInstead }
+  | .equippedAttackersGainDoubleStrike =>
+    { resolution := .grant .doubleStrike .equippedAttackers }
+  | .tapEnchantedRemoveCounters =>
+    { resolution := .sequence [.tap .enchanted, .removeCounters .all .enchanted] }
+  | .copySelfNonlegendary => { resolution := .becomeCopy .sourceTwoNonlegendaryTokens }
+  | .protectionEverything =>
+    { resolution := .grant .protectionEverything .youIfCast }
+  | .prepareSource .ifNotPrepared =>
+    { events := #[.yourUpkeep], resolution := .«if» (.not .preparedSource) (.becomePrepared .source) }
+  | .prepareSource .ifThreeCreaturesDied =>
+    { events := #[.eachEndStep], resolution := .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source) }
+  | .addGreenPerChargeCounter =>
+    { events := #[.yourFirstMain],
+      resolution := .addMana #[.colored .green] .perChargeCounter }
   | .tapOrUntapNonland =>
     { targeting := .of .nonland,
       resolution := .or [.tap .target, .untap] }
-  | .createFoodOrTreasure =>
-    { resolution := .or
-        [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] }
-  | .villainIfGyElseMill =>
-    { resolution := .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-        (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) }
-  | .drawMayPutLandTapped =>
-    { resolution := .sequence
-        [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }
-  | .drawGainLifeIfAnotherHero =>
-    { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] }
-  | .plusOneOrTwoIfAnotherHero =>
-    { targeting := .of .creature,
-      resolution := .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
-        (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
-        (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
-  | .maySacArtifactOrDiscardDraw =>
-    { resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo }
+
+/-- Targeting, divided-damage parameters, and resolution for `PermanentTrigger`. -/
+def PermanentTrigger.timing : PermanentTrigger → TriggeredAbility.TriggerTiming
+  | .onPermanent kind action =>
+    { targeting := .of kind
+      resolution := TriggeredAbility.TriggerResolution.ofPermanent action }
+  | .onSource action =>
+    { resolution := TriggeredAbility.TriggerResolution.ofSource action }
+  | .onEnchanted action =>
+    { resolution := TriggeredAbility.TriggerResolution.ofEnchanted action }
+  | .attachThen followup =>
+    { targeting := .of .creatureYouControl,
+      resolution := .sequence
+        ([.attach .source .target] ++
+          (TriggeredAbility.TriggerResolution.ofTargetWhileSource followup).flatten) }
+
+/-- Targeting, divided-damage parameters, and resolution for `EventLeftover`. -/
+def EventLeftover.timing : EventLeftover → TriggeredAbility.TriggerTiming
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -953,6 +951,37 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .resource .plusOneOnHeroesCreateWall =>
     { events := #[.youPutPlusOne],
       resolution := .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo }
+
+
+namespace SharedTrigger
+
+/-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
+def timing : SharedTrigger → TriggeredAbility.TriggerTiming
+  | .library t => t.timing
+  | .tokenCounter t => t.timing
+  | .combatDamage t => t.timing
+  | .zoneChange t => t.timing
+  | .continuous t => t.timing
+  | .permanent t => t.timing
+  | .leftover t => t.timing
+  | .mayTo can thenDo =>
+    let left := timing can
+    let right := timing thenDo
+    { targeting :=
+        if left.targeting.kind == .none then right.targeting else left.targeting
+      allowsZeroTargets := left.allowsZeroTargets || right.allowsZeroTargets
+      maxTargets :=
+        if left.targeting.kind == .none then right.maxTargets else left.maxTargets
+      dividedDamage :=
+        match left.dividedDamage with
+        | some d => some d
+        | none => right.dividedDamage
+      resolution := .may left.resolution right.resolution .ifYouDo }
+  | .may action =>
+    let inner := timing action
+    { inner with resolution := .may inner.resolution (.sequence []) }
+  | .chapter _n e =>
+    TriggeredAbility.chapterTiming e
 
 end SharedTrigger
 
