@@ -63,29 +63,45 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     else if onlyIfGyCreaturesAtLeast != 0 then
       .gyCreaturesAtLeast onlyIfGyCreaturesAtLeast
     else .none
+  let extra : ExtraActivationCost :=
+    if sacrificeAnotherCreatureOrArtifact then .sacrificeAnotherCreatureOrArtifact
+    else if exileSourceFromGraveyard then .exileSourceFromGraveyard
+    else if removeIndestructibleCounter then .removeIndestructibleCounter
+    else if removeAnyNumberPlusOne then .removeAnyNumberPlusOne
+    else if putStunCounterOnSource then .putStunCounterOnSource
+    else .none
+  let costReduction : ActivationCostReduction :=
+    if costReductionIfYouControlLegendary != 0 then
+      .ifYouControlLegendary costReductionIfYouControlLegendary
+    else if costReductionPerEquipment != 0 then
+      .perEquipment costReductionPerEquipment
+    else match costReductionIfTargetPowerAtMost with
+      | some (n, p) => .ifTargetPowerAtMost n p
+      | none => .none
+  let equipRestriction : EquipRestriction :=
+    if equipWorthy then .worthy
+    else match equipSubtype with
+      | some s => .subtype s
+      | none => .none
   {
     cost := {
       mana := mana
       tap := tap
       loyalty := loyalty
       sacrificeSource := sacrificeSource
-      sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
       payLife := payLife
       discardSource := discardSource
-      exileSourceFromGraveyard := exileSourceFromGraveyard
-      removeIndestructibleCounter := removeIndestructibleCounter
-      removeAnyNumberPlusOne := removeAnyNumberPlusOne
-      putStunCounterOnSource := putStunCounterOnSource
       picks := picks
+      extra := extra
     }
     condition := condition
+    costReduction := costReduction
     effect := effect
     otherModes := otherModes
     onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
     activateFromGraveyard, activateFromHand
-    costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-    powerUp, equipWorthy
-    costReductionIfTargetPowerAtMost
+    equipRestriction := equipRestriction
+    powerUp
   }
 
 /-- Equip `mana`, only as a sorcery. -/

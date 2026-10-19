@@ -66,7 +66,7 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : ExtraActivatio
   | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
   | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
   | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p o.id (costPicksOf { cost := { fra := c }, effect := default })
+    g.costPicksPayable p o.id (costPicksOf { cost := { extra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
@@ -75,6 +75,7 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : ExtraActivatio
   | .crew n =>
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n
+  | _ => true
 
 /-- “For each opponent, up to one target … that player controls” as one
 optional target slot per opponent (CR 601.2c). -/

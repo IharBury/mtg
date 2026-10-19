@@ -44,6 +44,64 @@ structure AdventureFace where
   empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
+/-- Replacement rule for whether a permanent enters the battlefield tapped (CR 614.1c). -/
+inductive EntersTappedRule where
+  | untapped
+  | always
+  | unlessLegendary
+  | unlessEquipment
+  | unlessPlaneswalker
+  | unlessTwoOtherLands
+  | unlessPayLife (life : Nat)
+  | unlessAnySubtype (subtypes : Array String)
+  | unlessNBasics (n : Nat)
+  | unlessOppLands (n : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Counters a permanent enters the battlefield with (CR 614.1c). -/
+inductive EntersWithCounters where
+  | none
+  | plusOne (n : Nat)
+  | shield (n : Nat)
+  | indestructible
+  | hopePerCreature
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Choice made as a permanent enters the battlefield (CR 614.12). -/
+inductive AsEntersChoice where
+  | none
+  | creatureType
+  | oddEven
+  | cardType
+  | marduOrJeskai
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Printed spell cost reduction (CR 601.2f). -/
+inductive SpellCostReduction where
+  | none
+  | ifCreatureDied (n : Nat)
+  | ifTargetDamaged (n : Nat)
+  | ifTargetTapped (n : Nat)
+  | ifTargetAttackingNontoken (n : Nat)
+  | ifTargetAttacking (n : Nat)
+  | ifYouControl (n : Nat) (subtype : String)
+  | ifGyCreaturesAtLeast (min : Nat) (n : Nat)
+  | equalFlyingPower
+  | greatestPower
+  | greatestToughness
+  | equalOppArtifacts
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Printed additional cost to cast a spell (CR 601.2b / 118.8). -/
+inductive SpellAdditionalCost where
+  | none
+  | sacrificeCreature
+  | sacrificeArtifactOrCreature (orPayGeneric : Option Nat := none)
+  | sacrificeCreatureOrPlaneswalkerOrPay (generic : Nat)
+  | discardOrPay (generic : Nat)
+  | beholdOrPay (quality : String) (generic : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
@@ -82,40 +140,10 @@ structure CardDef where
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
   spellEffect : Option Effect := none
-  /-- Additional cost: sacrifice an artifact or creature (CR 601.2b / 601.2h), e.g.
-  Improvised Club. When `additionalCostOrPayGeneric` is set, that sacrifice
-  may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
-  The choice is announced at CR 601.2b, before targets. -/
-  additionalCostSacrificeArtifactOrCreature : Bool := false
-  /-- The sacrifice alternative of the additional cost is a creature or
-  planeswalker rather than an artifact or creature (Silence the Echo). -/
-  additionalCostSacrificeCreatureOrPlaneswalker : Bool := false
-  /-- Alternative additional cost: pay this much generic mana instead of
-  sacrificing an artifact or creature (CR 601.2b). -/
-  additionalCostOrPayGeneric : Option Nat := none
-  /-- Additional cost: discard a card or pay `{n}` (e.g. Titania). -/
-  additionalCostDiscardOrPayGeneric : Option Nat := none
-  /-- This spell costs this much generic mana less if a creature died this
-  turn (e.g. Dreaded Bat-Cloud). -/
-  costReductionIfCreatureDied : Nat := 0
-  /-- This spell costs this much generic mana less if it targets a creature
-  that was dealt damage this turn (e.g. Bitter Downfall). -/
-  costReductionIfTargetDamaged : Nat := 0
-  /-- This spell costs this much generic mana less if it targets a tapped
-  creature (e.g. Magnificent End). -/
-  costReductionIfTargetTapped : Nat := 0
-  /-- This spell costs this much generic mana less if it targets an attacking
-  nontoken creature (e.g. Uneasy Partings). -/
-  costReductionIfTargetAttackingNontoken : Nat := 0
-  /-- This spell costs this much generic mana less if it targets an attacking
-  creature (e.g. Depower). -/
-  costReductionIfTargetAttacking : Nat := 0
-  /-- This spell costs this much generic mana less if you control a permanent
-  of this subtype (e.g. Visions of Villainy, Truck Toss). -/
-  costReductionIfYouControl : Option (Nat × String) := none
-  /-- This spell costs this much generic mana less if your graveyard has at
-  least this many creature cards (e.g. Punishing Punch). -/
-  costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
+  /-- Additional cost to cast this spell (CR 601.2b / 118.8). -/
+  additionalCost : SpellAdditionalCost := .none
+  /-- Cost reduction on this spell (CR 601.2f). -/
+  spellCostReduction : SpellCostReduction := .none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
   /-- Modes of this card's modal triggered ability (“When this creature
@@ -133,11 +161,12 @@ structure CardDef where
   /-- `{T}: Add one mana of any color. Spend this mana only to cast an instant
   or sorcery spell (e.g. Pelargir Survivor). -/
   tapAddAnyColorForInstantOrSorcery : Bool := false
-  /-- This enchantment enters with a hope counter for each creature you control
-  (e.g. Dawn of a New Age). -/
-  entersWithHopePerCreature : Bool := false
-  /-- This permanent enters tapped (CR 110.5b exception). -/
-  entersTapped : Bool := false
+  /-- Replacement rule for whether this permanent enters tapped (CR 614.1c). -/
+  entersTappedRule : EntersTappedRule := .untapped
+  /-- Counters this permanent enters the battlefield with (CR 614.1c). -/
+  entersWithCounters : EntersWithCounters := .none
+  /-- Choice made as this permanent enters the battlefield (CR 614.12). -/
+  asEntersChoose : AsEntersChoice := .none
   /-- `{T}: Add one of these mana types` as a single choice ability
   (e.g. `{T}: Add {G} or {U}`). -/
   tapAddOneOf : Array ManaType := #[]
@@ -164,15 +193,9 @@ structure CardDef where
   cast the exiled card, and mana of any type can be spent to cast that
   spell” (Null Summoner). -/
   castExiledWithSevenInGraveyard : Bool := false
-  /-- This permanent enters tapped unless you control a legendary creature. -/
-  entersTappedUnlessLegendary : Bool := false
-  /-- This permanent enters tapped unless you control an Equipment. -/
-  entersTappedUnlessEquipment : Bool := false
   /-- Abilities planeswalkers you control have (“Planeswalkers you control
   have …”). -/
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
-  /-- This permanent enters with this many +1/+1 counters (CR 614.1c). -/
-  entersWithPlusOneCounters : Nat := 0
   /-- `{T}: Choose a color. Add one mana of that color for each different
   power among creatures you control.` (Loot, the Nexus) -/
   tapAddChosenColorPerDifferentPower : Bool := false
@@ -181,22 +204,9 @@ structure CardDef where
   /-- You can't cast this spell unless there are at least this many other
   cards in your graveyard. -/
   castOnlyIfGraveyardAtLeast : Option Nat := none
-  /-- This permanent enters tapped unless you control a planeswalker. -/
-  entersTappedUnlessPlaneswalker : Bool := false
-  /-- This permanent enters tapped unless you control two or more other lands. -/
-  entersTappedUnlessTwoOtherLands : Bool := false
   /-- `{T}: Add one mana of any color. Spend this mana only to cast a
   legendary spell, and that spell can't be countered.` -/
   tapAddAnyColorForLegendary : Bool := false
-  /-- This spell costs {X} less to cast, where X is the total power of
-  creatures you control with flying. -/
-  costReductionEqualFlyingPower : Bool := false
-  /-- This spell costs {X} less to cast, where X is the greatest power among
-  creatures you control. -/
-  costReductionGreatestPower : Bool := false
-  /-- This spell costs {X} less to cast, where X is the greatest toughness
-  among creatures you control. -/
-  costReductionGreatestToughness : Bool := false
   /-- Crew `n` (CR 702.122). -/
   crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/
@@ -212,21 +222,12 @@ structure CardDef where
   tapAddRestricted : Option (Array ManaType × String) := none
   /-- `{T}, Pay n life: Add one of these types`. -/
   tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
-  /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/
-  entersTappedUnlessPayLife : Option Nat := none
   /-- `{T}: Add one mana of any color in your commander's color identity`. -/
   tapAddCommanderIdentity : Bool := false
-  /-- Additional cost: sacrifice a creature. -/
-  additionalCostSacrificeCreature : Bool := false
-  /-- As this enchantment enters, choose a creature type. -/
-  asEntersChooseCreatureType : Bool := false
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
   /-- Affinity for this subtype (CR 702.40). -/
   affinityForSubtype : Option String := none
-  /-- This spell costs {X} less, where X is the greatest number of artifacts
-  an opponent controls. -/
-  costReductionEqualOppArtifacts : Bool := false
   /-- Gift a Treasure (you may promise an opponent a Treasure). -/
   giftTreasure : Bool := false
   /-- If you would create a Food token, also create a Treasure. -/
@@ -281,10 +282,6 @@ structure CardDef where
   /-- Hexproof and indestructible while you control this many lore counters
   among Sagas (e.g. Tom Bombadil). -/
   hexproofIndestructibleIfLore : Option Nat := none
-  /-- This creature enters with an indestructible counter. -/
-  entersWithIndestructibleCounter : Bool := false
-  /-- As this permanent enters, choose odd or even (Gollum, Riddle Master). -/
-  asEntersChooseOddEven : Bool := false
   /-- Spells you cast from anywhere other than your hand cost this much
   generic mana less (e.g. Bilbo, Thief in the Night). -/
   costReductionNotFromHand : Nat := 0
@@ -296,8 +293,6 @@ structure CardDef where
   teamwork : Option Nat := none
   /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
   chooseBothIfTeamwork : Bool := false
-  /-- This permanent enters with this many shield counters. -/
-  entersWithShield : Nat := 0
   /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
   daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
@@ -310,8 +305,6 @@ structure CardDef where
   entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- Additional cost: behold this quality, or pay this much generic mana. -/
-  additionalCostBeholdOrPay : Option (String × Nat) := none
   /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
   tapAddTogether : Array ManaType := #[]
   /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
@@ -324,12 +317,6 @@ structure CardDef where
   grantLandsTapAnyColor : Bool := false
   /-- Pay `cost`, `{T}`: add two mana in any combination of these colors. -/
   filterMana : Option (ManaCost × Array ManaType) := none
-  /-- Enters tapped unless you control a land of one of these subtypes. -/
-  entersTappedUnlessAnySubtype : Array String := #[]
-  /-- Enters tapped unless you control at least this many basic lands. -/
-  entersTappedUnlessNBasics : Option Nat := none
-  /-- Enters tapped unless opponents control at least this many lands. -/
-  entersTappedUnlessOppLands : Option Nat := none
   /-- Spending commander-identity mana from this land to cast a creature spell
   that shares a creature type with your commander scries 1 (Path of Ancestry). -/
   commanderIdentityScryCreature : Bool := false
@@ -361,15 +348,11 @@ structure CardDef where
   /-- Eminence: other Sphinx spells you cast cost this much less while this is
   in the command zone or on the battlefield. -/
   eminenceSphinxReduction : Nat := 0
-  /-- As this creature enters, choose a card type. -/
-  asEntersChooseCardType : Bool := false
   /-- You and creatures you control have protection from the chosen card type. -/
   protectionFromChosenCardType : Bool := false
   /-- Corrupted — creatures you control with toxic have lifelink while an
   opponent has three or more poison counters. -/
   corruptedToxicLifelink : Bool := false
-  /-- As this enchantment enters, choose Mardu or Jeskai. -/
-  asEntersChooseMarduOrJeskai : Bool := false
   /-- Toxic `n` (CR 702.164). -/
   toxic : Nat := 0
   /-- This creature can't block. -/
@@ -379,6 +362,145 @@ structure CardDef where
 deriving Repr, Inhabited
 
 namespace CardDef
+
+def entersTapped (c : CardDef) : Bool :=
+  c.entersTappedRule == .always
+
+def entersTappedUnlessLegendary (c : CardDef) : Bool :=
+  c.entersTappedRule == .unlessLegendary
+
+def entersTappedUnlessEquipment (c : CardDef) : Bool :=
+  c.entersTappedRule == .unlessEquipment
+
+def entersTappedUnlessPlaneswalker (c : CardDef) : Bool :=
+  c.entersTappedRule == .unlessPlaneswalker
+
+def entersTappedUnlessTwoOtherLands (c : CardDef) : Bool :=
+  c.entersTappedRule == .unlessTwoOtherLands
+
+def entersTappedUnlessPayLife (c : CardDef) : Option Nat :=
+  match c.entersTappedRule with
+  | .unlessPayLife n => some n
+  | _ => none
+
+def entersTappedUnlessAnySubtype (c : CardDef) : Array String :=
+  match c.entersTappedRule with
+  | .unlessAnySubtype ts => ts
+  | _ => #[]
+
+def entersTappedUnlessNBasics (c : CardDef) : Option Nat :=
+  match c.entersTappedRule with
+  | .unlessNBasics n => some n
+  | _ => none
+
+def entersTappedUnlessOppLands (c : CardDef) : Option Nat :=
+  match c.entersTappedRule with
+  | .unlessOppLands n => some n
+  | _ => none
+
+def entersWithHopePerCreature (c : CardDef) : Bool :=
+  c.entersWithCounters == .hopePerCreature
+
+def entersWithPlusOneCounters (c : CardDef) : Nat :=
+  match c.entersWithCounters with
+  | .plusOne n => n
+  | _ => 0
+
+def entersWithIndestructibleCounter (c : CardDef) : Bool :=
+  c.entersWithCounters == .indestructible
+
+def entersWithShield (c : CardDef) : Nat :=
+  match c.entersWithCounters with
+  | .shield n => n
+  | _ => 0
+
+def asEntersChooseCreatureType (c : CardDef) : Bool :=
+  c.asEntersChoose == .creatureType
+
+def asEntersChooseOddEven (c : CardDef) : Bool :=
+  c.asEntersChoose == .oddEven
+
+def asEntersChooseCardType (c : CardDef) : Bool :=
+  c.asEntersChoose == .cardType
+
+def asEntersChooseMarduOrJeskai (c : CardDef) : Bool :=
+  c.asEntersChoose == .marduOrJeskai
+
+def costReductionIfCreatureDied (c : CardDef) : Nat :=
+  match c.spellCostReduction with
+  | .ifCreatureDied n => n
+  | _ => 0
+
+def costReductionIfTargetDamaged (c : CardDef) : Nat :=
+  match c.spellCostReduction with
+  | .ifTargetDamaged n => n
+  | _ => 0
+
+def costReductionIfTargetTapped (c : CardDef) : Nat :=
+  match c.spellCostReduction with
+  | .ifTargetTapped n => n
+  | _ => 0
+
+def costReductionIfTargetAttackingNontoken (c : CardDef) : Nat :=
+  match c.spellCostReduction with
+  | .ifTargetAttackingNontoken n => n
+  | _ => 0
+
+def costReductionIfTargetAttacking (c : CardDef) : Nat :=
+  match c.spellCostReduction with
+  | .ifTargetAttacking n => n
+  | _ => 0
+
+def costReductionIfYouControl (c : CardDef) : Option (Nat × String) :=
+  match c.spellCostReduction with
+  | .ifYouControl n s => some (n, s)
+  | _ => none
+
+def costReductionIfGyCreaturesAtLeast (c : CardDef) : Option (Nat × Nat) :=
+  match c.spellCostReduction with
+  | .ifGyCreaturesAtLeast min n => some (min, n)
+  | _ => none
+
+def costReductionEqualFlyingPower (c : CardDef) : Bool :=
+  c.spellCostReduction == .equalFlyingPower
+
+def costReductionGreatestPower (c : CardDef) : Bool :=
+  c.spellCostReduction == .greatestPower
+
+def costReductionGreatestToughness (c : CardDef) : Bool :=
+  c.spellCostReduction == .greatestToughness
+
+def costReductionEqualOppArtifacts (c : CardDef) : Bool :=
+  c.spellCostReduction == .equalOppArtifacts
+
+def additionalCostSacrificeArtifactOrCreature (c : CardDef) : Bool :=
+  match c.additionalCost with
+  | .sacrificeArtifactOrCreature _ | .sacrificeCreatureOrPlaneswalkerOrPay _ => true
+  | _ => false
+
+def additionalCostSacrificeCreatureOrPlaneswalker (c : CardDef) : Bool :=
+  match c.additionalCost with
+  | .sacrificeCreatureOrPlaneswalkerOrPay _ => true
+  | _ => false
+
+def additionalCostOrPayGeneric (c : CardDef) : Option Nat :=
+  match c.additionalCost with
+  | .sacrificeArtifactOrCreature opt => opt
+  | .sacrificeCreatureOrPlaneswalkerOrPay n => some n
+  | _ => none
+
+def additionalCostDiscardOrPayGeneric (c : CardDef) : Option Nat :=
+  match c.additionalCost with
+  | .discardOrPay n => some n
+  | _ => none
+
+def additionalCostSacrificeCreature (c : CardDef) : Bool :=
+  c.additionalCost == .sacrificeCreature
+
+def additionalCostBeholdOrPay (c : CardDef) : Option (String × Nat) :=
+  match c.additionalCost with
+  | .beholdOrPay q n => some (q, n)
+  | _ => none
 
 /-- Color from color indicator, otherwise from mana cost (CR 202.2). -/
 def colors (c : CardDef) : ColorSet :=
@@ -858,7 +980,7 @@ def toCardDef (a : AdventureFace) : CardDef := {
   spellEffect := a.spellEffect
   staticAbilities := a.extraLines.map StaticAbility.printed
   empowerJace := a.empowerJace
-  additionalCostSacrificeCreature := a.additionalCostSacrificeCreature
+  additionalCost := if a.additionalCostSacrificeCreature then .sacrificeCreature else .none
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

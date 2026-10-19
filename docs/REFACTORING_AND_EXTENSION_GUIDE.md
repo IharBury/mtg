@@ -126,8 +126,13 @@ The sections below document the remaining duplication left over from earlier per
 ---
 
 ### Priority 7: Encapsulate `CardDef` Flags and `Game` Scratchpad Fields
-1. **`CardDef` (`Mtg/Engine/Card/CardDef.lean:48–460`)**:
-   - Group the ~21 `tapAdd*` fields into structured mana ability definitions, the ~15 `entersTapped*`/`entersWith*` fields into an ETB modifier list, and the ~17 `costReduction*`/`additionalCost*` fields into a spell cost modifier list.
+1. **`CardDef` (`Mtg/Engine/Card/CardDef.lean`) & `ActivatedAbility` (`Mtg/Engine/Card/ActivatedAbility.lean`)**:
+   - **Completed in Batch 19**:
+     - Unified the 17 ETB fields on `CardDef` into `entersTappedRule : EntersTappedRule := .untapped` (CR 614.1c, 10 constructors), `entersWithCounters : EntersWithCounters := .none` (CR 614.1c, 5 constructors), and `asEntersChoose : AsEntersChoice := .none` (CR 614.12, 5 constructors).
+     - Unified the 17 spell cost-reduction and additional-cost fields on `CardDef` into `spellCostReduction : SpellCostReduction := .none` (CR 601.2f, 12 constructors) and `additionalCost : SpellAdditionalCost := .none` (CR 601.2b / 118.8, 6 constructors), reducing `CardDef` from 116 to 87 fields.
+     - Unified the 6 mutually-exclusive extra activation cost flags on `ActivationCost` into `extra : ExtraActivationCost := .none` (CR 602.1, 17 constructors, reducing `ActivationCost` from 14 to 8 fields), and unified the 4 cost-reduction fields and 2 equip fields on `ActivatedAbility` into `costReduction : ActivationCostReduction := .none` (CR 602.2b / 601.2f, 5 constructors) and `equipRestriction : EquipRestriction := .none` (CR 702.6, 3 constructors), reducing `ActivatedAbility` from 18 to 14 fields.
+   - **Remaining**:
+     - Group the ~20 `tapAdd*` fields on `CardDef` into structured mana ability definitions (CR 605).
 2. **`Game` & `Player` Per-Turn / Per-Resolution State (`Mtg/Engine/Game/Core.lean`, `Player.lean`, `Turns.lean`)**:
    - Extract per-turn `Player` fields into `pl.thisTurn : PlayerTurnState` and per-turn `Game` fields into `g.thisTurn : GameTurnState` so `Turns.clearTurnActivations` (`Turns.lean:55–143`) resets them with `{ pl with thisTurn := {} }` instead of a 90-line manual field reset.
    - Extract the ~25 `*ThisWay` fields on `Game` (`milledIdsThisWay`, `exiledIdsThisWay`, `sacrificedPowerThisWay`, etc., `Core.lean:310–395`) into `g.thisWay : ResolutionNotes` reset at the start of each resolution.

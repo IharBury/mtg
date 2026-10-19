@@ -563,7 +563,7 @@ namespace CardDef
     name := "Silent Club"
     types := #[.instant]
     spellEffect := some (Effect.dealDamage 4)
-    additionalCostSacrificeArtifactOrCreature := true
+    additionalCost := .sacrificeArtifactOrCreature
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1

@@ -98,8 +98,12 @@ inductive ExtraActivationCost where
   | none
   /-- Exile another creature card from your graveyard. -/
   | exileAnotherCreatureCardFromGraveyard
+  /-- Exile this card from your graveyard. -/
+  | exileSourceFromGraveyard
   /-- Sacrifice another artifact. -/
   | sacrificeAnotherArtifact
+  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
+  | sacrificeAnotherCreatureOrArtifact
   /-- Sacrifice another creature or planeswalker. -/
   | sacrificeAnotherCreatureOrPlaneswalker
   /-- Sacrifice an artifact or land. -/
@@ -112,6 +116,14 @@ inductive ExtraActivationCost where
   | exileSourceFromHand
   /-- Exile this permanent. -/
   | exileSource
+  /-- Remove an indestructible counter from the source (Arwen). -/
+  | removeIndestructibleCounter
+  /-- Remove any number of +1/+1 counters from the source. -/
+  | removeAnyNumberPlusOne
+  /-- Put a stun counter on the source. -/
+  | putStunCounterOnSource
+  /-- Remove a story counter from the source. -/
+  | removeStoryCounter
   /-- Crew N: tap any number of untapped creatures you control with total
   power N or more (CR 702.122). -/
   | crew (power : Nat)
@@ -147,6 +159,28 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 abbrev FraActivationCondition := ActivationCondition
 
+/-- Cost reduction on an activated ability (CR 602.2b / 601.2f). -/
+inductive ActivationCostReduction where
+  | none
+  /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
+  | perPlusOneOnTarget
+  /-- Costs `n` generic mana less if you control a legendary creature. -/
+  | ifYouControlLegendary (n : Nat)
+  /-- Costs `n` generic mana less for each Equipment you control. -/
+  | perEquipment (n : Nat)
+  /-- Costs `n` generic mana less if it targets a creature with power at most `power`. -/
+  | ifTargetPowerAtMost (n : Nat) (power : Int)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Target quality restriction on an equip ability (CR 702.6). -/
+inductive EquipRestriction where
+  | none
+  /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
+  | subtype (s : String)
+  /-- Equip worthy: attach only to a legendary non-Villain red or white creature (MSH 118 / 119). -/
+  | worthy
+deriving Repr, Inhabited, BEq, DecidableEq
+
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
@@ -155,29 +189,38 @@ structure ActivationCost where
   ability exactly when this is set. -/
   loyalty : Option LoyaltySymbol := none
   sacrificeSource : Bool := false
-  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
-  sacrificeAnotherCreatureOrArtifact : Bool := false
   /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
   payLife : Nat := 0
   /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
   discardSource : Bool := false
-  /-- Exile this card from your graveyard. -/
-  exileSourceFromGraveyard : Bool := false
-  /-- Remove an indestructible counter from the source (Arwen). -/
-  removeIndestructibleCounter : Bool := false
-  /-- Remove any number of +1/+1 counters from the source. -/
-  removeAnyNumberPlusOne : Bool := false
-  /-- Put a stun counter on the source. -/
-  putStunCounterOnSource : Bool := false
-  /-- Remove a story counter from the source. -/
-  removeStoryCounter : Bool := false
   /-- Chosen-object costs (sacrificing, discarding, tapping, or exiling chosen objects). -/
   picks : Array CostPick := #[]
-  /-- Additional activation cost. -/
-  fra : ExtraActivationCost := .none
+  /-- Additional activation cost (CR 602.1). -/
+  extra : ExtraActivationCost := .none
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
+
+def fra (c : ActivationCost) : ExtraActivationCost :=
+  c.extra
+
+def exileSourceFromGraveyard (c : ActivationCost) : Bool :=
+  c.extra == .exileSourceFromGraveyard
+
+def sacrificeAnotherCreatureOrArtifact (c : ActivationCost) : Bool :=
+  c.extra == .sacrificeAnotherCreatureOrArtifact
+
+def removeIndestructibleCounter (c : ActivationCost) : Bool :=
+  c.extra == .removeIndestructibleCounter
+
+def removeAnyNumberPlusOne (c : ActivationCost) : Bool :=
+  c.extra == .removeAnyNumberPlusOne
+
+def putStunCounterOnSource (c : ActivationCost) : Bool :=
+  c.extra == .putStunCounterOnSource
+
+def removeStoryCounter (c : ActivationCost) : Bool :=
+  c.extra == .removeStoryCounter
 
 /-- True when this cost contains a loyalty symbol (CR 209.2). -/
 def isLoyalty (c : ActivationCost) : Bool :=
@@ -274,8 +317,8 @@ structure ActivatedAbility where
   exhaust : Bool := false
   /-- An “Activate only if …” restriction (CR 602.5b). -/
   condition : ActivationCondition := .none
-  /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
-  costLessPerPlusOneOnTarget : Bool := false
+  /-- Cost reduction on this activated ability (CR 602.2b / 601.2f). -/
+  costReduction : ActivationCostReduction := .none
   /-- First (or only) mode of this ability. -/
   effect : Effect
   /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
@@ -293,30 +336,18 @@ structure ActivatedAbility where
   /-- This ability can be activated only while the source is in your hand
   (CR 112.6 / 702.29, e.g. cycling). -/
   activateFromHand : Bool := false
-  /-- This ability costs this much generic mana less if you control a legendary
-  creature (e.g. Esquire of the King). -/
-  costReductionIfYouControlLegendary : Nat := 0
-  /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
-  equipSubtype : Option String := none
-  /-- This ability costs this much generic mana less for each Equipment you
-  control. -/
-  costReductionPerEquipment : Nat := 0
+  /-- Target quality restriction on an equip ability (CR 702.6). -/
+  equipRestriction : EquipRestriction := .none
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
-  /-- Equip worthy: attach only to a legendary non-Villain red or white
-  creature (MSH 118 / 119). Other attach effects ignore this. -/
-  equipWorthy : Bool := false
-  /-- This ability costs this much generic mana less if it targets a creature
-  with power at most this value. -/
-  costReductionIfTargetPowerAtMost : Option (Nat × Int) := none
 deriving Repr, Inhabited, BEq
 
 /-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
 def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
   let c := ab.cost
   let fra : Array CostPick :=
-    match c.fra with
+    match c.extra with
     | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
     | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
     | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
@@ -350,9 +381,35 @@ def onlyIfGyCreaturesAtLeast (ab : ActivatedAbility) : Nat :=
   | .gyCreaturesAtLeast n => n
   | _ => 0
 
+def costLessPerPlusOneOnTarget (ab : ActivatedAbility) : Bool :=
+  ab.costReduction == .perPlusOneOnTarget
+
+def costReductionIfYouControlLegendary (ab : ActivatedAbility) : Nat :=
+  match ab.costReduction with
+  | .ifYouControlLegendary n => n
+  | _ => 0
+
+def costReductionPerEquipment (ab : ActivatedAbility) : Nat :=
+  match ab.costReduction with
+  | .perEquipment n => n
+  | _ => 0
+
+def costReductionIfTargetPowerAtMost (ab : ActivatedAbility) : Option (Nat × Int) :=
+  match ab.costReduction with
+  | .ifTargetPowerAtMost n p => some (n, p)
+  | _ => none
+
+def equipSubtype (ab : ActivatedAbility) : Option String :=
+  match ab.equipRestriction with
+  | .subtype s => some s
+  | _ => none
+
+def equipWorthy (ab : ActivatedAbility) : Bool :=
+  ab.equipRestriction == .worthy
+
 /-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
 def crewAbility (n : Nat) : ActivatedAbility :=
-  { cost := { fra := .crew n }, printed := s!"Crew {n}"
+  { cost := { extra := .crew n }, printed := s!"Crew {n}"
     effect := { resolution := .grant .artifactCreatureVehicle .source
                 phrase := "This Vehicle becomes an artifact creature until end of turn" } }
 
@@ -364,7 +421,7 @@ def isEquip (ab : ActivatedAbility) : Bool :=
 /-- Baron Helmut Zemo's boast ability (activate only if it attacked this turn
 and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
-  { cost := { fra := .zemoBoast }
+  { cost := { extra := .zemoBoast }
     printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
     effect := { resolution := .mayCast .boastExiled .unlimited .withoutPaying
                 phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs" } }

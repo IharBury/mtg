@@ -116,7 +116,8 @@ private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : Str
     (onlyAsSorcery := sorcery || (low phrase).contains "only as a sorcery")
     (loyalty := loyalty)
   let ab := { ab with
-    cost := { ab.cost with removeStoryCounter := costLow.contains "story counter" }
+    cost := { ab.cost with
+      extra := if costLow.contains "story counter" then .removeStoryCounter else ab.cost.extra }
     printed := phrase }
   { c with activatedAbilities := c.activatedAbilities.push ab }
 
@@ -261,7 +262,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
     else if l.contains "other sphinx spells you cast cost" then
       some { c with eminenceSphinxReduction := 1 }
     else if l.contains "choose a card type" then
-      some { c with asEntersChooseCardType := true }
+      some { c with asEntersChoose := .cardType }
     else if l.contains "protection from the chosen card type" then
       some { c with protectionFromChosenCardType := true }
     else if l.contains "creatures you control with toxic have lifelink" then
@@ -271,9 +272,9 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
     else if l.contains "without paying its mana cost" && l.contains "commander" then
       some { c with freeCastIfControlCommander := true }
     else if l.contains "enters tapped unless you control two or more basic" then
-      some { c with entersTappedUnlessNBasics := some 2 }
+      some { c with entersTappedRule := .unlessNBasics 2 }
     else if l.contains "enters tapped unless your opponents control eight" then
-      some { c with entersTappedUnlessOppLands := some 8 }
+      some { c with entersTappedRule := .unlessOppLands 8 }
     else if l.contains "enters tapped unless you control a" &&
         (l.contains " or a " || l.contains " or an ") then
       let after :=
@@ -281,11 +282,11 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         else (l.splitOn "control a ").getLastD ""
       let types := ((after.replace " or an " " or a ").splitOn " or a ").map fun p =>
         cap ((p.splitOn " ").headD "" |>.splitOn "." |>.headD "")
-      some { c with entersTappedUnlessAnySubtype := types.toArray.filter (· != "") }
+      some { c with entersTappedRule := .unlessAnySubtype (types.toArray.filter (· != "")) }
     else if l == s!"exile {low c.name}." then
       some c
     else if l.contains "choose mardu or jeskai" then
-      some (pushTrig { c with asEntersChooseMarduOrJeskai := true }
+      some (pushTrig { c with asEntersChoose := .marduOrJeskai }
         .yourUpkeep (frc (.createTokens .goblin (.fixed 1) false .you .ifNotMarduLifelinkHaste) line) line)
     else none
   match static with

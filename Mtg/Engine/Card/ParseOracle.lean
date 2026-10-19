@@ -661,23 +661,23 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
       some { c with activatedAbilities := c.activatedAbilities.push ab }
     | none => none
   else if low.startsWith "this spell costs {x} less to cast, where x is the total power of creatures you control with flying" then
-    some { c with costReductionEqualFlyingPower := true }
+    some { c with spellCostReduction := .equalFlyingPower }
   else if low.startsWith "this spell costs {x} less to cast, where x is the greatest number of artifacts an opponent controls" then
-    some { c with costReductionEqualOppArtifacts := true }
+    some { c with spellCostReduction := .equalOppArtifacts }
   else if low.startsWith "this spell costs {x} less to cast, where x is the greatest power among creatures you control" then
-    some { c with costReductionGreatestPower := true }
+    some { c with spellCostReduction := .greatestPower }
   else if low.startsWith "this spell costs {x} less to cast, where x is the greatest toughness among creatures you control" then
-    some { c with costReductionGreatestToughness := true }
+    some { c with spellCostReduction := .greatestToughness }
   else if low.startsWith "this spell costs " && low.contains "less to cast if a creature died this turn" then
-    n.map fun k => { c with costReductionIfCreatureDied := k }
+    n.map fun k => { c with spellCostReduction := .ifCreatureDied k }
   else if low.startsWith "this spell costs " && low.contains "dealt damage this turn" then
-    n.map fun k => { c with costReductionIfTargetDamaged := k }
+    n.map fun k => { c with spellCostReduction := .ifTargetDamaged k }
   else if low.startsWith "this spell costs " && low.contains "tapped creature" then
-    n.map fun k => { c with costReductionIfTargetTapped := k }
+    n.map fun k => { c with spellCostReduction := .ifTargetTapped k }
   else if low.startsWith "this spell costs " && low.contains "attacking nontoken" then
-    n.map fun k => { c with costReductionIfTargetAttackingNontoken := k }
+    n.map fun k => { c with spellCostReduction := .ifTargetAttackingNontoken k }
   else if low.startsWith "this spell costs " && low.contains "attacking creature" then
-    n.map fun k => { c with costReductionIfTargetAttacking := k }
+    n.map fun k => { c with spellCostReduction := .ifTargetAttacking k }
   else if low.startsWith "this spell costs " && low.contains "if you control a " then
     match n with
     | none => none
@@ -689,7 +689,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
         let printed :=
           (raw.splitOn "if you control a ").getLastD ""
             |>.splitOn "." |>.headD "" |>.trimAscii.copy
-        some { c with costReductionIfYouControl := some (k, printed) }
+        some { c with spellCostReduction := .ifYouControl k printed }
   else if low.startsWith "this spell costs " && low.contains "creature card" && low.contains "graveyard" then
     match n with
     | none => none
@@ -700,7 +700,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
           match (replaceNumberWords low |>.splitOn " or more creature").headD "" |>.splitOn " " |>.getLast? with
           | some w => if w.all Char.isDigit && !w.isEmpty then w.toNat! else 1
           | none => 1
-      some { c with costReductionIfGyCreaturesAtLeast := some (min, k) }
+      some { c with spellCostReduction := .ifGyCreaturesAtLeast min k }
   else if low.startsWith "affinity for " then
     let t :=
       ((stripParentheticals ((raw.drop "Affinity for ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
@@ -719,17 +719,15 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     let num := (low.drop "teamwork ".length).takeWhile Char.isDigit
     if num.isEmpty then none else some { c with teamwork := some num.toNat! }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature or planeswalker or pay" then
-    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true
-                            additionalCostSacrificeCreatureOrPlaneswalker := true
-                            additionalCostOrPayGeneric := some k }
+    n.map fun k => { c with additionalCost := .sacrificeCreatureOrPlaneswalkerOrPay k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature or pay" then
-    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true, additionalCostOrPayGeneric := some k }
+    n.map fun k => { c with additionalCost := .sacrificeArtifactOrCreature (some k) }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature" then
-    some { c with additionalCostSacrificeArtifactOrCreature := true }
+    some { c with additionalCost := .sacrificeArtifactOrCreature }
   else if low.startsWith "as an additional cost to cast this spell, discard a card or pay" then
-    n.map fun k => { c with additionalCostDiscardOrPayGeneric := some k }
+    n.map fun k => { c with additionalCost := .discardOrPay k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature" then
-    some { c with additionalCostSacrificeCreature := true }
+    some { c with additionalCost := .sacrificeCreature }
   else if low == "this spell can't be countered" || low == "this spell can't be countered." then
     some { c with cantBeCountered := true }
   else if low.startsWith "you may cast this spell as though it had flash if you control a " then
@@ -749,11 +747,11 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     let num := (low.drop "crew ".length).takeWhile Char.isDigit
     if num.isEmpty then none else some { c with crew := some num.toNat! }
   else if low.contains "enters tapped unless you control a legendary" then
-    some { c with entersTappedUnlessLegendary := true }
+    some { c with entersTappedRule := .unlessLegendary }
   else if low.contains "enters tapped unless you control an equipment" then
-    some { c with entersTappedUnlessEquipment := true }
+    some { c with entersTappedRule := .unlessEquipment }
   else if low == "this creature enters with a +1/+1 counter on it." then
-    some { c with entersWithPlusOneCounters := 1 }
+    some { c with entersWithCounters := .plusOne 1 }
   else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
     some { c with tapAddChosenColorPerDifferentPower := true }
   else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
@@ -763,30 +761,30 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
     some { c with castOnlyIfGraveyardAtLeast := some 7 }
   else if low.contains "enters tapped unless you control a planeswalker" then
-    some { c with entersTappedUnlessPlaneswalker := true }
+    some { c with entersTappedRule := .unlessPlaneswalker }
   else if low.contains "enters tapped unless you control two or more other lands" then
-    some { c with entersTappedUnlessTwoOtherLands := true }
+    some { c with entersTappedRule := .unlessTwoOtherLands }
   else if low.contains "you may pay" && low.contains "if you don't, it enters tapped" then
     let life :=
       match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with
       | "" => none
       | d => some d.toNat!
-    life.map fun k => { c with entersTappedUnlessPayLife := some k }
+    life.map fun k => { c with entersTappedRule := .unlessPayLife k }
   else if low == "this land enters tapped." || low == "this land enters tapped" ||
       low == "this artifact enters tapped." || low == "this creature enters tapped." ||
       low.endsWith " enters tapped." || low.endsWith " enters tapped" then
-    some { c with entersTapped := true }
+    some { c with entersTappedRule := .always }
   else if low.contains "as this enchantment enters, choose a creature type" then
-    some { c with asEntersChooseCreatureType := true }
+    some { c with asEntersChoose := .creatureType }
   else if low.contains "enters with a hope counter" then
-    some { c with entersWithHopePerCreature := true }
+    some { c with entersWithCounters := .hopePerCreature }
   else if low.contains "enters with" && low.contains "shield counter" then
     let k := if low.contains "counters" then
       match (low.splitOn "enters with ").getLastD "" |>.takeWhile Char.isDigit with
       | "" => 1
       | d => d.toNat!
     else 1
-    some { c with entersWithShield := k }
+    some { c with entersWithCounters := .shield k }
   else if low.contains "if you would create a food token" then
     some { c with foodAlsoCreatesTreasure := true }
   else if low.contains "except the first one you draw in each of your draw steps" then
@@ -809,11 +807,11 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     | some k =>
       some { c with firstCreatureCostsLess := k, firstCreatureHasFlash := low.contains "flash" }
   else if named.contains "as this enters" && named.contains "choose odd or even" then
-    some { c with asEntersChooseOddEven := true }
+    some { c with asEntersChoose := .oddEven }
   else if low.contains "from anywhere other than your hand cost" then
     n.map fun k => { c with costReductionNotFromHand := k }
   else if low.contains "enters with an indestructible counter" then
-    some { c with entersWithIndestructibleCounter := true }
+    some { c with entersWithCounters := .indestructible }
   else if low.contains "lore counters among sagas you control" && low.contains "hexproof and indestructible" then
     let numbered := replaceNumberWords low
     let k :=
@@ -1898,7 +1896,7 @@ partial def parseRules (c : CardDef) (lines : List String)
       if skipLine c line then go c rest
       else
         match beholdOrPay line with
-        | some cost => go { c with additionalCostBeholdOrPay := some cost } rest
+        | some (q, n) => go { c with additionalCost := .beholdOrPay q n } rest
         | none =>
         -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
         -- “Planeswalkers you control have "[−N]: …"”: a granted loyalty ability.

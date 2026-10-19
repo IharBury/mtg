@@ -102,26 +102,54 @@ rules text. -/
       colorIndicator isToken oracleText
   let parsed := { parseOracleCard! text with otherFace := otherFace }
   if (oracleText.trimAscii.copy).isEmpty then
+    let additionalCost : SpellAdditionalCost :=
+      if additionalCostSacrificeCreature then .sacrificeCreature
+      else if additionalCostSacrificeArtifactOrCreature then
+        .sacrificeArtifactOrCreature additionalCostOrPayGeneric
+      else match additionalCostDiscardOrPayGeneric with
+        | some n => .discardOrPay n
+        | none => .none
+    let spellCostReduction : SpellCostReduction :=
+      if costReductionEqualFlyingPower then .equalFlyingPower
+      else if costReductionEqualOppArtifacts then .equalOppArtifacts
+      else if costReductionIfCreatureDied != 0 then .ifCreatureDied costReductionIfCreatureDied
+      else if costReductionIfTargetDamaged != 0 then .ifTargetDamaged costReductionIfTargetDamaged
+      else if costReductionIfTargetTapped != 0 then .ifTargetTapped costReductionIfTargetTapped
+      else if costReductionIfTargetAttackingNontoken != 0 then
+        .ifTargetAttackingNontoken costReductionIfTargetAttackingNontoken
+      else if costReductionIfTargetAttacking != 0 then .ifTargetAttacking costReductionIfTargetAttacking
+      else match costReductionIfYouControl with
+        | some (n, s) => .ifYouControl n s
+        | none => match costReductionIfGyCreaturesAtLeast with
+          | some (min, n) => .ifGyCreaturesAtLeast min n
+          | none => .none
+    let entersTappedRule : EntersTappedRule :=
+      if entersTapped then .always
+      else if entersTappedUnlessLegendary then .unlessLegendary
+      else if entersTappedUnlessEquipment then .unlessEquipment
+      else match entersTappedUnlessPayLife with
+        | some n => .unlessPayLife n
+        | none => .untapped
+    let entersWithCounters : EntersWithCounters :=
+      if entersWithHopePerCreature then .hopePerCreature
+      else if entersWithShield != 0 then .shield entersWithShield
+      else .none
+    let asEntersChoose : AsEntersChoice :=
+      if asEntersChooseCreatureType then .creatureType
+      else .none
     { parsed with
       keywords
       spellEffect
       spellModes
-      additionalCostSacrificeArtifactOrCreature
-      additionalCostOrPayGeneric
-      additionalCostDiscardOrPayGeneric
-      costReductionIfCreatureDied
-      costReductionIfTargetDamaged
-      costReductionIfTargetTapped
-      costReductionIfTargetAttackingNontoken
-      costReductionIfTargetAttacking
-      costReductionIfYouControl
-      costReductionIfGyCreaturesAtLeast
+      additionalCost
+      spellCostReduction
       tapAddMana
       tapAddManaForEach
       tapAddAnyColorEqualToPower
       tapAddAnyColorForInstantOrSorcery
-      entersWithHopePerCreature
-      entersTapped
+      entersTappedRule
+      entersWithCounters
+      asEntersChoose
       tapAddOneOf
       tapAddOneOfIfEnteredOrBasic
       tapAddAnyColor
@@ -130,10 +158,7 @@ rules text. -/
       flashIfYouControlSubtype
       ward
       flashback
-      entersTappedUnlessLegendary
-      entersTappedUnlessEquipment
       tapAddAnyColorForLegendary
-      costReductionEqualFlyingPower
       crew
       tapAddTwoAmong
       chooseOneOrBoth
@@ -141,13 +166,9 @@ rules text. -/
       tapAddAnyColorAmongLegendaries
       tapAddRestricted
       tapPayLifeAddOneOf
-      entersTappedUnlessPayLife
       tapAddCommanderIdentity
-      additionalCostSacrificeCreature
-      asEntersChooseCreatureType
       saga
       affinityForSubtype
-      costReductionEqualOppArtifacts
       giftTreasure
       foodAlsoCreatesTreasure
       othersEnterWithPlusOneEqualToughness
@@ -164,7 +185,6 @@ rules text. -/
       adventure
       teamwork
       chooseBothIfTeamwork
-      entersWithShield
       mayLookAtTopAnytime
       mayPlayLandsFromTop }
   else

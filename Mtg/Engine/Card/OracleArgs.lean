@@ -657,24 +657,25 @@ def takeActivationCondition (c : ActivationCondition) : ArgM ActivationCondition
     return .gyCreaturesAtLeast (← takeNat n)
   | c => return c
 
+def takeActivationCostReduction : ActivationCostReduction → ArgM ActivationCostReduction
+  | .ifYouControlLegendary n => return .ifYouControlLegendary (← takeNat n)
+  | .perEquipment n => return .perEquipment (← takeNat n)
+  | .ifTargetPowerAtMost n p => return .ifTargetPowerAtMost (← takeNat n) (← takeInt p)
+  | r => pure r
+
+def takeEquipRestriction : EquipRestriction → ArgM EquipRestriction
+  | .subtype s => return .subtype (← takeStr s)
+  | r => pure r
+
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let cost ← takeCostFields ab.cost
   let effect ← takeEffect ab.effect
   let otherModes ← ab.otherModes.mapM takeEffect
-  let costReductionIfYouControlLegendary ←
-    if ab.costReductionIfYouControlLegendary == 0 then pure 0
-    else takeNat ab.costReductionIfYouControlLegendary
-  let equipSubtype ← takeOptStr ab.equipSubtype
-  let costReductionPerEquipment ←
-    if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
+  let costReduction ← takeActivationCostReduction ab.costReduction
+  let equipRestriction ← takeEquipRestriction ab.equipRestriction
   let condition ← takeActivationCondition ab.condition
-  let costReductionIfTargetPowerAtMost ←
-    match ab.costReductionIfTargetPowerAtMost with
-    | none => pure none
-    | some (n, p) => pure (some (← takeNat n, ← takeInt p))
   return { ab with
-    cost, effect, otherModes, costReductionIfYouControlLegendary, equipSubtype
-    costReductionPerEquipment, condition, costReductionIfTargetPowerAtMost }
+    cost, effect, otherModes, costReduction, equipRestriction, condition }
 
 def takeInterveningCondition : InterveningCondition → ArgM InterveningCondition
   | .youControlCreatureWithPower n => return .youControlCreatureWithPower (← takeInt n)
