@@ -294,7 +294,17 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .landsUpTo _ | .landsEqualDamage | .planeswalkerCard | .enchantmentCard
     | .supertypeCard _ _ | .landSubtype _ | .basicBeholdUntap _
     | .basicLandsDifferentNamesX | .artifactCreatureX | .random
-    | .topN _ | .opponentTopX | .lookedTypes _ =>
+    | .topN _ | .opponentTopX | .lookedTypes _
+    | .graveyardCardsOfType _ _ | .twoPiles | .creatureMvAtMostOrTeamwork _
+    | .cardsUnlessType _ _ | .stackAbility _ | .mayWheel _ _
+    | .sourceTwoNonlegendaryTokens | .nontokenCreaturesYouControl
+    | .secondArtifactTargetNotLegendary | .targetLegendRuleOff
+    | .sourceIfNotToken | .sourceSpellXTimes | .allCreaturesExceptTwoChosen
+    | .otherCreaturesOddOrEvenMv | .creaturesNotChosenType
+    | .opponentLibrariesButBottom | .oppGreatestMvCreatureOrPlaneswalker
+    | .nextSpellThisTurn | .untilYourNextTurn | .attackersOfCauseControllerWithTrample
+    | .attackersAgainstYouUntilYourTurn | .attackersAgainstOpponentsUntilYourTurn
+    | .equipmentYouControl | .upToTwoGyModal | .creaturesDiedThisTurn =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))

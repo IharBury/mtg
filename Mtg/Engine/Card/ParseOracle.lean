@@ -553,7 +553,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]
     else fallback
-  | .becomeArtifactCreature44Flying p t kw =>
+  | .grant (.artifactCreature p t kw) .target =>
     [s!"Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}.",
       "Draw a card."]
   | _ => fallback
@@ -1157,7 +1157,7 @@ def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Arr
       if modes.isEmpty || effects.length != modes.length then none
       else
         let eff : Effect :=
-          { resolution := .chooseTriggerModes n
+          { resolution := .chooseModes [] (.fraTrigger n)
             phrase := if n == 2 then "choose two" else "choose one" }
         some (.triggered .enter eff, effects.toArray)
 

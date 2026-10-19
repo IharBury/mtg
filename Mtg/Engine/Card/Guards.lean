@@ -80,16 +80,16 @@ namespace CardDef
   .sequence [
     .onPermanent .untap,
     .onPermanent (.pump 2 2),
-    .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))]
+    .«if» (.subtype "Dwarf") (.may (.attach .equipmentYouControl .target) (.sequence []))]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.«if» (.subtype "Elf") (.draw 1)) "target creature" ==
   "if target creature is an Elf, draw a card"
 #guard SpellResolution.toPhrase (.may (.gainLife 3) (.sequence [])) "target creature" ==
   "you may gain 3 life"
-#guard SpellResolution.toPhrase (.may .attachEquipment (.sequence [])) "target creature" ==
+#guard SpellResolution.toPhrase (.may (.attach .equipmentYouControl .target) (.sequence [])) "target creature" ==
   "you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))) "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.subtype "Dwarf") (.may (.attach .equipmentYouControl .target) (.sequence []))) "target creature" ==
   "if target creature is a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.«if» (.mvAtMost 2) .recruit) "target spell" ==
   "if that spell's mana value was 2 or less, recruit"
@@ -408,7 +408,7 @@ namespace CardDef
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
 #guard Effect.returnSpellCantCastIfGift.spellResolution ==
-  .sequence [.returnToHand .targetSpell, .«if» .giftPromised .playersCantCastThisTurn]
+  .sequence [.returnToHand .targetSpell, .«if» .giftPromised (.cant (.castSpellsThisTurn .any))]
 #guard SpellResolution.toPhrase (.pump (.fixed 1) (.fixed 1) .creaturesYouControl) "target creature" ==
   "creatures you control get +1/+1 until end of turn"
 #guard SpellResolution.toPhrase (.pump (.fixed (-4)) (.fixed (-4)) .allCreatures) "" ==
@@ -646,7 +646,7 @@ namespace CardDef
 #guard (Effect.sourceGets 1 0).resolution == .onSource (.pump 1 0)
 #guard (Effect.putPlusOnePlusOneOnSource 3).resolution == .onSource (.plusOne 3)
 #guard Effect.becomeBearCreatureWithLandsPT.resolution ==
-  .becomeSubtypeWithLandsPT "Bear"
+  .grant (.subtypeWithLandsPT "Bear") .source
 #guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
   "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
 #guard (Effect.searchBasicBeholdSubtypeUntap "Elf").resolution ==
@@ -1597,7 +1597,7 @@ end CardDef
   .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand,
     .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
-  .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
+  .sequence [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target,
     .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]

@@ -97,7 +97,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let g := g.setObject obj
     let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
     match ab.effect.resolution with
-    | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
+    | .chooseModes _ (.fraTrigger n) => g.beginTriggerModeChoice controller obj n
     | _ => if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
@@ -351,7 +351,7 @@ def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility
           | .fra .equippedHuntersAxe =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-              (.chooseKeyword [0, 3]))
+              (.grant (.choiceOfKeywords [0, 3]) .source))
           | .fra .equippedMedicsKitesail =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, you gain 1 life." (.gainLife 1))

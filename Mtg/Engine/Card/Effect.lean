@@ -151,7 +151,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Exile the top card of your library. You may play it until the end of your next turn"
   | .attach .source .target =>
     s!"Attach this Equipment to {noun}"
-  | .becomeSubtypeWithLandsPT subtype =>
+  | .grant (.subtypeWithLandsPT subtype) .source =>
     s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
   | .put .source .tapped .none =>
     "Return this card from your graveyard to the battlefield tapped"
@@ -186,15 +186,15 @@ private def phraseWith (r : Resolution) (noun : String)
     "Draw cards equal to the sacrificed creature's power"
   | .arwenShare =>
     "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
-  | .grantCombatDamageCreateTreasure =>
+  | .grant .combatDamageCreateTreasure .target =>
     "Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
   | .putCounters (.ofKind .shadow 1) .target =>
     "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
   | .dealDamage (.fixed n) (.player .eachOpponent) _ =>
     s!"This deals {n} damage to each opponent"
-  | .chooseTwoDestroyRest =>
+  | .destroy .allCreaturesExceptTwoChosen _ =>
     "Choose up to two creatures, then destroy the rest"
-  | .blackGateUnblockable =>
+  | .cant (.beBlockedByMostLifePlayer .target) =>
     "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
   | .draw .perBurden _ =>
     "Draw a card for each burden counter on this"
@@ -230,31 +230,31 @@ private def phraseWith (r : Resolution) (noun : String)
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
   | .draw (.fixed n) .player =>
     s!"{noun} draws {cardPhrase n.toNat}"
-  | .copyControlledAbility fromCreature =>
+  | .becomeCopy (.stackAbility fromCreature) =>
     let src := if fromCreature then "a creature" else "an artifact"
     s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
   | .proliferate (.fixed 1) .target =>
     "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
-  | .equipmentBecomesConstructHero =>
+  | .grant .constructHero .source =>
     "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
   | .revealLibrary (.top n) (.returnToHand (.milledSubtype subtype) _) _ =>
     s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
-  | .chooseOddOrEvenDestroy =>
+  | .destroy .otherCreaturesOddOrEvenMv _ =>
     "Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .put .source .asPrinted (.entering [.counter .finality 1 true]) =>
     "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
   | .revealLibrary (.top 1) (.draw (.fixed 1) _) _ =>
     "Reveal the top card of your library. If it's an artifact card, draw a card"
-  | .copyArtifactYouControlNotLegendary =>
+  | .becomeCopy .secondArtifactTargetNotLegendary =>
     "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
-  | .becomeTypes types p t k =>
+  | .grant (.typesPTAndKeywords types p t k) .source =>
     let joined :=
       if k.reach && k.vigilance then "reach and vigilance"
       else k.joinedAnd
     let typeWords := String.intercalate " " types.toList
     let art := indefinite (types[0]?.getD "")
     s!"Until end of turn, this becomes {art} {typeWords} with base power and toughness {p}/{t} and gains {joined}"
-  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
+  | .grant (.nextSpellCopy true) .source =>
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
   | .harnessInfinityStone =>
     "Harness this"
@@ -268,7 +268,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
   | .createTokens kind .lifeGainedThisTurn _ _ _ _ =>
     s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
-  | .oppSacrificesGreatestMv =>
+  | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ =>
     s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
   | .cant (.block .creaturesWithoutFlying) =>
     "Creatures without flying can't block this turn"
@@ -286,11 +286,11 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
   | .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
     s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
-  | .jaceLoyaltyAtInstantSpeed =>
+  | .grant .jaceLoyaltyAtInstantSpeed .youIfCast =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
   | .exile .top (.mayCastElseDamageOpponents n) _ =>
     s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
-  | .emblemCastSpellDamage n =>
+  | .grant (.emblemCastSpellDamage n) .youIfCast =>
     s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
   | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _ =>
     "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
@@ -298,13 +298,13 @@ private def phraseWith (r : Resolution) (noun : String)
     "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
   | .put .source .asPrinted (.entering [.counter .finality 1 false]) =>
     "Return this card from your graveyard to the battlefield with a finality counter on it"
-  | .copyNextInstantSorceryThisTurn =>
+  | .grant (.nextSpellCopy false) .source =>
     "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
   | .proliferate .planeswalkerTypes .youControl =>
     "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
-  | .copyEachCreatureOfTargetPlayer =>
+  | .becomeCopy (.creaturesControlledBy (.target .player)) =>
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
-  | .becomeCopyLegendRuleOff =>
+  | .becomeCopy .targetLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
   | .sequence rs =>
     sequence rs
@@ -332,7 +332,7 @@ Activated-ability constructors stay `none`, so `spellResolution` is
 def toSpellStep : Resolution → Option SpellResolution
   | .unrecognized | .sequence _ => none
   | .onSource _ | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _)
-  | .exile .top .playUntilNextTurn _ | .becomeSubtypeWithLandsPT _
+  | .exile .top .playUntilNextTurn _ | .grant (.subtypeWithLandsPT _) .source
   | .put .source .tapped _ | .returnToHand .source _
   | .addMana #[] (.fixed 1) .anyColor | .put .source .asPrinted .forAttach | .searchLibrary (.returnToHand .basicLand _)
   | .searchLibrary (.sequence [.put .basicLand .tapped _, .returnToHand .basicLand _])
@@ -341,9 +341,9 @@ def toSpellStep : Resolution → Option SpellResolution
   | .draw (.fixed 1) .targetPlayers
   | .dealDamage _ .target _ | .draw .lastKnownPower _
   | .draw .perBurden _ | .arwenShare
-  | .grantCombatDamageCreateTreasure | .putCounters (.ofKind .shadow _) .target
-  | .dealDamage _ (.player .eachOpponent) _ | .chooseTwoDestroyRest
-  | .blackGateUnblockable | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
+  | .grant .combatDamageCreateTreasure .target | .putCounters (.ofKind .shadow _) .target
+  | .dealDamage _ (.player .eachOpponent) _ | .destroy .allCreaturesExceptTwoChosen _
+  | .cant (.beBlockedByMostLifePlayer .target) | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
   | .extraTurn | .putCounters .plusOneChosenX .source
   | .revealLibrary (.top _) (.put (.lookedTypes _) _ _) _ | .transform | .draw .chosenX _
   | .revealLibrary (.top _) (.returnToHand .artifact _) _
@@ -352,25 +352,26 @@ def toSpellStep : Resolution → Option SpellResolution
   | .addMana #[] .equalSourcePower .anyColor | .addMana #[] (.fixed 4) .anyCombination
   | .addMana #[] (.fixed 2) .equipment | .draw .cardsDiscardedThisTurn _
   | .createTokens _ .removedPlusOnes _ _ _ _ | .exile .topPower .playThisTurn _
-  | .copyControlledAbility _
-  | .proliferate (.fixed 1) .target | .equipmentBecomesConstructHero
+  | .becomeCopy (.stackAbility _)
+  | .proliferate (.fixed 1) .target | .grant .constructHero .source
   | .revealLibrary (.top _) (.returnToHand (.milledSubtype _) _) _ | .mill _ .you (.subtypeOrEnchantmentToHand _)
-  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .chooseOddOrEvenDestroy
+  | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .destroy .otherCreaturesOddOrEvenMv _
   | .put .source .asPrinted (.entering [.counter .finality 1 true]) | .revealLibrary (.top 1) (.draw (.fixed 1) _) _
-  | .copyArtifactYouControlNotLegendary
-  | .becomeTypes _ _ _ _ | .nextInstantSorceryCopyIfMvAtMostSourcePower
+  | .becomeCopy .secondArtifactTargetNotLegendary
+  | .grant (.typesPTAndKeywords _ _ _ _) .source | .grant (.nextSpellCopy _) .source
   | .harnessInfinityStone | .connive (.target (.youControl (.subtype _)))
   | .mill _ .you .none | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
   | .createTokens _ .lifeGainedThisTurn _ _ _ _
-  | .oppSacrificesGreatestMv | .cant (.block .creaturesWithoutFlying)
+  | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ | .cant (.block .creaturesWithoutFlying)
   | .becomePrepared .creaturesYouControl _
-  | .jaceLoyaltyAtInstantSpeed
-  | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferate .planeswalkerTypes .youControl | .copyNextInstantSorceryThisTurn
+  | .grant .jaceLoyaltyAtInstantSpeed .youIfCast
+  | .becomeCopy .targetLegendRuleOff | .becomeCopy (.creaturesControlledBy (.target .player))
+  | .proliferate .planeswalkerTypes .youControl
   | .put .source .asPrinted (.entering [.counter .finality 1 false])
   | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _
-  | .exile .top (.mayCastElseDamageOpponents _) _ | .emblemCastSpellDamage _ => none
-  | r@(.returnToHand .targetSpell _) | r@(.returnToHand (.target .graveyardCard) _) => some r
+  | .exile .top (.mayCastElseDamageOpponents _) _ | .grant (.emblemCastSpellDamage _) .youIfCast => none
+  | r@(.returnToHand .targetSpell _) | r@(.returnToHand (.target .graveyardCard) _)
+  | r@(.becomeCopy .sourceSpellXTimes) => some r
   | r => if r.isFra then none else some r
 
 /-- The spell view of `r`. A sequence is a spell sequence only when every
@@ -398,17 +399,17 @@ partial def doesNothingAsSpell (r : Resolution) : Bool :=
   | .recruit _ | .addMana _ _ _ | .discard _ | .onSource _ => false
   | .empowerJace _ | .surveil _ | .mill _ .you _
   | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .oppSacrificesGreatestMv
+  | .createTokens _ .lifeGainedThisTurn _ _ _ _ | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _
   | .createTokens .treasure (.fixed 1) false .tigerGod _ _ | .extraTurn | .draw .perBurden _
   | .cant (.block .creaturesWithoutFlying)
-  | .chooseOddOrEvenDestroy
+  | .destroy .otherCreaturesOddOrEvenMv _
   | .becomePrepared .creaturesYouControl _
-  | .exile .top (.mayCastElseDamageOpponents _) _ | .emblemCastSpellDamage _
+  | .exile .top (.mayCastElseDamageOpponents _) _ | .grant (.emblemCastSpellDamage _) .youIfCast
   | .put .source .asPrinted (.entering [.counter .finality 1 false])
-  | .copyNextInstantSorceryThisTurn | .proliferate .planeswalkerTypes .youControl
-  | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
+  | .grant (.nextSpellCopy false) .source | .proliferate .planeswalkerTypes .youControl
+  | .becomeCopy (.creaturesControlledBy (.target .player)) | .becomeCopy .targetLegendRuleOff
   | .grant (.keywords _) .creaturesYouControl
-  | .jaceLoyaltyAtInstantSpeed | .draw .lastKnownPower _ => false
+  | .grant .jaceLoyaltyAtInstantSpeed .youIfCast | .draw .lastKnownPower _ => false
   | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _) | .searchLibrary (.returnToHand .basicLand _) | .exile .top .playUntilNextTurn _ => false
   | .unrecognized => true
   | r =>

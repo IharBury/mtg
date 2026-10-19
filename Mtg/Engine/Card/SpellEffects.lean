@@ -171,7 +171,7 @@ def pumpAndExileIfDies (power toughness : Int) : Effect :=
     (preferAsDefaultMode := true)
 
 def exileGraveyardCreaturesGrantCast : Effect :=
-  mkSpell (.of .player) (.exileGraveyardCreaturesGrantCast)
+  mkSpell (.of .player) (.exile (.graveyardCardsOfType .creature (.target .player)) .anyManaWhileExiled)
     (castKind := .draw)
 
 def draw (n : Nat) : Effect :=
@@ -245,11 +245,11 @@ def untapPumpMaybeAttach (power toughness : Int) : Effect :=
     (.sequence [
       .onPermanent .untap,
       .onPermanent (.pump power toughness),
-      .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))])
+      .«if» (.subtype "Dwarf") (.may (.attach .equipmentYouControl .target) (.sequence []))])
     (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=
-  mkSpell (.of .twoNonlandsSharingType) (.exchangeControl)
+  mkSpell (.of .twoNonlandsSharingType) (.gainControl .exchangeTargets)
     (castKind := .counter)
 
 def returnSpellDraw : Effect :=
@@ -388,7 +388,7 @@ def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
     (castKind := .draw)
 
 def exileAttackersSearchBasics : Effect :=
-  mkSpell (.of .player) (.exileAttackersSearchBasics)
+  mkSpell (.of .player) (.exile .attackingCreatures .forLater .controllerMaySearchBasic)
     (castKind := .destroyCreature)
 
 def createTokensX (kind : TokenKind) : Effect :=
@@ -401,7 +401,7 @@ def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
 
 def returnSpellCantCastIfGift : Effect :=
   mkSpell (.of .spell)
-    (.sequence [.returnToHand .targetSpell, .«if» .giftPromised .playersCantCastThisTurn])
+    (.sequence [.returnToHand .targetSpell, .«if» .giftPromised (.cant (.castSpellsThisTurn .any))])
     (castKind := .counter)
 
 def exileTopXOppPlayForLife : Effect :=
@@ -409,11 +409,11 @@ def exileTopXOppPlayForLife : Effect :=
     (castKind := .draw)
 
 def riddlesInTheDark : Effect :=
-  mkSpell (.of .none) (.riddlesInTheDark)
+  mkSpell (.of .none) (.revealLibrary (.top 4) (.returnToHand .twoPiles))
     (castKind := .draw)
 
 def supperForSpiders : Effect :=
-  mkSpell (.of .none) (.supperForSpiders)
+  mkSpell (.of .none) (.put .creaturesDiedThisTurn .tapped .asFood)
     (castKind := .draw)
 
 def eaglesAreComing : Effect :=
@@ -426,7 +426,7 @@ def lookAtTopLandsGainLife (n life : Nat) : Effect :=
     (castKind := .draw)
 
 def gainControlOppArtifacts : Effect :=
-  mkSpell (.of .artifact) (.gainControlOppArtifacts)
+  mkSpell (.of .artifact) (.gainControl .oppArtifacts)
     (castKind := .counter)
     (allowsZeroTargets := true)
 
@@ -464,11 +464,11 @@ def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
     (castKind := .counter)
 
 def exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat) : Effect :=
-  mkSpell (.of (.creatureMvAtMost n)) (.exileCreatureMvAtMostOrAnyIfTeamwork n life)
+  mkSpell (.of (.creatureMvAtMost n)) (.exile (.creatureMvAtMostOrTeamwork n) .forLater (.gainLifeIfTeamwork life))
     (castKind := .destroyCreature)
 
 def returnGyCreatureMvAtMostOrAny (n : Nat) : Effect :=
-  mkSpell (.of (.creatureCardInYourGraveyardMvAtMost n)) (.returnGyCreatureMvAtMostOrAny n)
+  mkSpell (.of (.creatureCardInYourGraveyardMvAtMost n)) (.put (.creatureMvAtMostOrTeamwork n) .asPrinted)
     (castKind := .draw)
 
 def revealTopPutCreatures (n : Nat) : Effect :=
@@ -554,11 +554,11 @@ def grantVigilanceUnblockable : Effect :=
     (castKind := .pump)
 
 def becomeArtifactCreature44Flying : Effect :=
-  mkSpell (.of .artifactOrCreatureYouControl) (.becomeArtifactCreature44Flying)
+  mkSpell (.of .artifactOrCreatureYouControl) (.grant (.artifactCreature 4 4 "flying") .target)
     (castKind := .pump)
 
 def drawThreeDiscardUnlessArtifact : Effect :=
-  mkSpell (.of .none) (.sequence [.draw 3, .discardTwoUnlessArtifact])
+  mkSpell (.of .none) (.sequence [.draw 3, .discard (.cardsUnlessType 2 .artifact)])
     (castKind := .draw)
 
 def eachOpponentLosesLife (n : Nat) : Effect :=
@@ -621,15 +621,15 @@ def worldsWithinWorlds : Effect :=
     (castKind := .extraLand)
 
 def exileHandDrawPlayUntilNext : Effect :=
-  mkSpell (.of .none) (.exileHandDrawPlayUntilNext)
+  mkSpell (.of .none) (.exile .hand .playUntilNextTurn .thenDrawThree)
     (castKind := .draw)
 
 def copyNontokenCreaturesYouControl : Effect :=
-  mkSpell (.of .none) (.copyNontokenCreaturesYouControl)
+  mkSpell (.of .none) (.becomeCopy .nontokenCreaturesYouControl)
     (castKind := .extraLand)
 
 def gainControlUntilEotOrNextIfVillain : Effect :=
-  mkSpell (.of .creature) (.gainControlUntilEotOrNextIfVillain)
+  mkSpell (.of .creature) (.gainControl .untilEotOrNextIfVillain)
     (castKind := .pump)
 
 def millThenPutPermanentGainLife (n life : Nat) : Effect :=
@@ -641,7 +641,8 @@ def searchLibraryOrGyArtifactCreatureX : Effect :=
     (castKind := .extraLand)
 
 def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
-  mkSpell (.of .upToOneCreatureThenPlayer) (.gainLifeSearchBasicPlusOne life)
+  mkSpell (.of .upToOneCreatureThenPlayer)
+    (.sequence [.gainLife (.fixed life) .player, .searchLibrary (.put .basicLand .asPrinted), .putCounters (.ofKind .plusOnePlusOne 1) .target])
     (castKind := .draw)
 
 def nextFreeRGCreature : Effect :=
@@ -653,7 +654,7 @@ def ownerPutsLibraryThenConnive : Effect :=
     (castKind := .counter)
 
 def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
-  mkSpell (.of .creature) (.copyThisSpellXTimesThenDamage n)
+  mkSpell (.of .creature) (.sequence [.becomeCopy .sourceSpellXTimes, .onPermanent (.dealDamage n)])
     (castKind := .creatureDamage)
 
 def mayDrawPerArtifactOppsDraw : Effect :=
@@ -681,7 +682,7 @@ def returnUpToTwoGyModal : Effect :=
       zone := .yourGraveyard
       types := #[.artifact, .creature, .enchantment, .land]
       controller := .you }))
-    (.returnUpToTwoGyModal) (allowsZeroTargets := true) (maxTargets := 2)
+    (.returnToHand .upToTwoGyModal) (allowsZeroTargets := true) (maxTargets := 2)
     (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
@@ -712,7 +713,7 @@ def attachToTargetCreatureYouControl : Effect :=
   mkAbility (.of .creatureYouControl) (.attach .source .target)
 
 def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
-  mkAbility ({}) (.becomeSubtypeWithLandsPT subtype)
+  mkAbility ({}) (.grant (.subtypeWithLandsPT subtype) .source)
 
 def becomeBearCreatureWithLandsPT : Effect :=
   becomeSubtypeWithLandsPT "Bear"
@@ -812,7 +813,7 @@ def arwenShare : Effect :=
   mkAbility (.of .anotherCreature) (.arwenShare)
 
 def grantCombatDamageCreateTreasure : Effect :=
-  mkAbility (.of .creature) (.grantCombatDamageCreateTreasure)
+  mkAbility (.of .creature) (.grant .combatDamageCreateTreasure .target)
 
 def putShadowCounter : Effect :=
   mkAbility (.of .creature) (.putCounters (.ofKind .shadow 1) .target)
@@ -821,10 +822,10 @@ def damageEachOpponent (n : Nat) : Effect :=
   mkAbility ({}) (.dealDamage n (.player .eachOpponent))
 
 def chooseTwoDestroyRest : Effect :=
-  mkAbility (.of .none) (.chooseTwoDestroyRest)
+  mkAbility (.of .none) (.destroy .allCreaturesExceptTwoChosen)
 
 def blackGateUnblockable : Effect :=
-  mkAbility (.of .creature) (.blackGateUnblockable)
+  mkAbility (.of .creature) (.cant (.beBlockedByMostLifePlayer .target))
 
 def burdenThenDraw : Effect :=
   mkAbility ({})
@@ -931,7 +932,7 @@ def exileTopXPlayThisTurn : Effect :=
 
 def copyControlledAbility (fromCreature : Bool) : Effect :=
   mkAbility (.of (if fromCreature then .stackAbilityFromCreatureSource
-             else .stackAbilityFromArtifactSource)) (.copyControlledAbility fromCreature)
+             else .stackAbilityFromArtifactSource)) (.becomeCopy (.stackAbility fromCreature))
 
 def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
   mkAbility ({}) (.createTokens kind (.perSubtype subtype))
@@ -951,7 +952,7 @@ def proliferateEachKind : Effect :=
   mkAbility (.of .permanentOrPlayer) (.proliferate (.fixed 1) .target)
 
 def equipmentBecomesConstructHero : Effect :=
-  mkAbility ({}) (.equipmentBecomesConstructHero)
+  mkAbility ({}) (.grant .constructHero .source)
 
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
   mkAbility ({}) (.revealLibrary (.top n) (.returnToHand (.milledSubtype subtype)))
@@ -996,7 +997,7 @@ def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
 
 def plusTwoThenOddEvenDestroy : Effect :=
   mkAbility ({})
-    (.sequence [.onSource (.plusOne 2), .chooseOddOrEvenDestroy])
+    (.sequence [.onSource (.plusOne 2), .destroy .otherCreaturesOddOrEvenMv])
     (phraseOverride := some
       "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality")
 
@@ -1014,20 +1015,20 @@ def revealTopDrawIfArtifact : Effect :=
   mkAbility ({}) (.revealLibrary (.top 1) (.draw (.fixed 1)))
 
 def copyArtifactYouControlNotLegendary : Effect :=
-  mkAbility (.of .twoArtifactsYouControl) (.copyArtifactYouControlNotLegendary)
+  mkAbility (.of .twoArtifactsYouControl) (.becomeCopy .secondArtifactTargetNotLegendary)
 
 def pumpAttackingAloneGainLife : Effect :=
   mkAbility (.of .attackingAloneCreatureYouControl)
     (.sequence [.onPermanent (.pump 1 0), .gainLife 1])
 
 def becomeTypes (types : Array String) (power toughness : Int) (k : Keywords) : Effect :=
-  mkAbility ({}) (.becomeTypes types power toughness k)
+  mkAbility ({}) (.grant (.typesPTAndKeywords types power toughness k) .source)
 
 def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
   becomeTypes #["Dinosaur", "Hero"] power toughness k
 
 def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
-  mkAbility ({}) (.nextInstantSorceryCopyIfMvAtMostSourcePower)
+  mkAbility ({}) (.grant (.nextSpellCopy true) .source)
 
 def harnessInfinityStone : Effect :=
   mkAbility ({}) (.harnessInfinityStone)
@@ -1119,7 +1120,7 @@ def setBasePT (power toughness : Int) : Effect :=
 
 def oppSacrificesGreatestMvGainLife (life : Nat) : Effect :=
   { mkAbility (.of .opponent)
-      (.sequence [.oppSacrificesGreatestMv, .gainLife life])
+      (.sequence [.sacrifice .oppGreatestMvCreatureOrPlaneswalker, .gainLife life])
       (phraseOverride := some
         s!"Target opponent sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control. You gain {life} life")
       with spellCastKind := .destroyCreature }
@@ -1129,13 +1130,13 @@ def damageThenEmpowerExcess (n : Nat) : Effect :=
       with spellCastKind := .creatureDamage }
 
 def jaceLoyaltyAtInstantSpeed : Effect :=
-  mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
+  mkAbility ({}) (.grant .jaceLoyaltyAtInstantSpeed .youIfCast)
 
 def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
   mkAbility ({}) (.exile .top (.mayCastElseDamageOpponents n))
 
 def emblemCastSpellDamage (n : Nat) : Effect :=
-  mkAbility ({}) (.emblemCastSpellDamage n)
+  mkAbility ({}) (.grant (.emblemCastSpellDamage n) .youIfCast)
 
 def returnFromGyWithFinality : Effect :=
   mkAbility ({}) (.put .source .asPrinted (.entering [.counter .finality 1]))
@@ -1150,13 +1151,13 @@ def tapAndStunTargetCreature : Effect :=
   mkAbility (.of .creature) (.onPermanent .tapAndStun)
 
 def copyNextInstantSorceryThisTurn : Effect :=
-  mkAbility ({}) (.copyNextInstantSorceryThisTurn)
+  mkAbility ({}) (.grant (.nextSpellCopy false) .source)
 
 def proliferatePlaneswalkerTypesTimes : Effect :=
   mkAbility ({}) (.proliferate .planeswalkerTypes .youControl)
 
 def copyEachCreatureOfTargetPlayer : Effect :=
-  { mkAbility (.of .player) (.copyEachCreatureOfTargetPlayer)
+  { mkAbility (.of .player) (.becomeCopy (.creaturesControlledBy (.target .player)))
       with spellCastKind := .extraLand }
 
 def cantBeBlockedAnotherPowerAtMost (n : Int) : Effect :=
@@ -1175,7 +1176,7 @@ def canonicalPlusOne (n : Nat) (kind : EffectTargetKind) : Option Effect :=
   | _ => none
 
 def becomeCopyLegendRuleOff : Effect :=
-  mkAbility (.of .creatureYouControl) (.becomeCopyLegendRuleOff)
+  mkAbility (.of .creatureYouControl) (.becomeCopy .targetLegendRuleOff)
 
 /-! Effects that resolve through former Reality Fracture steps of `Resolution`. -/
 
@@ -1208,7 +1209,7 @@ def hexhavenBattalion : Effect :=
     (castKind := .draw)
 
 def kindredJudgment : Effect :=
-  fraUntargeted (.destroyAllNotChosenType)
+  fraUntargeted (.destroy .creaturesNotChosenType)
     "Choose a creature type. Destroy all creatures that aren't of the chosen type"
     (castKind := .destroyCreature)
 
@@ -1223,7 +1224,7 @@ def predictivePreparations : Effect :=
     (castKind := .pump) (maxTargets := 2)
 
 def prophesiedEnd : Effect :=
-  fraSpellOn TargetFilter.creature .destroyDrawIfNotAttacking
+  fraSpellOn TargetFilter.creature (.destroy .target .drawIfNotAttacking)
     "Destroy target creature. If it wasn't attacking, its controller draws a card"
     (castKind := .destroyCreature)
 
@@ -1305,7 +1306,7 @@ def unwindHistory : Effect :=
     (castKind := .destroyCreature)
 
 def arcOfFortune : Effect :=
-  fraUntargeted (.eachPlayerMayWheel 7)
+  fraUntargeted (.discard (.mayWheel 7 .eachPlayer))
     "Each player may discard their hand and draw seven cards"
     (castKind := .draw)
 
@@ -1408,7 +1409,7 @@ def damageToCreatureOrPlaneswalker (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def moltenTide : Effect :=
-  fraUntargeted (.mountainsAddExtraRed)
+  fraUntargeted (.grant .mountainsAddExtraRed .landsYouControl)
     "Until end of turn, whenever you tap a Mountain for mana, add an additional {R}"
     (castKind := .draw)
 
@@ -1465,7 +1466,7 @@ def clashOfElements : Effect :=
     (castKind := .destroyCreature)
 
 def entrustTheSpark : Effect :=
-  fraUntargeted (.entrustTheSpark)
+  fraUntargeted (.may (.sacrifice .planeswalker) (.searchLibrary (.put .planeswalkerCard)) .ifYouDo)
     "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
     (castKind := .draw)
 
@@ -1550,7 +1551,7 @@ def permanentYouControlGains (k : Keywords) : Effect :=
     (castKind := .pump)
 
 def vindictiveTriumph : Effect :=
-  fraSpellOn TargetFilter.creatureOrPlaneswalker (.exileReturnBrieflyIfMvAtMost 3)
+  fraSpellOn TargetFilter.creatureOrPlaneswalker (.exile .target (.returnBrieflyIfMvAtMost 3))
     "Exile target creature or planeswalker. If that permanent's mana value was 3 or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step"
     (castKind := .destroyCreature)
 

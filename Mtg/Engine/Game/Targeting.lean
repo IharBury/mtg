@@ -436,7 +436,7 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
         else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
         match ab.effect.resolution with
-        | .chooseTriggerModes _ => false
+        | .chooseModes _ (.fraTrigger _) => false
         | _ => triggerStillNeedsTargets e ab
       | none, _ => false
     | none => false)

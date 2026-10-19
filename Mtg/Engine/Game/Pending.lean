@@ -114,7 +114,7 @@ def FraNext.toResolution : FraNext → Resolution
   | .reflexiveReturnLandTapped => .queueReflexive (.put .landCard .tapped)
   | .beastToken => .createTokens .beast44trample (.fixed 1) false
   | .proliferate n => .proliferate (.fixed n)
-  | .mshReflexive k paid => .queueMshReflexive k paid
+  | .mshReflexive k paid => .queueReflexive (.mshReflexive k paid)
   | .gainLife n => .gainLife n
   | .returnSourceToHand => .returnToHand .source
 

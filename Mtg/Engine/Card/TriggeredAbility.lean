@@ -1131,7 +1131,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
-  | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] =>
+  | .sequence [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
   | .sequence [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
@@ -1213,7 +1213,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield .you .remember,
       .attach .createdToken .source] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
-  | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
+  | .sequence [.exile .graveyardCard .forLater .playCard, .grant .playNotedUntilNextTurn .target] =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .sequence [.tap .target, .cant (.untapWhileYouControl .target)] =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
@@ -1583,6 +1583,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
     | .keywords _, .spellTargets =>
       "those creatures gain flying until end of turn"
+    | .bearType, .target =>
+      "it becomes a Bear in addition to its other types"
+    | .playNotedUntilNextTurn, .target =>
+      playThatCardUntilNextTurnPhrase
     | _, _ =>
       "grant"
   | .revealLibrary how thenDo who =>
@@ -1625,8 +1629,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
-  | .copySelfNonlegendary =>
-    "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
       (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
@@ -1705,8 +1707,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you controlled that creature, draw a card"
   | .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent)) =>
     "if you have an enduring story, this deals X damage to each opponent"
-  | .becomeBear =>
-    "it becomes a Bear in addition to its other types"
   | .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2)) =>
     "if you control three or more Bears, draw two cards"
   | .tap .enchanted | .tap .enchantedWhileSource => "tap enchanted creature"
@@ -1739,8 +1739,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "when you do, the reflexive ability triggers"
   | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed n)) =>
     s!"if you control another Hero, you gain {n} life"
-  | .grantPlayNotedUntilNextTurn =>
-    playThatCardUntilNextTurnPhrase
   | .tap (.target .ifPresent) =>
     "tap up to one target creature"
   | .tap .target =>
@@ -1777,6 +1775,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .becomeCopy (.cause none) =>
     "create a token that's a copy of the artifact that caused this"
+  | .becomeCopy .sourceTwoNonlegendaryTokens =>
+    "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .becomeCopy _ =>
     "become a copy"
   | .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) =>

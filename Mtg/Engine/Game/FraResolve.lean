@@ -42,7 +42,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let (g, _) := g.move o.id .exile none
       g.logMsg s!"{o.name} is exiled") sourceId illegal
-  | .destroyDrawIfNotAttacking =>
+  | .destroy .target .drawIfNotAttacking =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let wasAttacking := o.status.attacking
       let ctrl := o.controller.getD o.owner
@@ -95,7 +95,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o => g.returnToHand id o.owner
         | none => g
       | _ => g) sourceId none
-  | .destroyAllNotChosenType =>
+  | .destroy .creaturesNotChosenType _ =>
     let chosen := g.chooseCreatureTypeFor controller
     let g := g.logMsg s!"{(g.player controller).name} chooses {chosen}"
     let doomed := g.battlefield.filter (fun o => o.isCreature && !g.hasSubtype o chosen)
@@ -208,7 +208,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
         s!"{(g.player o.owner).name} may put {o.name} on top of their library") sourceId illegal
-  | .entrustTheSpark =>
+  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
       g.beginFraChoice controller .maySacrificePlaneswalker
         s!"{(g.player controller).name} may sacrifice a planeswalker"
@@ -238,7 +238,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         (g.creaturesControlledBy pid).foldl (fun g o => g.addPlusOnePlusOneTo o 1) g
       else g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
-  | .exileReturnBrieflyIfMvAtMost n =>
+  | .exile .target (.returnBrieflyIfMvAtMost n) _ =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       -- Ruling: the mana value is that of the permanent as it last existed
       -- on the battlefield.
@@ -251,19 +251,19 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let g := { g with delayedEndStepExiles := g.delayedEndStepExiles.push back }
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
-  | .eachPlayerMayWheel n =>
+  | .discard (.mayWheel n .eachPlayer) =>
     match g.apnapFrom.toList with
     | [] => g
     | p :: rest =>
       g.beginFraChoice p (.mayWheel n rest.toArray)
         s!"{(g.player p).name} may discard their hand and draw {n} cards"
-  | .mountainsAddExtraRed =>
+  | .grant .mountainsAddExtraRed .landsYouControl =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + 1 })
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLibrary (.mill (.fixed 1) _ _) =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
-  | .chooseTriggerModes _ => g
+  | .chooseModes _ (.fraTrigger _) => g
   | .untap .landsYouControl =>
     (g.permanentsOf controller).foldl (fun g o =>
       if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
@@ -303,7 +303,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.beginFraChoice controller (.discardThenStun n sourceId)
         s!"{(g.player controller).name} discards {n} card(s)"
-  | .copyTokenOfSourceIfNotToken =>
+  | .becomeCopy .sourceIfNotToken =>
     match sourceId with
     | none => g
     | some id =>
@@ -356,7 +356,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let (rng, r) := g.rng.next
       let g := { g with rng }
       g.discardFromHandRandomly controller hand[(r.toNat % hand.size)]!
-  | .grantFlashbackUntilEot =>
+  | .grant .flashback .target =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
@@ -686,15 +686,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         resolution := .put .landCard .tapped
         phrase := "Return target land card from your graveyard to the battlefield tapped" }
 
-  | .emrakulGrantMana
-  | .nextSpellCantBeCountered
+  | .grant .emrakulManaAndCast .target
+  | .cant (.beCountered .nextSpellThisTurn)
   | .identityEcho
-  | .destroyDrawIfLegendaryEnchantment
-  | .chooseKeyword _
+  | .destroy .target .drawIfLegendaryEnchantment
+  | .grant (.choiceOfKeywords _) .source
   | .putOnLibrary .bottom .graveyardCard
   | .destroy .allCreatures _
   | .putOnLibrary .shuffled .target
-  | .grantCombatDamageDrawTwo
+  | .grant .combatDamageDrawTwo .source
   | .pump (.count .artifact) (.fixed 0) .source
   | .pump (.count .artifact) (.fixed 0) .target
   | .putCounters (.ofKind .plusOnePlusOne 1) .creaturesWithPlusOne
@@ -702,32 +702,32 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .surveilReturnNoncreatureNonland
   | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell
   | .putCounters .stunRemovedLoyalty .target
-  | .emblemDrawOnCast
+  | .grant .emblemDrawOnCast .youIfCast
   | .empowerJace (.subtypeCount "Island")
-  | .attackersGetMinusFiveUntilYourTurn
-  | .exileOpponentLibrariesButBottom
-  | .minusFourMinusOneUntilYourTurn
-  | .eachPlayerSacrificesThenBeast
+  | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn
+  | .exile .opponentLibrariesButBottom .forLater _
+  | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn)
+  | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast
   | .eachOpponentDiscardsTwoDrawPerShort
   | .dealDamage (.fixed _) .creaturesExceptYourTokens _
-  | .emblemCreaturesGetTwoTwo
+  | .grant .emblemCreaturesGetTwoTwo .youIfCast
   | .untap (.target .eachPermanent)
-  | .attackersGetTwoTwoTrampleUntilYourTurn
+  | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn
   | .putCounters .plusOnePerLand .target
   | .may (.sacrifice .another) (.createTokens .beast44trample (.fixed 1) false _ _ _) .ifYouDo
   | .createTokens .beast44trample (.fixed 1) false _ _ _
   | .pump (.fixed _) (.fixed _) (.cause none)
-  | .attackersOfPlayerGetTwoTwoTrample
+  | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample
   | .putCounters .causeCounters .source
   | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo
   | .may (.pay (.mana #[.generic _])) (.proliferate (.fixed _) _) .ifYouDo
   | .proliferate (.fixed _) .youControl
-  | .becomeArtifactCreatureUntilEot
-  | .queueMshReflexive _ _
+  | .grant .artifactCreatureVehicle .source
+  | .queueReflexive (.mshReflexive _ _)
   | .mshReflexive _ _
-  | .hawkeyeArrows _
+  | .chooseModes _ (.hawkeyeIndices _)
   | .zemoBoastCopies
-  | .copySourceSpellXTimes
+  | .becomeCopy .sourceSpellXTimes
   | .dealDamage .equalSourcePower .target _ | .dealDamage (.power .source) .target _
   | .returnToHand .source _
   | .sarumanExileCopyMayCast

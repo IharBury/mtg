@@ -97,7 +97,7 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
     if m == 0 then "Net — Target creature can't block this turn"
     else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
     else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution := .hawkeyeArrows sorted.toList
+  { targeting, resolution := .chooseModes [] (.hawkeyeIndices sorted.toList)
     phrase := String.intercalate ". " names }
 
 /-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
@@ -632,7 +632,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
+      return (g.applyFra p default (.queueReflexive (.mshReflexive kind times)) #[] sourceId).finishFraChoice
   | .mayPayManaForReflexive .., .decline =>
     let g := g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger."
     if g.mayThenDrop > 0 then return g.declineMayThen

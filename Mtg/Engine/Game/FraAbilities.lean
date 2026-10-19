@@ -106,7 +106,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | none => g
   let chosenX := (g.resolvingAbilityObject?.bind (·.chosenX)).getD 0
   match r with
-  | .emrakulGrantMana =>
+  | .grant .emrakulManaAndCast .target =>
     match source? with
     | none => g
     | some card =>
@@ -122,7 +122,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.push card.id })
         g.logMsg s!"{land.name} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
         sourceId illegal
-  | .nextSpellCantBeCountered =>
+  | .cant (.beCountered .nextSpellThisTurn) =>
     (g.modifyPlayer controller (fun pl => { pl with nextSpellCantBeCountered := true })).logMsg
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
   | .identityEcho =>
@@ -154,12 +154,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         ({ g with rng }.moveIdsInOrder ordered (.library controller)).logMsg
           s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order")
       sourceId illegal
-  | .destroyDrawIfLegendaryEnchantment =>
+  | .destroy .target .drawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let legendaryEnchantment := o.isLegendary && o.printed.isEnchantment
       let g := g.destroyPermanent o
       if legendaryEnchantment then g.draw controller 1 else g) sourceId illegal
-  | .chooseKeyword options =>
+  | .grant (.choiceOfKeywords options) .source =>
     onSource (fun g o => g.beginChooseKeyword controller o.id options.toArray)
   | .putOnLibrary .bottom .graveyardCard =>
     g.withLegalKindTarget controller kind targets (fun g t =>
@@ -179,7 +179,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let (g, _) := g.move o.id (.library o.owner) none
       let g := g.logMsg s!"{(g.player o.owner).name} shuffles {o.name} into their library"
       g.shuffleLibrary o.owner) sourceId illegal
-  | .grantCombatDamageDrawTwo =>
+  | .grant .combatDamageDrawTwo .source =>
     onSource (fun g o =>
       let ab := TriggeredAbility.fra .combatDamageToPlayer
         "Whenever this creature deals combat damage to a player, draw two cards." (.draw 2)
@@ -228,7 +228,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         let n := g.countersYouPut (g.object! o.id) chosenX (putter := some controller)
         (g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })).logMsg
           s!"{n} stun counter(s) are put on {o.name}") sourceId illegal
-  | .emblemDrawOnCast =>
+  | .grant .emblemDrawOnCast .youIfCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra .youCastSpell
@@ -238,7 +238,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .empowerJace (.subtypeCount "Island") =>
     let n := ((g.permanentsOf controller).filter (fun o => g.hasSubtype o "Island")).size
     g.empowerJace controller n
-  | .attackersGetMinusFiveUntilYourTurn =>
+  | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
@@ -246,19 +246,19 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         (.pump (.fixed (-5)) (.fixed 0) .cause)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
-  | .exileOpponentLibrariesButBottom =>
+  | .exile .opponentLibrariesButBottom .forLater _ =>
     g.forEachOpponent controller (fun g pid =>
       let lib := (g.player pid).library
       let g := (lib.extract 1 lib.size).foldl (fun g id => (g.move id .exile none).1) g
       g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled")
-  | .minusFourMinusOneUntilYourTurn =>
+  | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn) =>
     if targets.isEmpty then g
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
         (g.mapObjectStatus o (fun s =>
           { s with untilTurnOfPump := s.untilTurnOfPump.push (controller, -4, -1) })).logMsg
           s!"{o.name} gets -4/-1 until {(g.player controller).name}'s next turn") sourceId illegal
-  | .eachPlayerSacrificesThenBeast =>
+  | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast =>
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .eachOpponentDiscardsTwoDrawPerShort =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
@@ -269,7 +269,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       match g.findObject? o.id with
       | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n.toNat (source := src?) else g
       | none => g) g
-  | .emblemCreaturesGetTwoTwo =>
+  | .grant .emblemCreaturesGetTwoTwo .youIfCast =>
     let emblem : CardDef := {
       name := s!"{srcName} Emblem", types := #[]
       staticAbilities := #[.fra .emblemCreaturesGetTwoTwo] }
@@ -285,12 +285,12 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           | none => g
         else g.illegalAbilityTarget t
       | _ => g) g
-  | .attackersGetTwoTwoTrampleUntilYourTurn =>
+  | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
       triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent)
         "Whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn."
-        (.attackersOfPlayerGetTwoTwoTrample)] }
+        (.pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
   | .putCounters .plusOnePerLand .target =>
@@ -324,18 +324,18 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .may (.pay (.mana #[.generic pay])) (.proliferate (.fixed times) _) .ifYouDo =>
     g.beginFraChoice controller (.mayPayThen pay (.proliferate times.toNat) sourceId)
       s!"{(g.player controller).name} may pay \{{pay}}"
-  | .becomeArtifactCreatureUntilEot =>
+  | .grant .artifactCreatureVehicle .source =>
     onSource (fun g o =>
       (g.mapObjectStatus o (fun s => { s with additionalCreatureUntilEot := true })).logMsg
         s!"{o.name} becomes an artifact creature until end of turn")
-  | .queueMshReflexive kind paid =>
+  | .queueReflexive (.mshReflexive kind paid) =>
     if kind == 2 then
       g.beginFraChoice controller (.hawkeyeModes paid #[] sourceId)
         s!"{(g.player controller).name} chooses up to {paid} Trick Arrows modes"
     else g.queueModeledReflexive controller sourceId kind paid
   | .mshReflexive kind paid =>
     g.resolveModeledReflexive controller sourceId kind paid targets g.resolvingDivision
-  | .hawkeyeArrows modes =>
+  | .chooseModes _ (.hawkeyeIndices modes) =>
     let src := sourceId.bind g.findObject?
     let illegal := some "The target is no longer legal"
     let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
@@ -355,7 +355,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           (g.beginFraChoice controller .discardThenDraw
             s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
     g
-  | .copySourceSpellXTimes =>
+  | .becomeCopy .sourceSpellXTimes =>
     match sourceId.bind g.findObject? with
     | some spell =>
       if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
@@ -437,7 +437,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.pumpPermanent o p t else g
     | none => g
-  | .attackersOfPlayerGetTwoTwoTrample =>
+  | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample =>
     match g.fraCauseController? with
     | some defender =>
       (g.creaturesAttackingPlayer defender).foldl (fun g o =>

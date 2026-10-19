@@ -301,8 +301,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .creatureTargets
   | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
     return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .firstTargetCreatureYouControl
-  | .exileGraveyardCreaturesGrantCast ty =>
-    return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
+  | .exile (.graveyardCardsOfType ty (.target .player)) .anyManaWhileExiled note =>
+    return .exile (.graveyardCardsOfType (← takeCardType ty) (.target .player)) .anyManaWhileExiled note
   | .searchLibrary (.returnToHand (.supertypeCard s ty) note) =>
     return .searchLibrary (.returnToHand (.supertypeCard (← takeSupertype s) (← takeCardType ty)) note)
   | .searchLibrary (.put (.supertypeCard s ty) how note) =>
@@ -311,11 +311,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .addMana types (.count (.oppPermanents (← takeCardType ty))) note
   | .addMana types (.fixed n) (.subtypeSpells s) =>
     return .addMana types (.fixed (← takeNat n.toNat)) (.subtypeSpells (← takeStr s))
-  | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
-  | .becomeArtifactCreature44Flying p t kw =>
-    return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
-  | .discardTwoUnlessArtifact n ty =>
-    return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
+  | .revealLibrary (.top n) (.returnToHand .twoPiles hnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.returnToHand .twoPiles hnote) rwho
+  | .grant (.artifactCreature p t kw) .target =>
+    return .grant (.artifactCreature (← takeInt p) (← takeInt t) (← takeStr kw)) .target
+  | .discard (.cardsUnlessType n ty) =>
+    return .discard (.cardsUnlessType (← takeNat n) (← takeCardType ty))
   | .putCounters (.ofKind .plusOnePlusOne n) .youControl =>
     return .putCounters (.ofKind .plusOnePlusOne (← takeNat n)) .youControl
   | .putCounters (.ofKind .plusOnePlusOne n) .eachOther =>
@@ -350,9 +351,10 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .revealLibrary (.top a) (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed b) lwho]) rwho =>
     return .revealLibrary (.top (← takeNat a))
       (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed (← takeNat b.toNat)) lwho]) rwho
-  | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
-    return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
-  | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
+  | .exile (.creatureMvAtMostOrTeamwork a) .forLater (.gainLifeIfTeamwork b) =>
+    return .exile (.creatureMvAtMostOrTeamwork (← takeNat a)) .forLater (.gainLifeIfTeamwork (← takeNat b))
+  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted pnote =>
+    return .put (.creatureMvAtMostOrTeamwork (← takeNat n)) .asPrinted pnote
   | .revealLibrary (.top n) (.put .creaturesYouControl how pnote) rwho =>
     return .revealLibrary (.top (← takeNat n)) (.put .creaturesYouControl how pnote) rwho
   | .createTokens k (.fixed n) tapped token who note =>
@@ -365,8 +367,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .returnToHand (.graveyardSubtype (← takeStr s)) note
   | .mill (.fixed a) who (.permanentAndGainLife b) =>
     return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
-  | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
-  | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
+  | .sequence [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
+    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
   | .spellsCostLess which (.fixed n) =>
     match which with
     | .cardType ty =>
@@ -490,7 +492,8 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .onSource a => return .onSource (← takeAction a)
   | .searchLibrary (.returnToHand (.landSubtype s) note) =>
     return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
-  | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
+  | .grant (.subtypeWithLandsPT s) .source =>
+    return .grant (.subtypeWithLandsPT (← takeStr s)) .source
   | .mill (.fixed n) who (.subtypeOrEnchantmentToHand s) =>
     return .mill (.fixed (← takeNat n.toNat)) who (.subtypeOrEnchantmentToHand (← takeStr s))
   | .mill (.fixed n) who .none => return .mill (← takeNat n.toNat) who .none
@@ -510,14 +513,17 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
     return .addMana types amount (.subtypeSpellsOrAbilities (← takeStr s))
   | .revealLibrary (.top n) (.returnToHand (.milledSubtype s) hnote) rwho =>
     return .revealLibrary (.top (← takeNat n)) (.returnToHand (.milledSubtype (← takeStr s)) hnote) rwho
-  | .becomeTypes ts p t k =>
-    return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
+  | .grant (.typesPTAndKeywords ts p t k) .source =>
+    return .grant (.typesPTAndKeywords (← takeStrs ts) (← takeInt p) (← takeInt t) k) .source
   | .connive (.target (.youControl (.subtype s))) =>
     return .connive (.target (.youControl (.subtype (← takeStr s))))
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exile .top (.mayCastElseDamageOpponents n) note =>
     return .exile .top (.mayCastElseDamageOpponents (← takeNat n)) note
-  | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
+  | .grant (.emblemCastSpellDamage n) .youIfCast =>
+    return .grant (.emblemCastSpellDamage (← takeNat n)) .youIfCast
+  | .sequence [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
+    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | r => takeSpell r
 end
@@ -1667,7 +1673,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some ((.amass 4 "Zombie"))
 
 #guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
-  some ((.riddlesInTheDark 6))
+  some (.revealLibrary (.top 6) (.returnToHand .twoPiles))
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
   some ((.putCounters (.ofKind .plusOnePlusOne 3) .youControl))
@@ -1725,11 +1731,11 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
 
 #guard refilled (Effect.drawThreeDiscardUnlessArtifact)
     "draw three cards. Then discard four cards unless you discard an enchantment card" ==
-  some (.sequence [.draw 3, (.discardTwoUnlessArtifact 4 .enchantment)])
+  some (.sequence [.draw 3, (.discard (.cardsUnlessType 4 .enchantment))])
 
 #guard refilled (Effect.becomeArtifactCreature44Flying)
     "until end of turn, target artifact or creature you control becomes an artifact creature with base power and toughness 2/3 and gains haste" ==
-  some ((.becomeArtifactCreature44Flying 2 3 "Haste"))
+  some ((.grant (.artifactCreature 2 3 "Haste") .target))
 
 #guard refilled (Effect.mayDrawPerArtifactOppsDraw)
     "You may draw a card for each creature you control. If you do, each opponent draws a card" ==

@@ -248,7 +248,7 @@ namespace ActivatedAbility
 /-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
 def crewAbility (n : Nat) : ActivatedAbility :=
   { cost := { fra := .crew n }, printed := s!"Crew {n}"
-    effect := { resolution := .becomeArtifactCreatureUntilEot
+    effect := { resolution := .grant .artifactCreatureVehicle .source
                 phrase := "This Vehicle becomes an artifact creature until end of turn" } }
 
 /-- An equip ability (CR 702.6): attach to target creature you control,

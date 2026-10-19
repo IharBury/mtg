@@ -391,6 +391,6 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         | none => none
 where
   frcEffectChoose (phrase : String) : Effect :=
-    { resolution := .chooseTriggerModes 1, phrase }
+    { resolution := .chooseModes [] (.fraTrigger 1), phrase }
 
 end Mtg.Engine

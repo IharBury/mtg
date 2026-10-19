@@ -444,7 +444,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
-        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
+        [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
         [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
@@ -562,7 +562,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] }
   | .damageTargetOpponent n =>
     { targeting := .of .opponent, resolution := .dealDamage (.fixed n) (.player (.target .opponent)) }
-  | .copySelfNonlegendary => { resolution := .copySelfNonlegendary }
+  | .copySelfNonlegendary => { resolution := .becomeCopy .sourceTwoNonlegendaryTokens }
   | .attachEquipmentThenFight =>
     { targeting := .of .creatureYouControl,
       resolution := .sequence [.attach .anyYouControl .target,
@@ -758,7 +758,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .enter .exileGyPlayUntilNextTurn =>
     { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
       resolution := .sequence
-        [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] }
+        [.exile .graveyardCard .forLater .playCard, .grant .playNotedUntilNextTurn .target] }
   | .enter .returnGyPermanentThisTurn =>
     { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
       resolution := .returnToHand .graveyardPermanent }
