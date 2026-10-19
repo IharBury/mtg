@@ -367,11 +367,11 @@ def drawEqualToughnessThenPutCreatures : Effect :=
     (castKind := .draw)
 
 def millThenPutInstantOrSorcery (n : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPut n (.oneOf .instant .sorcery))
+  mkSpell (.of .none) (.mill (.fixed n) .you (.toHand (.oneOf .instant .sorcery)))
     (castKind := .draw)
 
 def millThenPutLands (n max : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPut n (.upTo max .land))
+  mkSpell (.of .none) (.mill (.fixed n) .you (.toHand (.upTo max .land)))
     (castKind := .draw)
 
 def exileThenReturnYouControl : Effect :=
@@ -384,7 +384,7 @@ def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
     (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPut n (.allOf .instant .sorcery))
+  mkSpell (.of .none) (.mill (.fixed n) .you (.toHand (.allOf .instant .sorcery)))
     (castKind := .draw)
 
 def exileAttackersSearchBasics : Effect :=
@@ -396,7 +396,7 @@ def createTokensX (kind : TokenKind) : Effect :=
     (castKind := .extraLand)
 
 def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
-  mkSpell (.of .none) (.exileTopPlayIfYouControlSubtype n subtype)
+  mkSpell (.of .none) (.exile (.topN n) (.playIfYouControlSubtype subtype))
     (castKind := .draw)
 
 def returnSpellCantCastIfGift : Effect :=
@@ -405,7 +405,7 @@ def returnSpellCantCastIfGift : Effect :=
     (castKind := .counter)
 
 def exileTopXOppPlayForLife : Effect :=
-  mkSpell (.of .opponent) (.exileTopXOppPlayForLife)
+  mkSpell (.of .opponent) (.exile .opponentTopX .playForLifeThisTurn)
     (castKind := .draw)
 
 def riddlesInTheDark : Effect :=
@@ -422,7 +422,7 @@ def eaglesAreComing : Effect :=
     (castKind := .draw)
 
 def lookAtTopLandsGainLife (n life : Nat) : Effect :=
-  mkSpell (.of .none) (.lookAtTopLandsGainLife n life)
+  mkSpell (.of .none) (.revealLibrary (.top n) (.sequence [.put .landsYouControl .tapped, .gainLife (.fixed life)]))
     (castKind := .draw)
 
 def gainControlOppArtifacts : Effect :=
@@ -472,7 +472,7 @@ def returnGyCreatureMvAtMostOrAny (n : Nat) : Effect :=
     (castKind := .draw)
 
 def revealTopPutCreatures (n : Nat) : Effect :=
-  mkSpell (.of .none) (.revealTopPutCreatures n)
+  mkSpell (.of .none) (.revealLibrary (.top n) (.put .creaturesYouControl))
     (castKind := .extraLand)
 
 def createTokens (kind : TokenKind) (n : Nat) : Effect :=
@@ -514,7 +514,7 @@ def destroyCreatureSurveil : Effect :=
 def investigatePumpFlyingUntap : Effect :=
   mkSpell (.of .playerThenCreature)
     (.sequence [
-      .targetPlayerInvestigates,
+      .investigate (.target .player),
       .grant (.keywords Keyword.flying) .creatureTargets,
       .untap .creatureTargets,
       .pump (.fixed 1) (.fixed 0) .creatureTargets])
@@ -588,7 +588,7 @@ def pumpThenDraw (power toughness : Int) : Effect :=
 
 def pumpThenExileTopPlay (power toughness : Int) : Effect :=
   mkSpell (.of .creature)
-    (.sequence [.onPermanent (.pump power toughness), .exileTopPlayUntilNext 1])
+    (.sequence [.onPermanent (.pump power toughness), .exile (.topN 1) .playUntilNextTurn])
     (castKind := .pump)
 
 def creatureYouControlDealsTwicePower (k : Nat := 2) : Effect :=
@@ -633,7 +633,7 @@ def gainControlUntilEotOrNextIfVillain : Effect :=
     (castKind := .pump)
 
 def millThenPutPermanentGainLife (n life : Nat) : Effect :=
-  mkSpell (.of .none) (.millThenPutPermanentGainLife n life)
+  mkSpell (.of .none) (.mill (.fixed n) .you (.permanentAndGainLife life))
     (castKind := .draw)
 
 def searchLibraryOrGyArtifactCreatureX : Effect :=
@@ -758,11 +758,11 @@ def gainLife (n : Nat) : Effect :=
   mkAbility ({}) (.gainLife n)
 
 def ownerShuffleSourceDraw (n : Nat) : Effect :=
-  { resolution := .sequence [.shuffleSource, .draw n]
+  { resolution := .sequence [.putOnLibrary .shuffled .source, .draw n]
     phrase := s!"This owner shuffles him into their library and draws {cardPhrase n}" }
 
 def returnFromGyAttachPowerAtMost (n : Int) : Effect :=
-  mkAbility (.of (.creatureYouControlPowerAtMost n)) (.returnFromGyAttach)
+  mkAbility (.of (.creatureYouControlPowerAtMost n)) (.put .source .asPrinted .forAttach)
 
 def addMana (types : Array ManaType) : Effect :=
   mkAbility ({}) (.addMana types)
@@ -815,7 +815,7 @@ def grantCombatDamageCreateTreasure : Effect :=
   mkAbility (.of .creature) (.grantCombatDamageCreateTreasure)
 
 def putShadowCounter : Effect :=
-  mkAbility (.of .creature) (.putShadowCounter)
+  mkAbility (.of .creature) (.putCounters (.ofKind .shadow 1) .target)
 
 def damageEachOpponent (n : Nat) : Effect :=
   mkAbility ({}) (.dealDamage n (.player .eachOpponent))
@@ -874,7 +874,7 @@ def lookAtTopPutTypes (n : Nat) (types : Array String) : Effect :=
   let listed := orJoin types.toList
   let art := indefinite (types[0]?.getD "")
   mkAbility ({})
-    (.sequence [.onSource (.plusOne 2), .lookAtTopPutTypes n types])
+    (.sequence [.onSource (.plusOne 2), .revealLibrary (.top n) (.put (.lookedTypes types))])
     (phraseOverride := some
       s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}")
 
@@ -888,7 +888,7 @@ def drawX : Effect :=
   mkAbility ({}) (.draw .chosenX)
 
 def lookAtTopRevealArtifact (n : Nat) : Effect :=
-  mkAbility ({}) (.lookAtTopRevealArtifact n)
+  mkAbility ({}) (.revealLibrary (.top n) (.returnToHand .artifact))
 
 def connive : Effect :=
   mkAbility ({}) (.connive)
@@ -954,10 +954,10 @@ def equipmentBecomesConstructHero : Effect :=
   mkAbility ({}) (.equipmentBecomesConstructHero)
 
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
-  mkAbility ({}) (.lookAtTopRevealSubtype n subtype)
+  mkAbility ({}) (.revealLibrary (.top n) (.returnToHand (.milledSubtype subtype)))
 
 def millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String) : Effect :=
-  mkAbility ({}) (.millThenPutSubtypeOrEnchantment n subtype)
+  mkAbility ({}) (.mill (.fixed n) .you (.subtypeOrEnchantmentToHand subtype))
 
 def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
   millThenPutSubtypeOrEnchantment n "Hero"
@@ -1001,7 +1001,7 @@ def plusTwoThenOddEvenDestroy : Effect :=
       "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality")
 
 def returnFromGyFinalityAttach : Effect :=
-  mkAbility ({}) (.returnFromGyFinalityAttach)
+  mkAbility ({}) (.put .source .asPrinted (.entering [.counter .finality 1 true]))
 
 def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
   mkAbility (.of .creatureCardInYourGraveyard)
@@ -1011,7 +1011,7 @@ def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
       s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature")
 
 def revealTopDrawIfArtifact : Effect :=
-  mkAbility ({}) (.revealTopDrawIfArtifact)
+  mkAbility ({}) (.revealLibrary (.top 1) (.draw (.fixed 1)))
 
 def copyArtifactYouControlNotLegendary : Effect :=
   mkAbility (.of .twoArtifactsYouControl) (.copyArtifactYouControlNotLegendary)
@@ -1132,7 +1132,7 @@ def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility ({}) (.jaceLoyaltyAtInstantSpeed)
 
 def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
-  mkAbility ({}) (.exileTopMayCastElseDamageOpponents n)
+  mkAbility ({}) (.exile .top (.mayCastElseDamageOpponents n))
 
 def emblemCastSpellDamage (n : Nat) : Effect :=
   mkAbility ({}) (.emblemCastSpellDamage n)
@@ -1328,7 +1328,7 @@ def extrapolateTheImpossible : Effect :=
     (castKind := .draw)
 
 def overwriteTheMultiverse : Effect :=
-  fraUntargeted (.exileAllCreaturesEmpower)
+  fraUntargeted (.exile .allCreatures .forLater .empowerJace)
     "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this way"
     (castKind := .destroyCreature)
 
@@ -1339,7 +1339,7 @@ def rewriteRegrets : Effect :=
     (castKind := .draw)
 
 def riseDraw : Effect :=
-  fraUntargeted (.drawGreatestPowerLoseLife)
+  fraUntargeted (.draw .greatestPowerAndLoseLife .you)
     "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
     (castKind := .draw)
 
@@ -1434,7 +1434,7 @@ def restoreWithEmpathy : Effect :=
     (castKind := .draw)
 
 def somethingWorthSaving : Effect :=
-  fraUntargeted (.millThenPutPermanentGainLife 4 1)
+  fraUntargeted (.mill (.fixed 4) .you (.permanentAndGainLife 1))
     "Mill four cards. You may put a permanent card from among them into your hand. You gain 1 life"
     (castKind := .draw)
 
@@ -1500,7 +1500,7 @@ def addColorless (n : Nat) : Effect :=
 
 def recursiveRecruitment : Effect :=
   fraUntargeted
-    (.sequence [.createTokens .cadet 2, .plusOnePerThreeGraveyardOnRecentIfFromGy])
+    (.sequence [.createTokens .cadet 2, .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken])
     "Create two 2/2 colorless Wizard Soldier creature tokens named Cadet. If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
     (castKind := .draw)
 
@@ -1510,7 +1510,7 @@ def targetCreatureGains (k : Keywords) (words : String := k.joinedAnd) : Effect 
     (castKind := .pump)
 
 def cadetWithHaste : Effect :=
-  fraUntargeted (.sequence [.createTokens .cadet 1, .grantHasteToRecentTokens])
+  fraUntargeted (.sequence [.createTokens .cadet 1, .grant (.keywords Keyword.haste) .createdToken])
     "Create a 2/2 colorless Wizard Soldier creature token named Cadet. It gains haste until end of turn"
     (castKind := .draw)
 

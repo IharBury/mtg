@@ -241,7 +241,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         g.putReflexiveTrigger p sourceId
           { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonland
-            allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
+            allowsZeroTargets := true, resolution := .putCounters (.ofKind .stun 1) (.creaturesControlledBy .eachOpponent)
             phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"

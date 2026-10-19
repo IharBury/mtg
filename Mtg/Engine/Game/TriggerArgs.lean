@@ -293,7 +293,8 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .land | .creatureOrPlaneswalker | .landCard
     | .landsUpTo _ | .landsEqualDamage | .planeswalkerCard | .enchantmentCard
     | .supertypeCard _ _ | .landSubtype _ | .basicBeholdUntap _
-    | .basicLandsDifferentNamesX | .artifactCreatureX | .random =>
+    | .basicLandsDifferentNamesX | .artifactCreatureX | .random
+    | .topN _ | .opponentTopX | .lookedTypes _ =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -520,8 +521,9 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     match g.permanentsNamed ctx of with
     | some #[o] => some (Int.ofNat o.status.loyaltyCounters)
     | _ => none
+  | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
-  | .chosenX | .planeswalkerTypes => none
+  | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
@@ -559,7 +561,7 @@ def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.Tri
 def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n : Nat)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
   match note with
-  | .none =>
+  | .none | .toHand _ | .permanentAndGainLife _ | .subtypeOrEnchantmentToHand _ =>
     pids.foldl (fun g pid => g.mill pid n) g
   | .milledCards =>
     let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]

@@ -335,22 +335,26 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .dealDamage (.fixed (← takeNat n.toNat)) who note
   | .amass (.fixed n) subtype =>
     return .amass (← takeNat n.toNat) (← takeStr subtype)
-  | .millThenPut n which =>
+  | .mill (.fixed n) who (.toHand which) =>
     match which with
     | .oneOf a b =>
-      return .millThenPut (← takeNat n) (.oneOf (← takeCardType a) (← takeCardType b))
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
     | .upTo max ty =>
-      return .millThenPut (← takeNat n) (.upTo (← takeNat max) (← takeCardType ty))
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
     | .allOf a b =>
-      return .millThenPut (← takeNat n) (.allOf (← takeCardType a) (← takeCardType b))
-  | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
-  | .exileTopPlayIfYouControlSubtype n s =>
-    return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
-  | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
+  | .exile (.topN n) .playUntilNextTurn note =>
+    return .exile (.topN (← takeNat n)) .playUntilNextTurn note
+  | .exile (.topN n) (.playIfYouControlSubtype s) note =>
+    return .exile (.topN (← takeNat n)) (.playIfYouControlSubtype (← takeStr s)) note
+  | .revealLibrary (.top a) (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed b) lwho]) rwho =>
+    return .revealLibrary (.top (← takeNat a))
+      (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed (← takeNat b.toNat)) lwho]) rwho
   | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
   | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
-  | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
+  | .revealLibrary (.top n) (.put .creaturesYouControl how pnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.put .creaturesYouControl how pnote) rwho
   | .createTokens k (.fixed n) tapped token who note =>
     return .createTokens k (← takeNat n.toNat) tapped token who note
   | .createTokens k .chosenX tapped token who note =>
@@ -359,8 +363,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .createTokens k (.perSubtype (← takeStr s)) tapped token who note
   | .returnToHand (.graveyardSubtype s) note =>
     return .returnToHand (.graveyardSubtype (← takeStr s)) note
-  | .millThenPutPermanentGainLife a b =>
-    return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
+  | .mill (.fixed a) who (.permanentAndGainLife b) =>
+    return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
   | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
   | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
   | .spellsCostLess which (.fixed n) =>
@@ -487,7 +491,10 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .searchLibrary (.returnToHand (.landSubtype s) note) =>
     return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
   | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
-  | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
+  | .mill (.fixed n) who (.subtypeOrEnchantmentToHand s) =>
+    return .mill (.fixed (← takeNat n.toNat)) who (.subtypeOrEnchantmentToHand (← takeStr s))
+  | .mill (.fixed n) who .none => return .mill (← takeNat n.toNat) who .none
+  | .mill (.fixed n) who .milledCards => return .mill (← takeNat n.toNat) who .milledCards
   | .grant (.keywords k) (.intersection [.creaturesYouControl, .union what]) =>
     let ss := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
     let ss ← takeStrs ss
@@ -495,19 +502,21 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
       (.intersection [.creaturesYouControl, .union (ss.toList.map (fun s => .youControl (.subtype s)))])
   | .searchLibrary (.put (.basicBeholdUntap s) how note) =>
     return .searchLibrary (.put (.basicBeholdUntap (← takeStr s)) how note)
-  | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
-  | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
+  | .revealLibrary (.top n) (.put (.lookedTypes ts) how pnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.put (.lookedTypes (← takeStrs ts)) how pnote) rwho
+  | .revealLibrary (.top n) (.returnToHand .artifact hnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.returnToHand .artifact hnote) rwho
   | .addMana types amount (.subtypeSpellsOrAbilities s) =>
     return .addMana types amount (.subtypeSpellsOrAbilities (← takeStr s))
-  | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
-  | .millThenPutSubtypeOrEnchantment n s =>
-    return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeStr s)
+  | .revealLibrary (.top n) (.returnToHand (.milledSubtype s) hnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.returnToHand (.milledSubtype (← takeStr s)) hnote) rwho
   | .becomeTypes ts p t k =>
     return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
   | .connive (.target (.youControl (.subtype s))) =>
     return .connive (.target (.youControl (.subtype (← takeStr s))))
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
-  | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
+  | .exile .top (.mayCastElseDamageOpponents n) note =>
+    return .exile .top (.mayCastElseDamageOpponents (← takeNat n)) note
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | r => takeSpell r

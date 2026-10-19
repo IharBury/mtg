@@ -174,7 +174,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       match g.findObject? o.id with
       | some o => if o.isOnBattlefield then g.destroyPermanent o else g
       | none => g) g
-  | .ownerShufflesIntoLibrary =>
+  | .putOnLibrary .shuffled .target =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let (g, _) := g.move o.id (.library o.owner) none
       let g := g.logMsg s!"{(g.player o.owner).name} shuffles {o.name} into their library"
@@ -220,7 +220,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     (g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .blue) 1 (fra := some .noncreatureSpell) })).logMsg
       s!"{(g.player controller).name} adds \{U} (noncreature spells only)"
-  | .tapAndStunX =>
+  | .putCounters .stunRemovedLoyalty .target =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let g := if o.status.tapped then g else g.becomeTapped o
       if chosenX == 0 then g
@@ -312,7 +312,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         let g := if st.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! o.id) st.plusOnePlusOne else g
         g.logMsg s!"Counters are put on {o.name}"
     | _, _ => g
-  | .mayMoveSourceCountersToTarget =>
+  | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo =>
     match source? with
     | some src =>
       g.withLegalKindPermanent controller kind targets (fun g o =>

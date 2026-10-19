@@ -682,7 +682,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
     some "that creature can't be blocked this turn"
   | .becomeArtifact (.target .whileSource) =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
-  | .becomePrepared (.target .whileSource) => some "that creature becomes prepared"
+  | .becomePrepared (.target .whileSource) _ => some "that creature becomes prepared"
   | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .putOnLibrary .top (.target .whileSource) =>
@@ -801,15 +801,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "until end of turn, that creature becomes an artifact in addition to its other types"
   | .becomeArtifact _ =>
     "becomes an artifact"
-  | .becomePrepared .target =>
+  | .becomePrepared .target _ =>
     s!"{noun} becomes prepared"
-  | .becomePrepared .source =>
+  | .becomePrepared .source _ =>
     "this creature becomes prepared"
-  | .becomePrepared .enchanted =>
+  | .becomePrepared .enchanted _ =>
     "enchanted creature becomes prepared"
-  | .becomePrepared (.target .whileSource) =>
+  | .becomePrepared (.target .whileSource) _ =>
     "that creature becomes prepared"
-  | .becomePrepared _ =>
+  | .becomePrepared _ _ =>
     "becomes prepared"
   | .setBasePT (.fixed p) (.fixed t) .target =>
     s!"{noun} has base power and toughness {p}/{t} until end of turn"
@@ -829,6 +829,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "this creature's owner puts it on top of their library"
   | .putOnLibrary .bottom .source =>
     "this creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .shuffled .source =>
+    "its owner shuffles it into their library"
   | .putOnLibrary .top .enchanted =>
     "enchanted creature's owner puts it on top of their library"
   | .putOnLibrary .bottom .enchanted =>
@@ -845,9 +847,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .surveil _ => "surveil"
   | .empowerJace (.fixed n) => s!"empower Jace {n}"
   | .empowerJace _ => "empower Jace"
-  | .prepareSource .ifNotPrepared =>
+  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
     "if this creature isn't prepared, it becomes prepared"
-  | .prepareSource .ifThreeCreaturesDied =>
+  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
     "if three or more creatures died this turn, this creature becomes prepared"
   | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) =>
     "if you removed two or more loyalty counters to activate it, draw a card"
@@ -855,6 +857,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match what, who with
     | .ofKind .plusOnePlusOne _, .youControl .eachCreature =>
       "put a +1/+1 counter on each creature you control"
+    | .ofKind .hone _, .youControl (.subtype "Equipment") =>
+      "put a hone counter on each Equipment you control"
     | .ofKind .plusOnePlusOne _, .youControl (.subtype s) =>
       s!"put a +1/+1 counter on each {s} you control"
     | .ofKind .plusOnePlusOne _, .youControl .citysBlessing =>
@@ -1219,7 +1223,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
       .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] =>
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
-  | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] =>
+  | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
@@ -1488,8 +1492,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"gain control of {noun} for as long as this Saga remains on the battlefield"
   | .gainControl .duringNextTurn =>
     "you control target opponent during their next turn"
-  | .honeEachEquipment =>
-    "put a hone counter on each Equipment you control"
   | .cascade =>
     "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
   | .noteResolveThisTurn _ =>
@@ -1640,7 +1642,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "spells you cast this turn cost less to cast"
   | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
-  | .investigate => "investigate"
+  | .investigate _ => "investigate"
   | .connive .source => "it connives"
   | .connive .target => s!"{noun} connives"
   | .connive .enteringVillain => "you may have it connive"
@@ -1763,9 +1765,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you win the game"
   | .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame =>
     "if your library has no cards in it, you win the game"
-  | .shuffleSource =>
-    "its owner shuffles it into their library"
-  | .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource =>
+  | .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source) =>
     "Fblthp's owner shuffles him into their library"
   | .armSurveilReturnLifeGained =>
     "if you gained life this turn"

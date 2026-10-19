@@ -639,6 +639,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => (g, false)
     | _ => (g, false)
   | .teamwork => (g, g.resolvingTeamworkPaid)
+  | .preparedSource =>
+    match sourceId.bind g.findObject? with
+    | some o => (g, o.isOnBattlefield && o.status.prepared)
+    | none => (g, false)
   | .castFromGraveyard => (g, false)
   | .giftPromised | .notFromHand => (g, false)
 
@@ -1191,6 +1195,13 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (what : TriggeredAbility.CounterSelector)
     (who : TriggeredAbility.ObjectSelector) : Game :=
   match what, who with
+  | .ofKind .hone _, .youControl (.subtype "Equipment") =>
+    let eqs :=
+      g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
+    eqs.foldl (init := g) fun acc eq =>
+      let n := acc.countersYouPut eq 1 (putter := some controller)
+      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + n })
+        |>.logMsg s!"{eq.name} received a hone counter"
   | .ofKind .plusOnePlusOne _, .youControl which =>
     match which with
     | .eachCreature =>
@@ -1440,7 +1451,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX => g
+    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
+    | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -1783,6 +1795,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               | none => g
             else g
           | .anyManaThisTurn => g.grantWidowCast controller (some newId)
+          | .empowerJace => g.empowerJace controller 1
           | .none => g.logMsg s!"{name} is exiled"
         | .returnImmediately =>
           let owner := o.owner
@@ -1810,6 +1823,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             | _ => #[]
           { g with pending :=
               .fraChoice controller (.mayCastUpToFromExile (prev.push newId) casts) }
+        | .playIfYouControlSubtype _ | .playForLifeThisTurn | .mayCastElseDamageOpponents _ =>
+          (g.move o.id .exile none).1
       objs.foldl exileOne g
 
 /-- Resolve `TriggerResolution.sacrifice`. Each printed selector keeps
@@ -3719,20 +3734,21 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (place : TriggeredAbility.TriggerLibraryPlace)
     (what : TriggeredAbility.ObjectSelector) : Game :=
-  match what with
-  | .target => put .target
-  | .source => put .source
-  | .enchanted => put .enchanted
-  | .whileSource | .target .whileSource => put .targetWhileSource
-  | .cardFromHand =>
+  match place, what with
+  | .shuffled, .source => g.shuffleSourceIntoLibrary sourceId
+  | _, .target => put .target
+  | _, .source => put .source
+  | _, .enchanted => put .enchanted
+  | _, .whileSource | _, .target .whileSource => put .targetWhileSource
+  | _, .cardFromHand =>
     match place with
     | .bottom =>
       if (g.player controller).hand.isEmpty then g
       else
         { g with pending := .putOnBottom controller 1 }.logMsg
           s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-    | .top => g
-  | what =>
+    | .top | .topOrBottom | .shuffled => g
+  | _, what =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what with
     | some objs => objs.foldl (fun g o => g.applyPermanentAction o action) g
@@ -3740,7 +3756,7 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 where
   action : PermanentAction :=
     match place with
-    | .top => .putOnTopOfLibrary
+    | .top | .topOrBottom | .shuffled => .putOnTopOfLibrary
     | .bottom => .putOnBottomOfLibrary
   put (who : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets who fun g o =>
@@ -3825,7 +3841,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyCant controller ab sourceId targets action
   | .becomeArtifact who =>
     g.applyBecomeArtifact controller ab sourceId targets who
-  | .becomePrepared who =>
+  | .becomePrepared who _ =>
     g.applyBecomePrepared controller ab sourceId targets who
   | .setBasePT power toughness who =>
     g.applySetBasePT controller ab sourceId targets lastKnownPower lastKnownToughness
@@ -3992,13 +4008,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let g := g.setPlayerControl controller pid
         { g with controlOnNextTakenTurn := true })
         sourceId (some "The target is no longer legal")
-  | .honeEachEquipment =>
-    let eqs :=
-      g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
-    eqs.foldl (init := g) fun acc eq =>
-      let n := acc.countersYouPut eq 1 (putter := some controller)
-      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + n })
-        |>.logMsg s!"{eq.name} received a hone counter"
   | .cascade =>
     let maxMv :=
       match sourceId with
@@ -4029,6 +4038,22 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         (some (.dealDamage (.fixed 1) (.player (.target .opponent)))) sequencedCardPower
     else
       g.logMsg "Human Torch's ability has no effect"
+  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
+    else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+    else g.becomePrepared o
+    | none => g.logMsg "The source is no longer on the battlefield"
+  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
+    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+      g.logMsg "Fewer than three creatures died this turn"
+    else
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.becomePrepared o
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none => g.logMsg "The source is no longer on the battlefield"
   | .«if» cond thenDo =>
     let (g, holds) :=
       g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
@@ -4177,8 +4202,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     -- state-based action for drawing from an empty library.
     { g with result := some (.won controller) }.logMsg
       s!"{(g.player controller).name} wins the game"
-  | .shuffleSource =>
-    g.shuffleSourceIntoLibrary sourceId
   | .ringTempts =>
     g.temptWithTheRing controller
   | .spellsCostLess which amount =>
@@ -4191,7 +4214,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match which with
       | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
       | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
-  | .investigate =>
+  | .investigate _ =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"
   | .connive who =>
@@ -4280,25 +4303,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.triggerCount ctx amount with
     | some n => g.empowerJace controller n
     | none => g
-  | .prepareSource .ifNotPrepared =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
-      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
-      else g.becomePrepared o
-    | none => g.logMsg "The source is no longer on the battlefield"
   | .armSurveilReturnLifeGained =>
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
     { g with armSurveilReturn := true }
-  | .prepareSource .ifThreeCreaturesDied =>
-    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
-      g.logMsg "Fewer than three creatures died this turn"
-    else
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.becomePrepared o
-        else g.logMsg s!"{o.name} is no longer on the battlefield"
-      | none => g.logMsg "The source is no longer on the battlefield"
   | .becomeCopy of =>
     match of with
     | .noted | .cause none | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
@@ -4612,7 +4619,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logIllegalSequenceTargets targets
       else
         match steps with
-        | [.shuffleSource, .draw (.fixed n)] =>
+        | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
         | steps =>
         steps.foldl (fun g r =>

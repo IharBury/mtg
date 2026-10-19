@@ -334,7 +334,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .returnToHand .graveyardCard }
   | .plusOneEachYouControl which =>
     { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
-  | .honeEachEquipment => { resolution := .honeEachEquipment }
+  | .honeEachEquipment => { resolution := .putCounters (.ofKind .hone 1) (.youControl (.subtype "Equipment")) }
   | .plusOneEachOtherGainLife =>
     { resolution := .sequence
         [.putCounters (.ofKind .plusOnePlusOne) .eachOther,
@@ -654,9 +654,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .surveil n => { resolution := .surveil (.fixed n) }
   | .empowerJace n => { resolution := .empowerJace (.fixed n) }
   | .prepareSource .ifNotPrepared =>
-    { events := #[.yourUpkeep], resolution := .prepareSource .ifNotPrepared }
+    { events := #[.yourUpkeep], resolution := .«if» (.not .preparedSource) (.becomePrepared .source) }
   | .prepareSource .ifThreeCreaturesDied =>
-    { events := #[.eachEndStep], resolution := .prepareSource .ifThreeCreaturesDied }
+    { events := #[.eachEndStep], resolution := .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source) }
   | .drawIfRemovedTwoLoyalty =>
     { resolution := .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) }
   | .loyaltyOnSource =>
@@ -692,7 +692,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .addMana #[.colored .green] .perChargeCounter }
   | .drawTwoWinIfEmptyShuffleSource =>
     { resolution := .sequence
-        [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] }
+        [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] }
   | .surveilReturnIfGainedLife =>
     { events := #[.yourEndStep],
       resolution := .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] }

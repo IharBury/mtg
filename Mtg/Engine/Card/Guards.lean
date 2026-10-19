@@ -133,7 +133,7 @@ namespace CardDef
 #guard (Effect.abilityDrawThenDiscard 2).resolution ==
   Resolution.sequence [.draw 2, .discard (.cards 1)]
 #guard (Effect.ownerShuffleSourceDraw 3).resolution ==
-  Resolution.sequence [.shuffleSource, .draw 3]
+  Resolution.sequence [.putOnLibrary .shuffled .source, .draw 3]
 #guard (Effect.ownerShuffleSourceDraw 3).phrase ==
   "This owner shuffles him into their library and draws 3 cards"
 #guard (Effect.plusOneAndDraw 1 2).resolution ==
@@ -482,11 +482,11 @@ namespace CardDef
 #guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
   "each opponent loses 2 life"
 #guard (Effect.millThenPutInstantOrSorcery 4).spellResolution ==
-  .millThenPut 4 (.oneOf .instant .sorcery)
+  .mill (.fixed 4) .you (.toHand (.oneOf .instant .sorcery))
 #guard (Effect.millThenPutLands 4 2).spellResolution ==
-  .millThenPut 4 (.upTo 2 .land)
+  .mill (.fixed 4) .you (.toHand (.upTo 2 .land))
 #guard (Effect.millThenPutAllInstantsOrSorceries 6).spellResolution ==
-  .millThenPut 6 (.allOf .instant .sorcery)
+  .mill (.fixed 6) .you (.toHand (.allOf .instant .sorcery))
 #guard (Effect.millThenPutInstantOrSorcery 4).phrase ==
   "mill 4 cards, then put an instant or sorcery card from among them into your hand"
 #guard (Effect.millThenPutLands 4 2).phrase ==
@@ -1466,10 +1466,11 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
-    (.onStep (Effect.ofTrigger .prepareSource)) == .prepareSource
+    (.onStep (Effect.ofTrigger .prepareSource)) ==
+  .«if» (.not .preparedSource) (.becomePrepared .source)
 #guard TriggeredAbility.resolution
     (.onStep (Effect.ofTrigger (.prepareSource .ifThreeCreaturesDied))) ==
-  .prepareSource .ifThreeCreaturesDied
+  .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source)
 #guard (TriggeredAbility.triggered .youScryOrSurveil
     (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
   .may (.pay (.mana #[.generic 2])) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
@@ -1631,7 +1632,7 @@ end CardDef
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
-  .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource]
+  .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
 #guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==

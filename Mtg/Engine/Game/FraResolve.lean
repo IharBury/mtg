@@ -127,13 +127,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .draw .milledByTargetPlayerThisTurn _ =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.draw controller (g.player pid).cardsMilledThisTurn) sourceId illegal
-  | .exileAllCreaturesEmpower =>
+  | .exile .allCreatures .forLater .empowerJace =>
     let creatures := g.battlefield.filter (·.isCreature)
     let g := creatures.foldl (fun g o =>
       let (g, _) := g.move o.id .exile none
       g.logMsg s!"{o.name} is exiled") g
     g.empowerJace controller creatures.size
-  | .drawGreatestPowerLoseLife =>
+  | .draw .greatestPowerAndLoseLife _ =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
     let before := (g.player controller).cardsDrawnThisTurn
     let g := g.draw controller n
@@ -213,7 +213,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginFraChoice controller .maySacrificePlaneswalker
         s!"{(g.player controller).name} may sacrifice a planeswalker"
     else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
-  | .plusOnePerThreeGraveyardOnRecentIfFromGy =>
+  | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken =>
     let fromGy := (g.resolvingSpell.bind g.findObject?).any (·.castFromGraveyard)
     let counters := if fromGy then (g.player controller).graveyard.size / 3 else 0
     if counters == 0 then g
@@ -222,7 +222,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         match g.findObject? id with
         | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o counters else g
         | none => g) g
-  | .grantHasteToRecentTokens =>
+  | .grant (.keywords _) .createdToken =>
     g.recentTokenIds.foldl (fun g id =>
       match g.findObject? id with
       | some o => g.grantKeywordsUntilEot o Keyword.haste
@@ -273,7 +273,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
         g.exileThenReturn o "is exiled and returns to the battlefield") sourceId illegal
-  | .mayMovePlusOneToEachOther =>
+  | .may (.removeCounters (.upTo 1) .source) (.putCounters (.ofKind .plusOnePlusOne 1) .eachOther) .ifYouDo =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
@@ -283,13 +283,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | none => g
   | .empowerJace (.count .creaturesYouControl) =>
     g.empowerJace controller (g.creaturesControlledBy controller).size
-  | .tapEnchantedUnprepare =>
+  | .becomePrepared .enchanted false =>
     match (sourceId.bind g.findObject?).bind (·.attachedTo) |>.bind g.findObject? with
     | some host =>
       let g := if host.status.tapped then g else g.becomeTapped host
       g.unprepare (g.object! host.id)
     | none => g.logMsg "The Aura isn't attached to a creature"
-  | .ownerPutsOnTopOrBottom =>
+  | .putOnLibrary .topOrBottom .target =>
     if targets.isEmpty then g
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -313,11 +313,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {card.name}"
         g.afterPermanentEnters (g.object! tok.id)
       | none => g.logMsg "The card can't be found"
-  | .returnSourceFromGy toHand tapped plusOnes =>
+  | .put .source how note =>
+    let tapped := how == .tapped
+    let plusOnes := match note with
+      | .entering [.counter .plusOnePlusOne n _] => n
+      | _ => 0
     match sourceId.bind g.findObject? with
     | some o =>
       if o.zone != .graveyard o.owner then g.logMsg s!"{o.name} is no longer in the graveyard"
-      else if toHand then g.returnToHand o.id o.owner
       else
         let (g, newId) := g.returnCardToBattlefield controller o.id plusOnes (tapped := tapped)
         g.afterPermanentEnters (g.object! newId)
@@ -397,7 +400,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let name := (cause.map (·.name)).getD "The creature"
     g.forEachOpponent controller (fun g pid =>
       (g.dealDamageToPlayer pid n.toNat (source := cause)).logMsg s!"{name} deals {n.toNat} damage")
-  | .exileFromHandUntilLeaves =>
+  | .revealFromHand .hand (.exile .chosenNonland .untilSourceLeaves _) =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
       if (g.revealedHandChoices pid false).isEmpty then
@@ -498,7 +501,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match sourceId.bind g.findObject? with
     | some o => if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
     | none => g
-  | .tapAndStunPerOpponent =>
+  | .putCounters (.ofKind .stun _) (.creaturesControlledBy .eachOpponent) =>
     targets.foldl (fun g t =>
       match t with
       | Target.permanent id =>
@@ -579,7 +582,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.legalPermanentAt? controller kind targets 1 sourceId with
     | some a, some b => g.fightCreatures a b
     | _, _ => g
-  | .minusOnesPerOpponent =>
+  | .putCounters .minusOneGreatestGraveyardMv (.creaturesControlledBy .eachOpponent) =>
     let x := (g.player controller).graveyard.foldl (fun acc id =>
       match g.findObject? id with
       | some o => Nat.max acc (g.objectManaValue o)
@@ -690,7 +693,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .chooseKeyword _
   | .putOnLibrary .bottom .graveyardCard
   | .destroy .allCreatures _
-  | .ownerShufflesIntoLibrary
+  | .putOnLibrary .shuffled .target
   | .grantCombatDamageDrawTwo
   | .pump (.count .artifact) (.fixed 0) .source
   | .pump (.count .artifact) (.fixed 0) .target
@@ -698,7 +701,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .returnToHand (.target .eachPermanent) _
   | .surveilReturnNoncreatureNonland
   | .addMana #[.colored .blue] (.fixed 1) .noncreatureSpell
-  | .tapAndStunX
+  | .putCounters .stunRemovedLoyalty .target
   | .emblemDrawOnCast
   | .empowerJace (.subtypeCount "Island")
   | .attackersGetMinusFiveUntilYourTurn
@@ -716,7 +719,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .pump (.fixed _) (.fixed _) (.cause none)
   | .attackersOfPlayerGetTwoTwoTrample
   | .putCounters .causeCounters .source
-  | .mayMoveSourceCountersToTarget
+  | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo
   | .may (.pay (.mana #[.generic _])) (.proliferate (.fixed _) _) .ifYouDo
   | .proliferate (.fixed _) .youControl
   | .becomeArtifactCreatureUntilEot
