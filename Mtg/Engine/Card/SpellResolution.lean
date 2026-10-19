@@ -1624,21 +1624,6 @@ inductive TriggerDamageNote where
   | addRedIfMountain
 deriving Repr, Inhabited, BEq
 
-/-- Which permanent an effect uses when several recipients share one constructor.
-`.target` is the announced permanent. -/
-inductive TriggerAffected where
-  /-- The announced permanent, while it is still a legal target. -/
-  | target
-  /-- The ability's source, if it is still on the battlefield. -/
-  | source
-  /-- The creature this Aura enchants. The Aura must still be on the battlefield.
-  Nothing enchanted does nothing. -/
-  | enchanted
-  /-- The announced permanent, while the source is still on the battlefield.
-  A source that already left is silent. -/
-  | targetWhileSource
-deriving Repr, Inhabited, BEq
-
 /-- What `TriggerResolution.lose` removes. -/
 inductive AbilitySelector where
   /-- Indestructible, until end of turn. -/
@@ -3675,80 +3660,43 @@ def visionModes : List TriggerResolution :=
    .grant (.keywords Keyword.indestructible) .source,
    .draw (.fixed 1)]
 
-/-- What `action` does to the announced permanent. -/
-def ofPermanent : PermanentAction → TriggerResolution
-  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
-  | .pump p t => .pump (.fixed p) (.fixed t) .target
-  | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]
-  | .destroy => .destroy .target
-  | .dealDamage n => .dealDamage (.fixed n) .target
-  | .grantKeywords k => .grant (.keywords k) .target
-  | .tap => .tap .target
-  | .untap => .untap
-  | .loseIndestructible => .lose .indestructible
-  | .cantBeBlocked => .cant .beBlocked
-  | .indestructibleCounter => .putCounters (.ofKind .indestructible) .permanent
-  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
-  | .burdenCounter => .putCounters (.ofKind .burden) .permanent
-  | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
-  | .becomePrepared => .becomePrepared
-  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t)
-  | .tapAndStun =>
-    .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
-  | .putOnTopOfLibrary => .putOnLibrary .top
-  | .putOnBottomOfLibrary => .putOnLibrary .bottom
-  | .exile => .exile .target .forLater
-  | .doublePowerAndToughness => .pump .double .double .target
-
 /-- What `action` does to `who`. `target` is the announced permanent. -/
-def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
+def ofAffected (who : ObjectSelector) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
-  | .pump p t => .pump (.fixed p) (.fixed t) (affectedWho who)
+  | .pump p t => .pump (.fixed p) (.fixed t) who
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (affectedWho who)]
-  | .destroy => .destroy (affectedWho who)
-  | .dealDamage n => .dealDamage (.fixed n) (affectedWho who)
-  | .grantKeywords k => .grant (.keywords k) (affectedWho who)
+    .sequence [.pump (.fixed p) (.fixed t) who, .grant (.keywords Keyword.trample) who]
+  | .destroy => .destroy who
+  | .dealDamage n => .dealDamage (.fixed n) who
+  | .grantKeywords k => .grant (.keywords k) who
   | .tap => .tap (tapWho who)
-  | .untap => .untap (affectedWho who)
-  | .loseIndestructible => .lose .indestructible (loseWho who)
-  | .cantBeBlocked => .cant (.beBlocked (affectedWho who))
+  | .untap => .untap who
+  | .loseIndestructible => .lose .indestructible who
+  | .cantBeBlocked => .cant (.beBlocked who)
   | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (affectedWho who)]
-  | .becomePrepared => .becomePrepared (affectedWho who)
-  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
+    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) who]
+  | .becomePrepared => .becomePrepared who
+  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) who
   | .tapAndStun =>
     .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
-  | .putOnTopOfLibrary => .putOnLibrary .top (affectedWho who)
-  | .putOnBottomOfLibrary => .putOnLibrary .bottom (affectedWho who)
-  | .exile => .exile (affectedWho who) .forLater
-  | .doublePowerAndToughness => .pump .double .double (affectedWho who)
+  | .putOnTopOfLibrary => .putOnLibrary .top who
+  | .putOnBottomOfLibrary => .putOnLibrary .bottom who
+  | .exile => .exile who .forLater
+  | .doublePowerAndToughness => .pump .double .double who
 where
-  counterWho : TriggerAffected → ObjectSelector
-    | .target => .permanent
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .target .whileSource
-  affectedWho : TriggerAffected → ObjectSelector
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .target .whileSource
-  tapWho : TriggerAffected → ObjectSelector
-    | .target => .target
-    | .source => .source
+  counterWho : ObjectSelector → ObjectSelector
+    | .any | .target .any => .permanent
+    | w => w
+  tapWho : ObjectSelector → ObjectSelector
     | .enchanted => .enchantedWhileSource
-    | .targetWhileSource => .target .whileSource
-  loseWho : TriggerAffected → ObjectSelector
-    | .target => .target
-    | .source => .source
-    | .enchanted => .enchanted
-    | .targetWhileSource => .target .whileSource
+    | w => w
+
+/-- What `action` does to the announced permanent. -/
+def ofPermanent : PermanentAction → TriggerResolution :=
+  ofAffected .target
 
 /-- What `action` does to the source if it is still on the battlefield. -/
 def ofSource : PermanentAction → TriggerResolution :=
@@ -3761,7 +3709,7 @@ def ofEnchanted : PermanentAction → TriggerResolution :=
 /-- What `action` does to the target while the source is still on the battlefield.
 A source that already left is silent. -/
 def ofTargetWhileSource : PermanentAction → TriggerResolution :=
-  ofAffected .targetWhileSource
+  ofAffected (.target .whileSource)
 
 /-- A spell step as the same step in this vocabulary.
 Shapes whose spell constructor is a different step are rewritten.

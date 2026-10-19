@@ -69,7 +69,7 @@ selector that is not a sacrifice, leave the permanent where it is. -/
     !(logContains g "sacrifices Sacrifice Relic")
 
 #guard
-  let g := step { withRelic with sourceWasSacrificed := true } (.sacrifice .source)
+  let g := step { withRelic with thisWay := { withRelic.thisWay with sourceWasSacrificed := true } } (.sacrifice .source)
   onBoard g "Sacrifice Relic" && g.sourceWasSacrificed &&
     logContains g "The ability's source is no longer in play"
 
@@ -96,7 +96,7 @@ selector that is not a sacrifice, leave the permanent where it is. -/
     logContains g "Sacrifice Relic is sacrificed"
 
 #guard
-  let g := step { withRelic with sourceWasSacrificed := true }
+  let g := step { withRelic with thisWay := { withRelic.thisWay with sourceWasSacrificed := true } }
     (.sacrifice .source .noted)
   !g.sourceWasSacrificed && onBoard g "Sacrifice Relic" &&
     logContains g "The ability's source is no longer in play"

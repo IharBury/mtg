@@ -417,7 +417,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let pw := (g.power o).toNat
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     if g.mayThenDrop > 0 then
-      return { g with sacrificedPowerThisWay := some pw }.acceptMayThen
+      return { g with thisWay := { g.thisWay with sacrificedPowerThisWay := some pw } }.acceptMayThen
     else
       let g :=
         match g.findObject? sourceId with
@@ -503,7 +503,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           attached := attached + 1
       | none => pure ()
     if attached > 0 && host.isOnBattlefield then
-      g := { g with equipmentAttachedHost := some hostId }
+      g := { g with thisWay := { g.thisWay with equipmentAttachedHost := some hostId } }
     return g.finishFraChoice
   | .attachAnyEquipment .., .decline => return g.finishFraChoice
   | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
@@ -760,7 +760,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           let (acc, _) := acc.move id (.graveyard o.owner) none
           acc) g
     let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
-    let g := { g with handDiscardedThisWay := some n, notedSourceThisWay := sourceId }
+    let g := { g with thisWay := { g.thisWay with handDiscardedThisWay := some n, notedSourceThisWay := sourceId } }
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice

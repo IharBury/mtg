@@ -587,13 +587,13 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
     let g := pids.foldl (fun g pid => g.mill pid n) g
     let after := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
-    { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
+    { g with thisWay := { g.thisWay with milledIdsThisWay := after.filter (fun id => !before.contains id) } }
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)
     let (g, flag) := g.millThenReflexive opps n
     let g := pids.foldl (fun g pid =>
       if pid == controller then g.mill pid n else g) g
-    { g with opponentsMilledThisWay := flag }
+    { g with thisWay := { g.thisWay with opponentsMilledThisWay := flag } }
 
 end Game
 end Mtg.Engine

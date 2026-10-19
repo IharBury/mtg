@@ -261,7 +261,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let (g, newId) := g.putOntoBattlefield cardId p
     let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
     let g := g.afterPermanentEnters (g.object! newId)
-    return { g with pending := .none, putArtifactThisWay := some (newId, hostId) }
+    return { g with pending := .none, thisWay := { g.thisWay with putArtifactThisWay := some (newId, hostId) } }
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/

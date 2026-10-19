@@ -170,11 +170,11 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q == p then { g with pending := .none, triggerOr := none } else g
   | .tapHumans q =>
     if q == p then
-      { g with pending := .none, triggerSequenceRest := none, humansTappedThisWay := 0 }
+      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with humansTappedThisWay := 0 } }
     else g
   | .mayPutArtifactFromHand q _ =>
     if q == p then
-      { g with pending := .none, triggerSequenceRest := none, putArtifactThisWay := none }
+      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with putArtifactThisWay := none } }
     else g
   | .mayResolve q =>
     if q == p then { g with pending := .none }.clearMay else g

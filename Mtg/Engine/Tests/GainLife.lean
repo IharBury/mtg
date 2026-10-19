@@ -133,7 +133,7 @@ An illegal graveyard card skips both steps. -/
 /- One life for each permanent an earlier step destroyed. None clears the
 note and gains nothing. -/
 #guard
-  let g0 := { afterDraw with permanentsDestroyedThisWay := 3 }
+  let g0 := { afterDraw with thisWay := { afterDraw.thisWay with permanentsDestroyedThisWay := 3 } }
   let g := step g0 perDestroyed
   life g == life g0 + 3 && g.permanentsDestroyedThisWay == 0
 

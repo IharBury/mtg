@@ -94,7 +94,7 @@ target is chosen then, and only that creature is dealt damage. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
-  let g := step { g0 with equipmentAttachedHost := some alphaId } hostDamage
+  let g := step { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some alphaId } } hostDamage
   g.equipmentAttachedHost.isNone && damageOf g "Alpha" == 0 &&
     damageOf g "Beta" == 0 &&
     match g.pending with
@@ -104,7 +104,7 @@ target is chosen then, and only that creature is dealt damage. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
-  let g := step { g0 with equipmentAttachedHost := some alphaId } hostDamage
+  let g := step { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some alphaId } } hostDamage
   match (g.object! g.stack.back!.objectId).abilityEffect with
   | some e =>
     e.resolution == .dealDamage (.power .source) .target && e.allowsZeroTargets &&
@@ -116,7 +116,7 @@ target is chosen then, and only that creature is dealt damage. -/
   let g0 := board
   let alphaId := pid g0 "Alpha"
   let betaId := pid g0 "Beta"
-  let g := step { g0 with equipmentAttachedHost := some alphaId } hostDamage
+  let g := step { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some alphaId } } hostDamage
   let g := passBoth (mustApply g caster (.target (.permanent betaId)))
   damageOf g "Beta" == 2 && damageOf g "Alpha" == 0 &&
     logContains g "reflexive ability is put on the stack"
@@ -133,13 +133,13 @@ target is chosen then, and only that creature is dealt damage. -/
   let g0 := board
   let alphaId := pid g0 "Alpha"
   let (g1, _) := g0.move alphaId (.graveyard caster) none
-  let g := step { g1 with equipmentAttachedHost := some alphaId } hostDamage
+  let g := step { g1 with thisWay := { g1.thisWay with equipmentAttachedHost := some alphaId } } hostDamage
   g.equipmentAttachedHost.isNone && g.stack.size == g1.stack.size &&
     !(logContains g "reflexive")
 
 #guard
   let g0 := board
-  let g := step { g0 with equipmentAttachedHost := some ⟨99999⟩ } hostDamage
+  let g := step { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some ⟨99999⟩ } } hostDamage
   g.equipmentAttachedHost.isNone && g.stack.size == g0.stack.size &&
     !(logContains g "reflexive")
 
@@ -150,7 +150,7 @@ other creature chosen, has nothing to fight. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
-  let marked := { g0 with equipmentAttachedHost := some alphaId }
+  let marked := { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some alphaId } }
   let g := step marked (.fight .source .reflexive) (some alphaId)
     #[Target.permanent (pid g0 "Beta")]
   g.equipmentAttachedHost == some alphaId && g.stack.size == marked.stack.size &&
@@ -160,7 +160,7 @@ other creature chosen, has nothing to fight. -/
 #guard
   let g0 := board
   let alphaId := pid g0 "Alpha"
-  let marked := { g0 with equipmentAttachedHost := some alphaId }
+  let marked := { g0 with thisWay := { g0.thisWay with equipmentAttachedHost := some alphaId } }
   let g := step marked (.fight .equipmentHost .mutual) (some alphaId)
     #[Target.permanent (pid g0 "Beta")]
   g.equipmentAttachedHost == some alphaId && g.stack.size == marked.stack.size &&

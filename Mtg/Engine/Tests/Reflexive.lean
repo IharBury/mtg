@@ -150,7 +150,7 @@ use `queueReflexive`. -/
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
-  let g0 := { planOnBoard with planWasSacrificed := true }
+  let g0 := { planOnBoard with thisWay := { planOnBoard.thisWay with planWasSacrificed := true } }
   let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 

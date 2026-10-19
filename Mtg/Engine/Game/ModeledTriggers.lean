@@ -244,7 +244,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
   | .noted =>
     let copied := g.notedCopyObject
     let hostId := g.notedHostId
-    let g := { g with notedCopyObject := none, notedHostId := none }
+    let g := { g with thisWay := { g.thisWay with notedCopyObject := none, notedHostId := none } }
     match copied, hostId with
     | some tgt, some hid =>
       match g.findObject? hid with

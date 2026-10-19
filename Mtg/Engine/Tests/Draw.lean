@@ -47,13 +47,13 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 /- Each Human tapped by the previous step is one card. Zero taps draw nothing. -/
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with humansTappedThisWay := 2 }
+  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with humansTappedThisWay := 2 } }
     (.draw .forEachTappedHuman)
   handSize g caster == before + 2 && g.humansTappedThisWay == 0
 
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with humansTappedThisWay := 0 }
+  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with humansTappedThisWay := 0 } }
     (.draw .forEachTappedHuman)
   handSize g caster == before && g.humansTappedThisWay == 0
 
@@ -72,7 +72,7 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 /- The discarded-hand note is the draw count. A declined discard draws nothing. -/
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with handDiscardedThisWay := some 3 }
+  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with handDiscardedThisWay := some 3 } }
     (.draw .discardedHand)
   handSize g caster == before + 3
 
@@ -98,7 +98,7 @@ the rest of the sequence. -/
 #guard
   let g0 := addPermanent afterDraw pebble caster caster
   let sid := (pebbleOf g0).id
-  let g := drawStep { g0 with palantirChoiceReady := some (caster, opponent, sid) }
+  let g := drawStep { g0 with thisWay := { g0.thisWay with palantirChoiceReady := some (caster, opponent, sid) } }
     (.draw (.fixed 1) (who := .opponentHasYou))
   match g.pending with
   | .fraChoice p (.palantirMayDraw c id) =>

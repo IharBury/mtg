@@ -139,7 +139,7 @@ def notedCopy : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant opp opp
   let host := named g "Grizzly Bears"
   let giant := named g "Hill Giant"
-  let g := { g with notedCopyObject := some giant, notedHostId := some host.id }
+  let g := { g with thisWay := { g.thisWay with notedCopyObject := some giant, notedHostId := some host.id } }
   g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
     (resolutionOverride := some (.becomeCopy .noted))
 

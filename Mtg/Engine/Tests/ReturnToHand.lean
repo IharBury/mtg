@@ -107,8 +107,9 @@ noted. No target, or an illegal one, clears that note and moves nothing. -/
     logContains g "Grave Relic is returned to Nissa's hand"
 
 #guard
-  let g0 := { addPermanent afterDraw relic caster caster with
-    returnedPermanentThisWay := true }
+  let base := addPermanent afterDraw relic caster caster
+  let g0 := { base with thisWay := { base.thisWay with
+    returnedPermanentThisWay := true } }
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken)
     (r := some (.returnToHand .permanent .returnedPermanent))
   onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
@@ -152,7 +153,7 @@ milled cards stay, and the note is cleared. -/
   let g0 := putInGraveyard (putInGraveyard afterDraw bear caster) relic caster
   let elf := namedIn g0 (g0.player caster).graveyard "Grave Bear"
   let art := namedIn g0 (g0.player caster).graveyard "Grave Relic"
-  let g0 := { g0 with milledIdsThisWay := #[elf, art] }
+  let g0 := { g0 with thisWay := { g0.thisWay with milledIdsThisWay := #[elf, art] } }
   let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
     (r := some (.returnToHand (.milledSubtype "Elf")))
   inHand g caster "Grave Bear" && inGraveyard g caster "Grave Relic" &&

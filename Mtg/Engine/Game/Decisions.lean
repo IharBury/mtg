@@ -278,7 +278,7 @@ def declineMayThen (g : Game) : Game :=
   let n := g.mayThenDrop
   let g := { g with
     pending := .none
-    sacrificedPowerThisWay := none
+    thisWay := { g.thisWay with sacrificedPowerThisWay := none }
     mayThen := { g.mayThen with drop := 0, conditional := none, resume := false } }
   let g :=
     match g.triggerSequenceRest with
@@ -321,7 +321,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       match g.triggerSequenceRest with
       | some rest =>
         if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
-          { g with discardedCardThisWay := some (q, g.followMoved card.id) }
+          { g with thisWay := { g.thisWay with discardedCardThisWay := some (q, g.followMoved card.id) } }
         else g
       | none => g
     if g.thirstDiscardsLeft > 0 then
@@ -515,7 +515,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         throw s!"{o.name} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap
       n := n + 1
-    g := { g with pending := .none, humansTappedThisWay := n }
+    g := { g with pending := .none, thisWay := { g.thisWay with humansTappedThisWay := n } }
     g := g.resumeTriggerSequence
     if g.pending != .none then return g
     return g.receivePriority g.activePlayer
@@ -683,7 +683,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to tap Humans"
     let g := g.logMsg s!"{(g.player p).name} taps no Humans"
-    let g := { g with pending := .none, humansTappedThisWay := 0 }
+    let g := { g with pending := .none, thisWay := { g.thisWay with humansTappedThisWay := 0 } }
     let g := g.resumeTriggerSequence
     if g.pending != .none then return g
     return g.receivePriority g.activePlayer
@@ -720,7 +720,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"
     let g := g.logMsg
       s!"{(g.player p).name} declines to put an artifact onto the battlefield"
-    let g := { g with pending := .none, putArtifactThisWay := none }
+    let g := { g with pending := .none, thisWay := { g.thisWay with putArtifactThisWay := none } }
     return g.resumeSequenceThenPriority
   | .mayHaveVillainConnive q _ _ =>
     if p != q then

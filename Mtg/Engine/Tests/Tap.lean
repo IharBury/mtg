@@ -67,7 +67,7 @@ def village : Game :=
   addPermanent g bear caster caster
 
 def offered : Game :=
-  step { village with humansTappedThisWay := 4 } humansDraw
+  step { village with thisWay := { village.thisWay with humansTappedThisWay := 4 } } humansDraw
 
 def rejects (g : Game) (ids : Array ObjectId) (needle : String) : Bool :=
   match g.choosePermanents caster ids with

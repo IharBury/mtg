@@ -642,13 +642,19 @@ def counterOn (noun : String) (kind : CounterKind) (n : Nat) : String :=
   | .stun => s!"put {kind.countersPhrase n} on {noun}"
   | _ => "put counters"
 
-/-- Printed noun for the permanent `who` names. `targetNoun` is the announced target. -/
-def affectedNoun (who : TriggerAffected) (targetNoun : String) : String :=
+/-- Printed noun for the permanent `who` names when it is one of the four
+standard affected-permanent selectors. `targetNoun` is the announced target. -/
+def affectedNoun? (who : ObjectSelector) (targetNoun : String) : Option String :=
   match who with
-  | .target => targetNoun
-  | .source => "this creature"
-  | .enchanted => "enchanted creature"
-  | .targetWhileSource => "that creature"
+  | .target => some targetNoun
+  | .source => some "this creature"
+  | .enchanted => some "enchanted creature"
+  | .whileSource | .target .whileSource => some "that creature"
+  | _ => none
+
+/-- Printed noun for the permanent `who` names. `targetNoun` is the announced target. -/
+def affectedNoun (who : ObjectSelector) (targetNoun : String) : String :=
+  (affectedNoun? who targetNoun).getD targetNoun
 
 /-- Oracle clause for the single step that follows attaching to the announced
 creature. A compound action flattened into more than one step is `none`. -/
@@ -755,88 +761,52 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "those permanents get +P/+T until end of turn"
   | .setBasePT .equalSourcePower .equalSourceToughness .target =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-  | .lose .indestructible .target =>
-    s!"{noun} loses indestructible until end of turn"
-  | .lose .indestructible .source =>
-    "this creature loses indestructible until end of turn"
-  | .lose .indestructible .enchanted =>
-    "enchanted creature loses indestructible until end of turn"
-  | .lose .indestructible (.target .whileSource) =>
-    "that creature loses indestructible until end of turn"
+  | .lose .indestructible who =>
+    match affectedNoun? who noun with
+    | some n => s!"{n} loses indestructible until end of turn"
+    | none => "lose"
   | .lose .allAbilities (.target .ifPresent) =>
     "it loses all abilities for as long as this remains on the battlefield"
   | .lose _ _ =>
     "lose"
-  | .cant (.beBlocked .target) =>
-    s!"{affectedNoun .target noun} can't be blocked this turn"
-  | .cant (.beBlocked .source) =>
-    s!"{affectedNoun .source noun} can't be blocked this turn"
-  | .cant (.beBlocked .enchanted) =>
-    s!"{affectedNoun .enchanted noun} can't be blocked this turn"
-  | .cant (.beBlocked (.target .whileSource)) =>
-    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn"
-  | .cant (.beBlockedExceptByHaste .target) =>
-    s!"{affectedNoun .target noun} can't be blocked this turn except by creatures with haste"
-  | .cant (.beBlockedExceptByHaste .source) =>
-    s!"{affectedNoun .source noun} can't be blocked this turn except by creatures with haste"
-  | .cant (.beBlockedExceptByHaste .enchanted) =>
-    s!"{affectedNoun .enchanted noun} can't be blocked this turn except by creatures with haste"
-  | .cant (.beBlockedExceptByHaste (.target .whileSource)) =>
-    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlocked who) =>
+    match affectedNoun? who noun with
+    | some n => s!"{n} can't be blocked this turn"
+    | none => "can't"
+  | .cant (.beBlockedExceptByHaste who) =>
+    match affectedNoun? who noun with
+    | some n => s!"{n} can't be blocked this turn except by creatures with haste"
+    | none => "can't"
   | .cant (.untapWhileYouControl .target) =>
     "that creature can't become untapped for as long as you control this creature"
   | .cant _ =>
     "can't"
-  | .becomeArtifact .target =>
-    s!"until end of turn, {noun} becomes an artifact in addition to its other types"
-  | .becomeArtifact .source =>
-    "until end of turn, this creature becomes an artifact in addition to its other types"
-  | .becomeArtifact .enchanted =>
-    "until end of turn, enchanted creature becomes an artifact in addition to its other types"
-  | .becomeArtifact (.target .whileSource) =>
-    "until end of turn, that creature becomes an artifact in addition to its other types"
-  | .becomeArtifact _ =>
-    "becomes an artifact"
-  | .becomePrepared .target _ =>
-    s!"{noun} becomes prepared"
-  | .becomePrepared .source _ =>
-    "this creature becomes prepared"
-  | .becomePrepared .enchanted _ =>
-    "enchanted creature becomes prepared"
-  | .becomePrepared (.target .whileSource) _ =>
-    "that creature becomes prepared"
-  | .becomePrepared _ _ =>
-    "becomes prepared"
-  | .setBasePT (.fixed p) (.fixed t) .target =>
-    s!"{noun} has base power and toughness {p}/{t} until end of turn"
-  | .setBasePT (.fixed p) (.fixed t) .source =>
-    s!"this creature has base power and toughness {p}/{t} until end of turn"
-  | .setBasePT (.fixed p) (.fixed t) .enchanted =>
-    s!"enchanted creature has base power and toughness {p}/{t} until end of turn"
-  | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
-    s!"that creature has base power and toughness {p}/{t} until end of turn"
+  | .becomeArtifact who =>
+    match affectedNoun? who noun with
+    | some n => s!"until end of turn, {n} becomes an artifact in addition to its other types"
+    | none => "becomes an artifact"
+  | .becomePrepared who _ =>
+    match affectedNoun? who noun with
+    | some n => s!"{n} becomes prepared"
+    | none => "becomes prepared"
+  | .setBasePT (.fixed p) (.fixed t) who =>
+    match affectedNoun? who noun with
+    | some n => s!"{n} has base power and toughness {p}/{t} until end of turn"
+    | none => "set base power and toughness"
   | .setBasePT _ _ _ =>
     "set base power and toughness"
-  | .putOnLibrary .top .target =>
-    s!"{noun}'s owner puts it on top of their library"
-  | .putOnLibrary .bottom .target =>
-    s!"{noun}'s owner puts it on the bottom of their library"
-  | .putOnLibrary .top .source =>
-    "this creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom .source =>
-    "this creature's owner puts it on the bottom of their library"
   | .putOnLibrary .shuffled .source =>
     "its owner shuffles it into their library"
-  | .putOnLibrary .top .enchanted =>
-    "enchanted creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom .enchanted =>
-    "enchanted creature's owner puts it on the bottom of their library"
-  | .putOnLibrary .top (.target .whileSource) =>
-    "that creature's owner puts it on top of their library"
-  | .putOnLibrary .bottom (.target .whileSource) =>
-    "that creature's owner puts it on the bottom of their library"
   | .putOnLibrary .bottom .cardFromHand =>
     "put a card from your hand on the bottom of your library"
+  | .putOnLibrary .top who =>
+    match affectedNoun? who noun with
+    | some n => s!"{n}'s owner puts it on top of their library"
+    | none => "put on library"
+  | .putOnLibrary .bottom who =>
+    match affectedNoun? who noun with
+    | some n => s!"{n}'s owner puts it on the bottom of their library"
+    | none => "put on library"
   | .putOnLibrary _ _ =>
     "put on library"
   | .surveil (.fixed 0) .armReturnLifeGained =>
@@ -1609,13 +1579,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .untap who =>
     match who with
     | .attackingCreatures => "untap all attacking creatures"
-    | .target => s!"untap {affectedNoun .target noun}"
-    | .source => s!"untap {affectedNoun .source noun}"
-    | .enchanted => s!"untap {affectedNoun .enchanted noun}"
-    | .target .whileSource => s!"untap {affectedNoun .targetWhileSource noun}"
     | .equipped => "untap equipped creature"
-    | .firstThisTurn => "untap it"
-    | _ => "untap it"
+    | _ =>
+      match affectedNoun? who noun with
+      | some n => s!"untap {n}"
+      | none => "untap it"
   | .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on it if it's a creature"
   | .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent) =>

@@ -244,81 +244,12 @@ structure TurnControlState where
   controlOnNextTakenTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
-structure Game where
-  players : Array Player
-  objects : Array GameObject
-  stack : Array StackEntry := #[]
-  activePlayer : PlayerId := ⟨0⟩
-  priority : PlayerId := ⟨0⟩
-  step : Step := .untap
-  turnNumber : Nat := 1
-  startingPlayer : PlayerId := ⟨0⟩
-  isFirstTurn : Bool := true
-  pending : Pending := .none
-  nextObjectId : Nat := 0
-  timestamp : Nat := 0
-  rng : Rng := Rng.ofSeed 1
-  /-- When true, random events become `Pending.resolveRandom` instead of
-  using `rng`. -/
-  norandom : Bool := false
-  /-- Continuation after a `--norandom` result is applied. -/
-  afterRandom : AfterRandom := .none
-  result : Option GameResult := none
-  log : Array String := #[]
-  format : Format := .constructed
-  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
-  brawl : Bool := false
-  consecutivePasses : Nat := 0
-  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
-  cleanupGivesPriority : Bool := false
-  /-- Until-end-of-turn continuous effect: creatures without flying can't
-  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
-  creaturesWithoutFlyingCantBlock : Bool := false
-  /-- A creature went to a graveyard from the battlefield this turn
-  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
-  creatureDiedThisTurn : Bool := false
-  /-- Spell or ability proposed and waiting for mana abilities / payment
-  (CR 601.2f–h / 602.2b). -/
-  proposedSpell : Option ProposedSpell := none
-  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
-  mulligan : MulliganState := {}
-  /-- Combat phase state (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
-  combat : CombatPhaseState := {}
-  /-- Triggered abilities waiting to be put onto the stack the next time a
-  player would receive priority (CR 603.3 / 603.3b). Distinguished by
-  `WaitingTrigger.event`. -/
-  waitingTriggers : Array WaitingTrigger := #[]
-  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
-  isNight : Bool := false
-  /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
-  afterScrySurveil : AfterScrySurveil := {}
+/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
+structure ResolutionNotes where
   /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
   may put that land onto the battlefield tapped (Silvan Reveler). The
   player who discarded it, and the card. -/
   discardedCardThisWay : Option (PlayerId × ObjectId) := none
-  /-- Last-known status of objects that left the battlefield, newest last
-  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
-  lastKnownStatus : Array (ObjectId × Status) := #[]
-  /-- The spell whose effect is currently resolving (CR 608.2). -/
-  resolvingSpell : Option ObjectId := none
-  /-- The activated or triggered ability currently resolving. -/
-  resolvingAbility : Option ObjectId := none
-  /-- Where recently moved objects went (old id, new id), most recent last. -/
-  movedTo : Array (ObjectId × ObjectId) := #[]
-  /-- Tokens created by the most recent `createKindTokens` call, so a following
-  sequence step can haste them or leave them out of a plus-one. -/
-  recentTokenIds : Array ObjectId := #[]
-  /-- Creatures that died this turn, tokens included. -/
-  creatureDeathsThisTurn : Nat := 0
-  /-- Copies a player may still cast without paying their mana costs as an
-  ability resolves, with the mana value left (Uldaros Theorix). -/
-  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
-  /-- Spells exiled by a resolving ability that may still be cast without
-  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
-  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
-  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
-  permanent (Proft, Consulting Detective). -/
-  mayPayAlsoPlusOneOn : Option ObjectId := none
   /-- Humans chosen for the current “tap any number of Humans” step.
   `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
@@ -394,6 +325,84 @@ structure Game where
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
   playExiledThisWay : Option ObjectId := none
+  /-- Power of the creature sacrificed for
+  `putCounters .plusOneSacrificedPower`. -/
+  sacrificedPowerThisWay : Option Nat := none
+deriving Repr, Inhabited
+
+structure Game where
+  players : Array Player
+  objects : Array GameObject
+  stack : Array StackEntry := #[]
+  activePlayer : PlayerId := ⟨0⟩
+  priority : PlayerId := ⟨0⟩
+  step : Step := .untap
+  turnNumber : Nat := 1
+  startingPlayer : PlayerId := ⟨0⟩
+  isFirstTurn : Bool := true
+  pending : Pending := .none
+  nextObjectId : Nat := 0
+  timestamp : Nat := 0
+  rng : Rng := Rng.ofSeed 1
+  /-- When true, random events become `Pending.resolveRandom` instead of
+  using `rng`. -/
+  norandom : Bool := false
+  /-- Continuation after a `--norandom` result is applied. -/
+  afterRandom : AfterRandom := .none
+  result : Option GameResult := none
+  log : Array String := #[]
+  format : Format := .constructed
+  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
+  brawl : Bool := false
+  consecutivePasses : Nat := 0
+  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
+  cleanupGivesPriority : Bool := false
+  /-- Until-end-of-turn continuous effect: creatures without flying can't
+  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
+  creaturesWithoutFlyingCantBlock : Bool := false
+  /-- A creature went to a graveyard from the battlefield this turn
+  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
+  creatureDiedThisTurn : Bool := false
+  /-- Spell or ability proposed and waiting for mana abilities / payment
+  (CR 601.2f–h / 602.2b). -/
+  proposedSpell : Option ProposedSpell := none
+  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
+  mulligan : MulliganState := {}
+  /-- Combat phase state (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
+  combat : CombatPhaseState := {}
+  /-- Triggered abilities waiting to be put onto the stack the next time a
+  player would receive priority (CR 603.3 / 603.3b). Distinguished by
+  `WaitingTrigger.event`. -/
+  waitingTriggers : Array WaitingTrigger := #[]
+  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  isNight : Bool := false
+  /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
+  afterScrySurveil : AfterScrySurveil := {}
+  /-- Cross-step resolution notes ("this way", CR 608.2c / CR 608.2h). -/
+  thisWay : ResolutionNotes := {}
+  /-- Last-known status of objects that left the battlefield, newest last
+  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
+  lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- The spell whose effect is currently resolving (CR 608.2). -/
+  resolvingSpell : Option ObjectId := none
+  /-- The activated or triggered ability currently resolving. -/
+  resolvingAbility : Option ObjectId := none
+  /-- Where recently moved objects went (old id, new id), most recent last. -/
+  movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Tokens created by the most recent `createKindTokens` call, so a following
+  sequence step can haste them or leave them out of a plus-one. -/
+  recentTokenIds : Array ObjectId := #[]
+  /-- Creatures that died this turn, tokens included. -/
+  creatureDeathsThisTurn : Nat := 0
+  /-- Copies a player may still cast without paying their mana costs as an
+  ability resolves, with the mana value left (Uldaros Theorix). -/
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
+  /-- Spells exiled by a resolving ability that may still be cast without
+  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
+  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
+  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
+  permanent (Proft, Consulting Detective). -/
+  mayPayAlsoPlusOneOn : Option ObjectId := none
   /-- Later steps of a trigger `sequence`, waiting on the pending choice an
   earlier step opened. -/
   triggerSequenceRest : Option TriggerSequenceRest := none
@@ -401,9 +410,6 @@ structure Game where
   mayThen : MayThenState := {}
   /-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
   triggerMayBranch : TriggerMayBranch := {}
-  /-- Power of the creature sacrificed for
-  `putCounters .plusOneSacrificedPower`. -/
-  sacrificedPowerThisWay : Option Nat := none
   /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
   that index. -/
   triggerOr : Option TriggerOrRest := none
@@ -467,6 +473,41 @@ def awaitingOpeningBegin (g : Game) : Bool := g.mulligan.awaitingOpeningBegin
 def mulliganToDeclare (g : Game) : Array PlayerId := g.mulligan.toDeclare
 def willMulligan (g : Game) : Array PlayerId := g.mulligan.willMulligan
 def mulliganToBottom (g : Game) : Array PlayerId := g.mulligan.toBottom
+
+def discardedCardThisWay (g : Game) : Option (PlayerId × ObjectId) := g.thisWay.discardedCardThisWay
+def humansTappedThisWay (g : Game) : Nat := g.thisWay.humansTappedThisWay
+def permanentsDestroyedThisWay (g : Game) : Nat := g.thisWay.permanentsDestroyedThisWay
+def removedHopeThisWay (g : Game) : Bool := g.thisWay.removedHopeThisWay
+def permanentDealtDamageThisWay (g : Game) : Option ObjectId := g.thisWay.permanentDealtDamageThisWay
+def returnedPermanentThisWay (g : Game) : Bool := g.thisWay.returnedPermanentThisWay
+def nthResolveThisWay (g : Game) : Option Nat := g.thisWay.nthResolveThisWay
+def skipTriggerSequenceRest (g : Game) : Bool := g.thisWay.skipTriggerSequenceRest
+def excessDamageThisWay (g : Game) : Nat := g.thisWay.excessDamageThisWay
+def destroyedForAmassThisWay (g : Game) : Bool := g.thisWay.destroyedForAmassThisWay
+def amassControllerThisWay (g : Game) : Option PlayerId := g.thisWay.amassControllerThisWay
+def amassAmountThisWay (g : Game) : Nat := g.thisWay.amassAmountThisWay
+def amassYouControlledThisWay (g : Game) : Bool := g.thisWay.amassYouControlledThisWay
+def milledIdsThisWay (g : Game) : Array ObjectId := g.thisWay.milledIdsThisWay
+def revealedIdsThisWay (g : Game) : Array ObjectId := g.thisWay.revealedIdsThisWay
+def opponentsMilledThisWay (g : Game) : Bool := g.thisWay.opponentsMilledThisWay
+def palantirChoiceReady (g : Game) : Option (PlayerId × PlayerId × ObjectId) := g.thisWay.palantirChoiceReady
+def grimaImpulseReady (g : Game) : Bool := g.thisWay.grimaImpulseReady
+def grimaImpulseVictim (g : Game) : Option PlayerId := g.thisWay.grimaImpulseVictim
+def grimaImpulseFound (g : Game) : Option ObjectId := g.thisWay.grimaImpulseFound
+def grimaImpulseOthers (g : Game) : Array ObjectId := g.thisWay.grimaImpulseOthers
+def planWasSacrificed (g : Game) : Bool := g.thisWay.planWasSacrificed
+def sourceWasSacrificed (g : Game) : Bool := g.thisWay.sourceWasSacrificed
+def exiledIdsThisWay (g : Game) : Array ObjectId := g.thisWay.exiledIdsThisWay
+def notedCopyObject (g : Game) : Option GameObject := g.thisWay.notedCopyObject
+def notedHostId (g : Game) : Option ObjectId := g.thisWay.notedHostId
+def handDiscardedThisWay (g : Game) : Option Nat := g.thisWay.handDiscardedThisWay
+def notedSourceThisWay (g : Game) : Option ObjectId := g.thisWay.notedSourceThisWay
+def equipmentAttachedHost (g : Game) : Option ObjectId := g.thisWay.equipmentAttachedHost
+def notedCountThisWay (g : Game) : Nat := g.thisWay.notedCountThisWay
+def createdTokenThisWay (g : Game) : Option ObjectId := g.thisWay.createdTokenThisWay
+def putArtifactThisWay (g : Game) : Option (ObjectId × ObjectId) := g.thisWay.putArtifactThisWay
+def playExiledThisWay (g : Game) : Option ObjectId := g.thisWay.playExiledThisWay
+def sacrificedPowerThisWay (g : Game) : Option Nat := g.thisWay.sacrificedPowerThisWay
 
 def assignedCombatDamage (g : Game) : Array CreatureCombatAssignment := g.combat.assignedCombatDamage
 def blockersQueue (g : Game) : Array PlayerId := g.combat.blockersQueue

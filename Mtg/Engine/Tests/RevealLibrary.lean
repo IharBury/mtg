@@ -416,7 +416,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
   let g0 := { g0 with
     lastEvent := { g0.lastEvent with lastCombatDamagePlayer := some opp }
-    grimaImpulseReady := false }
+    thisWay := { g0.thisWay with grimaImpulseReady := false } }
   let g := step g0 (.revealLibrary (.top 3) (.put .revealed))
   onBattlefield g "Reveal Plot" && onBattlefield g "Reveal Bear" &&
     onBattlefield g "Reveal Tale" && libNames g caster == []
@@ -429,7 +429,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := { g0 with grimaImpulseReady := false }
+  let g0 := { g0 with thisWay := { g0.thisWay with grimaImpulseReady := false } }
   let g := step g0 (.revealLibrary (.top 3) (.exile .top .forLater .impulse))
   g.grimaImpulseReady && inExile g "Reveal Plot" && inExile g "Reveal Bear" &&
     inExile g "Reveal Tale" && libNames g caster == []

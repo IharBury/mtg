@@ -191,12 +191,12 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent g bear caster caster
   let eq := named g "Count Sword"
   let host := named g "Count Bear"
-  let g := { g with putArtifactThisWay := some (eq.id, host.id) }
+  let g := { g with thisWay := { g.thisWay with putArtifactThisWay := some (eq.id, host.id) } }
   let (g, equip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   let kept := g.putArtifactThisWay.isSome
   let g := addPermanent g isle caster caster
   let land := named g "Count Isle"
-  let g := { g with putArtifactThisWay := some (land.id, host.id) }
+  let g := { g with thisWay := { g.thisWay with putArtifactThisWay := some (land.id, host.id) } }
   let (g, notEquip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   equip && kept && !notEquip && g.putArtifactThisWay.isNone
 
