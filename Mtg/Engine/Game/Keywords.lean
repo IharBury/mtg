@@ -36,17 +36,17 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
       let gy := (g.player p).graveyard.size
       let self := o.staticAbilities.foldl (fun acc ab =>
         match ab with
-        | .fra .firstStrikeDuringYourTurn =>
+        | .firstStrikeDuringYourTurn =>
           if g.activePlayer == p then Keywords.merge acc Keyword.firstStrike else acc
-        | .fra .vigilanceIfJace =>
+        | .vigilanceIfJace =>
           if g.controlsJacePlaneswalker p then Keywords.merge acc Keyword.vigilance else acc
-        | .fra .powerAndFlyingIfSevenInGraveyard =>
+        | .powerAndFlyingIfSevenInGraveyard =>
           if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
-        | .fra .flyingHasteIfOpponentDealtNoncombat =>
+        | .flyingHasteIfOpponentDealtNoncombat =>
           if (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
             Keywords.merge acc (Keyword.flying.merge Keyword.haste)
           else acc
-        | .fra .hexproofUntilCombatDamage =>
+        | .hexproofUntilCombatDamage =>
           if o.status.dealtCombatDamage then acc else Keywords.merge acc Keyword.hexproof
         | _ => acc) Keywords.none
       let team := (g.permanentsOf p).foldl (fun acc src =>
@@ -54,18 +54,18 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         src.staticAbilities.foldl (fun acc ab =>
           let grant (cond : Bool) (k : Keywords) := if cond then Keywords.merge acc k else acc
           match ab with
-          | .fra .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
-          | .fra .plusOneCreaturesHaveVigilance =>
+          | .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
+          | .plusOneCreaturesHaveVigilance =>
             grant (o.isCreature && o.status.plusOnePlusOne > 0) Keyword.vigilance
-          | .fra .creatureTokensGetOneAndVigilance =>
+          | .creatureTokensGetOneAndVigilance =>
             grant (o.isCreature && o.printed.isToken) Keyword.vigilance
-          | .fra .otherPlusOneCreaturesHaveHaste =>
+          | .otherPlusOneCreaturesHaveHaste =>
             grant (other && o.isCreature && o.status.plusOnePlusOne > 0) Keyword.haste
-          | .fra .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
-          | .fra .otherCreaturesHaveTrample => grant (other && o.isCreature) Keyword.trample
-          | .fra .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
-          | .fra .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
-          | .fra .artifactCreaturesHaveVigilance =>
+          | .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
+          | .otherCreaturesHaveTrample #[] => grant (other && o.isCreature) Keyword.trample
+          | .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
+          | .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
+          | .artifactCreaturesHaveVigilance =>
             grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
           | _ => acc) acc) Keywords.none
       let attached := g.battlefield.foldl (fun acc a =>
@@ -73,8 +73,8 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         else
           a.staticAbilities.foldl (fun acc ab =>
             match ab with
-            | .fra .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
-            | .fra .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
+            | .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
+            | .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
             | _ => acc) acc) Keywords.none
       Keywords.mergeAll #[self, team, attached]
 

@@ -245,7 +245,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           if face.hasType ty then acc + n else acc
         | .supertypeSpellsCostLess s n =>
           if face.hasSupertype s then acc + n else acc
-        | .fra .noncreatureSpellsCostLess => if face.isCreature then acc else acc + 1
+        | .noncreatureSpellsCostLess => if face.isCreature then acc else acc + 1
         | _ => acc) acc) 0
   let selfLess :=
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&

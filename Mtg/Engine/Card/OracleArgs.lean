@@ -559,7 +559,9 @@ where
 
 def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   match ab with
-  | .otherCreaturesHaveTrample ss => return .otherCreaturesHaveTrample (← takeStrs ss)
+  | .otherCreaturesHaveTrample ss =>
+    if ss.isEmpty then return .otherCreaturesHaveTrample #[]
+    else return .otherCreaturesHaveTrample (← takeStrs ss)
   | .otherCreaturesGet ss p t =>
     return .otherCreaturesGet (← takeStrs ss) (← takeInt p) (← takeInt t)
   | .enchantedCreatureGets p t => return .enchantedCreatureGets (← takeInt p) (← takeInt t)

@@ -249,13 +249,13 @@ def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
     else #[{ output := .oneOf lords 1 }]
   let fra := o.staticAbilities.foldl (fun acc ab =>
     match ab with
-    | .fra .tapAddColorlessNotFromHand =>
+    | .tapAddColorlessNotFromHand =>
       acc.push { output := .fixed #[.colorless], restriction := .fra .notSpellsFromHand }
-    | .fra .tapAddAnyColorPlaneswalkerOnly =>
+    | .tapAddAnyColorPlaneswalkerOnly =>
       acc.push { output := .oneOf anyColorMana 1, restriction := .fra .planeswalkerSpell }
-    | .fra .tapSacrificeAddThreeOfOneColor =>
+    | .tapSacrificeAddThreeOfOneColor =>
       acc.push { output := .oneOf anyColorMana 3, sacrificeSelf := true }
-    | .fra .tapAddChosenColor =>
+    | .tapAddChosenColor =>
       match o.status.chosenColor with
       | some c => acc.push { output := .fixed #[.colored c] }
       | none => acc

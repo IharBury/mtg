@@ -27,14 +27,13 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `Targeting.lean` | `TargetZone`, `TargetController`, `TargetFilter` (28-field compositional filter), `TargetPreference`, and `EffectTargetKind` (70 named target kinds + `.filtered`, `.multi`, `.pair`). |
 | `PermanentAction.lean` | `PermanentAction` (21 single-permanent actions such as `.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`). |
 | `AbilityResolution.lean` | `AbilityCastKind` heuristic categories for activated abilities. |
-| `FrcEffect.lean` | `FrcToken` (15 FRC tokens) and `FrcEffect` (60 Reality Fracture Commander effect constructors nested inside `Resolution.frc`). |
 | `SpellResolution.lean` | Defines the compositional selector ASTs (`PlayerSelector`, `ObjectSelector`, `NumberSelector`, `CostSelector`, `ConditionSelector`, `ActionSelector`), modifier enums, and the unified `Resolution` inductive (`SpellResolution` and `TriggerResolution` are `abbrev`s for `Resolution`), plus `SpellResolution.toPhrase`. |
-| `Effect.lean` | `Effect` struct unifying targeting, cast hints, `resolution : Resolution`, `sharedTrigger : Option SharedTrigger`, and `phrase : String`; plus conversion helpers (`Resolution.ofSpellStep`/`toSpellStep`, `Effect.spellResolution`). |
+| `Effect.lean` | `Effect` struct unifying targeting, cast hints, `resolution : Resolution`, `sharedTrigger : Option SharedTrigger`, and `phrase : String`; plus conversion helpers (`Resolution.toSpellStep`, `Effect.spellResolution`). |
 | `SpellEffects.lean` | Named `Effect.*` builders for spells and activated abilities, plus `ActivatedAbility.fra` and `FraCandidates.ab`. |
 | `Chapter.lean` & `ChapterEffects.lean` | `ChapterSpell`, `ChapterResolution` (24 Saga chapter constructors), and `Effect.ofChapter` / `Effect.chapter*` builders. |
 | `Saga.lean` | `SagaChapter`, `SagaDef`, and Roman numeral chapter header parsers. |
 | `ActivatedAbility.lean` & `OracleActivate.lean` | `LoyaltySymbol`, `FraCost`, `FraActivationCondition`, `ActivationCost` (21 fields), `ActivatedAbility` (23 fields), and builder functions (`OracleActivate.activated`, `equipAbility`, `typecyclingAbility`). |
-| `StaticAbility.lean` | `FraStatic` (43 FRA static constructors), `StaticAbility` (108 constructors + `.fra` + `.printed`), `StaticShape`/`StaticMeta` projection table, and `StaticAbility.toNotation`. |
+| `StaticAbility.lean` | Unified CR 604 / CR 613 / CR 614 `StaticAbility` inductive (9 field-bearing constructors over 8 CR category sub-inductives `TypeStatic`, `AbilityStatic`, `CdaStatic`, `PtStatic`, `CombatStatic`, `CostCastStatic`, `RuleStatic`, `KeywordStatic` + `.printed`), `FraStatic` and `StaticShape` as `abbrev`s for `StaticAbility`, `StaticMeta`/`StaticAbility.spec`, and `StaticAbility.toNotation`. |
 | `TriggerEvent.lean` | Unified CR 603 `TriggerEvent` inductive (14 constructors: 12 field-bearing over 11 CR 603 event-filter sub-inductives `EntersEvent`..`ActionEvent` + `.or` + 2 nullary `.cascade`, `.fromEffect`), `FraEvent` and `SharedTriggerWhen` as `abbrev`s for `TriggerEvent`, `@[match_pattern] abbrev` aliases, `TriggerEvent.events`, and `TriggerEvent.spec`. |
 | `SharedTrigger.lean` | 9 MSH `*Leftover` enums, `SharedTrigger` (116 constructors), `FraCondition`, and `SharedTriggerOpts`. |
 | `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming`, `TriggeredAbility.chapterTiming`, and `SharedTrigger.timing` (compiles `SharedTrigger` into `Resolution`). |
@@ -126,6 +125,18 @@ Recent refactorings unified trigger and spell parameters around six composable s
    - `.or (a b : TriggerEvent)` — compound disjunctive trigger conditions (`enterOrAttack`, `castGreenOrForestEnters`, `enterOrOpponentDrawsExceptFirst`)
 2. **Nullary Constructors (2 nullary)**:
    - `.cascade` (CR 702.85a) and `.fromEffect` (deferred to the inner `SharedTrigger`'s timing).
+
+### 2.6 `StaticAbility` Structure (`Mtg/Engine/Card/StaticAbility.lean`)
+`FraStatic` and `StaticShape` are both type aliases (`abbrev`) for `StaticAbility`. After consolidating the 3 separate static-ability inductives (previously 255 constructors across `StaticAbility`, `FraStatic`, and `StaticShape`), `StaticAbility` has **9 total constructors** (all 9 field-bearing) aligned with the CR 604 / CR 613 / CR 614 static-ability categories:
+- `.typeChange (which : TypeStatic)` — CR 613.1d Layer 4 type-changing static effects
+- `.ability (which : AbilityStatic)` — CR 613.1f Layer 6 ability-adding and ability-removing static effects
+- `.cda (which : CdaStatic)` — CR 604.3 / CR 613.4a Layer 7a characteristic-defining P/T abilities
+- `.pt (which : PtStatic)` — CR 613.4c Layer 7c power/toughness-modifying static effects
+- `.combat (which : CombatStatic)` — CR 508 / CR 509 / CR 510 combat requirements, restrictions, and damage assignment
+- `.costCast (which : CostCastStatic)` — CR 601.2f / CR 601.3 / CR 305.1 cost modifiers, casting permissions, and casting restrictions
+- `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects
+- `.keyword (which : KeywordStatic)` — CR 702 / CR 303.4 / CR 605 keyword, enchant, and intrinsic mana static abilities
+- `.printed (text : String)` — fallback printed text for unmodeled lines
 
 ---
 

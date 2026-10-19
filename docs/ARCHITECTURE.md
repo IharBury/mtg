@@ -69,9 +69,9 @@ Because nearly all tests in this repository are **compile-time `#guard` assertio
 ### 3.3 Lean 4's 243 Field-Bearing Constructor Tag Limit
 - Lean 4's runtime and C code generator restrict any `inductive` type to at most **243 constructors that carry fields** (`tag <= 243`). Nullary constructors (no arguments) may follow field-bearing constructors without limit.
 - Keep this constraint in mind when editing large sum types:
-  - `Resolution` (`Mtg/Engine/Card/SpellResolution.lean`) places all field-bearing constructors before its nullary block and nests Reality Fracture Commander effects inside `.frc (e : FrcEffect)`.
-  - `StaticAbility` (`Mtg/Engine/Card/StaticAbility.lean`) nests FRA static abilities inside `.fra (s : FraStatic)`.
-  - `TriggerEvent` (`Mtg/Engine/Card/TriggerEvent.lean`) nests FRA/FRC events inside `.fra (e : FraEvent)`.
+  - `Resolution` (`Mtg/Engine/Card/SpellResolution.lean`) has 39 constructors (33 field-bearing + 6 nullary) parameterized by compositional selectors (`ObjectSelector`, `PlayerSelector`, `NumberSelector`, `CostSelector`, `ConditionSelector`).
+  - `StaticAbility` (`Mtg/Engine/Card/StaticAbility.lean`) has 9 field-bearing constructors aligned with CR 604 / CR 613 / CR 614 categories (`TypeStatic`, `AbilityStatic`, `CdaStatic`, `PtStatic`, `CombatStatic`, `CostCastStatic`, `RuleStatic`, `KeywordStatic`, and `.printed`).
+  - `TriggerEvent` (`Mtg/Engine/Card/TriggerEvent.lean`) has 14 constructors (12 field-bearing + 2 nullary) aligned with CR 603 categories (`EntersEvent`, `LeavesEvent`, `StepEvent`, `CastEvent`, `CombatEvent`, `DamageEvent`, `DrawEvent`, `DiscardEvent`, `TapEvent`, `CounterEvent`, `ActionEvent`, `.or`, `.cascade`, `.fromEffect`).
   - `SharedTrigger` (`Mtg/Engine/Card/SharedTrigger.lean`) groups MSH leftover triggers into 9 `*Leftover` sub-inductives.
   - `Pending` (`Mtg/Engine/Game/Pending.lean`) nests 74 newer interactive choice kinds inside `.fraChoice (player : PlayerId) (choice : FraChoice)`.
 

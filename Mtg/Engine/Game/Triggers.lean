@@ -344,11 +344,11 @@ def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility
       else
         eq.staticAbilities.foldl (fun acc ab =>
           match ab with
-          | .fra .equippedHuntersAxe =>
+          | .equippedHuntersAxe =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
               (.grant (.choiceOfKeywords [0, 3]) .source))
-          | .fra .equippedMedicsKitesail =>
+          | .equippedMedicsKitesail =>
             acc.push (TriggeredAbility.fra .attack
               "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
           | _ => acc) acc) #[]
@@ -608,10 +608,10 @@ def fraManaAbilities (o : GameObject) : Array ManaType :=
     #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
   let own := o.staticAbilities.foldl (fun acc ab =>
     match ab with
-    | .fra .tapAddColorlessNotFromHand => acc.push .colorless
-    | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
-    | .fra .tapSacrificeAddThreeOfOneColor => acc ++ anyColor
-    | .fra .tapAddChosenColor =>
+    | .tapAddColorlessNotFromHand => acc.push .colorless
+    | .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
+    | .tapSacrificeAddThreeOfOneColor => acc ++ anyColor
+    | .tapAddChosenColor =>
       match o.status.chosenColor with
       | some c => acc.push (.colored c)
       | none => acc
@@ -624,10 +624,7 @@ def fraManaAbilities (o : GameObject) : Array ManaType :=
 def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaUse :=
   if mana == .colorless && !o.status.colorlessGrantUntilCast.isEmpty then none
   else
-    match o.staticAbilities.findSome? (fun ab =>
-        match ab with
-        | .fra s => s.manaUse?
-        | _ => none) with
+    match o.staticAbilities.findSome? StaticAbility.manaUse? with
     | some u => some u
     | none => if g.hasSubtype o "Treasure" then some .fromTreasure else none
 

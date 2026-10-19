@@ -299,9 +299,9 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
       let gy := gyIds.size
       let self := o.staticAbilities.foldl (fun acc ab =>
         match ab with
-        | .fra .powerPerSevenInGraveyard => addStats acc (2 * Int.ofNat (gy / 7), 0)
-        | .fra .powerAndFlyingIfSevenInGraveyard => if gy ≥ 7 then addStats acc (1, 0) else acc
-        | .fra .powerPerCreatureAndPlaneswalkerCard =>
+        | .powerPerSevenInGraveyard => addStats acc (2 * Int.ofNat (gy / 7), 0)
+        | .powerAndFlyingIfSevenInGraveyard => if gy ≥ 7 then addStats acc (1, 0) else acc
+        | .powerPerCreatureAndPlaneswalkerCard =>
           let n := (gyIds.filter (fun id =>
             (g.findObject? id).any (fun c => c.printed.isCreature || c.printed.isPlaneswalker))).size
           addStats acc (Int.ofNat n, 0)
@@ -310,9 +310,9 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
         srcs.foldl (fun acc src =>
           src.staticAbilities.foldl (fun acc ab =>
             match ab with
-            | .fra .creatureTokensGetOneAndVigilance =>
+            | .creatureTokensGetOneAndVigilance =>
               if o.isCreature && o.printed.isToken then addStats acc (1, 0) else acc
-            | .fra .emblemCreaturesGetTwoTwo => if o.isCreature then addStats acc (2, 2) else acc
+            | .emblemCreaturesGetTwoTwo => if o.isCreature then addStats acc (2, 2) else acc
             | _ => acc) acc) (0, 0)
       let team := fromSources (g.permanentsOf p)
       let emblems := fromSources (g.objects.filter (fun e => e.zone == .command && e.controlledBy p))
@@ -321,9 +321,9 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
         else
           a.staticAbilities.foldl (fun acc ab =>
             match ab with
-            | .fra .equippedHuntersAxe => addStats acc (2, 0)
-            | .fra .equippedMedicsKitesail => addStats acc (1, 0)
-            | .fra .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
+            | .equippedHuntersAxe => addStats acc (2, 0)
+            | .equippedMedicsKitesail => addStats acc (1, 0)
+            | .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
             | _ => acc) acc) (0, 0)
       let flyingEmblem :=
         if o.isCreature &&

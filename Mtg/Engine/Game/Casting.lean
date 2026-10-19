@@ -460,9 +460,9 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
         acc := acc.push (.discardOrPay n)
       | .wardPoisonCounters _ =>
         acc := acc.push .fivePoison
-      | .fra .wardDiscardCard =>
+      | .wardDiscardCard =>
         acc := acc.push .discardCard
-      | .fra .wardSacrificeThreePermanents =>
+      | .wardSacrificeThreePermanents =>
         acc := acc.push (.sacrificePermanents 3 0)
       | _ =>
         match ab.grantedWard? with

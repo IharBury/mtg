@@ -56,8 +56,7 @@ def unprepare (g : Game) (o : GameObject) : Game :=
 def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
     o.staticAbilities.any (fun
-      | .exileOppDeathCreateWolf => true
-      | .fra .exileOpponentsDyingCreatures => true
+      | .exileOppDeathCreateWolf | .exileOpponentsDyingCreatures => true
       | _ => false)
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
