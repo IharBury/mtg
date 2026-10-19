@@ -146,7 +146,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | .oneUnusedThisTurn => src.status.allianceModesChosen
       | .vision => src.status.modesChosenThisTurn
       | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-        | .hawkeyeIndices _ | .fraTrigger _ =>
+        | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ =>
         src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
@@ -160,7 +160,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .vision =>
           g.logMsg "The Vision's ability is removed from the stack with no effect"
         | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ =>
+          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -184,7 +184,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               chooseModesRest := some rest }.logMsg
             "Choose one that hasn't been chosen this turn"
         | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ => g
+          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -1456,7 +1456,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _, _ => g
     | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
     | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
-    | .plusOnePerDiscardAfterDraw => g
+    | .plusOnePerDiscardAfterDraw | .eachKindOnIt _ | .remove _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -2878,18 +2878,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         g.mapObjectStatus o (fun s =>
           { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
           |>.logMsg s!"{o.name} gains a tap ability until end of turn"
-      | .doubleStrike | .keywords _ | .protectionEverything
-        | .assignCombatDamageEqualToughness | .artifactCreature ..
-        | .subtypeWithLandsPT _ | .typesPTAndKeywords ..
-        | .emblemCastSpellDamage _ | .choiceOfKeywords _ | .bearType
-        | .constructHero | .artifactCreatureVehicle | .playNotedUntilNextTurn
-        | .combatDamageCreateTreasure | .combatDamageDrawTwo | .flashback
-        | .jaceLoyaltyAtInstantSpeed | .mountainsAddExtraRed
-        | .emrakulManaAndCast | .emblemDrawOnCast | .emblemCreaturesGetTwoTwo
-        | .nextSpellCopy _ | .attacking | .newTargets | .extraLand | .extraTurn
-        | .transformed | .harnessed | .arwenShare | .phaseOutKicker
-        | .animateLand .. | .emblemCreaturesGetTwoTwoFlying | .monarch
-        | .teferisReproach | .explored | .transformedIncubator | .faceUp => g
+      | _ => g
     match g.permanentsNamed ctx who with
     | some objs => objs.foldl grantOne g
     | none => g
@@ -3381,7 +3370,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           | some id => found := found.push id
           | none => pure ()
         | .topNumber _ | .untilCreaturesPerOpponent | .untilHistoric
-        | .firstResolveUntilCreature => pure ()
+        | .firstResolveUntilCreature | .fromHand _ => pure ()
       return { g with revealedIdsThisWay := found }
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
@@ -3998,8 +3987,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDestroy controller ab sourceId targets lastKnownPower what note
   | .recruit _ =>
     g.beginRecruit controller
-  | .putCounters what who =>
-    g.applyPutCounters controller ab sourceId targets lastKnownPower what who
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
@@ -4162,37 +4149,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .additionalCombatPhase =>
     { g with additionalCombatPhases := g.additionalCombatPhases + 1 }.logMsg
       "Attacking creatures untap. After this phase, there is an additional combat phase"
-  | .chooseModes modes how =>
-    match how with
-    | .plusOneOrRemoveCounter =>
-      match lastKnownPower with
-      | none => g.offerHydeChoice controller sourceId
-      | some mode => g.applyHydeMode controller sourceId mode.toNat targets
-    | .alreadyChosen =>
-      let chosen :=
-        match sourceId.bind g.findObject? with
-        | some o => o.status.chosenModes
-        | none => #[]
-      chosen.foldl (init := g) fun g idx =>
-        match modes[idx]? with
-        | none => g
-        | some r =>
-          g.applyChooseModeStep targets r (fun g r =>
-            g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-              lastKnownPower lastKnownToughness sourceName (some r)
-              sequencedCardPower)
-    | .oneUnusedThisTurn | .oneUnused =>
-      g.offerChooseModes controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
-    | .vision =>
-      g.offerVisionModes controller ab sourceId targets lastKnownPower sourceName
-    | .fromLastKnown =>
-      match modes[(lastKnownPower.getD 0).toNat]? with
-      | none => g
-      | some r =>
-        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-    | .hawkeyeIndices _ | .fraTrigger _ => g
   | .returnToHand what note =>
     g.applyReturnToHand controller ab sourceId targets what note
   | .may (.discard .hand) _ =>
@@ -4202,27 +4158,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .mill amount who note =>
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
       amount who note
-  | .grant .newTargets .causingSpell =>
-    let targetingSource (e : StackEntry) : Bool :=
-      e.targets.any (fun t =>
-        match t, sourceId with
-        | Target.permanent id, some sid => id == sid
-        | _, _ => false)
-    let fromStack :=
-      g.stack.foldl (fun acc e =>
-        if targetingSource e then some e.objectId else acc) none
-    match g.resolvingCauseId.orElse (fun _ => fromStack) with
-    | none => g
-    | some spellId => g.offerSpellRetarget controller spellId 0
-  | .grant what who =>
-    g.applyGrant controller ab sourceId targets what who
-  | .revealLibrary how thenDo who =>
-    match g.applyRevealLibrary controller sourceId targets how thenDo who with
-    | some g => g
-    | none =>
-      let g := g.noteRevealedLibraries controller targets sourceId how who
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .loseLife amount who =>
@@ -4633,6 +4568,60 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         mayOnDecline := some follow
         mayContext := some ctx }.logMsg
       s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+  | .putCounters what who =>
+    g.applyPutCounters controller ab sourceId targets lastKnownPower what who
+  | .chooseModes modes how =>
+    match how with
+    | .plusOneOrRemoveCounter =>
+      match lastKnownPower with
+      | none => g.offerHydeChoice controller sourceId
+      | some mode => g.applyHydeMode controller sourceId mode.toNat targets
+    | .alreadyChosen =>
+      let chosen :=
+        match sourceId.bind g.findObject? with
+        | some o => o.status.chosenModes
+        | none => #[]
+      chosen.foldl (init := g) fun g idx =>
+        match modes[idx]? with
+        | none => g
+        | some r =>
+          g.applyChooseModeStep targets r (fun g r =>
+            g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+              lastKnownPower lastKnownToughness sourceName (some r)
+              sequencedCardPower)
+    | .oneUnusedThisTurn | .oneUnused =>
+      g.offerChooseModes controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
+    | .vision =>
+      g.offerVisionModes controller ab sourceId targets lastKnownPower sourceName
+    | .fromLastKnown =>
+      match modes[(lastKnownPower.getD 0).toNat]? with
+      | none => g
+      | some r =>
+        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+          lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
+    | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ => g
+  | .grant .newTargets .causingSpell =>
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match g.resolvingCauseId.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
+  | .grant what who =>
+    g.applyGrant controller ab sourceId targets what who
+  | .revealLibrary how thenDo who =>
+    match g.applyRevealLibrary controller sourceId targets how thenDo who with
+    | some g => g
+    | none =>
+      let g := g.noteRevealedLibraries controller targets sourceId how who
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
   | _ => g
   else
   match ab.effect.resolution with
@@ -4680,7 +4669,7 @@ def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
   | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ | .fromLastKnown, _
-  | .hawkeyeIndices _, _ | .fraTrigger _, _ => g
+  | .hawkeyeIndices _, _ | .fraTrigger _, _ | .one, _ | .ifElse _, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=

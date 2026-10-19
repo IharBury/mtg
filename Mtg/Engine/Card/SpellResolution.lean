@@ -1505,6 +1505,16 @@ inductive AbilitySelector where
   | allAbilities
 deriving Repr, Inhabited, BEq
 
+/-- What `TriggerResolution.removeCounters` removes. -/
+inductive TriggerRemoveWhat where
+  /-- One hope counter. A later `«if» .removedHope` sees whether one was removed. -/
+  | hope
+  /-- Every counter on that permanent. -/
+  | all
+  /-- Up to `n` counters of the controller's choice. -/
+  | upTo (n : Nat)
+deriving Repr, Inhabited, BEq
+
 /-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
 inductive CounterSelector where
   /-- `n` counters of this kind. One is `.ofKind kind`. -/
@@ -1540,6 +1550,10 @@ inductive CounterSelector where
   | stunRemovedLoyalty
   /-- Draw a card, then put a +1/+1 counter for each card you've discarded this turn. -/
   | plusOnePerDiscardAfterDraw
+  /-- Give each recipient another counter of each kind already on it `times` times (proliferate, CR 701.34). -/
+  | eachKindOnIt (times : NumberSelector := .fixed 1)
+  /-- Remove counters as `what` says (CR 122). -/
+  | remove (what : TriggerRemoveWhat)
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
@@ -1804,6 +1818,10 @@ end TriggerPutNote
 
 /-- How `TriggerResolution.chooseModes` chooses those modes. -/
 inductive TriggerModeHow where
+  /-- The controller chooses one of the alternatives (`Resolution.or`). -/
+  | one
+  /-- Resolve the first branch when `cond` holds, and the second otherwise (`Resolution.ifElse`). -/
+  | ifElse (cond : ConditionSelector)
   /-- The controller chooses one mode that has not been chosen this turn.
   The source remembers it until the turn ends. If every mode was already
   chosen, the ability is removed with no effect. -/
@@ -1871,6 +1889,65 @@ inductive TriggerFightHow where
   /-- It deals `k` times its power to the announced opposing creature.
   One times its power is `.fight .announced (.timesPower 1)`. -/
   | timesPower (k : Nat)
+deriving Repr, Inhabited, BEq
+
+/-- How long `TriggerResolution.gainControl` lasts. -/
+inductive TriggerControlHow where
+  /-- Until end of turn. The permanent untaps and gains haste. -/
+  | untilEndOfTurn
+  /-- For as long as the source remains on the battlefield. -/
+  | whileSourceRemains
+  /-- You control the announced opponent during their next turn.
+  `.gainControl .duringNextTurn`.
+  Inside `queueReflexive`, that ability is put on the stack and the
+  opponent is chosen then. -/
+  | duringNextTurn
+  /-- Permanently gain control of up to one targeted artifact per opponent. -/
+  | oppArtifacts
+  /-- Gain control until end of turn, or until the end of your next turn if you control a Villain with greater mana value. -/
+  | untilEotOrNextIfVillain
+  /-- Exchange control of two targeted permanents sharing a card type (CR 701.10). -/
+  | exchangeTargets
+deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.cant` prevents, and who can't do it.
+The announced permanent can't be blocked this turn is `.beBlocked`.
+The source is `.beBlocked .source`.
+The enchanted creature is `.beBlocked .enchanted`.
+The target, while the source remains, is `.beBlocked (.target .whileSource)`.
+Can't be blocked this turn except by creatures with haste is
+`.beBlockedExceptByHaste`.
+The announced permanent can't become untapped for as long as you control
+the source is `.untapWhileYouControl`. An opponent's creature is the only
+recipient. -/
+inductive ActionSelector where
+  /-- Can't be blocked this turn.
+  The announced permanent is `.cant .beBlocked`.
+  The source is `.cant (.beBlocked .source)`.
+  The enchanted creature is `.cant (.beBlocked .enchanted)`.
+  The target, while the source remains, is
+  `.cant (.beBlocked (.target .whileSource))`.
+  Any other selector does nothing. -/
+  | beBlocked (who : ObjectSelector := .target)
+  /-- Can't be blocked this turn except by creatures with haste.
+  `.cant (.beBlockedExceptByHaste .target)`.
+  Any other selector does nothing. -/
+  | beBlockedExceptByHaste (who : ObjectSelector := .target)
+  /-- Can't become untapped for as long as you control the source.
+  The announced permanent is `.cant .untapWhileYouControl`.
+  An opponent's creature is the only recipient. A creature you control
+  is left alone. Any other `who` does nothing. -/
+  | untapWhileYouControl (who : ObjectSelector := .target)
+  /-- Can't block this turn. -/
+  | block (who : ObjectSelector := .target)
+  /-- Players can't cast spells this turn. -/
+  | castSpellsThisTurn (who : ObjectSelector := .any)
+  /-- Can't be countered. -/
+  | beCountered (who : ObjectSelector := .target)
+  /-- Can't be blocked this turn by creatures controlled by a chosen player with the most life. -/
+  | beBlockedByMostLifePlayer (who : ObjectSelector := .target)
+  /-- Can't attack Jaces this turn unless their controller pays {1} for each creature. -/
+  | attackJaces (who : ObjectSelector := .opponentsCreatures)
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.grant` grants. -/
@@ -1965,6 +2042,34 @@ inductive TriggerGrantWhat where
   | transformedIncubator
   /-- Turn the source face up (CR 702.37). -/
   | faceUp
+  /-- Become a copy of `of` (CR 613.1a Layer 1). -/
+  | copy (of : ObjectSelector)
+  /-- Gain control as `how` says (CR 613.1b Layer 2). -/
+  | control (how : TriggerControlHow)
+  /-- Become an artifact in addition to its other types (CR 613.1d Layer 4). -/
+  | artifact
+  /-- Lose `what` abilities (CR 613.1f Layer 6). -/
+  | lose (what : AbilitySelector)
+  /-- Prevent `action` (CR 613.1f / CR 508 / CR 509). -/
+  | cant (action : ActionSelector)
+  /-- Set base power and toughness to `power`/`toughness` (CR 613.4b Layer 7b). -/
+  | basePT (power toughness : NumberSelector)
+  /-- Replacement effect: if `what` would happen, `instead` happens instead (CR 614.1). -/
+  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
+  /-- Spells of `which` cost `n` less to cast this turn (CR 601.2f). -/
+  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
+  /-- Become prepared (or unprepared if `prepared == false`). -/
+  | prepared (prepared : Bool := true)
+  /-- Investigate (CR 701.36). -/
+  | investigate
+  /-- Empower Jace `n` (FRA 732). -/
+  | empowerJace (n : NumberSelector)
+  /-- Recruit as `who` says. -/
+  | recruit (who : RecruitSubject := .recruit)
+  /-- Record another resolution of this ability this turn, up to `limit`. -/
+  | noteResolveThisTurn (limit : Nat)
+  /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
+  | mshReflexive (kind paid : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
@@ -1985,14 +2090,13 @@ inductive TriggerMillNote where
   | freeCastFromGraveyard
 deriving Repr, Inhabited, BEq
 
-/-- What `TriggerResolution.removeCounters` removes. -/
-inductive TriggerRemoveWhat where
-  /-- One hope counter. A later `«if» .removedHope` sees whether one was removed. -/
-  | hope
-  /-- Every counter on that permanent. -/
-  | all
-  /-- Up to `n` counters of the controller's choice. -/
-  | upTo (n : Nat)
+/-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
+inductive TriggerRevealCount where
+  /-- The whole hand. -/
+  | hand
+  /-- One card, plus one for each creature card in the controller's
+  graveyard. A smaller hand is shown in full. -/
+  | onePlusCreatureCards
 deriving Repr, Inhabited, BEq
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
@@ -2015,15 +2119,8 @@ inductive TriggerLibraryHow where
   | untilHistoric
   /-- Draw a card, then on the first resolution this turn reveal until a creature card and put it onto the battlefield. -/
   | firstResolveUntilCreature
-deriving Repr, Inhabited, BEq
-
-/-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
-inductive TriggerRevealCount where
-  /-- The whole hand. -/
-  | hand
-  /-- One card, plus one for each creature card in the controller's
-  graveyard. A smaller hand is shown in full. -/
-  | onePlusCreatureCards
+  /-- Reveal cards from hand (CR 701.16). -/
+  | fromHand (count : TriggerRevealCount)
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.putOnLibrary` puts the card. -/
@@ -2067,65 +2164,6 @@ inductive TriggerMayWhen where
   | ifYouDo
   /-- The player declined `action`. Performing `action` skips `follow`. -/
   | ifYouDont
-deriving Repr, Inhabited, BEq
-
-/-- How long `TriggerResolution.gainControl` lasts. -/
-inductive TriggerControlHow where
-  /-- Until end of turn. The permanent untaps and gains haste. -/
-  | untilEndOfTurn
-  /-- For as long as the source remains on the battlefield. -/
-  | whileSourceRemains
-  /-- You control the announced opponent during their next turn.
-  `.gainControl .duringNextTurn`.
-  Inside `queueReflexive`, that ability is put on the stack and the
-  opponent is chosen then. -/
-  | duringNextTurn
-  /-- Permanently gain control of up to one targeted artifact per opponent. -/
-  | oppArtifacts
-  /-- Gain control until end of turn, or until the end of your next turn if you control a Villain with greater mana value. -/
-  | untilEotOrNextIfVillain
-  /-- Exchange control of two targeted permanents sharing a card type (CR 701.10). -/
-  | exchangeTargets
-deriving Repr, Inhabited, BEq
-
-/-- What `TriggerResolution.cant` prevents, and who can't do it.
-The announced permanent can't be blocked this turn is `.beBlocked`.
-The source is `.beBlocked .source`.
-The enchanted creature is `.beBlocked .enchanted`.
-The target, while the source remains, is `.beBlocked (.target .whileSource)`.
-Can't be blocked this turn except by creatures with haste is
-`.beBlockedExceptByHaste`.
-The announced permanent can't become untapped for as long as you control
-the source is `.untapWhileYouControl`. An opponent's creature is the only
-recipient. -/
-inductive ActionSelector where
-  /-- Can't be blocked this turn.
-  The announced permanent is `.cant .beBlocked`.
-  The source is `.cant (.beBlocked .source)`.
-  The enchanted creature is `.cant (.beBlocked .enchanted)`.
-  The target, while the source remains, is
-  `.cant (.beBlocked (.target .whileSource))`.
-  Any other selector does nothing. -/
-  | beBlocked (who : ObjectSelector := .target)
-  /-- Can't be blocked this turn except by creatures with haste.
-  `.cant (.beBlockedExceptByHaste .target)`.
-  Any other selector does nothing. -/
-  | beBlockedExceptByHaste (who : ObjectSelector := .target)
-  /-- Can't become untapped for as long as you control the source.
-  The announced permanent is `.cant .untapWhileYouControl`.
-  An opponent's creature is the only recipient. A creature you control
-  is left alone. Any other `who` does nothing. -/
-  | untapWhileYouControl (who : ObjectSelector := .target)
-  /-- Can't block this turn. -/
-  | block (who : ObjectSelector := .target)
-  /-- Players can't cast spells this turn. -/
-  | castSpellsThisTurn (who : ObjectSelector := .any)
-  /-- Can't be countered. -/
-  | beCountered (who : ObjectSelector := .target)
-  /-- Can't be blocked this turn by creatures controlled by a chosen player with the most life. -/
-  | beBlockedByMostLifePlayer (who : ObjectSelector := .target)
-  /-- Can't attack Jaces this turn unless their controller pays {1} for each creature. -/
-  | attackJaces (who : ObjectSelector := .opponentsCreatures)
 deriving Repr, Inhabited, BEq
 
 end TriggeredAbility
@@ -2249,7 +2287,7 @@ inductive Resolution where
   Scry 2 is `.scry (.fixed 2)`. Any other count scries that many cards.
   Scry 0 looks at nothing and does not trigger “whenever you scry.” A
   selector that is not a count scries nothing. -/
-  | scry (n : NumberSelector)
+  | scry (n : NumberSelector) (surveil : Option TriggerSurveilNote := none)
   /-- `who` draws cards, as `amount` says. `.fixed` is that many cards.
   The controller is `.you`.
   The controller draws `n` is `.draw (.fixed n)`.
@@ -2452,68 +2490,6 @@ inductive Resolution where
   that a sacrifice happened. `.forReflexive` records it for the next
   reflexive step. A card or a hand is not sacrificed. -/
   | sacrifice (what : ObjectSelector) (note : TriggerSacrificeNote := .none)
-  /-- A permanent loses `what`, as `who` says.
-  The announced permanent loses indestructible until end of turn is
-  `.lose .indestructible`.
-  The source is `.lose .indestructible .source`.
-  The enchanted creature is `.lose .indestructible .enchanted`.
-  The target, while the source remains, is
-  `.lose .indestructible (.target .whileSource)`.
-  The announced permanent loses all abilities while the source remains is
-  `.lose .allAbilities (.target .ifPresent)`. A missing target loses nothing.
-  A source that has left leaves that permanent able.
-  Any other permanent the selector names loses that ability. A card or a
-  hand loses nothing. -/
-  | lose (what : AbilitySelector) (who : ObjectSelector := .target)
-  /-- `action` says what can't be done, and who can't do it.
-  The announced permanent can't be blocked this turn is `.cant .beBlocked`.
-  The source is `.cant (.beBlocked .source)`.
-  The enchanted creature is `.cant (.beBlocked .enchanted)`.
-  The target, while the source remains, is
-  `.cant (.beBlocked (.target .whileSource))`.
-  The announced permanent can't become untapped for as long as you control
-  the source is `.cant .untapWhileYouControl`. An opponent's creature is
-  the only recipient. A creature you control is left alone. A missing
-  source still records a stand-in. Any other permanent the selector names
-  can't do that. A card or a hand is unchanged. -/
-  | cant (action : ActionSelector)
-  /-- Until end of turn, `who` becomes an artifact in addition to its other
-  types. The announced permanent is `.becomeArtifact` (`.target`).
-  The source is `.becomeArtifact .source`.
-  The enchanted creature is `.becomeArtifact .enchanted`.
-  The target, while the source remains, is
-  `.becomeArtifact (.target .whileSource)`.
-  Gaining indestructible as well is
-  `.sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]`.
-  Any other permanent the selector names becomes an artifact until end of
-  turn. A card or a hand does not. -/
-  | becomeArtifact (who : ObjectSelector := .target)
-  /-- `who` becomes prepared. A creature that is already prepared, or has no
-  prepare spell, does not. The announced permanent is `.becomePrepared`
-  (`.target`).
-  The source is `.becomePrepared .source`.
-  The enchanted creature is `.becomePrepared .enchanted`.
-  The target, while the source remains, is
-  `.becomePrepared (.target .whileSource)`.
-  Any other permanent the selector names becomes prepared. A creature that
-  is already prepared, or has no prepare spell, does not. A card or a hand
-  does not. -/
-  | becomePrepared (who : ObjectSelector := .target) (prepared : Bool := true)
-  /-- Until end of turn, `who`'s base power and toughness become `power` and
-  `toughness`. Each statistic reads its own value.
-  The announced permanent becoming `p`/`t` is `.setBasePT (.fixed p) (.fixed t)`.
-  The source is `.setBasePT (.fixed p) (.fixed t) .source`.
-  The enchanted creature is `.setBasePT (.fixed p) (.fixed t) .enchanted`.
-  The target, while the source remains, is
-  `.setBasePT (.fixed p) (.fixed t) (.target .whileSource)`.
-  Another target creature becoming equal to this creature's power and
-  toughness is `.setBasePT .equalSourcePower .equalSourceToughness`.
-  A source that has left uses its last-known power and toughness.
-  No target logs that none was chosen.
-  Any other permanent the selector names receives the two counts.
-  A count that is not a number, and a selector that names no permanent,
-  sets nothing. -/
-  | setBasePT (power toughness : NumberSelector) (who : ObjectSelector := .target)
   /-- Put a card onto a library. `place` says top or bottom, and `what`
   says which card.
   The announced permanent on top of its owner's library is `.putOnLibrary .top`.
@@ -2681,7 +2657,7 @@ inductive Resolution where
   power. Zero gains nothing.
   Any other count gains that much life. A count that cannot be read
   gains nothing. -/
-  | gainLife (amount : NumberSelector) (who : PlayerSelector := .you)
+  | gainLife (amount : NumberSelector) (who : PlayerSelector := .you) (lose : Bool := false)
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
   Which cards is an `ObjectSelector`.
@@ -2779,16 +2755,7 @@ inductive Resolution where
   already on the battlefield is not put again. -/
   | put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none)
-  /-- Remove counters. `what` says which, and `who` says from whom.
-  A hope counter from the source is `.removeCounters .hope .source`.
-  Removing none leaves the later draw skipped. A missing source, or a
-  source that has left the battlefield, removes nothing.
-  All counters from the enchanted creature are
-  `.removeCounters .all .enchanted`. Nothing enchanted removes nothing.
-  Any other permanent the selector names loses that counter, or every
-  counter. A card or a hand loses nothing. -/
-  | removeCounters (what : TriggerRemoveWhat) (who : ObjectSelector)
-  /-- Tap permanents, as `who` says.
+  /-- Tap or untap permanents, as `who` and `tapped` say.
   Any number of untapped Humans you control is `.tap .humans`.
   Choosing none taps nothing. Optional as `.may (.tap .humans) (.sequence [])`.
   The creature the source enchants is `.tap .enchanted`.
@@ -2800,23 +2767,9 @@ inductive Resolution where
   Wrapping one in `may` is that tap.
   The creature this Aura enchants, while the Aura remains, is
   `.tap .enchantedWhileSource`.
-  Any other permanent the selector names is tapped. A card or a hand
+  Any other permanent the selector names is tapped or untapped. A card or a hand
   is not. -/
-  | tap (who : ObjectSelector)
-  /-- Untap permanents, as `who` says.
-  The announced permanent, while it is still a legal target, is `.untap`.
-  An illegal target is reported. A stun counter is removed instead of
-  untapping (CR 122.1d).
-  The source is `.untap .source`. A missing source untaps nothing.
-  The enchanted creature is `.untap .enchanted`. Nothing enchanted untaps
-  nothing.
-  The announced permanent while the source remains is
-  `.untap (.target .whileSource)`. A source that already left is silent.
-  Each attacking creature is `.untap .attackingCreatures`.
-  Tap or untap is `.or [.tap .target, .untap]`.
-  Any other permanent the selector names is untapped. A card or a hand
-  is not. -/
-  | untap (who : ObjectSelector := .target)
+  | tap (who : ObjectSelector) (tapped : Bool := true)
   /-- Destroy permanents. `what` says which, and `note` says what a later
   step can read.
   Opponents' artifacts and enchantments, counted for the next step, are
@@ -2835,8 +2788,6 @@ inductive Resolution where
   Any other permanent the selector names is destroyed. A card or a hand
   is not. -/
   | destroy (what : ObjectSelector) (note : TriggerDestroyNote := .none)
-  /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
-  | recruit (who : RecruitSubject := .recruit)
   /-- Amass `subtype` for `who`, as `amount` says. Attach the source when
   `attachSource` is true.
   Goblins `n` is `.amass (.fixed n)`.
@@ -2915,16 +2866,7 @@ inductive Resolution where
   nothing. A count that cannot be read adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
       (note : ManaSpendNote := .none)
-  /-- Gain control of the announced permanents, as `how` says.
-  Until end of turn, then untap and haste, is `.gainControl .untilEndOfTurn`.
-  While the source remains is `.gainControl .whileSourceRemains`.
-  A source that has left changes nothing in that case. -/
-  | gainControl (how : TriggerControlHow)
-  /-- Record another resolution of this ability this turn. Later
-  `«if» (.nthResolve n)` steps in this sequence see the ordinal. An ordinal
-  above `limit` logs that the ability has no effect. -/
-  | noteResolveThisTurn (limit : Nat)
-  /-- Resolve `thenDo` when `cond` holds.
+  /-- Resolve `thenDo` when `cond` holds, and `elseDo` otherwise.
   Putting a card on the bottom when you control no legendary creature is
   `.«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)`.
   Drawing when an earlier step removed a hope counter is
@@ -2948,33 +2890,6 @@ inductive Resolution where
   Discarding `n` cards when mana was spent to cast the triggering spell is
   `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
   | «if» (cond : ConditionSelector) (thenDo : Resolution)
-  /-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise.
-  A tapped Villain when your graveyard has two creature cards, and milling
-  two otherwise, is
-  `.ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2))) (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))`.
-  Two +1/+1 counters when the target is another Hero, and one otherwise, is
-  `.ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne) .permanent)`.
-  A +1/+1 counter when you have scried or surveilled, and +1/+1 until end of
-  turn otherwise, is
-  `.ifElse (.or [.scriedThisTurn, .surveilledThisTurn]) (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)`.
-  The revealed creature enters when its mana value is at most the lands
-  you control, and goes to your hand otherwise, with
-  `.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)`.
-  Outside `revealLibrary .untilCreature`, that condition does not hold. -/
-  | ifElse (cond : ConditionSelector) (whenTrue whenFalse : Resolution)
-  /-- The controller chooses one of these resolutions.
-  Tap an opposing creature or untap one you control is
-  `.or [.tap .target, .untap]`.
-  A +1/+1 counter on a Wolf you control, or a Treasure token, is
-  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`.
-  Tap or untap the targeted nonland is
-  `.or [.tap .target, .untap]`.
-  A Food token or a Treasure token is
-  `.or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]`.
-  +1/+1 counters on the creature targets, or returning an artifact or
-  enchantment card from the graveyard, is
-  `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]`. -/
-  | or (rs : List Resolution)
   /-- Resolve these modes, as `how` says.
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
   Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
@@ -2984,7 +2899,7 @@ inductive Resolution where
   `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
   One unused Vision mode this turn is
   `.chooseModes TriggerResolution.visionModes .vision`. -/
-  | chooseModes (modes : List Resolution) (how : TriggerModeHow)
+  | chooseModes (modes : List Resolution) (how : TriggerModeHow := .one)
   /-- You may cast a spell. `origin` says where the card is, `maxMv` limits
   its mana value, `cost` says whether that cost is paid, and `note` says
   what happens to an instant or sorcery cast this way.
@@ -3005,7 +2920,7 @@ inductive Resolution where
   resolution. Outside it, the cast does nothing. -/
   | mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
       (cost : TriggerCastCost) (note : TriggerCastNote := .none)
-  /-- Grant an ability. `what` says which, and `who` says to whom.
+  /-- Grant an ability or continuous effect. `what` says which, and `who` says to whom.
   Each equipped attacking creature gains double strike until end of turn
   with `.grant .doubleStrike .equippedAttackers`.
   If the source was cast, the controller gains protection from everything
@@ -3035,7 +2950,7 @@ inductive Resolution where
   is skipped. No recorded spell grants nothing.
   Any other permanent the selector names receives that ability. A card, a
   hand, or an unmade choice receives nothing. -/
-  | grant (what : TriggerGrantWhat) (who : ObjectSelector)
+  | grant (what : TriggerGrantWhat) (who : ObjectSelector := .target)
   /-- Look at cards from the top of a library, as `how` and `who` say, then
   resolve `thenDo` for the cards that were found.
   The top `n` cards of your library, a random creature from among them
@@ -3090,13 +3005,6 @@ inductive Resolution where
   note records what it says. A missing count or player mills nothing. -/
   | mill (amount : NumberSelector) (who : PlayerSelector := .you)
       (note : TriggerMillNote := .none)
-  /-- Spells of `which` cost less this turn, as `n` says.
-  `.fixed` is that much generic mana.
-  A card type is `.spellsCostLess (.cardType ty) (.fixed n)`.
-  A supertype is `.spellsCostLess (.supertype s) (.fixed n)`.
-  Any other count reduces the cost by that much. A count that cannot be
-  read changes nothing. -/
-  | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
   /-- Connive (CR 701.48). `who` says which creature.
   The source is `.connive`.
   The announced creature is `.connive .target`. The kind of that target is
@@ -3120,63 +3028,6 @@ inductive Resolution where
   or deals damage equal to its power when `how` is `.reflexive`. A card or
   a hand fights nothing. -/
   | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
-  /-- A player reveals cards from their hand (CR 701.16), as `count` says,
-  then resolves `thenDo`.
-  The opponent reveals their hand. You may exile a nonland card from it, or
-  the chosen creature, until the source leaves, with
-  `.revealFromHand .hand (.exile .target .untilSourceLeaves)`.
-  A source that has already left still reveals; nothing is exiled.
-  The announced player reveals one card plus one for each creature card in
-  your graveyard. You choose one of them and that player discards it, with
-  `.revealFromHand .onePlusCreatureCards (.discard (.cards 1 (.target .opponent)))`.
-  A smaller hand is revealed in full.
-  Any other combination reveals that hand, then resolves `thenDo`. -/
-  | revealFromHand (count : TriggerRevealCount) (thenDo : Resolution)
-  /-- Surveil, as `n` and `note` say (CR 701.25). `.fixed` is that many cards.
-  Surveil 2 is `.surveil (.fixed 2)`. Any other count surveils that many
-  cards. Surveil 0 looks at nothing (unless `note` is `.armReturnLifeGained`).
-  A count that cannot be read surveils nothing. -/
-  | surveil (n : NumberSelector) (note : TriggerSurveilNote := .none)
-  /-- Empower Jace, as `n` says (Reality Fracture).
-  `.fixed` is that many loyalty counters.
-  Empower Jace `n` is `.empowerJace (.fixed n)`.
-  Any other count puts that many loyalty counters. A count that cannot
-  be read empowers nothing. -/
-  | empowerJace (n : NumberSelector)
-  /-- A player loses life (CR 118.3a), as `amount` and `who` say.
-  Losing 0 life does nothing.
-  You lose `n` life is `.loseLife (.fixed n)`.
-  The announced opponent loses `n` life is
-  `.loseLife (.fixed n) (.target .opponent)`.
-  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
-  You lose 1 life for each burden counter on the source is
-  `.loseLife .perBurden`.
-  A missing source loses nothing.
-  Each opponent loses life equal to the Equipment attached to the source with
-  `.loseLife .attachedEquipment .eachOpponent`.
-  A source that has left uses its last-known power. Zero loses nothing.
-  Any other count is lost by the players the selector names. An offer
-  is not a player, and a missing count loses nothing. -/
-  | loseLife (amount : NumberSelector) (who : PlayerSelector := .you)
-  /-- The source becomes a copy of the announced object until your next turn,
-  as `of` says. It keeps its name.
-  An artifact, non-Aura enchantment, or land, also a legendary 4/4 Human
-  Villain creature with vigilance, is `.becomeCopy .artifactEnchantmentOrLand`.
-  A creature or a creature card in a graveyard, as a legendary Human
-  Mercenary Villain creature, is `.becomeCopy .creatureOrGraveyardCard`.
-  Choosing none copies nothing. An illegal object is reported.
-  A missing source copies nothing.
-  The enchanted creature copying the creature an earlier step noted is
-  `.becomeCopy .noted`. Nothing noted copies nothing.
-  A token copy of the nontoken artifact that caused this is
-  `.becomeCopy .cause`. An announced permanent is used when one was chosen;
-  otherwise the recorded cause. The source need not still be on the
-  battlefield. A noncreature token becomes a 2/2 Robot Villain after it
-  enters. A subtype on `.cause` copies nothing.
-  Any other permanent the selector names, other than the source itself, is
-  what the source copies. A missing source copies nothing. A card or a hand
-  copies nothing. -/
-  | becomeCopy (of : ObjectSelector)
   /-- Affect a still-legal permanent (by default `.target`, or `.source` if the
   source is still on the battlefield). Damage can hit a player or a creature;
   other actions require a permanent. -/
@@ -3184,25 +3035,6 @@ inductive Resolution where
   /-- Resolve `r` unless its controller pays `{n}`.
   Countering unless they pay is `.unlessPays .counter n`. -/
   | unlessPays (r : Resolution) (n : Nat)
-  /-- If `what` would happen, `instead` happens in its place.
-  The targeted creature dying this turn, exiled instead, is
-  `.replace .diesThisTurn .exile`. A pump and that replacement are
-  `.sequence [.onPermanent (.pump p t), .replace .diesThisTurn .exile]`.
-  Damage, losing indestructible, and that replacement are
-  `.sequence [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile]`. -/
-  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
-  /-
-  Field-bearing constructors must keep a runtime tag ≤ 243.
-  Nullary constructors follow this block. Former `FraResolution`
-  steps with arguments are inserted here so those tags stay in range.
-  -/
-  /-- Investigate (create a Clue; CR 701.36). -/
-  | investigate (who : PlayerSelector := .you)
-  /-- Proliferate `amount` times (CR 701.34), or give `who` another counter
-  of each kind on it. -/
-  | proliferate (amount : NumberSelector := .fixed 1) (who : ObjectSelector := .youControl)
-  /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
-  | mshReflexive (kind paid : Nat)
   /-
   Nullary steps. A constructor with fields appended after this point
   exceeds the runtime tag limit.
@@ -3227,6 +3059,94 @@ namespace Resolution
 @[match_pattern] abbrev onSource (action : PermanentAction) : Resolution :=
   .onPermanent action .source
 
+/-- Surveil, as `n` and `note` say (CR 701.25). -/
+@[match_pattern] abbrev surveil (n : NumberSelector) (note : TriggerSurveilNote := .none) : Resolution :=
+  .scry n (some note)
+
+/-- A player loses life (CR 118.3a), as `amount` and `who` say. -/
+@[match_pattern] abbrev loseLife (amount : NumberSelector) (who : PlayerSelector := .you) : Resolution :=
+  .gainLife amount who true
+
+/-- Untap permanents, as `who` says. -/
+@[match_pattern] abbrev untap (who : ObjectSelector := .target) : Resolution :=
+  .tap who false
+
+/-- Resolve `whenTrue` when `cond` holds, and `whenFalse` otherwise. -/
+@[match_pattern] abbrev ifElse (cond : ConditionSelector) (whenTrue whenFalse : Resolution) : Resolution :=
+  .chooseModes [whenTrue, whenFalse] (.ifElse cond)
+
+/-- The controller chooses one of these resolutions. -/
+@[match_pattern] abbrev or (rs : List Resolution) : Resolution :=
+  .chooseModes rs .one
+
+/-- Proliferate `amount` times (CR 701.34), or give `who` another counter of each kind on it. -/
+@[match_pattern] abbrev proliferate (amount : NumberSelector := .fixed 1) (who : ObjectSelector := .youControl) : Resolution :=
+  .putCounters (.eachKindOnIt amount) who
+
+/-- Remove counters. `what` says which, and `who` says from whom. -/
+@[match_pattern] abbrev removeCounters (what : TriggerRemoveWhat) (who : ObjectSelector) : Resolution :=
+  .putCounters (.remove what) who
+
+/-- A player reveals cards from their hand (CR 701.16), as `count` says, then resolves `thenDo`. -/
+@[match_pattern] abbrev revealFromHand (count : TriggerRevealCount) (thenDo : Resolution) : Resolution :=
+  .revealLibrary (.fromHand count) thenDo .you
+
+/-- A permanent loses `what`, as `who` says (CR 613.1f Layer 6). -/
+@[match_pattern] abbrev lose (what : AbilitySelector) (who : ObjectSelector := .target) : Resolution :=
+  .grant (.lose what) who
+
+/-- `action` says what can't be done, and who can't do it (CR 613.1f / CR 508 / CR 509). -/
+@[match_pattern] abbrev cant (action : ActionSelector) : Resolution :=
+  .grant (.cant action) .target
+
+/-- Until end of turn, `who` becomes an artifact in addition to its other types (CR 613.1d Layer 4). -/
+@[match_pattern] abbrev becomeArtifact (who : ObjectSelector := .target) : Resolution :=
+  .grant .artifact who
+
+/-- `who` becomes prepared (or unprepared when `prepared = false`). -/
+@[match_pattern] abbrev becomePrepared (who : ObjectSelector := .target) (prepared : Bool := true) : Resolution :=
+  .grant (.prepared prepared) who
+
+/-- Until end of turn, `who`'s base power and toughness become `power` and `toughness` (CR 613.4b Layer 7b). -/
+@[match_pattern] abbrev setBasePT (power toughness : NumberSelector) (who : ObjectSelector := .target) : Resolution :=
+  .grant (.basePT power toughness) who
+
+/-- Gain control of the announced permanents, as `how` says (CR 613.1b Layer 2). -/
+@[match_pattern] abbrev gainControl (how : TriggerControlHow) : Resolution :=
+  .grant (.control how) .target
+
+/-- The source becomes a copy of `of` (CR 613.1a Layer 1). -/
+@[match_pattern] abbrev becomeCopy (of : ObjectSelector) : Resolution :=
+  .grant (.copy of) .source
+
+/-- If `what` would happen, `instead` happens in its place (CR 614.1). -/
+@[match_pattern] abbrev replace (what : ReplaceEvent) (instead : ReplaceInstead) : Resolution :=
+  .grant (.replace what instead) .target
+
+/-- Spells of `which` cost less this turn, as `n` says (CR 601.2f). -/
+@[match_pattern] abbrev spellsCostLess (which : SpellCostLess) (n : NumberSelector) : Resolution :=
+  .grant (.spellsCostLess which n) .youIfCast
+
+/-- Investigate (create a Clue; CR 701.36). -/
+@[match_pattern] abbrev investigate (who : PlayerSelector := .you) : Resolution :=
+  .grant .investigate (.player who)
+
+/-- Empower Jace, as `n` says (Reality Fracture). -/
+@[match_pattern] abbrev empowerJace (n : NumberSelector) : Resolution :=
+  .grant (.empowerJace n) .youIfCast
+
+/-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
+@[match_pattern] abbrev recruit (who : RecruitSubject := .recruit) : Resolution :=
+  .grant (.recruit who) .youIfCast
+
+/-- Record another resolution of this ability this turn. -/
+@[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : Resolution :=
+  .grant (.noteResolveThisTurn limit) .source
+
+/-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
+@[match_pattern] abbrev mshReflexive (kind paid : Nat) : Resolution :=
+  .grant (.mshReflexive kind paid) .source
+
 /-- A step that used to be a `FraResolution` constructor. -/
 def isFra : Resolution → Bool
   | .destroy .target .drawIfNotAttacking | .destroy .creaturesNotChosenType _ => true
@@ -3241,7 +3161,7 @@ def isFra : Resolution → Bool
   | .surveil (.fixed 1) .eyeOfJace | .putCounters (.ofKind .stun _) (.creaturesControlledBy .eachOpponent) | .discard .lootThenCountersPerDiscard => true
   | .dealDamage (.fixed 1) (.player .eachOpponent) .addRedIfMountain | .putCounters .minusOneGreatestGraveyardMv (.creaturesControlledBy .eachOpponent) | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo => true
   | .proliferate (.fixed _) .youControl | .grant .artifactCreatureVehicle .source | .loseLife (.fixed 1) .extort => true
-  | .queueReflexive (.mshReflexive _ _) | .mshReflexive .. | .chooseModes _ (.hawkeyeIndices _) | .mayCast .boastExiled .unlimited .withoutPaying _ | .becomeCopy .sourceSpellXTimes => true
+  | .queueReflexive (.mshReflexive _ _) | .mshReflexive _ _ | .chooseModes _ (.hawkeyeIndices _) | .mayCast .boastExiled .unlimited .withoutPaying _ | .becomeCopy .sourceSpellXTimes => true
   | .mayCast .milledSpell .causingSpell .withoutPaying _ | .pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample | .grant .emrakulManaAndCast .target => true
   | .cant (.beCountered .nextSpellThisTurn) | .exile .target .forLater .revealUntilCreatureOrPlaneswalker | .destroy .target .drawIfLegendaryEnchantment | .grant (.choiceOfKeywords _) .source => true
   | .putOnLibrary .shuffled .target | .grant .combatDamageDrawTwo .source => true
@@ -3382,7 +3302,31 @@ abbrev TriggerResolution := Resolution
 
 namespace TriggerResolution
 
-export Resolution (onSource)
+export Resolution (
+  onSource
+  lose
+  cant
+  becomeArtifact
+  becomePrepared
+  setBasePT
+  removeCounters
+  untap
+  recruit
+  gainControl
+  noteResolveThisTurn
+  ifElse
+  or
+  spellsCostLess
+  revealFromHand
+  surveil
+  empowerJace
+  loseLife
+  becomeCopy
+  replace
+  investigate
+  proliferate
+  mshReflexive
+)
 
 /-- What `queueReflexive` does with a follow-up resolution.
 `.modeled` queues that MSH reflexive. `times` is how many times a mana
@@ -3645,6 +3589,8 @@ export Resolution (
   ringTempts
   spellsCostLess
   investigate
+  proliferate
+  mshReflexive
   connive
   fight
   revealFromHand
