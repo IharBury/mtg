@@ -313,9 +313,8 @@ instance : BEq ManaCost where
 
 end ManaCost
 
-/-- What a Reality Fracture restricted mana ability's mana may be spent on
-(CR 106.6). -/
-inductive FraManaUse where
+/-- What a restricted mana ability's mana may be spent on (CR 106.6). -/
+inductive ManaUse where
   /-- Anything except casting spells from your hand (Heartwood Crafter). -/
   | notSpellsFromHand
   /-- Only casting a planeswalker spell (Gideon's Memorial). -/
@@ -341,7 +340,10 @@ inductive FraManaUse where
   | subtypeSpell (subtype : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- What a payment is for, as far as `FraManaUse` restrictions care. The
+/-- Backward-compatible alias for `ManaUse` (CR 106.6). -/
+abbrev FraManaUse := ManaUse
+
+/-- What a payment is for, as far as `ManaUse` restrictions care. The
 default is an activated ability or another non-spell payment. -/
 structure ManaSpend where
   spell : Bool := false
@@ -357,7 +359,7 @@ structure ManaSpend where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Whether mana restricted to `u` may pay for `s`. -/
-def FraManaUse.allows : FraManaUse → ManaSpend → Bool
+def ManaUse.allows : ManaUse → ManaSpend → Bool
   | .notSpellsFromHand, s => !(s.spell && s.fromHand)
   | .planeswalkerSpell, s => s.spell && s.planeswalker
   | .noncreatureSpell, s => s.spell && s.noncreature
@@ -372,7 +374,7 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
 
 /-- Short label for a restriction in pool notation. -/
-def FraManaUse.label : FraManaUse → String
+def ManaUse.label : ManaUse → String
   | .notSpellsFromHand => "not spells from hand"
   | .planeswalkerSpell => "planeswalker spells"
   | .noncreatureSpell => "noncreature spells"
@@ -385,8 +387,12 @@ def FraManaUse.label : FraManaUse → String
   | .subtypeSpell sub => s!"{sub} spells"
 
 /-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
-def FraManaUse.forSubtype (subtype : String) : FraManaUse :=
+def ManaUse.forSubtype (subtype : String) : ManaUse :=
   if subtype == "Dragon" then .dragonSpell else .subtypeSpell subtype
+
+/-- Backward-compatible alias for `ManaUse.forSubtype`. -/
+abbrev FraManaUse.forSubtype := ManaUse.forSubtype
+
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/

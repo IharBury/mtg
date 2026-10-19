@@ -17,66 +17,186 @@ structure ChapterSpell where
   resolution : SpellResolution := .grant .extraLand .youIfCast
 deriving Repr, Inhabited, BEq
 
-/-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
-Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
-wording. -/
+/-- How a printed Saga chapter resolves (CR 714.3). Unified onto `ChapterSpell`
+(`EffectTargeting` + `Resolution` + printed `phrase`); named constructors in
+`ChapterResolution` build the corresponding `ChapterSpell`. -/
 inductive ChapterResolution where
-  /-- This Saga deals `n` damage to target creature an opponent controls. -/
-  | dealDamageToOppCreature (n : Nat)
-  /-- Destroy target artifact an opponent controls. -/
-  | destroyOppArtifact
-  /-- Add this mana (e.g. `{R}`). -/
-  | addMana (mana : ManaType)
-  /-- Search for a basic land, put it into your hand, then shuffle. -/
-  | searchBasicLandToHand
-  /-- This Saga gains landfall: create a 1/1 green Elf. -/
-  | gainLandfallCreateElf
-  /-- Elves you control get +P/+0 and vigilance until end of turn. -/
-  | elvesGetVigilance (power : Int)
-  /-- Target opponent reveals their hand; you choose a nonland; they discard it. -/
-  | opponentDiscardsNonland
-  /-- Amass Goblins `n`. -/
-  | amass (n : Nat)
-  /-- Target opponent loses `n` life and you gain `n` life. -/
-  | opponentLosesYouGain (n : Nat)
-  /-- Target creature you control gains hexproof while this Saga remains. -/
-  | grantHexproofWhileRemains
-  /-- Prevent damage that would be dealt by up to one target creature while
-  this Saga remains. -/
-  | preventDamageWhileRemains
-  /-- Draw `n` cards. -/
-  | draw (n : Nat)
-  /-- Search for up to `max` basic Plains, exile them, shuffle, gain `life`. -/
-  | searchBasicPlainsExileGainLife (max life : Nat)
-  /-- Put a card exiled with this Saga into its owner's hand. -/
-  | returnLinkedExileToHand
-  /-- Whenever you attack this turn, a target creature you control gets
-  +1/+1 per Plains you control. -/
-  | grantAttackPumpPerPlainsThisTurn
-  /-- Exile up to one target creature or land you control; return it at the
-  beginning of the next end step. -/
-  | blinkUntilEndStep
-  /-- Create a Treasure. Then if you control four or more, sacrifice this
-  Saga. If you do, create a 6/6 red Dragon with flying. -/
-  | treasureThenDragonIfFour
-  /-- Recruit. -/
-  | recruit
-  /-- Return target creature card with mana value `n` or less from your
-  graveyard to the battlefield. -/
-  | returnCreatureFromGyMvAtMost (n : Nat)
-  /-- Put a +1/+1 counter on up to one target creature. -/
-  | plusOneUpToOne
-  /-- Gain control of up to two creatures with total mana value `n` or less
-  for as long as this Saga remains. -/
-  | gainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat)
-  /-- This Saga deals `n` damage to each creature that is not this subtype
-  and to each opponent. -/
-  | dealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String)
-  /-- This Saga deals X damage to target opponent, where X is the greatest
-  mana value among artifacts you control. -/
-  | dealXDamageToTargetOpponentGreatestArtifactMv
-  /-- A spell-shaped MSH Saga chapter. -/
+  /-- A Saga chapter (CR 714.3). -/
   | spell (s : ChapterSpell)
 deriving Repr, Inhabited, BEq
 
+namespace ChapterResolution
+
+/-- This Saga deals `n` damage to target creature an opponent controls. -/
+def dealDamageToOppCreature (n : Nat) : ChapterResolution :=
+  .spell {
+    targeting := .of .oppCreature
+    phrase := s!"this Saga deals {n} damage to target creature an opponent controls"
+    resolution := .dealDamage (.fixed n) .target }
+
+/-- Destroy target artifact an opponent controls. -/
+def destroyOppArtifact : ChapterResolution :=
+  .spell {
+    targeting := .of .oppArtifact
+    phrase := "destroy target artifact an opponent controls"
+    resolution := .destroy .target }
+
+/-- Add this mana (e.g. `{R}`). -/
+def addMana (mana : ManaType) : ChapterResolution :=
+  .spell {
+    phrase := s!"add {mana}"
+    resolution := .addMana #[mana] }
+
+/-- Search for a basic land, put it into your hand, then shuffle. -/
+def searchBasicLandToHand : ChapterResolution :=
+  .spell {
+    phrase := searchLibraryToHandPhrase "a basic land card"
+    resolution := .searchLibrary (.returnToHand .basicLand) }
+
+/-- This Saga gains landfall: create a 1/1 green Elf. -/
+def gainLandfallCreateElf : ChapterResolution :=
+  .spell {
+    phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+    resolution := .grant .landfallCreateElf .source }
+
+/-- Elves you control get +P/+0 and vigilance until end of turn. -/
+def elvesGetVigilance (power : Int) : ChapterResolution :=
+  .spell {
+    phrase := s!"Elves you control get {signedStat power}/+0 and gain vigilance until end of turn"
+    resolution := .sequence [
+      .pump (.fixed power) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
+      .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] }
+
+/-- Target opponent reveals their hand; you choose a nonland; they discard it. -/
+def opponentDiscardsNonland : ChapterResolution :=
+  .spell {
+    targeting := .of .opponent
+    phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card"
+    resolution := .discard .chosenNonland }
+
+/-- Amass Goblins `n`. -/
+def amass (n : Nat) : ChapterResolution :=
+  .spell {
+    phrase := s!"amass Goblins {n}"
+    resolution := .amass (.fixed n) }
+
+/-- Target opponent loses `n` life and you gain `n` life. -/
+def opponentLosesYouGain (n : Nat) : ChapterResolution :=
+  .spell {
+    targeting := .of .opponent
+    phrase := s!"target opponent loses {n} life and you gain {n} life"
+    resolution := .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed n)] }
+
+/-- Target creature you control gains hexproof while this Saga remains. -/
+def grantHexproofWhileRemains : ChapterResolution :=
+  .spell {
+    targeting := .of .creatureYouControl
+    phrase := "target creature you control gains hexproof for as long as this Saga remains on the battlefield"
+    resolution := .grant .hexproofWhileSource .target }
+
+/-- Prevent damage that would be dealt by up to one target creature while
+this Saga remains. -/
+def preventDamageWhileRemains : ChapterResolution :=
+  .spell {
+    targeting := .of .creature
+    allowsZeroTargets := true
+    phrase := "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
+    resolution := .grant .preventDamageWhileSource .target }
+
+/-- Draw `n` cards. -/
+def draw (n : Nat) : ChapterResolution :=
+  .spell {
+    phrase := s!"draw {cardPhrase n}"
+    resolution := .draw (.fixed n) }
+
+/-- Search for up to `max` basic Plains, exile them, shuffle, gain `life`. -/
+def searchBasicPlainsExileGainLife (max life : Nat) : ChapterResolution :=
+  .spell {
+    phrase := s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
+    resolution := .sequence [
+      .searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
+      .gainLife (.fixed life)] }
+
+/-- Put a card exiled with this Saga into its owner's hand. -/
+def returnLinkedExileToHand : ChapterResolution :=
+  .spell {
+    phrase := "put a card exiled with this Saga into its owner's hand"
+    resolution := .returnToHand .linkedExile }
+
+/-- Whenever you attack this turn, a target creature you control gets
++1/+1 per Plains you control. -/
+def grantAttackPumpPerPlainsThisTurn : ChapterResolution :=
+  .spell {
+    phrase := "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
+    resolution := .queueReflexive (.pump .perPlains .perPlains .target) }
+
+/-- Exile up to one target creature or land you control; return it at the
+beginning of the next end step. -/
+def blinkUntilEndStep : ChapterResolution :=
+  .spell {
+    targeting := .of .creatureOrLandYouControl
+    allowsZeroTargets := true
+    phrase := "exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step"
+    resolution := .exile .target .nextEndStep }
+
+/-- Create a Treasure. Then if you control four or more, sacrifice this
+Saga. If you do, create a 6/6 red Dragon with flying. -/
+def treasureThenDragonIfFour : ChapterResolution :=
+  .spell {
+    phrase := "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
+    resolution := .sequence [
+      .createTokens .treasure (.fixed 1) false,
+      .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4)))
+        (.sacrifice (.sacrificedSource .isSacrificed) .noted),
+      .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] }
+
+/-- Recruit. -/
+def recruit : ChapterResolution :=
+  .spell {
+    phrase := "recruit"
+    resolution := .recruit }
+
+/-- Return target creature card with mana value `n` or less from your
+graveyard to the battlefield. -/
+def returnCreatureFromGyMvAtMost (n : Nat) : ChapterResolution :=
+  .spell {
+    targeting := .of (.creatureCardInYourGraveyardMvAtMost n)
+    phrase := s!"return target creature card with mana value {n} or less from your graveyard to the battlefield"
+    resolution := .put (.creatureMvAtMost n) }
+
+/-- Put a +1/+1 counter on up to one target creature. -/
+def plusOneUpToOne : ChapterResolution :=
+  .spell {
+    targeting := .of .creature
+    allowsZeroTargets := true
+    phrase := "put a +1/+1 counter on up to one target creature"
+    resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
+
+/-- Gain control of up to two creatures with total mana value `n` or less
+for as long as this Saga remains. -/
+def gainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat) : ChapterResolution :=
+  .spell {
+    targeting := .of (.upToTwoCreaturesTotalMvAtMost n)
+    allowsZeroTargets := true
+    phrase := s!"Gain control of up to two target creatures with total mana value {n} or less for as long as this Saga remains on the battlefield"
+    resolution := .gainControl .whileSourceRemains }
+
+/-- This Saga deals `n` damage to each creature that is not this subtype
+and to each opponent. -/
+def dealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String) : ChapterResolution :=
+  .spell {
+    phrase := s!"This Saga deals {n} damage to each non-{subtype} creature and each opponent"
+    resolution := .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) }
+
+/-- This Saga deals X damage to target opponent, where X is the greatest
+mana value among artifacts you control. -/
+def dealXDamageToTargetOpponentGreatestArtifactMv : ChapterResolution :=
+  .spell {
+    targeting := .of .opponent
+    phrase := "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"
+    resolution := .dealDamage .greatestArtifactMv (.player (.target .opponent)) }
+
+end ChapterResolution
+
 end Mtg.Engine
+

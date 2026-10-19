@@ -1612,9 +1612,9 @@ namespace ActivatedAbility
 def fra (printed : String) (effect : Effect) (cost : ActivationCost)
     (onlyAsSorcery := false) (onlyDuringYourTurn := false)
     (activateFromGraveyard := false) (activateFromHand := false) (exhaust := false)
-    (cond : FraActivationCondition := .none) : ActivatedAbility :=
+    (cond : ActivationCondition := .none) : ActivatedAbility :=
   { cost, effect, printed, onlyAsSorcery, onlyDuringYourTurn, activateFromGraveyard,
-    activateFromHand, exhaust, fraCondition := cond }
+    activateFromHand, exhaust, condition := cond }
 
 end ActivatedAbility
 

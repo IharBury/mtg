@@ -330,8 +330,12 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .fight .announced (.timesPower k) =>
     if k == 1 then return .fight .announced (.timesPower 1)
     else return .fight .announced (.timesPower (← takeNat k))
+  | .searchLibrary (.exile (.basicUpTo s max) .forLater .linked) =>
+    return .searchLibrary (.exile (.basicUpTo s (← takeNat max)) .forLater .linked)
   | .dealDamage (.fixed n) (.nonSubtypeCreatures subtype) note =>
     return .dealDamage (.fixed (← takeNat n.toNat)) (.nonSubtypeCreatures (← takeStr subtype)) note
+  | .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) note =>
+    return .dealDamage (.fixed (← takeNat n.toNat)) (.eachNonSubtypeAndOpponents (← takeStr subtype)) note
   | .dealDamage (.fixed n) who note =>
     return .dealDamage (.fixed (← takeNat n.toNat)) who note
   | .amass (.fixed n) subtype =>
@@ -380,23 +384,14 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
 
 def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
   match c with
-  | .dealDamageToOppCreature n => return .dealDamageToOppCreature (← takeNat n)
-  | .elvesGetVigilance p => return .elvesGetVigilance (← takeInt p)
-  | .amass n => return .amass (← takeNat n)
-  | .opponentLosesYouGain n => return .opponentLosesYouGain (← takeNat n)
-  | .draw n => return .draw (← takeNat n)
-  | .searchBasicPlainsExileGainLife a b =>
-    return .searchBasicPlainsExileGainLife (← takeNat a) (← takeNat b)
-  | .returnCreatureFromGyMvAtMost n => return .returnCreatureFromGyMvAtMost (← takeNat n)
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
-    return .gainControlOfUpToTwoCreaturesTotalMvAtMost (← takeNat n)
-  | .dealDamageToEachNonSubtypeAndOpponents n s =>
-    return .dealDamageToEachNonSubtypeAndOpponents (← takeNat n) (← takeStr s)
   | .spell s =>
-    return .spell { s with
-      targeting := ← takeTargeting s.targeting
-      resolution := ← takeSpell s.resolution }
-  | c => return c
+    let targeting ← takeTargeting s.targeting
+    let resolution ←
+      match targeting.kind, s.resolution with
+      | .creatureCardInYourGraveyardMvAtMost n, .put (.creatureMvAtMost _) how note =>
+        pure (.put (.creatureMvAtMost n) how note)
+      | _, r => takeSpell r
+    return .spell { s with targeting, resolution }
 
 def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   match e with
@@ -643,11 +638,24 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .sneak c => return .sneak (← takeCost c)
   | ab => return ab
 
+def takeCostPick (p : CostPick) : ArgM CostPick := do
+  match p with
+  | .sacrificeAnotherSubtype s => return .sacrificeAnotherSubtype (← takeStr s)
+  | p => return p
+
 def takeCostFields (c : ActivationCost) : ArgM ActivationCost := do
   let mana ← takeCost c.mana
   let payLife ← if c.payLife == 0 then pure c.payLife else takeNat c.payLife
-  let sacrificeAnotherSubtype ← takeOptStr c.sacrificeAnotherSubtype
-  return { c with mana, payLife, sacrificeAnotherSubtype }
+  let picks ← c.picks.mapM takeCostPick
+  return { c with mana, payLife, picks }
+
+def takeActivationCondition (c : ActivationCondition) : ArgM ActivationCondition := do
+  match c with
+  | .youControlCreatureToughnessAtLeast n =>
+    return .youControlCreatureToughnessAtLeast (← takeNat n)
+  | .gyCreaturesAtLeast n =>
+    return .gyCreaturesAtLeast (← takeNat n)
+  | c => return c
 
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let cost ← takeCostFields ab.cost
@@ -659,20 +667,14 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let equipSubtype ← takeOptStr ab.equipSubtype
   let costReductionPerEquipment ←
     if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
-  let onlyIfYouControlCreatureToughnessAtLeast ←
-    if ab.onlyIfYouControlCreatureToughnessAtLeast == 0 then pure 0
-    else takeNat ab.onlyIfYouControlCreatureToughnessAtLeast
-  let onlyIfGyCreaturesAtLeast ←
-    if ab.onlyIfGyCreaturesAtLeast == 0 then pure 0
-    else takeNat ab.onlyIfGyCreaturesAtLeast
+  let condition ← takeActivationCondition ab.condition
   let costReductionIfTargetPowerAtMost ←
     match ab.costReductionIfTargetPowerAtMost with
     | none => pure none
     | some (n, p) => pure (some (← takeNat n, ← takeInt p))
   return { ab with
     cost, effect, otherModes, costReductionIfYouControlLegendary, equipSubtype
-    costReductionPerEquipment, onlyIfYouControlCreatureToughnessAtLeast
-    onlyIfGyCreaturesAtLeast, costReductionIfTargetPowerAtMost }
+    costReductionPerEquipment, condition, costReductionIfTargetPowerAtMost }
 
 def takeOpts (o : SharedTriggerOpts) : ArgM SharedTriggerOpts := do
   return { o with
@@ -1567,9 +1569,6 @@ def finishEffect (old new : Effect) : Effect :=
   | some (.chapter k (.spell s)) =>
     let s := { s with phrase := splicePhrase s.phrase oldArgs newArgs }
     let ce : ChapterResolution := .spell s
-    let rebuilt := Effect.ofChapter ce
-    { rebuilt with sharedTrigger := some (.chapter k ce) }
-  | some (.chapter k ce) =>
     let rebuilt := Effect.ofChapter ce
     { rebuilt with sharedTrigger := some (.chapter k ce) }
   | some te =>

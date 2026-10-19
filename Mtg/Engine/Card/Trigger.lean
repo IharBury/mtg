@@ -74,74 +74,9 @@ structure TriggerTiming where
   thisOrAnotherSubtype : Option String := none
 deriving Repr, Inhabited, BEq
 
-/-- Targeting and resolution for a printed Saga chapter (CR 714.3).
-The chapter is still stored as `ChapterResolution`. What resolves is one
-of these `TriggerResolution` constructors. -/
+/-- Targeting and resolution for a printed Saga chapter (CR 714.3). -/
 def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   match e with
-  | .dealDamageToOppCreature n =>
-    { targeting := .of .oppCreature, resolution := .dealDamage (.fixed n) .target }
-  | .destroyOppArtifact =>
-    { targeting := .of .oppArtifact, resolution := .destroy .target }
-  | .addMana mana =>
-    { resolution := .addMana #[mana] }
-  | .searchBasicLandToHand =>
-    { resolution := .searchLibrary (.returnToHand .basicLand) }
-  | .gainLandfallCreateElf =>
-    { resolution := .grant .landfallCreateElf .source }
-  | .elvesGetVigilance p =>
-    { resolution := .sequence [
-        .pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
-        .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] }
-  | .opponentDiscardsNonland =>
-    { targeting := .of .opponent
-      resolution := .discard .chosenNonland }
-  | .amass n =>
-    { resolution := .amass (.fixed n) }
-  | .opponentLosesYouGain n =>
-    { targeting := .of .opponent
-      resolution := .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed n)] }
-  | .grantHexproofWhileRemains =>
-    { targeting := .of .creatureYouControl
-      resolution := .grant .hexproofWhileSource .target }
-  | .preventDamageWhileRemains =>
-    { targeting := .of .creature, allowsZeroTargets := true
-      resolution := .grant .preventDamageWhileSource .target }
-  | .draw n =>
-    { resolution := .draw (.fixed n) }
-  | .searchBasicPlainsExileGainLife max life =>
-    { resolution := .sequence [
-        .searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
-        .gainLife (.fixed life)] }
-  | .returnLinkedExileToHand =>
-    { resolution := .returnToHand .linkedExile }
-  | .grantAttackPumpPerPlainsThisTurn =>
-    { resolution := .queueReflexive (.pump .perPlains .perPlains .target) }
-  | .blinkUntilEndStep =>
-    { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
-      resolution := .exile .target .nextEndStep }
-  | .treasureThenDragonIfFour =>
-    { resolution := .sequence [
-        .createTokens .treasure (.fixed 1) false,
-        .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4)))
-          (.sacrifice (.sacrificedSource .isSacrificed) .noted),
-        .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] }
-  | .recruit =>
-    { resolution := .recruit }
-  | .returnCreatureFromGyMvAtMost n =>
-    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n)
-      resolution := .put (.creatureMvAtMost n) }
-  | .plusOneUpToOne =>
-    { targeting := .of .creature, allowsZeroTargets := true
-      resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
-    { targeting := .of (.upToTwoCreaturesTotalMvAtMost n), allowsZeroTargets := true
-      resolution := .gainControl .whileSourceRemains }
-  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    { resolution := .dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype) }
-  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
-    { targeting := .of .opponent
-      resolution := .dealDamage .greatestArtifactMv (.player (.target .opponent)) }
   | .spell s =>
     { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
       resolution := TriggerResolution.ofSpell s.resolution }

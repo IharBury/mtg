@@ -1135,9 +1135,9 @@ namespace SharedTrigger
 
 end SharedTrigger
 
-/-- A Reality Fracture intervening “if” clause (CR 603.4), checked when the
+/-- An intervening “if” clause (CR 603.4), checked when the
 ability triggers and again as it resolves. -/
-inductive FraCondition where
+inductive InterveningCondition where
   | none
   /-- “if it isn't a token” (the source, as it last existed). -/
   | sourceNotToken
@@ -1158,6 +1158,10 @@ inductive FraCondition where
   /-- “if this has counters on it”. -/
   | sourceHasCounters
 deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Backward-compatible alias for `InterveningCondition` (CR 603.4). -/
+abbrev FraCondition := InterveningCondition
+
 
 /-- Optional intervening conditions and wording filters for `triggered`. -/
 structure SharedTriggerOpts where

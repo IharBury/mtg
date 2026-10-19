@@ -22,6 +22,10 @@ Recent commits have systematically moved the engine toward **one compositional I
 6. **Unified `ObjectSelector` (CR 109 / CR 400) and `SharedTrigger` (CR 603 / CR 608) Inductives**:
    - Grouped the 167 non-recursive leaf constructors of `ObjectSelector` (`Mtg/Engine/Card/SpellResolution.lean`) into 5 CR 109 / CR 400 zone and object-category sub-inductives (`TargetObject`, `BattlefieldObject`, `GraveyardExileObject`, `LibraryHandObject`, `SacrificeStackObject`) with `@[match_pattern] abbrev` aliases, reducing `ObjectSelector` from **177** to **15 constructors** (**13 field-bearing** + **2 nullary**).
    - Grouped the 166 effect and leftover constructors of `SharedTrigger` (`Mtg/Engine/Card/SharedTrigger.lean`) into 7 CR 603 / CR 608 / CR 701 effect-category sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`) with `@[match_pattern] abbrev` aliases and category-factored `SharedTrigger.timing` (`Mtg/Engine/Card/Trigger.lean`), reducing `SharedTrigger` from **169** to **10 constructors** (all **10 field-bearing**).
+7. **Unified `ChapterResolution` (CR 714.3), `ActivationCost` / `CostPick` (CR 602.2b), and `ActivationCondition` (CR 602.5b)**:
+   - Reduced `ChapterResolution` (`Mtg/Engine/Card/Chapter.lean`) from **24 constructors (9 field-bearing + 15 nullary)** to **1 constructor** (`| spell (s : ChapterSpell)`) wrapping `Resolution`, with all 23 named HOB/MSH chapter constructors retained as builder functions in `namespace ChapterResolution`, and simplified `Effect.ofChapter` (`ChapterEffects.lean`), `TriggeredAbility.chapterTiming` (`Trigger.lean`), and `takeChapter` (`OracleArgs.lean`) to a single `.spell s` arm.
+   - Unified the 9 chosen-object boolean/option fields on `ActivationCost` (`discardACard`, `discardLegendarySameName`, `sacrificeLegendaryArtifact`, `sacrificeArtifact`, `sacrificeArtifactOrCreature`, `sacrificeArtifactOrDiscardNonland`, `sacrificeEquipmentAttachedToSource`, `tapAnUntappedCreatureYouControl`, `sacrificeAnotherSubtype`) into `picks : Array CostPick := #[]` (`Mtg/Engine/Card/ActivatedAbility.lean`, CR 602.2b).
+   - Unified `FraActivationCondition` and the 5 `onlyIf*` fields on `ActivatedAbility` (`onlyIfYouControlLegendary`, `onlyIfYouAttackedWithTwoOrMore`, `onlyIfOpponentDealtNoncombatDamage`, `onlyIfYouControlCreatureToughnessAtLeast`, `onlyIfGyCreaturesAtLeast`) into a single CR 602.5b `ActivationCondition` inductive (`condition : ActivationCondition := .none` on `ActivatedAbility`) and aligned `ExtraActivationCost` (CR 602.1), `InterveningCondition` (CR 603.4), and `ManaUse` (CR 106.6) with CR terminology.
 
 The sections below document the remaining duplication left over from earlier per-set iterations (`HOB`, `MSH`, `FRA`, `FRC`) and how to complete this unification cleanly.
 
@@ -59,22 +63,23 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 3: Eliminate `Effect.sharedTrigger : Option SharedTrigger`, `ChapterResolution`, and the 9 `*Leftover` Families
+### Priority 3: Eliminate `Effect.sharedTrigger : Option SharedTrigger` and the 9 `*Leftover` Families
 - **Files**:
   - `Mtg/Engine/Card/Effect.lean` (line 45)
   - `Mtg/Engine/Card/SharedTrigger.lean` (lines 15–560)
-  - `Mtg/Engine/Card/Chapter.lean` & `Mtg/Engine/Card/ChapterEffects.lean`
-  - `Mtg/Engine/Card/Trigger.lean` (`chapterTiming` L51–116, `SharedTrigger.timing` L216–1200)
+  - `Mtg/Engine/Card/Trigger.lean` (`SharedTrigger.timing` L216–1200)
   - `Mtg/Engine/Card/TriggerEffects.lean`
   - `Mtg/Engine/Card/TriggeredAbility.lean` (lines 19–51, 1876–2182)
   - `Mtg/Engine/Card/OracleArgs.lean` (lines 400–473, 513–518)
-- **What is duplicated**:
-  - Every HOB/HOC/MSH triggered ability and Saga chapter stores its payload **twice** on `Effect`: once as `resolution : Resolution` (computed via `SharedTrigger.timing` or `TriggeredAbility.chapterTiming`) and once as `sharedTrigger : Option SharedTrigger`.
+- **Completed**:
+  - Unified `ChapterResolution` (`Mtg/Engine/Card/Chapter.lean`, CR 714.3) into a single constructor (`| spell (s : ChapterSpell)`) wrapping `Resolution`, eliminating the 23 duplicate Saga chapter constructors and the 24-arm match trees in `ChapterEffects.lean` and `Trigger.lean`.
+- **What remains duplicated**:
+  - Every HOB/HOC/MSH triggered ability stores its payload **twice** on `Effect`: once as `resolution : Resolution` (computed via `SharedTrigger.timing`) and once as `sharedTrigger : Option SharedTrigger`.
   - Meanwhile, FRA triggers (`TriggeredAbility.fra` in `TriggeredAbility.lean:2204`) already work with `sharedTrigger := none`, storing their effect directly in `Effect.resolution` and their text in `SharedTriggerOpts.printed` / `Effect.phrase`.
 - **How to refactor**:
-  - Construct trigger and chapter `Effect`s directly with compositional `Resolution` trees and `Effect.phrase`.
+  - Construct trigger `Effect`s directly with compositional `Resolution` trees and `Effect.phrase`.
   - Update `OracleArgs.takeEffect` and `TriggeredAbility.toNotation` to read `e.resolution` / `e.phrase` directly instead of branching on `e.sharedTrigger`.
-  - Delete `SharedTrigger`, the 9 `*Leftover` enums (`EnterLeftover`, `StepLeftover`, `DeathLeftover`, `ThisAttackLeftover`, `EnterOrAttackLeftover`, `WatchLeftover`, `YouAttackLeftover`, `CastLeftover`, `ResourceLeftover`), `ChapterResolution`, and `TriggerEffects.lean` (~2,500 lines removed).
+  - Delete `SharedTrigger`, the 9 `*Leftover` enums (`EnterLeftover`, `StepLeftover`, `DeathLeftover`, `ThisAttackLeftover`, `EnterOrAttackLeftover`, `WatchLeftover`, `YouAttackLeftover`, `CastLeftover`, `ResourceLeftover`), and `TriggerEffects.lean` (~2,500 lines removed).
 
 ---
 

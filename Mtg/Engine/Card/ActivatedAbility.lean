@@ -41,8 +41,60 @@ def counters : LoyaltySymbol → Option Int
 
 end LoyaltySymbol
 
-/-- Reality Fracture activation costs (CR 602.1 / 118). -/
-inductive FraCost where
+/-- Part of an activation cost that needs the player to choose what to pay
+with (CR 601.2h / 602.2b). -/
+inductive CostPick where
+  /-- Sacrifice another permanent of this subtype, or another creature when
+  the subtype is `Creature`. -/
+  | sacrificeAnotherSubtype (subtype : String)
+  | sacrificeArtifact
+  | sacrificeLegendaryArtifact
+  | sacrificeArtifactOrCreature
+  | sacrificeAnotherArtifact
+  | sacrificeAnotherCreatureOrPlaneswalker
+  | sacrificeArtifactOrLand
+  | sacrificeEquipmentAttachedToSource
+  /-- Sacrifice an artifact, or discard a nonland card. -/
+  | sacrificeArtifactOrDiscardNonland
+  | discardACard
+  /-- Discard a nonland card. -/
+  | discardNonland
+  | discardLegendaryCard
+  /-- Discard a legendary card with the same name as a legendary permanent
+  you control. -/
+  | discardLegendarySameName
+  | exileAnotherCreatureCardFromGraveyard
+  | tapUntappedCreature
+  | tapTwoUntappedArtifacts
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- How many objects `pick` takes. -/
+def CostPick.count : CostPick → Nat
+  | .tapTwoUntappedArtifacts => 2
+  | _ => 1
+
+/-- The cost phrase of `pick`, for prompts and logs. -/
+def CostPick.phrase : CostPick → String
+  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
+  | .sacrificeArtifact => "sacrifice an artifact"
+  | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
+  | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
+  | .sacrificeAnotherArtifact => "sacrifice another artifact"
+  | .sacrificeAnotherCreatureOrPlaneswalker => "sacrifice another creature or planeswalker"
+  | .sacrificeArtifactOrLand => "sacrifice an artifact or land"
+  | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
+  | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"
+  | .discardACard => "discard a card"
+  | .discardNonland => "discard a nonland card"
+  | .discardLegendaryCard => "discard a legendary card"
+  | .discardLegendarySameName =>
+    "discard a legendary card with the same name as a legendary permanent you control"
+  | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
+  | .tapUntappedCreature => "tap an untapped creature you control"
+  | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
+
+/-- Additional non-mana activation costs (CR 602.1 / 118). -/
+inductive ExtraActivationCost where
   | none
   /-- Exile another creature card from your graveyard. -/
   | exileAnotherCreatureCardFromGraveyard
@@ -69,8 +121,10 @@ inductive FraCost where
   | zemoBoast
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- A Reality Fracture “Activate only if …” condition. -/
-inductive FraActivationCondition where
+abbrev FraCost := ExtraActivationCost
+
+/-- An “Activate only if …” restriction on an activated ability (CR 602.5b). -/
+inductive ActivationCondition where
   | none
   /-- “Activate only if you've scried or surveilled this turn.” -/
   | scriedOrSurveilledThisTurn
@@ -79,7 +133,19 @@ inductive FraActivationCondition where
   /-- “Activate only if there are `n` or more loyalty counters among Jaces you
   control.” -/
   | jaceLoyaltyAtLeast (n : Nat)
+  /-- “Activate only if you control a legendary creature.” -/
+  | youControlLegendary
+  /-- “Activate only if you attacked with two or more creatures this turn.” -/
+  | youAttackedWithTwoOrMore
+  /-- “Activate only if an opponent has been dealt noncombat damage this turn.” -/
+  | opponentDealtNoncombatDamage
+  /-- “Activate only if you control a creature with toughness `n` or greater.” -/
+  | youControlCreatureToughnessAtLeast (n : Nat)
+  /-- “Activate only if there are `n` or more creature cards in your graveyard.” -/
+  | gyCreaturesAtLeast (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+abbrev FraActivationCondition := ActivationCondition
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
@@ -97,34 +163,18 @@ structure ActivationCost where
   discardSource : Bool := false
   /-- Exile this card from your graveyard. -/
   exileSourceFromGraveyard : Bool := false
-  /-- Sacrifice another permanent you control of this subtype. -/
-  sacrificeAnotherSubtype : Option String := none
-  /-- Discard a card (not necessarily this card). -/
-  discardACard : Bool := false
-  /-- Tap an untapped creature you control. -/
-  tapAnUntappedCreatureYouControl : Bool := false
   /-- Remove an indestructible counter from the source (Arwen). -/
   removeIndestructibleCounter : Bool := false
-  /-- Sacrifice a legendary artifact you control (Mount Doom). -/
-  sacrificeLegendaryArtifact : Bool := false
-  /-- Discard a legendary card with the same name as a legendary you control. -/
-  discardLegendarySameName : Bool := false
-  /-- Sacrifice an artifact you control (Stone-Giant). -/
-  sacrificeArtifact : Bool := false
-  /-- Sacrifice an artifact or creature you control. -/
-  sacrificeArtifactOrCreature : Bool := false
-  /-- Sacrifice an artifact or discard a nonland card. -/
-  sacrificeArtifactOrDiscardNonland : Bool := false
   /-- Remove any number of +1/+1 counters from the source. -/
   removeAnyNumberPlusOne : Bool := false
   /-- Put a stun counter on the source. -/
   putStunCounterOnSource : Bool := false
-  /-- Sacrifice an Equipment attached to the source. -/
-  sacrificeEquipmentAttachedToSource : Bool := false
-  /-- A Reality Fracture cost. -/
-  fra : FraCost := .none
   /-- Remove a story counter from the source. -/
   removeStoryCounter : Bool := false
+  /-- Chosen-object costs (sacrificing, discarding, tapping, or exiling chosen objects). -/
+  picks : Array CostPick := #[]
+  /-- Additional activation cost. -/
+  fra : ExtraActivationCost := .none
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -132,6 +182,35 @@ namespace ActivationCost
 /-- True when this cost contains a loyalty symbol (CR 209.2). -/
 def isLoyalty (c : ActivationCost) : Bool :=
   c.loyalty.isSome
+
+def discardACard (c : ActivationCost) : Bool :=
+  c.picks.contains .discardACard
+
+def discardLegendarySameName (c : ActivationCost) : Bool :=
+  c.picks.contains .discardLegendarySameName
+
+def sacrificeLegendaryArtifact (c : ActivationCost) : Bool :=
+  c.picks.contains .sacrificeLegendaryArtifact
+
+def sacrificeArtifact (c : ActivationCost) : Bool :=
+  c.picks.contains .sacrificeArtifact
+
+def sacrificeArtifactOrCreature (c : ActivationCost) : Bool :=
+  c.picks.contains .sacrificeArtifactOrCreature
+
+def sacrificeArtifactOrDiscardNonland (c : ActivationCost) : Bool :=
+  c.picks.contains .sacrificeArtifactOrDiscardNonland
+
+def sacrificeEquipmentAttachedToSource (c : ActivationCost) : Bool :=
+  c.picks.contains .sacrificeEquipmentAttachedToSource
+
+def tapAnUntappedCreatureYouControl (c : ActivationCost) : Bool :=
+  c.picks.contains .tapUntappedCreature
+
+def sacrificeAnotherSubtype (c : ActivationCost) : Option String :=
+  c.picks.findSome? fun
+    | .sacrificeAnotherSubtype t => some t
+    | _ => none
 
 def toNotation (c : ActivationCost) : String :=
   let parts : List String :=
@@ -193,8 +272,8 @@ structure ActivatedAbility where
   printed : String := ""
   /-- Exhaust: activate this ability only once (CR 702.177). -/
   exhaust : Bool := false
-  /-- A Reality Fracture “Activate only if …” condition. -/
-  fraCondition : FraActivationCondition := .none
+  /-- An “Activate only if …” restriction (CR 602.5b). -/
+  condition : ActivationCondition := .none
   /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
   costLessPerPlusOneOnTarget : Bool := false
   /-- First (or only) mode of this ability. -/
@@ -214,8 +293,6 @@ structure ActivatedAbility where
   /-- This ability can be activated only while the source is in your hand
   (CR 112.6 / 702.29, e.g. cycling). -/
   activateFromHand : Bool := false
-  /-- Timing restriction “Activate only if you control a legendary creature”. -/
-  onlyIfYouControlLegendary : Bool := false
   /-- This ability costs this much generic mana less if you control a legendary
   creature (e.g. Esquire of the King). -/
   costReductionIfYouControlLegendary : Nat := 0
@@ -224,26 +301,54 @@ structure ActivatedAbility where
   /-- This ability costs this much generic mana less for each Equipment you
   control. -/
   costReductionPerEquipment : Nat := 0
-  /-- “Activate only if you attacked with two or more creatures this turn.” -/
-  onlyIfYouAttackedWithTwoOrMore : Bool := false
-  /-- “Activate only if an opponent has been dealt noncombat damage this turn.” -/
-  onlyIfOpponentDealtNoncombatDamage : Bool := false
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
   /-- Equip worthy: attach only to a legendary non-Villain red or white
   creature (MSH 118 / 119). Other attach effects ignore this. -/
   equipWorthy : Bool := false
-  /-- “Activate only if you control a creature with toughness `n` or greater.” -/
-  onlyIfYouControlCreatureToughnessAtLeast : Nat := 0
-  /-- “Activate only if there are `n` or more creature cards in your graveyard.” -/
-  onlyIfGyCreaturesAtLeast : Nat := 0
   /-- This ability costs this much generic mana less if it targets a creature
   with power at most this value. -/
   costReductionIfTargetPowerAtMost : Option (Nat × Int) := none
 deriving Repr, Inhabited, BEq
 
+/-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
+def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
+  let c := ab.cost
+  let fra : Array CostPick :=
+    match c.fra with
+    | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
+    | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
+    | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
+    | .sacrificeArtifactOrLand => #[.sacrificeArtifactOrLand]
+    | .discardLegendaryCard => #[.discardLegendaryCard]
+    | .tapTwoUntappedArtifacts => #[.tapTwoUntappedArtifacts]
+    | _ => #[]
+  c.picks ++ fra
+
 namespace ActivatedAbility
+
+def fraCondition (ab : ActivatedAbility) : ActivationCondition :=
+  ab.condition
+
+def onlyIfYouControlLegendary (ab : ActivatedAbility) : Bool :=
+  ab.condition == .youControlLegendary
+
+def onlyIfYouAttackedWithTwoOrMore (ab : ActivatedAbility) : Bool :=
+  ab.condition == .youAttackedWithTwoOrMore
+
+def onlyIfOpponentDealtNoncombatDamage (ab : ActivatedAbility) : Bool :=
+  ab.condition == .opponentDealtNoncombatDamage
+
+def onlyIfYouControlCreatureToughnessAtLeast (ab : ActivatedAbility) : Nat :=
+  match ab.condition with
+  | .youControlCreatureToughnessAtLeast n => n
+  | _ => 0
+
+def onlyIfGyCreaturesAtLeast (ab : ActivatedAbility) : Nat :=
+  match ab.condition with
+  | .gyCreaturesAtLeast n => n
+  | _ => 0
 
 /-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
 def crewAbility (n : Nat) : ActivatedAbility :=

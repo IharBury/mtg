@@ -749,36 +749,31 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
     (onlyIfGyCreaturesAtLeast : Nat := 0)
     (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none) :
-    ActivatedAbility := {
-  cost := {
-    mana := mana
-    tap := tap
-    sacrificeSource := sacrificeSource
-    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
-    payLife := payLife
-    discardSource := discardSource
-    sacrificeAnotherSubtype := sacrificeAnotherSubtype
-    discardACard := discardACard
-    tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
-    removeIndestructibleCounter := removeIndestructibleCounter
-    sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
-    discardLegendarySameName := discardLegendarySameName
-    sacrificeArtifact := sacrificeArtifact
-    sacrificeArtifactOrCreature := sacrificeArtifactOrCreature
-    sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland
-    removeAnyNumberPlusOne := removeAnyNumberPlusOne
-    putStunCounterOnSource := putStunCounterOnSource
-    sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
-  }
-  effect := effect
-  otherModes := otherModes
-  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
-  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
-  costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-  onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
-  onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
-  costReductionIfTargetPowerAtMost
-}
+    ActivatedAbility :=
+  OracleActivate.activated effect mana
+    (tap := tap) (sacrificeSource := sacrificeSource)
+    (sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact)
+    (onlyAsSorcery := onlyAsSorcery) (onlyDuringYourTurn := onlyDuringYourTurn)
+    (onceEachTurn := onceEachTurn) (otherModes := otherModes) (payLife := payLife)
+    (activateFromGraveyard := activateFromGraveyard) (activateFromHand := activateFromHand)
+    (onlyIfYouControlLegendary := onlyIfYouControlLegendary) (discardSource := discardSource)
+    (costReductionIfYouControlLegendary := costReductionIfYouControlLegendary)
+    (equipSubtype := equipSubtype) (sacrificeAnotherSubtype := sacrificeAnotherSubtype)
+    (discardACard := discardACard) (costReductionPerEquipment := costReductionPerEquipment)
+    (tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl)
+    (onlyIfYouAttackedWithTwoOrMore := onlyIfYouAttackedWithTwoOrMore)
+    (removeIndestructibleCounter := removeIndestructibleCounter)
+    (sacrificeLegendaryArtifact := sacrificeLegendaryArtifact)
+    (discardLegendarySameName := discardLegendarySameName)
+    (sacrificeArtifact := sacrificeArtifact) (powerUp := powerUp) (equipWorthy := equipWorthy)
+    (sacrificeArtifactOrCreature := sacrificeArtifactOrCreature)
+    (sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland)
+    (removeAnyNumberPlusOne := removeAnyNumberPlusOne)
+    (putStunCounterOnSource := putStunCounterOnSource)
+    (sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource)
+    (onlyIfYouControlCreatureToughnessAtLeast := onlyIfYouControlCreatureToughnessAtLeast)
+    (onlyIfGyCreaturesAtLeast := onlyIfGyCreaturesAtLeast)
+    (costReductionIfTargetPowerAtMost := costReductionIfTargetPowerAtMost)
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/

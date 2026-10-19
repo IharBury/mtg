@@ -1667,7 +1667,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { mana := ⟨#[.generic 3, .colored .black]⟩, exileSourceFromGraveyard := true }
     (activateFromGraveyard := true),
   ActivatedAbility.fra "{T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { tap := true, discardACard := true },
+    { tap := true, picks := #[.discardACard] },
   ActivatedAbility.fra
     "{3}{R}: Exile target creature or planeswalker you control. Reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. Activate only as a sorcery."
     (FraCandidates.ab (.exile .target .forLater .revealUntilCreatureOrPlaneswalker) "Exile target creature or planeswalker you control"
@@ -1739,7 +1739,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       (.filtered TargetFilter.oppCreatureOrPlaneswalker))
     { mana := ManaCost.ofGeneric 6, sacrificeSource := true },
   ActivatedAbility.fra "{2}, {T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 2, tap := true, discardACard := true },
+    { mana := ManaCost.ofGeneric 2, tap := true, picks := #[.discardACard] },
   ActivatedAbility.fra
     "{2}, {T}: Target creature that attacked this turn becomes prepared. Activate only as a sorcery."
     (FraCandidates.ab (.onPermanent .becomePrepared) "Target creature that attacked this turn becomes prepared"
@@ -1754,7 +1754,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     (FraCandidates.ab (.onPermanent (.grantKeywords Keyword.hexproof)) "Another target creature or planeswalker you control gains hexproof until end of turn"
       (.filtered { TargetFilter.creatureOrPlaneswalker with
         noun := "another target creature or planeswalker you control", controller := .you, another := true }))
-    { mana := ManaCost.ofGeneric 1, tap := true, discardACard := true },
+    { mana := ManaCost.ofGeneric 1, tap := true, picks := #[.discardACard] },
   ActivatedAbility.fra "{T}: Return another target permanent you control to its owner's hand. Activate only during your turn."
     (FraCandidates.ab (.returnToHand .target) "Return another target permanent you control to its owner's hand"
       (.filtered { noun := "another target permanent you control", controller := .you, another := true }))

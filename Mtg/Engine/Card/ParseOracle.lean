@@ -1927,7 +1927,7 @@ partial def parseRules (c : CardDef) (lines : List String)
             " Activate only if there are twenty-five or more loyalty counters among Jaces you control."
           let (effectText, cond) :=
             if effectText.endsWith jaceSuffix then
-              ((effectText.dropEnd jaceSuffix.length).copy, FraActivationCondition.jaceLoyaltyAtLeast 25)
+              ((effectText.dropEnd jaceSuffix.length).copy, ActivationCondition.jaceLoyaltyAtLeast 25)
             else (effectText, .none)
           match matchModeled c.name (effectText :: rest) with
           | some (.spell e, n) =>
@@ -1937,20 +1937,20 @@ partial def parseRules (c : CardDef) (lines : List String)
                 if n == 1 then extendSpellSequence c.name e more else (e, more)
               let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
-                c.activatedAbilities.push { ab with fraCondition := cond } } more
+                c.activatedAbilities.push { ab with condition := cond } } more
             else unrecognized c line rest
           | _ =>
             match spellSentenceSequence c.name effectText with
             | some e =>
               let ab : ActivatedAbility := activated e (loyalty := some sym)
               go { c with activatedAbilities :=
-                c.activatedAbilities.push { ab with fraCondition := cond } } rest
+                c.activatedAbilities.push { ab with condition := cond } } rest
             | none =>
               match parseFrcLoyaltyEffect effectText with
               | some e =>
                 let ab : ActivatedAbility := activated e (loyalty := some sym)
                 go { c with activatedAbilities :=
-                  c.activatedAbilities.push { ab with fraCondition := cond } } rest
+                  c.activatedAbilities.push { ab with condition := cond } } rest
               | none => unrecognized c line rest
         | none =>
         match keywordTokens c.name line with
