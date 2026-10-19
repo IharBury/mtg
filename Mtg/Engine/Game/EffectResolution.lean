@@ -354,7 +354,7 @@ def applyGainLifeSearchBasicPlusOne (g : Game) (_controller : PlayerId)
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield && o.isCreature then
-              { g with plusOneAfterSearch := some id }
+              { g with afterLibrarySearch := .plusOneOn id }
             else g.logMsg "The target is no longer legal"
           | none => g.logMsg "The target is no longer legal"
       g.beginLibrarySearch pid isBasicLandCard "a basic land card" (.battlefield true)
@@ -778,9 +778,7 @@ def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
     let inner := { effect with resolution := Resolution.ofSpell r }
     { g with
         pending := .mayResolve controller
-        mayEffect := some inner
-        mayController := controller
-        mayTargets := targets }.logMsg
+        mayEffectState := { effect := some inner, controller, targets } }.logMsg
       s!"{(g.player controller).name} may {phrase}"
 
 /-- Ask a player to choose one resolution in `rs`. A library top-or-bottom
@@ -801,12 +799,13 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
         if o.isOnBattlefield then
           { g with
               pending := .chooseLibraryPlacement o.owner id
-              spellOr := #[
-                asEffect (.onPermanent .putOnTopOfLibrary),
-                asEffect (.onPermanent .putOnBottomOfLibrary)]
-              spellOrController := controller
-              spellOrTargets := targets
-              spellOrLibrary := true }.logMsg
+              spellOrState := {
+                effects := #[
+                  asEffect (.onPermanent .putOnTopOfLibrary),
+                  asEffect (.onPermanent .putOnBottomOfLibrary)]
+                controller
+                targets
+                isLibrary := true } }.logMsg
             s!"{(g.player o.owner).name} chooses top or bottom of their library for {o.name}"
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
@@ -814,10 +813,11 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
   | _ =>
     { g with
         pending := .chooseLibraryPlacement controller ⟨g.nextObjectId⟩
-        spellOr := (rs.map asEffect).toArray
-        spellOrController := controller
-        spellOrTargets := targets
-        spellOrLibrary := false }.logMsg
+        spellOrState := {
+          effects := (rs.map asEffect).toArray
+          controller
+          targets
+          isLibrary := false } }.logMsg
       s!"{(g.player controller).name} chooses {SpellResolution.toPhrase (.or rs) effect.targeting.kind.noun}"
 
 /-- Apply `whenHolds` when `cond` is true and `whenNot` otherwise.
@@ -1511,7 +1511,7 @@ partial def flushUnlessPays (g : Game) : Game :=
   if !g.unlessPaysDue || g.over then g
   else
     match g.unlessPaysInstead with
-    | none => { g with unlessPaysDue := false }
+    | none => { g with unlessPays := { g.unlessPays with due := false } }
     | some effect =>
       let controller := g.unlessPaysController
       let targets := g.unlessPaysTargets
@@ -1750,7 +1750,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
               some o.id != sourceId then
             let name := o.name
             let (g, newId) := g.move o.id .exile none
-            { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+            { g with delayedEndStep := g.delayedEndStep.push (.returnExiled newId) }
               |>.logMsg s!"{name} is exiled until the beginning of the next end step"
           else g.logMsg "The target is no longer legal")
       | .searchLibrary (.put (.basicBeholdUntap subtype) .tapped _) =>

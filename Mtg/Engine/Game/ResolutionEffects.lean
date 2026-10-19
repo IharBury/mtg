@@ -854,12 +854,16 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       keywords :=
         if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
         else printed0.keywords }
+  let duration : CopyDuration :=
+    match untilSourceLeaves with
+    | some src => .untilSourceLeaves src
+    | none =>
+      if untilEot then .untilEot
+      else if untilNextTurn then .untilNextTurn
+      else .permanent
   let g := g.setObject { o with
     printed
-    copyRestore := some restore
-    copyUntilEot := untilEot
-    copyUntilNextTurn := untilNextTurn
-    copyUntilSourceLeaves := untilSourceLeaves }
+    copyEffect := some { restore, duration } }
   g.logMsg s!"{restore.name} becomes a copy of {printed0.name}"
 
 /-- Copy an activated or triggered ability on the stack. The copy is not

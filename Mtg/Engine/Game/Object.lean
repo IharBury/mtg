@@ -43,6 +43,30 @@ structure PlayPermission where
   payLifeEqualManaValue : Bool := false
 deriving Repr, Inhabited, BEq
 
+/-- Snapshot of the object whose event caused a triggered ability to trigger
+(CR 603.2 / CR 603.7c / CR 608.2c). -/
+structure TriggerCause where
+  id : Option ObjectId := none
+  controller : Option PlayerId := none
+  power : Option Int := none
+  status : Option Status := none
+deriving Repr, Inhabited, BEq
+
+/-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
+inductive CopyDuration where
+  | permanent
+  | untilEot
+  | untilNextTurn
+  | untilSourceLeaves (source : ObjectId)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Active temporary copy effect on a permanent, storing the original printed
+characteristics to restore when `duration` expires (CR 707 / CR 613.2). -/
+structure CopyEffect where
+  restore : CardDef
+  duration : CopyDuration := .permanent
+deriving Repr, Inhabited
+
 /-- An object currently in the game (CR 109). -/
 structure GameObject where
   id : ObjectId
@@ -101,13 +125,9 @@ structure GameObject where
   /-- This spell is a copy of a prepare spell cast from exile (a “prepared
   spell”). -/
   isPreparedSpell : Bool := false
-  /-- For a triggered ability on the stack: the object whose event caused it,
-  that object's controller, and its power as the ability triggered. -/
-  fraCauseId : Option ObjectId := none
-  fraCauseController : Option PlayerId := none
-  fraCausePower : Option Int := none
-  /-- The causing object's status (its counters) as it last existed. -/
-  fraCauseStatus : Option Status := none
+  /-- For a triggered ability on the stack: snapshot of the object whose event
+  caused it to trigger (CR 603.2 / CR 603.7c / CR 608.2c). -/
+  triggerCause : TriggerCause := {}
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
@@ -141,14 +161,8 @@ structure GameObject where
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
-  /-- Printed card to restore when a copy effect ends (CR 707 / MSH). -/
-  copyRestore : Option CardDef := none
-  /-- The current copy effect lasts until end of turn. -/
-  copyUntilEot : Bool := false
-  /-- The current copy effect lasts until this controller's next turn. -/
-  copyUntilNextTurn : Bool := false
-  /-- The current copy effect lasts until this source leaves the battlefield. -/
-  copyUntilSourceLeaves : Option ObjectId := none
+  /-- Active temporary copy effect on this permanent (CR 707 / CR 613.2). -/
+  copyEffect : Option CopyEffect := none
   /-- A control-changing effect lasts until this source leaves (Super Hero
   Civil War; MSH 143). -/
   controlUntilSourceLeaves : Option ObjectId := none
@@ -165,6 +179,29 @@ structure CreatureCombatAssignment where
 deriving Repr, Inhabited, BEq
 
 namespace GameObject
+
+def fraCauseId (o : GameObject) : Option ObjectId := o.triggerCause.id
+def fraCauseController (o : GameObject) : Option PlayerId := o.triggerCause.controller
+def fraCausePower (o : GameObject) : Option Int := o.triggerCause.power
+def fraCauseStatus (o : GameObject) : Option Status := o.triggerCause.status
+
+def copyRestore (o : GameObject) : Option CardDef :=
+  o.copyEffect.map (·.restore)
+
+def copyUntilEot (o : GameObject) : Bool :=
+  match o.copyEffect with
+  | some c => c.duration == .untilEot
+  | none => false
+
+def copyUntilNextTurn (o : GameObject) : Bool :=
+  match o.copyEffect with
+  | some c => c.duration == .untilNextTurn
+  | none => false
+
+def copyUntilSourceLeaves (o : GameObject) : Option ObjectId :=
+  match o.copyEffect with
+  | some { duration := .untilSourceLeaves src, .. } => some src
+  | _ => none
 
 def name (o : GameObject) : String := o.printed.name
 

@@ -333,7 +333,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
 def exileUntilNextEndStep (g : Game) (o : GameObject) : Game :=
   let name := o.name
   let (g, newId) := g.move o.id .exile none
-  let g := { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+  let g := { g with delayedEndStep := g.delayedEndStep.push (.returnExiled newId) }
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/

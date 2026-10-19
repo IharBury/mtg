@@ -4564,9 +4564,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       steps := [] }
     { g with
         pending := .mayResolve controller
-        mayOnAccept := some action
-        mayOnDecline := some follow
-        mayContext := some ctx }.logMsg
+        triggerMayBranch := {
+          onAccept := some action
+          onDecline := some follow
+          context := some ctx } }.logMsg
       s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who

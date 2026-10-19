@@ -78,10 +78,12 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       (triggeredAbility := some ab)
       (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     let obj := { obj with
-      fraCauseId := cause.map (·.id)
-      fraCauseController := cause.bind (·.controller)
-      fraCausePower := cause.map (g.power ·)
-      fraCauseStatus := cause.map (·.status)
+      triggerCause := {
+        id := cause.map (·.id)
+        controller := cause.bind (·.controller)
+        power := cause.map (g.power ·)
+        status := cause.map (·.status)
+      }
       -- “For each opponent, up to one target … that player controls”: one
       -- optional instance per opponent (CR 601.2c).
       abilityEffect :=

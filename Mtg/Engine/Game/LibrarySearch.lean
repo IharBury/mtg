@@ -54,7 +54,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
         let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
           if o.printed.isLand then acc + 1 else acc) 0
         if tapped && entered.printed.isLand && landCount >= n then
-          let g := { g with untapSearchedIfLands := none }
+          let g := { g with afterLibrarySearch := .none }
           g.setObject { (g.object! newId) with status :=
             { (g.object! newId).status with tapped := false } }
             |>.logMsg s!"{(g.object! newId).name} is untapped"
@@ -139,13 +139,13 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
 def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
-  | some id => ({ g with plusOneAfterSearch := none }, .plusOne id)
+  | some id => ({ g with afterLibrarySearch := .none }, .plusOne id)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
 def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
-  let g := { g with untapSearchedIfLands := none }
   let (g, done) := g.searchDone p after
+  let g := { g with afterLibrarySearch := .none }
   g.shuffleThen p done
 
 /-- Put the waiting post-search counter when this search does not shuffle. -/
@@ -153,7 +153,7 @@ def applyWaitingPlusOne (g : Game) : Game :=
   match g.plusOneAfterSearch with
   | none => g
   | some id =>
-    addPlusOneIfStillCreature { g with plusOneAfterSearch := none } id
+    addPlusOneIfStillCreature { g with afterLibrarySearch := .none } id
 
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.19b). -/

@@ -429,9 +429,7 @@ def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
     | some action, some ctx =>
       let g := { g with
         pending := .none
-        mayOnAccept := none
-        mayOnDecline := none
-        mayContext := none
+        triggerMayBranch := {}
         triggerSequenceRest := some { ctx with steps := [action] } }.clearMay
       let g := g.resumeTriggerSequence
       if g.pending != .none || g.over then return g
@@ -676,15 +674,13 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     | some follow, some ctx =>
       let g := { g with
         pending := .none
-        mayOnAccept := none
-        mayOnDecline := none
-        mayContext := none
+        triggerMayBranch := {}
         triggerSequenceRest := some { ctx with steps := [follow] } }.clearMay
       let g := g.resumeTriggerSequence
       if g.pending != .none || g.over then return g
       return g.receivePriority g.activePlayer
     | _, _ =>
-      let g := { g with pending := .none, mayOnAccept := none, mayOnDecline := none, mayContext := none }.clearMay
+      let g := { g with pending := .none, triggerMayBranch := {} }.clearMay
       return g.receivePriority g.activePlayer
   | .tapHumans q =>
     if p != q then
@@ -816,7 +812,7 @@ def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
       throw "You already kept your opening hand (CR 103.5)"
     if !g.canTakeMulligan p then
       throw "A player may not take further mulligans after their opening hand would be zero cards (CR 103.5)"
-    let g := { g with willMulligan := g.willMulligan.push p }
+    let g := { g with mulligan := { g.mulligan with willMulligan := g.willMulligan.push p } }
     let g := g.logMsg s!"{g.player p |>.name} will take a mulligan (CR 103.5)"
     return g.afterDeclaration p
   | _ => throw "Not time to take a mulligan (CR 103.5)"

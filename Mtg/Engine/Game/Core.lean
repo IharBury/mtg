@@ -58,6 +58,68 @@ structure ChooseModesRest where
   how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited
 
+/-- Delayed triggered ability waiting to fire at the beginning of the next end
+step (CR 603.7). -/
+inductive DelayedEndStepTrigger where
+  | returnExiled (id : ObjectId)
+  | exilePermanent (id : ObjectId)
+  | sacrificePermanent (id : ObjectId)
+  | returnFromGraveyard (id : ObjectId) (controller : PlayerId)
+  | syntheticDestiny (controller : PlayerId) (count : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
+structure MulliganState where
+  /-- Opening hands are kept and a “may begin on the battlefield” choice is
+  still unfinished (CR 103.6). -/
+  awaitingOpeningBegin : Bool := false
+  /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
+  toDeclare : Array PlayerId := #[]
+  /-- Players who declared they will mulligan this round; taken together after
+  every remaining player has declared (CR 103.5). -/
+  willMulligan : Array PlayerId := #[]
+  /-- Players who still must put cards on the bottom after simultaneous mulligans. -/
+  toBottom : Array PlayerId := #[]
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
+structure UnlessPaysRest where
+  effect : Option Effect := none
+  controller : PlayerId := ⟨0⟩
+  targets : Array Target := #[]
+  /-- The payer left without paying (CR 800.4f). -/
+  due : Bool := false
+deriving Repr, Inhabited
+
+/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
+structure MayEffectRest where
+  effect : Option Effect := none
+  controller : PlayerId := ⟨0⟩
+  targets : Array Target := #[]
+deriving Repr, Inhabited
+
+/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
+structure SpellOrRest where
+  effects : Array Effect := #[]
+  controller : PlayerId := ⟨0⟩
+  targets : Array Target := #[]
+  isLibrary : Bool := false
+deriving Repr, Inhabited
+
+/-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
+structure TriggerMayBranch where
+  onAccept : Option TriggeredAbility.TriggerResolution := none
+  onDecline : Option TriggeredAbility.TriggerResolution := none
+  context : Option TriggerSequenceRest := none
+deriving Repr, Inhabited
+
+/-- Follow-up action after a library search completes (CR 701.23). -/
+inductive AfterLibrarySearch where
+  | none
+  | plusOneOn (id : ObjectId)
+  | untapSearchedIfLands (minLands : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 structure Game where
   players : Array Player
   objects : Array GameObject
@@ -94,16 +156,8 @@ structure Game where
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
-  /-- Opening hands are kept and a “may begin on the battlefield” choice is
-  still unfinished. The first turn starts when that choice ends. -/
-  awaitingOpeningBegin : Bool := false
-  /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
-  mulliganToDeclare : Array PlayerId := #[]
-  /-- Players who declared they will mulligan this round; taken together after
-  every remaining player has declared (CR 103.5). -/
-  willMulligan : Array PlayerId := #[]
-  /-- Players who still must put cards on the bottom after simultaneous mulligans. -/
-  mulliganToBottom : Array PlayerId := #[]
+  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
+  mulligan : MulliganState := {}
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Defending players who still must declare blockers, in APNAP order
@@ -249,14 +303,8 @@ structure Game where
   /-- Conditional of the `mayThen` currently offered. The optional action
   reads it for its log and which choice to open. -/
   mayThenConditional : Option TriggeredAbility.TriggerResolution := none
-  /-- Accepting `Pending.mayResolve` applies this trigger resolution.
-  The ability context is `mayContext`. -/
-  mayOnAccept : Option TriggeredAbility.TriggerResolution := none
-  /-- Declining `Pending.mayResolve` applies this trigger resolution
-  instead of `mayOnAccept`. -/
-  mayOnDecline : Option TriggeredAbility.TriggerResolution := none
-  /-- Ability context for `mayOnAccept` and `mayOnDecline`. -/
-  mayContext : Option TriggerSequenceRest := none
+  /-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
+  triggerMayBranch : TriggerMayBranch := {}
   /-- Power of the creature sacrificed for
   `putCounters .plusOneSacrificedPower`. -/
   sacrificedPowerThisWay : Option Nat := none
@@ -269,29 +317,12 @@ structure Game where
   /-- Context for a pending Alliance or Gollum mode choice. `chooseMode`
   applies that index of `modes`. -/
   chooseModesRest : Option ChooseModesRest := none
-  /-- Declining `payOrLetCounter` resolves this effect instead of countering.
-  The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
-  announced for that effect. -/
-  unlessPaysInstead : Option Effect := none
-  unlessPaysController : PlayerId := ⟨0⟩
-  unlessPaysTargets : Array Target := #[]
-  /-- The payer left without paying (CR 800.4f). `flushUnlessPays` resolves
-  `unlessPaysInstead`. -/
-  unlessPaysDue : Bool := false
-  /-- Accepting `mayResolve` resolves this effect. The controller is
-  `mayController`; `mayTargets` are the targets announced for that effect. -/
-  mayEffect : Option Effect := none
-  mayController : PlayerId := ⟨0⟩
-  mayTargets : Array Target := #[]
-  /-- Alternatives for a pending `SpellResolution.or`. `chooseTop` applies
-  the first and `chooseBottom` the second. `chooseMode` applies that index.
-  Library top and bottom are stored in that order when `spellOrLibrary`. -/
-  spellOr : Array Effect := #[]
-  spellOrController : PlayerId := ⟨0⟩
-  spellOrTargets : Array Target := #[]
-  /-- `chooseTop` and `chooseBottom` name the library side, not list order
-  written by the card. The stashed effects are still top then bottom. -/
-  spellOrLibrary : Bool := false
+  /-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
+  unlessPays : UnlessPaysRest := {}
+  /-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
+  mayEffectState : MayEffectRest := {}
+  /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
+  spellOrState : SpellOrRest := {}
   /-- After the pending surveil, a card with mana value at most this put into
   the graveyard goes to its owner's hand (Enlightened Confidant). -/
   surveilReturnMvAtMost : Option Nat := none
@@ -323,16 +354,13 @@ structure Game where
   lastLifeLost : Option (PlayerId × Nat) := none
   /-- Most recent noncombat damage marked on a permanent. -/
   lastNoncombatDamage : Option (ObjectId × Nat) := none
-  /-- Cards in exile that return at the beginning of the next end step
-  (Roll-Roll-Roll-Roll and similar delayed blinks). -/
-  delayedEndStepReturns : Array ObjectId := #[]
+  /-- Delayed triggered abilities waiting to fire at the beginning of the next
+  end step (CR 603.7). -/
+  delayedEndStep : Array DelayedEndStepTrigger := #[]
   /-- Extra turns to take before the next player in turn order (Kang). -/
   extraTurns : Array PlayerId := #[]
   /-- Power-up abilities can't be activated during this extra turn (Kang). -/
   powerUpsForbidden : Bool := false
-  /-- Permanents exiled at the beginning of the next end step (Vindictive
-  Triumph). -/
-  delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
   /-- Put a +1/+1 counter on this permanent after the current discard choices
@@ -368,9 +396,8 @@ structure Game where
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
-  /-- After the current library search shuffles, put a +1/+1 counter on this
-  creature if it is still a creature (Restorative Technique). -/
-  plusOneAfterSearch : Option ObjectId := none
+  /-- Follow-up action after a library search completes (CR 701.23). -/
+  afterLibrarySearch : AfterLibrarySearch := .none
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0
@@ -382,14 +409,6 @@ structure Game where
   pendingDiscardsLeft : Nat := 0
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
-  /-- Permanents sacrificed at the beginning of the next end step. -/
-  delayedEndStepSacrifices : Array ObjectId := #[]
-  /-- Graveyard cards that return under a chosen player at the next end step. -/
-  delayedGraveReturns : Array (ObjectId × PlayerId) := #[]
-  /-- At the next end step, reveal this many creature cards (Synthetic Destiny). -/
-  delayedSynthetic : Array (PlayerId × Nat) := #[]
-  /-- After the current search, untap the land if its controller has this many lands. -/
-  untapSearchedIfLands : Option Nat := none
   /-- Players who created one or more creature tokens since the last priority. -/
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
@@ -398,21 +417,79 @@ deriving Repr, Inhabited
 
 namespace Game
 
+def awaitingOpeningBegin (g : Game) : Bool := g.mulligan.awaitingOpeningBegin
+def mulliganToDeclare (g : Game) : Array PlayerId := g.mulligan.toDeclare
+def willMulligan (g : Game) : Array PlayerId := g.mulligan.willMulligan
+def mulliganToBottom (g : Game) : Array PlayerId := g.mulligan.toBottom
+
+def mayOnAccept (g : Game) : Option TriggeredAbility.TriggerResolution := g.triggerMayBranch.onAccept
+def mayOnDecline (g : Game) : Option TriggeredAbility.TriggerResolution := g.triggerMayBranch.onDecline
+def mayContext (g : Game) : Option TriggerSequenceRest := g.triggerMayBranch.context
+
+def unlessPaysInstead (g : Game) : Option Effect := g.unlessPays.effect
+def unlessPaysController (g : Game) : PlayerId := g.unlessPays.controller
+def unlessPaysTargets (g : Game) : Array Target := g.unlessPays.targets
+def unlessPaysDue (g : Game) : Bool := g.unlessPays.due
+
+def mayEffect (g : Game) : Option Effect := g.mayEffectState.effect
+def mayController (g : Game) : PlayerId := g.mayEffectState.controller
+def mayTargets (g : Game) : Array Target := g.mayEffectState.targets
+
+def spellOr (g : Game) : Array Effect := g.spellOrState.effects
+def spellOrController (g : Game) : PlayerId := g.spellOrState.controller
+def spellOrTargets (g : Game) : Array Target := g.spellOrState.targets
+def spellOrLibrary (g : Game) : Bool := g.spellOrState.isLibrary
+
+def delayedEndStepReturns (g : Game) : Array ObjectId :=
+  g.delayedEndStep.filterMap fun
+    | .returnExiled id => some id
+    | _ => none
+
+def delayedEndStepExiles (g : Game) : Array ObjectId :=
+  g.delayedEndStep.filterMap fun
+    | .exilePermanent id => some id
+    | _ => none
+
+def delayedEndStepSacrifices (g : Game) : Array ObjectId :=
+  g.delayedEndStep.filterMap fun
+    | .sacrificePermanent id => some id
+    | _ => none
+
+def delayedGraveReturns (g : Game) : Array (ObjectId × PlayerId) :=
+  g.delayedEndStep.filterMap fun
+    | .returnFromGraveyard id p => some (id, p)
+    | _ => none
+
+def delayedSynthetic (g : Game) : Array (PlayerId × Nat) :=
+  g.delayedEndStep.filterMap fun
+    | .syntheticDestiny p n => some (p, n)
+    | _ => none
+
+def plusOneAfterSearch (g : Game) : Option ObjectId :=
+  match g.afterLibrarySearch with
+  | .plusOneOn id => some id
+  | _ => none
+
+def untapSearchedIfLands (g : Game) : Option Nat :=
+  match g.afterLibrarySearch with
+  | .untapSearchedIfLands n => some n
+  | _ => none
+
 def logMsg (g : Game) (msg : String) : Game :=
   { g with log := g.log.push msg }
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
-  { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
+  { g with unlessPays := {} }
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  { g with mayEffect := none, mayTargets := #[] }
+  { g with mayEffectState := {} }
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
-  { g with spellOr := #[], spellOrTargets := #[], spellOrLibrary := false }
+  { g with spellOrState := {} }
 
 def over (g : Game) : Bool := g.result.isSome
 
@@ -583,10 +660,7 @@ def restoreCopy (g : Game) (o : GameObject) : Game :=
     let copied := o.printed.name
     g.setObject { o with
       printed := card
-      copyRestore := none
-      copyUntilEot := false
-      copyUntilNextTurn := false
-      copyUntilSourceLeaves := none }
+      copyEffect := none }
     |>.logMsg s!"{card.name} is no longer a copy of {copied}"
 
 /-- Restore copy effects on battlefield objects that satisfy `p`. -/

@@ -303,7 +303,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               { s with time := left, notACreature := left != 0 && s.notACreature })
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
-        g := { g with delayedEndStepSacrifices := #[] }
+        g := { g with delayedEndStep := g.delayedEndStep.filter fun
+          | .sacrificePermanent _ => false | _ => true }
         for id in sacrifices do
           match g.findObject? id with
           | some o =>
@@ -311,7 +312,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
           | none => pure ()
         let returns := g.delayedGraveReturns
-        g := { g with delayedGraveReturns := #[] }
+        g := { g with delayedEndStep := g.delayedEndStep.filter fun
+          | .returnFromGraveyard .. => false | _ => true }
         for (id, who) in returns do
           match g.findObject? id with
           | some o =>
@@ -324,7 +326,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           | none => pure ()
         g := g.applyDelayedSynthetic
         let ids := g.delayedEndStepReturns
-        g := { g with delayedEndStepReturns := #[] }
+        g := { g with delayedEndStep := g.delayedEndStep.filter fun
+          | .returnExiled _ => false | _ => true }
         for id in ids do
           match g.findObject? id with
           | none => pure ()
@@ -345,7 +348,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                   if back.printed.isLand then g.afterLandEnters back
                   else g.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
-        g := { g with delayedEndStepExiles := #[] }
+        g := { g with delayedEndStep := g.delayedEndStep.filter fun
+          | .exilePermanent _ => false | _ => true }
         for id in exiles do
           match g.findObject? id with
           | some o =>

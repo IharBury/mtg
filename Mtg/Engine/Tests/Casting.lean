@@ -44,7 +44,7 @@ def withCause (g : Game) (source : GameObject) (spell : CardDef)
       { g with stack := g.stack.map fun e =>
           if e.objectId == spellObj.id then { e with targets } else e }
   let (g, ab) := g.allocStackAbility source me
-  let g := g.setObject { ab with fraCauseId := some spellObj.id }
+  let g := g.setObject { ab with triggerCause := { id := some spellObj.id } }
   { g with resolvingAbility := some ab.id }
 
 def casting (e : Effect) : TriggeredAbility :=

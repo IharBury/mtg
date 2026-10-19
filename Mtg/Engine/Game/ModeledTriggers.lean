@@ -783,10 +783,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
       let inner := { effect with resolution := Resolution.ofSpell r }
       { g with
           pending := .payOrLetCounter payer n spellId
-          unlessPaysInstead := some inner
-          unlessPaysController := controller
-          unlessPaysTargets := targets
-          unlessPaysDue := false }.logMsg
+          unlessPays := { effect := some inner, controller, targets, due := false } }.logMsg
         s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its

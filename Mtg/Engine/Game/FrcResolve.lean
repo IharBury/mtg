@@ -232,10 +232,10 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
   | .exile .creaturesYouControl .forLater .revealCreaturesAtEndStep =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
     let g := yours.foldl (fun g id => g.exileId id) g
-    some ({ g with delayedSynthetic := g.delayedSynthetic.push (controller, yours.size) }
+    some ({ g with delayedEndStep := g.delayedEndStep.push (.syntheticDestiny controller yours.size) }
       |>.logMsg "Those creatures return as revealed cards at the next end step")
   | .searchLibrary (.put (.basicSubtypesUntapAt kinds untapAt) _ _) =>
-    let g := if untapAt == 0 then g else { g with untapSearchedIfLands := some untapAt }
+    let g := if untapAt == 0 then g else { g with afterLibrarySearch := .untapSearchedIfLands untapAt }
     some (g.beginLibrarySearch controller (basicOf kinds) "a basic land card" (.battlefield true))
   | .putOnLibrary .bottomRevealCreature .target =>
     some <|
@@ -286,7 +286,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
       match g.frcCause? with
       | some o =>
         if o.zone == .graveyard o.owner then
-          { g with delayedGraveReturns := g.delayedGraveReturns.push (o.id, controller) }
+          { g with delayedEndStep := g.delayedEndStep.push (.returnFromGraveyard o.id controller) }
             |>.logMsg s!"{o.name} returns at the beginning of the next end step"
         else g
       | none => g
@@ -465,7 +465,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
               let (g', tok) := g.copyBattlefieldPermanent src controller
               g := g'
               g := g.mapObjectStatus tok (·.grantUntilEot Keyword.haste)
-              g := { g with delayedEndStepSacrifices := g.delayedEndStepSacrifices.push tok.id }
+              g := { g with delayedEndStep := g.delayedEndStep.push (.sacrificePermanent tok.id) }
             return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
         | none => g
       | _ => g
@@ -638,7 +638,9 @@ where
 /-- Reveal creature cards exiled by Synthetic Destiny at the end step. -/
 def applyDelayedSynthetic (g : Game) : Game :=
   let synth := g.delayedSynthetic
-  let g := { g with delayedSynthetic := #[] }
+  let g := { g with delayedEndStep := g.delayedEndStep.filter fun
+    | .syntheticDestiny .. => false
+    | _ => true }
   synth.foldl (fun g (who, n) =>
     let (g, hits, rest) := g.revealUntil who (·.isCreature) n
     let g := g.putHits who hits

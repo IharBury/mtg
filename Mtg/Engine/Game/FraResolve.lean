@@ -250,7 +250,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if mv ≤ n && !o.printed.isToken then
         let (g, back) := g.putOntoBattlefield exiled controller (tapped := true)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
-        let g := { g with delayedEndStepExiles := g.delayedEndStepExiles.push back }
+        let g := { g with delayedEndStep := g.delayedEndStep.push (.exilePermanent back) }
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .discard (.mayWheel n .eachPlayer) =>

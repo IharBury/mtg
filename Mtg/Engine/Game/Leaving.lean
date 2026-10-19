@@ -108,7 +108,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       let g := { g with pending := .none }
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
       if g.unlessPaysInstead.isSome then
-        { g with unlessPaysDue := true }
+        { g with unlessPays := { g.unlessPays with due := true } }
       else
         match g.findObject? spellId with
         | none => g

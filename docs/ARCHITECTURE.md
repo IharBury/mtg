@@ -83,6 +83,8 @@ Because nearly all tests in this repository are **compile-time `#guard` assertio
   - `InterveningCondition`, `SharedTriggerOpts`, and `TriggerTiming` (`Mtg/Engine/Card/SharedTrigger.lean`, `Mtg/Engine/Card/Trigger.lean`) unify intervening-"if" conditions (CR 603.4) and watched subtype parameters across all sets.
   - `ManaUse`, `ManaRestriction` (`| none | only (u : ManaUse)`), and `ManaPool` (`restricted : Array (ManaType × ManaUse)`) in `Mtg/Engine/Mana.lean` unify mana spending restrictions (CR 106.6 / CR 106.10) across all sets.
   - `Pending` (`Mtg/Engine/Game/Pending.lean`) has 6 constructors (5 field-bearing + 1 nullary) aligned with CR turn/combat, casting, resolution, and random choices (`TurnCombatPending`, `CastPending`, `ResolvePending`, `FraChoice`, `RandomRequest`), and `FraChoice` has 4 field-bearing constructors (`HandGraveyardChoice`, `LibraryChoice`, `BattlefieldChoice`, `CostModeChoice`). No inductive in `Mtg/Engine/` exceeds 33 field-bearing constructors.
+  - `GameObject` (`Mtg/Engine/Game/Object.lean`) encapsulates exiled-card play permissions in `ExilePlayState` (CR 601.2 / 608.2a), trigger cause snapshots in `TriggerCause` (CR 603.2 / 603.7c / 608.2c), and temporary copy effects in `CopyEffect` / `CopyDuration` (CR 707 / 613.2).
+  - `Game` (`Mtg/Engine/Game/Core.lean`) encapsulates delayed end-step triggers in `DelayedEndStepTrigger` (CR 603.7), London mulligan state in `MulliganState` (CR 103.5 / 103.6), and resolution continuations in `UnlessPaysRest` (CR 118.12 / 608.2c), `MayEffectRest` (CR 608.2c), `SpellOrRest` (CR 608.2c), `TriggerMayBranch` (CR 603.3 / 608.2c), and `AfterLibrarySearch` (CR 701.23).
 
 ---
 

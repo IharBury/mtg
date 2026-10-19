@@ -2568,13 +2568,13 @@ def hulklingComparesCauseOk : Bool :=
     (some hulkling.id) #[]
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.setObject { ab with fraCauseId := some bot.id }
+     let g := g.setObject { ab with triggerCause := { id := some bot.id } }
      let g := { g with resolvingAbility := some ab.id }
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.setObject { ab with fraCauseId := some giant.id }
+     let g := g.setObject { ab with triggerCause := { id := some giant.id } }
      let g := { g with resolvingAbility := some ab.id }
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
@@ -2585,7 +2585,7 @@ def hulklingComparesCauseOk : Bool :=
      let gy := g.object! (g.followMoved giantId)
      gy.lastKnownPower == some 1 && gy.lastKnownToughness == some 1 &&
        (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-        let g := g.setObject { ab with fraCauseId := some giantId }
+        let g := g.setObject { ab with triggerCause := { id := some giantId } }
         let g := { g with resolvingAbility := some ab.id }
         let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
@@ -2615,7 +2615,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let g := g.applyPermanentAction giant .tap
   let cap := namedPermanent g "Captain America, Living Legend"
   let (g, ab) := g.allocStackAbility cap ⟨0⟩
-  let g := g.setObject { ab with fraCauseId := some bears.id }
+  let g := g.setObject { ab with triggerCause := { id := some bears.id } }
   let g := { g with resolvingAbility := some ab.id }
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
@@ -2722,7 +2722,7 @@ def ultronMayPayCopyOk : Bool :=
   let ultron := namedPermanent g "Ultron, Artificial Malevolence"
   let stone := namedPermanent g "The Mind Stone"
   let (g, ab) := g.allocStackAbility ultron ⟨0⟩
-  let g := g.setObject { ab with fraCauseId := some stone.id }
+  let g := g.setObject { ab with triggerCause := { id := some stone.id } }
   let g := { g with resolvingAbility := some ab.id }
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
@@ -2904,7 +2904,7 @@ def thorSpellManaValueOk : Bool :=
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let (g, ab) := g.allocStackAbility thor ⟨0⟩
-  let g := g.setObject { ab with fraCauseId := some spell.id }
+  let g := g.setObject { ab with triggerCause := { id := some spell.id } }
   let g := { g with resolvingAbility := some ab.id }
   let life0 := (g.player ⟨1⟩).life
   let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
@@ -2914,7 +2914,7 @@ def thorSpellManaValueOk : Bool :=
      let gy := g.object! (g.followMoved spell.id)
      gy.chosenX == some 3 &&
        (let (g, ab2) := g.allocStackAbility thor ⟨0⟩
-        let g := g.setObject { ab2 with fraCauseId := some spell.id }
+        let g := g.setObject { ab2 with triggerCause := { id := some spell.id } }
         let g := { g with resolvingAbility := some ab2.id }
         let life1 := (g.player ⟨1⟩).life
         let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
@@ -2935,13 +2935,13 @@ def namorTriggeringSpellOk : Bool :=
   let merfolk (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Merfolk")).size
   let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
-  let gBlue := gBlue.setObject { ab with fraCauseId := some aura.id }
+  let gBlue := gBlue.setObject { ab with triggerCause := { id := some aura.id } }
   let gBlue := { gBlue with resolvingAbility := some ab.id }
   let gBlue := gBlue.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
     (some namor.id)
   merfolk gBlue == 2 &&
     (let (gRed, ab) := g.allocStackAbility namor ⟨0⟩
-     let gRed := gRed.setObject { ab with fraCauseId := some bolt.id }
+     let gRed := gRed.setObject { ab with triggerCause := { id := some bolt.id } }
      let gRed := { gRed with resolvingAbility := some ab.id }
      let gRed := gRed.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
        (some namor.id)
