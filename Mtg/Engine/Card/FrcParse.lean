@@ -231,21 +231,21 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
     if l.contains "protection from" && (l.contains "flying" || l.contains "trample" || l.startsWith "protection") then
       let before := (line.splitOn "protection from").headD ""
       let cols := colorsFrom ((line.splitOn "protection from").getLastD "")
-      some { addKw c before with protectionFromColors := cols }
+      some { addKw c before with keywordRule := .protectionFromColors cols }
     else if l.startsWith "morph " then
-      some { c with morph := some (costOf line) }
+      some { c with castOption := .morph (costOf line) }
     else if l.startsWith "impending " then
       let n :=
         match (l.drop "impending ".length).takeWhile Char.isDigit with
         | "" => 0
         | d => d.toNat!
-      some { c with impending := some (n, costOf line) }
+      some { c with castOption := .impending n (costOf line) }
     else if l.startsWith "cycling " then
       let cost := costOf ((line.splitOn "(").headD line)
       let ab := activated (Effect.draw 1) (mana := cost) (activateFromHand := true)
         (discardSource := true)
       let ab := { ab with printed := line }
-      some { c with cycling := some cost
+      some { c with keywordRule := .cycling cost
                     activatedAbilities := c.activatedAbilities.push ab }
     else if l.contains "your opponents can't gain life" then
       some { c with staticRule := .opponentsCantGainLife }
@@ -274,7 +274,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
     else if l.contains "creatures you control with toxic have lifelink" then
       some { c with staticRule := .corruptedToxicLifelink }
     else if l.contains "can be your commander" then
-      some { c with canBeCommander := true }
+      some { c with keywordRule := .canBeCommander }
     else if l.contains "without paying its mana cost" && l.contains "commander" then
       some { c with staticRule := .freeCastIfControlCommander }
     else if l.contains "enters tapped unless you control two or more basic" then

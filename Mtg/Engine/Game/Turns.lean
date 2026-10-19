@@ -73,73 +73,11 @@ def clearTurnActivations (g : Game) : Game :=
         -- Keep last-known this-turn info until that turn would have begun
         -- (CR 800.4i).
         pure ()
-      else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
-          pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
-          pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
-          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
-          pl.scriedThisTurn || pl.surveilledThisTurn ||
-          pl.copyNextInstantSorceryThisTurn != 0 ||
-          pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
-          pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
-          pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
-          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
-          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
-          !pl.typeSpellCostLessThisTurn.isEmpty ||
-          !pl.supertypeSpellCostLessThisTurn.isEmpty then
-        g := g.setPlayer { pl with
-          cardsDrawnThisTurn := 0
-          cardsDrawnThisDrawStep := 0
-          spellsCastThisTurn := 0
-          noncreatureSpellsCastThisTurn := 0
-          creatureSpellsCastThisTurn := 0
-          castManaValuesThisTurn := #[]
-          belladonnaResolvesThisTurn := 0
-          lifeGainedThisTurn := 0
-          cantCastSpellsThisTurn := false
-          attackPumpPerPlainsThisTurn := 0
-          heroEnteredThisTurn := false
-          attackedWithHeroThisTurn := false
-          creaturesAttackedWithThisTurn := 0
-          equipActivationsThisTurn := 0
-          cardsDiscardedThisTurn := 0
-          artifactEnteredThisTurn := false
-          jaceLoyaltyAtInstantSpeed := false
-          scriedThisTurn := false
-          surveilledThisTurn := false
-          copyNextInstantSorceryThisTurn := 0
-          dealtNoncombatDamageThisTurn := false
-          dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
-          activatedLoyaltyThisTurn := false
-          cardsMilledThisTurn := 0
-          mountainExtraRedThisTurn := 0
-          nextSpellCantBeCountered := false
-          lifeLostThisTurn := 0
-          cantAttackJaces := false
-          typeSpellCostLessThisTurn := #[]
-          supertypeSpellCostLessThisTurn := #[] }
+      else if pl.hasTurnStateToClear then
+        g := g.setPlayer pl.clearedAtEndOfTurn
     for o in g.battlefield do
-      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
-          o.status.optionalOnceUsed ||
-          !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
-          o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
-          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
-          o.status.loyaltyActivatedThisTurn ||
-          !o.status.combatDamageToPlayers.isEmpty ||
-          !o.status.modesChosenThisTurn.isEmpty then
-        g := g.setObject { o with status := { o.status with
-          activationsThisTurn := 0
-          abilitiesActivatedThisTurn := #[]
-          loyaltyActivatedThisTurn := false
-          firedOnceEachTurn := false
-          optionalOnceUsed := false
-          allianceModesChosen := #[]
-          enteredThisTurn := false
-          declaredAsAttackerThisTurn := false
-          boastUsedThisTurn := false
-          becameTappedThisTurn := false
-          gotPlusOneThisTurn := false
-          combatDamageToPlayers := #[]
-          modesChosenThisTurn := #[] } }
+      if o.status.hasTurnStateToClear then
+        g := g.setObject { o with status := o.status.clearedAtEndOfTurn }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/

@@ -176,35 +176,51 @@ rules text. -/
       else match extraLandIfOtherSubtype with
         | some s => .extraLandIfOtherSubtype s
         | none => .none
+    let castOption : SpellCastOption :=
+      if giftTreasure then .giftTreasure
+      else if cascade != 0 then .cascade cascade
+      else match flashback with
+        | some cost => .flashback cost
+        | none => match kicker with
+          | some cost => .kicker cost
+          | none => match teamwork with
+            | some n => .teamwork n
+            | none => match affinityForSubtype with
+              | some s => .affinity s
+              | none => .none
+    let castPermission : CastPermissionRule :=
+      if cantBeCountered then .cantBeCountered
+      else match flashIfYouControlSubtype with
+        | some s => .flashIfYouControl s
+        | none => .normal
+    let keywordRule : CardKeywordRule :=
+      match ward with
+      | some n => .ward n
+      | none => match crew with
+        | some n => .crew n
+        | none => .none
     { parsed with
       keywords
+      keywordRule
       spellEffect
       spellModes
       modalRule
       additionalCost
       spellCostReduction
+      castOption
+      castPermission
       tapAddMana
       tapManaAbility
       entersTappedRule
       entersWithCounters
       asEntersChoose
-      cantBeCountered
-      flashIfYouControlSubtype
-      ward
-      flashback
-      crew
       saga
-      affinityForSubtype
-      giftTreasure
-      cascade
-      kicker
       staticAbilities
       triggeredAbilities
       activatedAbilities
       topOfLibraryRule
       staticRule
-      adventure
-      teamwork }
+      adventure }
   else
     parsed
 

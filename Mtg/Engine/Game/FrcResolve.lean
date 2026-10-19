@@ -49,7 +49,11 @@ private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → 
 private def creatureTokenOf (name : String) (subtypes : Array String) (p t : Int)
     (color : Option Color := none) (keywords : Keywords := Keywords.none)
     (types : Array CardType := #[.creature]) (toxic : Nat := 0) (cantBlock : Bool := false) : CardDef :=
-  { creatureToken name subtypes p t color keywords types with toxic, cantBlock }
+  let keywordRule : CardKeywordRule :=
+    if toxic != 0 then .toxic toxic cantBlock
+    else if cantBlock then .cantBlock
+    else .none
+  { creatureToken name subtypes p t color keywords types with keywordRule }
 
 private def frcPrinted (k : TokenKind) (x : Nat) : CardDef :=
   match k with

@@ -825,7 +825,7 @@ def okoyeFirstStrikeLossOk : Bool :=
 
 /-- Rulings 191 / 192: Nick Fury puts a DFC onto the battlefield front-face-up
 unless it is night and the front has daybound. -/
-def nickFuryDayDfc : CardDef := { bruceBanner with daybound := true }
+def nickFuryDayDfc : CardDef := { bruceBanner with keywordRule := .daybound }
 
 def nickFuryDayEnter : Game :=
   let g := addToLibraryTop afterDraw nickFuryDayDfc ⟨0⟩

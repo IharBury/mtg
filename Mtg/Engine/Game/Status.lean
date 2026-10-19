@@ -435,6 +435,35 @@ def clearsAtCleanup (s : Status) : Bool :=
 def clearedAtCleanup (s : Status) : Status :=
   untilEotFields.foldl (fun acc f => f.clear acc) s
 
+/-- True when this permanent has per-turn activation or event tracking state to
+reset as a turn ends. -/
+def hasTurnStateToClear (s : Status) : Bool :=
+  s.activationsThisTurn != 0 || s.firedOnceEachTurn ||
+    s.optionalOnceUsed ||
+    !s.allianceModesChosen.isEmpty || s.enteredThisTurn ||
+    s.declaredAsAttackerThisTurn || s.boastUsedThisTurn ||
+    s.becameTappedThisTurn || s.gotPlusOneThisTurn ||
+    s.loyaltyActivatedThisTurn ||
+    !s.combatDamageToPlayers.isEmpty ||
+    !s.modesChosenThisTurn.isEmpty
+
+/-- Status with per-turn activation and event tracking fields reset as a turn ends. -/
+def clearedAtEndOfTurn (s : Status) : Status :=
+  { s with
+    activationsThisTurn := 0
+    abilitiesActivatedThisTurn := #[]
+    loyaltyActivatedThisTurn := false
+    firedOnceEachTurn := false
+    optionalOnceUsed := false
+    allianceModesChosen := #[]
+    enteredThisTurn := false
+    declaredAsAttackerThisTurn := false
+    boastUsedThisTurn := false
+    becameTappedThisTurn := false
+    gotPlusOneThisTurn := false
+    combatDamageToPlayers := #[]
+    modesChosenThisTurn := #[] }
+
 end Status
 
 #guard

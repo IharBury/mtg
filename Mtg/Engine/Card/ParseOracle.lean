@@ -702,20 +702,20 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "affinity for " then
     let t :=
       ((stripParentheticals ((raw.drop "Affinity for ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    some { c with affinityForSubtype := some t }
+    some { c with castOption := .affinity t }
   else if low.contains "cascade" &&
       (((low.replace "," "").splitOn " ").filter (fun w => w != "")).all (fun w => w == "cascade") then
     let n := (low.splitOn "cascade").length - 1
-    some { c with cascade := n }
+    some { c with castOption := .cascade n }
   else if low.startsWith "kicker " then
     let costText :=
       ((stripParentheticals ((raw.drop "Kicker ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    parseManaCost costText |>.map fun cost => { c with kicker := some cost }
+    parseManaCost costText |>.map fun cost => { c with castOption := .kicker cost }
   else if low == "gift a treasure" || low == "gift a treasure." then
-    some { c with giftTreasure := true }
+    some { c with castOption := .giftTreasure }
   else if low.startsWith "teamwork " then
     let num := (low.drop "teamwork ".length).takeWhile Char.isDigit
-    if num.isEmpty then none else some { c with teamwork := some num.toNat! }
+    if num.isEmpty then none else some { c with castOption := .teamwork num.toNat! }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature or planeswalker or pay" then
     n.map fun k => { c with additionalCost := .sacrificeCreatureOrPlaneswalkerOrPay k }
   else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature or pay" then
@@ -727,23 +727,23 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature" then
     some { c with additionalCost := .sacrificeCreature }
   else if low == "this spell can't be countered" || low == "this spell can't be countered." then
-    some { c with cantBeCountered := true }
+    some { c with castPermission := .cantBeCountered }
   else if low.startsWith "you may cast this spell as though it had flash if you control a " then
     let t := (raw.splitOn "if you control a ").getLastD "" |>.replace "." "" |>.trimAscii.copy
-    some { c with flashIfYouControlSubtype := some t }
+    some { c with castPermission := .flashIfYouControl t }
   else if low.startsWith "ward " || low.startsWith "ward{" then
-    n.map fun k => { c with ward := some k }
+    n.map fun k => { c with keywordRule := .ward k }
   else if low.startsWith "flashback—" && low.contains ", discard a card" then
     let costText := (((raw.drop "Flashback—".length).copy).splitOn ",").headD "" |>.trimAscii.copy
     parseManaCost costText |>.map fun cost =>
-      { c with flashback := some cost, flashbackDiscard := true }
+      { c with castOption := .flashback cost true }
   else if low.startsWith "flashback " then
     let costText :=
       ((stripParentheticals ((raw.drop "Flashback ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    parseManaCost costText |>.map fun cost => { c with flashback := some cost }
+    parseManaCost costText |>.map fun cost => { c with castOption := .flashback cost }
   else if low.startsWith "crew " then
     let num := (low.drop "crew ".length).takeWhile Char.isDigit
-    if num.isEmpty then none else some { c with crew := some num.toNat! }
+    if num.isEmpty then none else some { c with keywordRule := .crew num.toNat! }
   else if low.contains "enters tapped unless you control a legendary" then
     some { c with entersTappedRule := .unlessLegendary }
   else if low.contains "enters tapped unless you control an equipment" then
@@ -753,11 +753,11 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
     some { c with tapManaAbility := .chosenColorPerDifferentPower }
   else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
-    some { c with castExiledWithSevenInGraveyard := true }
+    some { c with castPermission := .castExiledWithSevenInGraveyard }
   else if low.startsWith "a deck can have any number of cards named" then
-    some { c with anyNumberInDeck := true }
+    some { c with keywordRule := .anyNumberInDeck }
   else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
-    some { c with castOnlyIfGraveyardAtLeast := some 7 }
+    some { c with castPermission := .castOnlyIfGraveyardAtLeast 7 }
   else if low.contains "enters tapped unless you control a planeswalker" then
     some { c with entersTappedRule := .unlessPlaneswalker }
   else if low.contains "enters tapped unless you control two or more other lands" then
@@ -1950,9 +1950,10 @@ partial def parseRules (c : CardDef) (lines : List String)
         | none =>
         match keywordTokens c.name line with
         | some toks =>
+          let prow := toks.count "prowess"
           go { c with
             keywords := c.keywords.merge (keywordsFromTokens toks)
-            prowessInstances := c.prowessInstances + toks.count "prowess" } rest
+            keywordRule := if prow > 0 then .prowess (c.prowessInstances + prow) else c.keywordRule } rest
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
@@ -2081,7 +2082,7 @@ def parseFace (lines : List String) (keepUnrecognized : Bool := false) :
           | [] => (c, [])
           | line :: rest =>
             if line == "Token" then takeExtras { c with isToken := true } rest
-            else if lowerAscii line == "daybound" then takeExtras { c with daybound := true } rest
+            else if lowerAscii line == "daybound" then takeExtras { c with keywordRule := .daybound } rest
             else
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest

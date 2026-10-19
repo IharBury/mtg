@@ -4532,7 +4532,7 @@ def quicksilverMayStayInHandOk : Bool :=
 def prowessPrintedPlusGrantedOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let printedOnly := { host with printed := { host.printed with prowessInstances := 2 } }
+  let printedOnly := { host with printed := { host.printed with keywordRule := .prowess 2 } }
   let g1 := g.setObject printedOnly
   let both := { printedOnly with status :=
     { printedOnly.status with untilEotKeywords := Keyword.prowess } }
@@ -4542,7 +4542,7 @@ def prowessPrintedPlusGrantedOk : Bool :=
   let gStaff := gStaff.attachSourceTo (namedPermanent gStaff "Wizard's Staff")
     (namedPermanent gStaff "Grizzly Bears")
   let armed := namedPermanent gStaff "Grizzly Bears"
-  let armed := { armed with printed := { armed.printed with prowessInstances := 1 } }
+  let armed := { armed with printed := { armed.printed with keywordRule := .prowess 1 } }
   let gStaff := gStaff.setObject armed
   (g1.prowessTriggers (g1.object! host.id)).size == 2 &&
     (g2.prowessTriggers (g2.object! host.id)).size == 3 &&

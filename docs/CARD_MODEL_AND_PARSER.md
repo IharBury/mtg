@@ -39,7 +39,7 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming` (10 fields including `condition : InterveningCondition` and `subtype : Option String`), `TriggeredAbility.chapterTiming`, and category-factored `SharedTrigger.timing` (`LibraryTrigger.timing`, `TokenCounterTrigger.timing`, `CombatDamageTrigger.timing`, `ZoneChangeTrigger.timing`, `ContinuousTrigger.timing`, `PermanentTrigger.timing`, `EventLeftover.timing`). |
 | `TriggerEffects.lean` | `Effect.ofTrigger` and 92 `Effect.*` leftover trigger wrappers. |
 | `TriggeredAbility.lean` | ~180 `TriggeredAbility.on*` catalog builders, `TriggeredAbility.fra`, and the Oracle text renderer (`TriggeredAbility.toNotation`). |
-| `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `EntersTappedRule` (10 ETB tapped replacement rules, CR 614.1c), `EntersWithCounters` (5 ETB counter rules, CR 614.1c), `AsEntersChoice` (5 ETB choice rules, CR 614.12), `SpellCostReduction` (12 spell cost reductions, CR 601.2f), `SpellAdditionalCost` (6 spell additional costs, CR 601.2b / 118.8), `TapManaAbility` (21 activated mana ability variants, CR 605.1a), `ModalRule` (4 modal spell choice rules, CR 700.2), `TopOfLibraryRule` (6 top-of-library permissions, CR 401.5 / 601.3), `CardStaticRule` (22 continuous/replacement static rules, CR 604 / 613 / 614), `CardDef` (41 fields), `structuredAbilityLines`, and `modellingError?`. |
+| `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `EntersTappedRule` (10 ETB tapped replacement rules, CR 614.1c), `EntersWithCounters` (5 ETB counter rules, CR 614.1c), `AsEntersChoice` (5 ETB choice rules, CR 614.12), `SpellCostReduction` (12 spell cost reductions, CR 601.2f), `SpellAdditionalCost` (6 spell additional costs, CR 601.2b / 118.8), `SpellCastOption` (9 optional/alternative casting options, CR 118.8 / 118.9 / 702), `CastPermissionRule` (5 casting permissions/restrictions, CR 601.2 / 601.3 / 608.2a), `CardKeywordRule` (11 parameterized keyword/characteristic rules, CR 702 / 100.2a / 903.3a), `TapManaAbility` (21 activated mana ability variants, CR 605.1a), `ModalRule` (4 modal spell choice rules, CR 700.2), `TopOfLibraryRule` (6 top-of-library permissions, CR 401.5 / 601.3), `CardStaticRule` (22 continuous/replacement static rules, CR 604 / 613 / 614), `CardDef` (42 fields), `structuredAbilityLines`, and `modellingError?`. |
 | `OracleNorm.lean` | Reminder-text stripping, ability-word stripping, number-word replacement, and 3-stage line normalization (`lightLine`, `normalizeStructural`, `normalizeUnit`). |
 | `OracleArgs.lean` | Bidirectional `ArgM` slot collector/refiller (`takeEffect`, `takeStatic`, `takeActivated`, `takeTriggered`) and token pattern matcher (`Pat`, `patsOfLines`, `matchArgLines`, `splicePhrase`). |
 | `OracleCandidates.lean` | The 4 prototype tables (`spellEffects`, `staticAbilities`, `triggeredAbilities`, `activatedAbilities`) + `chapterEffects`. |
@@ -52,17 +52,19 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 ## 2. The Card IR: `CardDef`, `Effect`, `Resolution`, and Selectors
 
 ### 2.1 `CardDef` (`Mtg/Engine/Card/CardDef.lean`)
-A `CardDef` represents a printed card face (with optional `otherFace : Option CardDef` for DFCs, `adventure : Option AdventureFace` for `//ADV//`, and `prepareFace : Option AdventureFace` for `//PREP//`). Its 41 fields fall into two groups:
-1. **Core Printed & Modeled Collections**:
-   - Identification & types: `name`, `manaCost`, `colorIndicator`, `supertypes`, `types`, `subtypes`, `power`, `toughness`, `loyalty`, `defense`, `handModifier`, `lifeModifier`, `isToken`, `daybound`.
-   - Keywords: `keywords : Keywords`.
-   - Spell resolution, modal rules & cost modifiers: `spellEffect : Option Effect`, `spellModes : Array Effect`, `modalRule : ModalRule` (CR 700.2), `additionalCost : SpellAdditionalCost` (CR 601.2b / 118.8), `spellCostReduction : SpellCostReduction` (CR 601.2f).
-   - ETB replacement & choices: `entersTappedRule : EntersTappedRule` (CR 614.1c), `entersWithCounters : EntersWithCounters` (CR 614.1c), `asEntersChoose : AsEntersChoice` (CR 614.12).
-   - Mana abilities, top-of-library permissions & static rules: `tapAddMana : Array ManaType`, `tapManaAbility : TapManaAbility` (CR 605.1a), `topOfLibraryRule : TopOfLibraryRule` (CR 401.5 / 601.3), `staticRule : CardStaticRule` (CR 604 / 613 / 614).
-   - Abilities: `triggeredAbilities : Array TriggeredAbility`, `activatedAbilities : Array ActivatedAbility`, `staticAbilities : Array StaticAbility`, `saga : Option SagaDef`.
-   - Modal trigger metadata: `fraTriggerModes : Array Effect`.
-2. **Alternative Costs & Parameterized Keyword Modifiers (~15 fields)**:
-   - Alternative & keyword costs (`affinityForSubtype`, `kicker`, `morph`, `impending`, `flashback`, `flashbackDiscard`, `cycling`, `teamwork`, `giftTreasure`, `cascade`, `ward`, `crew`, `toxic`, `prowessInstances`, `protectionFromColors`, etc.).
+A `CardDef` represents a printed card face (with optional `otherFace : Option CardDef` for DFCs, `adventure : Option AdventureFace` for `//ADV//`, and `prepareFace : Option AdventureFace` for `//PREP//`). Its 42 fields (reduced from 116 fields by 12 CR-aligned rule inductives) are organized by CR category:
+1. **Printed Characteristics (CR 200–212)**:
+   - `name`, `manaCost`, `colorIndicator`, `supertypes`, `types`, `subtypes`, `power`, `toughness`, `powerStar`, `toughnessStar`, `loyalty`, `defense`, `handModifier`, `lifeModifier`, `isToken`.
+2. **Keywords & Characteristic Rules (CR 702 / 100.2a / 903.3a)**:
+   - `keywords : Keywords`, `keywordRule : CardKeywordRule` (`.ward`, `.crew`, `.prowess`, `.protectionFromColors`, `.cycling`, `.daybound`, `.toxic`, `.cantBlock`, `.anyNumberInDeck`, `.canBeCommander`).
+3. **Spell Resolution, Modal Rules, Casting Options & Cost Modifiers (CR 601 / 608 / 700 / 702)**:
+   - `spellEffect : Option Effect`, `spellModes : Array Effect`, `modalRule : ModalRule` (CR 700.2), `additionalCost : SpellAdditionalCost` (CR 601.2b / 118.8), `spellCostReduction : SpellCostReduction` (CR 601.2f), `castOption : SpellCastOption` (CR 118.8 / 118.9 / 702), `castPermission : CastPermissionRule` (CR 601.2 / 601.3 / 608.2a), `empowerJace : Option Nat`.
+4. **ETB Replacement & Choices (CR 614)**:
+   - `entersTappedRule : EntersTappedRule` (CR 614.1c), `entersWithCounters : EntersWithCounters` (CR 614.1c), `asEntersChoose : AsEntersChoice` (CR 614.12), `entersPrepared : Bool`.
+5. **Mana Abilities, Top-of-Library Permissions & Static/Activated/Triggered Abilities (CR 602–605 / 714)**:
+   - `tapAddMana : Array ManaType`, `tapManaAbility : TapManaAbility` (CR 605.1a), `topOfLibraryRule : TopOfLibraryRule` (CR 401.5 / 601.3), `staticRule : CardStaticRule` (CR 604 / 613 / 614), `triggeredAbilities : Array TriggeredAbility`, `fraTriggerModes : Array Effect`, `activatedAbilities : Array ActivatedAbility`, `planeswalkersYouControlHave : Array ActivatedAbility`, `staticAbilities : Array StaticAbility`, `saga : Option SagaDef`.
+6. **Multi-Part & Double-Faced Cards (CR 712 / 715)**:
+   - `adventure : Option AdventureFace`, `prepareFace : Option AdventureFace`, `otherFace : Option CardDef`.
 
 ### 2.2 `Effect` (`Mtg/Engine/Card/Effect.lean`)
 `Effect` is the shared carrier struct used for spells, spell modes, activated abilities, triggered abilities, and Saga chapters:

@@ -173,6 +173,45 @@ inductive CardStaticRule where
   | grantTeamPlusTwoFlying
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
+inductive SpellCastOption where
+  | none
+  | flashback (cost : ManaCost) (discard : Bool := false)
+  | kicker (cost : ManaCost)
+  | giftTreasure
+  | teamwork (minPower : Nat)
+  | morph (cost : ManaCost)
+  | impending (counters : Nat) (cost : ManaCost)
+  | affinity (subtype : String)
+  | cascade (n : Nat)
+deriving Repr, Inhabited, BEq
+
+/-- Casting permission, restriction, or counterability rule on a card
+(CR 601.2 / 601.3 / 608.2a). -/
+inductive CastPermissionRule where
+  | normal
+  | cantBeCountered
+  | flashIfYouControl (subtype : String)
+  | castExiledWithSevenInGraveyard
+  | castOnlyIfGraveyardAtLeast (min : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Parameterized keyword or deck-building / blocking rule on a card
+(CR 702 / 100.2a / 903.3a). -/
+inductive CardKeywordRule where
+  | none
+  | ward (n : Nat)
+  | crew (n : Nat)
+  | prowess (n : Nat)
+  | protectionFromColors (colors : Array Color)
+  | cycling (cost : ManaCost)
+  | daybound
+  | toxic (n : Nat) (cantBlock : Bool := false)
+  | cantBlock
+  | anyNumberInDeck
+  | canBeCommander
+deriving Repr, Inhabited, BEq
+
 set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
@@ -210,11 +249,17 @@ structure CardDef where
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
+  /-- Parameterized keyword or deck-building / blocking rule (CR 702 / 100.2a / 903.3a). -/
+  keywordRule : CardKeywordRule := .none
   spellEffect : Option Effect := none
   /-- Additional cost to cast this spell (CR 601.2b / 118.8). -/
   additionalCost : SpellAdditionalCost := .none
   /-- Cost reduction on this spell (CR 601.2f). -/
   spellCostReduction : SpellCostReduction := .none
+  /-- Optional or alternative casting option on this card (CR 118.8 / 118.9 / 702). -/
+  castOption : SpellCastOption := .none
+  /-- Casting permission, restriction, or counterability rule (CR 601.2 / 601.3 / 608.2a). -/
+  castPermission : CastPermissionRule := .normal
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
   /-- Mode-selection rule for a modal spell (CR 700.2). -/
@@ -234,40 +279,11 @@ structure CardDef where
   asEntersChoose : AsEntersChoice := .none
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
-  /-- This spell can't be countered. -/
-  cantBeCountered : Bool := false
-  /-- You may cast this as though it had flash if you control this subtype. -/
-  flashIfYouControlSubtype : Option String := none
-  /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
-  ward : Option Nat := none
-  /-- Flashback cost (CR 702.34). -/
-  flashback : Option ManaCost := none
-  /-- Casting with flashback also requires discarding a card (CR 702.34a). -/
-  flashbackDiscard : Bool := false
-  /-- “As long as there are seven or more cards in your graveyard, you may
-  cast the exiled card, and mana of any type can be spent to cast that
-  spell” (Null Summoner). -/
-  castExiledWithSevenInGraveyard : Bool := false
   /-- Abilities planeswalkers you control have (“Planeswalkers you control
   have …”). -/
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
-  /-- A deck can have any number of cards with this name (CR 100.2a). -/
-  anyNumberInDeck : Bool := false
-  /-- You can't cast this spell unless there are at least this many other
-  cards in your graveyard. -/
-  castOnlyIfGraveyardAtLeast : Option Nat := none
-  /-- Crew `n` (CR 702.122). -/
-  crew : Option Nat := none
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
-  /-- Affinity for this subtype (CR 702.40). -/
-  affinityForSubtype : Option String := none
-  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
-  giftTreasure : Bool := false
-  /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
-  cascade : Nat := 0
-  /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
-  kicker : Option ManaCost := none
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapManaAbility` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
@@ -275,8 +291,6 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
-  /-- Printed instances of prowess; each triggers separately (CR 702.108b). -/
-  prowessInstances : Nat := 0
   /-- Permission to look at or play/cast cards from the top of your library
   (CR 401.5 / 601.3). -/
   topOfLibraryRule : TopOfLibraryRule := .none
@@ -285,11 +299,6 @@ structure CardDef where
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
-  /-- Teamwork N (CR 702.194): optional additional cost to tap creatures with
-  total power N or more. -/
-  teamwork : Option Nat := none
-  /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
-  daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
   /-- Empower Jace N on this spell (Reality Fracture). When the spell
@@ -300,24 +309,112 @@ structure CardDef where
   entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- Morph cost (CR 702.37). Face-down cast is a 2/2 for {3}. -/
-  morph : Option ManaCost := none
-  /-- Impending `n`—`cost`. Enters with `n` time counters and isn't a creature
-  until the last is removed. -/
-  impending : Option (Nat × ManaCost) := none
-  /-- Protection from each of these colors. -/
-  protectionFromColors : Array Color := #[]
-  /-- Cycling cost (CR 702.29). -/
-  cycling : Option ManaCost := none
-  /-- This planeswalker can be your commander. -/
-  canBeCommander : Bool := false
-  /-- Toxic `n` (CR 702.164). -/
-  toxic : Nat := 0
-  /-- This creature can't block. -/
-  cantBlock : Bool := false
 deriving Repr, Inhabited
 
 namespace CardDef
+
+def cantBeCountered (c : CardDef) : Bool :=
+  c.castPermission == .cantBeCountered
+
+def flashIfYouControlSubtype (c : CardDef) : Option String :=
+  match c.castPermission with
+  | .flashIfYouControl s => some s
+  | _ => none
+
+def castExiledWithSevenInGraveyard (c : CardDef) : Bool :=
+  c.castPermission == .castExiledWithSevenInGraveyard
+
+def castOnlyIfGraveyardAtLeast (c : CardDef) : Option Nat :=
+  match c.castPermission with
+  | .castOnlyIfGraveyardAtLeast n => some n
+  | _ => none
+
+def flashback (c : CardDef) : Option ManaCost :=
+  match c.castOption with
+  | .flashback cost _ => some cost
+  | _ => none
+
+def flashbackDiscard (c : CardDef) : Bool :=
+  match c.castOption with
+  | .flashback _ d => d
+  | _ => false
+
+def affinityForSubtype (c : CardDef) : Option String :=
+  match c.castOption with
+  | .affinity s => some s
+  | _ => none
+
+def giftTreasure (c : CardDef) : Bool :=
+  c.castOption == .giftTreasure
+
+def cascade (c : CardDef) : Nat :=
+  match c.castOption with
+  | .cascade n => n
+  | _ => 0
+
+def kicker (c : CardDef) : Option ManaCost :=
+  match c.castOption with
+  | .kicker cost => some cost
+  | _ => none
+
+def teamwork (c : CardDef) : Option Nat :=
+  match c.castOption with
+  | .teamwork n => some n
+  | _ => none
+
+def morph (c : CardDef) : Option ManaCost :=
+  match c.castOption with
+  | .morph cost => some cost
+  | _ => none
+
+def impending (c : CardDef) : Option (Nat × ManaCost) :=
+  match c.castOption with
+  | .impending n cost => some (n, cost)
+  | _ => none
+
+def ward (c : CardDef) : Option Nat :=
+  match c.keywordRule with
+  | .ward n => some n
+  | _ => none
+
+def anyNumberInDeck (c : CardDef) : Bool :=
+  c.keywordRule == .anyNumberInDeck
+
+def crew (c : CardDef) : Option Nat :=
+  match c.keywordRule with
+  | .crew n => some n
+  | _ => none
+
+def prowessInstances (c : CardDef) : Nat :=
+  match c.keywordRule with
+  | .prowess n => n
+  | _ => 0
+
+def daybound (c : CardDef) : Bool :=
+  c.keywordRule == .daybound
+
+def protectionFromColors (c : CardDef) : Array Color :=
+  match c.keywordRule with
+  | .protectionFromColors cols => cols
+  | _ => #[]
+
+def cycling (c : CardDef) : Option ManaCost :=
+  match c.keywordRule with
+  | .cycling cost => some cost
+  | _ => none
+
+def canBeCommander (c : CardDef) : Bool :=
+  c.keywordRule == .canBeCommander
+
+def toxic (c : CardDef) : Nat :=
+  match c.keywordRule with
+  | .toxic n _ => n
+  | _ => 0
+
+def cantBlock (c : CardDef) : Bool :=
+  match c.keywordRule with
+  | .cantBlock | .toxic _ true => true
+  | _ => false
 
 def entersTapped (c : CardDef) : Bool :=
   c.entersTappedRule == .always

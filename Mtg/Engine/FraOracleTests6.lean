@@ -256,7 +256,7 @@ def testPeerReview : CardDef :=
 /- Ruling 843: no costs are paid for the copy, but a paid kicker still
 counts for it. -/
 #guard
-  let kicked := { shock with kicker := some (ManaCost.ofGeneric 1) }
+  let kicked := { shock with castOption := .kicker (ManaCost.ofGeneric 1) }
   let g := withRedMana (addToHand (emptyHand cryomancerReady ⟨0⟩) kicked ⟨0⟩) ⟨0⟩ 2
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
   let g := mustApply g ⟨0⟩ (.announceKicker true)

@@ -152,6 +152,60 @@ structure Player where
   commanderCreatureTypes : Array String := #[]
 deriving Repr, Inhabited
 
+namespace Player
+
+/-- True when this player has per-turn tracking state to reset at the end of a turn. -/
+def hasTurnStateToClear (pl : Player) : Bool :=
+  pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
+    pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
+    pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
+    pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
+    pl.scriedThisTurn || pl.surveilledThisTurn ||
+    pl.copyNextInstantSorceryThisTurn != 0 ||
+    pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
+    pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
+    pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
+    pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
+    pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
+    !pl.typeSpellCostLessThisTurn.isEmpty ||
+    !pl.supertypeSpellCostLessThisTurn.isEmpty
+
+/-- Player with per-turn tracking fields reset as the turn ends. -/
+def clearedAtEndOfTurn (pl : Player) : Player :=
+  { pl with
+    cardsDrawnThisTurn := 0
+    cardsDrawnThisDrawStep := 0
+    spellsCastThisTurn := 0
+    noncreatureSpellsCastThisTurn := 0
+    creatureSpellsCastThisTurn := 0
+    castManaValuesThisTurn := #[]
+    belladonnaResolvesThisTurn := 0
+    lifeGainedThisTurn := 0
+    cantCastSpellsThisTurn := false
+    attackPumpPerPlainsThisTurn := 0
+    heroEnteredThisTurn := false
+    attackedWithHeroThisTurn := false
+    creaturesAttackedWithThisTurn := 0
+    equipActivationsThisTurn := 0
+    cardsDiscardedThisTurn := 0
+    artifactEnteredThisTurn := false
+    jaceLoyaltyAtInstantSpeed := false
+    scriedThisTurn := false
+    surveilledThisTurn := false
+    copyNextInstantSorceryThisTurn := 0
+    dealtNoncombatDamageThisTurn := false
+    dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
+    activatedLoyaltyThisTurn := false
+    cardsMilledThisTurn := 0
+    mountainExtraRedThisTurn := 0
+    nextSpellCantBeCountered := false
+    lifeLostThisTurn := 0
+    cantAttackJaces := false
+    typeSpellCostLessThisTurn := #[]
+    supertypeSpellCostLessThisTurn := #[] }
+
+end Player
+
 /-- A seat at the table before objects are created. -/
 structure Seat where
   name : String

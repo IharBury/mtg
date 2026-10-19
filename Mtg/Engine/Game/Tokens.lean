@@ -535,7 +535,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .mite =>
     { creatureToken "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
         (types := #[.artifact, .creature]) with
-      toxic := 1, cantBlock := true }
+      keywordRule := .toxic 1 true }
   | .shark => creatureToken "Shark" #["Shark"] 0 0 (some .blue) (keywords := Keyword.flying)
   | .gingerbrute =>
     { creatureToken "Gingerbrute" #["Food", "Golem"] 1 1
