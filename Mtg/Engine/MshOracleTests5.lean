@@ -144,7 +144,7 @@ def tenRingsReplacementOk : Bool :=
   let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
   let bot := namedPermanent g "Aerial Doombot"
   let g := g.setObject { bot with printed :=
-    { bot.printed with drawTwoExceptFirstDrawStep := true } }
+    { bot.printed with staticRule := .drawTwoExceptFirstDrawStep } }
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := { g with step := .end }

@@ -360,7 +360,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
     let (g, emb) := g.allocObject {
         name := "Elspeth emblem"
         types := #[.enchantment]
-        grantTeamPlusTwoFlying := true
+        staticRule := .grantTeamPlusTwoFlying
       } controller .command (some controller)
     some (g.logMsg s!"{pl.name} gets an emblem ({emb.name})")
   | .putOnLibrary .bottomAfterDrawTwo .cardFromHand =>

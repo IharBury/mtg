@@ -563,7 +563,7 @@ inductive ParsedAbility where
   | triggered (ab : TriggeredAbility)
   | activated (ab : ActivatedAbility)
   | spell (e : Effect)
-  | modes (es : Array Effect) (oneOrBoth : Bool) (teamwork : Bool) (twoIf : Option String)
+  | modes (es : Array Effect) (rule : ModalRule)
 deriving Repr
 
 def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
@@ -572,12 +572,10 @@ def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
   | .triggered ab => { c with triggeredAbilities := c.triggeredAbilities.push ab }
   | .activated ab => { c with activatedAbilities := c.activatedAbilities.push ab }
   | .spell e => { c with spellEffect := some e }
-  | .modes es oneOrBoth teamwork twoIf =>
+  | .modes es rule =>
     { c with
       spellModes := es
-      chooseOneOrBoth := oneOrBoth
-      chooseBothIfTeamwork := teamwork
-      chooseTwoIfYouControlSubtype := twoIf }
+      modalRule := rule }
 
 def pushMana (c : CardDef) (t : ManaType) : CardDef :=
   { c with tapAddMana := c.tapAddMana.push t }
@@ -753,7 +751,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low == "this creature enters with a +1/+1 counter on it." then
     some { c with entersWithCounters := .plusOne 1 }
   else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
-    some { c with tapAddChosenColorPerDifferentPower := true }
+    some { c with tapManaAbility := .chosenColorPerDifferentPower }
   else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
     some { c with castExiledWithSevenInGraveyard := true }
   else if low.startsWith "a deck can have any number of cards named" then
@@ -786,30 +784,31 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     else 1
     some { c with entersWithCounters := .shield k }
   else if low.contains "if you would create a food token" then
-    some { c with foodAlsoCreatesTreasure := true }
+    some { c with staticRule := .foodAlsoCreatesTreasure }
   else if low.contains "except the first one you draw in each of your draw steps" then
-    some { c with drawTwoExceptFirstDrawStep := true }
+    some { c with staticRule := .drawTwoExceptFirstDrawStep }
   else if low.contains "twice that many of those tokens are created instead" then
-    some { c with tokenDoubling := true }
+    some { c with staticRule := .tokenDoubling (c.staticRule == .drawTwoExceptFirstDrawStep) }
   else if named.contains "additional +1/+1 counters" && named.contains "equal to this toughness" then
-    some { c with othersEnterWithPlusOneEqualToughness := true }
+    some { c with staticRule := .othersEnterWithPlusOneEqualToughness }
   else if low.contains "you may look at the top card of your library any time" then
-    some { c with mayLookAtTopAnytime := true }
+    some { c with topOfLibraryRule := .lookAnytime }
   else if low.contains "you may cast creature spells from the top of your library" then
-    some { c with mayCastCreaturesFromTop := true }
+    some { c with topOfLibraryRule := .castCreatures }
   else if low.contains "you may play lands from the top of your library" then
-    some { c with mayPlayLandsFromTop := true }
+    some { c with topOfLibraryRule := .playLands }
   else if low.contains "creatures you control have" && low.contains "add one mana of any color" then
-    some { c with grantCreaturesTapAddAnyColor := true }
+    some { c with topOfLibraryRule :=
+      if c.topOfLibraryRule == .castCreatures then .elvenChorus else .grantCreaturesTapAnyColor }
   else if low.contains "the first creature spell you cast each turn costs" then
     match n with
     | none => none
     | some k =>
-      some { c with firstCreatureCostsLess := k, firstCreatureHasFlash := low.contains "flash" }
+      some { c with staticRule := .firstCreatureDiscount k (low.contains "flash") }
   else if named.contains "as this enters" && named.contains "choose odd or even" then
     some { c with asEntersChoose := .oddEven }
   else if low.contains "from anywhere other than your hand cost" then
-    n.map fun k => { c with costReductionNotFromHand := k }
+    n.map fun k => { c with staticRule := .costReductionNotFromHand k }
   else if low.contains "enters with an indestructible counter" then
     some { c with entersWithCounters := .indestructible }
   else if low.contains "lore counters among sagas you control" && low.contains "hexproof and indestructible" then
@@ -818,16 +817,16 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
       match (numbered.splitOn "there are ").getLastD "" |>.takeWhile Char.isDigit with
       | "" => 1
       | d => d.toNat!
-    some { c with hexproofIndestructibleIfLore := some k }
+    some { c with staticRule := .hexproofIndestructibleIfLore k }
   else if low.contains "for each mountain you control" then
     let k :=
       match (low.splitOn "gets +").getLastD "" |>.takeWhile Char.isDigit with
       | "" => 1
       | d => d.toNat!
-    some { c with powerPerMountain := k }
+    some { c with staticRule := .powerPerMountain k }
   else if low.contains "you may play an additional land" && low.contains "as long as you control another" then
     let t := (raw.splitOn "another ").getLastD "" |>.splitOn "," |>.headD "" |>.trimAscii.copy
-    some { c with extraLandIfOtherSubtype := some t }
+    some { c with staticRule := .extraLandIfOtherSubtype t }
   else if low.contains "enters prepared" then
     some { c with entersPrepared := true }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
@@ -848,43 +847,42 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
 where
   parseTap (c : CardDef) (raw low : String) : Option CardDef :=
     if low.contains "where x is this creature's power" then
-      some { c with tapAddAnyColorEqualToPower := true }
+      some { c with tapManaAbility := .anyColorEqualToPower }
     else if low.contains "spend this mana only to cast" &&
         !low.contains "legendary spell" && !low.contains "instant or sorcery" then
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
       let restriction :=
         ((raw.splitOn "to cast ").getLastD "").replace "." "" |>.trimAscii.copy
       match manaLetters add with
-      | some ts => some { c with tapAddRestricted := some (ts.toArray, restriction) }
+      | some ts => some { c with tapManaAbility := .restricted ts.toArray restriction }
       | none => none
     else if low.contains "for each" && low.contains "you control" then
       if low.contains "where x is this creature's power" || low.contains "x mana of any" then
-        some { c with tapAddAnyColorEqualToPower := true }
+        some { c with tapManaAbility := .anyColorEqualToPower }
       else
         match (low.splitOn "add ").getLastD "" |>.splitOn " for each" with
         | [sym, _] =>
           match manaLetters sym.trimAscii.copy with
           | some [m] =>
             let subtype := (raw.splitOn "for each ").getLastD "" |>.splitOn " you control" |>.headD "" |>.trimAscii.copy
-            some { c with tapAddManaForEach := c.tapAddManaForEach.push { mana := m, subtype := subtype } }
+            some { c with tapManaAbility := .forEach (c.tapAddManaForEach.push { mana := m, subtype := subtype }) }
           | _ => none
         | _ => none
     else if low.contains "activate only if this land entered this turn" then
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
       manaLetters add |>.map fun ts =>
-        { c with tapAddOneOfIfEnteredOrBasic := ts.toArray }
+        { c with tapManaAbility := .oneOfIfEnteredOrBasic ts.toArray }
     else if low.contains "spend this mana only to cast a legendary spell" then
-      some { c with tapAddAnyColorForLegendary := true }
+      some { c with tapManaAbility := .anyColorForLegendary }
     else if low.contains "spend this mana only to cast an instant or sorcery" then
-      some { c with tapAddAnyColorForInstantOrSorcery := true }
+      some { c with tapManaAbility := .anyColorForInstantOrSorcery }
     else if low.contains "among legendary creatures and planeswalkers" then
-      some { c with tapAddAnyColorAmongLegendaries := true }
+      some { c with tapManaAbility := .anyColorAmongLegendaries }
     else if low.contains "in your commander's color identity" then
-      some { c with tapAddCommanderIdentity := true
-                    commanderIdentityScryCreature := low.contains "scry" }
+      some { c with tapManaAbility := .commanderIdentity (low.contains "scry") }
     else if low.contains "sacrifice this artifact: add one mana of any color" ||
         low.contains "sacrifice this token: add one mana of any color" then
-      some { c with tapSacrificeAddAnyColor := true }
+      some { c with tapManaAbility := .sacrificeAnyColor }
     else if low.contains "two mana in any combination" then
       let rest := (raw.splitOn "combination of ").getLastD "" |>.replace "." ""
       let parts := rest.splitOn "and/or" |>.flatMap (·.splitOn ",") |>.map (·.trimAscii.copy) |>.filter (· != "")
@@ -892,7 +890,7 @@ where
         match manaLetters p with
         | some [t] => some t
         | _ => none
-      if types.length >= 2 then some { c with tapAddTwoAmong := types.toArray } else none
+      if types.length >= 2 then some { c with tapManaAbility := .twoAmong types.toArray } else none
     else if low.contains "pay" && low.contains "life: add" then
       let life :=
         match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with
@@ -900,7 +898,7 @@ where
         | d => some d.toNat!
       let add := (raw.splitOn "Add ").getLastD "" |>.replace "." ""
       match life, manaLetters add with
-      | some n, some ts => some { c with tapPayLifeAddOneOf := some (n, ts.toArray) }
+      | some n, some ts => some { c with tapManaAbility := .payLifeOneOf n ts.toArray }
       | _, _ => none
     else if low.contains "deals" && low.contains "damage to you" then
       let n :=
@@ -909,17 +907,17 @@ where
         | d => d.toNat!
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
       match manaLetters add with
-      | some ts => some { c with tapAddOneOfDealsDamage := some (ts.toArray, n) }
+      | some ts => some { c with tapManaAbility := .oneOfDealsDamage ts.toArray n }
       | none => none
     else if low.contains "land an opponent controls could produce" then
-      some { c with tapAddOppCouldProduce := true }
+      some { c with tapManaAbility := .oppCouldProduce }
     else if low.contains "land you control could produce" then
-      some { c with tapAddYouCouldProduce := true }
+      some { c with tapManaAbility := .youCouldProduce }
     else if low.contains "one mana of any color" && !low.contains "spend this mana" then
-      some { c with tapAddAnyColor := true }
+      some { c with tapManaAbility := .anyColor }
     else if low.contains " or " then
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
-      manaLetters add |>.map fun ts => { c with tapAddOneOf := ts.toArray }
+      manaLetters add |>.map fun ts => { c with tapManaAbility := .oneOf ts.toArray }
     else
       let add := (raw.splitOn "Add ").getLastD "" |>.replace "." "" |>.trimAscii.copy
       match manaLetters add with
@@ -930,7 +928,7 @@ where
         -- `{T}: Add {C}{C}` is one ability. A sacrifice or other cost before
         -- the mana stays with the activated-ability parser.
         if ts.length ≥ 2 && low.startsWith "{t}: add" && !low.contains "sacrifice" then
-          some { c with tapAddTogether := ts.toArray }
+          some { c with tapManaAbility := .together ts.toArray }
         else none
       | none => none
 
@@ -1177,15 +1175,15 @@ def parseModes (cardName line : String) : Option ParsedAbility :=
           matchChapter cardName m
         if effects.length != modes.length then none
         else
-          let oneOrBoth := low.contains "choose one or both"
-          let teamwork := low.contains "using teamwork"
-          let twoIf :=
-            if low.contains "you may choose two instead" then
+          let rule : ModalRule :=
+            if low.contains "choose one or both" then .chooseOneOrBoth
+            else if low.contains "using teamwork" then .chooseBothIfTeamwork
+            else if low.contains "you may choose two instead" then
               let after := (header.splitOn "you control a ").getLastD ""
               let t := (after.splitOn " ").headD "" |>.trimAscii.copy
-              if t.isEmpty then none else some t
-            else none
-          some (.modes effects.toArray oneOrBoth teamwork twoIf)
+              if t.isEmpty then .chooseOne else .chooseTwoIfYouControl t
+            else .chooseOne
+          some (.modes effects.toArray rule)
 
 /-- Lowercase, strip reminders and punctuation, keep the card name. Used to
 prefer a literal printed match over a phrase-equivalent one. -/
@@ -1251,7 +1249,7 @@ def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   | .triggered a => .triggered (refillTriggered a vals)
   | .activated a => .activated (refillActivated a vals)
   | .spell e => .spell (refillEffect e vals)
-  | .modes es oneOrBoth teamwork twoIf => .modes es oneOrBoth teamwork twoIf
+  | .modes es rule => .modes es rule
 
 def parsedEq (a b : ParsedAbility) : Bool :=
   match a, b with
@@ -1259,8 +1257,7 @@ def parsedEq (a b : ParsedAbility) : Bool :=
   | .triggered x, .triggered y => x == y
   | .activated x, .activated y => x == y
   | .spell x, .spell y => x == y
-  | .modes es1 a1 b1 c1, .modes es2 a2 b2 c2 =>
-    es1 == es2 && a1 == a2 && b1 == b2 && c1 == c2
+  | .modes es1 r1, .modes es2 r2 => es1 == es2 && r1 == r2
   | _, _ => false
 
 /-- True when `a` and `b` are the same ability with different argument values. -/
@@ -1891,7 +1888,7 @@ partial def parseRules (c : CardDef) (lines : List String)
       let c :=
         if bare.contains "a creature an opponent controls would die" &&
             bare.contains "exile it instead" then
-          { c with exileOppCreaturesInstead := true }
+          { c with staticRule := .exileOppCreaturesInstead }
         else c
       if skipLine c line then go c rest
       else

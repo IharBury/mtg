@@ -102,6 +102,77 @@ inductive SpellAdditionalCost where
   | beholdOrPay (quality : String) (generic : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
+(CR 605.1a). -/
+inductive TapManaAbility where
+  | none
+  | oneOf (types : Array ManaType)
+  | oneOfIfEnteredOrBasic (types : Array ManaType)
+  | oneOfDealsDamage (types : Array ManaType) (damage : Nat)
+  | payLifeOneOf (life : Nat) (types : Array ManaType)
+  | together (types : Array ManaType)
+  | twoAmong (types : Array ManaType)
+  | filter (cost : ManaCost) (types : Array ManaType)
+  | forEach (entries : Array TapAddForEach)
+  | colorlessPerSubtype (subtype : String)
+  | anyColor
+  | sacrificeAnyColor
+  | anyColorEqualToPower
+  | anyColorForInstantOrSorcery
+  | anyColorForLegendary
+  | anyColorAmongLegendaries
+  | chosenColorPerDifferentPower
+  | restricted (types : Array ManaType) (restriction : String)
+  | commanderIdentity (scryCreature : Bool := false)
+  | oppCouldProduce
+  | youCouldProduce
+deriving Repr, Inhabited, BEq
+
+/-- Mode-selection rule for a modal spell (CR 700.2). -/
+inductive ModalRule where
+  | chooseOne
+  | chooseOneOrBoth
+  | chooseTwoIfYouControl (subtype : String)
+  | chooseBothIfTeamwork
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Permission to look at or play/cast cards from the top of your library
+(CR 401.5 / 601.3). -/
+inductive TopOfLibraryRule where
+  | none
+  | lookAnytime
+  | playLands
+  | castCreatures
+  | elvenChorus
+  | grantCreaturesTapAnyColor
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
+inductive CardStaticRule where
+  | none
+  | foodAlsoCreatesTreasure
+  | othersEnterWithPlusOneEqualToughness
+  | powerPerMountain (n : Nat)
+  | extraLandIfOtherSubtype (subtype : String)
+  | tokenDoubling (andDrawTwo : Bool := false)
+  | drawTwoExceptFirstDrawStep
+  | exileOppCreaturesInstead
+  | firstCreatureDiscount (costReduction : Nat) (hasFlash : Bool)
+  | hexproofIndestructibleIfLore (minLore : Nat)
+  | costReductionNotFromHand (n : Nat)
+  | grantLandsTapAnyColor
+  | freeCastIfControlCommander
+  | opponentsCantGainLife
+  | cantLoseAndOpponentsCantWin (andNoMinusCounters : Bool := false)
+  | creaturesCantGetMinusCounters
+  | powerPerUnspentMana (andColorless : Bool := false)
+  | unspentManaBecomesColorless
+  | eminenceSphinxReduction (n : Nat)
+  | protectionFromChosenCardType
+  | corruptedToxicLifelink
+  | grantTeamPlusTwoFlying
+deriving Repr, Inhabited, BEq, DecidableEq
+
 set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
@@ -146,37 +217,21 @@ structure CardDef where
   spellCostReduction : SpellCostReduction := .none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
+  /-- Mode-selection rule for a modal spell (CR 700.2). -/
+  modalRule : ModalRule := .chooseOne
   /-- Modes of this card's modal triggered ability (“When this creature
   enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
   fraTriggerModes : Array Effect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
-  /-- `{T}: Add {M} for each permanent you control with this subtype
-  (e.g. Elvish Archdruid). -/
-  tapAddManaForEach : Array TapAddForEach := #[]
-  /-- `{T}: Add X mana of any one color, where X is this creature's power.
-  That mana may be spent only to cast Elf spells and activate abilities of
-  Elf sources (e.g. Woodland Weavemaster). -/
-  tapAddAnyColorEqualToPower : Bool := false
-  /-- `{T}: Add one mana of any color. Spend this mana only to cast an instant
-  or sorcery spell (e.g. Pelargir Survivor). -/
-  tapAddAnyColorForInstantOrSorcery : Bool := false
+  /-- `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana` (CR 605.1a). -/
+  tapManaAbility : TapManaAbility := .none
   /-- Replacement rule for whether this permanent enters tapped (CR 614.1c). -/
   entersTappedRule : EntersTappedRule := .untapped
   /-- Counters this permanent enters the battlefield with (CR 614.1c). -/
   entersWithCounters : EntersWithCounters := .none
   /-- Choice made as this permanent enters the battlefield (CR 614.12). -/
   asEntersChoose : AsEntersChoice := .none
-  /-- `{T}: Add one of these mana types` as a single choice ability
-  (e.g. `{T}: Add {G} or {U}`). -/
-  tapAddOneOf : Array ManaType := #[]
-  /-- `{T}: Add one of these types. Activate only if this land entered this
-  turn or if you control a basic land.` -/
-  tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
-  /-- `{T}: Add one mana of any color` with no spending restriction. -/
-  tapAddAnyColor : Bool := false
-  /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
-  tapSacrificeAddAnyColor : Bool := false
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
   /-- This spell can't be countered. -/
@@ -196,103 +251,43 @@ structure CardDef where
   /-- Abilities planeswalkers you control have (“Planeswalkers you control
   have …”). -/
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
-  /-- `{T}: Choose a color. Add one mana of that color for each different
-  power among creatures you control.` (Loot, the Nexus) -/
-  tapAddChosenColorPerDifferentPower : Bool := false
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
   /-- You can't cast this spell unless there are at least this many other
   cards in your graveyard. -/
   castOnlyIfGraveyardAtLeast : Option Nat := none
-  /-- `{T}: Add one mana of any color. Spend this mana only to cast a
-  legendary spell, and that spell can't be countered.` -/
-  tapAddAnyColorForLegendary : Bool := false
   /-- Crew `n` (CR 702.122). -/
   crew : Option Nat := none
-  /-- `{T}: Add two mana in any combination of these types`. -/
-  tapAddTwoAmong : Array ManaType := #[]
-  /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
-  chooseOneOrBoth : Bool := false
-  /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
-  chooseTwoIfYouControlSubtype : Option String := none
-  /-- `{T}: Add one mana of any color among legendary creatures and
-  planeswalkers you control`. -/
-  tapAddAnyColorAmongLegendaries : Bool := false
-  /-- `{T}: Add these mana types. Spend this mana only to cast …`. -/
-  tapAddRestricted : Option (Array ManaType × String) := none
-  /-- `{T}, Pay n life: Add one of these types`. -/
-  tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
-  /-- `{T}: Add one mana of any color in your commander's color identity`. -/
-  tapAddCommanderIdentity : Bool := false
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
   /-- Affinity for this subtype (CR 702.40). -/
   affinityForSubtype : Option String := none
   /-- Gift a Treasure (you may promise an opponent a Treasure). -/
   giftTreasure : Bool := false
-  /-- If you would create a Food token, also create a Treasure. -/
-  foodAlsoCreatesTreasure : Bool := false
-  /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
-  othersEnterWithPlusOneEqualToughness : Bool := false
-  /-- This gets +N/+0 for each Mountain you control. -/
-  powerPerMountain : Nat := 0
-  /-- You may play an additional land if you control another of this subtype. -/
-  extraLandIfOtherSubtype : Option String := none
-  /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
-  tapAddColorlessPerSubtype : Option String := none
   /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
   kicker : Option ManaCost := none
-  /-- If one or more tokens would be created under your control, twice that
-  many of those tokens are created instead (e.g. Bard, King of Dale). -/
-  tokenDoubling : Bool := false
-  /-- If you would draw a card except the first one you draw in each of your
-  draw steps, draw two cards instead. -/
-  drawTwoExceptFirstDrawStep : Bool := false
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
-  `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
+  `tapAddMana` / `tapManaAbility` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Static abilities other than printed keywords (CR 604). -/
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
-  /-- If a creature an opponent controls would die, exile it instead
-  (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
-  exileOppCreaturesInstead : Bool := false
   /-- Printed instances of prowess; each triggers separately (CR 702.108b). -/
   prowessInstances : Nat := 0
-  /-- You may look at the top card of your library any time
-  (e.g. Elven Chorus). -/
-  mayLookAtTopAnytime : Bool := false
-  /-- You may cast creature spells from the top of your library
-  (e.g. Elven Chorus). Does not grant flash or change timing. -/
-  mayCastCreaturesFromTop : Bool := false
-  /-- You may play lands from the top of your library (e.g. Ka-Zar). -/
-  mayPlayLandsFromTop : Bool := false
-  /-- Creatures you control have `{T}: Add one mana of any color`
-  (e.g. Elven Chorus). -/
-  grantCreaturesTapAddAnyColor : Bool := false
-  /-- The first creature spell you cast each turn costs this much generic
-  less (e.g. Radagast of Rhosgobel). -/
-  firstCreatureCostsLess : Nat := 0
-  /-- The first creature spell you cast each turn can be cast as though it
-  had flash (e.g. Radagast of Rhosgobel). -/
-  firstCreatureHasFlash : Bool := false
-  /-- Hexproof and indestructible while you control this many lore counters
-  among Sagas (e.g. Tom Bombadil). -/
-  hexproofIndestructibleIfLore : Option Nat := none
-  /-- Spells you cast from anywhere other than your hand cost this much
-  generic mana less (e.g. Bilbo, Thief in the Night). -/
-  costReductionNotFromHand : Nat := 0
+  /-- Permission to look at or play/cast cards from the top of your library
+  (CR 401.5 / 601.3). -/
+  topOfLibraryRule : TopOfLibraryRule := .none
+  /-- Continuous or replacement static rule on this card (CR 604 / 613 / 614). -/
+  staticRule : CardStaticRule := .none
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
   /-- Teamwork N (CR 702.194): optional additional cost to tap creatures with
   total power N or more. -/
   teamwork : Option Nat := none
-  /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
-  chooseBothIfTeamwork : Bool := false
   /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
   daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
@@ -305,21 +300,6 @@ structure CardDef where
   entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
-  tapAddTogether : Array ManaType := #[]
-  /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
-  tapAddOneOfDealsDamage : Option (Array ManaType × Nat) := none
-  /-- `{T}: Add one mana of any color that a land an opponent controls could produce.` -/
-  tapAddOppCouldProduce : Bool := false
-  /-- `{T}: Add one mana of any type that a land you control could produce.` -/
-  tapAddYouCouldProduce : Bool := false
-  /-- Lands you control have `{T}: Add one mana of any color.` -/
-  grantLandsTapAnyColor : Bool := false
-  /-- Pay `cost`, `{T}`: add two mana in any combination of these colors. -/
-  filterMana : Option (ManaCost × Array ManaType) := none
-  /-- Spending commander-identity mana from this land to cast a creature spell
-  that shares a creature type with your commander scries 1 (Path of Ancestry). -/
-  commanderIdentityScryCreature : Bool := false
   /-- Morph cost (CR 702.37). Face-down cast is a 2/2 for {3}. -/
   morph : Option ManaCost := none
   /-- Impending `n`—`cost`. Enters with `n` time counters and isn't a creature
@@ -329,36 +309,12 @@ structure CardDef where
   protectionFromColors : Array Color := #[]
   /-- Cycling cost (CR 702.29). -/
   cycling : Option ManaCost := none
-  /-- If you control a commander, you may cast this spell without paying its mana cost. -/
-  freeCastIfControlCommander : Bool := false
   /-- This planeswalker can be your commander. -/
   canBeCommander : Bool := false
-  /-- Your opponents can't gain life. -/
-  opponentsCantGainLife : Bool := false
-  /-- You can't lose the game. -/
-  cantLoseGame : Bool := false
-  /-- Your opponents can't win the game. -/
-  opponentsCantWin : Bool := false
-  /-- Creatures you control can't have minus counters put on them. -/
-  creaturesCantGetMinusCounters : Bool := false
-  /-- This creature gets +1/+1 for each unspent mana you have. -/
-  powerPerUnspentMana : Bool := false
-  /-- If you would lose unspent mana, that mana becomes colorless instead. -/
-  unspentManaBecomesColorless : Bool := false
-  /-- Eminence: other Sphinx spells you cast cost this much less while this is
-  in the command zone or on the battlefield. -/
-  eminenceSphinxReduction : Nat := 0
-  /-- You and creatures you control have protection from the chosen card type. -/
-  protectionFromChosenCardType : Bool := false
-  /-- Corrupted — creatures you control with toxic have lifelink while an
-  opponent has three or more poison counters. -/
-  corruptedToxicLifelink : Bool := false
   /-- Toxic `n` (CR 702.164). -/
   toxic : Nat := 0
   /-- This creature can't block. -/
   cantBlock : Bool := false
-  /-- Emblem: creatures you control get +2/+2 and have flying. -/
-  grantTeamPlusTwoFlying : Bool := false
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -501,6 +457,217 @@ def additionalCostBeholdOrPay (c : CardDef) : Option (String × Nat) :=
   match c.additionalCost with
   | .beholdOrPay q n => some (q, n)
   | _ => none
+
+def tapAddManaForEach (c : CardDef) : Array TapAddForEach :=
+  match c.tapManaAbility with
+  | .forEach es => es
+  | _ => #[]
+
+def tapAddAnyColorEqualToPower (c : CardDef) : Bool :=
+  c.tapManaAbility == .anyColorEqualToPower
+
+def tapAddAnyColorForInstantOrSorcery (c : CardDef) : Bool :=
+  c.tapManaAbility == .anyColorForInstantOrSorcery
+
+def tapAddOneOf (c : CardDef) : Array ManaType :=
+  match c.tapManaAbility with
+  | .oneOf ts => ts
+  | _ => #[]
+
+def tapAddOneOfIfEnteredOrBasic (c : CardDef) : Array ManaType :=
+  match c.tapManaAbility with
+  | .oneOfIfEnteredOrBasic ts => ts
+  | _ => #[]
+
+def tapAddAnyColor (c : CardDef) : Bool :=
+  c.tapManaAbility == .anyColor
+
+def tapSacrificeAddAnyColor (c : CardDef) : Bool :=
+  c.tapManaAbility == .sacrificeAnyColor
+
+def tapAddChosenColorPerDifferentPower (c : CardDef) : Bool :=
+  c.tapManaAbility == .chosenColorPerDifferentPower
+
+def tapAddAnyColorForLegendary (c : CardDef) : Bool :=
+  c.tapManaAbility == .anyColorForLegendary
+
+def tapAddTwoAmong (c : CardDef) : Array ManaType :=
+  match c.tapManaAbility with
+  | .twoAmong ts => ts
+  | _ => #[]
+
+def tapAddAnyColorAmongLegendaries (c : CardDef) : Bool :=
+  c.tapManaAbility == .anyColorAmongLegendaries
+
+def tapAddRestricted (c : CardDef) : Option (Array ManaType × String) :=
+  match c.tapManaAbility with
+  | .restricted ts r => some (ts, r)
+  | _ => none
+
+def tapPayLifeAddOneOf (c : CardDef) : Option (Nat × Array ManaType) :=
+  match c.tapManaAbility with
+  | .payLifeOneOf n ts => some (n, ts)
+  | _ => none
+
+def tapAddCommanderIdentity (c : CardDef) : Bool :=
+  match c.tapManaAbility with
+  | .commanderIdentity _ => true
+  | _ => false
+
+def commanderIdentityScryCreature (c : CardDef) : Bool :=
+  c.tapManaAbility == .commanderIdentity true
+
+def tapAddColorlessPerSubtype (c : CardDef) : Option String :=
+  match c.tapManaAbility with
+  | .colorlessPerSubtype s => some s
+  | _ => none
+
+def tapAddTogether (c : CardDef) : Array ManaType :=
+  match c.tapManaAbility with
+  | .together ts => ts
+  | _ => #[]
+
+def tapAddOneOfDealsDamage (c : CardDef) : Option (Array ManaType × Nat) :=
+  match c.tapManaAbility with
+  | .oneOfDealsDamage ts n => some (ts, n)
+  | _ => none
+
+def tapAddOppCouldProduce (c : CardDef) : Bool :=
+  c.tapManaAbility == .oppCouldProduce
+
+def tapAddYouCouldProduce (c : CardDef) : Bool :=
+  c.tapManaAbility == .youCouldProduce
+
+def filterMana (c : CardDef) : Option (ManaCost × Array ManaType) :=
+  match c.tapManaAbility with
+  | .filter cost ts => some (cost, ts)
+  | _ => none
+
+def chooseOneOrBoth (c : CardDef) : Bool :=
+  c.modalRule == .chooseOneOrBoth
+
+def chooseTwoIfYouControlSubtype (c : CardDef) : Option String :=
+  match c.modalRule with
+  | .chooseTwoIfYouControl s => some s
+  | _ => none
+
+def chooseBothIfTeamwork (c : CardDef) : Bool :=
+  c.modalRule == .chooseBothIfTeamwork
+
+def mayLookAtTopAnytime (c : CardDef) : Bool :=
+  match c.topOfLibraryRule with
+  | .lookAnytime | .playLands | .castCreatures | .elvenChorus => true
+  | _ => false
+
+def mayCastCreaturesFromTop (c : CardDef) : Bool :=
+  match c.topOfLibraryRule with
+  | .castCreatures | .elvenChorus => true
+  | _ => false
+
+def mayPlayLandsFromTop (c : CardDef) : Bool :=
+  c.topOfLibraryRule == .playLands
+
+def grantCreaturesTapAddAnyColor (c : CardDef) : Bool :=
+  match c.topOfLibraryRule with
+  | .elvenChorus | .grantCreaturesTapAnyColor => true
+  | _ => false
+
+def foodAlsoCreatesTreasure (c : CardDef) : Bool :=
+  c.staticRule == .foodAlsoCreatesTreasure
+
+def othersEnterWithPlusOneEqualToughness (c : CardDef) : Bool :=
+  c.staticRule == .othersEnterWithPlusOneEqualToughness
+
+def powerPerMountain (c : CardDef) : Nat :=
+  match c.staticRule with
+  | .powerPerMountain n => n
+  | _ => 0
+
+def extraLandIfOtherSubtype (c : CardDef) : Option String :=
+  match c.staticRule with
+  | .extraLandIfOtherSubtype s => some s
+  | _ => none
+
+def tokenDoubling (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .tokenDoubling _ => true
+  | _ => false
+
+def drawTwoExceptFirstDrawStep (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .drawTwoExceptFirstDrawStep | .tokenDoubling true => true
+  | _ => false
+
+def exileOppCreaturesInstead (c : CardDef) : Bool :=
+  c.staticRule == .exileOppCreaturesInstead
+
+def firstCreatureCostsLess (c : CardDef) : Nat :=
+  match c.staticRule with
+  | .firstCreatureDiscount n _ => n
+  | _ => 0
+
+def firstCreatureHasFlash (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .firstCreatureDiscount _ b => b
+  | _ => false
+
+def hexproofIndestructibleIfLore (c : CardDef) : Option Nat :=
+  match c.staticRule with
+  | .hexproofIndestructibleIfLore n => some n
+  | _ => none
+
+def costReductionNotFromHand (c : CardDef) : Nat :=
+  match c.staticRule with
+  | .costReductionNotFromHand n => n
+  | _ => 0
+
+def grantLandsTapAnyColor (c : CardDef) : Bool :=
+  c.staticRule == .grantLandsTapAnyColor
+
+def freeCastIfControlCommander (c : CardDef) : Bool :=
+  c.staticRule == .freeCastIfControlCommander
+
+def opponentsCantGainLife (c : CardDef) : Bool :=
+  c.staticRule == .opponentsCantGainLife
+
+def cantLoseGame (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .cantLoseAndOpponentsCantWin _ => true
+  | _ => false
+
+def opponentsCantWin (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .cantLoseAndOpponentsCantWin _ => true
+  | _ => false
+
+def creaturesCantGetMinusCounters (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .creaturesCantGetMinusCounters | .cantLoseAndOpponentsCantWin true => true
+  | _ => false
+
+def powerPerUnspentMana (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .powerPerUnspentMana _ => true
+  | _ => false
+
+def unspentManaBecomesColorless (c : CardDef) : Bool :=
+  match c.staticRule with
+  | .unspentManaBecomesColorless | .powerPerUnspentMana true => true
+  | _ => false
+
+def eminenceSphinxReduction (c : CardDef) : Nat :=
+  match c.staticRule with
+  | .eminenceSphinxReduction n => n
+  | _ => 0
+
+def protectionFromChosenCardType (c : CardDef) : Bool :=
+  c.staticRule == .protectionFromChosenCardType
+
+def corruptedToxicLifelink (c : CardDef) : Bool :=
+  c.staticRule == .corruptedToxicLifelink
+
+def grantTeamPlusTwoFlying (c : CardDef) : Bool :=
+  c.staticRule == .grantTeamPlusTwoFlying
 
 /-- Color from color indicator, otherwise from mana cost (CR 202.2). -/
 def colors (c : CardDef) : ColorSet :=

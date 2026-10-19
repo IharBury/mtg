@@ -39,7 +39,7 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming` (10 fields including `condition : InterveningCondition` and `subtype : Option String`), `TriggeredAbility.chapterTiming`, and category-factored `SharedTrigger.timing` (`LibraryTrigger.timing`, `TokenCounterTrigger.timing`, `CombatDamageTrigger.timing`, `ZoneChangeTrigger.timing`, `ContinuousTrigger.timing`, `PermanentTrigger.timing`, `EventLeftover.timing`). |
 | `TriggerEffects.lean` | `Effect.ofTrigger` and 92 `Effect.*` leftover trigger wrappers. |
 | `TriggeredAbility.lean` | ~180 `TriggeredAbility.on*` catalog builders, `TriggeredAbility.fra`, and the Oracle text renderer (`TriggeredAbility.toNotation`). |
-| `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `EntersTappedRule` (10 ETB tapped replacement rules, CR 614.1c), `EntersWithCounters` (5 ETB counter rules, CR 614.1c), `AsEntersChoice` (5 ETB choice rules, CR 614.12), `SpellCostReduction` (12 spell cost reductions, CR 601.2f), `SpellAdditionalCost` (6 spell additional costs, CR 601.2b / 118.8), `CardDef` (87 fields), `structuredAbilityLines`, and `modellingError?`. |
+| `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `EntersTappedRule` (10 ETB tapped replacement rules, CR 614.1c), `EntersWithCounters` (5 ETB counter rules, CR 614.1c), `AsEntersChoice` (5 ETB choice rules, CR 614.12), `SpellCostReduction` (12 spell cost reductions, CR 601.2f), `SpellAdditionalCost` (6 spell additional costs, CR 601.2b / 118.8), `TapManaAbility` (21 activated mana ability variants, CR 605.1a), `ModalRule` (4 modal spell choice rules, CR 700.2), `TopOfLibraryRule` (6 top-of-library permissions, CR 401.5 / 601.3), `CardStaticRule` (22 continuous/replacement static rules, CR 604 / 613 / 614), `CardDef` (41 fields), `structuredAbilityLines`, and `modellingError?`. |
 | `OracleNorm.lean` | Reminder-text stripping, ability-word stripping, number-word replacement, and 3-stage line normalization (`lightLine`, `normalizeStructural`, `normalizeUnit`). |
 | `OracleArgs.lean` | Bidirectional `ArgM` slot collector/refiller (`takeEffect`, `takeStatic`, `takeActivated`, `takeTriggered`) and token pattern matcher (`Pat`, `patsOfLines`, `matchArgLines`, `splicePhrase`). |
 | `OracleCandidates.lean` | The 4 prototype tables (`spellEffects`, `staticAbilities`, `triggeredAbilities`, `activatedAbilities`) + `chapterEffects`. |
@@ -52,18 +52,17 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 ## 2. The Card IR: `CardDef`, `Effect`, `Resolution`, and Selectors
 
 ### 2.1 `CardDef` (`Mtg/Engine/Card/CardDef.lean`)
-A `CardDef` represents a printed card face (with optional `otherFace : Option CardDef` for DFCs, `adventure : Option AdventureFace` for `//ADV//`, and `prepareFace : Option AdventureFace` for `//PREP//`). Its fields fall into two groups:
+A `CardDef` represents a printed card face (with optional `otherFace : Option CardDef` for DFCs, `adventure : Option AdventureFace` for `//ADV//`, and `prepareFace : Option AdventureFace` for `//PREP//`). Its 41 fields fall into two groups:
 1. **Core Printed & Modeled Collections**:
    - Identification & types: `name`, `manaCost`, `colorIndicator`, `supertypes`, `types`, `subtypes`, `power`, `toughness`, `loyalty`, `defense`, `handModifier`, `lifeModifier`, `isToken`, `daybound`.
    - Keywords: `keywords : Keywords`.
-   - Spell resolution & cost modifiers: `spellEffect : Option Effect`, `spellModes : Array Effect`, `additionalCost : SpellAdditionalCost` (CR 601.2b / 118.8), `spellCostReduction : SpellCostReduction` (CR 601.2f).
+   - Spell resolution, modal rules & cost modifiers: `spellEffect : Option Effect`, `spellModes : Array Effect`, `modalRule : ModalRule` (CR 700.2), `additionalCost : SpellAdditionalCost` (CR 601.2b / 118.8), `spellCostReduction : SpellCostReduction` (CR 601.2f).
    - ETB replacement & choices: `entersTappedRule : EntersTappedRule` (CR 614.1c), `entersWithCounters : EntersWithCounters` (CR 614.1c), `asEntersChoose : AsEntersChoice` (CR 614.12).
+   - Mana abilities, top-of-library permissions & static rules: `tapAddMana : Array ManaType`, `tapManaAbility : TapManaAbility` (CR 605.1a), `topOfLibraryRule : TopOfLibraryRule` (CR 401.5 / 601.3), `staticRule : CardStaticRule` (CR 604 / 613 / 614).
    - Abilities: `triggeredAbilities : Array TriggeredAbility`, `activatedAbilities : Array ActivatedAbility`, `staticAbilities : Array StaticAbility`, `saga : Option SagaDef`.
    - Modal trigger metadata: `fraTriggerModes : Array Effect`.
-2. **Structural / Bespoke Card Flags (~65 fields)**:
-   - Mana production flags (`tapAddMana`, `tapAddManaForEach`, `tapAddAnyColor`, `tapSacrificeAddAnyColor`, `tapAddRestricted`, `filterMana`, etc.).
-   - Alternative & keyword costs (`affinityForSubtype`, `kicker`, `morph`, `impending`, `flashback`, `cycling`, `teamwork`, etc.).
-   - Special static flags (`foodAlsoCreatesTreasure`, `tokenDoubling`, `exileOppCreaturesInstead`, `mayLookAtTopAnytime`, `mayCastCreaturesFromTop`, `mayPlayLandsFromTop`, etc.).
+2. **Alternative Costs & Parameterized Keyword Modifiers (~15 fields)**:
+   - Alternative & keyword costs (`affinityForSubtype`, `kicker`, `morph`, `impending`, `flashback`, `flashbackDiscard`, `cycling`, `teamwork`, `giftTreasure`, `cascade`, `ward`, `crew`, `toxic`, `prowessInstances`, `protectionFromColors`, etc.).
 
 ### 2.2 `Effect` (`Mtg/Engine/Card/Effect.lean`)
 `Effect` is the shared carrier struct used for spells, spell modes, activated abilities, triggered abilities, and Saga chapters:

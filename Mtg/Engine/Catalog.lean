@@ -137,56 +137,74 @@ rules text. -/
     let asEntersChoose : AsEntersChoice :=
       if asEntersChooseCreatureType then .creatureType
       else .none
+    let tapManaAbility : TapManaAbility :=
+      if !tapAddManaForEach.isEmpty then .forEach tapAddManaForEach
+      else if tapAddAnyColorEqualToPower then .anyColorEqualToPower
+      else if tapAddAnyColorForInstantOrSorcery then .anyColorForInstantOrSorcery
+      else if !tapAddOneOf.isEmpty then .oneOf tapAddOneOf
+      else if !tapAddOneOfIfEnteredOrBasic.isEmpty then
+        .oneOfIfEnteredOrBasic tapAddOneOfIfEnteredOrBasic
+      else if tapAddAnyColor then .anyColor
+      else if tapSacrificeAddAnyColor then .sacrificeAnyColor
+      else if tapAddAnyColorForLegendary then .anyColorForLegendary
+      else if !tapAddTwoAmong.isEmpty then .twoAmong tapAddTwoAmong
+      else if tapAddAnyColorAmongLegendaries then .anyColorAmongLegendaries
+      else if tapAddCommanderIdentity then .commanderIdentity false
+      else match tapAddRestricted with
+        | some (ts, r) => .restricted ts r
+        | none => match tapPayLifeAddOneOf with
+          | some (n, ts) => .payLifeOneOf n ts
+          | none => match tapAddColorlessPerSubtype with
+            | some s => .colorlessPerSubtype s
+            | none => .none
+    let modalRule : ModalRule :=
+      if chooseOneOrBoth then .chooseOneOrBoth
+      else if chooseBothIfTeamwork then .chooseBothIfTeamwork
+      else match chooseTwoIfYouControlSubtype with
+        | some s => .chooseTwoIfYouControl s
+        | none => .chooseOne
+    let topOfLibraryRule : TopOfLibraryRule :=
+      if mayPlayLandsFromTop then .playLands
+      else if mayLookAtTopAnytime then .lookAnytime
+      else .none
+    let staticRule : CardStaticRule :=
+      if foodAlsoCreatesTreasure then .foodAlsoCreatesTreasure
+      else if othersEnterWithPlusOneEqualToughness then .othersEnterWithPlusOneEqualToughness
+      else if powerPerMountain != 0 then .powerPerMountain powerPerMountain
+      else if tokenDoubling then .tokenDoubling drawTwoExceptFirstDrawStep
+      else if drawTwoExceptFirstDrawStep then .drawTwoExceptFirstDrawStep
+      else match extraLandIfOtherSubtype with
+        | some s => .extraLandIfOtherSubtype s
+        | none => .none
     { parsed with
       keywords
       spellEffect
       spellModes
+      modalRule
       additionalCost
       spellCostReduction
       tapAddMana
-      tapAddManaForEach
-      tapAddAnyColorEqualToPower
-      tapAddAnyColorForInstantOrSorcery
+      tapManaAbility
       entersTappedRule
       entersWithCounters
       asEntersChoose
-      tapAddOneOf
-      tapAddOneOfIfEnteredOrBasic
-      tapAddAnyColor
-      tapSacrificeAddAnyColor
       cantBeCountered
       flashIfYouControlSubtype
       ward
       flashback
-      tapAddAnyColorForLegendary
       crew
-      tapAddTwoAmong
-      chooseOneOrBoth
-      chooseTwoIfYouControlSubtype
-      tapAddAnyColorAmongLegendaries
-      tapAddRestricted
-      tapPayLifeAddOneOf
-      tapAddCommanderIdentity
       saga
       affinityForSubtype
       giftTreasure
-      foodAlsoCreatesTreasure
-      othersEnterWithPlusOneEqualToughness
-      powerPerMountain
-      extraLandIfOtherSubtype
-      tapAddColorlessPerSubtype
       cascade
       kicker
-      tokenDoubling
-      drawTwoExceptFirstDrawStep
       staticAbilities
       triggeredAbilities
       activatedAbilities
+      topOfLibraryRule
+      staticRule
       adventure
-      teamwork
-      chooseBothIfTeamwork
-      mayLookAtTopAnytime
-      mayPlayLandsFromTop }
+      teamwork }
   else
     parsed
 

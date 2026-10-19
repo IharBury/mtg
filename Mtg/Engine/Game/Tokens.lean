@@ -15,7 +15,7 @@ def treasureToken : CardDef := {
   name := "Treasure"
   types := #[.artifact]
   subtypes := #["Treasure"]
-  tapSacrificeAddAnyColor := true
+  tapManaAbility := .sacrificeAnyColor
   isToken := true
 }
 
@@ -318,7 +318,7 @@ def heartwoodToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Heartwood"]
   colorIndicator := some ((ColorSet.singleton .red).insert .green)
-  tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
+  tapManaAbility := .oneOf #[ManaType.colored .red, ManaType.colored .green]
   isToken := true
 }
 
@@ -351,7 +351,7 @@ def jacePlaneswalkerToken : CardDef := {
 def sculptureToken : CardDef :=
   { creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
       (types := #[.artifact, .creature]) with
-    tapSacrificeAddAnyColor := true }
+    tapManaAbility := .sacrificeAnyColor }
 
 /-- A legendary 3/3 green Dog creature token named Mowu. -/
 def mowuToken : CardDef := {

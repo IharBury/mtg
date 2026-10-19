@@ -248,29 +248,35 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       some { c with cycling := some cost
                     activatedAbilities := c.activatedAbilities.push ab }
     else if l.contains "your opponents can't gain life" then
-      some { c with opponentsCantGainLife := true }
+      some { c with staticRule := .opponentsCantGainLife }
     else if l.contains "can't lose the game" then
-      some { c with cantLoseGame := true, opponentsCantWin := true }
+      some { c with staticRule := .cantLoseAndOpponentsCantWin false }
     else if l.contains "can't have -1/-1 counters" then
-      some { c with creaturesCantGetMinusCounters := true }
+      some { c with staticRule :=
+        if c.staticRule == .cantLoseAndOpponentsCantWin false then
+          .cantLoseAndOpponentsCantWin true
+        else .creaturesCantGetMinusCounters }
     else if l.contains "lands you control have" && l.contains "any color" then
-      some { c with grantLandsTapAnyColor := true }
+      some { c with staticRule := .grantLandsTapAnyColor }
     else if l.contains "for each unspent mana you have" then
-      some { c with powerPerUnspentMana := true }
+      some { c with staticRule := .powerPerUnspentMana false }
     else if l.contains "that mana becomes colorless instead" then
-      some { c with unspentManaBecomesColorless := true }
+      some { c with staticRule :=
+        if c.staticRule == .powerPerUnspentMana false then
+          .powerPerUnspentMana true
+        else .unspentManaBecomesColorless }
     else if l.contains "other sphinx spells you cast cost" then
-      some { c with eminenceSphinxReduction := 1 }
+      some { c with staticRule := .eminenceSphinxReduction 1 }
     else if l.contains "choose a card type" then
       some { c with asEntersChoose := .cardType }
     else if l.contains "protection from the chosen card type" then
-      some { c with protectionFromChosenCardType := true }
+      some { c with staticRule := .protectionFromChosenCardType }
     else if l.contains "creatures you control with toxic have lifelink" then
-      some { c with corruptedToxicLifelink := true }
+      some { c with staticRule := .corruptedToxicLifelink }
     else if l.contains "can be your commander" then
       some { c with canBeCommander := true }
     else if l.contains "without paying its mana cost" && l.contains "commander" then
-      some { c with freeCastIfControlCommander := true }
+      some { c with staticRule := .freeCastIfControlCommander }
     else if l.contains "enters tapped unless you control two or more basic" then
       some { c with entersTappedRule := .unlessNBasics 2 }
     else if l.contains "enters tapped unless your opponents control eight" then
@@ -301,7 +307,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         let costLow := low cost
         if (low effectRaw).contains "add " && colors.size ≥ 2 && costLow.contains "{t}" &&
             ((low effectRaw).contains " or " || (low effectRaw).contains ",") then
-          some { c with filterMana := some (costOf cost, colors) }
+          some { c with tapManaAbility := .filter (costOf cost) colors }
         else if (low effectRaw).startsWith "add " && colors.size ≥ 2 && costLow.contains "{t}" then
           some (pushAct c (Effect.addMana colors) line cost)
         else
