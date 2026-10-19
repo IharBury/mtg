@@ -4,318 +4,443 @@ import Mtg.Engine.Card.Text
 /-!
 # Trigger events (CR 603)
 
-When a triggered ability fires, with per-event clause wording and metadata.
+When a triggered ability fires, structured around the event categories of
+CR 603 (`enters`, `leaves`, `step`, `casts`, `combat`, `damage`, `draws`,
+`discards`, `taps`, `counters`, `action`, `or`), with per-event clause wording
+and metadata.
 -/
 
 namespace Mtg.Engine
 
-/-- Trigger events first printed in Reality Fracture (FRA). -/
-inductive FraEvent where
-  /-- When you cast this spell. -/
-  | castThis
-  /-- Whenever one or more opponents are dealt noncombat damage. -/
-  | opponentsDealtNoncombatDamage
-  /-- Whenever an opponent is dealt noncombat damage. -/
-  | opponentDealtNoncombatDamage
-  /-- Whenever you put one or more loyalty counters on a planeswalker. -/
-  | youPutLoyaltyCounters
-  /-- When enchanted creature dies. -/
+namespace TriggerEvent
+
+/-- Which permanent entering the battlefield causes `TriggerEvent.enters` to fire (CR 603.6a). -/
+inductive EntersEvent where
+  | source
+  | landYouControl
+  | forestYouControl
+  | mountainYouControl
+  | artifactYouControl
+  | anotherArtifact
+  | anotherNontokenArtifact
+  | equipmentYouControl
+  | tokenYouControl
+  | creatureYouControl
+  | anotherCreatureYouControl
+  | anotherNontokenCreatureYouControl
+  | thisOrAnotherCreatureYouControl
+  | anotherCreatureOrPlaneswalkerYouControl
+  | creatureOpponentControls
+  | creatureYouControlPowerAtLeast (n : Int)
+  | anotherElfYouControl
+  | anotherVillain
+  | anotherVillainOrArtifact
+  | anotherNontokenHero
+  | subtypeYouControl (subtype : String)
+  | thisOrAnotherSubtypeYouControl
+  | thisOrNontokenSubtypeYouControl
+  | anotherSubtypeOrEquipmentYouControl
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which zone-leaving or graveyard-entering event causes `TriggerEvent.leaves` to fire (CR 603.6c / 700.4). -/
+inductive LeavesEvent where
+  | sourceDies
+  | sourceLeaves
   | enchantedDies
-  /-- Whenever a creature you control attacks. -/
-  | creatureYouControlAttacks
-  /-- Whenever a creature you control attacks a player alone. -/
-  | creatureYouControlAttacksPlayerAlone
-  /-- Whenever an opponent casts a spell with mana value `n` or less. -/
-  | opponentCastsSpellMvAtMost (n : Nat)
-  /-- Whenever you cast a prepared spell (a copy of a prepare spell). -/
-  | youCastPreparedSpell
-  /-- Whenever another creature or planeswalker you control enters. -/
-  | anotherCreatureOrPlaneswalkerYouControlEnters
-  /-- Whenever this creature or another creature you control enters. -/
-  | thisOrAnotherCreatureYouControlEnters
-  /-- Whenever another nontoken creature you control enters. -/
-  | anotherNontokenCreatureYouControlEnters
-  /-- Whenever a creature an opponent controls enters. -/
-  | creatureOpponentControlsEnters
-  /-- Whenever an opponent activates a loyalty ability. -/
-  | opponentActivatesLoyaltyAbility
-  /-- Whenever another creature or planeswalker you control dies. -/
-  | anotherCreatureOrPlaneswalkerYouControlDies
-  /-- Whenever a player discards one or more cards. -/
-  | playerDiscards
-  /-- When you discard this card. -/
-  | youDiscardThis
-  /-- Whenever a creature you control with power `n` or greater enters. -/
-  | creatureYouControlPowerAtLeastEnters (n : Int)
-  /-- Whenever you cast an artifact or creature spell. -/
-  | youCastArtifactOrCreature
-  /-- Whenever you cast an Equipment spell or a spell that targets a creature
-  you control. -/
-  | youCastEquipmentOrTargetingCreatureYouControl
-  /-- Whenever a creature an opponent controls with power or toughness 1 or
-  less blocks. -/
-  | opponentSmallCreatureBlocks
-  /-- At the beginning of combat on your turn, while this card is in your
-  graveyard. -/
-  | yourBeginCombatFromGraveyard
-  /-- At the beginning of each upkeep, while this card is in your graveyard. -/
-  | eachUpkeepFromGraveyard
-  /-- Whenever a creature attacks you or a planeswalker you control. -/
-  | creatureAttacksYouOrYourPlaneswalker
-  /-- Whenever one or more creatures attack one of your opponents. -/
-  | creaturesAttackYourOpponent
-  /-- Whenever a creature you control leaves the battlefield. -/
-  | creatureYouControlLeaves
-  /-- Whenever you proliferate (CR 701.34). -/
-  | youProliferate
-  /-- Whenever you discard a card. The discarded card's id is last-known information. -/
-  | youDiscardOne
-  /-- Whenever this nontoken creature or another nontoken creature you control dies. -/
+  | creatureYouControlDies
+  | nontokenYouControlDies
   | nontokenCreatureYouControlDies
-  /-- At the beginning of combat on an opponent's turn. -/
+  | attackingCreatureYouControlDies
+  | villainYouControlDies
+  | anotherGoblinOrcArmyDies
+  | anotherCreatureOrPlaneswalkerYouControlDies
+  | oneOrMoreOtherCreaturesDie
+  | creatureYouControlLeaves
+  | anotherNonlandReturned
+  | creatureCardLeavesYourGy
+  | creatureCardsPutIntoYourGy
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which phase or step beginning causes `TriggerEvent.step` to fire (CR 603.2b). -/
+inductive StepEvent where
+  | yourUpkeep
+  | eachUpkeep
+  | eachUpkeepFromGraveyard
+  | enchantedControllerUpkeep
+  | eaglesCreateBirds
+  | eachOpponentDrawStep
+  | yourFirstMain
+  | yourBeginCombat
+  | yourBeginCombatFromGraveyard
   | opponentBeginCombat
-  /-- Whenever you create one or more creature tokens. -/
-  | youCreateCreatureTokens
-  /-- Whenever a Zombie token you control with power 6 or greater attacks. -/
+  | eachBeginCombat
+  | yourEndStep
+  | eachEndStep
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which spell being cast causes `TriggerEvent.casts` to fire (CR 601.2i). -/
+inductive CastEvent where
+  | castThis
+  | youSpell
+  | youInstantOrSorcery
+  | youNoncreature
+  | youFirstNoncreature
+  | youSecondSpell
+  | youCreature
+  | youArtifactOrCreature
+  | youGreen
+  | youColor (color : Color)
+  | youColorFromHand (color : Color)
+  | youVillain
+  | youWithTreasure
+  | youPreparedSpell
+  | youTargetingCreatureYouControl
+  | youEquipmentOrTargetingCreatureYouControl
+  | youTargetingCreature
+  | youInstantSorceryTargetingArtifactOrLand
+  | youTargetingOpponentOrTheirCreature
+  | opponentSpell
+  | opponentFirstNoncreature
+  | opponentSpellMvAtMost (n : Nat)
+  | opponentMatchingParity
+  | anyPlayerSecondSpell
+  | spellTargetsSource
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which attacker or blocker declaration causes `TriggerEvent.combat` to fire (CR 508.2 / 509.5c). -/
+inductive CombatEvent where
+  | sourceAttacks
+  | youAttack
+  | youAttackWithElves
+  | youAttackWithTwoOrMore
+  | youAttackWithTotalPower
+  | equippedAttacks
+  | equippedAttacksAlone
+  | equippedCreatureYouControlAttacks
+  | creatureYouControlAttacks
+  | creatureYouControlAttacksAlone
+  | creatureYouControlAttacksPlayerAlone
+  | creatureAttacksYouOrYourPlaneswalker
+  | creaturesAttackYourOpponent
+  | merfolkAttackPlayer
   | zombieTokenAttacks
-  /-- Whenever one or more Sphinxes you control attack. The count is last-known power. -/
   | sphinxesAttack
-  /-- When you cycle this card. X is last-known power. -/
+  | enchantedAttacksOrBlocks
+  | becomesBlocked
+  | opponentSmallCreatureBlocks
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which damage event causes `TriggerEvent.damage` to fire (CR 510.2 / 120). -/
+inductive DamageEvent where
+  | sourceCombatToPlayer
+  | sourceCombatToPlayerOrBattle
+  | equippedCombatToPlayer
+  | armyYouControlCombat
+  | combatToYou
+  | opponentsDealtCombatYourTurn
+  | heroesDealToPlayer
+  | sourceDealt
+  | sourceDealtNoncombat
+  | creatureYouControlDealt
+  | opponentsDealtNoncombat
+  | opponentDealtNoncombat
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which card draw causes `TriggerEvent.draws` to fire (CR 121). -/
+inductive DrawEvent where
+  | youCard
+  | youSecondCard
+  | opponentExceptFirstDrawStep
+  | opponentSecondCard
+  | anyPlayerSecond
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which discard or cycling action causes `TriggerEvent.discards` to fire (CR 701.8 / 702.29). -/
+inductive DiscardEvent where
+  | youCard
+  | youOne
+  | youThis
+  | playerCards
   | youCycle
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- When a triggered ability fires (CR 603). Several printed abilities share
-an event (`scry` on attack, enter, or attack-with-Elves); “enters or attacks”
-is two events. -/
-inductive TriggerEvent where
-  /-- This creature is declared as an attacker (CR 508.2). -/
-  | attacking
-  /-- This creature becomes blocked (CR 509.5c). -/
-  | becomesBlocked
-  /-- This permanent enters the battlefield (CR 603.6a). -/
-  | entering
-  /-- A land the controller controls enters (landfall). -/
-  | landYouControlEnters
-  /-- This creature dies (CR 700.4 / 603.6c). -/
-  | dying
-  /-- You cast an instant or sorcery (CR 601.2i). -/
-  | youCastInstantOrSorcery
-  /-- You attack with one or more Elves (CR 508.2 / 603.2a). -/
-  | youAttackWithElves
-  /-- You scry (CR 701.20 / 603.2). -/
-  | youScry
-  /-- Another Elf you control enters (CR 603.6a). -/
-  | anotherElfYouControlEnters
-  /-- One or more other creatures die (CR 700.4 / 603.2a). -/
-  | oneOrMoreOtherCreaturesDie
-  /-- This permanent leaves the battlefield (CR 603.6c). -/
-  | leaving
-  /-- You draw a card (CR 121 / 603.2). -/
-  | youDraw
-  /-- You draw your second card this turn. -/
-  | youDrawSecondCard
-  /-- Two or more creatures you control attack a player. -/
-  | youAttackWithTwoOrMore
-  /-- This creature deals combat damage to a player (CR 510.2 / 603.2). -/
-  | dealsCombatDamageToPlayer
-  /-- The beginning of your end step (CR 513.1 / 603.1). -/
-  | yourEndStep
-  /-- Another creature you control enters (CR 603.6a). -/
-  | anotherCreatureYouControlEnters
-  /-- The beginning of combat on your turn (CR 507.1 / 603.1). -/
-  | yourBeginCombat
-  /-- You attack with one or more creatures (CR 508.2). -/
-  | youAttack
-  /-- You cast a noncreature spell (CR 601.2i / 603.3). -/
-  | youCastNoncreature
-  /-- The beginning of your upkeep (CR 503.1 / 603.1). -/
-  | yourUpkeep
-  /-- An artifact you control enters (CR 603.6a). -/
-  | artifactYouControlEnters
-  /-- An opponent casts their first noncreature spell this turn. -/
-  | opponentCastsFirstNoncreature
-  /-- A player casts their second spell this turn. -/
-  | anyPlayerCastsSecondSpell
-  /-- The beginning of your first main phase. -/
-  | yourFirstMain
-  /-- This or another nontoken permanent of a listed subtype you control
-  enters. The subtype is stored on the triggered ability. -/
-  | thisOrNontokenSubtypeYouControlEnters
-  /-- This becomes the target of a spell or ability an opponent controls. -/
-  | becomesTarget
-  /-- The beginning of each end step. -/
-  | eachEndStep
-  /-- The beginning of each combat. -/
-  | eachBeginCombat
-  /-- You cast a green spell. -/
-  | youCastGreen
-  /-- A Forest you control enters. -/
-  | forestYouControlEnters
-  /-- Another permanent of a listed subtype or an Equipment you control enters. -/
-  | anotherSubtypeOrEquipmentYouControlEnters
-  /-- You cast a spell that had Treasure mana spent. -/
-  | youCastWithTreasure
-  /-- This or another permanent of a listed subtype you control enters. -/
-  | thisOrAnotherSubtypeYouControlEnters
-  /-- This deals combat damage to a player or battle. -/
-  | dealsCombatDamageToPlayerOrBattle
-  /-- The Ring tempts you. -/
-  | theRingTemptsYou
-  /-- You choose a creature as your Ring-bearer. -/
-  | youChooseRingBearer
-  /-- Equipped creature is the only attacker declared this combat. -/
-  | equippedAttacksAlone
-  /-- A token you control enters (CR 603.6a). -/
-  | tokenYouControlEnters
-  /-- You activate an ability of a creature, including a mana ability
-  (CR 605.3b / 603.2). -/
-  | youActivateCreatureAbility
-  /-- Equipped creature attacks (CR 508.2). -/
-  | equippedAttacks
-  /-- An opponent draws a card that is not the first card of their draw step. -/
-  | opponentDrawsExceptFirstDrawStep
-  /-- An opponent draws their second card this turn. -/
-  | opponentDrawsSecondCard
-  /-- You attack with creatures whose total power meets a threshold. -/
-  | youAttackWithTotalPower
-  /-- Delayed trigger: create Bird Soldiers at the next upkeep. -/
-  | eaglesCreateBirds
-  /-- You sacrificed a creature to Bolg's enters instruction. -/
-  | bolgSacrificedForReflexive
-  /-- You cast a spell of this color. -/
-  | youCastColor (color : Color)
-  /-- An opponent casts a spell whose mana value matches a chosen odd/even. -/
-  | opponentCastsMatchingParity
-  /-- A creature card leaves your graveyard. -/
-  | creatureCardLeavesYourGy
-  /-- You cast a creature spell. -/
-  | youCastCreature
-  /-- A Mountain you control enters. -/
-  | mountainYouControlEnters
-  /-- This was dealt noncombat damage. -/
-  | sourceDealtNoncombatDamage
-  /-- An opponent casts a spell. -/
-  | opponentCastsSpell
-  /-- An Army you control deals combat damage to a player. -/
-  | armyYouControlCombatDamage
-  /-- A lore counter was put on this Saga (CR 714.3). -/
-  | sagaChapter
-  /-- The final chapter of a Saga you control resolves. -/
-  | finalSagaChapterResolves
-  /-- One or more creatures deal combat damage to you. -/
-  | combatDamageToYou
-  /-- You cast your second spell this turn. -/
-  | youCastSecondSpell
-  /-- You sacrifice a token. -/
-  | youSacrificeToken
-  /-- A player loses life. -/
-  | playerLosesLife
-  /-- You put one or more counters on a Goblin, Orc, or Army you control. -/
-  | youPutCountersOnGoblinOrcArmy
-  /-- Another Goblin, Orc, or Army you control dies. -/
-  | anotherGoblinOrcArmyDies
-  /-- A nontoken creature you control dies. -/
-  | nontokenYouControlDies
-  /-- Equipped creature deals combat damage to a player. -/
-  | equippedDealsCombatDamageToPlayer
-  /-- A creature you control is the only attacker declared this combat. -/
-  | creatureYouControlAttacksAlone
-  /-- This permanent became tapped to pay a teamwork cost. -/
-  | tappedForTeamwork
-  /-- A creature you control enters. -/
-  | creatureYouControlEnters
-  /-- A permanent you control of this subtype enters. -/
-  | subtypeYouControlEnters (subtype : String)
-  /-- One or more creatures you control become tapped. -/
-  | creaturesYouControlBecomeTapped
-  /-- One or more creature cards are put into your graveyard from anywhere. -/
-  | creatureCardsPutIntoYourGy
-  /-- You cast a spell of this color from your hand. -/
-  | youCastColorFromHand (color : Color)
-  /-- This permanent was dealt damage. -/
-  | sourceDealtDamage
-  /-- The `n`th plan counter was put on this enchantment. -/
-  | nthPlanCounter (n : Nat)
-  /-- You cast a Villain spell. -/
-  | youCastVillain
-  /-- You cast a spell that targets a creature you control. -/
-  | youCastTargetingCreatureYouControl
-  /-- You cast a spell that targets one or more creatures. -/
-  | youCastTargetingCreature
-  /-- You cast an instant or sorcery spell that targets an artifact or land. -/
-  | youCastInstantSorceryTargetingArtifactOrLand
-  /-- You cast a spell that targets an opponent or a creature an opponent
-  controls. -/
-  | youCastTargetingOpponentOrTheirCreature
-  /-- You cast your first noncreature spell this turn. -/
-  | youCastFirstNoncreature
-  /-- You activate a loyalty ability. -/
-  | youActivateLoyaltyAbility
-  /-- The beginning of each player's upkeep. -/
-  | eachUpkeep
-  /-- You scry or surveil (CR 701.20 / 701.25). -/
-  | youScryOrSurveil
-  /-- One or more of your opponents are dealt combat damage during your turn. -/
-  | opponentsDealtCombatDamageYourTurn
-  /-- A creature you control dies. -/
-  | creatureYouControlDies
-  /-- The beginning of each opponent's draw step. -/
-  | eachOpponentDrawStep
-  /-- You cast a spell. -/
-  | youCastSpell
-  /-- You discard a card. -/
-  | youDiscard
-  /-- You put a +1/+1 counter on a creature. -/
-  | youPutPlusOne
-  /-- You gain life. -/
-  | youGainLife
-  /-- A player draws their second card this turn. -/
-  | anyPlayerDrawsSecond
-  /-- A spell targets this permanent. -/
-  | spellTargetsSource
-  /-- A player or permanent becomes the target of an ability you control. -/
-  | youTargetSomething
-  /-- An Equipment you control enters. -/
-  | equipmentYouControlEnters
-  /-- Another Villain or artifact you control enters. -/
-  | anotherVillainOrArtifactEnters
-  /-- Another Villain you control enters. -/
-  | anotherVillainEnters
-  /-- Another artifact you control enters. -/
-  | anotherArtifactEnters
-  /-- Another nontoken Hero you control enters. -/
-  | anotherNontokenHeroEnters
-  /-- Another nontoken artifact you control enters. -/
-  | anotherNontokenArtifactEnters
-  /-- Another nonland permanent you control is returned to hand. -/
-  | anotherNonlandReturned
-  /-- A Villain you control dies. -/
-  | villainYouControlDies
-  /-- An attacking creature you control dies. -/
-  | attackingCreatureYouControlDies
-  /-- An equipped creature you control attacks. -/
-  | equippedCreatureYouControlAttacks
-  /-- Enchanted creature attacks or blocks. -/
-  | enchantedAttacksOrBlocks
-  /-- A creature you control becomes tapped during your turn. -/
-  | creatureYouControlTapped
-  /-- A creature you control is dealt damage. -/
-  | creatureYouControlDealtDamage
-  /-- One or more Heroes you control deal damage to a player. -/
-  | heroesDealDamageToPlayer
-  /-- One or more Merfolk you control attack a player. -/
-  | merfolkAttackPlayer
-  /-- The upkeep of the enchanted creature's controller. -/
-  | enchantedControllerUpkeep
-  /-- This permanent becomes tapped. -/
-  | sourceBecomesTapped
-  /-- Equipped creature becomes tapped. -/
-  | equippedBecomesTapped
-  /-- A Reality Fracture event. -/
-  | fra (e : FraEvent)
+/-- Which permanent becoming tapped causes `TriggerEvent.taps` to fire (CR 701.26). -/
+inductive TapEvent where
+  | source
+  | equipped
+  | forTeamwork
+  | creatureYouControl
+  | creaturesYouControl
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Which counter placement, proliferation, or Saga chapter causes `TriggerEvent.counters` to fire (CR 122 / 701.34 / 714). -/
+inductive CounterEvent where
+  | youPutPlusOne
+  | youPutOnGoblinOrcArmy
+  | youPutLoyalty
+  | nthPlan (n : Nat)
+  | sagaChapter
+  | finalSagaChapterResolves
+  | youProliferate
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Which player or object game action causes `TriggerEvent.action` to fire (CR 603.2). -/
+inductive ActionEvent where
+  | youActivateCreatureAbility
+  | youActivateLoyaltyAbility
+  | opponentActivatesLoyaltyAbility
+  | becomesTarget
+  | youTargetSomething
+  | youSacrificeToken
+  | bolgSacrificedForReflexive
+  | youCreateCreatureTokens
+  | youGainLife
+  | playerLosesLife
+  | youScry
+  | youScryOrSurveil
+  | theRingTemptsYou
+  | youChooseRingBearer
+deriving Repr, Inhabited, BEq, DecidableEq
+
+end TriggerEvent
+
+/-- When a triggered ability fires (CR 603). -/
+inductive TriggerEvent where
+  /-- A permanent enters the battlefield (CR 603.6a). -/
+  | enters (what : TriggerEvent.EntersEvent := .source)
+  /-- A permanent dies, leaves the battlefield, or changes zone (CR 603.6c / 700.4). -/
+  | leaves (what : TriggerEvent.LeavesEvent := .sourceDies)
+  /-- At the beginning of a phase or step (CR 603.2b). -/
+  | step (which : TriggerEvent.StepEvent)
+  /-- A player casts a spell (CR 601.2i). -/
+  | casts (what : TriggerEvent.CastEvent := .youSpell)
+  /-- Attackers or blockers are declared (CR 508.2 / 509.5c). -/
+  | combat (what : TriggerEvent.CombatEvent := .sourceAttacks)
+  /-- Damage is dealt (CR 510.2 / 120). -/
+  | damage (what : TriggerEvent.DamageEvent := .sourceCombatToPlayer)
+  /-- A player draws a card (CR 121). -/
+  | draws (what : TriggerEvent.DrawEvent := .youCard)
+  /-- A player discards or cycles a card (CR 701.8 / 702.29). -/
+  | discards (what : TriggerEvent.DiscardEvent := .youCard)
+  /-- One or more permanents become tapped (CR 701.26). -/
+  | taps (what : TriggerEvent.TapEvent := .source)
+  /-- Counters are put on a permanent, a player proliferates, or a Saga chapter triggers (CR 122 / 701.34 / 714). -/
+  | counters (what : TriggerEvent.CounterEvent)
+  /-- A player or object performs a game action (CR 603.2). -/
+  | action (what : TriggerEvent.ActionEvent)
+  /-- Triggers when at least one of the two given conditions triggers. -/
+  | or (a b : TriggerEvent)
+  /-- Cascade on the spell being cast (no `TriggerEvent`; queued from cast). -/
+  | cascade
+  /-- Use the events stored on the shared effect (leftover family wrappers). -/
+  | fromEffect
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Unified alias for `TriggerEvent`. -/
+abbrev FraEvent := TriggerEvent
+
+/-- Unified alias for `TriggerEvent`. -/
+abbrev SharedTriggerWhen := TriggerEvent
+
 namespace TriggerEvent
+
+/-- Identity wrapper kept for `TriggerEvent.fra` call sites. -/
+abbrev fra (e : TriggerEvent) : TriggerEvent := e
+
+-- Enters-the-battlefield aliases (CR 603.6a)
+@[match_pattern] abbrev entering : TriggerEvent := .enters .source
+@[match_pattern] abbrev enter : TriggerEvent := .enters .source
+@[match_pattern] abbrev landYouControlEnters : TriggerEvent := .enters .landYouControl
+@[match_pattern] abbrev forestYouControlEnters : TriggerEvent := .enters .forestYouControl
+@[match_pattern] abbrev mountainYouControlEnters : TriggerEvent := .enters .mountainYouControl
+@[match_pattern] abbrev artifactYouControlEnters : TriggerEvent := .enters .artifactYouControl
+@[match_pattern] abbrev anotherArtifactEnters : TriggerEvent := .enters .anotherArtifact
+@[match_pattern] abbrev anotherNontokenArtifactEnters : TriggerEvent := .enters .anotherNontokenArtifact
+@[match_pattern] abbrev equipmentYouControlEnters : TriggerEvent := .enters .equipmentYouControl
+@[match_pattern] abbrev tokenYouControlEnters : TriggerEvent := .enters .tokenYouControl
+@[match_pattern] abbrev creatureYouControlEnters : TriggerEvent := .enters .creatureYouControl
+@[match_pattern] abbrev anotherCreatureYouControlEnters : TriggerEvent := .enters .anotherCreatureYouControl
+@[match_pattern] abbrev anotherNontokenCreatureYouControlEnters : TriggerEvent := .enters .anotherNontokenCreatureYouControl
+@[match_pattern] abbrev thisOrAnotherCreatureYouControlEnters : TriggerEvent := .enters .thisOrAnotherCreatureYouControl
+@[match_pattern] abbrev anotherCreatureOrPlaneswalkerYouControlEnters : TriggerEvent := .enters .anotherCreatureOrPlaneswalkerYouControl
+@[match_pattern] abbrev creatureOpponentControlsEnters : TriggerEvent := .enters .creatureOpponentControls
+@[match_pattern] abbrev creatureYouControlPowerAtLeastEnters (n : Int) : TriggerEvent := .enters (.creatureYouControlPowerAtLeast n)
+@[match_pattern] abbrev anotherElfYouControlEnters : TriggerEvent := .enters .anotherElfYouControl
+@[match_pattern] abbrev anotherVillainEnters : TriggerEvent := .enters .anotherVillain
+@[match_pattern] abbrev anotherVillainOrArtifactEnters : TriggerEvent := .enters .anotherVillainOrArtifact
+@[match_pattern] abbrev anotherNontokenHeroEnters : TriggerEvent := .enters .anotherNontokenHero
+@[match_pattern] abbrev subtypeYouControlEnters (subtype : String) : TriggerEvent := .enters (.subtypeYouControl subtype)
+@[match_pattern] abbrev thisOrAnotherSubtypeYouControlEnters : TriggerEvent := .enters .thisOrAnotherSubtypeYouControl
+@[match_pattern] abbrev thisOrAnotherSubtypeEnters : TriggerEvent := .enters .thisOrAnotherSubtypeYouControl
+@[match_pattern] abbrev thisOrNontokenSubtypeYouControlEnters : TriggerEvent := .enters .thisOrNontokenSubtypeYouControl
+@[match_pattern] abbrev thisOrNontokenSubtypeEnters : TriggerEvent := .enters .thisOrNontokenSubtypeYouControl
+@[match_pattern] abbrev anotherSubtypeOrEquipmentYouControlEnters : TriggerEvent := .enters .anotherSubtypeOrEquipmentYouControl
+@[match_pattern] abbrev anotherSubtypeOrEquipmentEnters : TriggerEvent := .enters .anotherSubtypeOrEquipmentYouControl
+
+-- Zone-leaving / dies / graveyard aliases (CR 603.6c / 700.4)
+@[match_pattern] abbrev dying : TriggerEvent := .leaves .sourceDies
+@[match_pattern] abbrev dies : TriggerEvent := .leaves .sourceDies
+@[match_pattern] abbrev leaving : TriggerEvent := .leaves .sourceLeaves
+@[match_pattern] abbrev enchantedDies : TriggerEvent := .leaves .enchantedDies
+@[match_pattern] abbrev creatureYouControlDies : TriggerEvent := .leaves .creatureYouControlDies
+@[match_pattern] abbrev nontokenYouControlDies : TriggerEvent := .leaves .nontokenYouControlDies
+@[match_pattern] abbrev nontokenCreatureYouControlDies : TriggerEvent := .leaves .nontokenCreatureYouControlDies
+@[match_pattern] abbrev attackingCreatureYouControlDies : TriggerEvent := .leaves .attackingCreatureYouControlDies
+@[match_pattern] abbrev villainYouControlDies : TriggerEvent := .leaves .villainYouControlDies
+@[match_pattern] abbrev anotherGoblinOrcArmyDies : TriggerEvent := .leaves .anotherGoblinOrcArmyDies
+@[match_pattern] abbrev anotherCreatureOrPlaneswalkerYouControlDies : TriggerEvent := .leaves .anotherCreatureOrPlaneswalkerYouControlDies
+@[match_pattern] abbrev oneOrMoreOtherCreaturesDie : TriggerEvent := .leaves .oneOrMoreOtherCreaturesDie
+@[match_pattern] abbrev creatureYouControlLeaves : TriggerEvent := .leaves .creatureYouControlLeaves
+@[match_pattern] abbrev anotherNonlandReturned : TriggerEvent := .leaves .anotherNonlandReturned
+@[match_pattern] abbrev creatureCardLeavesYourGy : TriggerEvent := .leaves .creatureCardLeavesYourGy
+@[match_pattern] abbrev creatureCardsPutIntoYourGy : TriggerEvent := .leaves .creatureCardsPutIntoYourGy
+
+-- Phase and step aliases (CR 603.2b)
+@[match_pattern] abbrev yourUpkeep : TriggerEvent := .step .yourUpkeep
+@[match_pattern] abbrev eachUpkeep : TriggerEvent := .step .eachUpkeep
+@[match_pattern] abbrev eachUpkeepFromGraveyard : TriggerEvent := .step .eachUpkeepFromGraveyard
+@[match_pattern] abbrev enchantedControllerUpkeep : TriggerEvent := .step .enchantedControllerUpkeep
+@[match_pattern] abbrev eaglesCreateBirds : TriggerEvent := .step .eaglesCreateBirds
+@[match_pattern] abbrev eachOpponentDrawStep : TriggerEvent := .step .eachOpponentDrawStep
+@[match_pattern] abbrev yourFirstMain : TriggerEvent := .step .yourFirstMain
+@[match_pattern] abbrev yourBeginCombat : TriggerEvent := .step .yourBeginCombat
+@[match_pattern] abbrev yourBeginCombatFromGraveyard : TriggerEvent := .step .yourBeginCombatFromGraveyard
+@[match_pattern] abbrev opponentBeginCombat : TriggerEvent := .step .opponentBeginCombat
+@[match_pattern] abbrev eachBeginCombat : TriggerEvent := .step .eachBeginCombat
+@[match_pattern] abbrev yourEndStep : TriggerEvent := .step .yourEndStep
+@[match_pattern] abbrev eachEndStep : TriggerEvent := .step .eachEndStep
+
+-- Spell-cast aliases (CR 601.2i)
+@[match_pattern] abbrev castThis : TriggerEvent := .casts .castThis
+@[match_pattern] abbrev youCastSpell : TriggerEvent := .casts .youSpell
+@[match_pattern] abbrev youCastInstantOrSorcery : TriggerEvent := .casts .youInstantOrSorcery
+@[match_pattern] abbrev youCastNoncreature : TriggerEvent := .casts .youNoncreature
+@[match_pattern] abbrev youCastFirstNoncreature : TriggerEvent := .casts .youFirstNoncreature
+@[match_pattern] abbrev youCastSecondSpell : TriggerEvent := .casts .youSecondSpell
+@[match_pattern] abbrev youCastCreature : TriggerEvent := .casts .youCreature
+@[match_pattern] abbrev youCastArtifactOrCreature : TriggerEvent := .casts .youArtifactOrCreature
+@[match_pattern] abbrev youCastGreen : TriggerEvent := .casts .youGreen
+@[match_pattern] abbrev youCastColor (color : Color) : TriggerEvent := .casts (.youColor color)
+@[match_pattern] abbrev youCastColorFromHand (color : Color) : TriggerEvent := .casts (.youColorFromHand color)
+@[match_pattern] abbrev youCastVillain : TriggerEvent := .casts .youVillain
+@[match_pattern] abbrev youCastWithTreasure : TriggerEvent := .casts .youWithTreasure
+@[match_pattern] abbrev youCastPreparedSpell : TriggerEvent := .casts .youPreparedSpell
+@[match_pattern] abbrev youCastTargetingCreatureYouControl : TriggerEvent := .casts .youTargetingCreatureYouControl
+@[match_pattern] abbrev youCastEquipmentOrTargetingCreatureYouControl : TriggerEvent := .casts .youEquipmentOrTargetingCreatureYouControl
+@[match_pattern] abbrev youCastTargetingCreature : TriggerEvent := .casts .youTargetingCreature
+@[match_pattern] abbrev youCastInstantSorceryTargetingArtifactOrLand : TriggerEvent := .casts .youInstantSorceryTargetingArtifactOrLand
+@[match_pattern] abbrev youCastTargetingOpponentOrTheirCreature : TriggerEvent := .casts .youTargetingOpponentOrTheirCreature
+@[match_pattern] abbrev opponentCastsSpell : TriggerEvent := .casts .opponentSpell
+@[match_pattern] abbrev opponentCastsFirstNoncreature : TriggerEvent := .casts .opponentFirstNoncreature
+@[match_pattern] abbrev opponentCastsSpellMvAtMost (n : Nat) : TriggerEvent := .casts (.opponentSpellMvAtMost n)
+@[match_pattern] abbrev opponentCastsMatchingParity : TriggerEvent := .casts .opponentMatchingParity
+@[match_pattern] abbrev anyPlayerCastsSecondSpell : TriggerEvent := .casts .anyPlayerSecondSpell
+@[match_pattern] abbrev spellTargetsSource : TriggerEvent := .casts .spellTargetsSource
+
+-- Combat declaration aliases (CR 508.2 / 509.5c)
+@[match_pattern] abbrev attacking : TriggerEvent := .combat .sourceAttacks
+@[match_pattern] abbrev attack : TriggerEvent := .combat .sourceAttacks
+@[match_pattern] abbrev youAttack : TriggerEvent := .combat .youAttack
+@[match_pattern] abbrev youAttackWithElves : TriggerEvent := .combat .youAttackWithElves
+@[match_pattern] abbrev youAttackWithTwoOrMore : TriggerEvent := .combat .youAttackWithTwoOrMore
+@[match_pattern] abbrev youAttackWithTotalPower : TriggerEvent := .combat .youAttackWithTotalPower
+@[match_pattern] abbrev equippedAttacks : TriggerEvent := .combat .equippedAttacks
+@[match_pattern] abbrev equippedAttacksAlone : TriggerEvent := .combat .equippedAttacksAlone
+@[match_pattern] abbrev equippedCreatureYouControlAttacks : TriggerEvent := .combat .equippedCreatureYouControlAttacks
+@[match_pattern] abbrev creatureYouControlAttacks : TriggerEvent := .combat .creatureYouControlAttacks
+@[match_pattern] abbrev creatureYouControlAttacksAlone : TriggerEvent := .combat .creatureYouControlAttacksAlone
+@[match_pattern] abbrev creatureYouControlAttacksPlayerAlone : TriggerEvent := .combat .creatureYouControlAttacksPlayerAlone
+@[match_pattern] abbrev creatureAttacksYouOrYourPlaneswalker : TriggerEvent := .combat .creatureAttacksYouOrYourPlaneswalker
+@[match_pattern] abbrev creaturesAttackYourOpponent : TriggerEvent := .combat .creaturesAttackYourOpponent
+@[match_pattern] abbrev merfolkAttackPlayer : TriggerEvent := .combat .merfolkAttackPlayer
+@[match_pattern] abbrev zombieTokenAttacks : TriggerEvent := .combat .zombieTokenAttacks
+@[match_pattern] abbrev sphinxesAttack : TriggerEvent := .combat .sphinxesAttack
+@[match_pattern] abbrev enchantedAttacksOrBlocks : TriggerEvent := .combat .enchantedAttacksOrBlocks
+@[match_pattern] abbrev becomesBlocked : TriggerEvent := .combat .becomesBlocked
+@[match_pattern] abbrev opponentSmallCreatureBlocks : TriggerEvent := .combat .opponentSmallCreatureBlocks
+
+-- Damage aliases (CR 510.2 / 120)
+@[match_pattern] abbrev dealsCombatDamageToPlayer : TriggerEvent := .damage .sourceCombatToPlayer
+@[match_pattern] abbrev combatDamageToPlayer : TriggerEvent := .damage .sourceCombatToPlayer
+@[match_pattern] abbrev dealsCombatDamageToPlayerOrBattle : TriggerEvent := .damage .sourceCombatToPlayerOrBattle
+@[match_pattern] abbrev combatDamageToPlayerOrBattle : TriggerEvent := .damage .sourceCombatToPlayerOrBattle
+@[match_pattern] abbrev equippedDealsCombatDamageToPlayer : TriggerEvent := .damage .equippedCombatToPlayer
+@[match_pattern] abbrev armyYouControlCombatDamage : TriggerEvent := .damage .armyYouControlCombat
+@[match_pattern] abbrev combatDamageToYou : TriggerEvent := .damage .combatToYou
+@[match_pattern] abbrev opponentsDealtCombatDamageYourTurn : TriggerEvent := .damage .opponentsDealtCombatYourTurn
+@[match_pattern] abbrev heroesDealDamageToPlayer : TriggerEvent := .damage .heroesDealToPlayer
+@[match_pattern] abbrev sourceDealtDamage : TriggerEvent := .damage .sourceDealt
+@[match_pattern] abbrev sourceDealtNoncombatDamage : TriggerEvent := .damage .sourceDealtNoncombat
+@[match_pattern] abbrev creatureYouControlDealtDamage : TriggerEvent := .damage .creatureYouControlDealt
+@[match_pattern] abbrev opponentsDealtNoncombatDamage : TriggerEvent := .damage .opponentsDealtNoncombat
+@[match_pattern] abbrev opponentDealtNoncombatDamage : TriggerEvent := .damage .opponentDealtNoncombat
+
+-- Draw aliases (CR 121)
+@[match_pattern] abbrev youDraw : TriggerEvent := .draws .youCard
+@[match_pattern] abbrev youDrawSecondCard : TriggerEvent := .draws .youSecondCard
+@[match_pattern] abbrev youDrawSecond : TriggerEvent := .draws .youSecondCard
+@[match_pattern] abbrev opponentDrawsExceptFirstDrawStep : TriggerEvent := .draws .opponentExceptFirstDrawStep
+@[match_pattern] abbrev opponentDrawsExceptFirst : TriggerEvent := .draws .opponentExceptFirstDrawStep
+@[match_pattern] abbrev opponentDrawsSecondCard : TriggerEvent := .draws .opponentSecondCard
+@[match_pattern] abbrev opponentDrawsSecond : TriggerEvent := .draws .opponentSecondCard
+@[match_pattern] abbrev anyPlayerDrawsSecond : TriggerEvent := .draws .anyPlayerSecond
+
+-- Discard & cycle aliases (CR 701.8 / 702.29)
+@[match_pattern] abbrev youDiscard : TriggerEvent := .discards .youCard
+@[match_pattern] abbrev youDiscardOne : TriggerEvent := .discards .youOne
+@[match_pattern] abbrev youDiscardThis : TriggerEvent := .discards .youThis
+@[match_pattern] abbrev playerDiscards : TriggerEvent := .discards .playerCards
+@[match_pattern] abbrev youCycle : TriggerEvent := .discards .youCycle
+
+-- Tap aliases (CR 701.26)
+@[match_pattern] abbrev sourceBecomesTapped : TriggerEvent := .taps .source
+@[match_pattern] abbrev equippedBecomesTapped : TriggerEvent := .taps .equipped
+@[match_pattern] abbrev tappedForTeamwork : TriggerEvent := .taps .forTeamwork
+@[match_pattern] abbrev creatureYouControlTapped : TriggerEvent := .taps .creatureYouControl
+@[match_pattern] abbrev creaturesYouControlBecomeTapped : TriggerEvent := .taps .creaturesYouControl
+
+-- Counter, proliferate & Saga aliases (CR 122 / 701.34 / 714)
+@[match_pattern] abbrev youPutPlusOne : TriggerEvent := .counters .youPutPlusOne
+@[match_pattern] abbrev youPutCountersOnGoblinOrcArmy : TriggerEvent := .counters .youPutOnGoblinOrcArmy
+@[match_pattern] abbrev youPutLoyaltyCounters : TriggerEvent := .counters .youPutLoyalty
+@[match_pattern] abbrev nthPlanCounter (n : Nat) : TriggerEvent := .counters (.nthPlan n)
+@[match_pattern] abbrev sagaChapter : TriggerEvent := .counters .sagaChapter
+@[match_pattern] abbrev finalSagaChapterResolves : TriggerEvent := .counters .finalSagaChapterResolves
+@[match_pattern] abbrev youProliferate : TriggerEvent := .counters .youProliferate
+
+-- Player/object action aliases (CR 603.2)
+@[match_pattern] abbrev youActivateCreatureAbility : TriggerEvent := .action .youActivateCreatureAbility
+@[match_pattern] abbrev youActivateLoyaltyAbility : TriggerEvent := .action .youActivateLoyaltyAbility
+@[match_pattern] abbrev opponentActivatesLoyaltyAbility : TriggerEvent := .action .opponentActivatesLoyaltyAbility
+@[match_pattern] abbrev becomesTarget : TriggerEvent := .action .becomesTarget
+@[match_pattern] abbrev youTargetSomething : TriggerEvent := .action .youTargetSomething
+@[match_pattern] abbrev youSacrificeToken : TriggerEvent := .action .youSacrificeToken
+@[match_pattern] abbrev bolgSacrificedForReflexive : TriggerEvent := .action .bolgSacrificedForReflexive
+@[match_pattern] abbrev youCreateCreatureTokens : TriggerEvent := .action .youCreateCreatureTokens
+@[match_pattern] abbrev youGainLife : TriggerEvent := .action .youGainLife
+@[match_pattern] abbrev playerLosesLife : TriggerEvent := .action .playerLosesLife
+@[match_pattern] abbrev youScry : TriggerEvent := .action .youScry
+@[match_pattern] abbrev youScryOrSurveil : TriggerEvent := .action .youScryOrSurveil
+@[match_pattern] abbrev theRingTemptsYou : TriggerEvent := .action .theRingTemptsYou
+@[match_pattern] abbrev youChooseRingBearer : TriggerEvent := .action .youChooseRingBearer
+
+-- Disjunctive composite events
+/-- Whenever this creature enters or attacks. -/
+def enterOrAttack : TriggerEvent := .or .enter .attack
+
+/-- Whenever you cast a green spell and whenever a Forest you control enters. -/
+def castGreenOrForestEnters : TriggerEvent :=
+  .or .youCastGreen .forestYouControlEnters
+
+/-- When this enters and whenever an opponent draws except their first draw-step card. -/
+def enterOrOpponentDrawsExceptFirst : TriggerEvent :=
+  .or .enter .opponentDrawsExceptFirst
+
+/-- Events this trigger watches. -/
+def events : TriggerEvent → Array TriggerEvent
+  | .or a b => a.events ++ b.events
+  | .cascade | .fromEffect => #[]
+  | e => #[e]
 
 /-- Oracle wording plus how Game queues this event. Exhaustive so a new event
 is a compile error here rather than silently matching `When this occurs` with
@@ -653,20 +778,19 @@ def spec : TriggerEvent → Spec
   | .equippedBecomesTapped =>
     { clause := "equipped creature becomes tapped", label := "equipped-tapped trigger",
       checkTargets := false }
-  | .fra e =>
-    match e with
-    | .castThis => { clause := "you cast this spell", isWhenever := false, label := "cast trigger" }
-    | .enchantedDies =>
-      { clause := "enchanted creature dies", isWhenever := false, label := "dies trigger" }
-    | .youDiscardThis =>
-      { clause := "you discard this card", isWhenever := false, label := "discard trigger" }
-    | .yourBeginCombatFromGraveyard =>
-      { clause := "the beginning of combat on your turn", isWhenever := false
-        label := "beginning-of-combat trigger" }
-    | .eachUpkeepFromGraveyard =>
-      { clause := "the beginning of each upkeep", isWhenever := false
-        label := "upkeep trigger" }
-    | _ => { clause := "this occurs", label := "triggered ability" }
+  | .castThis =>
+    { clause := "you cast this spell", isWhenever := false, label := "cast trigger" }
+  | .enchantedDies =>
+    { clause := "enchanted creature dies", isWhenever := false, label := "dies trigger" }
+  | .youDiscardThis =>
+    { clause := "you discard this card", isWhenever := false, label := "discard trigger" }
+  | .yourBeginCombatFromGraveyard =>
+    { clause := "the beginning of combat on your turn", isWhenever := false,
+      label := "beginning-of-combat trigger" }
+  | .eachUpkeepFromGraveyard =>
+    { clause := "the beginning of each upkeep", isWhenever := false,
+      label := "upkeep trigger" }
+  | _ => { clause := "this occurs", label := "triggered ability" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -689,5 +813,84 @@ def isAnotherAbilityTriggering (e : TriggerEvent) : Bool :=
   e.spec.isAnotherAbilityTriggering
 
 end TriggerEvent
+
+namespace SharedTriggerWhen
+export TriggerEvent (
+  enters leaves step casts combat damage draws discards taps counters action «or» cascade fromEffect fra
+  entering enter landYouControlEnters forestYouControlEnters mountainYouControlEnters
+  artifactYouControlEnters anotherArtifactEnters anotherNontokenArtifactEnters
+  equipmentYouControlEnters tokenYouControlEnters creatureYouControlEnters
+  anotherCreatureYouControlEnters anotherNontokenCreatureYouControlEnters
+  thisOrAnotherCreatureYouControlEnters anotherCreatureOrPlaneswalkerYouControlEnters
+  creatureOpponentControlsEnters creatureYouControlPowerAtLeastEnters
+  anotherElfYouControlEnters anotherVillainEnters anotherVillainOrArtifactEnters
+  anotherNontokenHeroEnters subtypeYouControlEnters
+  thisOrAnotherSubtypeYouControlEnters thisOrAnotherSubtypeEnters
+  thisOrNontokenSubtypeYouControlEnters thisOrNontokenSubtypeEnters
+  anotherSubtypeOrEquipmentYouControlEnters anotherSubtypeOrEquipmentEnters
+  dying dies leaving enchantedDies creatureYouControlDies nontokenYouControlDies
+  nontokenCreatureYouControlDies attackingCreatureYouControlDies villainYouControlDies
+  anotherGoblinOrcArmyDies anotherCreatureOrPlaneswalkerYouControlDies
+  oneOrMoreOtherCreaturesDie creatureYouControlLeaves anotherNonlandReturned
+  creatureCardLeavesYourGy creatureCardsPutIntoYourGy
+  yourUpkeep eachUpkeep eachUpkeepFromGraveyard enchantedControllerUpkeep eaglesCreateBirds
+  eachOpponentDrawStep yourFirstMain yourBeginCombat yourBeginCombatFromGraveyard
+  opponentBeginCombat eachBeginCombat yourEndStep eachEndStep
+  castThis youCastSpell youCastInstantOrSorcery youCastNoncreature youCastFirstNoncreature
+  youCastSecondSpell youCastCreature youCastArtifactOrCreature youCastGreen
+  youCastColor youCastColorFromHand youCastVillain youCastWithTreasure youCastPreparedSpell
+  youCastTargetingCreatureYouControl youCastEquipmentOrTargetingCreatureYouControl
+  youCastTargetingCreature youCastInstantSorceryTargetingArtifactOrLand
+  youCastTargetingOpponentOrTheirCreature opponentCastsSpell opponentCastsFirstNoncreature
+  opponentCastsSpellMvAtMost opponentCastsMatchingParity anyPlayerCastsSecondSpell
+  spellTargetsSource
+  attacking attack youAttack youAttackWithElves youAttackWithTwoOrMore
+  youAttackWithTotalPower equippedAttacks equippedAttacksAlone
+  equippedCreatureYouControlAttacks creatureYouControlAttacks
+  creatureYouControlAttacksAlone creatureYouControlAttacksPlayerAlone
+  creatureAttacksYouOrYourPlaneswalker creaturesAttackYourOpponent
+  merfolkAttackPlayer zombieTokenAttacks sphinxesAttack
+  enchantedAttacksOrBlocks becomesBlocked opponentSmallCreatureBlocks
+  dealsCombatDamageToPlayer combatDamageToPlayer
+  dealsCombatDamageToPlayerOrBattle combatDamageToPlayerOrBattle
+  equippedDealsCombatDamageToPlayer armyYouControlCombatDamage combatDamageToYou
+  opponentsDealtCombatDamageYourTurn heroesDealDamageToPlayer
+  sourceDealtDamage sourceDealtNoncombatDamage creatureYouControlDealtDamage
+  opponentsDealtNoncombatDamage opponentDealtNoncombatDamage
+  youDraw youDrawSecondCard youDrawSecond
+  opponentDrawsExceptFirstDrawStep opponentDrawsExceptFirst
+  opponentDrawsSecondCard opponentDrawsSecond anyPlayerDrawsSecond
+  youDiscard youDiscardOne youDiscardThis playerDiscards youCycle
+  sourceBecomesTapped equippedBecomesTapped tappedForTeamwork
+  creatureYouControlTapped creaturesYouControlBecomeTapped
+  youPutPlusOne youPutCountersOnGoblinOrcArmy youPutLoyaltyCounters
+  nthPlanCounter sagaChapter finalSagaChapterResolves youProliferate
+  youActivateCreatureAbility youActivateLoyaltyAbility opponentActivatesLoyaltyAbility
+  becomesTarget youTargetSomething youSacrificeToken bolgSacrificedForReflexive
+  youCreateCreatureTokens youGainLife playerLosesLife youScry youScryOrSurveil
+  theRingTemptsYou youChooseRingBearer
+  enterOrAttack castGreenOrForestEnters enterOrOpponentDrawsExceptFirst
+)
+abbrev events (w : SharedTriggerWhen) : Array TriggerEvent := TriggerEvent.events w
+end SharedTriggerWhen
+
+namespace FraEvent
+export TriggerEvent (
+  castThis opponentsDealtNoncombatDamage opponentDealtNoncombatDamage
+  youPutLoyaltyCounters enchantedDies creatureYouControlAttacks
+  creatureYouControlAttacksPlayerAlone opponentCastsSpellMvAtMost
+  youCastPreparedSpell anotherCreatureOrPlaneswalkerYouControlEnters
+  thisOrAnotherCreatureYouControlEnters anotherNontokenCreatureYouControlEnters
+  creatureOpponentControlsEnters opponentActivatesLoyaltyAbility
+  anotherCreatureOrPlaneswalkerYouControlDies playerDiscards youDiscardThis
+  creatureYouControlPowerAtLeastEnters youCastArtifactOrCreature
+  youCastEquipmentOrTargetingCreatureYouControl opponentSmallCreatureBlocks
+  yourBeginCombatFromGraveyard eachUpkeepFromGraveyard
+  creatureAttacksYouOrYourPlaneswalker creaturesAttackYourOpponent
+  creatureYouControlLeaves youProliferate youDiscardOne
+  nontokenCreatureYouControlDies opponentBeginCombat youCreateCreatureTokens
+  zombieTokenAttacks sphinxesAttack youCycle
+)
+end FraEvent
 
 end Mtg.Engine

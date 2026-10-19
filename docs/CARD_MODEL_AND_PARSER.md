@@ -35,9 +35,9 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 | `Saga.lean` | `SagaChapter`, `SagaDef`, and Roman numeral chapter header parsers. |
 | `ActivatedAbility.lean` & `OracleActivate.lean` | `LoyaltySymbol`, `FraCost`, `FraActivationCondition`, `ActivationCost` (21 fields), `ActivatedAbility` (23 fields), and builder functions (`OracleActivate.activated`, `equipAbility`, `typecyclingAbility`). |
 | `StaticAbility.lean` | `FraStatic` (43 FRA static constructors), `StaticAbility` (108 constructors + `.fra` + `.printed`), `StaticShape`/`StaticMeta` projection table, and `StaticAbility.toNotation`. |
-| `TriggerEvent.lean` | `FraEvent` (34 FRA/FRC events), `TriggerEvent` (113 constructors + `.fra`), and `TriggerEvent.spec`. |
-| `SharedTrigger.lean` | 9 MSH `*Leftover` enums, `SharedTriggerWhen` (88 trigger conditions), `SharedTrigger` (116 constructors), `FraCondition`, and `SharedTriggerOpts`. |
-| `Trigger.lean` | `TriggeredAbility` (`.triggered when effect opts`), `TriggerTiming`, `TriggeredAbility.chapterTiming`, and `SharedTrigger.timing` (compiles `SharedTrigger` into `Resolution`). |
+| `TriggerEvent.lean` | Unified CR 603 `TriggerEvent` inductive (14 constructors: 12 field-bearing over 11 CR 603 event-filter sub-inductives `EntersEvent`..`ActionEvent` + `.or` + 2 nullary `.cascade`, `.fromEffect`), `FraEvent` and `SharedTriggerWhen` as `abbrev`s for `TriggerEvent`, `@[match_pattern] abbrev` aliases, `TriggerEvent.events`, and `TriggerEvent.spec`. |
+| `SharedTrigger.lean` | 9 MSH `*Leftover` enums, `SharedTrigger` (116 constructors), `FraCondition`, and `SharedTriggerOpts`. |
+| `Trigger.lean` | `TriggeredAbility` (`.triggered (when : TriggerEvent) effect opts`), `TriggerTiming`, `TriggeredAbility.chapterTiming`, and `SharedTrigger.timing` (compiles `SharedTrigger` into `Resolution`). |
 | `TriggerEffects.lean` | `Effect.ofTrigger` and 92 `Effect.*` leftover trigger wrappers. |
 | `TriggeredAbility.lean` | ~180 `TriggeredAbility.on*` catalog builders, `TriggeredAbility.fra`, and the Oracle text renderer (`TriggeredAbility.toNotation`). |
 | `CardDef.lean` | `TapAddForEach`, `AdventureFace`, `CardDef` (~118 fields), `structuredAbilityLines`, and `modellingError?`. |
@@ -108,6 +108,24 @@ Recent refactorings unified trigger and spell parameters around six composable s
    - Its 33 field-bearing constructors are `.pump`, `.dealDamage`, `.scry` (also covering `.surveil` via `surveil : Option TriggerSurveilNote := none`, CR 701.25), `.draw`, `.searchLibrary`, `.discard`, `.pay`, `.putCounters` (also covering `.proliferate` via `.eachKindOnIt` and `.removeCounters` via `.remove`, CR 122 / CR 701.34), `.returnToHand`, `.put`, `.putOnLibrary`, `.createTokens`, `.amass`, `.exile`, `.sacrifice`, `.attach`, `.mayCast`, `.addMana`, `.chooseModes` (also covering `.or` via `.one` and `.ifElse` via `.ifElse cond`, CR 700.2 / CR 608.2c), `.destroy`, `.tap` (also covering `.untap` via `tapped : Bool := true`, CR 701.26), `.grant` (covering continuous effects across CR 613 Layers 1–7, CR 614 replacement effects, cost reductions, and keyword actions via `@[match_pattern] abbrev`s `.lose`, `.cant`, `.becomeArtifact`, `.becomePrepared`, `.setBasePT`, `.gainControl`, `.becomeCopy`, `.replace`, `.spellsCostLess`, `.investigate`, `.empowerJace`, `.recruit`, `.noteResolveThisTurn`, `.mshReflexive`), `.gainLife` (also covering `.loseLife` via `lose : Bool := false`, CR 119), `.mill`, `.revealLibrary` (also covering `.revealFromHand` via `.fromHand`, CR 701.16), `.connive`, `.queueReflexive`, `.sequence`, `.may`, `.«if»`, `.fight`, `.onPermanent` (with `@[match_pattern] abbrev onSource`), and `.unlessPays`.
 2. **Nullary Block (lines 3038–3054)**:
    - All 33 field-bearing constructors are placed before the nullary block (max field-bearing constructor tag = **32**, leaving **211 of 244 field-bearing constructor slots** free below Lean's 243 limit), and all 6 nullary constructors (`.cascade`, `.ringTempts`, `.additionalCombatPhase`, `.winTheGame`, `.counter`, `.unrecognized`) are grouped at the end of `Resolution`.
+
+### 2.5 `TriggerEvent` Structure (`Mtg/Engine/Card/TriggerEvent.lean`)
+`FraEvent` and `SharedTriggerWhen` are both type aliases (`abbrev`) for `TriggerEvent`. After consolidating the 3 separate trigger-event inductives (previously 235 constructors across `TriggerEvent`, `FraEvent`, and `SharedTriggerWhen`), `TriggerEvent` has **14 total constructors** (**12 field-bearing** + **2 nullary**) aligned with the CR 603 trigger-event categories:
+1. **CR 603 Event-Category Constructors (12 field-bearing)**:
+   - `.enters (which : EntersEvent := .source)` — CR 603.6a enters-the-battlefield events
+   - `.leaves (which : LeavesEvent := .dies)` — CR 603.6c / CR 603.10a leaves-the-battlefield, dies, and graveyard zone-change events
+   - `.step (which : StepEvent := .yourUpkeep)` — CR 603.2b beginning-of-step/phase events
+   - `.casts (which : CastEvent := .youSpell)` — CR 601.2i spell-cast events
+   - `.combat (which : CombatEvent := .sourceAttacks)` — CR 508.1m / CR 509.1h attack and block events
+   - `.damage (which : DamageEvent := .sourceCombatToPlayer)` — CR 120.2 / CR 510.2 damage events
+   - `.draws (which : DrawEvent := .you)` — CR 121.1 card-draw events
+   - `.discards (which : DiscardEvent := .you)` — CR 701.9 discard and cycling events
+   - `.taps (which : TapEvent := .source)` — CR 603.2f / CR 701.26a becomes-tapped events
+   - `.counters (which : CounterEvent := .youPutPlusOne)` — CR 122 / CR 714.2 counter-placement, proliferate, and Saga chapter events
+   - `.action (which : ActionEvent := .becomesTarget)` — CR 602 / CR 701 / CR 119 activated-ability, targeting, token, sacrifice, life, scry/surveil, and Ring events
+   - `.or (a b : TriggerEvent)` — compound disjunctive trigger conditions (`enterOrAttack`, `castGreenOrForestEnters`, `enterOrOpponentDrawsExceptFirst`)
+2. **Nullary Constructors (2 nullary)**:
+   - `.cascade` (CR 702.85a) and `.fromEffect` (deferred to the inner `SharedTrigger`'s timing).
 
 ---
 

@@ -18,7 +18,7 @@ names are aliases of `triggered`. -/
 inductive TriggeredAbility where
   /-- Reusable trigger: when it fires, a unified `Effect`, and optional
   intervening conditions / wording filters. -/
-  | triggered (when : SharedTriggerWhen) (effect : Effect)
+  | triggered (when : TriggerEvent) (effect : Effect)
       (opts : SharedTriggerOpts := {})
 deriving Repr, Inhabited, BEq
 
@@ -147,114 +147,6 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
       resolution := TriggerResolution.ofSpell s.resolution }
 
 end TriggeredAbility
-
-namespace SharedTriggerWhen
-
-/-- Whenever this creature enters or attacks. -/
-def enterOrAttack : SharedTriggerWhen := .or .enter .attack
-
-/-- Whenever you cast a green spell and whenever a Forest you control enters. -/
-def castGreenOrForestEnters : SharedTriggerWhen :=
-  .or .youCastGreen .forestYouControlEnters
-
-/-- When this enters and whenever an opponent draws except their first draw-step card. -/
-def enterOrOpponentDrawsExceptFirst : SharedTriggerWhen :=
-  .or .enter .opponentDrawsExceptFirst
-
-/-- Events this reusable trigger watches. -/
-def events : SharedTriggerWhen → Array TriggerEvent
-  | .enter => #[.entering]
-  | .attack => #[.attacking]
-  | .dies => #[.dying]
-  | .youAttack => #[.youAttack]
-  | .youAttackWithElves => #[.youAttackWithElves]
-  | .youCastColor c => #[.youCastColor c]
-  | .youCastNoncreature => #[.youCastNoncreature]
-  | .landYouControlEnters => #[.landYouControlEnters]
-  | .yourUpkeep => #[.yourUpkeep]
-  | .yourEndStep => #[.yourEndStep]
-  | .yourBeginCombat => #[.yourBeginCombat]
-  | .youDrawSecond => #[.youDrawSecondCard]
-  | .theRingTemptsYou => #[.theRingTemptsYou]
-  | .youChooseRingBearer => #[.youChooseRingBearer]
-  | .becomesTarget => #[.becomesTarget]
-  | .artifactYouControlEnters => #[.artifactYouControlEnters]
-  | .combatDamageToPlayer => #[.dealsCombatDamageToPlayer]
-  | .oneOrMoreOtherCreaturesDie => #[.oneOrMoreOtherCreaturesDie]
-  | .creatureCardLeavesYourGy => #[.creatureCardLeavesYourGy]
-  | .youDraw => #[.youDraw]
-  | .youGainLife => #[.youGainLife]
-  | .anotherArtifactEnters => #[.anotherArtifactEnters]
-  | .sourceDealtDamage => #[.sourceDealtDamage]
-  | .equippedAttacksAlone => #[.equippedAttacksAlone]
-  | .youCastWithTreasure => #[.youCastWithTreasure]
-  | .youCastColorFromHand c => #[.youCastColorFromHand c]
-  | .equippedCreatureYouControlAttacks => #[.equippedCreatureYouControlAttacks]
-  | .anotherElfYouControlEnters => #[.anotherElfYouControlEnters]
-  | .youActivateCreatureAbility => #[.youActivateCreatureAbility]
-  | .opponentDrawsSecond => #[.opponentDrawsSecondCard]
-  | .opponentCastsFirstNoncreature => #[.opponentCastsFirstNoncreature]
-  | .youCastFirstNoncreature => #[.youCastFirstNoncreature]
-  | .youCastSpell => #[.youCastSpell]
-  | .youCastTargetingOpponentOrTheirCreature => #[.youCastTargetingOpponentOrTheirCreature]
-  | .youActivateLoyaltyAbility => #[.youActivateLoyaltyAbility]
-  | .eachUpkeep => #[.eachUpkeep]
-  | .youScryOrSurveil => #[.youScryOrSurveil]
-  | .opponentsDealtCombatDamageYourTurn => #[.opponentsDealtCombatDamageYourTurn]
-  | .creatureYouControlDies => #[.creatureYouControlDies]
-  | .eachOpponentDrawStep => #[.eachOpponentDrawStep]
-  | .eachEndStep => #[.eachEndStep]
-  | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
-  | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
-  | .anotherSubtypeOrEquipmentEnters => #[.anotherSubtypeOrEquipmentYouControlEnters]
-  | .combatDamageToPlayerOrBattle => #[.dealsCombatDamageToPlayerOrBattle]
-  | .youCastGreen => #[.youCastGreen]
-  | .forestYouControlEnters => #[.forestYouControlEnters]
-  | .youCastInstantOrSorcery => #[.youCastInstantOrSorcery]
-  | .equipmentYouControlEnters => #[.equipmentYouControlEnters]
-  | .anotherCreatureYouControlEnters => #[.anotherCreatureYouControlEnters]
-  | .anotherGoblinOrcArmyDies => #[.anotherGoblinOrcArmyDies]
-  | .creatureYouControlAttacksAlone => #[.creatureYouControlAttacksAlone]
-  | .opponentCastsSpell => #[.opponentCastsSpell]
-  | .youScry => #[.youScry]
-  | .becomesBlocked => #[.becomesBlocked]
-  | .leaving => #[.leaving]
-  | .youAttackWithTwoOrMore => #[.youAttackWithTwoOrMore]
-  | .youSacrificeToken => #[.youSacrificeToken]
-  | .armyYouControlCombatDamage => #[.armyYouControlCombatDamage]
-  | .yourFirstMain => #[.yourFirstMain]
-  | .anyPlayerCastsSecondSpell => #[.anyPlayerCastsSecondSpell]
-  | .eachBeginCombat => #[.eachBeginCombat]
-  | .youCastCreature => #[.youCastCreature]
-  | .mountainYouControlEnters => #[.mountainYouControlEnters]
-  | .equippedDealsCombatDamageToPlayer => #[.equippedDealsCombatDamageToPlayer]
-  | .nontokenYouControlDies => #[.nontokenYouControlDies]
-  | .playerLosesLife => #[.playerLosesLife]
-  | .youCastSecondSpell => #[.youCastSecondSpell]
-  | .equippedAttacks => #[.equippedAttacks]
-  | .cascade => #[]
-  | .tokenYouControlEnters => #[.tokenYouControlEnters]
-  | .bolgSacrificedForReflexive => #[.bolgSacrificedForReflexive]
-  | .opponentDrawsExceptFirst => #[.opponentDrawsExceptFirstDrawStep]
-  | .youAttackWithTotalPower => #[.youAttackWithTotalPower]
-  | .eaglesCreateBirds => #[.eaglesCreateBirds]
-  | .opponentCastsMatchingParity => #[.opponentCastsMatchingParity]
-  | .youPutCountersOnGoblinOrcArmy => #[.youPutCountersOnGoblinOrcArmy]
-  | .sourceDealtNoncombatDamage => #[.sourceDealtNoncombatDamage]
-  | .finalSagaChapterResolves => #[.finalSagaChapterResolves]
-  | .combatDamageToYou => #[.combatDamageToYou]
-  | .sagaChapter => #[.sagaChapter]
-  | .tappedForTeamwork => #[.tappedForTeamwork]
-  | .creatureYouControlEnters => #[.creatureYouControlEnters]
-  | .creaturesYouControlBecomeTapped => #[.creaturesYouControlBecomeTapped]
-  | .subtypeYouControlEnters subtype => #[.subtypeYouControlEnters subtype]
-  | .creatureCardsPutIntoYourGy => #[.creatureCardsPutIntoYourGy]
-  | .nthPlanCounter n => #[.nthPlanCounter n]
-  | .or a b => a.events ++ b.events
-  | .fromEffect => #[]
-  | .fra e => #[.fra e]
-
-end SharedTriggerWhen
 
 namespace SharedTrigger
 

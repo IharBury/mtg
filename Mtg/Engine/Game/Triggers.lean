@@ -270,12 +270,8 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       else g
     let attackEvent :=
       match event with
-      | .attacking => true
-      | .fra fe =>
-        match fe with
-        | .creatureYouControlAttacks | .creatureYouControlAttacksPlayerAlone
-        | .zombieTokenAttacks | .sphinxesAttack => true
-        | _ => false
+      | .attacking | .creatureYouControlAttacks | .creatureYouControlAttacksPlayerAlone
+      | .zombieTokenAttacks | .sphinxesAttack => true
       | _ => false
     let mardu :=
       if attackEvent && (g.permanentsOf controller).any (fun o =>
@@ -488,10 +484,7 @@ def putFraEventTriggersWhere (g : Game) (p : PlayerId) (pred : FraEvent → Bool
     (lastKnownPower : Option Int := none) : Game :=
   let fire (g : Game) (o : GameObject) : Game :=
     (o.printed.triggeredAbilities ++ o.status.grantedTriggeredAbilities).foldl (fun g ab =>
-      match ab.timing.events.find? (fun e =>
-          match e with
-          | .fra fe => pred fe
-          | _ => false) with
+      match ab.timing.events.find? pred with
       | some e => g.queueTrigger p o ab e (lastKnownPower := lastKnownPower) (cause := cause)
       | none => g) g
   let g := g.foldControlledPermanents p excludeId fire
