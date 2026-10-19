@@ -135,6 +135,9 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
   | .causeHadCounters => causeStatus.any (·.hasCounters)
   | .sourceHasCounters =>
     source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
+  | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures controller ≥ n
+  | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n
+  | .anotherCreaturePowerAtMost _ => true
 
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/
@@ -182,11 +185,13 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | _, _, _ => true
   -- “Whenever another [legendary] Wolf you control enters”.
   let causeOk :=
-    match cause with
-    | some o =>
-      (ab.opts.thisOrAnotherSubtype.all (g.hasSubtype o ·)) &&
-        (!ab.opts.anotherLegendary || o.isLegendary)
-    | none => true
+    if !ab.firesOn .anotherCreatureYouControlEnters then true
+    else
+      match cause with
+      | some o =>
+        (ab.opts.thisOrAnotherSubtype.all (g.hasSubtype o ·)) &&
+          (!ab.opts.anotherLegendary || o.isLegendary)
+      | none => true
   -- Intervening “if” clauses checked as the ability triggers (CR 603.4);
   -- they are checked again on resolution.
   let interveningOk :=

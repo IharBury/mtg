@@ -11,17 +11,7 @@ the mana immediately, without using the stack (CR 605.3b).
 namespace Mtg.Engine
 namespace Game
 
-/-- How mana from a mana ability may be spent (CR 106.10). -/
-inductive ManaRestriction where
-  | none
-  | elf
-  | instantOrSorcery
-  | hero
-  | villain
-  | cantNonartifact
-  | creatureSource
-  | fra (u : FraManaUse)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ManaRestriction := Mtg.Engine.ManaRestriction
 
 /-- The mana a mana ability adds (CR 106.1). -/
 inductive ManaOutput where
@@ -305,24 +295,8 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestric
   mana.foldl (fun pool t =>
     match r with
     | .none => pool.add t
-    | .elf => pool.add t (elfRestricted := true)
-    | .instantOrSorcery => pool.add t (instRestricted := true)
-    | .hero => pool.add t (heroRestricted := true)
-    | .villain => pool.add t (villainRestricted := true)
-    | .cantNonartifact => pool.add t (cantNonartifact := true)
-    | .creatureSource => pool.add t (creatureRestricted := true)
-    | .fra u => pool.add t (fra := some u)) pool
+    | .only u => pool.addWithUse t u) pool
 
-/-- A short note for the log describing `r`. -/
-def ManaRestriction.note : ManaRestriction → String
-  | .none | .fra .fromTreasure => ""
-  | .elf => " (Elf spells and abilities)"
-  | .instantOrSorcery => " (instant or sorcery spells)"
-  | .hero => " (Hero spells and abilities)"
-  | .villain => " (Villain spells and abilities)"
-  | .cantNonartifact => " (not a nonartifact spell)"
-  | .creatureSource => " (abilities of creature sources)"
-  | .fra u => s!" ({u.label})"
 
 /-- `p` may activate abilities of creatures they control as though those
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/

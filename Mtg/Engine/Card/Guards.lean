@@ -810,7 +810,7 @@ namespace CardDef
   .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike 1)
 #guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw 1))
-    { anotherCreaturePowerAtMost := some 2 }
+    { condition := .anotherCreaturePowerAtMost 2 }
 #guard TriggeredAbility.anotherCreaturePowerAtMost?
   (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == some 2
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==

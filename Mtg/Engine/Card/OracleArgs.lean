@@ -676,15 +676,16 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
     cost, effect, otherModes, costReductionIfYouControlLegendary, equipSubtype
     costReductionPerEquipment, condition, costReductionIfTargetPowerAtMost }
 
+def takeInterveningCondition : InterveningCondition → ArgM InterveningCondition
+  | .youControlCreatureWithPower n => return .youControlCreatureWithPower (← takeInt n)
+  | .gainedLifeAtLeast n => return .gainedLifeAtLeast (← takeNat n)
+  | .anotherCreaturePowerAtMost n => return .anotherCreaturePowerAtMost (← takeInt n)
+  | c => pure c
+
 def takeOpts (o : SharedTriggerOpts) : ArgM SharedTriggerOpts := do
   return { o with
-    youControlCreatureWithPower := ← takeOptInt o.youControlCreatureWithPower
-    thisOrNontokenSubtype := ← takeOptStr o.thisOrNontokenSubtype
-    thisOrAnotherSubtype := ← takeOptStr o.thisOrAnotherSubtype
-    anotherSubtypeOrEquipment := ← takeOptStr o.anotherSubtypeOrEquipment
-    gainedLifeAtLeast := ← takeOptNat o.gainedLifeAtLeast
-    anotherCreaturePowerAtMost := ← takeOptInt o.anotherCreaturePowerAtMost
-    watchedSubtype := ← takeOptStr o.watchedSubtype }
+    condition := ← takeInterveningCondition o.condition
+    subtype := ← takeOptStr o.subtype }
 
 def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
   match ab with

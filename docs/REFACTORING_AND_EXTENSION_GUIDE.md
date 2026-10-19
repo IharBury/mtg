@@ -26,6 +26,9 @@ Recent commits have systematically moved the engine toward **one compositional I
    - Reduced `ChapterResolution` (`Mtg/Engine/Card/Chapter.lean`) from **24 constructors (9 field-bearing + 15 nullary)** to **1 constructor** (`| spell (s : ChapterSpell)`) wrapping `Resolution`, with all 23 named HOB/MSH chapter constructors retained as builder functions in `namespace ChapterResolution`, and simplified `Effect.ofChapter` (`ChapterEffects.lean`), `TriggeredAbility.chapterTiming` (`Trigger.lean`), and `takeChapter` (`OracleArgs.lean`) to a single `.spell s` arm.
    - Unified the 9 chosen-object boolean/option fields on `ActivationCost` (`discardACard`, `discardLegendarySameName`, `sacrificeLegendaryArtifact`, `sacrificeArtifact`, `sacrificeArtifactOrCreature`, `sacrificeArtifactOrDiscardNonland`, `sacrificeEquipmentAttachedToSource`, `tapAnUntappedCreatureYouControl`, `sacrificeAnotherSubtype`) into `picks : Array CostPick := #[]` (`Mtg/Engine/Card/ActivatedAbility.lean`, CR 602.2b).
    - Unified `FraActivationCondition` and the 5 `onlyIf*` fields on `ActivatedAbility` (`onlyIfYouControlLegendary`, `onlyIfYouAttackedWithTwoOrMore`, `onlyIfOpponentDealtNoncombatDamage`, `onlyIfYouControlCreatureToughnessAtLeast`, `onlyIfGyCreaturesAtLeast`) into a single CR 602.5b `ActivationCondition` inductive (`condition : ActivationCondition := .none` on `ActivatedAbility`) and aligned `ExtraActivationCost` (CR 602.1), `InterveningCondition` (CR 603.4), and `ManaUse` (CR 106.6) with CR terminology.
+8. **Unified `ManaUse` / `ManaRestriction` / `ManaPool` (CR 106.4 / CR 106.6 / CR 106.10) and `InterveningCondition` / `SharedTriggerOpts` / `TriggerTiming` (CR 603.4)**:
+   - Extended `ManaUse` (`Mtg/Engine/Mana.lean`, CR 106.6) with the 6 HOB/MSH spending restrictions (`.elf`, `.instantOrSorcery`, `.hero`, `.villain`, `.cantNonartifact`, `.creatureSource`), unified `ManaRestriction` (CR 106.10) into 2 constructors (`| none` and `| only (u : ManaUse)`), and replaced the 27 hardcoded restricted-mana `Nat` fields (`elfWhite`..`creatureGreen`, `cantNonartifact`, `cantNonartifactBlue`) and `fraRestricted` on `ManaPool` (CR 106.4) with a single `restricted : Array (ManaType × ManaUse) := #[]` field (reducing `ManaPool` from **34** to **7 fields**).
+   - Extended `InterveningCondition` (`Mtg/Engine/Card/SharedTrigger.lean`, CR 603.4) with `.youControlCreatureWithPower`, `.gainedLifeAtLeast`, and `.anotherCreaturePowerAtMost`, and replaced the 8 mutually-exclusive condition and subtype fields on `SharedTriggerOpts` and 6 copied fields on `TriggerTiming` (`Mtg/Engine/Card/Trigger.lean`) with `condition : InterveningCondition := .none` and `subtype : Option String := none` (reducing `SharedTriggerOpts` from **13** to **7 fields** and `TriggerTiming` from **14** to **10 fields**).
 
 The sections below document the remaining duplication left over from earlier per-set iterations (`HOB`, `MSH`, `FRA`, `FRC`) and how to complete this unification cleanly.
 
@@ -122,14 +125,14 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 7: Encapsulate `CardDef` Flags, `Game` Scratchpad Fields, and `ManaPool` Restrictions
+### Priority 7: Encapsulate `CardDef` Flags and `Game` Scratchpad Fields
 1. **`CardDef` (`Mtg/Engine/Card/CardDef.lean:48–460`)**:
    - Group the ~21 `tapAdd*` fields into structured mana ability definitions, the ~15 `entersTapped*`/`entersWith*` fields into an ETB modifier list, and the ~17 `costReduction*`/`additionalCost*` fields into a spell cost modifier list.
 2. **`Game` & `Player` Per-Turn / Per-Resolution State (`Mtg/Engine/Game/Core.lean`, `Player.lean`, `Turns.lean`)**:
    - Extract per-turn `Player` fields into `pl.thisTurn : PlayerTurnState` and per-turn `Game` fields into `g.thisTurn : GameTurnState` so `Turns.clearTurnActivations` (`Turns.lean:55–143`) resets them with `{ pl with thisTurn := {} }` instead of a 90-line manual field reset.
    - Extract the ~25 `*ThisWay` fields on `Game` (`milledIdsThisWay`, `exiledIdsThisWay`, `sacrificedPowerThisWay`, etc., `Core.lean:310–395`) into `g.thisWay : ResolutionNotes` reset at the start of each resolution.
-3. **`ManaPool` (`Mtg/Engine/Mana.lean:285–795`)**:
-   - Merge the 23 hardcoded LOTR/MSH restricted mana counters (`elfWhite`..`creatureColorless`) into `fraRestricted : Array (ManaType × FraManaUse)` (renamed to `restricted : Array (ManaType × ManaRestriction)`), cutting ~350 lines from `ManaPool.spendOne?`.
+3. **`ManaPool` (`Mtg/Engine/Mana.lean`) — Completed in Batch 18**:
+   - Unified all 27 hardcoded restricted-mana `Nat` counters (`elfWhite`..`creatureGreen`, `cantNonartifact`, `cantNonartifactBlue`) and `fraRestricted` into `restricted : Array (ManaType × ManaUse) := #[]` on `ManaPool` (`Mtg/Engine/Mana.lean`, CR 106.4 / CR 106.6 / CR 106.10).
 
 ---
 

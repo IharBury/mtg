@@ -25,12 +25,8 @@ def timing : TriggeredAbility → TriggerTiming
         | .fromEffect => t.events
         | _ => w.events
       onceEachTurn := t.onceEachTurn || opts.onceEachTurn
-      youControlCreatureWithPower := opts.youControlCreatureWithPower
-      thisOrNontokenSubtype := opts.thisOrNontokenSubtype
-      thisOrAnotherSubtype := opts.thisOrAnotherSubtype
-      anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
-      gainedLifeAtLeast := opts.gainedLifeAtLeast
-      anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
+      condition := opts.condition
+      subtype := opts.subtype
       targeting := if opts.untargeted then {} else e.targeting
       allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
 
@@ -184,21 +180,21 @@ def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
   .triggered .youActivateCreatureAbility (Effect.ofTrigger (.draw 1)) .once
 def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
   .triggered .anotherSubtypeOrEquipmentEnters (Effect.ofTrigger (.draw 1))
-    { onceEachTurn := true, anotherSubtypeOrEquipment := some subtype }
+    { onceEachTurn := true, subtype := some subtype }
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
-  .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { gainedLifeAtLeast := some n }
+  .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { condition := .gainedLifeAtLeast n }
 def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrNontokenSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { thisOrNontokenSubtype := some subtype }
+    { subtype := some subtype }
 def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { thisOrAnotherSubtype := some subtype }
+    { subtype := some subtype }
 def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.createTokens kind n))
-    { watchedSubtype := some subtype }
+    { subtype := some subtype }
 def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
   .triggered .opponentDrawsSecond (Effect.ofTrigger (.createTokens .treasure 1))
 def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
@@ -227,7 +223,7 @@ def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
 def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
     TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.onSource (.plusOne n)))
-    { thisOrAnotherSubtype := some subtype }
+    { subtype := some subtype }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
   .triggered .opponentCastsSpell (Effect.ofTrigger (.amass n "Orc"))
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
@@ -268,7 +264,7 @@ def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.seqDrawThenDiscard 2)
-    { thisOrAnotherSubtype := some subtype, anotherLegendary := true }
+    { subtype := some subtype, anotherLegendary := true }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
@@ -329,7 +325,7 @@ def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility
 def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
     (generic : Nat) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw generic))
-    { anotherCreaturePowerAtMost := some power }
+    { condition := .anotherCreaturePowerAtMost power }
 def onEnterDrawThenBottomIfNoLegendary : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 def onYourEndStepRemoveHopeDrawSac : TriggeredAbility :=
@@ -427,7 +423,7 @@ def onOpponentCastsChosenParityModes : TriggeredAbility :=
   .triggered .opponentCastsMatchingParity (Effect.ofTrigger .gollumMode)
 def onThisOrAnotherSubtypeEntersDiscardHand (subtype : String) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger .discardHandDrawDamageIfStory)
-    { thisOrAnotherSubtype := some subtype }
+    { subtype := some subtype }
 def onAttackCastFromGyArtifactInstantSorcery : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .castFromGyArtifactInstantSorcery)
 def onAttackEquippedGainDoubleStrike : TriggeredAbility :=
@@ -2085,13 +2081,13 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Alliance — Whenever another creature you control enters"
     | .enter, some .destroyOtherAmassControllerPower, _ =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some "Dwarf", .. } =>
+    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { subtype := some "Dwarf", .. } =>
       leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
     | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
     | .enter, some .returnCreatureFromGyToHand, _ =>
     "When this enchantment enters, return target creature card from your graveyard to your hand."
-    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some "Dwarf", .. } =>
+    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { subtype := some "Dwarf", .. } =>
     "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
     | .attack, some .castFromGyArtifactInstantSorcery, _ =>
       leadInSentence ab "Whenever Bilbo attacks"
@@ -2111,11 +2107,11 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "When The Notary Hobbits enter"
     | .enter, some .attachEquipmentThenFight, _ =>
       leadInSentence ab "When Thorin enters"
-    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some "Elf", anotherLegendary := true, .. } =>
+    | .anotherCreatureYouControlEnters, _, { subtype := some "Elf", anotherLegendary := true, .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, some .returnAsArtifact, _ =>
       leadInSentence ab "When Tom, Bert, and William die"
-    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
+    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { subtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
     | .enter, some .exileLandsThenReturnTapped, _ =>
       leadInSentence ab "When Gandalf enters"
@@ -2212,7 +2208,7 @@ def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
     (once := false) (cond : FraCondition := .none) : TriggeredAbility :=
   .triggered w { targeting := .of kind, resolution := r, phrase := printed
                  allowsZeroTargets, maxTargets }
-    { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
+    { printed, onceEachTurn := once, condition := cond, allowsZeroTargets }
 
 end TriggeredAbility
 

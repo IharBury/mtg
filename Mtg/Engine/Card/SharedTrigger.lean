@@ -1135,9 +1135,14 @@ namespace SharedTrigger
 
 end SharedTrigger
 
-/-- An intervening “if” clause (CR 603.4), checked when the
-ability triggers and again as it resolves. -/
+/-- An intervening “if” or trigger condition (CR 603.2 / 603.4). -/
 inductive InterveningCondition where
+  /-- “while you control a creature with power ≥ n” (e.g. Ferocious). -/
+  | youControlCreatureWithPower (n : Int)
+  /-- “if you gained `n` or more life this turn”. -/
+  | gainedLifeAtLeast (n : Nat)
+  /-- “another creature you control with power ≤ n”. -/
+  | anotherCreaturePowerAtMost (n : Int)
   | none
   /-- “if it isn't a token” (the source, as it last existed). -/
   | sourceNotToken
@@ -1162,41 +1167,63 @@ deriving Repr, Inhabited, BEq, DecidableEq
 /-- Backward-compatible alias for `InterveningCondition` (CR 603.4). -/
 abbrev FraCondition := InterveningCondition
 
-
-/-- Optional intervening conditions and wording filters for `triggered`. -/
+/-- Optional intervening conditions and wording filters for `triggered` (CR 603). -/
 structure SharedTriggerOpts where
   onceEachTurn : Bool := false
-  youControlCreatureWithPower : Option Int := none
-  thisOrNontokenSubtype : Option String := none
-  thisOrAnotherSubtype : Option String := none
-  anotherSubtypeOrEquipment : Option String := none
-  gainedLifeAtLeast : Option Nat := none
-  /-- Intervening “another creature you control with power ≤ n”. -/
-  anotherCreaturePowerAtMost : Option Int := none
+  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
+  condition : InterveningCondition := .none
+  /-- Subtype filter watched by the trigger event. -/
+  subtype : Option String := none
   allowsZeroTargets : Bool := false
-  /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
-  watchedSubtype : Option String := none
   /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
   untargeted : Bool := false
   /-- The ability's printed sentence, when its wording isn't built from the
   event and resolution (Reality Fracture). -/
   printed : String := ""
-  /-- Reality Fracture intervening “if” clause. -/
-  fraCondition : FraCondition := .none
   /-- The other permanent must be legendary (“another legendary Elf”). -/
   anotherLegendary : Bool := false
 deriving Repr, Inhabited, BEq
 
+namespace SharedTriggerOpts
+
+def youControlCreatureWithPower (o : SharedTriggerOpts) : Option Int :=
+  match o.condition with
+  | .youControlCreatureWithPower n => some n
+  | _ => none
+
+def gainedLifeAtLeast (o : SharedTriggerOpts) : Option Nat :=
+  match o.condition with
+  | .gainedLifeAtLeast n => some n
+  | _ => none
+
+def anotherCreaturePowerAtMost (o : SharedTriggerOpts) : Option Int :=
+  match o.condition with
+  | .anotherCreaturePowerAtMost n => some n
+  | _ => none
+
+def fraCondition (o : SharedTriggerOpts) : InterveningCondition :=
+  match o.condition with
+  | .youControlCreatureWithPower _ | .gainedLifeAtLeast _ | .anotherCreaturePowerAtMost _ => .none
+  | c => c
+
+def thisOrNontokenSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+def thisOrAnotherSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+def anotherSubtypeOrEquipment (o : SharedTriggerOpts) : Option String := o.subtype
+def watchedSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+
 /-- Ferocious intervening condition (power 4 or greater). -/
-def SharedTriggerOpts.ferocious : SharedTriggerOpts :=
-  { youControlCreatureWithPower := some 4 }
+def ferocious : SharedTriggerOpts :=
+  { condition := .youControlCreatureWithPower 4 }
 
 /-- “This ability triggers only once each turn.” -/
-def SharedTriggerOpts.once : SharedTriggerOpts :=
+def once : SharedTriggerOpts :=
   { onceEachTurn := true }
 
 /-- Shared effect has targeting; this printed ability does not. -/
-def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
+def noTarget : SharedTriggerOpts :=
   { untargeted := true }
 
+end SharedTriggerOpts
+
 end Mtg.Engine
+

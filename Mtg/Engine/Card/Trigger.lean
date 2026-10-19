@@ -53,26 +53,39 @@ structure TriggerTiming where
   dividedDamage : Option (Nat × Nat) := none
   /-- What happens when this ability resolves. -/
   resolution : TriggerResolution := .pump .greatestPower (.fixed 0) .source
-  /-- Intervening “while you control a creature with power ≥ n” (e.g. Ferocious).
-  Checked when the trigger event occurs (CR 603.2 / 603.4); not rechecked on
-  resolution. -/
-  youControlCreatureWithPower : Option Int := none
   /-- This trigger fires only once each turn. -/
   onceEachTurn : Bool := false
   /-- “Do this only once each turn”: the ability keeps triggering until the
   controller chooses to do the optional action (MSH 69). -/
   optionalOnceEachTurn : Bool := false
-  /-- Intervening “another creature you control with power ≤ n”. -/
-  anotherCreaturePowerAtMost : Option Int := none
-  /-- “This or another nontoken {subtype} you control enters”. -/
-  thisOrNontokenSubtype : Option String := none
-  /-- Intervening “if you gained `n` or more life this turn”. -/
-  gainedLifeAtLeast : Option Nat := none
-  /-- “Another {subtype} or Equipment you control enters”. -/
-  anotherSubtypeOrEquipment : Option String := none
-  /-- “This or another {subtype} you control enters”. -/
-  thisOrAnotherSubtype : Option String := none
+  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
+  condition : InterveningCondition := .none
+  /-- Subtype filter watched by the trigger event. -/
+  subtype : Option String := none
 deriving Repr, Inhabited, BEq
+
+namespace TriggerTiming
+
+def youControlCreatureWithPower (t : TriggerTiming) : Option Int :=
+  match t.condition with
+  | .youControlCreatureWithPower n => some n
+  | _ => none
+
+def gainedLifeAtLeast (t : TriggerTiming) : Option Nat :=
+  match t.condition with
+  | .gainedLifeAtLeast n => some n
+  | _ => none
+
+def anotherCreaturePowerAtMost (t : TriggerTiming) : Option Int :=
+  match t.condition with
+  | .anotherCreaturePowerAtMost n => some n
+  | _ => none
+
+def thisOrNontokenSubtype (t : TriggerTiming) : Option String := t.subtype
+def thisOrAnotherSubtype (t : TriggerTiming) : Option String := t.subtype
+def anotherSubtypeOrEquipment (t : TriggerTiming) : Option String := t.subtype
+
+end TriggerTiming
 
 /-- Targeting and resolution for a printed Saga chapter (CR 714.3). -/
 def chapterTiming (e : ChapterResolution) : TriggerTiming :=
