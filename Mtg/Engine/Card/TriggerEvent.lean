@@ -179,7 +179,7 @@ inductive CounterEvent where
   | youPutOnGoblinOrcArmy
   | youPutLoyalty
   | nthPlan (n : Nat)
-  | sagaChapter
+  | sagaChapter (n : Nat := 0)
   | finalSagaChapterResolves
   | youProliferate
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -404,7 +404,7 @@ abbrev fra (e : TriggerEvent) : TriggerEvent := e
 @[match_pattern] abbrev youPutCountersOnGoblinOrcArmy : TriggerEvent := .counters .youPutOnGoblinOrcArmy
 @[match_pattern] abbrev youPutLoyaltyCounters : TriggerEvent := .counters .youPutLoyalty
 @[match_pattern] abbrev nthPlanCounter (n : Nat) : TriggerEvent := .counters (.nthPlan n)
-@[match_pattern] abbrev sagaChapter : TriggerEvent := .counters .sagaChapter
+@[match_pattern] abbrev sagaChapter (n : Nat := 0) : TriggerEvent := .counters (.sagaChapter n)
 @[match_pattern] abbrev finalSagaChapterResolves : TriggerEvent := .counters .finalSagaChapterResolves
 @[match_pattern] abbrev youProliferate : TriggerEvent := .counters .youProliferate
 
@@ -611,7 +611,7 @@ def spec : TriggerEvent → Spec
   | .armyYouControlCombatDamage =>
     { clause := "an Army you control deals combat damage to a player",
       label := "army-combat-damage trigger", checkTargets := false }
-  | .sagaChapter =>
+  | .sagaChapter _ =>
     { clause := "a lore counter is put on this Saga", isWhenever := false,
       label := "saga chapter", checkTargets := true }
   | .finalSagaChapterResolves =>

@@ -102,8 +102,8 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
     | .graveyard _, some p =>
       (old.waitingTriggersFor p .dying (some (g.snapshotPower old))).filter (fun w =>
         old.isCreature ||
-          match w.ability.shared with
-          | .returnAsArtifact => false
+          match w.ability.effect.resolution with
+          | .put .source .asArtifact _ => false
           | _ => true)
     | _, _ => (#[] : Array WaitingTrigger)
   else (#[] : Array WaitingTrigger)

@@ -282,10 +282,14 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
   g.foldControlledPermanents p none fun g o =>
+    let isDrawIfRemovedTwo (ab : TriggeredAbility) : Bool :=
+      match ab.effect.resolution with
+      | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1) _) => true
+      | _ => false
     let waiting :=
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
-        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
+        !isDrawIfRemovedTwo wt.ability || removed ≥ 2)).map (fun wt =>
+        if isDrawIfRemovedTwo wt.ability then
           { wt with lastKnownPower := some (Int.ofNat removed) }
         else wt)
     g.enqueueWaitingTriggers waiting

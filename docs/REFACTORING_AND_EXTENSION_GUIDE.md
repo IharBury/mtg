@@ -81,10 +81,11 @@ The sections below document the remaining duplication left over from earlier per
   - `Mtg/Engine/Card/TriggeredAbility.lean` (lines 19–51, 1876–2182)
   - `Mtg/Engine/Card/OracleArgs.lean` (lines 400–473, 513–518)
 - **Completed**:
-  - Unified `ChapterResolution` (`Mtg/Engine/Card/Chapter.lean`, CR 714.3) into a single constructor (`| spell (s : ChapterSpell)`) wrapping `Resolution`, eliminating the 23 duplicate Saga chapter constructors and the 24-arm match trees in `ChapterEffects.lean` and `Trigger.lean`.
+  - Eliminated `Mtg/Engine/Card/Chapter.lean`, `ChapterResolution`, `ChapterSpell`, `TriggeredAbility.chapterTiming`, `SharedTrigger.chapter`, `Effect.asChapter?`, `Effect.asTrigger?`, `Effect.mkChapter`, `Effect.ofChapter`, `Effect.chapterSpell`, and `OracleArgs.takeChapter` (CR 714.2b / CR 714.3): Saga chapters now use compositional `Effect` values directly (`Mtg/Engine/Card/ChapterEffects.lean`), with the chapter number carried by `CounterEvent.sagaChapter (n : Nat := 0)` (`TriggerEvent.sagaChapter`).
+  - Eliminated `TriggeredAbility.shared` (`Mtg/Engine/Card/TriggeredAbility.lean`) and replaced all 16 runtime checks of `.shared` across `Mtg/Engine/Game/*.lean` (`CastSpell.lean`, `Combat.lean`, `Damage.lean`, `Entering.lean`, `Keywords.lean`, `Movement.lean`, `SpellResolution.lean`, `SpellTargets.lean`, `Triggers.lean`) with compositional `Effect.resolution`, `TriggeredAbility.firesOn`, and `TriggeredAbility.sagaChapterNumber?` checks.
 - **What remains duplicated**:
-  - Every HOB/HOC/MSH triggered ability stores its payload **twice** on `Effect`: once as `resolution : Resolution` (computed via `SharedTrigger.timing`) and once as `sharedTrigger : Option SharedTrigger`.
-  - Meanwhile, FRA triggers (`TriggeredAbility.fra` in `TriggeredAbility.lean:2204`) already work with `sharedTrigger := none`, storing their effect directly in `Effect.resolution` and their text in `SharedTriggerOpts.printed` / `Effect.phrase`.
+  - Every HOB/HOC/MSH non-chapter triggered ability still stores its payload **twice** on `Effect`: once as `resolution : Resolution` (computed via `SharedTrigger.timing`) and once as `sharedTrigger : Option SharedTrigger` (used only by `OracleArgs.takeEffect` / `finishEffect` and `TriggeredAbility.toNotation`).
+  - Meanwhile, FRA triggers (`TriggeredAbility.fra`) and Saga chapters (`TriggeredAbility.sagaChapter`) already work with `sharedTrigger := none`, storing their effect directly in `Effect.resolution` and their text in `SharedTriggerOpts.printed` / `Effect.phrase`.
 - **How to refactor**:
   - Construct trigger `Effect`s directly with compositional `Resolution` trees and `Effect.phrase`.
   - Update `OracleArgs.takeEffect` and `TriggeredAbility.toNotation` to read `e.resolution` / `e.phrase` directly instead of branching on `e.sharedTrigger`.

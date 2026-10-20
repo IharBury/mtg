@@ -1,13 +1,13 @@
 import Mtg.Engine.Card.PermanentAction
+import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.TriggerEvent
-import Mtg.Engine.Card.Chapter
 
 /-!
 # Shared triggers (CR 603)
 
 Reusable trigger payloads (`SharedTriggerWhen` x `SharedTrigger`) used by
-triggered abilities and Saga chapters, including the leftover printed
-wordings grouped per trigger family.
+triggered abilities, including the leftover printed wordings grouped per
+trigger family.
 -/
 
 namespace Mtg.Engine
@@ -947,8 +947,6 @@ inductive SharedTrigger where
   You may draw X cards, where X is the mana spent to cast that spell, then
   discard two, is `.may (.drawXDiscard 2)`. -/
   | may (action : SharedTrigger)
-  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
-  | chapter (n : Nat) (e : ChapterResolution)
 deriving Repr, Inhabited, BEq
 
 namespace SharedTrigger

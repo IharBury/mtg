@@ -42,12 +42,8 @@ def chapterNumbers (ch : SagaChapter) : Array Nat :=
 
 /-- A catalog chapter with parsed numerals and a real effect. -/
 def of (roman effect : String) (e : Effect) : SagaChapter :=
-  let e :=
-    match e.asChapter? with
-    | some _ => e
-    | none => Effect.ofChapter (Effect.chapterSpell e)
   { roman, effect, numbers := parseChapterNumbers roman,
-    chapterEffect := some e }
+    chapterEffect := some { e with resolution := TriggeredAbility.TriggerResolution.ofSpell e.resolution } }
 
 end SagaChapter
 

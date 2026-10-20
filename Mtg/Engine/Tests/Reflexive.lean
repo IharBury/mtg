@@ -74,7 +74,7 @@ use `queueReflexive`. -/
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
+#guard (TriggeredAbility.sagaChapter 1 Effect.chapterGrantAttackPumpPerPlainsThisTurn).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
 
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0

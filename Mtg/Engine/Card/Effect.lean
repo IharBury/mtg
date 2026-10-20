@@ -28,7 +28,7 @@ structure Effect where
   preferAsDefaultMode : Bool := false
   resolution : Resolution := .draw 0
   /-- Shared trigger this effect was built from, when any.
-  `asTrigger?` and `asChapter?` read it. The steps themselves are `resolution`. -/
+  The steps themselves are `resolution`. -/
   sharedTrigger : Option SharedTrigger := none
   phrase : String := ""
 deriving Repr, Inhabited, BEq
@@ -58,16 +58,6 @@ def castKind (e : Effect) : SpellCastKind :=
 /-- Demonstration-agent category for an activated-ability mode. -/
 def abilityKind (e : Effect) : AbilityCastKind :=
   e.abilityCastKind
-
-/-- Recover a Saga chapter stored on this effect, if any. -/
-def asChapter? (e : Effect) : Option ChapterResolution :=
-  match e.sharedTrigger with
-  | some (.chapter _ ce) => some ce
-  | _ => none
-
-/-- Recover the leftover shared trigger stored on this effect, if any. -/
-def asTrigger? (e : Effect) : Option SharedTrigger :=
-  e.sharedTrigger
 
 /-- Oracle-style reminder text. -/
 def toNotation (e : Effect) : String :=

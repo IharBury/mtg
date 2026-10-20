@@ -3491,7 +3491,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (sequencedCardPower : Option Nat := none) : Game :=
   if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
-  else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then
+  else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome || ab.sagaChapterNumber?.isSome then
   match resolutionOverride.getD ab.resolution with
   | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness

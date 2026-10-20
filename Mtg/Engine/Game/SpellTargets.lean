@@ -310,8 +310,8 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       | some ab =>
         let n := ab.targeting.targetCount
         let lifeTargets :=
-          match ab.shared with
-          | .resource .gainLifePlusOnes => true
+          match ab.effect.resolution with
+          | .putCounters _ .eachUpToLastKnown => true
           | _ => false
         let maxN :=
           if lifeTargets then (obj.lastKnownPower.getD 0).toNat

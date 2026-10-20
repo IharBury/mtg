@@ -3032,10 +3032,7 @@ def heroicFeastUpToLifeOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
   let bounds :=
-    match heroicFeast.triggeredAbilities.find? (fun ab =>
-      match ab.shared with
-      | .resource .gainLifePlusOnes => true
-      | _ => false) with
+    match heroicFeast.triggeredAbilities.find? (·.firesOn .youGainLife) with
     | none => false
     | some abil =>
       let (_, obj) := g.allocStackAbility feast ⟨0⟩

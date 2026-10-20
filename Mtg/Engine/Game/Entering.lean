@@ -336,9 +336,10 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
         g.foldControlledPermanents q none fun g src =>
           -- Invisible Woman: one or more counters at once trigger once.
           let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
-            match ab.shared with
-            | .resource .plusOneOnHeroesCreateWall => true
-            | _ => false)
+            ab.firesOn .youPutPlusOne &&
+              match ab.effect.resolution with
+              | .may (.createTokens .wall04defender ..) .. => true
+              | _ => false)
           if oncePerBatch && g.waitingTriggers.any (fun w =>
               w.source.id == src.id && w.event == .youPutPlusOne) then g
           else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
@@ -522,9 +523,10 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.foldControlledPermanents p none fun g src =>
           let onceForBatch :=
             src.printed.triggeredAbilities.any (fun ab =>
-              match ab.shared with
-              | .watch .tokensEnterMayDraw => true
-              | _ => false)
+              ab.firesOn .tokenYouControlEnters &&
+                match ab.effect.resolution with
+                | .may (.draw ..) .. => true
+                | _ => false)
           if onceForBatch && g.waitingTriggers.any (fun w =>
               w.source.id == src.id && w.event == .tokenYouControlEnters) then g
           else g.putMatchingSourceTriggers p src .tokenYouControlEnters

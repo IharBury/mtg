@@ -6,7 +6,6 @@ import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.AbilityResolution
-import Mtg.Engine.Card.Chapter
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
@@ -37,9 +36,8 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Token`: token kinds (CR 111).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
-- `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
-  how the demo agent classifies activated abilities, and Saga chapters
-  (CR 608 / 714.3).
+- `SpellResolution` / `AbilityResolution`: how spells resolve and how the
+  demo agent classifies activated abilities (CR 608).
 - `SharedTrigger`: reusable trigger payloads (CR 603).
 - `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary
   (activated-ability leftovers live on `Resolution`).

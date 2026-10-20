@@ -18,17 +18,29 @@ namespace TriggeredAbility
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .triggered w e opts =>
-    let t := (e.asTrigger?.getD (.draw 0)).timing
-    { t with
-      events :=
-        match w with
-        | .fromEffect => t.events
-        | _ => w.events
-      onceEachTurn := t.onceEachTurn || opts.onceEachTurn
-      condition := opts.condition
-      subtype := opts.subtype
-      targeting := if opts.untargeted then {} else e.targeting
-      allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
+    match e.sharedTrigger with
+    | some te =>
+      let t := te.timing
+      { t with
+        events :=
+          match w with
+          | .fromEffect => t.events
+          | _ => w.events
+        onceEachTurn := t.onceEachTurn || opts.onceEachTurn
+        condition := opts.condition
+        subtype := opts.subtype
+        targeting := if opts.untargeted then {} else e.targeting
+        allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
+    | none =>
+      { events := w.events
+        targeting := if opts.untargeted then {} else e.targeting
+        allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets
+        maxTargets := e.maxTargets
+        dividedDamage := e.dividedDamage
+        resolution := e.resolution
+        onceEachTurn := opts.onceEachTurn
+        condition := opts.condition
+        subtype := opts.subtype }
 
 /-- Unified effect this trigger resolves. -/
 def effect (ab : TriggeredAbility) : Effect :=
@@ -39,11 +51,10 @@ def effect (ab : TriggeredAbility) : Effect :=
 def opts : TriggeredAbility → SharedTriggerOpts
   | .triggered _ _ o => o
 
-/-- Leftover shared trigger this ability resolves. -/
-def shared (ab : TriggeredAbility) : SharedTrigger :=
-  match ab.effect.asTrigger? with
-  | some te => te
-  | none => .draw 0
+/-- Chapter number when this triggered ability is a Saga chapter (CR 714.2b). -/
+def sagaChapterNumber? : TriggeredAbility → Option Nat
+  | .triggered (.sagaChapter n) _ _ => some n
+  | _ => none
 
 /-- Catalog aliases for reusable triggers that now share `triggered`. -/
 def onEnterScry (n : Nat) : TriggeredAbility := .triggered .enter (Effect.ofTrigger (.scry n))
@@ -461,11 +472,7 @@ def onFinalSagaChapterRevealSaga : TriggeredAbility :=
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
 def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
-  match e.asChapter? with
-  | some ch =>
-    .triggered .sagaChapter
-      { e with sharedTrigger := some (SharedTrigger.chapter n ch) }
-  | none => .triggered .sagaChapter e
+  .triggered (.sagaChapter n) { e with resolution := TriggerResolution.ofSpell e.resolution }
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
@@ -2025,8 +2032,8 @@ def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
     if !opts.printed.isEmpty then opts.printed else
-    match w, e.asTrigger?, opts with
-    | .sagaChapter, some (.chapter _ _), _ =>
+    match w, e.sharedTrigger, opts with
+    | .sagaChapter _, _, _ =>
       s!"When a lore counter is put on this Saga, {e.phrase}."
     | .enter, some .bolgMaySacrifice, _ =>
       leadInSentence ab "When Bolg enters"

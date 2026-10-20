@@ -56,7 +56,7 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
   let isFra :=
     obj.abilityEffect.isSome ||
-      (t.effect.sharedTrigger.isNone &&
+      (t.effect.sharedTrigger.isNone && t.sagaChapterNumber?.isNone &&
         match t.effect.resolution with
         | .sequence rs => rs.any Resolution.isFra
         | r => r.isFra || !t.opts.printed.isEmpty)
@@ -109,8 +109,8 @@ def resolveTop (g : Game) : Game :=
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
         let g := { g with resolvingAbility := none }
         let g := g.ceaseToExist obj.id
-        match t.shared with
-        | .chapter n _ =>
+        match t.sagaChapterNumber? with
+        | some n =>
           match obj.sourceId.bind g.findObject? with
           | some src =>
             match src.printed.saga, src.controller with
@@ -118,7 +118,7 @@ def resolveTop (g : Game) : Game :=
               if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
             | _, _ => g
           | none => g
-        | _ => g
+        | none => g
       else
         -- CR 608.2b: an instant or sorcery whose targets are all illegal
         -- doesn't resolve, so none of its effects happen (rulings 734 / 749).

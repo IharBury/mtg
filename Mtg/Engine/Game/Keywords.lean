@@ -490,21 +490,13 @@ def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
 def sagaChapterPending (g : Game) (id : ObjectId) : Bool :=
   let waiting :=
     g.waitingTriggers.any (fun wt =>
-      wt.source.id == id &&
-        match wt.ability.shared with
-        | .chapter .. => true
-        | _ => false)
+      wt.source.id == id && wt.ability.sagaChapterNumber?.isSome)
   let stacked :=
     g.stack.any (fun e =>
       match g.findObject? e.objectId with
       | some o =>
         o.sourceId == some id &&
-          match o.triggeredAbility with
-          | some t =>
-            match t.shared with
-            | .chapter .. => true
-            | _ => false
-          | none => false
+          o.triggeredAbility.any (·.sagaChapterNumber?.isSome)
       | none => false)
   waiting || stacked
 

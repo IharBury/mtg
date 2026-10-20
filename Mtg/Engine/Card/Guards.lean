@@ -183,8 +183,8 @@ namespace CardDef
   [.draw 1, .gainLife 1, .amass 2]
 #guard (Effect.ofTrigger (.scry 2)).resolution == .scry (.fixed 2)
 #guard (Effect.ofTrigger (.scry 2)).sharedTrigger == some (.scry 2)
-#guard (Effect.chapterRecruit).asChapter? == some .recruit
-#guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
+#guard (Effect.chapterRecruit).resolution == .recruit
+#guard (Effect.chapterDraw 2).resolution == .draw (.fixed 2)
 #guard (Effect.enterDealDamageUpToOne 4).allowsZeroTargets
 #guard Effect.watchHulk.resolution ==
   .sequence [
@@ -952,9 +952,7 @@ namespace CardDef
 #guard TriggeredAbility.onStep Effect.stepDrawToTen ==
   .triggered .fromEffect Effect.stepDrawToTen
 #guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
-  .triggered .sagaChapter
-    { Effect.chapterRecruit with
-      sharedTrigger := some (SharedTrigger.chapter 1 .recruit) }
+  .triggered (.sagaChapter 1) Effect.chapterRecruit
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))

@@ -16,31 +16,31 @@ namespace Game
 /-- Modes of a modal triggered ability (“choose one —”) printed outside
 Reality Fracture (CR 700.2). -/
 def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
-  match ab.shared with
-  | .tapOppOrUntapYours =>
+  match ab.targeting.kind, ab.effect.resolution with
+  | .none, .or [.tap .target, .untap .target] =>
     #[{ targeting := .of .oppCreature, resolution := .onPermanent .tap
         phrase := "Tap target creature an opponent controls" },
       { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
         phrase := "Untap target creature you control" }]
-  | .wolfPlusOneOrTreasure =>
+  | _, .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .createTokens .treasure (.fixed 1) false _ _] =>
     #[{ targeting := .of (.creatureYouControlAnySubtype #["Wolf"])
         resolution := .onPermanent (.plusOne 1)
         phrase := "Put a +1/+1 counter on target Wolf you control" },
       { resolution := .createTokens .treasure 1
         phrase := "Create a Treasure token" }]
-  | .enter .plusOnesOrReturnArtEnch =>
+  | _, .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .returnToHand .graveyardCard _] =>
     #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
         resolution := .putCounters (.ofKind .plusOnePlusOne 1) (.target .eachPermanent),
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
       { targeting := .of .artEnchCardInYourGraveyard,
         resolution := .returnToHand (.target .graveyardCard),
         phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
-  | .watch .nontokenHeroModal =>
+  | _, .chooseModes [.createTokens .soldier11white (.fixed 1) false _ _, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown =>
     #[{ resolution := .createTokens .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },
       { resolution := .pump (.fixed 1) (.fixed 1) .creaturesYouControl
         phrase := "Creatures you control get +1/+1 until end of turn" }]
-  | _ => #[]
+  | _, _ => #[]
 
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
@@ -145,20 +145,22 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
 trigger and again as it resolves (rulings 743 / 889). -/
 def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (source : Option GameObject) (cause : Option GameObject := none) : Bool :=
-  match ab.shared with
-  | .pumpIfFiveOtherForests =>
+  match ab.effect.resolution with
+  | .«if» (.atLeast (.count .forestsExceptCause) (.fixed 5)) _ =>
     ((g.permanentsOf controller).filter (fun o =>
       g.hasSubtype o "Forest" && some o.id != cause.map (·.id))).size ≥ 5
-  | .destroyOppPermanentIfSixLands =>
+  | .«if» (.atLeast (.count .landsYouControl) (.fixed 6)) _ =>
     ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
-  | .prepareSource .ifNotPrepared =>
+  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
     match source.bind (fun o => g.findObject? o.id) with
     | some o => !o.status.prepared
     | none => true
-  | .prepareSource .ifThreeCreaturesDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
-  | .sacrificeSourceIfNoPlaneswalker =>
+  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
+    g.battlefieldCreaturesToGyThisTurn.size ≥ 3
+  | .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) _ =>
     !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
-  | .surveilReturnIfGainedLife => (g.player controller).lifeGainedThisTurn > 0
+  | .sequence [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1) _] =>
+    (g.player controller).lifeGainedThisTurn > 0
   | _ => true
 
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
@@ -180,10 +182,10 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | none => true
     | some n => (g.player controller).lifeGainedThisTurn ≥ n
   let hulklingOk :=
-    match ab.shared, cause, source with
-    | .watch .hulklingCompare, some entered, some hulkling =>
+    match ab.effect.resolution, cause, source with
+    | .«if» (.or [.causeGreaterPower, .causeGreaterToughness]) _, some entered, some hulkling =>
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
-    | .watch .hulklingCompare, _, _ => false
+    | .«if» (.or [.causeGreaterPower, .causeGreaterToughness]) _, _, _ => false
     | _, _, _ => true
   -- “Whenever another [legendary] Wolf you control enters”.
   let causeOk :=
@@ -197,22 +199,26 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   -- Intervening “if” clauses checked as the ability triggers (CR 603.4);
   -- they are checked again on resolution.
   let interveningOk :=
-    match ab.shared with
-    | .beginCombatIfDrawnTwoPump => (g.player controller).cardsDrawnThisTurn ≥ 2
-    | .thisAttack .equippedDrain =>
+    match ab.effect.resolution with
+    | .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) _ => (g.player controller).cardsDrawnThisTurn ≥ 2
+    | .«if» .attachedEquipment _ =>
       source.any (fun s => g.battlefield.any (fun e => e.attachedTo == some s.id && e.printed.isEquipment))
-    | .thisAttack .ifArtifactEnteredDraw =>
+    | .«if» .artifactEnteredThisTurn _ =>
       (g.player controller).artifactEnteredThisTurn
-    | .resource .drawIfAnotherHeroDamage =>
+    | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)) _) =>
       (g.permanentsOf controller).any (fun o => g.hasSubtype o "Hero" && some o.id != source.map (·.id))
-    | .step .drawToTen => (g.player controller).hand.size < 10
-    | .protectionEverything => source.any (·.wasCast)
-    | .death .deathtouchOppSac => cause.any (g.hasDeathtouch ·)
-    | .resource .plusOneOnThisOnce => cause.any (fun c => some c.id != source.map (·.id))
-    | .resource .plusOneOnHeroesCreateWall =>
-      cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
-        g.hasSubtype c "Hero")
-    | .watch .sheHulkRedirectOnce => !g.sheHulkDamageUsedThisTurn
+    | .draw (.upToHandSize 10) _ => (g.player controller).hand.size < 10
+    | .grant .protectionEverything .youIfCast => source.any (·.wasCast)
+    | .sacrifice .chosenNontokenCreature _ =>
+      !ab.firesOn .creatureYouControlDies || cause.any (g.hasDeathtouch ·)
+    | .putCounters (.ofKind .plusOnePlusOne 1) .source =>
+      !ab.firesOn .youPutPlusOne || cause.any (fun c => some c.id != source.map (·.id))
+    | .may (.createTokens .wall04defender (.fixed 1) false _ _) (.sequence []) .ifYouDo =>
+      !ab.firesOn .youPutPlusOne ||
+        cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
+          g.hasSubtype c "Hero")
+    | .may (.dealDamage .lastKnownPower .target _) (.sequence []) .ifYouDo =>
+      !ab.firesOn .creatureYouControlDealtDamage || !g.sheHulkDamageUsedThisTurn
     | _ => true
   powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
     g.fraInterveningHolds controller ab source cause &&
@@ -311,7 +317,7 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
           | none => g
           | some ce =>
             g.queueTrigger p saga (TriggeredAbility.sagaChapter lore ce)
-              .sagaChapter) g
+              (.sagaChapter lore)) g
   | _, _ => g
 
 /-- Add `n` lore counters one at a time, plus one per Doc Samson the
@@ -383,8 +389,8 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     for ab in (source.matchingTriggers event ++
         (g.attachedGrantedTriggers source ++ g.prowessTriggers source).filter (·.firesOn event)).filter keep do
       let skipInfinity :=
-        match ab.shared with
-        | .step .harnessedFlicker => !source.status.harnessed
+        match ab.effect.resolution with
+        | .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) _ => !source.status.harnessed
         | _ => false
       if !skipInfinity then
         g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
@@ -711,9 +717,9 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
 connive (MSH 422). -/
 def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option Int)
     (causeId : Option ObjectId) : Option Int :=
-  match ab.shared, causeId with
-  | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
-  | .pumpIfFiveOtherForests, some id => some (Int.ofNat id.raw)
+  match ab.effect.resolution, causeId with
+  | .connive .enteringVillain, some id => some (Int.ofNat id.raw)
+  | .«if» (.atLeast (.count .forestsExceptCause) (.fixed 5)) _, some id => some (Int.ofNat id.raw)
   | _, _ => lastKnownPower
 
 /-- Put one waiting trigger on the stack. A trigger queued without
@@ -841,8 +847,8 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
       -- “Return this card from your graveyard” works only from the graveyard
       -- (CR 113.6k); other landfall abilities only on the battlefield.
       let fromGraveyard (ab : TriggeredAbility) : Bool :=
-        match ab.shared with
-        | .payReturnFromGy => true
+        match ab.effect.resolution with
+        | .may _ (.returnToHand .source _) _ => true
         | _ => false
       let g := (g.foldControlledPermanents landController none fun g o =>
         g.putMatchingSourceTriggers landController o .landYouControlEnters

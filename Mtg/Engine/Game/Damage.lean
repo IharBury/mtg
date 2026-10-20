@@ -85,8 +85,8 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
           else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
-            match ab.shared with
-            | .watch .hulk => true
+            match ab.effect.resolution with
+            | .sequence rs => rs.contains (.«if» .enrageGrantsCombat .additionalCombatPhase)
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
           { g with combat := { g.combat with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 } }

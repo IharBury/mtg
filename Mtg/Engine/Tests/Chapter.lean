@@ -4,10 +4,10 @@ import Mtg.Engine.Fixture
 /-!
 # Saga chapters as `TriggerResolution`
 
-A printed chapter is still a `ChapterResolution`. Resolving it uses the
-other `TriggerResolution` constructors: damage, destroy, mana, search,
-draw, amass, recruit, exile, counters, and the chapter-only steps that
-those constructors do not already name.
+A printed chapter is a unified `Effect` whose chapter number rides on
+`TriggerEvent.sagaChapter` (CR 714.2b). Resolving it uses the `Resolution`
+constructors: damage, destroy, mana, search, draw, amass, recruit, exile,
+counters, and continuous effects.
 -/
 
 namespace Mtg.Engine.ChapterTests
@@ -46,99 +46,98 @@ def bolt : CardDef := { name := "Bolt", types := #[.instant] }
 
 def withSaga : Game := addPermanent afterDraw saga caster caster
 
-def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
-  TriggeredAbility.chapterTiming e
+def timing (e : Effect) : TriggeredAbility.TriggerTiming :=
+  (TriggeredAbility.sagaChapter 1 e).timing
 
-/- Each printed chapter resolves as a constructor that does not store
-`ChapterResolution`. -/
-#guard (timing (.dealDamageToOppCreature 6)).resolution == .dealDamage (.fixed 6) .target
-#guard (timing .destroyOppArtifact).resolution == .destroy .target
-#guard (timing (.addMana (.colored .red))).resolution == .addMana #[.colored .red]
-#guard (timing .searchBasicLandToHand).resolution ==
+/- Each printed chapter resolves as a unified `Effect` constructor. -/
+#guard (timing (.chapterDealDamageToOppCreature 6)).resolution == .dealDamage (.fixed 6) .target
+#guard (timing .chapterDestroyOppArtifact).resolution == .destroy .target
+#guard (timing (.chapterAddMana (.colored .red))).resolution == .addMana #[.colored .red]
+#guard (timing .chapterSearchBasicLandToHand).resolution ==
   .searchLibrary (.returnToHand .basicLand)
-#guard (timing .gainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
-#guard (timing (.elvesGetVigilance 1)).resolution ==
+#guard (timing .chapterGainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
+#guard (timing (.chapterElvesGetVigilance 1)).resolution ==
   .sequence [
     .pump (.fixed 1) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
     .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])]
-#guard (timing .opponentDiscardsNonland).resolution ==
+#guard (timing .chapterOpponentDiscardsNonland).resolution ==
   .discard .chosenNonland
-#guard (timing (.amass 1)).resolution == .amass (.fixed 1)
-#guard (timing (.opponentLosesYouGain 1)).resolution ==
+#guard (timing (.chapterAmassGoblins 1)).resolution == .amass (.fixed 1)
+#guard (timing (.chapterOpponentLosesYouGain 1)).resolution ==
   .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]
-#guard (timing .grantHexproofWhileRemains).resolution ==
+#guard (timing .chapterGrantHexproofWhileRemains).resolution ==
   .grant .hexproofWhileSource .target
-#guard (timing .preventDamageWhileRemains).resolution ==
+#guard (timing .chapterPreventDamageWhileRemains).resolution ==
   .grant .preventDamageWhileSource .target
-#guard (timing (.draw 2)).resolution == .draw (.fixed 2)
-#guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
+#guard (timing (.chapterDraw 2)).resolution == .draw (.fixed 2)
+#guard (timing (.chapterSearchBasicPlainsExileGainLife 2 2)).resolution ==
   .sequence [
     .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
     .gainLife (.fixed 2)]
-#guard (timing .returnLinkedExileToHand).resolution ==
+#guard (timing .chapterReturnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile
-#guard (timing .grantAttackPumpPerPlainsThisTurn).resolution ==
+#guard (timing .chapterGrantAttackPumpPerPlainsThisTurn).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
-#guard (timing .blinkUntilEndStep).resolution == .exile .target .nextEndStep
-#guard (timing .treasureThenDragonIfFour).resolution ==
+#guard (timing .chapterBlinkUntilEndStep).resolution == .exile .target .nextEndStep
+#guard (timing .chapterTreasureThenDragonIfFour).resolution ==
   .sequence [
     .createTokens .treasure (.fixed 1) false,
     .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
     .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)]
-#guard (timing .recruit).resolution == .recruit
-#guard (timing (.returnCreatureFromGyMvAtMost 3)).resolution ==
+#guard (timing .chapterRecruit).resolution == .recruit
+#guard (timing (.chapterReturnCreatureFromGyMvAtMost 3)).resolution ==
   .put (.creatureMvAtMost 3)
-#guard (timing .plusOneUpToOne).resolution ==
+#guard (timing .chapterPlusOneUpToOne).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
-#guard (timing (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)).resolution ==
+#guard (timing (.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)).resolution ==
   .gainControl .whileSourceRemains
-#guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
+#guard (timing (.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
   .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
-#guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
+#guard (timing .chapterDealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
   .dealDamage .greatestArtifactMv (.player (.target .opponent))
-#guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
-#guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
-#guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
+#guard (timing { resolution := .draw 1 }).resolution == .draw (.fixed 1)
+#guard (timing { resolution := .scry 2 }).resolution == .scry (.fixed 2)
+#guard (timing { resolution := .createTokens .villain21menace 2 }).resolution ==
   .createTokens .villain21menace (.fixed 2) false
-#guard (timing (.spell { resolution := .createTokens .treasure (.perSubtype "Villain") })).resolution ==
+#guard (timing { resolution := .createTokens .treasure (.perSubtype "Villain") }).resolution ==
   .createTokens .treasure (.perSubtype "Villain") false
-#guard (timing (.spell { resolution := .fight .announced .upToOneOther })).resolution ==
+#guard (timing { resolution := .fight .announced .upToOneOther }).resolution ==
   .fight .announced .upToOneOther
-#guard (timing (.spell { resolution := .createTokens .galactus (.fixed 1) false })).resolution ==
+#guard (timing { resolution := .createTokens .galactus (.fixed 1) false }).resolution ==
   .createTokens .galactus (.fixed 1) false
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .createTokens .treasure .perOtherCreature false } ==
   "create a token"
-#guard (timing (.spell { resolution := .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying })).resolution ==
+#guard (timing { resolution := .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying }).resolution ==
   .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
-#guard (timing (.spell { resolution := .putCounters (.ofKind .plusOnePlusOne) .youControl })).resolution ==
+#guard (timing { resolution := .putCounters (.ofKind .plusOnePlusOne) .youControl }).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
-#guard (timing (.spell { resolution := .putCounters (.ofKind .plusOnePlusOne 3) .permanent })).resolution ==
+#guard (timing { resolution := .putCounters (.ofKind .plusOnePlusOne 3) .permanent }).resolution ==
   .putCounters (.ofKind .plusOnePlusOne 3) .permanent
-#guard (timing (.spell { resolution := .loseLife 2 .eachOpponent })).resolution ==
+#guard (timing { resolution := .loseLife 2 .eachOpponent }).resolution ==
   .loseLife (.fixed 2) .eachOpponent
-#guard (timing (.spell { resolution := .destroy .target })).resolution == .destroy .target
-#guard (timing (.spell { resolution := .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1)) })).resolution ==
+#guard (timing { resolution := .destroy .target }).resolution == .destroy .target
+#guard (timing { resolution := .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1)) }).resolution ==
   .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))
-#guard (timing (.spell { resolution := .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo })).resolution ==
+#guard (timing { resolution := .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo }).resolution ==
   .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
-#guard (timing (.spell { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) })).resolution ==
+#guard (timing { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) }).resolution ==
   .spellsCostLess (.cardType .artifact) (.fixed 1)
-#guard (timing (.spell {
+#guard (timing {
     resolution := .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
-  })).resolution ==
+  }).resolution ==
   .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
-#guard (timing (.spell {
+#guard (timing {
     resolution := .sequence [
       .onPermanent .doublePowerAndToughness,
       .onPermanent (.grantKeywords Keyword.trample)]
-  })).resolution ==
+  }).resolution ==
   .sequence [.pump .double .double .target, .grant (.keywords Keyword.trample) .target]
 
-#guard (timing (.dealDamageToOppCreature 6)).targeting.kind == .oppCreature
-#guard (timing .plusOneUpToOne).allowsZeroTargets
-#guard (timing .blinkUntilEndStep).allowsZeroTargets
-#guard !(timing .destroyOppArtifact).allowsZeroTargets
+#guard (timing (.chapterDealDamageToOppCreature 6)).targeting.kind == .oppCreature
+#guard (timing .chapterPlusOneUpToOne).allowsZeroTargets
+#guard (timing .chapterBlinkUntilEndStep).allowsZeroTargets
+#guard !(timing .chapterDestroyOppArtifact).allowsZeroTargets
 
 #guard toString (TriggeredAbility.sagaChapter 1 Effect.chapterRecruit) ==
   "When a lore counter is put on this Saga, recruit."

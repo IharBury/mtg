@@ -366,7 +366,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               for ab in o.printed.triggeredAbilities do
                 match ab with
                 | .triggered _ _ opts =>
-                  match ab.shared, opts.watchedSubtype with
+                  match ab.effect.resolution, opts.watchedSubtype with
                   | .createTokens .., some subtype =>
                     if o.id != src.id && g.hasSubtype src subtype then
                       g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle

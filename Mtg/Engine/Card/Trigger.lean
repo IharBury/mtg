@@ -87,13 +87,6 @@ def anotherSubtypeOrEquipment (t : TriggerTiming) : Option String := t.subtype
 
 end TriggerTiming
 
-/-- Targeting and resolution for a printed Saga chapter (CR 714.3). -/
-def chapterTiming (e : ChapterResolution) : TriggerTiming :=
-  match e with
-  | .spell s =>
-    { targeting := s.targeting, allowsZeroTargets := s.allowsZeroTargets
-      resolution := TriggerResolution.ofSpell s.resolution }
-
 end TriggeredAbility
 
 /-- Targeting, divided-damage parameters, and resolution for `LibraryTrigger`. -/
@@ -928,8 +921,6 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .may action =>
     let inner := timing action
     { inner with resolution := .may inner.resolution (.sequence []) }
-  | .chapter _n e =>
-    TriggeredAbility.chapterTiming e
 
 end SharedTrigger
 

@@ -382,17 +382,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
-def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
-  match c with
-  | .spell s =>
-    let targeting ← takeTargeting s.targeting
-    let resolution ←
-      match targeting.kind, s.resolution with
-      | .creatureCardInYourGraveyardMvAtMost n, .put (.creatureMvAtMost _) how note =>
-        pure (.put (.creatureMvAtMost n) how note)
-      | _, r => takeSpell r
-    return .spell { s with targeting, resolution }
-
 def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   match e with
   | .destroy k => return .destroy (← takeWholeKind k)
@@ -403,6 +392,7 @@ def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
   match w with
   | .subtypeYouControlEnters s => return .subtypeYouControlEnters (← takeStr s)
   | .nthPlanCounter n => return .nthPlanCounter (← takeNat n)
+  | .sagaChapter n => return .sagaChapter (← takeNat n)
   | .or a b => return .or (← takeWhen a) (← takeWhen b)
   | w => return w
 
@@ -462,7 +452,6 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .untapAttackersExtraCombat n => return .untapAttackersExtraCombat (← takeInt n)
   | .revealTopPutRandomCreature n => return .revealTopPutRandomCreature (← takeNat n)
   | .damageTargetOpponent n => return .damageTargetOpponent (← takeNat n)
-  | .chapter n ce => return .chapter (← takeNat n) (← takeChapter ce)
   | .drawIfAttackedOrEnteredSubtype s => return .drawIfAttackedOrEnteredSubtype (← takeStr s)
   | .othersOfSubtypeGetEqualSourceToughness s =>
     return .othersOfSubtypeGetEqualSourceToughness (← takeStr s)
@@ -548,7 +537,11 @@ def takeEffect (e : Effect) : ArgM Effect := do
 where
   takeEffectRest (e : Effect) : ArgM Effect := do
     let targeting ← takeTargeting e.targeting
-    let resolution ← takeResolution e.resolution
+    let resolution ←
+      match targeting.kind, e.resolution with
+      | .creatureCardInYourGraveyardMvAtMost n, .put (.creatureMvAtMost _) how note =>
+        pure (.put (.creatureMvAtMost n) how note)
+      | _, r => takeResolution r
     let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
     return { e with targeting, resolution, maxTargets }
 
@@ -1568,11 +1561,6 @@ def finishEffect (old new : Effect) : Effect :=
   let oldArgs := collectEffect old
   let newArgs := collectEffect new
   match new.sharedTrigger with
-  | some (.chapter k (.spell s)) =>
-    let s := { s with phrase := splicePhrase s.phrase oldArgs newArgs }
-    let ce : ChapterResolution := .spell s
-    let rebuilt := Effect.ofChapter ce
-    { rebuilt with sharedTrigger := some (.chapter k ce) }
   | some te =>
     let t := te.timing
     { new with
