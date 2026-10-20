@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.CastExtras
+import Mtg.Engine.Game.ModeledTriggers
 
 /-!
 # Reading `TriggerResolution` arguments
@@ -318,6 +318,67 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
   | .union sels =>
     unionPermanentSets (sels.map (g.permanentsNamed ctx))
+
+/-- Non-battlefield cards `what` names (CR 400.1 / 603). -/
+def cardsNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSelector) :
+    Option (Array GameObject) :=
+  let controller := ctx.controller
+  let sourceId := ctx.sourceId
+  let targets := ctx.targets
+  let fromIds (ids : Array ObjectId) : Option (Array GameObject) :=
+    some (ids.filterMap g.findObject?)
+  let inGraveyard (o : GameObject) : Bool :=
+    match o.zone with
+    | .graveyard _ => true
+    | _ => false
+  match what with
+  | .top =>
+    match (g.player controller).library.back?.bind g.findObject? with
+    | some o => some #[o]
+    | none => some #[]
+  | .linkedExile =>
+    match sourceId.bind g.findObject? with
+    | some src => fromIds src.linkedExile
+    | none => some #[]
+  | .graveyardCard | .graveyardPermanent | .creatureCard =>
+    some (targets.filterMap fun
+      | Target.card id | Target.permanent id =>
+        match g.findObject? id with
+        | some o => if inGraveyard o then some o else none
+        | none => none
+      | _ => none)
+  | .source =>
+    match sourceId.bind g.findObject? with
+    | some o => if inGraveyard o then some #[o] else some #[]
+    | none => some #[]
+  | .cause subtype =>
+    match g.recordedCauseId.bind g.findObject? with
+    | some o =>
+      let zoneOk := o.zone != Zone.battlefield
+      let subOk :=
+        match subtype with
+        | some s => g.hasSubtype o s
+        | none => true
+      if zoneOk && subOk then some #[o] else some #[]
+    | none => some #[]
+  | .opponentTop n =>
+    let pid :=
+      match targets.findSome? fun
+        | Target.player p => some p
+        | _ => none with
+      | some p => p
+      | none => g.opponent controller
+    fromIds (g.scryLookedIds pid n)
+  | .milledSubtype subtype =>
+    fromIds (g.milledIdsThisWay.filter fun id =>
+      (g.findObject? id).any (·.printed.hasSubtype subtype))
+  | .notedLands => fromIds g.exiledIdsThisWay
+  | .discarded | .discardedLand =>
+    match g.discardedCardThisWay with
+    | some (_, id) => fromIds #[id]
+    | none => some #[]
+  | .revealed => fromIds g.revealedIdsThisWay
+  | _ => none
 
 /-- Controllers of the objects `what` names.
 `none` means `what` does not name objects, or a single object it names

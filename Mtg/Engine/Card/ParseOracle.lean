@@ -828,7 +828,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     let t := (raw.splitOn "another ").getLastD "" |>.splitOn "," |>.headD "" |>.trimAscii.copy
     some { c with staticRule := .extraLandIfOtherSubtype t }
   else if low.contains "enters prepared" then
-    some { c with entersPrepared := true }
+    some { c with asEntersChoose := .prepared }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
     let after := (raw.splitOn "Sacrifice after ").getLastD raw
     let roman := (after.takeWhile (fun c => c != '.' && c != ')')).trimAscii.copy

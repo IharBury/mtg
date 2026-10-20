@@ -1,3 +1,4 @@
+import Mtg.Engine.Game.CastExtras
 import Mtg.Engine.Game.TriggerArgs
 
 /-!
@@ -974,15 +975,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let amt := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
-  | .player .eachOpponent, .fixed n, .fromEquipped =>
-    let n := n.toNat
-    let src :=
-      match g.attachedHost? sourceId with
-      | some host => some host
-      | none => none
-    g.forEachOpponent controller (fun g pid =>
-      g.dealDamageToPlayer pid n (source := src))
-  | .player .eachOpponent, .fixed n, _ =>
+  | .player .eachOpponent, .fixed n, .none =>
     let n := n.toNat
     let src := sourceId.bind g.findObject?
     if ab.opts.untargeted || !ab.requiresTarget then
@@ -991,11 +984,6 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     else
       g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
         g.dealDamageToPlayer pid n (source := src))
-  | .player .eachOpponent, .subtypeCount subtype, _ =>
-    let amt := g.countSubtype controller subtype
-    let src := sourceId.bind g.findObject?
-    g.forEachOpponent controller (fun g pid =>
-      g.dealDamageToPlayer pid amt (source := src))
   | .player .eachOpponent, .discardedHand, _ =>
     match g.handDiscardedThisWay with
     | none => { g with thisWay := { g.thisWay with notedSourceThisWay := none } }
@@ -1050,9 +1038,6 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let n := n.toNat
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
       (some "The target is no longer legal")
-  | .target, .spellManaValue, _ =>
-    let n := g.castSpellManaValue controller lastKnownPower
-    g.applyDamageToKindTarget controller ab.targetKind targets n sourceId none
   | .source, .fixed n, _ | .enchanted, .fixed n, _
   | .whileSource, .fixed n, _ | .target .whileSource, .fixed n, _ =>
     let n := n.toNat
@@ -1340,14 +1325,6 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal")
       "The source is no longer in play"
-  | .ofKind kind n, who =>
-    let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower }
-    match g.permanentsNamed ctx who with
-    | some objs =>
-      objs.foldl (fun game o =>
-        game.addCounters o kind n (byPlayer := some controller)) g
-    | none => g
   | what, who =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower }
@@ -1358,6 +1335,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           game.addCounters o kind n (byPlayer := some controller)) g
       | none => g
     match what with
+    | .ofKind kind n => putN kind n
     | .plusOneLastKnownMv => putN .plusOnePlusOne (lastKnownPower.getD 0).toNat
     | .plusOneSacrificedPower =>
       putN .plusOnePlusOne (g.sacrificedPowerThisWay.getD 0)
@@ -1394,7 +1372,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
+    | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
     | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
     | .eachKindOnIt _ | .remove _ => g
 
@@ -1589,51 +1567,15 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.applyDaredevilExile controller sourceId
   | what, how, note =>
     let ctx : TriggerRead := { controller, sourceId, targets }
-    let fromIds (ids : Array ObjectId) : Option (Array GameObject) :=
-      some (ids.filterMap g.findObject?)
     let cards : Option (Array GameObject) :=
       match g.permanentsNamed ctx what with
       | some objs => some objs
       | none =>
-        match what with
-        | .top =>
-          match note with
-          | .impulse | .anyManaThisTurn =>
-            if g.revealedIdsThisWay.isEmpty then none
-            else fromIds g.revealedIdsThisWay
-          | _ =>
-            match (g.player controller).library.back?.bind g.findObject? with
-            | some o => some #[o]
-            | none => some #[]
-        | .linkedExile =>
-          match sourceId.bind g.findObject? with
-          | some src => fromIds src.linkedExile
-          | none => some #[]
-        | .graveyardCard | .graveyardPermanent | .creatureCard =>
-          some (targets.filterMap fun
-            | Target.card id | Target.permanent id =>
-              match g.findObject? id with
-              | some o => if o.zone == .graveyard o.owner then some o else none
-              | none => none
-            | _ => none)
-        | .opponentTop n =>
-          let pid :=
-            match targets.findSome? fun
-              | Target.player p => some p
-              | _ => none with
-            | some p => p
-            | none => g.opponent controller
-          fromIds (g.scryLookedIds pid n)
-        | .milledSubtype subtype =>
-          fromIds (g.milledIdsThisWay.filter fun id =>
-            (g.findObject? id).any (·.printed.hasSubtype subtype))
-        | .notedLands => fromIds g.exiledIdsThisWay
-        | .discarded | .discardedLand =>
-          match g.discardedCardThisWay with
-          | some (_, id) => fromIds #[id]
-          | none => some #[]
-        | .revealed => fromIds g.revealedIdsThisWay
-        | _ => none
+        match what, note with
+        | .top, .impulse | .top, .anyManaThisTurn =>
+          if g.revealedIdsThisWay.isEmpty then none
+          else g.cardsNamed ctx .revealed
+        | _, _ => g.cardsNamed ctx what
     match cards with
     | none => g
     | some objs =>
@@ -1786,14 +1728,10 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
   | .chosenNontokenCreature, .none =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | .source, .noted =>
-    sacrificeSource .isSacrificed true
-  | .sacrificedSource how, .noted =>
-    sacrificeSource how true
-  | .source, .none =>
-    sacrificeSource .isSacrificed false
-  | .sacrificedSource how, .none =>
-    sacrificeSource how false
+  | .source, .noted | .source, .none =>
+    sacrificeSource .isSacrificed (note == .noted)
+  | .sacrificedSource how, .noted | .sacrificedSource how, .none =>
+    sacrificeSource how (note == .noted)
   | .sacrificedSource how, .forReflexive =>
     let stillThere :=
       match sourceId.bind g.findObject? with
@@ -2363,18 +2301,6 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | Target.card id | Target.permanent id =>
         g.returnToHand id controller
       | _ => g) sourceId (some "The target is no longer legal")
-  | .milledSubtype subtype, .none =>
-    let ids := g.milledIdsThisWay
-    let g := { g with thisWay := { g.thisWay with milledIdsThisWay := #[] } }
-    ids.foldl (fun acc id =>
-      match acc.findObject? id with
-      | some o =>
-        if o.printed.hasSubtype subtype then
-          let name := o.name
-          let (acc, _) := acc.move id (.hand controller) none
-          acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
-        else acc
-      | none => acc) g
   | .source, .none =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -2385,16 +2311,17 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.returnLinkedExileToHand sourceId
   | .cause _, .none =>
     g.returnCauseToOwnerHand targets
-  | .revealed, _ =>
-    let ids := g.revealedIdsThisWay
-    let g := { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
-    ids.foldl (fun g id =>
-      match g.findObject? id with
-      | some o =>
-        let name := o.name
-        let (g, _) := g.move id (.hand controller) none
-        g.logMsg s!"{name} is put into {(g.player controller).name}'s hand"
-      | none => g) g
+  | .milledSubtype _, .none | .revealed, _ =>
+    let ctx : TriggerRead := { controller, sourceId, targets }
+    let cards := (g.cardsNamed ctx what).getD #[]
+    let g :=
+      match what with
+      | .milledSubtype _ => { g with thisWay := { g.thisWay with milledIdsThisWay := #[] } }
+      | _ => { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
+    cards.foldl (fun g o =>
+      let name := o.name
+      let (g, _) := g.move o.id (.hand controller) none
+      g.logMsg s!"{name} is put into {(g.player controller).name}'s hand") g
   | what, note =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what with
@@ -2509,26 +2436,6 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.returnSourceUnderOwner controller sourceId note.enterMods
   | .cause subtype, .underOwner, note =>
     g.returnCauseUnderOwner controller targets subtype note.enterMods
-  | .revealed, how, note =>
-    let ids := g.revealedIdsThisWay
-    let g := { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
-    let tapped := how == .tapped
-    ids.foldl (fun g id =>
-      match g.findObject? id with
-      | none => g
-      | some o =>
-        let owner :=
-          match how with
-          | .underOwner => o.owner
-          | _ => controller
-        let (g, newId) := g.putOntoBattlefield id owner (tapped := tapped)
-        let g :=
-          if how == .asArtifact then
-            g.mapObjectStatus (g.object! newId) (fun s => { s with returnedAsArtifact := true })
-          else g
-        let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
-        let g := g.logMsg s!"{o.name} is put onto the battlefield"
-        g.afterPermanentEnters (g.object! newId)) g
   | .randomCreature, _, _ =>
     let ids := g.revealedIdsThisWay
     if ids.isEmpty then g
@@ -2548,40 +2455,12 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some id => g.resolveRandomCreatureReveal controller ids id
         | none => g.putRestOnBottomRandom controller ids
   | what, how, note =>
-    let inGraveyard (o : GameObject) : Bool :=
-      match o.zone with
-      | .graveyard _ => true
-      | _ => false
-    let cards : Array GameObject :=
-      match what with
-      | .graveyardCard | .graveyardPermanent | .creatureCard =>
-        targets.filterMap fun
-          | Target.card id | Target.permanent id =>
-            match g.findObject? id with
-            | some o => if inGraveyard o then some o else none
-            | none => none
-          | _ => none
-      | .top =>
-        match (g.player controller).library.back?.bind g.findObject? with
-        | some o => #[o]
-        | none => #[]
-      | .source =>
-        match sourceId.bind g.findObject? with
-        | some o => if inGraveyard o then #[o] else #[]
-        | none => #[]
-      | .cause subtype =>
-        let causeId :=
-          ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-        match causeId.bind g.findObject? with
-        | some o =>
-          let zoneOk := o.zone != Zone.battlefield
-          let subOk :=
-            match subtype with
-            | some s => g.hasSubtype o s
-            | none => true
-          if zoneOk && subOk then #[o] else #[]
-        | none => #[]
-      | _ => #[]
+    let ctx : TriggerRead := { controller, sourceId, targets }
+    let cards := (g.cardsNamed ctx what).getD #[]
+    let g :=
+      if what == .revealed then
+        { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
+      else g
     if cards.isEmpty then g
     else
       let tapped := how == .tapped

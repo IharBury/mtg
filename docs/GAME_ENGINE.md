@@ -61,10 +61,10 @@ The 50 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `ResolutionHelpers.lean` | Target legality wrappers (`withLegal*`, `targetLegalAt`, `legalPermanentAt?`), `applyPermanentAction`, `applyOnPermanent`, `beginSurveil`, `mill`, `revealHand`, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
 | `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
+| `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `cardsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
 | `FraResolve.lean` | Reality Fracture and Reality Fracture Commander (`Resolution.isFra`) resolver (`applyFra`, `applyDelayedSynthetic`). |
 | `EffectResolution.lean` | Unified `Effect` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, and `applyAbilityEffect`), plus `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
-| `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
 | `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `interveningStillHolds` (CR 603.4), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |
 | `SpellResolution.lean` | Top-of-stack resolution (`resolveTop`), Aura attachment (`resolveAuraSpell`), Adventure exile (`resolveAdventureSpell`), and CR 608.2b target checks (`fraAbilityTargetsAllIllegal`). |
 

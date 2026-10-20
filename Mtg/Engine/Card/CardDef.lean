@@ -86,13 +86,14 @@ namespace EntersTappedRule
 
 end EntersTappedRule
 
-/-- Choice made as a permanent enters the battlefield (CR 614.12). -/
+/-- Choice or state replacement as a permanent enters the battlefield (CR 614.1c / 614.12). -/
 inductive AsEntersChoice where
   | none
   | creatureType
   | oddEven
   | cardType
   | marduOrJeskai
+  | prepared
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
@@ -339,8 +340,6 @@ structure CardDef where
   resolves, put N loyalty counters on a Jace planeswalker token you control,
   creating one first if you control none. -/
   empowerJace : Option Nat := none
-  /-- This permanent enters prepared (Reality Fracture). -/
-  entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
 deriving Repr, Inhabited
@@ -512,6 +511,9 @@ def asEntersChooseCardType (c : CardDef) : Bool :=
 
 def asEntersChooseMarduOrJeskai (c : CardDef) : Bool :=
   c.asEntersChoose == .marduOrJeskai
+
+def entersPrepared (c : CardDef) : Bool :=
+  c.asEntersChoose == .prepared
 
 def costReductionIfCreatureDied (c : CardDef) : Nat :=
   match c.spellCostReduction with

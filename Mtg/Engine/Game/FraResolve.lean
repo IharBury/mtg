@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.TriggerArgs
 
 /-!
 # Reality Fracture effect resolution
@@ -836,43 +836,42 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           s!"{(g.player controller).name} may exile Sphinx's Approach and four cards named Sphinx's Approach"
       else g
     | none => g
-  | .putCounters (.ofKind .plusOnePlusOne 1) .wizardTokensExceptRecent =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o "Wizard" then
-        g.addPlusOnePlusOneTo o 1
-      else g) g
-  | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ =>
-    let victims := g.battlefield.filter (fun o =>
-      (o.isCreature || o.printed.isPlaneswalker) && o.controller.isSome &&
-        !o.controlledBy controller)
-    victims.foldl (fun g o =>
-      match g.findObject? o.id with
-      | some o => g.dealDamageFrom srcName o n.toNat (source := src?)
-      | none => g) g
+  | .putCounters (.ofKind .plusOnePlusOne n) who@(.wizardTokensExceptRecent)
+  | .putCounters (.ofKind .plusOnePlusOne n) who@(.creaturesWithPlusOne)
+  | .putCounters (.ofKind .plusOnePlusOne n) who@(.source) =>
+    match g.permanentsNamed { controller, sourceId, targets } who with
+    | some objs =>
+      (objs.map (·.id)).foldl (fun g id =>
+        match g.findObject? id with
+        | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o n else g
+        | none => g) g
+    | none => g
+  | .dealDamage (.fixed n) who@(.oppCreaturesAndPlaneswalkers) _
+  | .dealDamage (.fixed n) who@(.creaturesExceptYourTokens) _ =>
+    match g.permanentsNamed { controller, sourceId, targets } who with
+    | some victims =>
+      victims.foldl (fun g o =>
+        match g.findObject? o.id with
+        | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n.toNat (source := src?) else g
+        | none => g) g
+    | none => g
   | .lose .allAbilities (.targetAt index) =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
     | some o =>
       let g := g.mapObjectStatus o (fun s => { s with losesAbilitiesUntilEot := true })
       g.logMsg s!"{o.name} loses all abilities until end of turn"
-  | .dealDamage (.power (.targetAt fromIdx)) (.targetAt toIdx) _ =>
-    match g.legalPermanentAt? controller kind targets toIdx sourceId with
-    | none => g.logMsg "The target is no longer legal. No damage is dealt"
-    | some victim =>
-      match g.legalPermanentAt? controller kind targets fromIdx sourceId with
-      | some striker =>
-        g.dealDamageFrom striker.name (g.object! victim.id) (max (g.power striker) 0)
-          (source := some striker)
-      | none => g.logMsg "The target is no longer legal. No damage is dealt"
-  | .dealDamage (.loyalty (.targetAt fromIdx)) (.targetAt toIdx) _ =>
-    match g.legalPermanentAt? controller kind targets toIdx sourceId with
-    | none => g.logMsg "The target is no longer legal. No damage is dealt"
-    | some victim =>
-      match g.legalPermanentAt? controller kind targets fromIdx sourceId with
-      | some striker =>
-        g.dealDamageFrom striker.name (g.object! victim.id) (Int.ofNat striker.status.loyaltyCounters)
-          (source := some striker)
-      | none => g.logMsg "The target is no longer legal. No damage is dealt"
+  | .dealDamage amt@(.power (.targetAt fromIdx)) (.targetAt toIdx) _
+  | .dealDamage amt@(.loyalty (.targetAt fromIdx)) (.targetAt toIdx) _ =>
+    match g.legalPermanentAt? controller kind targets toIdx sourceId,
+        g.legalPermanentAt? controller kind targets fromIdx sourceId with
+    | some victim, some striker =>
+      let dmg := match amt with
+        | .loyalty _ => Int.ofNat striker.status.loyaltyCounters
+        | _ => max (g.power striker) 0
+      g.dealDamageFrom striker.name (g.object! victim.id) dmg
+        (source := some striker)
+    | _, _ => g.logMsg "The target is no longer legal. No damage is dealt"
   | .putOnLibrary .topOrBottomDamage2 .target =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
@@ -933,10 +932,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .searchLibrary (.mill (.fixed 1) _ _) =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
   | .chooseModes _ (.fraTrigger _) => g
-  | .untap .landsYouControl =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
-      else g) g
+  | .untap who@(.landsYouControl) | .untap who@(.source) | .untap who@(.tokensYouControl) =>
+    match g.permanentsNamed { controller, sourceId, targets } who with
+    | some objs =>
+      objs.foldl (fun g o =>
+        let o := g.object! o.id
+        if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap
+        else g) g
+    | none => g
   | .exile .target .returnImmediately _ =>
     if targets.isEmpty then g
     else
@@ -950,8 +953,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           s!"{(g.player controller).name} may remove a +1/+1 counter from {o.name}"
       else g
     | none => g
-  | .empowerJace (.count .creaturesYouControl) =>
-    g.empowerJace controller (g.creaturesControlledBy controller).size
+  | .empowerJace amount =>
+    match g.triggerCount { controller, sourceId, targets } amount with
+    | some n => g.empowerJace controller n
+    | none => g
   | .becomePrepared .enchanted false =>
     match (sourceId.bind g.findObject?).bind (·.attachedTo) |>.bind g.findObject? with
     | some host =>
@@ -1004,10 +1009,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
       | Target.permanent id => g.dealDamageFrom srcName (g.object! id) x (source := src?)
       | Target.card _ => g) sourceId illegal
-  | .pump (.count .artifact) (.fixed 0) .creaturesYouControl =>
-    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
-    (g.creaturesControlledBy controller).foldl (fun g o =>
-      g.pumpPermanent (g.object! o.id) n 0) g
+  | .pump (.count .artifact) (.fixed 0) who@(.creaturesYouControl)
+  | .pump (.count .artifact) (.fixed 0) who@(.source) =>
+    let ctx : TriggerRead := { controller, sourceId, targets }
+    match g.triggerInt ctx (.count .artifact), g.permanentsNamed ctx who with
+    | some n, some objs =>
+      objs.foldl (fun g o =>
+        match g.findObject? o.id with
+        | some o => if o.isOnBattlefield then g.pumpPermanent o n 0 else g
+        | none => g) g
+    | _, _ => g
   | .putCounters .plusOneEqualToHand .creaturesYouControl =>
     let x := (g.player controller).hand.size
     if x == 0 then g
@@ -1168,10 +1179,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.fraCause? with
     | some o => if o.isOnBattlefield then g.grantKeywordsUntilEot o k else g
     | none => g
-  | .untap .source =>
-    match sourceId.bind g.findObject? with
-    | some o => if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
-    | none => g
   | .putCounters (.ofKind .stun _) (.creaturesControlledBy .eachOpponent) =>
     targets.foldl (fun g t =>
       match t with
@@ -1236,10 +1243,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           else acc
         | none => acc) (g, #[])
     g.shuffleLibrary controller
-  | .untap .tokensYouControl =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if o.printed.isToken && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
-      else g) g
   | .fight (.targetAt 0) .mutual =>
     match g.legalPermanentAt? controller kind targets 0 sourceId,
         g.legalPermanentAt? controller kind targets 1 sourceId with
@@ -1276,10 +1279,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let n : Int := Int.ofNat (g.player controller).graveyard.size
     g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
       sourceId illegal
-  | .putCounters (.ofKind .plusOnePlusOne n) .source =>
-    match sourceId.bind g.findObject? with
-    | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o n else g
-    | none => g
   | .fight .source .mutual =>
     if targets.isEmpty then g
     else
@@ -1429,21 +1428,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       (g.mapObjectStatus o (fun s =>
         { s with grantedTriggersUntilEot := s.grantedTriggersUntilEot.push ab })).logMsg
         s!"Until end of turn, whenever {o.name} deals combat damage to a player, {(g.player controller).name} draws two cards")
-  | .pump (.count .artifact) (.fixed 0) .source =>
-    let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
-    match source? with
-    | some o => if o.isOnBattlefield then g.pumpPermanent o n 0 else g
-    | none => g
   | .pump (.count .artifact) (.fixed 0) .target =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
     g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o n 0)
       sourceId illegal
-  | .putCounters (.ofKind .plusOnePlusOne 1) .creaturesWithPlusOne =>
-    let ids := ((g.creaturesControlledBy controller).filter (·.status.plusOnePlusOne > 0)).map (·.id)
-    ids.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.addPlusOnePlusOneTo o 1
-      | none => g) g
   | .returnToHand (.target .eachPermanent) _ =>
     (List.range targets.size).foldl (fun g i =>
       match targets[i]! with
@@ -1478,9 +1466,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         "Whenever you cast a spell, draw a card." (.draw 1)] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
-  | .empowerJace (.subtypeCount "Island") =>
-    let n := ((g.permanentsOf controller).filter (fun o => g.hasSubtype o "Island")).size
-    g.empowerJace controller n
   | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
@@ -1505,13 +1490,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .discard .eachOpponentTwoDrawPerNonlandShortfall =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
-  | .dealDamage (.fixed n) .creaturesExceptYourTokens _ =>
-    let victims := g.battlefield.filter (fun o =>
-      o.isCreature && !(o.printed.isToken && o.controlledBy controller))
-    victims.foldl (fun g o =>
-      match g.findObject? o.id with
-      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n.toNat (source := src?) else g
-      | none => g) g
   | .grant .emblemCreaturesGetTwoTwo .youIfCast =>
     let emblem : CardDef := {
       name := s!"{srcName} Emblem", types := #[]
