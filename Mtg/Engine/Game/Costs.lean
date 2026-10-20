@@ -257,10 +257,10 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     else 0
   let pl := g.player caster
   let thisTurnLess :=
-    (pl.typeSpellCostLessThisTurn.foldl (fun acc (ty, n) =>
-      if face.hasType ty then acc + n else acc) 0) +
-    (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
-      if face.hasSupertype s then acc + n else acc) 0)
+    pl.spellsCostLessThisTurn.foldl (fun acc (which, n) =>
+      match which with
+      | .cardType ty => if face.hasType ty then acc + n else acc
+      | .supertype s => if face.hasSupertype s then acc + n else acc) 0
   let sphinxLess :=
     if face.hasSubtype "Sphinx" then
       let zone (o : GameObject) :=

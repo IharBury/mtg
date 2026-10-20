@@ -20,10 +20,10 @@ def caster : PlayerId := ⟨0⟩
     (resolutionOverride := some (.connive .hand))
   g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
 
-#guard (SharedTrigger.timing (.connive (.target .creatureYouControl))).resolution ==
+#guard (SharedTrigger.timing (.connive .creatureYouControl)).resolution ==
   .connive .target
 
-#guard (SharedTrigger.timing (.connive (.target .creatureYouControl))).targeting.kind ==
+#guard (SharedTrigger.timing (.connive .creatureYouControl)).targeting.kind ==
   .creatureYouControl
 
 #guard (SharedTrigger.timing .connive).resolution == .connive .source

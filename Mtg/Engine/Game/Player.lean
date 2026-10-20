@@ -96,11 +96,9 @@ structure Player where
   lifeLocked : Bool := false
   /-- Cards discarded this turn (Misty Knight; MSH 375). -/
   cardsDiscardedThisTurn : Nat := 0
-  /-- Generic mana less to cast spells of each of these types this turn
-  (Armor Wars II). -/
-  typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
-  /-- Generic mana less to cast spells of each of these supertypes this turn. -/
-  supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
+  /-- Generic mana less to cast spells of each of these types or supertypes this turn
+  (CR 601.2f, Armor Wars II). -/
+  spellsCostLessThisTurn : Array (SpellCostLess × Nat) := #[]
   /-- An artifact entered under this player's control this turn (Iron Man;
   MSH 242 / 323). Still true if that artifact later left or changed types. -/
   artifactEnteredThisTurn : Bool := false
@@ -154,6 +152,16 @@ deriving Repr, Inhabited
 
 namespace Player
 
+def typeSpellCostLessThisTurn (pl : Player) : Array (CardType × Nat) :=
+  pl.spellsCostLessThisTurn.filterMap fun
+    | (.cardType ty, n) => some (ty, n)
+    | _ => none
+
+def supertypeSpellCostLessThisTurn (pl : Player) : Array (Supertype × Nat) :=
+  pl.spellsCostLessThisTurn.filterMap fun
+    | (.supertype s, n) => some (s, n)
+    | _ => none
+
 /-- True when this player has per-turn tracking state to reset at the end of a turn. -/
 def hasTurnStateToClear (pl : Player) : Bool :=
   pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
@@ -167,8 +175,7 @@ def hasTurnStateToClear (pl : Player) : Bool :=
     pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
     pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
     pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
-    !pl.typeSpellCostLessThisTurn.isEmpty ||
-    !pl.supertypeSpellCostLessThisTurn.isEmpty
+    !pl.spellsCostLessThisTurn.isEmpty
 
 /-- Player with per-turn tracking fields reset as the turn ends. -/
 def clearedAtEndOfTurn (pl : Player) : Player :=
@@ -201,8 +208,7 @@ def clearedAtEndOfTurn (pl : Player) : Player :=
     nextSpellCantBeCountered := false
     lifeLostThisTurn := 0
     cantAttackJaces := false
-    typeSpellCostLessThisTurn := #[]
-    supertypeSpellCostLessThisTurn := #[] }
+    spellsCostLessThisTurn := #[] }
 
 end Player
 

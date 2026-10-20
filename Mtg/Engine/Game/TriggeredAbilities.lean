@@ -1068,52 +1068,22 @@ def copyKeywordCounter (g : Game) (src other : GameObject)
 Haste, flying, first strike, double strike, deathtouch, indestructible,
 lifelink, menace, reach, trample, and vigilance. -/
 def copyMissingKeywordCounters (g : Game) (src other : GameObject) : Game :=
-  let g := g.copyKeywordCounter src other g.hasHaste
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with haste := s.keywordCounters.haste + 1 } }) "haste"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasFlying
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with flying := s.keywordCounters.flying + 1 } }) "flying"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other
-    (fun o => g.hasKeyword o (·.firstStrike))
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with
-        firstStrike := s.keywordCounters.firstStrike + 1 } }) "first strike"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasDoubleStrike
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with
-        doubleStrike := s.keywordCounters.doubleStrike + 1 } }) "double strike"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasDeathtouch
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with
-        deathtouch := s.keywordCounters.deathtouch + 1 } }) "deathtouch"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasIndestructible
-    (fun s => { s with
-      indestructibleCounters := s.indestructibleCounters + 1 }) "indestructible"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasLifelink
-    (fun s => { s with lifelinkCounters := s.lifelinkCounters + 1 }) "lifelink"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasMenace
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with menace := s.keywordCounters.menace + 1 } }) "menace"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other (fun o => g.hasKeyword o (·.reach))
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with reach := s.keywordCounters.reach + 1 } }) "reach"
-  let src := g.object! src.id
-  let g := g.copyKeywordCounter src other g.hasTrample
-    (fun s => { s with trampleCounters := s.trampleCounters + 1 }) "trample"
-  let src := g.object! src.id
-  g.copyKeywordCounter src other g.hasVigilance
-    (fun s => { s with keywordCounters :=
-      { s.keywordCounters with
-        vigilance := s.keywordCounters.vigilance + 1 } }) "vigilance"
+  let kinds : List (CounterKind × (Game → GameObject → Bool)) := [
+    (.haste, Game.hasHaste),
+    (.flying, Game.hasFlying),
+    (.firstStrike, fun g o => g.hasKeyword o (·.firstStrike)),
+    (.doubleStrike, Game.hasDoubleStrike),
+    (.deathtouch, Game.hasDeathtouch),
+    (.indestructible, Game.hasIndestructible),
+    (.lifelink, Game.hasLifelink),
+    (.menace, Game.hasMenace),
+    (.reach, fun g o => g.hasKeyword o (·.reach)),
+    (.trample, Game.hasTrample),
+    (.vigilance, Game.hasVigilance)
+  ]
+  kinds.foldl (fun g (kind, pred) =>
+    let src := g.object! src.id
+    g.copyKeywordCounter src other (pred g) (fun s => s.addCounters kind 1) kind.oracleName) g
 
 /-- Resolve `TriggerResolution.putCounters`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other permanent the
@@ -3827,10 +3797,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       sequencedCardPower }
     match g.triggerCount ctx amount with
     | none => g
-    | some n =>
-      match which with
-      | .cardType ty => g.grantTypeCostLessThisTurn controller ty n
-      | .supertype s => g.grantSupertypeCostLessThisTurn controller s n
+    | some n => g.grantSpellsCostLessThisTurn controller which n
   | .investigate _ =>
     let (g, _) := g.createToken controller clueToken
     g.logMsg s!"{(g.player controller).name} investigates"

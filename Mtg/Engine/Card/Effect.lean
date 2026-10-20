@@ -268,7 +268,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Each creature you control becomes prepared"
   | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
-  | .sequence [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] =>
+  | .sequence [.replace, .dealDamage (.fixed n) .target .none] =>
     s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
   | .grant .jaceLoyaltyAtInstantSpeed .youIfCast =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"

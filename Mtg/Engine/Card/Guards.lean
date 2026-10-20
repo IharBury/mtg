@@ -209,7 +209,7 @@ namespace CardDef
   .sequence [
     .onPermanent (.dealDamage 3),
     .onPermanent .loseIndestructible,
-    .replace .diesThisTurn .exile]
+    .replace]
 #guard Effect.creatureYouControlDealsPowerToOppCreature.phrase ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard Effect.playAdditionalLandThisTurn.phrase ==
@@ -233,7 +233,7 @@ namespace CardDef
 #guard (Effect.pumpAndExileIfDies (-5) (-5)).phrase ==
   "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
 #guard (Effect.pumpAndExileIfDies (-5) (-5)).resolution ==
-  .sequence [.onPermanent (.pump (-5) (-5)), .replace .diesThisTurn .exile]
+  .sequence [.onPermanent (.pump (-5) (-5)), .replace]
 #guard (Effect.exileGraveyardCreaturesGrantCast.phrase).startsWith
   "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
@@ -551,10 +551,10 @@ namespace CardDef
 #guard (Effect.dealDamageToCreature 5).resolution ==
   .onPermanent (.dealDamage 5)
 #guard (Effect.dealDamageToCreatureExileIfDies 3).resolution ==
-  .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage 3)]
+  .sequence [.replace, .onPermanent (.dealDamage 3)]
 #guard (Effect.dealDamageToCreatureExileIfDies 3).phrase ==
   "deals 3 damage to target creature. If that creature would die this turn, exile it instead"
-#guard SpellResolution.toPhrase (.replace .diesThisTurn .exile) "target creature" ==
+#guard SpellResolution.toPhrase .replace "target creature" ==
   "if target creature would die this turn, exile it instead"
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.resolution ==
   .sequence [.onPermanent .destroy, .cant (.block .creaturesWithoutFlying)]

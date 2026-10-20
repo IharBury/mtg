@@ -383,18 +383,16 @@ def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
     { g with pending := .fraChoice p (.mayPutHeroFromHandOrDraw ids) }
       |>.logMsg s!"{(g.player p).name} may put {indefinite subtype} {subtype} creature card onto the battlefield"
 
+/-- Spells matching `which` cost `{n}` less this turn (CR 601.2f). -/
+def grantSpellsCostLessThisTurn (g : Game) (p : PlayerId) (which : SpellCostLess) (n : Nat) : Game :=
+  let kind := match which with | .cardType ty => toString ty | .supertype s => toString s
+  g.modifyPlayer p (fun pl =>
+    { pl with spellsCostLessThisTurn := pl.spellsCostLessThisTurn.push (which, n) })
+    |>.logMsg s!"{kind} spells {(g.player p).name} casts this turn cost \{{n}} less"
+
 /-- Spells of type `ty` cost `{n}` less this turn. -/
 def grantTypeCostLessThisTurn (g : Game) (p : PlayerId) (ty : CardType) (n : Nat) : Game :=
-  g.modifyPlayer p (fun pl =>
-    { pl with typeSpellCostLessThisTurn := pl.typeSpellCostLessThisTurn.push (ty, n) })
-    |>.logMsg s!"{ty} spells {(g.player p).name} casts this turn cost \{{n}} less"
-
-/-- Spells with supertype `s` cost `{n}` less this turn. -/
-def grantSupertypeCostLessThisTurn (g : Game) (p : PlayerId) (s : Supertype) (n : Nat) : Game :=
-  g.modifyPlayer p (fun pl =>
-    { pl with supertypeSpellCostLessThisTurn :=
-        pl.supertypeSpellCostLessThisTurn.push (s, n) })
-    |>.logMsg s!"{s} spells {(g.player p).name} casts this turn cost \{{n}} less"
+  g.grantSpellsCostLessThisTurn p (.cardType ty) n
 
 /-- Return up to two graveyard cards, each using a different mode among
 artifact, creature, enchantment, and land (Call Damage Control). -/
@@ -1128,12 +1126,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | .otherSpellsManaValue => g.otherSpellsManaValue controller
       | _ => 0
     g.dealDamageToEachNonDragon n subtype
-  | .replace what instead =>
-    match what, instead with
-    | .diesThisTurn, .exile =>
-      g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-        let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
-        g.logMsg s!"If {o.name} would die this turn, exile it instead")
+  | .replace =>
+    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
+      g.logMsg s!"If {o.name} would die this turn, exile it instead")
   | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
     let n := g.battlefield.filter (fun o =>
       o.printed.hasType ty && !o.controlledBy controller) |>.size
@@ -1493,9 +1489,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .returnToHand .upToTwoGyModal _ =>
     g.returnChosenGraveyardCards controller targets
   | .spellsCostLess which (.fixed n) =>
-    match which with
-    | .cardType ty => g.grantTypeCostLessThisTurn controller ty n.toNat
-    | .supertype s => g.grantSupertypeCostLessThisTurn controller s n.toNat
+    g.grantSpellsCostLessThisTurn controller which n.toNat
   | r =>
     match r.onPermanent? with
     | some a => g.applyOnPermanent controller effect.targetKind targets a

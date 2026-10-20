@@ -436,7 +436,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger .recruit,
   Effect.ofTrigger (.onPermanent .creature (.plusOne 1)),
   Effect.ofTrigger (.attachTo .creatureYouControl),
-  Effect.ofTrigger (.connive (.target .creatureYouControl)),
+  Effect.ofTrigger (.connive .creatureYouControl),
   Effect.ofTrigger (.exileUntilLeaves .oppNonland),
   Effect.ofTrigger (.exileUntilLeaves .defendingPlayerCreature),
   Effect.ofTrigger (.onSource (.pump 1 1)),

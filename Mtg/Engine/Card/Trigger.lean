@@ -12,18 +12,6 @@ The unified `TriggeredAbility` carrier plus its stack/resolution metadata
 
 namespace Mtg.Engine
 
-/-- Who `SharedTrigger.connive` makes connive. -/
-inductive ConniveSubject where
-  /-- The trigger's source. -/
-  | source
-  /-- The announced target of this kind. -/
-  | target (kind : EffectTargetKind)
-  /-- The Villain that caused this trigger. You may have it connive.
-  Already chosen this turn does nothing. A Villain that will not connive
-  is reported. -/
-  | enteringVillain
-deriving Repr, Inhabited, BEq
-
 /-- An intervening “if” or trigger condition (CR 603.2 / 603.4). -/
 inductive InterveningCondition where
   /-- “while you control a creature with power ≥ n” (e.g. Ferocious). -/
@@ -208,11 +196,9 @@ def timing (e : SharedTrigger) : TriggeredAbility.TriggerTiming :=
 -- Library triggers (CR 121 / CR 701.13 / CR 701.18 / CR 701.20 / CR 701.25 / CR 701.48)
 def scry (n : Nat) : Effect := { resolution := .scry (.fixed n) }
 def draw (n : Nat) : Effect := { resolution := .draw (.fixed n) }
-def connive (who : ConniveSubject := .source) : Effect :=
-  match who with
-  | .source => { resolution := .connive .source }
-  | .target kind => { targeting := .of kind, resolution := .connive .target }
-  | .enteringVillain => { resolution := .connive .enteringVillain }
+def connive (target : EffectTargetKind := .none) : Effect :=
+  if target == .none then { resolution := .connive .source }
+  else { targeting := .of target, resolution := .connive .target }
 def millPlayer (n : Nat) : Effect :=
   { targeting := .of .player, resolution := .mill (.fixed n) (.target .player) }
 def searchLibrary : Effect := { resolution := .searchLibrary (.put .forest) }
@@ -300,7 +286,7 @@ def createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false) : Effect 
 def amass (n : Nat) (subtype : String := "Goblin")
     (amount : TriggeredAbility.NumberSelector := .fixed n) (attachSource : Bool := false) : Effect :=
   { resolution := .amass amount subtype attachSource }
-def recruit (who : RecruitSubject := .recruit) : Effect := { resolution := .recruit who }
+def recruit (who : TriggeredAbility.PlayerSelector := .recruit) : Effect := { resolution := .recruit who }
 def investigate : Effect := { resolution := .investigate }
 def plusOneEachYouControl (which : YouControlPlusOne := .eachCreature) : Effect :=
   { resolution := .putCounters (.ofKind .plusOnePlusOne) (.youControl which) }
@@ -642,12 +628,9 @@ def tapEnchantedRemoveCounters : Effect :=
 def copySelfNonlegendary : Effect := { resolution := .becomeCopy .sourceTwoNonlegendaryTokens }
 def protectionEverything : Effect :=
   { resolution := .grant .protectionEverything .youIfCast }
-def prepareSource (when : PrepareWhen := .ifNotPrepared) : SharedTrigger :=
-  match when with
-  | .ifNotPrepared =>
-    { events := #[.yourUpkeep], resolution := .«if» (.not .preparedSource) (.becomePrepared .source) }
-  | .ifThreeCreaturesDied =>
-    { events := #[.eachEndStep], resolution := .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source) }
+def prepareSource (when : TriggeredAbility.ConditionSelector := .ifNotPrepared) : SharedTrigger :=
+  { events := #[if when == .ifNotPrepared then .yourUpkeep else .eachEndStep]
+    resolution := .«if» when (.becomePrepared .source) }
 def addGreenPerChargeCounter : Effect :=
   { events := #[.yourFirstMain],
     resolution := .addMana #[.colored .green] .perChargeCounter }

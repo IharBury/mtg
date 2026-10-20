@@ -72,26 +72,6 @@ inductive SpellCostLess where
   | supertype (s : Supertype)
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- The event `SpellResolution.replace` replaces. -/
-inductive ReplaceEvent where
-  /-- The targeted permanent dying this turn. -/
-  | diesThisTurn
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- What `SpellResolution.replace` does instead of `ReplaceEvent`. -/
-inductive ReplaceInstead where
-  /-- Exile it. -/
-  | exile
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Who the printed `SharedTrigger.recruit` names. -/
-inductive RecruitSubject where
-  /-- “recruit”. -/
-  | recruit
-  /-- “you recruit”. -/
-  | you
-deriving Repr, Inhabited, BEq, DecidableEq
-
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
 inductive YouControlPlusOne where
   /-- Each creature you control. -/
@@ -101,14 +81,6 @@ inductive YouControlPlusOne where
   /-- Each creature you control, or two counters with the city's blessing. -/
   | citysBlessing
 deriving Repr, Inhabited, BEq
-
-/-- When `SharedTrigger.prepareSource` makes this creature prepared. -/
-inductive PrepareWhen where
-  /-- If it isn't prepared yet. -/
-  | ifNotPrepared
-  /-- If three or more creatures died this turn. -/
-  | ifThreeCreaturesDied
-deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggeredAbility
 
@@ -1072,6 +1044,7 @@ end
 namespace PlayerSelector
 
 @[match_pattern] abbrev each : PlayerSelector := .eachOpponent
+@[match_pattern] abbrev recruit : PlayerSelector := .player
 
 end PlayerSelector
 
@@ -1588,6 +1561,8 @@ namespace ConditionSelector
 @[match_pattern] abbrev subtype (subtype : String) : ConditionSelector := .state (.subtype subtype)
 @[match_pattern] abbrev mvAtMost (n : Nat) : ConditionSelector := .state (.mvAtMost n)
 @[match_pattern] abbrev preparedSource : ConditionSelector := .state .preparedSource
+@[match_pattern] abbrev ifNotPrepared : ConditionSelector := .not .preparedSource
+@[match_pattern] abbrev ifThreeCreaturesDied : ConditionSelector := .atLeast .creaturesDiedThisTurn (.fixed 3)
 
 -- TurnHistoryCondition aliases
 @[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.attackedWithSubtype subtype)
@@ -2161,8 +2136,8 @@ deriving Repr, Inhabited, BEq
 
 /-- Replacement, prevention, permission, cost-reduction, turn, and emblem grants (CR 614 / CR 615 / CR 114). -/
 inductive RuleEffectGrant where
-  /-- Replacement effect: if `what` would happen, `instead` happens instead (CR 614.1). -/
-  | replace (what : ReplaceEvent) (instead : ReplaceInstead)
+  /-- Replacement effect: if the target permanent would die this turn, exile it instead (CR 614.1). -/
+  | replace
   /-- Prevent all damage this permanent would deal for as long as the source remains (CR 615). -/
   | preventDamageWhileSource
   /-- Spells of `which` cost `n` less to cast this turn (CR 601.2f). -/
@@ -2224,7 +2199,7 @@ inductive ActionStateGrant where
   /-- Empower Jace `n` (FRA 732). -/
   | empowerJace (n : NumberSelector)
   /-- Recruit as `who` says. -/
-  | recruit (who : RecruitSubject := .recruit)
+  | recruit (who : PlayerSelector := .recruit)
   /-- Record another resolution of this ability this turn, up to `limit`. -/
   | noteResolveThisTurn (limit : Nat)
   /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
@@ -2297,7 +2272,7 @@ namespace TriggerGrantWhat
 @[match_pattern] abbrev assignCombatDamageEqualToughness : TriggerGrantWhat := .layer7PT .assignCombatDamageEqualToughness
 
 -- RuleEffectGrant aliases
-@[match_pattern] abbrev replace (what : ReplaceEvent) (instead : ReplaceInstead) : TriggerGrantWhat := .ruleEffect (.replace what instead)
+@[match_pattern] abbrev replace : TriggerGrantWhat := .ruleEffect .replace
 @[match_pattern] abbrev preventDamageWhileSource : TriggerGrantWhat := .ruleEffect .preventDamageWhileSource
 @[match_pattern] abbrev spellsCostLess (which : SpellCostLess) (n : NumberSelector) : TriggerGrantWhat := .ruleEffect (.spellsCostLess which n)
 @[match_pattern] abbrev playNotedUntilNextTurn : TriggerGrantWhat := .ruleEffect .playNotedUntilNextTurn
@@ -2328,7 +2303,7 @@ namespace TriggerGrantWhat
 @[match_pattern] abbrev prepared (prepared : Bool := true) : TriggerGrantWhat := .actionState (.prepared prepared)
 @[match_pattern] abbrev investigate : TriggerGrantWhat := .actionState .investigate
 @[match_pattern] abbrev empowerJace (n : NumberSelector) : TriggerGrantWhat := .actionState (.empowerJace n)
-@[match_pattern] abbrev recruit (who : RecruitSubject := .recruit) : TriggerGrantWhat := .actionState (.recruit who)
+@[match_pattern] abbrev recruit (who : PlayerSelector := .recruit) : TriggerGrantWhat := .actionState (.recruit who)
 @[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : TriggerGrantWhat := .actionState (.noteResolveThisTurn limit)
 @[match_pattern] abbrev mshReflexive (kind paid : Nat) : TriggerGrantWhat := .actionState (.mshReflexive kind paid)
 @[match_pattern] abbrev connive : TriggerGrantWhat := .actionState .connive
@@ -3334,9 +3309,9 @@ which creature, and `how` says which. -/
 @[match_pattern] abbrev becomeCopy (of : ObjectSelector) : Resolution :=
   .grant (.copy of) .source
 
-/-- If `what` would happen, `instead` happens in its place (CR 614.1). -/
-@[match_pattern] abbrev replace (what : ReplaceEvent) (instead : ReplaceInstead) : Resolution :=
-  .grant (.replace what instead) .target
+/-- If the targeted permanent would die this turn, exile it instead (CR 614.1). -/
+@[match_pattern] abbrev replace : Resolution :=
+  .grant .replace .target
 
 /-- Spells of `which` cost less this turn, as `n` says (CR 601.2f). -/
 @[match_pattern] abbrev spellsCostLess (which : SpellCostLess) (n : NumberSelector) : Resolution :=
@@ -3351,7 +3326,7 @@ which creature, and `how` says which. -/
   .grant (.empowerJace n) .youIfCast
 
 /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
-@[match_pattern] abbrev recruit (who : RecruitSubject := .recruit) : Resolution :=
+@[match_pattern] abbrev recruit (who : PlayerSelector := .recruit) : Resolution :=
   .grant (.recruit who) .youIfCast
 
 /-- Record another resolution of this ability this turn. -/
@@ -3503,7 +3478,7 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .counter => some (s!"Counter {noun}")
   | .unlessPays .counter n => some (s!"Counter {noun} unless its controller pays \{{n}}")
   | .destroy .target .none => some (s!"Destroy {noun}")
-  | .sequence [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] => some (s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead")
+  | .sequence [.replace, .dealDamage (.fixed n) .target .none] => some (s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead")
   | .mill (.fixed n) .you (.permanentAndGainLife l) => some (s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life")
   | .chooseModes _ (.fraTrigger n) => some (if n == 2 then "choose two" else "choose one")
   | .pump .minusGraveyardCards (.fixed 0) .target => some (s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard")
@@ -3992,16 +3967,6 @@ private def ifClause (cond : TriggeredAbility.ConditionSelector) (noun : String)
   | .giftPromised => "if the gift was promised"
   | _ => "if that is true"
 
-/-- The “if … would …” clause for `what`, without the replacement. -/
-private def replaceWhatClause (what : ReplaceEvent) (noun : String) : String :=
-  match what with
-  | .diesThisTurn => s!"if {noun} would die this turn"
-
-/-- What happens instead of `what`. -/
-private def replaceInsteadClause (instead : ReplaceInstead) : String :=
-  match instead with
-  | .exile => "exile it instead"
-
 /-- Drop one trailing period so a following clause can continue the sentence. -/
 private def trimPeriod (s : String) : String :=
   if s.endsWith "." then (s.dropEnd 1).toString else s
@@ -4109,8 +4074,8 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
   | .dealDamage .otherSpellsManaValue (.nonSubtypeCreatures subtype) _ =>
     s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
-  | .replace what instead =>
-    s!"{replaceWhatClause what noun}, {replaceInsteadClause instead}"
+  | .replace =>
+    s!"if {noun} would die this turn, exile it instead"
   | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
     s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
   | .returnToHand .creaturesNotChosenType _ =>
@@ -4299,11 +4264,11 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw (.fixed 3), .discard (.cardsUnlessType n ty)] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] =>
+  | [.replace, .dealDamage (.fixed n) .target .none] =>
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
-  | [.pump (.fixed p) (.fixed t) .target, .replace .diesThisTurn .exile] =>
+  | [.pump (.fixed p) (.fixed t) .target, .replace] =>
     s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
-  | [.dealDamage (.fixed n) .target .none, .lose .indestructible .target, .replace .diesThisTurn .exile] =>
+  | [.dealDamage (.fixed n) .target .none, .lose .indestructible .target, .replace] =>
     s!"deals {n} damage to {noun}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
   | [.pump (.fixed p) (.fixed t) .target, .exile (.topN 1) .playUntilNextTurn _] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."

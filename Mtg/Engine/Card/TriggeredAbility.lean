@@ -151,7 +151,7 @@ def onYouCastColorFromHandConnive (color : Color) : TriggeredAbility :=
 def onEquippedCreatureYouControlAttacksConnive : TriggeredAbility :=
   .triggered .equippedCreatureYouControlAttacks (Effect.ofTrigger .connive)
 def onCombatTargetYouControlConnives : TriggeredAbility :=
-  .triggered .yourBeginCombat (Effect.ofTrigger (.connive (.target .creatureYouControl)))
+  .triggered .yourBeginCombat (Effect.ofTrigger (.connive .creatureYouControl))
 def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppNonland))
 def onEnterExileOppTappedUntilLeaves : TriggeredAbility :=

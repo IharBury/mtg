@@ -277,62 +277,93 @@ def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
     damage := s.damage + n
     dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
 
+/-- Number of counters of `kind` on this permanent (CR 122.1). -/
+def counter (s : Status) : CounterKind → Nat
+  | .plusOnePlusOne => s.plusOnePlusOne
+  | .minusOneMinusOne => s.minusOneMinusOne
+  | .loyalty => s.loyaltyCounters
+  | .hope => s.hope
+  | .charge => s.charge
+  | .stun => s.stun
+  | .shield => s.shield
+  | .finality => s.finality
+  | .plan => s.plan
+  | .burden => s.burden
+  | .quest => s.quest
+  | .invasion => s.invasion
+  | .influence => s.influence
+  | .trample => s.trampleCounters
+  | .indestructible => s.indestructibleCounters
+  | .lifelink => s.lifelinkCounters
+  | .hone => s.hone
+  | .shadow => s.shadow
+  | .lore => s.lore
+  | .story => s.story
+  | .time => s.time
+  | .haste => s.keywordCounters.haste
+  | .vigilance => s.keywordCounters.vigilance
+  | .flying => s.keywordCounters.flying
+  | .menace => s.keywordCounters.menace
+  | .reach => s.keywordCounters.reach
+  | .deathtouch => s.keywordCounters.deathtouch
+  | .firstStrike => s.keywordCounters.firstStrike
+  | .doubleStrike => s.keywordCounters.doubleStrike
+
+/-- Set the count of `kind` counters on this permanent (CR 122.1). -/
+def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
+  match kind with
+  | .plusOnePlusOne => { s with plusOnePlusOne := n }
+  | .minusOneMinusOne => { s with minusOneMinusOne := n }
+  | .loyalty => { s with loyaltyCounters := n }
+  | .hope => { s with hope := n }
+  | .charge => { s with charge := n }
+  | .stun => { s with stun := n }
+  | .shield => { s with shield := n }
+  | .finality => { s with finality := n }
+  | .plan => { s with plan := n }
+  | .burden => { s with burden := n }
+  | .quest => { s with quest := n }
+  | .invasion => { s with invasion := n }
+  | .influence => { s with influence := n }
+  | .trample => { s with trampleCounters := n }
+  | .indestructible => { s with indestructibleCounters := n }
+  | .lifelink => { s with lifelinkCounters := n }
+  | .hone => { s with hone := n }
+  | .shadow => { s with shadow := n }
+  | .lore => { s with lore := n }
+  | .story => { s with story := n }
+  | .time => { s with time := n }
+  | .haste => { s with keywordCounters := { s.keywordCounters with haste := n } }
+  | .vigilance => { s with keywordCounters := { s.keywordCounters with vigilance := n } }
+  | .flying => { s with keywordCounters := { s.keywordCounters with flying := n } }
+  | .menace => { s with keywordCounters := { s.keywordCounters with menace := n } }
+  | .reach => { s with keywordCounters := { s.keywordCounters with reach := n } }
+  | .deathtouch => { s with keywordCounters := { s.keywordCounters with deathtouch := n } }
+  | .firstStrike => { s with keywordCounters := { s.keywordCounters with firstStrike := n } }
+  | .doubleStrike => { s with keywordCounters := { s.keywordCounters with doubleStrike := n } }
+
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
-  s.plusOnePlusOne > 0 || s.minusOneMinusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 ||
-    s.charge > 0 ||
-    s.stun > 0 || s.shield > 0 ||
-    s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
-    s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
-    s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
-    s.story > 0 || s.time > 0 ||
-    s.keywordCounters.any
+  CounterKind.all.any (fun k => s.counter k > 0)
 
 /-- This permanent with every counter removed. -/
 def withoutCounters (s : Status) : Status :=
-  { s with
-    plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
-    stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
-    influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-    hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
+  CounterKind.all.foldl (fun acc k => acc.setCounter k 0) s
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
 def proliferatedExceptPlusOne (s : Status) (extra : Nat := 0) : Status :=
-  let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
-  { s with
-    loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
-    minusOneMinusOne := inc s.minusOneMinusOne
-    stun := inc s.stun
-    shield := inc s.shield
-    finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
-    quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
-    trampleCounters := inc s.trampleCounters
-    indestructibleCounters := inc s.indestructibleCounters
-    lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore, story := inc s.story, time := inc s.time
-    keywordCounters := s.keywordCounters.incPresent extra }
+  CounterKind.all.foldl (fun acc k =>
+    if k == .plusOnePlusOne || acc.counter k == 0 then acc
+    else acc.setCounter k (acc.counter k + 1 + extra)) s
 
 /-- Put the same number of each kind of counter `from` has, except +1/+1
 counters, which the caller adds so their triggers apply (Graft Surgeon). -/
 def addCountersExceptPlusOne (s «from» : Status) (extra : Nat := 0) : Status :=
-  let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
-  { s with
-    loyaltyCounters := s.loyaltyCounters + bump «from».loyaltyCounters
-    minusOneMinusOne := s.minusOneMinusOne + bump «from».minusOneMinusOne
-    hope := s.hope + bump «from».hope, charge := s.charge + bump «from».charge
-    stun := s.stun + bump «from».stun
-    shield := s.shield + bump «from».shield, finality := s.finality + bump «from».finality
-    plan := s.plan + bump «from».plan, burden := s.burden + bump «from».burden
-    quest := s.quest + bump «from».quest, invasion := s.invasion + bump «from».invasion
-    influence := s.influence + bump «from».influence
-    trampleCounters := s.trampleCounters + bump «from».trampleCounters
-    indestructibleCounters := s.indestructibleCounters + bump «from».indestructibleCounters
-    lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
-    hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
-    lore := s.lore + bump «from».lore
-    story := s.story + bump «from».story, time := s.time + bump «from».time
-    keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
+  CounterKind.all.foldl (fun acc k =>
+    let n := «from».counter k
+    if k == .plusOnePlusOne || n == 0 then acc
+    else acc.setCounter k (acc.counter k + n + extra)) s
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=
@@ -344,39 +375,10 @@ def addPlusOnePlusOne (s : Status) (n : Nat := 1) : Status :=
 
 /-- Put `n` counters of `kind` on this permanent (CR 122.1). -/
 def addCounters (s : Status) (kind : CounterKind) (n : Nat) : Status :=
-  let kw (f : KeywordCounters → KeywordCounters) : Status :=
-    { s with keywordCounters := f s.keywordCounters }
-  match kind with
-  | .plusOnePlusOne =>
-    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 }
-  | .minusOneMinusOne => { s with minusOneMinusOne := s.minusOneMinusOne + n }
-  | .loyalty => { s with loyaltyCounters := s.loyaltyCounters + n }
-  | .hope => { s with hope := s.hope + n }
-  | .charge => { s with charge := s.charge + n }
-  | .stun => { s with stun := s.stun + n }
-  | .shield => { s with shield := s.shield + n }
-  | .finality => { s with finality := s.finality + n }
-  | .plan => { s with plan := s.plan + n }
-  | .burden => { s with burden := s.burden + n }
-  | .quest => { s with quest := s.quest + n }
-  | .invasion => { s with invasion := s.invasion + n }
-  | .influence => { s with influence := s.influence + n }
-  | .trample => { s with trampleCounters := s.trampleCounters + n }
-  | .indestructible => { s with indestructibleCounters := s.indestructibleCounters + n }
-  | .lifelink => { s with lifelinkCounters := s.lifelinkCounters + n }
-  | .hone => { s with hone := s.hone + n }
-  | .shadow => { s with shadow := s.shadow + n }
-  | .lore => { s with lore := s.lore + n }
-  | .story => { s with story := s.story + n }
-  | .time => { s with time := s.time + n }
-  | .haste => kw fun k => { k with haste := k.haste + n }
-  | .vigilance => kw fun k => { k with vigilance := k.vigilance + n }
-  | .flying => kw fun k => { k with flying := k.flying + n }
-  | .menace => kw fun k => { k with menace := k.menace + n }
-  | .reach => kw fun k => { k with reach := k.reach + n }
-  | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
-  | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
-  | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
+  let s' := s.setCounter kind (s.counter kind + n)
+  if kind == .plusOnePlusOne then
+    { s' with gotPlusOneThisTurn := s'.gotPlusOneThisTurn || n > 0 }
+  else s'
 
 /-- Union printed-style keyword grants that last until end of turn. -/
 def grantUntilEot (s : Status) (k : Keywords) : Status :=

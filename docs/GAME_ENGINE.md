@@ -11,7 +11,7 @@ The 58 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 ### Layer 1: Core State & Representation
 | Module | Key Types & Entry Points |
 | --- | --- |
-| `Status.lean` | `Status` (~75 per-permanent battlefield state fields: tapped, summoningSick, attacking/blocking, 17 counter counts, temporary P/T & keyword grants, and the table-driven `untilEotFields : Array UntilEotField` reset by `Status.clearedAtCleanup`). |
+| `Status.lean` | `Status` (~75 per-permanent battlefield state fields: tapped, summoningSick, attacking/blocking, counter counts with uniform `Status.counter` / `Status.setCounter` over `CounterKind.all` (CR 122.1), temporary P/T & keyword grants, and the table-driven `untilEotFields : List UntilEotField` reset by `Status.clearedAtCleanup`). |
 | `Object.lean` | `PlayPermission`, `GameObject` (~40 fields: `id`, `printed : CardDef`, `owner`, `controller`, `zone`, `status`, `timestamp`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `linkedExile`, copy/control tracking), `CreatureCombatAssignment`, `WaitingTrigger`. |
 | `Stack.lean` | `Target` (`.player`, `.permanent`, `.card`), `StackEntry`, `ProposalKind` (`.spell`, `.activatedAbility`), and `ProposedSpell` (snapshot used to reverse illegal proposals per CR 733.1). |
 | `Pending.lean` | `RandomRequest`, `AfterRandom`, `WardCost`/`WardObligation`, `FraNext`, `SearchDest`, `CostPick`, `CardChoice`, `FraChoice` (74 constructors), and `Pending` (43 constructors). |

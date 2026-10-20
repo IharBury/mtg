@@ -113,7 +113,7 @@ def dealDamageLoseIndestructibleExile (amount : Nat) : Effect :=
     (.sequence [
       .onPermanent (.dealDamage amount),
       .onPermanent .loseIndestructible,
-      .replace .diesThisTurn .exile])
+      .replace])
     (castKind := .creatureDamage)
 
 def creatureYouControlDealsPowerToOppCreature : Effect :=
@@ -166,7 +166,7 @@ def pumpAndExileIfDies (power toughness : Int) : Effect :=
   mkSpell (.of .creature)
     (.sequence [
       .onPermanent (.pump power toughness),
-      .replace .diesThisTurn .exile])
+      .replace])
     (castKind := .pump)
     (preferAsDefaultMode := true)
 
@@ -344,7 +344,7 @@ def targetPlayerDraw (n : Nat) : Effect :=
 
 def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
   mkSpell (.of .creature)
-    (.sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)])
+    (.sequence [.replace, .onPermanent (.dealDamage n)])
     (castKind := .creatureDamage)
 
 def destroyArtifactToken : Effect :=
@@ -1395,7 +1395,7 @@ def commandTheStage : Effect :=
 def essenceBurn : Effect :=
   fraSpellOn { TargetFilter.creatureOrPlaneswalker with
       noun := "target black or green creature or planeswalker", colors := #[.black, .green] }
-    (.sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage 5)])
+    (.sequence [.replace, .onPermanent (.dealDamage 5)])
     "This spell deals 5 damage to target black or green creature or planeswalker. If that permanent would die this turn, exile it instead"
     (castKind := .creatureDamage)
 

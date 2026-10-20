@@ -386,7 +386,7 @@ def afterSmiteWurmCleanup : Game :=
 #guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotLosesIndestructible
 #guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotExileIfDies
 
-/- `.replace .diesThisTurn .exile`: lethal damage exiles the creature, and
+/- `.replace`: lethal damage exiles the creature, and
 nonlethal damage leaves the replacement in place. -/
 
 def exileIfDiesOnBears : Game :=
