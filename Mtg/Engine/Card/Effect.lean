@@ -379,7 +379,7 @@ private def phraseWith (r : Resolution) (noun : String)
       match r.onSource? with
       | some action => PermanentAction.toNotation action "this creature" (sentence := true)
       | none =>
-        if r.isFra then "" else SpellResolution.toPhrase r noun
+        SpellResolution.toPhrase r noun
 
 /-- Oracle-style reminder from targeting and resolution. Source-deals-damage
 uses the creature as the subject rather than the generic `PermanentAction`

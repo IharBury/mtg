@@ -601,11 +601,26 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     | some #[o] => some (Int.ofNat o.status.loyaltyCounters)
     | _ => none
   | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
-  | .basicLandsYouControl | .opponentLands => g.boardNumber controller amount
-  | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
-  | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife
-  | .greatestToughnessThenPutCreatures | .lifeLostThisTurn
-  | .totalFlyingPower | .greatestToughness | .targetPlusOneCounters => none
+  | .colorsAmongOtherArtifacts =>
+    let colors := (g.permanentsOf controller).foldl (fun (acc : ColorSet) o =>
+      if o.printed.isArtifact && some o.id != sourceId then ColorSet.union acc o.printed.colors
+      else acc) ColorSet.empty
+    some ((Color.all.filter colors.contains).length)
+  | .planeswalkerTypes =>
+    let types := (g.permanentsOf controller).foldl (fun acc o =>
+      if o.printed.isPlaneswalker then
+        o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
+      else acc) (#[] : Array String)
+    some types.size
+  | .lifeLostThisTurn =>
+    some (g.player controller).lifeLostThisTurn
+  | .basicLandsYouControl | .opponentLands
+  | .totalFlyingPower | .greatestToughness | .targetPlusOneCounters =>
+    let tgt := ctx.targets.findSome? (fun | Target.permanent id => g.findObject? id | _ => none)
+    g.boardNumber controller amount tgt
+  | .otherSpellsManaValue | .removedPlusOnes
+  | .chosenX | .greatestPowerAndLoseLife
+  | .greatestToughnessThenPutCreatures => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

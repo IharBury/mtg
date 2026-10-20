@@ -150,21 +150,6 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
 def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (cause : Option GameObject := none) (source : Option GameObject := none) : Bool :=
-  let powerOk :=
-    match ab.youControlCreatureWithPower? with
-    | none => true
-    | some n => g.greatestPowerAmongCreatures controller ≥ n
-  let otherOk :=
-    match ab.anotherCreaturePowerAtMost? with
-    | none => true
-    | some n =>
-      match cause with
-      | some o => g.power o ≤ n
-      | none => true
-  let lifeOk :=
-    match ab.timing.gainedLifeAtLeast with
-    | none => true
-    | some n => (g.player controller).lifeGainedThisTurn ≥ n
   let hulklingOk :=
     match ab.effect.resolution, cause, source with
     | .«if» (.or [.causeGreaterPower, .causeGreaterToughness]) _, some entered, some hulkling =>
@@ -204,9 +189,10 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .may (.dealDamage .lastKnownPower .target _) (.sequence []) .ifYouDo =>
       !ab.firesOn .creatureYouControlDealtDamage || !g.sheHulkDamageUsedThisTurn
     | _ => true
-  powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
+  hulklingOk && causeOk && interveningOk &&
     g.fraInterveningHolds controller ab source cause &&
-    g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
+    g.boardConditionHolds controller ab.opts.condition (target := cause)
+      (source := source) (causeStatus := cause.map (·.status))
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/

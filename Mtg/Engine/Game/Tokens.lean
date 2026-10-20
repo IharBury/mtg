@@ -474,7 +474,7 @@ def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
 
 /-- Printed characteristics for a `TokenKind`. -/
-def tokenPrinted (k : TokenKind) : CardDef :=
+def tokenPrinted (k : TokenKind) (size : Nat := 0) : CardDef :=
   match k with
   | .treasure => treasureToken
   | .food => foodToken
@@ -536,7 +536,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
     { creatureToken "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
         (types := #[.artifact, .creature]) with
       keywordRule := .toxic 1 true }
-  | .shark => creatureToken "Shark" #["Shark"] 0 0 (some .blue) (keywords := Keyword.flying)
+  | .shark => creatureToken "Shark" #["Shark"] (Int.ofNat size) (Int.ofNat size) (some .blue) (keywords := Keyword.flying)
   | .gingerbrute =>
     { creatureToken "Gingerbrute" #["Food", "Golem"] 1 1
         (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
@@ -566,7 +566,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
-    (n : Nat) (tapped := false) (attacking := false) : Game :=
+    (n : Nat := 1) (tapped := false) (attacking := false) (size : Nat := 0) : Game :=
   if (g.player controller).lost then
     if n == 0 then { g with recentTokenIds := #[] }
     else { g with recentTokenIds := #[] }.logMsg "no token is created (CR 800.4b)"
@@ -575,7 +575,7 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     let mut g := g
     let mut ids : Array ObjectId := #[]
     let dest := if attacking then some g.defendingPlayer else none
-    let printed := tokenPrinted kind
+    let printed := tokenPrinted kind size
     let creature :=
       printed.isCreature || (g.replaceArtifactTokenWithDragon controller printed).isCreature
     for _ in [0:n] do

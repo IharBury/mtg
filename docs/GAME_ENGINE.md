@@ -62,8 +62,7 @@ The 50 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
 | `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
 | `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `cardsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
-| `FraResolve.lean` | Reality Fracture and Reality Fracture Commander (`Resolution.isFra`) resolver (`applyFra`, `applyDelayedSynthetic`). |
-| `EffectResolution.lean` | Unified `Effect` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, and `applyAbilityEffect`), plus `flushUnlessPays`. |
+| `EffectResolution.lean` | Unified `Effect` and `Resolution` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, `applyAbilityEffect`, and `applyFra`), plus `applyDelayedSynthetic` and `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
 | `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `interveningStillHolds` (CR 603.4), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |
 | `SpellResolution.lean` | Top-of-stack resolution (`resolveTop`), Aura attachment (`resolveAuraSpell`), Adventure exile (`resolveAdventureSpell`), and CR 608.2b target checks (`fraAbilityTargetsAllIllegal`). |
@@ -134,28 +133,22 @@ resolveTop (SpellResolution.lean:69)
   │
   ├─► 1. Activated Ability (or Modal Trigger with combined abilityEffect)
   │      `obj.abilityEffect = some e`
-  │      └─► EffectResolution.applyUnifiedAbility (EffectResolution.lean:1597)
-  │            ├─► applyFraResolution? (L59) ──► FraResolve.applyFra
-  │            │                                   ├─► FrcResolve.applyFrc (for .frc e)
-  │            │                                   └─► FraAbilities.applyFraAbility
-  │            ├─► Ability-specific Resolution arms
-  │            └─► Delegates to applyUnified via Resolution.toSpell
+  │      └─► EffectResolution.applyUnifiedAbility (EffectResolution.lean:3506)
+  │            └─► EffectResolution.applyUnified (isAbility := true)
   │
   ├─► 2. Triggered Ability (including Saga Chapters & Reflexive Triggers)
   │      `obj.triggeredAbility = some t`
   │      └─► TriggeredAbilities.applyTriggeredAbility (TriggeredAbilities.lean:3777)
-  │            ├─► Branch A: Compositional TriggerResolution (L3786–4593)
-  │            │     Uses TriggerArgs.lean (permanentsNamed, collectPlayers, triggerInt, triggerCount)
+  │            ├─► Branch A: Compositional TriggerResolution
+  │            │     Uses TriggerArgs.lean (permanentsNamed, cardsNamed, collectPlayers, triggerInt, triggerCount)
   │            │     + pause-aware sequence runner (`triggerSequenceRest`)
-  │            └─► Branch B: Effect.resolution fallback (L4594–4638)
+  │            └─► Branch B: Effect.resolution fallback
   │                  Delegates to applyUnified / applyUnifiedAbility
   │
   └─► 3. Spell (Instant, Sorcery, or Permanent Spell)
          `obj.abilityEffect == none && obj.triggeredAbility == none`
          ├─► Instant / Sorcery / Adventure / Prepare spell:
-         │     Resolves each chosen mode via EffectResolution.applyUnified (L847)
-         │       ├─► applyFraResolution? (L59) ──► FraResolve.applyFra ──► FrcResolve.applyFrc
-         │       └─► SpellResolution arms (L883–1471)
+         │     Resolves each chosen mode via EffectResolution.applyUnified
          └─► Permanent spell:
                resolveAuraSpell or putOntoBattlefield + afterPermanentEnters
 ```

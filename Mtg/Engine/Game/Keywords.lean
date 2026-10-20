@@ -361,7 +361,7 @@ partial def boardConditionHolds (g : Game) (p : PlayerId) (cond : ConditionSelec
   | .targetAttackingNontoken => target.any (fun o => o.status.attacking && !o.printed.isToken)
   | .targetAttacking => target.any (·.status.attacking)
   | .targetPowerAtMost most => target.any (fun o => o.isCreature && g.power o ≤ most)
-  | .anotherCreaturePowerAtMost _ => true
+  | .anotherCreaturePowerAtMost n => target.all (fun o => g.power o ≤ n)
   | .scriedThisTurn => pl.scriedThisTurn
   | .surveilledThisTurn => pl.surveilledThisTurn
   | .scriedOrSurveilledThisTurn => pl.scriedThisTurn || pl.surveilledThisTurn

@@ -34,8 +34,6 @@ import Mtg.Engine.Game.LibrarySearch
 import Mtg.Engine.Game.ResolutionHelpers
 import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
-import Mtg.Engine.Game.FraResolve
-import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
 import Mtg.Engine.Game.TriggeredAbilities
@@ -45,6 +43,7 @@ import Mtg.Engine.Game.Turns
 import Mtg.Engine.Game.PriorityActions
 import Mtg.Engine.Game.Mulligans
 import Mtg.Engine.Game.Decisions
+import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.Actions
 import Mtg.Engine.Game.Start
 
