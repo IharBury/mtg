@@ -135,18 +135,27 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
-/-- Whether paying this proposed spell or ability may spend Elf-restricted mana
-(CR 106.10): Elf spells, and activated abilities of Elf sources. -/
-def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+/-- Object whose types decide subtype / creature-source restrictions. -/
+def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
   match prop.kind with
-  | .spell =>
-    match g.findObject? prop.spellId with
-    | some o => g.hasSubtype o "Elf"
-    | none => false
+  | .spell => g.findObject? prop.spellId
   | .activatedAbility =>
     match prop.sourceId.bind g.findObject? with
-    | some src => g.hasSubtype src "Elf"
-    | none => g.hasSubtype prop.original "Elf"
+    | some src => some src
+    | none => some prop.original
+
+/-- Whether paying this proposed spell or ability may spend `subtype`-restricted
+mana (CR 106.6 / 106.10): `subtype` spells, and activated abilities of `subtype`
+sources (including changeling and cards in any zone). -/
+def proposedAllowsSubtypeRestricted (g : Game) (prop : ProposedSpell) (subtype : String) : Bool :=
+  match g.proposedRestrictionSource prop with
+  | some o => g.hasSubtype o subtype
+  | none => false
+
+/-- Whether paying this proposed spell or ability may spend Elf-restricted mana
+(CR 106.10): Elf spells, and activated abilities of Elf sources. -/
+abbrev proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  g.proposedAllowsSubtypeRestricted prop "Elf"
 
 /-- Whether paying this proposed spell may spend instant/sorcery-restricted mana. -/
 def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
@@ -157,29 +166,16 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     | none => false
   | .activatedAbility => false
 
-/-- Object whose types decide Hero / Villain / creature-source restrictions. -/
-def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
-  match prop.kind with
-  | .spell => g.findObject? prop.spellId
-  | .activatedAbility =>
-    match prop.sourceId.bind g.findObject? with
-    | some src => some src
-    | none => some prop.original
-
 /-- Whether paying this proposed spell or ability may spend Hero-restricted
 mana (MSH 72): Hero spells, and activated abilities of Hero sources
 (including changeling and cards in any zone). -/
-def proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o "Hero"
-  | none => false
+abbrev proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  g.proposedAllowsSubtypeRestricted prop "Hero"
 
 /-- Whether paying this proposed spell or ability may spend Villain-restricted
 mana (MSH 73): Villain spells, and activated abilities of Villain sources. -/
-def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o "Villain"
-  | none => false
+abbrev proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  g.proposedAllowsSubtypeRestricted prop "Villain"
 
 /-- Whether paying this proposed activation may spend creature-restricted mana
 (MSH 75). Casting a creature spell does not qualify. -/
@@ -204,25 +200,28 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
 
 /-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
+  let sourceSubtypes :=
+    match g.proposedRestrictionSource prop with
+    | some o => g.currentSubtypes o ++ g.auraAddedTypes o
+    | none => #[]
   match prop.kind with
-  | .activatedAbility => { equip := prop.activation.any (·.isEquip) }
+  | .activatedAbility =>
+    { equip := prop.activation.any (·.isEquip), sourceSubtypes }
   | .spell =>
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
         planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature
         legendary := o.isLegendary, artifact := o.printed.isArtifact
-        subtypes := o.printed.subtypes }
-    | none => {}
+        subtypes := o.printed.subtypes, sourceSubtypes }
+    | none => { sourceSubtypes }
 
 /-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
 def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedSpell) : Bool :=
   match r with
   | .none => true
-  | .elf => g.proposedAllowsElfRestricted prop
+  | .subtypeSpellOrAbility sub => g.proposedAllowsSubtypeRestricted prop sub
   | .instantOrSorcery => g.proposedAllowsInstRestricted prop
-  | .hero => g.proposedAllowsHeroRestricted prop
-  | .villain => g.proposedAllowsVillainRestricted prop
   | .cantNonartifact => g.proposedAllowsCantNonartifact prop
   | .creatureSource => g.proposedAllowsCreatureRestricted prop
   | .fra u => u.allows (g.proposedManaSpend prop)

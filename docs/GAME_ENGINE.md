@@ -4,9 +4,9 @@ This document describes the runtime state machine, module layering, casting/acti
 
 ---
 
-## 1. Module Layering & Inventory (55 Modules + `Game.lean`)
+## 1. Module Layering & Inventory (54 Modules + `Game.lean`)
 
-The 55 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
+The 54 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
 
 ### Layer 1: Core State & Representation
 | Module | Key Types & Entry Points |
@@ -62,10 +62,9 @@ The 55 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
 | `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
 | `FraHelpers.lean` | Target slot legality, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
-| `FraAbilities.lean` | Reality Fracture activated/loyalty ability resolver (`applyFraAbility`). |
-| `FrcResolve.lean` | Reality Fracture Commander resolver (`applyFrc`, `applyDelayedSynthetic`). |
-| `FraResolve.lean` | Reality Fracture (`Resolution.isFra`) dispatcher (`applyFra`, delegating `.frc` to `applyFrc` and falling back to `applyFraAbility`). |
-| `EffectResolution.lean` | Unified `Effect` interpreters for spells (`applyUnified`, `applyEffect`) and activated abilities (`applyUnifiedAbility`, `applyAbilityEffect`), plus `applyFraResolution?` and `flushUnlessPays`. |
+| `FrcResolve.lean` | Reality Fracture Commander resolver (`applyFrc?`, `applyDelayedSynthetic`). |
+| `FraResolve.lean` | Reality Fracture (`Resolution.isFra`) resolver (`applyFra`, delegating Commander steps to `applyFrc?`). |
+| `EffectResolution.lean` | Unified `Effect` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, and `applyAbilityEffect`), plus `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
 | `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
 | `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `interveningStillHolds` (CR 603.4), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |

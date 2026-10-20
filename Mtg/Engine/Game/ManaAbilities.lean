@@ -219,8 +219,7 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       | .addMana types (.fixed 1) .none => with_ (.fixed types)
       | .addMana #[] (.fixed 1) .anyColor => with_ (.oneOf anyColorMana 1)
       | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities s) =>
-        with_ (.oneOf anyColorMana 1)
-          (if s == "Hero" then .hero else if s == "Villain" then .villain else .none)
+        with_ (.oneOf anyColorMana 1) (.subtypeSpellOrAbility s)
       | .addMana #[] (.fixed 1) .artifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
       | .addMana #[] (.fixed 2) .creatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
       | .addMana #[] .equalSourcePower .anyColor => with_ (.oneOf anyColorMana power)

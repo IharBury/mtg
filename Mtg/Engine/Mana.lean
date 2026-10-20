@@ -317,14 +317,10 @@ end ManaCost
 inductive ManaUse where
   /-- Only casting spells of this subtype. -/
   | subtypeSpell (subtype : String)
-  /-- Only casting Elf spells or activating abilities of Elf sources (Woodland Weavemaster). -/
-  | elf
+  /-- Only casting spells of this subtype or activating abilities of sources of this subtype (CR 106.6). -/
+  | subtypeSpellOrAbility (subtype : String)
   /-- Only casting an instant or sorcery spell (Pelargir Survivor). -/
   | instantOrSorcery
-  /-- Only casting a Hero spell or activating an ability of a Hero source (Avengers Tower). -/
-  | hero
-  /-- Only casting a Villain spell or activating an ability of a Villain source (Villainous Hideout). -/
-  | villain
   /-- Cannot be spent to cast a nonartifact spell (Vibranium tokens, Hydraulic Helper). -/
   | cantNonartifact
   /-- Only activating abilities of creature sources in any zone (Shang-Chi; MSH 75). -/
@@ -348,9 +344,20 @@ inductive ManaUse where
   | equipmentOrEquip
   /-- Only casting an artifact spell (Castle Doom). -/
   | artifactSpell
-  /-- Only casting Dragon spells (Desolation of Smaug). -/
-  | dragonSpell
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace ManaUse
+
+/-- Only casting Elf spells or activating abilities of Elf sources (Woodland Weavemaster). -/
+@[match_pattern] abbrev elf : ManaUse := .subtypeSpellOrAbility "Elf"
+/-- Only casting a Hero spell or activating an ability of a Hero source (Avengers Tower). -/
+@[match_pattern] abbrev hero : ManaUse := .subtypeSpellOrAbility "Hero"
+/-- Only casting a Villain spell or activating an ability of a Villain source (Villainous Hideout). -/
+@[match_pattern] abbrev villain : ManaUse := .subtypeSpellOrAbility "Villain"
+/-- Only casting Dragon spells (Desolation of Smaug). -/
+@[match_pattern] abbrev dragonSpell : ManaUse := .subtypeSpell "Dragon"
+
+end ManaUse
 
 /-- Backward-compatible alias for `ManaUse` (CR 106.6). -/
 abbrev FraManaUse := ManaUse
@@ -363,6 +370,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaRestriction
 
+@[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaRestriction := .only (.subtypeSpellOrAbility subtype)
 @[match_pattern] abbrev elf : ManaRestriction := .only .elf
 @[match_pattern] abbrev instantOrSorcery : ManaRestriction := .only .instantOrSorcery
 @[match_pattern] abbrev hero : ManaRestriction := .only .hero
@@ -389,6 +397,8 @@ structure ManaSpend where
   artifact : Bool := false
   /-- Subtypes of the spell being cast. -/
   subtypes : Array String := #[]
+  /-- Subtypes of the spell or ability source. -/
+  sourceSubtypes : Array String := #[]
   /-- Activating an equip ability. -/
   equip : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -397,6 +407,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 def ManaUse.allows : ManaUse → ManaSpend → Bool
   | .elf, _ | .instantOrSorcery, _ | .hero, _ | .villain, _
   | .cantNonartifact, _ | .creatureSource, _ => false
+  | .subtypeSpellOrAbility sub, s => s.subtypes.contains sub || s.sourceSubtypes.contains sub
   | .notSpellsFromHand, s => !(s.spell && s.fromHand)
   | .planeswalkerSpell, s => s.spell && s.planeswalker
   | .noncreatureSpell, s => s.spell && s.noncreature
@@ -407,15 +418,12 @@ def ManaUse.allows : ManaUse → ManaSpend → Bool
       s.subtypes.contains "Saga")
   | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
   | .artifactSpell, s => s.spell && s.artifact
-  | .dragonSpell, s => s.spell && s.subtypes.contains "Dragon"
   | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
 
 /-- Short label for a restriction in pool notation. -/
 def ManaUse.label : ManaUse → String
-  | .elf => "Elf"
+  | .subtypeSpellOrAbility sub => sub
   | .instantOrSorcery => "instant/sorcery"
-  | .hero => "Hero"
-  | .villain => "Villain"
   | .cantNonartifact => "not nonartifact spell"
   | .creatureSource => "creature source"
   | .notSpellsFromHand => "not spells from hand"
@@ -426,23 +434,20 @@ def ManaUse.label : ManaUse → String
   | .dwarfEquipmentSagaSpell => "Dwarf, Equipment, and Saga spells"
   | .equipmentOrEquip => "Equipment spells and equip abilities"
   | .artifactSpell => "artifact spells"
-  | .dragonSpell => "Dragon spells"
   | .subtypeSpell sub => s!"{sub} spells"
 
 /-- A short note for the log describing `r`. -/
 def ManaRestriction.note : ManaRestriction → String
   | .none | .fra .fromTreasure => ""
-  | .elf => " (Elf spells and abilities)"
+  | .subtypeSpellOrAbility sub => s!" ({sub} spells and abilities)"
   | .instantOrSorcery => " (instant or sorcery spells)"
-  | .hero => " (Hero spells and abilities)"
-  | .villain => " (Villain spells and abilities)"
   | .cantNonartifact => " (not a nonartifact spell)"
   | .creatureSource => " (abilities of creature sources)"
   | .only u => s!" ({u.label})"
 
-/-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
+/-- Spend restriction for spells of `subtype`. -/
 def ManaUse.forSubtype (subtype : String) : ManaUse :=
-  if subtype == "Dragon" then .dragonSpell else .subtypeSpell subtype
+  .subtypeSpell subtype
 
 /-- Backward-compatible alias for `ManaUse.forSubtype`. -/
 abbrev FraManaUse.forSubtype := ManaUse.forSubtype

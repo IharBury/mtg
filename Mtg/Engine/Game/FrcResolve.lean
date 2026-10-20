@@ -46,19 +46,10 @@ private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → 
     | some o => if o.isOnBattlefield && pred o then g.destroyPermanent o else g
     | none => g) g
 
-private def creatureTokenOf (name : String) (subtypes : Array String) (p t : Int)
-    (color : Option Color := none) (keywords : Keywords := Keywords.none)
-    (types : Array CardType := #[.creature]) (toxic : Nat := 0) (cantBlock : Bool := false) : CardDef :=
-  let keywordRule : CardKeywordRule :=
-    if toxic != 0 then .toxic toxic cantBlock
-    else if cantBlock then .cantBlock
-    else .none
-  { creatureToken name subtypes p t color keywords types with keywordRule }
-
 private def frcPrinted (k : TokenKind) (x : Nat) : CardDef :=
   match k with
   | .shark =>
-    creatureTokenOf "Shark" #["Shark"] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
+    creatureToken "Shark" #["Shark"] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
   | _ => tokenPrinted k
 
 private def makeFrc (g : Game) (p : PlayerId) (k : TokenKind) (n : Nat := 1) (x : Nat := 0) : Game :=
@@ -263,8 +254,6 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
           (additionalCreature := true)
         if first then g.mapObjectStatus (g.object! o.id) (fun s => { s with firstStrikeOnYourTurn := true })
         else g
-  | .createTokens .map (.fixed 1) false _ _ =>
-    some (g.makeFrc controller .map)
   | .sacrifice .archonCruelty _ =>
     some <|
       match targets[0]? with
@@ -536,8 +525,14 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
       g.loseLife pid (g.player pid).lifeLostThisTurn)
   | .amass (.fixed 1) "Zombie" false .youLose1Life =>
     some ((g.loseLife controller 1).amassZombies controller 1)
-  | .createTokens .myr (.fixed n) false _ _ =>
-    some (g.makeFrc controller .myr n.toNat)
+  | .createTokens k@(.myr) (.fixed n) false _ .none
+  | .createTokens k@(.insect) (.fixed n) false _ .none
+  | .createTokens k@(.kobold) (.fixed n) false _ .none
+  | .createTokens k@(.map) (.fixed n) false _ .none =>
+    some (g.makeFrc controller k n.toNat)
+  | .createTokens k@(.warrior) .chosenX false _ .none
+  | .createTokens k@(.citizen) .chosenX false _ .none =>
+    some (g.makeFrc controller k (g.spellX))
   | .createTokens .shark .spellManaValue false _ _ =>
     let x :=
       match g.frcCause? with
@@ -548,8 +543,6 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
     some (g.makeFrc controller .shark 1 g.knownN)
   | .createTokens .mite (.fixed 1) false _ .lose1Life =>
     some ((g.loseLife controller 1).makeFrc controller .mite)
-  | .createTokens .insect (.fixed n) false _ _ =>
-    some (g.makeFrc controller .insect n.toNat)
   | .revealLibrary (.top 5) (.returnToHand .factOrFiction _) _ =>
     let lib := (g.player controller).library
     let n := min 5 lib.size
@@ -574,12 +567,6 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
         let (g, _) := g.move id (.graveyard controller) none
         g.logMsg s!"{o.name} goes to {pl.name}'s graveyard"
       | none => g) g)
-  | .createTokens .kobold (.fixed 1) false _ _ =>
-    some (g.makeFrc controller .kobold)
-  | .createTokens .warrior .chosenX false _ _ =>
-    some (g.makeFrc controller .warrior (g.spellX))
-  | .createTokens .citizen .chosenX false _ .none =>
-    some (g.makeFrc controller .citizen (g.spellX))
   | .grant .explored .source =>
     let lib := (g.player controller).library
     some <|
@@ -605,7 +592,7 @@ def applyFrc? (g : Game) (controller : PlayerId) (_effect : Effect) (r : Resolut
       | some o =>
         let counters := o.status.plusOnePlusOne
         g.setObject { o with printed :=
-          { creatureTokenOf "Phyrexian" #["Phyrexian"] 0 0 (types := #[.artifact, .creature]) with
+          { creatureToken "Phyrexian" #["Phyrexian"] 0 0 (types := #[.artifact, .creature]) with
             name := "Phyrexian" } }
           |>.logMsg s!"{o.name} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
       | none => g

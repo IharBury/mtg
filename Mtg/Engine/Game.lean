@@ -35,7 +35,7 @@ import Mtg.Engine.Game.ResolutionHelpers
 import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
 import Mtg.Engine.Game.FraHelpers
-import Mtg.Engine.Game.FraAbilities
+import Mtg.Engine.Game.FrcResolve
 import Mtg.Engine.Game.FraResolve
 import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
