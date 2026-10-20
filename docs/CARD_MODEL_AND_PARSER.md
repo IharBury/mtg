@@ -129,12 +129,12 @@ Recent refactorings unified trigger and spell parameters around six composable s
 ### 2.6 `StaticAbility` Structure (`Mtg/Engine/Card/StaticAbility.lean`)
 `FraStatic` and `StaticShape` are both type aliases (`abbrev`) for `StaticAbility`. After consolidating the 3 separate static-ability inductives and parameterizing overlapping lord, attachment, and replacement variants inside the sub-inductives, `StaticAbility` has **9 total constructors** (all 9 field-bearing) aligned with the CR 604 / CR 613 / CR 614 static-ability categories:
 - `.typeChange (which : TypeStatic)` — CR 613.1d Layer 4 type-changing static effects
-- `.ability (which : AbilityStatic)` — CR 613.1f Layer 6 ability-adding and ability-removing static effects (26 constructors, including parameterized `creaturesYouControlHave`, `keywordIfYouControlOtherSubtype`, `creaturesWithPlusOneHave`, and `enchantedLosesAbilitiesNoUntap`)
-- `.cda (which : CdaStatic)` — CR 604.3 / CR 613.4a Layer 7a characteristic-defining P/T abilities
-- `.pt (which : PtStatic)` — CR 613.4c Layer 7c power/toughness-modifying static effects (22 constructors, including parameterized `creaturesYouControlGet`, `enchantedCreatureGetsAndHas`, and `equippedCreatureGetsAndHas`)
-- `.combat (which : CombatStatic)` — CR 508 / CR 509 / CR 510 combat requirements, restrictions, and damage assignment
-- `.costCast (which : CostCastStatic)` — CR 601.2f / CR 601.3 / CR 305.1 cost modifiers, casting permissions, and casting restrictions
-- `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects (20 constructors, including parameterized `doesntUntap`, `exileOpponentsDyingCreatures`, `extraCounter`, and `noncombatDamageBonus`)
+- `.ability (which : AbilityStatic)` — CR 613.1f Layer 6 ability-adding and ability-removing static effects (22 constructors, including parameterized `creaturesYouControlHave`, `permanentsYouControlHave`, `keywordIfYouControlOtherSubtype`, `creaturesWithPlusOneHave`, `keywordIfPlusOneThisTurn`, and `enchantedLosesAbilitiesNoUntap`)
+- `.cda (which : CdaStatic)` — CR 604.3 / CR 613.4a Layer 7a characteristic-defining P/T abilities (7 constructors, evaluated uniformly by `Game.cdaValues` in `PowerToughness.lean`)
+- `.pt (which : PtStatic)` — CR 613.4c Layer 7c power/toughness-modifying static effects (17 constructors, including parameterized `creaturesYouControlGet`, `attachedCreatureGetsAndHas`, `legendaryOrNonlegendaryCreaturesGet`, `thresholdGets`, `getsIfEnduringStory`, and `getsPowerPerControlled`, evaluated by `Game.attachedStatBonus`, `Game.lordStatBonus`, and `Game.selfStatBonus` in `PowerToughness.lean`)
+- `.combat (which : CombatStatic)` — CR 508 / CR 509 / CR 510 combat requirements, restrictions, and damage assignment (15 constructors, including parameterized `cantBeBlockedCount`, `cantBeBlockedByPower`, and `attackDespiteDefender`)
+- `.costCast (which : CostCastStatic)` — CR 601.2f / CR 601.3 / CR 305.1 cost modifiers, casting permissions, and casting restrictions (18 constructors, including parameterized `instantSorceryCostLessEqualPower`)
+- `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects (19 constructors, including parameterized `doesntUntap`, `exileOpponentsDyingCreatures`, `extraCounter`, `noncombatDamageBonus`, and `maximumHandSize`)
 - `.keyword (which : KeywordStatic)` — CR 702 / CR 303.4 / CR 605 keyword, enchant, and intrinsic mana static abilities
 - `.printed (text : String)` — fallback printed text for unmodeled lines
 

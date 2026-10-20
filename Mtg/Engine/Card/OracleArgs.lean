@@ -518,40 +518,41 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .enchantedCreatureGets p t => return .enchantedCreatureGets (← takeInt p) (← takeInt t)
   | .equippedCreatureGets p t => return .equippedCreatureGets (← takeInt p) (← takeInt t)
   | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeStrs ss)
-  | .cantBeBlockedExceptBy n => return .cantBeBlockedExceptBy (← takeNat n)
-  | .cantBeBlockedByMoreThan n => return .cantBeBlockedByMoreThan (← takeNat n)
+  | .combat (.cantBeBlockedCount n maxBlockers) =>
+    return .combat (.cantBeBlockedCount (← takeNat n) maxBlockers)
   | .enchantedIsOnlySubtypeCantAttackOrBlock s =>
     return .enchantedIsOnlySubtypeCantAttackOrBlock (← takeStr s)
-  | .pt (.enchantedCreatureGetsAndHas p t k w) =>
-    let p ← takeInt p
-    let t ← takeInt t
-    let w ← if w == 0 then pure 0 else takeNat w
-    return .pt (.enchantedCreatureGetsAndHas p t k w)
+  | .pt (.attachedCreatureGetsAndHas eq p t k w) =>
+    if p == 0 && t == 0 then
+      let w ← if w == 0 then pure 0 else takeNat w
+      return .pt (.attachedCreatureGetsAndHas eq 0 0 k w)
+    else
+      let p ← takeInt p
+      let t ← takeInt t
+      let w ← if w == 0 then pure 0 else takeNat w
+      return .pt (.attachedCreatureGetsAndHas eq p t k w)
   | .ability (.keywordIfYouControlOtherSubtype k s) =>
     return .ability (.keywordIfYouControlOtherSubtype k (← takeStr s))
   | .cantAttackUnlessYouControlNOther n s =>
     return .cantAttackUnlessYouControlNOther (← takeNat n) (← takeStr s)
-  | .legendaryCreaturesGetAndWard p t w =>
-    return .legendaryCreaturesGetAndWard (← takeInt p) (← takeInt t) (← takeNat w)
-  | .nonlegendaryCreaturesGet p t => return .nonlegendaryCreaturesGet (← takeInt p) (← takeInt t)
-  | .pt (.equippedCreatureGetsAndHas p t k w) =>
+  | .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w) =>
     let p ← takeInt p
     let t ← takeInt t
-    let w ← if w == 0 then pure 0 else takeNat w
-    return .pt (.equippedCreatureGetsAndHas p t k w)
-  | .thresholdGets p t => return .thresholdGets (← takeInt p) (← takeInt t)
-  | .cantBeBlockedByPowerAtMost n => return .cantBeBlockedByPowerAtMost (← takeInt n)
-  | .getsAndHasIfEnduringStory p t k =>
-    return .getsAndHasIfEnduringStory (← takeInt p) (← takeInt t) k
-  | .creaturesYouControlGetIfEnduringStory p t =>
-    return .creaturesYouControlGetIfEnduringStory (← takeInt p) (← takeInt t)
+    let w ← if legendary then takeNat w else pure 0
+    return .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w)
+  | .pt (.thresholdGets p t k) =>
+    if k == Keywords.none then return .thresholdGets (← takeInt p) (← takeInt t)
+    else return ab
+  | .combat (.cantBeBlockedByPower n atLeast) =>
+    return .combat (.cantBeBlockedByPower (← takeInt n) atLeast)
+  | .pt (.getsIfEnduringStory p t k team) =>
+    return .pt (.getsIfEnduringStory (← takeInt p) (← takeInt t) k team)
   | .artifactsAndCreaturesHaveWardIfEnduringStory n =>
     return .artifactsAndCreaturesHaveWardIfEnduringStory (← takeNat n)
   | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
     return .creaturesCantAttackYouUnlessPayIfEnduringStory (← takeNat n)
   | .otherSubtypeHaveTapAddOneOf ss m =>
     return .otherSubtypeHaveTapAddOneOf (← takeStrs ss) m
-  | .cantBeBlockedByPowerAtLeast n => return .cantBeBlockedByPowerAtLeast (← takeInt n)
   | .equipAbilitiesTargetingThisCostLess n =>
     return .equipAbilitiesTargetingThisCostLess (← takeNat n)
   | .chosenTypeCreaturesGet p t => return .chosenTypeCreaturesGet (← takeInt p) (← takeInt t)
@@ -569,7 +570,8 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
     return .youAndOtherSubtypeHaveHexproofIfShield (← takeStr s)
   | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeStr s) (← takeNat n)
   | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
-  | .maximumHandSize n => return .maximumHandSize (← takeNat n)
+  | .rule (.maximumHandSize n) =>
+    if n == 0 then return .noMaximumHandSize else return .maximumHandSize (← takeNat n)
   | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
   | .typeSpellsCostLess ty n =>
     return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
@@ -578,10 +580,9 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
   | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
   | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
-  | .enchantedCreatureHasWard n => return .enchantedCreatureHasWard (← takeNat n)
   | .opponentsCreaturesGet p t => return .opponentsCreaturesGet (← takeInt p) (← takeInt t)
-  | .getsPowerPerOtherArtifact p => return .getsPowerPerOtherArtifact (← takeInt p)
-  | .getsPowerPerAttachedEquipment p => return .getsPowerPerAttachedEquipment (← takeInt p)
+  | .pt (.getsPowerPerControlled p attachedEquipment) =>
+    return .pt (.getsPowerPerControlled (← takeInt p) attachedEquipment)
   | .getsIfGyCreatureCards n p t =>
     return .getsIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
   | .enchantedCreatureGetsHasAndTypes p t k ts =>

@@ -173,6 +173,13 @@ def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
       match ab with
       | .flyingIfPlusOneThisTurn =>
         if o.status.gotPlusOneThisTurn then Keywords.merge acc Keyword.flying else acc
+      | .ability (.keywordIfYouControlOtherSubtype k t) =>
+        if o.isOnBattlefield &&
+            (match o.controller with
+             | some p => (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)
+             | none => false) then
+          Keywords.merge acc k
+        else acc
       | _ => acc) Keywords.none
   let fromTeam :=
     match o.controller with
@@ -230,16 +237,7 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
 /-- Haste from printed text, attachments, enduring story, counters, or
 “haste as long as you control another …”. Lost abilities are omitted. -/
 def hasHaste (g : Game) (o : GameObject) : Bool :=
-  (g.currentKeywords o).haste ||
-  (o.isOnBattlefield &&
-    o.staticAbilities.any (fun ab =>
-      match ab.hasteIfOtherSubtype? with
-      | none => false
-      | some t =>
-        match o.controller with
-        | none => false
-        | some p =>
-          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+  (g.currentKeywords o).haste
 
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
@@ -414,21 +412,9 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
     | .always => true
     | .unless cond => !g.boardConditionHolds p cond
 
-/-- Okoye: attacking creature tokens you control have first strike. -/
-def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && o.status.attacking && o.printed.isToken &&
-    match o.controller with
-    | none => false
-    | some p =>
-      (g.permanentsOf p).any (fun src =>
-        src.staticAbilities.any (fun
-          | .attackingTokensHave k => k.firstStrike
-          | _ => false))
-
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
 def hasFirstStrike (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike) ||
-    g.okoyeGrantsFirstStrike o
+  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike)
 
 /-- Whether `o` has double strike (CR 702.4). -/
 def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
@@ -484,28 +470,13 @@ def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has lifelink, printed, granted until end of turn, or from a
 lifelink counter (CR 702.15). -/
 def hasLifelink (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.lifelink) ||
-  (o.isOnBattlefield &&
-    o.staticAbilities.any (fun ab =>
-      match ab.lifelinkIfOtherSubtype? with
-      | none => false
-      | some t =>
-        match o.controller with
-        | none => false
-        | some p =>
-          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+  g.hasKeyword o (·.lifelink)
 
 /-- Whether `o` has menace, printed or granted until end of turn (CR 702.111).
 Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (g : Game) (o : GameObject) : Bool :=
-  (g.currentKeywords o).menace ||
-  (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
-    match o.controller with
-    | none => false
-    | some p =>
-      (g.permanentsOf p).any (fun src =>
-        src.staticAbilities.any StaticAbility.creaturesWithPlusOneHaveMenace))
+  (g.currentKeywords o).menace
 
 /-- Minimum number of creatures required to block `o`, or `0` if unrestricted.
 Menace is 2; Troll of Khazad-dûm is 3. -/
