@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.StatBonuses
+import Mtg.Engine.Game.PowerToughness
 
 /-!
 # Zone changes (CR 400)

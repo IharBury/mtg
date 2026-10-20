@@ -391,8 +391,7 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
   if o.printed.entersWithIndestructibleCounter then
     let n := g.extraCountersOn o.controller 1
-    let g := g.setObject { o with status :=
-      { o.status with indestructibleCounters := o.status.indestructibleCounters + n } }
+    let g := g.setObject { o with status := o.status.addCounters .indestructible n }
     g.logMsg s!"{o.name} enters with an indestructible counter"
   else g
 

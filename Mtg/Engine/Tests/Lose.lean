@@ -93,7 +93,7 @@ missing target, and a creature that has left lose nothing. -/
 #guard
   let marked :=
     let o := obj board "Bear"
-    board.setObject { o with status := { o.status with indestructibleCounters := 1 } }
+    board.mapObjectStatus o (·.setCounter .indestructible 1)
   marked.hasIndestructible (obj marked "Bear") &&
     lostFlag (step marked indestructible
       (targets := #[Target.permanent (pid marked "Bear")])) "Bear"

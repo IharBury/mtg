@@ -15,8 +15,8 @@ namespace Game
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{o.name} has no indestructible counter"
-  let g := g.setObject { o with status :=
-    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
+  let g := g.mapObjectStatus o (fun s =>
+    s.setCounter .indestructible (s.indestructibleCounters - 1))
   return g.logMsg s!"{o.name} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/

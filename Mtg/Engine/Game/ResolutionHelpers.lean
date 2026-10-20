@@ -162,8 +162,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction) 
     g.grantUntilEotLogged o k
   | .putCounters (.ofKind .indestructible _) _ => g.addIndestructibleCounter o
   | .putCounters (.ofKind .doubleStrike _) _ =>
-    let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
-      { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + 1 } })
+    let g := g.mapObjectStatus o (·.addCounters .doubleStrike 1)
     g.logMsg s!"{o.name} gets a double strike counter"
   | .putCounters (.ofKind .burden _) _ => g.addBurdenCounter o
   | .tap _ true => g.becomeTapped o

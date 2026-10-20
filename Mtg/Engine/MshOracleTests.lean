@@ -2074,7 +2074,7 @@ def sheHulkDamageOnceOk : Bool :=
   let she := namedPermanent g "The Sensational She-Hulk"
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.mapObjectStatus giant (fun s => { s with indestructibleCounters := 1 })
+  let g := g.mapObjectStatus giant (·.setCounter .indestructible 1)
   let giant := namedPermanent g "Hill Giant"
   let g := g.markDamageOn bears 3 "Bears are dealt 3 damage"
   g.waitingTriggers.any (fun t =>
@@ -3439,8 +3439,7 @@ def avengersLandSearchOk : Bool :=
     | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) =>
       let kept := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
       let land := namedPermanent kept "Forest"
-      let kept := kept.setObject { land with status :=
-        { land.status with indestructibleCounters := 1 } }
+      let kept := kept.mapObjectStatus land (·.setCounter .indestructible 1)
       let kept := kept.applyEffect ⟨0⟩ Effect.destroyLandSearchBasic
         #[Target.permanent (namedPermanent kept "Forest").id]
       kept.battlefield.any (fun o => o.name == "Forest") &&

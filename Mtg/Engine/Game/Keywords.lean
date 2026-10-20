@@ -368,7 +368,6 @@ def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has lifelink, printed, granted until end of turn, or from a
 lifelink counter (CR 702.15). -/
 def hasLifelink (g : Game) (o : GameObject) : Bool :=
-  o.status.lifelinkCounters > 0 ||
   g.hasKeyword o (·.lifelink) ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
@@ -594,7 +593,6 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
 
 def hasIndestructible (g : Game) (o : GameObject) : Bool :=
   ((g.currentKeywords o).indestructible ||
-    o.status.indestructibleCounters > 0 ||
     g.loreThresholdProtection o ||
     g.leftoverIndestructible o) &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
@@ -618,7 +616,6 @@ def equippedCreatesCombatTreasures (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has trample, printed, granted, or from a lord (CR 702.19). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
   (g.currentKeywords o).trample ||
-  o.status.trampleCounters > 0 ||
   (o.isOnBattlefield && g.battlefield.any (fun src => g.grantsTrampleTo src o)) ||
   g.equippedCreatesCombatTreasures o
 

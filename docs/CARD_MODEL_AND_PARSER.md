@@ -20,7 +20,7 @@ This document explains the data structures in `Mtg/Engine/Card/` (and its founda
 
 | File | Role |
 | --- | --- |
-| `Keywords.lean` | `Keywords` (22 boolean flags + reflection table `Keywords.fields` mapping Oracle names to getters/setters) and `KeywordCounters` (8 boolean counter flags). |
+| `Keywords.lean` | `Keywords` (22 boolean flags + reflection table `Keywords.fields` mapping Oracle names to getters/setters) and `KeywordCounters` (all 11 CR 122.1b keyword counter flags projected to `Keywords` via `KeywordCounters.toKeywords`). |
 | `Text.lean` | Shared English number/phrase formatting helpers (`englishNumber`, `timesPhrase`, `indefinite`, `signedStat`, etc.). |
 | `Counter.lean` | `CounterKind` (29 counter kinds) with `oracleName`, `countersPhrase`, and token matcher `matchPhrase`. |
 | `Token.lean` | `TokenKind` (37 predefined token kinds for HOB/HOC/MSH/FRA) and `createPhrase`. |

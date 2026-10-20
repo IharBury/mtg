@@ -151,8 +151,8 @@ def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (
       let (b, left) := take s.plusOnePlusOne left
       let (c, left) := take s.shield left
       let (d, _) := take s.indestructibleCounters left
-      { s with loyaltyCounters := s.loyaltyCounters - a, plusOnePlusOne := s.plusOnePlusOne - b
-               shield := s.shield - c, indestructibleCounters := s.indestructibleCounters - d }
+      ({ s with loyaltyCounters := s.loyaltyCounters - a, plusOnePlusOne := s.plusOnePlusOne - b
+                shield := s.shield - c }).setCounter .indestructible (s.indestructibleCounters - d)
   (g.setObject { o with status := s' }).logMsg s!"Counters are removed from {o.name}"
 
 /-- The resolving activated or triggered ability's stack object. -/

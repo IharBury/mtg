@@ -4,9 +4,9 @@ This document describes the runtime state machine, module layering, casting/acti
 
 ---
 
-## 1. Module Layering & Inventory (58 Modules + `Game.lean`)
+## 1. Module Layering & Inventory (55 Modules + `Game.lean`)
 
-The 58 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
+The 55 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
 
 ### Layer 1: Core State & Representation
 | Module | Key Types & Entry Points |
@@ -23,16 +23,14 @@ The 58 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | --- | --- |
 | `Designations.lean` | Enduring story, The Ring / Ring-bearer (`setRingBearer`), City's Blessing (`checkAscend`), shadow counters. |
 | `Phasing.lean` | Phasing out/in (`phaseOut`, `phaseIn`, `phaseInControlled`) and `removeFromCombat`. |
-| `BasePT.lean` | Layer 7a/7b CDAs and base P/T overrides (`characteristicBasePT`). |
 | `Allocation.lean` | ID/timestamp allocation (`allocId`, `bumpTime`, `allocObject`, `putStackEntry`, `putStackAbility`). |
 | `Tokens.lean` | Predefined token `CardDef`s and token creation (`createToken`, `createKindTokens`, `empowerJace`) with token-doubling/replacement support. |
 | `Attachments.lean` | Aura/Equipment attachment & cleanup (`attachSourceTo`, `unattachFrom`, `ceaseToExist`). |
-| `StatBonuses.lean` | Layer 7c continuous P/T bonuses (`lordStatBonus`, `attachedStatBonus`, `fraStatBonus`, `snapshotPT`) and effective subtypes (`currentSubtypes`, `hasSubtype`). |
+| `PowerToughness.lean` | Layer 7a/7b CDAs and base P/T overrides (`characteristicBasePT`, CR 604.3 / 613.4a–b), Layer 7c continuous P/T bonuses (`lordStatBonus`, `attachedStatBonus`, `fraStatBonus`, `snapshotPT`, CR 613.4c), effective subtypes (`currentSubtypes`, `hasSubtype`, CR 613.1d), public P/T queries (`basePower`, `baseToughness`, `power`, `toughness`, `greatestPowerAmongCreatures`), and blocker lookups (`blockersOf`, `creaturesBlockedBy`). |
 | `Movement.lean` | Zone-change engine (`Game.move`, `moveToOwnerGraveyard`, `moveSimultaneousToGraveyard`, `putOntoBattlefield`, `becomePrepared`/`unprepare`). Allocates a new `ObjectId` on every zone change (CR 400.7), records `(oldId, newId)` in `g.movedIds`, captures LKI snapshots, applies exile replacement effects, and queues dies/LTB/discard triggers. |
 | `Leaving.lean` | Multiplayer win/loss & CR 800.4 cleanup (`decideGameIfFinished`, `changeControl`, `endControlChangingEffect`, `redirectPendingAfterLeave`, `playerLeavesGame`, `emptyManaPools`). |
 | `Library.lean` | Drawing (`drawOneCard`, `draw`), `beginRecruit`, `shuffleLibrary`, `requestShuffle`, `moveIdsInOrder`, `putIdsOnTop`, `requestOrderInto`. |
 | `Keywords.lean` | Effective keywords (`currentKeywords`, `fraGrantedKeywords`), `entersTapped`, attack/block legality (`canAttack`, `canBlock`), `hasHexproof`, `frcProtectedFrom`, `hasIndestructible`, `hasTrample`. |
-| `PowerToughness.lean` | Public P/T queries (`basePower`, `baseToughness`, `power`, `toughness`, `greatestPowerAmongCreatures`) and blocker lookups (`blockersOf`, `creaturesBlockedBy`). |
 | `CombatAssignment.lean` | Lethal damage calculation (`lethalRemaining`), `creaturesAssigningCombatDamage`, `needsCombatDamageChoice`. |
 | `StateBasedActions.lean` | CR 704 SBA loop (`checkSBACounted`, `checkSBA`, `firstLegendRuleChoice?`). |
 | `Timing.lean` | Priority & timing (`playersReceivePriority`, `asSorcery?`, `splitSecondOnStack`, `hasPriority`, `canPlayLand`, `mayPlayFromExile`/`mayPlayFromGraveyard`/`mayPlayFromLibraryTop`). |
@@ -69,9 +67,8 @@ The 58 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `FraResolve.lean` | Reality Fracture (`Resolution.isFra`) dispatcher (`applyFra`, delegating `.frc` to `applyFrc` and falling back to `applyFraAbility`). |
 | `EffectResolution.lean` | Unified `Effect` interpreters for spells (`applyUnified`, `applyEffect`) and activated abilities (`applyUnifiedAbility`, `applyAbilityEffect`), plus `applyFraResolution?` and `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
-| `Chapters.lean` | Saga chapter helpers and `interveningStillHolds` (CR 603.4). |
 | `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
-| `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |
+| `TriggeredAbilities.lean` | Compositional `TriggerResolution` handlers (`applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, etc.), `interveningStillHolds` (CR 603.4), `applyTriggeredAbility`, `resumeTriggerSequence`, `chooseTriggerOr`, `putAttackTriggersOnStack`, `putBlockedTriggersOnStack`. |
 | `SpellResolution.lean` | Top-of-stack resolution (`resolveTop`), Aura attachment (`resolveAuraSpell`), Adventure exile (`resolveAdventureSpell`), and CR 608.2b target checks (`fraAbilityTargetsAllIllegal`). |
 
 ### Layer 5: Combat, Turn Structure, Decisions & Top-Level Dispatch

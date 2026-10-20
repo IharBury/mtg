@@ -6,16 +6,14 @@ import Mtg.Engine.Game.Player
 import Mtg.Engine.Game.Core
 import Mtg.Engine.Game.Designations
 import Mtg.Engine.Game.Phasing
-import Mtg.Engine.Game.BasePT
 import Mtg.Engine.Game.Allocation
 import Mtg.Engine.Game.Tokens
 import Mtg.Engine.Game.Attachments
-import Mtg.Engine.Game.StatBonuses
+import Mtg.Engine.Game.PowerToughness
 import Mtg.Engine.Game.Movement
 import Mtg.Engine.Game.Leaving
 import Mtg.Engine.Game.Library
 import Mtg.Engine.Game.Keywords
-import Mtg.Engine.Game.PowerToughness
 import Mtg.Engine.Game.CombatAssignment
 import Mtg.Engine.Game.StateBasedActions
 import Mtg.Engine.Game.Timing
@@ -42,7 +40,6 @@ import Mtg.Engine.Game.FraResolve
 import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
-import Mtg.Engine.Game.Chapters
 import Mtg.Engine.Game.TriggeredAbilities
 import Mtg.Engine.Game.SpellResolution
 import Mtg.Engine.Game.Combat
@@ -145,16 +142,14 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Core`: Game state core
 - `Designations`: Player designations
 - `Phasing`: Attachments in play and phasing (CR 702.26)
-- `BasePT`: Characteristic-defining P/T (CR 604.3)
 - `Allocation`: Object allocation
 - `Tokens`: Tokens (CR 111)
 - `Attachments`: Attach and unattach (CR 701.3)
-- `StatBonuses`: Continuous stat bonuses (CR 613)
+- `PowerToughness`: Characteristic-defining P/T, continuous stat bonuses, and current P/T (CR 604.3 / 613.4)
 - `Movement`: Zone changes (CR 400)
 - `Leaving`: Game end and leaving the game (CR 104 / 800.4)
 - `Library`: Draws, shuffles, and library order (CR 121)
 - `Keywords`: Current keywords (CR 613.1f)
-- `PowerToughness`: Current power and toughness (CR 613.4)
 - `CombatAssignment`: Combat damage assignment (CR 510.1)
 - `StateBasedActions`: State-based actions (CR 704)
 - `Timing`: Priority and play timing (CR 117 / 116.2a)
@@ -177,7 +172,6 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ModeledTriggers`: Modeled trigger resolution
 - `EffectResolution`: Unified effect resolution (CR 608)
 - `CastExtras`: Optional costs, cascade, and the Ring
-- `Chapters`: Saga chapter resolution (CR 714.3)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)
 - `Combat`: Combat (CR 506–510)

@@ -188,7 +188,7 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
                 |>.logMsg s!"A counter is removed from {o.name}"
             else if o.status.indestructibleCounters > 0 then
               g.mapObjectStatus o (fun s =>
-                { s with indestructibleCounters := s.indestructibleCounters - 1 })
+                s.setCounter .indestructible (s.indestructibleCounters - 1))
                 |>.logMsg s!"A counter is removed from {o.name}"
             else g.logMsg "A counter is removed from the creature"
           g.draw controller 1

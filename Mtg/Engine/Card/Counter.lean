@@ -9,8 +9,8 @@ puts any one of them; `Status` stores each kind in its own field.
 
 namespace Mtg.Engine
 
-/-- A kind of counter a permanent can have (CR 122.1). Keyword counters other
-than trample, lifelink, and indestructible share `KeywordCounters`. -/
+/-- A kind of counter a permanent can have (CR 122.1). Keyword counters share
+`KeywordCounters` (CR 122.1b). -/
 inductive CounterKind where
   | plusOnePlusOne
   | minusOneMinusOne

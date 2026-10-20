@@ -160,10 +160,6 @@ structure Status where
   chosenOdd : Option Bool := none
   /-- Lore counters on a Saga (CR 714). -/
   lore : Nat := 0
-  /-- Indestructible counters. -/
-  indestructibleCounters : Nat := 0
-  /-- Lifelink counters (Arwen, Mortal Queen). -/
-  lifelinkCounters : Nat := 0
   /-- Creature type chosen as this permanent entered (Unexpected Party). -/
   chosenCreatureType : Option String := none
   /-- Creatures this player controls cannot block this attacker this turn
@@ -194,10 +190,7 @@ structure Status where
   quest : Nat := 0
   /-- Invasion counters (Alien Invasion). -/
   invasion : Nat := 0
-  /-- Trample counters (Beorn the Fierce). -/
-  trampleCounters : Nat := 0
-  /-- Haste, flying, and the other keyword counters Super-Adaptoid copies.
-  Trample, lifelink, and indestructible use their own fields. -/
+  /-- Keyword counters on this permanent (CR 122.1b). -/
   keywordCounters : KeywordCounters := {}
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
   combatDamageCreatesTreasure : Bool := false
@@ -277,6 +270,15 @@ def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
     damage := s.damage + n
     dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
 
+/-- Trample counters on this permanent (CR 122.1b). -/
+abbrev trampleCounters (s : Status) : Nat := s.keywordCounters.trample
+
+/-- Indestructible counters on this permanent (CR 122.1b). -/
+abbrev indestructibleCounters (s : Status) : Nat := s.keywordCounters.indestructible
+
+/-- Lifelink counters on this permanent (CR 122.1b). -/
+abbrev lifelinkCounters (s : Status) : Nat := s.keywordCounters.lifelink
+
 /-- Number of counters of `kind` on this permanent (CR 122.1). -/
 def counter (s : Status) : CounterKind → Nat
   | .plusOnePlusOne => s.plusOnePlusOne
@@ -292,9 +294,9 @@ def counter (s : Status) : CounterKind → Nat
   | .quest => s.quest
   | .invasion => s.invasion
   | .influence => s.influence
-  | .trample => s.trampleCounters
-  | .indestructible => s.indestructibleCounters
-  | .lifelink => s.lifelinkCounters
+  | .trample => s.keywordCounters.trample
+  | .indestructible => s.keywordCounters.indestructible
+  | .lifelink => s.keywordCounters.lifelink
   | .hone => s.hone
   | .shadow => s.shadow
   | .lore => s.lore
@@ -325,9 +327,9 @@ def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
   | .quest => { s with quest := n }
   | .invasion => { s with invasion := n }
   | .influence => { s with influence := n }
-  | .trample => { s with trampleCounters := n }
-  | .indestructible => { s with indestructibleCounters := n }
-  | .lifelink => { s with lifelinkCounters := n }
+  | .trample => { s with keywordCounters := { s.keywordCounters with trample := n } }
+  | .indestructible => { s with keywordCounters := { s.keywordCounters with indestructible := n } }
+  | .lifelink => { s with keywordCounters := { s.keywordCounters with lifelink := n } }
   | .hone => { s with hone := n }
   | .shadow => { s with shadow := n }
   | .lore => { s with lore := n }

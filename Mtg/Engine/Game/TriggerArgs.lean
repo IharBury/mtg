@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Chapters
+import Mtg.Engine.Game.CastExtras
 
 /-!
 # Reading `TriggerResolution` arguments

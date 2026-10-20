@@ -176,8 +176,7 @@ def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s =>
-    { s with indestructibleCounters := s.indestructibleCounters + n })
+  let g := g.mapObjectStatus o (·.addCounters .indestructible n)
   let g := g.logMsg s!"{o.name} gets an indestructible counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
@@ -185,8 +184,7 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s =>
-    { s with lifelinkCounters := s.lifelinkCounters + n })
+  let g := g.mapObjectStatus o (·.addCounters .lifelink n)
   let g := g.logMsg s!"{o.name} gets a lifelink counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 

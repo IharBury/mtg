@@ -429,8 +429,7 @@ def plusOneAndDoubleStrike (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
     let g := g.addPlusOnePlusOneTo o 1
     let o := g.object! o.id
-    let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
-      { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + 1 } })
+    let g := g.mapObjectStatus o (·.addCounters .doubleStrike 1)
     g.logMsg s!"{o.name} gets a double strike counter")
     "The source is no longer in play"
 

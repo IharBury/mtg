@@ -1707,8 +1707,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "those tokens enter tapped and attacking"
     | .newTargets, .causingSpell =>
       "choose new targets for that spell"
-    | .doubleStrike, .equippedAttackers =>
-      "each equipped attacking creature gains double strike until end of turn"
+    | .keywords k, .equippedAttackers =>
+      s!"each equipped attacking creature gains {k.joinedAnd} until end of turn"
     | .protectionEverything, .youIfCast =>
       "if you cast it, you gain protection from everything until your next turn"
     | .keywords k, .target =>
@@ -1888,7 +1888,7 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Whenever Bilbo attacks"
     | .enter, .createTokens .axe (.fixed 1) false _ .attachReflexive, _, _ =>
       leadInSentence ab "When Dáin enters"
-    | .attack, .grant .doubleStrike .equippedAttackers, _, _ =>
+    | .attack, .grant (.keywords _) .equippedAttackers, _, _ =>
       leadInSentence ab "Whenever Dáin attacks"
     | .enter, .sequence [.tap .enchanted, .removeCounters .all .enchanted], _, _ =>
       leadInSentence ab "When this Aura enters"

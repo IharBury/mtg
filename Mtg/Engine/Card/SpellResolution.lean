@@ -2096,8 +2096,6 @@ deriving Repr, Inhabited, BEq
 
 /-- Layer 6 ability-adding, keyword, ability-removing, and restriction grants (CR 613.1f). -/
 inductive Layer6AbilityGrant where
-  /-- Double strike until end of turn. -/
-  | doubleStrike
   /-- Protection from everything until that player's next turn. -/
   | protectionEverything
   /-- These keywords until end of turn. -/
@@ -2252,9 +2250,9 @@ namespace TriggerGrantWhat
   .layer4Type (.animateLand power toughness flying firstStrike)
 
 -- Layer6AbilityGrant aliases
-@[match_pattern] abbrev doubleStrike : TriggerGrantWhat := .layer6Ability .doubleStrike
 @[match_pattern] abbrev protectionEverything : TriggerGrantWhat := .layer6Ability .protectionEverything
 @[match_pattern] abbrev keywords (k : Keywords) : TriggerGrantWhat := .layer6Ability (.keywords k)
+def doubleStrike : TriggerGrantWhat := .keywords Keyword.doubleStrike
 @[match_pattern] abbrev hexproofWhileSource : TriggerGrantWhat := .layer6Ability .hexproofWhileSource
 @[match_pattern] abbrev choiceOfKeywords (options : List Nat) : TriggerGrantWhat := .layer6Ability (.choiceOfKeywords options)
 @[match_pattern] abbrev landfallCreateElf : TriggerGrantWhat := .layer6Ability .landfallCreateElf

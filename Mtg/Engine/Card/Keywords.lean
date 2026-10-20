@@ -151,8 +151,7 @@ def changeling : Keywords := { Keywords.none with changeling := true }
 def convoke : Keywords := { Keywords.none with convoke := true }
 end Keyword
 
-/-- Keyword counters other than trample, lifelink, and indestructible, which
-already have their own fields. A counter grants that keyword (CR 122.1b). -/
+/-- Keyword counters (CR 122.1b). A counter grants that keyword. -/
 structure KeywordCounters where
   haste : Nat := 0
   vigilance : Nat := 0
@@ -162,6 +161,9 @@ structure KeywordCounters where
   deathtouch : Nat := 0
   firstStrike : Nat := 0
   doubleStrike : Nat := 0
+  trample : Nat := 0
+  indestructible : Nat := 0
+  lifelink : Nat := 0
 deriving Repr, Inhabited, BEq
 
 namespace KeywordCounters
@@ -171,7 +173,9 @@ def none : KeywordCounters := {}
 def toKeywords (k : KeywordCounters) : Keywords :=
   { haste := k.haste > 0, vigilance := k.vigilance > 0, flying := k.flying > 0
     menace := k.menace > 0, reach := k.reach > 0, deathtouch := k.deathtouch > 0
-    firstStrike := k.firstStrike > 0, doubleStrike := k.doubleStrike > 0 }
+    firstStrike := k.firstStrike > 0, doubleStrike := k.doubleStrike > 0
+    trample := k.trample > 0, indestructible := k.indestructible > 0
+    lifelink := k.lifelink > 0 }
 
 end KeywordCounters
 
