@@ -44,7 +44,7 @@ def finishLibraryLook (g : Game) : Game :=
   let g :=
     match g.fraAfterLook with
     | some (c, src, next) =>
-      ({ g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := none } }).applyFra c default next.toResolution #[] src
+      ({ g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := none } }).applyFra c default next #[] src
     | none => g
   let g :=
     match g.pendingDrawAfterScry with

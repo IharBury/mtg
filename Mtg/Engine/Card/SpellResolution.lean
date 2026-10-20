@@ -1668,8 +1668,6 @@ inductive CounterSelector where
   | minusOneGreatestGraveyardMv
   /-- Tap and put X stun counters, where X is the loyalty removed to activate this ability. -/
   | stunRemovedLoyalty
-  /-- Draw a card, then put a +1/+1 counter for each card you've discarded this turn. -/
-  | plusOnePerDiscardAfterDraw
   /-- Give each recipient another counter of each kind already on it `times` times (proliferate, CR 701.34). -/
   | eachKindOnIt (times : NumberSelector := .fixed 1)
   /-- Remove counters as `what` says (CR 122). -/
@@ -2411,6 +2409,15 @@ inductive TriggerMayWhen where
 deriving Repr, Inhabited, BEq
 
 end TriggeredAbility
+
+export TriggeredAbility (
+  ObjectSelector
+  PlayerSelector
+  NumberSelector
+  CostSelector
+  ConditionSelector
+  ActionSelector
+)
 
 open TriggeredAbility
 
@@ -3357,7 +3364,7 @@ def isFra : Resolution → Bool
   | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn | .exile .opponentLibrariesButBottom .forLater _ | .pump (.fixed (-4)) (.fixed (-1)) (.target .untilYourNextTurn) => true
   | .sacrifice .eachPlayersCreature .ifYouDoCreateBeast | .discard .eachOpponentTwoDrawPerNonlandShortfall | .grant .emblemCreaturesGetTwoTwo .youIfCast => true
   | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn => true
-  | .putCounters .plusOnePerDiscardAfterDraw .cause | .sacrifice .source .eyeOfJaceIfSevenInGy | .chooseModes _ (.fraTrigger _) => true
+  | .sacrifice .source .eyeOfJaceIfSevenInGy | .chooseModes _ (.fraTrigger _) => true
   | .putOnLibrary (.topAfterDraw _ _) .cardFromHand | .exile .target .forLater .despark => true
   | .exile .target .forLater .controllerMaySearchBasic | .exile .target .forLater .controllerGainsLifePower => true
   | .destroy .target .controllerCreatesHuman | .discard .drawAndDiscardXCreateSpiritPerType => true
@@ -3430,57 +3437,11 @@ def isFra : Resolution → Bool
   | .fight .source .mutual | .becomeCopy .causingSpell => true
   | _ => false
 
-/-- Oracle wording for a former `FraResolution` step. `none` for every other step. -/
-def fraPhrase? (r : Resolution) (noun : String) : Option String :=
-  match r with
-  | .returnToHand .target .none => some (s!"Return {noun} to its owner's hand")
-  | .exile .target .forLater .none => some (s!"Exile {noun}")
-  | .destroy .target .drawIfNotAttacking => some (s!"Destroy {noun}. If it wasn't attacking, its controller draws a card")
-  | .dealDamage (.fixed n) (.player .eachPlayer) _ => some (s!"This deals {n} damage to each player")
-  | .dealDamage (.fixed n) (.targetAt _) .none => some (s!"This deals {n} damage to {noun}")
-  | .putCounters (.ofKind .plusOnePlusOne n) (.targetAt _) => some (s!"Put {plusOnePlusOneCountersPhrase n} on {noun}")
-  | .returnToHand (.target .graveyardCard) .none => some (s!"Return {noun} to your hand")
-  | .put .graveyardCard .asPrinted .none => some (s!"Return {noun} to the battlefield")
-  | .put .graveyardCard .asPrinted (.entering [.counter .plusOnePlusOne _ true]) =>
-    some (s!"Return {noun} to the battlefield with an additional +1/+1 counter on it")
-  | .destroy .creaturesNotChosenType _ => some ("Choose a creature type. Destroy all creatures that aren't of the chosen type")
-  | .searchLibrary (.putOnLibrary .top .planeswalkerCard) => some ("Search your library for a planeswalker card, reveal it, then shuffle and put that card on top")
-  | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) => some (s!"Put {plusOnePlusOneCountersPhrase n} on each of {noun}")
-  | .put .allNonlandPermanentsInGraveyard .asPrinted .none => some ("Return all nonland permanent cards from your graveyard to the battlefield")
-  | .draw .milledByTargetPlayerThisTurn _ => some ("Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn")
-  | .exile .allCreatures .forLater .empowerJace => some ("Exile all creatures. Empower Jace X, where X is the number of creatures exiled this way")
-  | .draw .greatestPowerAndLoseLife _ => some ("Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way")
-  | .discard .chosenNonlandPermanent =>
-    some (s!"{capitalizeAscii noun} reveals their hand. You choose a nonland permanent card from it. That player discards that card")
-  | .discard .chosenNonland =>
-    some (s!"{capitalizeAscii noun} reveals their hand. You choose a nonland card from it. That player discards that card")
-  | .discard .hand => some ("Discard your hand")
-  | .draw (.perControlled .creature) _ => some ("Draw a card for each creature you control")
-  | .returnToHand .outsideGameOpponentChoice _ => some ("You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand")
-  | .exile .sphinxsApproach .forLater _ => some ("You may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle")
-  | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent => some ("Put a +1/+1 counter on each other Wizard token you control")
-  | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ => some (s!"This deals {n} damage to each creature and planeswalker your opponents control")
-  | .lose .allAbilities (.targetAt _) => some (s!"{capitalizeAscii noun} loses all abilities until end of turn")
-  | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none => some ("Target creature you control deals damage equal to its power to that permanent")
-  | .putOnLibrary .topOrBottomDamage2 .target => some ("Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom")
-  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo => some ("You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle")
-  | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken => some ("If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard")
-  | .grant (.keywords _) .createdToken => some ("It gains haste until end of turn")
-  | .ifElse .notFromHand (.draw (.fixed 2) _) (.draw (.fixed 1) _) => some ("Draw a card. If this spell wasn't cast from your hand, draw two cards instead")
-  | .destroy (.targetAt _) .none => some (s!"Destroy {noun}")
-  | .putCounters (.ofKind .plusOnePlusOne 1) (.creaturesControlledBy (.targetAt _)) => some ("Put a +1/+1 counter on each creature target player controls")
-  | .exile .target (.returnBrieflyIfMvAtMost n) _ => some (s!"Exile {noun}. If that permanent's mana value was {n} or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step")
-  | .discard (.mayWheel n _) => some (s!"Each player may discard their hand and draw {englishNumber n} cards")
-  | .grant .mountainsAddExtraRed .landsYouControl => some ("Until end of turn, whenever you tap a Mountain for mana, add an additional {R}")
-  | .searchLibrary (.mill (.fixed 1) _ _) => some ("Search your library for a land card, put it into your graveyard, then shuffle")
-  | .counter => some (s!"Counter {noun}")
-  | .unlessPays .counter n => some (s!"Counter {noun} unless its controller pays \{{n}}")
-  | .destroy .target .none => some (s!"Destroy {noun}")
-  | .sequence [.replace, .dealDamage (.fixed n) .target .none] => some (s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead")
-  | .mill (.fixed n) .you (.permanentAndGainLife l) => some (s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life")
-  | .chooseModes _ (.fraTrigger n) => some (if n == 2 then "choose two" else "choose one")
-  | .pump .minusGraveyardCards (.fixed 0) .target => some (s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard")
-  | r => if r.isFra then some "" else none
+/-- Nested `sequence` constructors, left to right. An `or` stays one step:
+flattening it would resolve every alternative. -/
+def flatten : Resolution → List Resolution
+  | .sequence rs => rs.flatMap flatten
+  | r => [r]
 
 end Resolution
 
@@ -3832,11 +3793,7 @@ def queuedReflexive : TriggerResolution → QueuedReflexive
     .attackPump
   | _ => .none
 
-/-- Nested `sequence` constructors, left to right. An `or` stays one step:
-flattening it would resolve every alternative. -/
-def flatten : TriggerResolution → List TriggerResolution
-  | .sequence rs => rs.flatMap flatten
-  | r => [r]
+export Resolution (flatten)
 
 /-- Add {G}{G}{G}. Put a +1/+1 counter on each creature you control.
 Scry 2, then draw a card. -/
@@ -4177,11 +4134,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     | some action => PermanentAction.toNotation action noun
     | none => ""
 
-/-- Nested `sequence` constructors, left to right. An `or` stays one step:
-flattening it would resolve every alternative. -/
-def flatten : SpellResolution → List SpellResolution
-  | .sequence rs => rs.flatMap flatten
-  | r => [r]
+export Resolution (flatten)
 
 /-- Printed wording of a flat sequence. Known shapes keep their Oracle text;
 other sequences join each step. -/

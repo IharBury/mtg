@@ -4,9 +4,9 @@ This document describes the runtime state machine, module layering, casting/acti
 
 ---
 
-## 1. Module Layering & Inventory (54 Modules + `Game.lean`)
+## 1. Module Layering & Inventory (50 Modules + `Game.lean`)
 
-The 54 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
+The 50 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from `Status.lean` at the bottom to `Start.lean` at the top, re-exported by `Mtg/Engine/Game.lean`:
 
 ### Layer 1: Core State & Representation
 | Module | Key Types & Entry Points |
@@ -14,7 +14,7 @@ The 54 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `Status.lean` | `Status` (~75 per-permanent battlefield state fields: tapped, summoningSick, attacking/blocking, counter counts with uniform `Status.counter` / `Status.setCounter` over `CounterKind.all` (CR 122.1), temporary P/T & keyword grants, and the table-driven `untilEotFields : List UntilEotField` reset by `Status.clearedAtCleanup`). |
 | `Object.lean` | `PlayPermission`, `GameObject` (~40 fields: `id`, `printed : CardDef`, `owner`, `controller`, `zone`, `status`, `timestamp`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `linkedExile`, copy/control tracking), `CreatureCombatAssignment`, `WaitingTrigger`. |
 | `Stack.lean` | `Target` (`.player`, `.permanent`, `.card`), `StackEntry`, `ProposalKind` (`.spell`, `.activatedAbility`), and `ProposedSpell` (snapshot used to reverse illegal proposals per CR 733.1). |
-| `Pending.lean` | `RandomRequest`, `AfterRandom`, `WardCost`/`WardObligation`, `FraNext`, `SearchDest`, `CostPick`, `CardChoice`, `FraChoice` (74 constructors), and `Pending` (43 constructors). |
+| `Pending.lean` | `RandomRequest`, `AfterRandom`, `WardCost`/`WardObligation`, `SearchDest`, `CostPick`, `CardChoice`, `FraChoice` (4 category constructors over `HandGraveyardChoice`, `LibraryChoice`, `BattlefieldChoice`, `CostModeChoice`, with choice continuations carrying `Resolution` and sacrifice filters carrying `ObjectSelector`), and `Pending` (6 category constructors). |
 | `Player.lean` | `GameResult`, `Player` (~48 fields: `library`, `hand`, `graveyard`, `manaPool`, life/poison, emblems/designations, per-turn counters), `Seat`, `StartConfig`, and `Action` (38 player action constructors). |
 | `Core.lean` | `TriggerSequenceRest`, `TriggerOrRest`, `ChooseModesRest`, `Game` (~110 fields), and core object/player/zone accessors (`player`, `modifyPlayer`, `findObject?`, `setObject`, `mapObjectStatus`, `battlefield`, `permanentsOf`, `decidesFor`, `canSeeAs`, `followMoved`). |
 
@@ -62,8 +62,7 @@ The 54 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
 | `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
 | `FraHelpers.lean` | Target slot legality, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
-| `FrcResolve.lean` | Reality Fracture Commander resolver (`applyFrc?`, `applyDelayedSynthetic`). |
-| `FraResolve.lean` | Reality Fracture (`Resolution.isFra`) resolver (`applyFra`, delegating Commander steps to `applyFrc?`). |
+| `FraResolve.lean` | Reality Fracture and Reality Fracture Commander (`Resolution.isFra`) resolver (`applyFra`, `applyDelayedSynthetic`). |
 | `EffectResolution.lean` | Unified `Effect` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, and `applyAbilityEffect`), plus `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |
 | `TriggerArgs.lean` | Compositional selector evaluators (`TriggerRead`, `permanentsNamed`, `controllersNamed`, `collectPlayers`, `countNamed`, `triggerInt`, `triggerCount`). |
@@ -182,4 +181,4 @@ Because `Game` transitions are pure and synchronous, any effect that requires pl
    - Optional `"You may ... If you do, ..."` trigger steps use `mayThenDrop`, `mayThenSkip`, `mayThenConditional`, and `mayThenResume` on `Game` (`Decisions.lean:268–298`).
 2. **Ad-Hoc Spell/Ability Continuations on `Game`**:
    - Unlike `applyTriggeredAbility`, `applyUnified` and `applyUnifiedAbility` (`EffectResolution.lean:866, 1617`) currently fold over `.sequence` steps synchronously without checking `g.pending != .none`.
-   - Consequently, multi-step spell/ability resolutions that pause mid-sequence rely on dedicated continuation fields on `Game` (`pendingDrawAfterScry`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `palantirAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, `unlessPaysInstead`, `chooseModesRest`). See [`docs/REFACTORING_AND_EXTENSION_GUIDE.md`](./REFACTORING_AND_EXTENSION_GUIDE.md) for how to unify this with `triggerSequenceRest`.
+   - Consequently, multi-step spell/ability resolutions that pause mid-sequence rely on dedicated continuation fields on `Game` (`pendingDrawAfterScry`, `fraAfterLook : Option (PlayerId × Option ObjectId × Resolution)`, `palantirAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, `unlessPaysInstead`, `chooseModesRest`). See [`docs/REFACTORING_AND_EXTENSION_GUIDE.md`](./REFACTORING_AND_EXTENSION_GUIDE.md) for how to unify this with `triggerSequenceRest`.

@@ -18,8 +18,8 @@ def searchNoun (kind : String) : String :=
   | none => kind
 
 /-- What still happens after the library is shuffled. -/
-def searchAfter (p : PlayerId) : Option FraNext → AfterRandom
-  | some (.gainLife n) => .gainLife p n
+def searchAfter (p : PlayerId) : Option Resolution → AfterRandom
+  | some (.gainLife (.fixed n) _ _) => .gainLife p n.toNat
   | _ => .none
 
 /-- True when failing to find still shuffles. Searching only the hand does not
@@ -137,13 +137,13 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
     if g.pending == .none then { g with pending := saved } else g
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
-def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
+def searchDone (g : Game) (p : PlayerId) (after : Option Resolution) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
   | some id => ({ g with afterLibrarySearch := .none }, .plusOne id)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
-def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
+def shuffleSearch (g : Game) (p : PlayerId) (after : Option Resolution) : Game :=
   let (g, done) := g.searchDone p after
   let g := { g with afterLibrarySearch := .none }
   g.shuffleThen p done
@@ -158,7 +158,7 @@ def applyWaitingPlusOne (g : Game) : Game :=
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.19b). -/
 def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
-    (dest : SearchDest) (after : Option FraNext) (kind : String) : Game :=
+    (dest : SearchDest) (after : Option Resolution) (kind : String) : Game :=
   let noun := searchNoun kind
   if ids.isEmpty then
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
@@ -208,7 +208,7 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
 The player chooses which, or none (CR 701.19b). `optional` may skip the
 search entirely, and then the library is not shuffled. -/
 def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind : String)
-    (dest : SearchDest) (count : Nat := 1) (after : Option FraNext := none)
+    (dest : SearchDest) (count : Nat := 1) (after : Option Resolution := none)
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
   let keep (id : ObjectId) := (g.findObject? id).any (pred ·.printed)
   let pl := g.player p

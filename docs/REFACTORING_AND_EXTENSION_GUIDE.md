@@ -61,7 +61,7 @@ The sections below document the remaining duplication left over from earlier per
   - Removed duplicate fallback arms (`.shuffleSource`, `.draw`, `.scry`, `.gainLife`, `.recruit`, `.amass`, `.createTokens`, `.addMana`, `.discard`, and `Resolution.toSpell`) from `applyTriggeredAbility` (`TriggeredAbilities.lean:4611–4625`), delegating directly to `applyUnifiedAbility`.
   - Collapsed 25 redundant specialized pattern-match arms across `applyTriggerPump`, `applyTriggerDraw`, `applyMill`, `applyUntap`, `applyTap`, `applyLoseLife`, and `applyGainLife` (`TriggeredAbilities.lean`) into the generic `TriggerArgs.lean` evaluators (`permanentsNamed`, `collectPlayers`, `triggerCount`, `millCollected`).
   - Eliminated `TriggerAffected` (`SpellResolution.lean`), parameterized `ofAffected`, `affectedNoun`, `withAffected`, and `applyAffectedCounters` directly over `ObjectSelector`, and collapsed redundant recipient match arms and local `where` helpers across `applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, `applyExile`, `applyDestroy`, `applyGrant`, `applyUntap`, `applyTap`, `applyLose`, `applyCant`, `applyBecomeArtifact`, `applyBecomePrepared`, `applyPutOnLibrary`, and `applySetBasePT` (`TriggeredAbilities.lean`) and `toNotation` (`TriggeredAbility.lean`).
-  - Eliminated `Resolution.ofSpell`, `Resolution.toSpellStep`, `Resolution.toSpell`, `Effect.spellResolution` (`Effect.lean`), `Layer6AbilityGrant.doubleStrike`, `Mtg/Engine/Game/Chapters.lean`, and `Mtg/Engine/Game/FraAbilities.lean` (folding `applyFraAbility` into `FraResolve.applyFra`), simplified `Resolution.doesNothingAsSpell` to 4 lines matching `doesNothingAsActivated`, unified `applyFraResolution?`, `applyUnified`, and `applyUnifiedAbility` (`EffectResolution.lean`) into a single `applyUnified` dispatcher, and collapsed redundant specialized condition, counter, token, cast, destroy, and grant arms in `triggerIfHolds`, `applyPutCounters`, `applyCreateTokens`, `applyMayCast`, `applyDestroy`, `applyGrant`, and `applyTriggeredAbility` (`TriggeredAbilities.lean`) and `FrcResolve.lean`.
+  - Eliminated `Resolution.ofSpell`, `Resolution.toSpellStep`, `Resolution.toSpell`, `Effect.spellResolution` (`Effect.lean`), `Layer6AbilityGrant.doubleStrike`, `CounterSelector.plusOnePerDiscardAfterDraw`, `FraNext`, `FraSacrifice`, `Mtg/Engine/Game/Chapters.lean`, `Mtg/Engine/Game/FraAbilities.lean`, and `Mtg/Engine/Game/FrcResolve.lean` (folding `applyFraAbility` and `applyFrc?` into `FraResolve.applyFra`), consolidated `Resolution.flatten` (`SpellResolution.lean`) and `Resolution.fraPhrase?` (`Effect.lean`), simplified `Resolution.doesNothingAsSpell` to 4 lines matching `doesNothingAsActivated`, unified `applyFraResolution?`, `applyUnified`, and `applyUnifiedAbility` (`EffectResolution.lean`) into a single `applyUnified` dispatcher, and collapsed redundant specialized condition, counter, token, cast, destroy, and grant arms in `triggerIfHolds`, `applyPutCounters`, `applyCreateTokens`, `applyMayCast`, `applyDestroy`, `applyGrant`, and `applyTriggeredAbility` (`TriggeredAbilities.lean`) and `FraResolve.lean`.
 - **Remaining**:
   1. **Duplicate Printed vs. Selector Arms in `TriggeredAbilities.lean`**:
      - `TriggeredAbilities.lean` still has specialized pattern-match arms in `applyTriggerDamage`, `applyPutCounters`, `applyCreateTokens`, `applyExile`, `applySacrifice`, `applyDestroy`, `applyReturnToHand`, `applyPut`, `applyGrant`, `applyFight`, and `applySetBasePT` that can be collapsed into the generic `TriggerArgs` evaluators.
@@ -88,16 +88,15 @@ The sections below document the remaining duplication left over from earlier per
 
 ### Priority 4: Pause-Aware `.sequence` Execution for Spells and Activated Abilities
 - **Files**:
-  - `Mtg/Engine/Game/EffectResolution.lean` (lines 854–870, 1604–1620)
-  - `Mtg/Engine/Game/TriggeredAbilities.lean` (lines 3852–3907, 4641)
-  - `Mtg/Engine/Game/Core.lean` (lines 17–28, 217–310)
-  - `Mtg/Engine/Game/Pending.lean` (`FraNext` lines 85–120)
+  - `Mtg/Engine/Game/EffectResolution.lean`
+  - `Mtg/Engine/Game/TriggeredAbilities.lean`
+  - `Mtg/Engine/Game/Core.lean`
 - **Problem**:
   - `applyTriggeredAbility` has a pause-aware `.sequence` runner: if step $i$ sets `g.pending != .none`, remaining steps $i+1 \dots n$ are saved in `g.triggerSequenceRest` and automatically resumed via `g.resumeTriggerSequence` once the player finishes the choice.
-  - `applyUnified` and `applyUnifiedAbility` instead run `steps.foldl` synchronously without checking `g.pending != .none`. To work around this, spells and abilities use ad-hoc continuation fields on `Game`: `pendingDrawAfterScry`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `palantirAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, and hardcoded `.sequence` pattern matches in `EffectResolution.lean` (lines 856, 863, 1606, 1614).
+  - `applyUnified` instead runs `steps.foldl` synchronously without checking `g.pending != .none`. To work around this, spells and abilities use ad-hoc continuation fields on `Game`: `pendingDrawAfterScry`, `fraAfterLook : Option (PlayerId × Option ObjectId × Resolution)`, `palantirAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, and hardcoded `.sequence` pattern matches in `EffectResolution.lean`.
 - **How to refactor**:
-  - Use the same pause-aware sequence continuation (`triggerSequenceRest`, generalized to `resolutionSequenceRest`) in `applyUnified` and `applyUnifiedAbility`.
-  - Delete `FraNext`, `fraAfterLook`, `pendingDrawAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, and the special-cased `.sequence` matches in `EffectResolution.lean`.
+  - Use the same pause-aware sequence continuation (`triggerSequenceRest`, generalized to `resolutionSequenceRest`) in `applyUnified`.
+  - Delete `fraAfterLook`, `pendingDrawAfterScry`, `plusOneAfterSearch`, `plusOneAfterDiscards`, and the special-cased `.sequence` matches in `EffectResolution.lean`.
 
 ---
 

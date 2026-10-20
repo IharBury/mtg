@@ -80,44 +80,6 @@ structure WardObligation where
   cost : WardCost
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- What happens after a Reality Fracture choice is made. Each one is also a
-`Resolution` step, run through the same interpreter. -/
-inductive FraNext where
-  | searchBasicLandTapped
-  | searchLandsTapped (n : Nat)
-  | searchEnchantmentToHand
-  | tappedHeartwoods (n : Nat)
-  | eachOpponentSacrificesCreature
-  | drawThenCountersPerDiscard
-  | eyeOfJaceCheck
-  | reflexiveDamageAnyTarget (n : Nat)
-  | reflexiveDestroyPerOpponent
-  | reflexiveReturnLandTapped
-  | beastToken
-  | proliferate (times : Nat)
-  | mshReflexive (kind paid : Nat)
-  | gainLife (n : Nat)
-  /-- Return the source from the graveyard to its owner's hand. -/
-  | returnSourceToHand
-deriving DecidableEq, Repr, Inhabited, BEq
-
-def FraNext.toResolution : FraNext → Resolution
-  | .searchBasicLandTapped => .searchLibrary (.put .basicLand .tapped)
-  | .searchLandsTapped n => .searchLibrary (.put (.landsUpTo n) .tapped)
-  | .searchEnchantmentToHand => .searchLibrary (.returnToHand .enchantmentCard)
-  | .tappedHeartwoods n => .createTokens .heartwood (.fixed n) true
-  | .eachOpponentSacrificesCreature => .sacrifice .eachOpponentsCreature
-  | .drawThenCountersPerDiscard => .putCounters .plusOnePerDiscardAfterDraw .cause
-  | .eyeOfJaceCheck => .sacrifice .source .eyeOfJaceIfSevenInGy
-  | .reflexiveDamageAnyTarget n => .queueReflexive (.dealDamage (.fixed n) .target)
-  | .reflexiveDestroyPerOpponent => .queueReflexive (.destroy (.target .eachPermanent))
-  | .reflexiveReturnLandTapped => .queueReflexive (.put .landCard .tapped)
-  | .beastToken => .createTokens .beast44trample (.fixed 1) false
-  | .proliferate n => .proliferate (.fixed n)
-  | .mshReflexive k paid => .queueReflexive (.mshReflexive k paid)
-  | .gainLife n => .gainLife n
-  | .returnSourceToHand => .returnToHand .source
-
 /-- Where cards found by a library search go (CR 701.19). -/
 inductive SearchDest where
   | battlefield (tapped : Bool)
@@ -136,13 +98,6 @@ inductive SearchDest where
   /-- Onto the battlefield from the hand or library; shuffle only if the
   library was searched (Last Light of Durin's Day). -/
   | battlefieldFromHandOrLibrary
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- What a “you may sacrifice …” choice accepts. -/
-inductive FraSacrifice where
-  | land
-  | creatureOrPlaneswalker
-  | creature
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
@@ -191,11 +146,11 @@ inductive LibraryChoice where
   /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option FraNext) (kind : String)
+    (after : Option Resolution) (kind : String)
   /-- You may search (Old Thrush). Declining does not shuffle. Accepting
   continues as `searchLibrary`. -/
   | maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option FraNext) (kind : String)
+    (after : Option Resolution) (kind : String)
   /-- Palantír of Orthanc: this opponent may have `controller` draw a card.
   Declining mills X cards and this player loses life equal to their mana values. -/
   | palantirMayDraw (controller : PlayerId) (sourceId : ObjectId)
@@ -229,7 +184,7 @@ inductive LibraryChoice where
   /-- You may begin the game with the first of these cards on the battlefield
   (Quicksilver). The rest are asked next. -/
   | mayBeginOnBattlefield (ids : Array ObjectId)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Hand, discard, graveyard, and exile cast choices made while an effect resolves (CR 402 / CR 404 / CR 406). -/
 inductive HandGraveyardChoice where
@@ -239,10 +194,10 @@ inductive HandGraveyardChoice where
   /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
   | sphinxsApproach (spellId : ObjectId)
   /-- You may discard a card; if you do, do `next`. -/
-  | mayDiscardThen (next : FraNext) (sourceId : Option ObjectId)
-  /-- Discard a card (required while you have one), then do `next`. -/
-  | discardThen (next : FraNext) (sourceId : Option ObjectId)
-    (causeId : Option ObjectId)
+  | mayDiscardThen (next : Resolution) (sourceId : Option ObjectId)
+  /-- Discard a card (required while you have one), then draw a card and put
+  +1/+1 counters on `causeId` per card discarded this turn. -/
+  | discardThen (causeId : Option ObjectId)
   /-- Discard `n` cards, then tap and stun up to as many target creatures as
   nonland cards were discarded (Seasoned Cryomancer). -/
   | discardThenStun (n : Nat) (sourceId : Option ObjectId)
@@ -298,7 +253,7 @@ inductive HandGraveyardChoice where
   /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
   life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
   | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Battlefield, sacrifice, counter, and permanent choices made while an effect resolves (CR 403 / CR 701.17). -/
 inductive BattlefieldChoice where
@@ -306,7 +261,7 @@ inductive BattlefieldChoice where
   | maySacrificePlaneswalker
   /-- You may sacrifice a permanent of `kind` (land, creature or planeswalker);
   if you do, do `next`. -/
-  | maySacrificeThen (kind : FraSacrifice) (next : FraNext)
+  | maySacrificeThen (kind : ObjectSelector) (next : Resolution)
     (sourceId : Option ObjectId)
   /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
   | mayMovePlusOne (sourceId : ObjectId)
@@ -343,7 +298,7 @@ inductive BattlefieldChoice where
   until end of turn. -/
   | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
   /-- You may tap the untapped source; if you do, do `next`. -/
-  | mayTapSourceThen (next : FraNext) (sourceId : ObjectId)
+  | mayTapSourceThen (next : Resolution) (sourceId : ObjectId)
   /-- Sacrifice one creature that dealt combat damage to `controller`. The
   other opponents in `rest` choose next, then the Ring tempts `controller`
   (Witch-king of Angmar). -/
@@ -376,14 +331,14 @@ inductive BattlefieldChoice where
   /-- Choose a player tied for most life. The creature can't be blocked by
   that player's creatures this turn (The Black Gate). -/
   | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Cost, mode, enters, and target choices made while an effect resolves (CR 118 / CR 601.2 / CR 614.12 / CR 700.2). -/
 inductive CostModeChoice where
   /-- You may do `next` (accept or decline). -/
-  | mayThen (next : FraNext) (sourceId : Option ObjectId)
+  | mayThen (next : Resolution) (sourceId : Option ObjectId)
   /-- You may pay `{n}`; if you do, do `next`. -/
-  | mayPayThen (n : Nat) (next : FraNext) (sourceId : Option ObjectId)
+  | mayPayThen (n : Nat) (next : Resolution) (sourceId : Option ObjectId)
   /-- Choose an Alliance mode of `sourceId` that hasn't been chosen this turn.
   Answered with `Action.chooseMode` (0 add {G}{G}{G}, 1 +1/+1 counters,
   2 scry 2 then draw). -/
@@ -411,12 +366,12 @@ inductive CostModeChoice where
   | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
-  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
+  | mayPayPickThen (pick : CostPick) (next : Resolution) (sourceId : ObjectId)
   /-- Choose a creature type you control. `types` are offered by index
   (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
   | chooseCreatureType (types : Array String)
   /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
-  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId)
+  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Resolution) (sourceId : ObjectId)
   /-- Choose the color of each of `left` more mana to add, spendable only as
   `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
   green by index). -/
@@ -453,7 +408,7 @@ inductive CostModeChoice where
   | entersCreatureType (objectId : ObjectId)
   /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
   | entersOddEven (objectId : ObjectId)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- A choice made while an effect resolves (CR 608 / CR 701). The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
@@ -467,7 +422,7 @@ inductive FraChoice where
   | battlefield (c : BattlefieldChoice)
   /-- Cost, mode, enters, or target choice (CR 118 / CR 601.2 / CR 614.12 / CR 700.2). -/
   | costMode (c : CostModeChoice)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 namespace FraChoice
 
@@ -481,9 +436,9 @@ namespace FraChoice
 @[match_pattern] abbrev nickFuryPut (looked eligible : Array ObjectId) : FraChoice := .library (.nickFuryPut looked eligible)
 @[match_pattern] abbrev nickFuryMayTransform (permanentId : ObjectId) (rest : Array ObjectId) : FraChoice := .library (.nickFuryMayTransform permanentId rest)
 @[match_pattern] abbrev orderLibraryBottom (ids : Array ObjectId) : FraChoice := .library (.orderLibraryBottom ids)
-@[match_pattern] abbrev searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option FraNext) (kind : String) : FraChoice :=
+@[match_pattern] abbrev searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option Resolution) (kind : String) : FraChoice :=
   .library (.searchLibrary eligible count dest after kind)
-@[match_pattern] abbrev maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option FraNext) (kind : String) : FraChoice :=
+@[match_pattern] abbrev maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option Resolution) (kind : String) : FraChoice :=
   .library (.maySearchLibrary eligible count dest after kind)
 @[match_pattern] abbrev palantirMayDraw (controller : PlayerId) (sourceId : ObjectId) : FraChoice := .library (.palantirMayDraw controller sourceId)
 @[match_pattern] abbrev tricksterLibrary (caster : PlayerId) (creatureId : ObjectId) (connive : Option ObjectId) : FraChoice :=
@@ -505,9 +460,9 @@ namespace FraChoice
 @[match_pattern] abbrev discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool) : FraChoice :=
   .handGraveyard (.discardFromRevealedHand target permanentOnly)
 @[match_pattern] abbrev sphinxsApproach (spellId : ObjectId) : FraChoice := .handGraveyard (.sphinxsApproach spellId)
-@[match_pattern] abbrev mayDiscardThen (next : FraNext) (sourceId : Option ObjectId) : FraChoice := .handGraveyard (.mayDiscardThen next sourceId)
-@[match_pattern] abbrev discardThen (next : FraNext) (sourceId : Option ObjectId) (causeId : Option ObjectId) : FraChoice :=
-  .handGraveyard (.discardThen next sourceId causeId)
+@[match_pattern] abbrev mayDiscardThen (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .handGraveyard (.mayDiscardThen next sourceId)
+@[match_pattern] abbrev discardThen (causeId : Option ObjectId) : FraChoice :=
+  .handGraveyard (.discardThen causeId)
 @[match_pattern] abbrev discardThenStun (n : Nat) (sourceId : Option ObjectId) : FraChoice := .handGraveyard (.discardThenStun n sourceId)
 @[match_pattern] abbrev exileFromRevealedHand (victim : PlayerId) (sourceId : Option ObjectId) : FraChoice :=
   .handGraveyard (.exileFromRevealedHand victim sourceId)
@@ -536,7 +491,7 @@ namespace FraChoice
 
 -- BattlefieldChoice aliases
 @[match_pattern] abbrev maySacrificePlaneswalker : FraChoice := .battlefield .maySacrificePlaneswalker
-@[match_pattern] abbrev maySacrificeThen (kind : FraSacrifice) (next : FraNext) (sourceId : Option ObjectId) : FraChoice :=
+@[match_pattern] abbrev maySacrificeThen (kind : ObjectSelector) (next : Resolution) (sourceId : Option ObjectId) : FraChoice :=
   .battlefield (.maySacrificeThen kind next sourceId)
 @[match_pattern] abbrev mayMovePlusOne (sourceId : ObjectId) : FraChoice := .battlefield (.mayMovePlusOne sourceId)
 @[match_pattern] abbrev sacrificeCreatureEach (controller : PlayerId) (rest : Array PlayerId) (chosen : Array ObjectId) : FraChoice :=
@@ -555,7 +510,7 @@ namespace FraChoice
   .battlefield (.sacrificeNontokenEach rest chosen)
 @[match_pattern] abbrev mayCreateTokens (kind : TokenKind) (n : Nat) : FraChoice := .battlefield (.mayCreateTokens kind n)
 @[match_pattern] abbrev mayBecomeBasePT (objectId : ObjectId) (p t : Int) : FraChoice := .battlefield (.mayBecomeBasePT objectId p t)
-@[match_pattern] abbrev mayTapSourceThen (next : FraNext) (sourceId : ObjectId) : FraChoice := .battlefield (.mayTapSourceThen next sourceId)
+@[match_pattern] abbrev mayTapSourceThen (next : Resolution) (sourceId : ObjectId) : FraChoice := .battlefield (.mayTapSourceThen next sourceId)
 @[match_pattern] abbrev sacrificeDamager (ids : Array ObjectId) (rest : Array PlayerId) (controller : PlayerId) : FraChoice :=
   .battlefield (.sacrificeDamager ids rest controller)
 @[match_pattern] abbrev hydeRemoveCounter (ids : Array ObjectId) : FraChoice := .battlefield (.hydeRemoveCounter ids)
@@ -573,8 +528,8 @@ namespace FraChoice
   .battlefield (.blackGatePlayer creatureId players)
 
 -- CostModeChoice aliases
-@[match_pattern] abbrev mayThen (next : FraNext) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayThen next sourceId)
-@[match_pattern] abbrev mayPayThen (n : Nat) (next : FraNext) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayPayThen n next sourceId)
+@[match_pattern] abbrev mayThen (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayThen next sourceId)
+@[match_pattern] abbrev mayPayThen (n : Nat) (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayPayThen n next sourceId)
 @[match_pattern] abbrev allianceMode (sourceId : ObjectId) (available : Array Nat) : FraChoice := .costMode (.allianceMode sourceId available)
 @[match_pattern] abbrev gollumMode (sourceId : ObjectId) (available : Array Nat) : FraChoice := .costMode (.gollumMode sourceId available)
 @[match_pattern] abbrev triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat) : FraChoice :=
@@ -584,10 +539,10 @@ namespace FraChoice
 @[match_pattern] abbrev chooseCardName (objectId : ObjectId) : FraChoice := .costMode (.chooseCardName objectId)
 @[match_pattern] abbrev costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool) : FraChoice :=
   .costMode (.costPicks sourceId picks paid)
-@[match_pattern] abbrev mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId) : FraChoice :=
+@[match_pattern] abbrev mayPayPickThen (pick : CostPick) (next : Resolution) (sourceId : ObjectId) : FraChoice :=
   .costMode (.mayPayPickThen pick next sourceId)
 @[match_pattern] abbrev chooseCreatureType (types : Array String) : FraChoice := .costMode (.chooseCreatureType types)
-@[match_pattern] abbrev mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId) : FraChoice :=
+@[match_pattern] abbrev mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Resolution) (sourceId : ObjectId) : FraChoice :=
   .costMode (.mayPaySymbolsThen symbols next sourceId)
 @[match_pattern] abbrev addManaColors (left : Nat) (use : FraManaUse) : FraChoice := .costMode (.addManaColors left use)
 @[match_pattern] abbrev payLifeOrEnterTapped (objectId : ObjectId) (life : Nat) : FraChoice := .costMode (.payLifeOrEnterTapped objectId life)
@@ -733,7 +688,7 @@ inductive Pending where
   | fraChoice (player : PlayerId) (choice : FraChoice)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 namespace Pending
 

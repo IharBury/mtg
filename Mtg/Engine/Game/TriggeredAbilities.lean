@@ -1394,7 +1394,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _, _ => g
     | .ofKind .. | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
     | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
-    | .plusOnePerDiscardAfterDraw | .eachKindOnIt _ | .remove _ => g
+    | .eachKindOnIt _ | .remove _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -2918,7 +2918,7 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match sourceId.bind g.findObject? with
       | some src =>
         if src.isOnBattlefield && !src.status.tapped then
-          g.beginFraChoice controller (.mayTapSourceThen (.mshReflexive 0 0) src.id)
+          g.beginFraChoice controller (.mayTapSourceThen (.queueReflexive (.mshReflexive 0 0)) src.id)
             s!"{(g.player controller).name} may tap {src.name}"
         else
           (g.logMsg s!"{src.name} can't be tapped this way. The reflexive ability doesn't trigger.").failMayThen
@@ -3996,7 +3996,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
               else
                 let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
-                g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+                g.beginFraChoice controller (.mayPaySymbolsThen symbols (.returnToHand .source) src.id)
                   s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
       | some (.becomeCopy (.cause none)), [.generic 2] =>
         g.offerCopyCause controller sourceId targets
@@ -4022,7 +4022,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               (g.logMsg s!"{src.name} is no longer in the graveyard").failMayThen
             else
               let shown := String.join (symbols.toList.map ManaSymbol.toNotation)
-              g.beginFraChoice controller (.mayPaySymbolsThen symbols .returnSourceToHand src.id)
+              g.beginFraChoice controller (.mayPaySymbolsThen symbols (.returnToHand .source) src.id)
                 s!"{(g.player controller).name} may pay {shown} to return {src.name} to their hand"
     | .sacrifice (.fixed 1) .another =>
       let reflexive :=
@@ -4036,7 +4036,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           if (g.costPickCandidates controller sid pick).isEmpty then
             (g.logMsg "There is no other creature to sacrifice. The reflexive ability doesn't trigger.").failMayThen
           else
-            g.beginFraChoice controller (.mayPayPickThen pick (.mshReflexive 7 0) sid)
+            g.beginFraChoice controller (.mayPayPickThen pick (.queueReflexive (.mshReflexive 7 0)) sid)
               s!"{(g.player controller).name} may sacrifice another creature"
         else
           let others := (g.creaturesControlledBy controller).filter (·.id != sid)
@@ -4118,7 +4118,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             g.failMayThen
           else
             g.beginFraChoice controller
-              (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.reflexiveDamageAnyTarget 2) sid)
+              (.mayPayPickThen .sacrificeArtifactOrDiscardNonland (.queueReflexive (.dealDamage (.fixed 2) .target)) sid)
               s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
         | none => g.failMayThen
       else

@@ -169,7 +169,7 @@ structure AfterScrySurveil where
   palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
   /-- Work left after the pending scry or surveil finishes (Eye of Jace):
   its controller, source, and what to do. -/
-  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
+  fraAfterLook : Option (PlayerId × Option ObjectId × Resolution) := none
   /-- The following `surveil` returns a card with mana value at most the life
   gained this turn (ruling 750). -/
   armSurveilReturn : Bool := false
@@ -524,7 +524,7 @@ def mayThenResume (g : Game) : Bool := g.mayThen.resume
 
 def pendingDrawAfterScry (g : Game) : Option (PlayerId × Nat) := g.afterScrySurveil.pendingDrawAfterScry
 def palantirAfterScry (g : Game) : Option (PlayerId × PlayerId × ObjectId) := g.afterScrySurveil.palantirAfterScry
-def fraAfterLook (g : Game) : Option (PlayerId × Option ObjectId × FraNext) := g.afterScrySurveil.fraAfterLook
+def fraAfterLook (g : Game) : Option (PlayerId × Option ObjectId × Resolution) := g.afterScrySurveil.fraAfterLook
 def armSurveilReturn (g : Game) : Bool := g.afterScrySurveil.armSurveilReturn
 def surveilReturnMvAtMost (g : Game) : Option Nat := g.afterScrySurveil.surveilReturnMvAtMost
 def surveilReturnNoncreatureNonland (g : Game) : Bool := g.afterScrySurveil.surveilReturnNoncreatureNonland

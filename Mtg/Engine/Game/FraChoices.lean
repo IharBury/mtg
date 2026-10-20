@@ -201,7 +201,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayThen next sourceId, .accept =>
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .mayThen .., .decline => return g.finishFraChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
@@ -209,16 +209,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
   | .mayPayThen .., _ => throw "Pay or decline"
   | .mayDiscardThen next sourceId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .mayDiscardThen .., .decline => return g.finishFraChoice
   | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
-  | .discardThen _ _ causeId, .objects #[id] =>
+  | .discardThen causeId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g := g.draw p 1
@@ -254,9 +254,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | .land => o.printed.isLand
         | .creatureOrPlaneswalker => o.isCreature || o.printed.isPlaneswalker
         | .creature => o.isCreature
+        | _ => false
     if !ok then throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .maySacrificeThen .., .decline => return g.finishFraChoice
   | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
   | .mayMovePlusOne sourceId, .accept =>
@@ -485,7 +486,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+      return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
   | .mayPaySymbolsThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
@@ -516,7 +517,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+      return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
   | .mayPayPickThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
@@ -647,7 +648,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         if g.mayThenDrop > 0 then
           return g.acceptMayThen
         else
-          return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+          return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
       else throw s!"{o.name} can't be tapped"
     | none => throw "The source is gone"
   | .mayTapSourceThen .., .decline =>

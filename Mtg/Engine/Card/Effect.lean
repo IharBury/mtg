@@ -73,11 +73,6 @@ end Effect
 
 namespace Resolution
 
-/-- Nested `sequence` constructors, left to right. -/
-def flatten : Resolution → List Resolution
-  | .sequence rs => rs.flatMap flatten
-  | r => [r]
-
 /-- `toPhrase` of one activated-ability resolution. Spell and trigger steps
 phrase through `SpellResolution.toPhrase`.
 
@@ -280,6 +275,8 @@ private def phraseWith (r : Resolution) (noun : String)
     "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
   | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ =>
     "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
+  | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none =>
+    "Target creature you control deals damage equal to its power to that permanent"
   | .put .source .asPrinted (.entering [.counter .finality 1 false]) =>
     "Return this card from your graveyard to the battlefield with a finality counter on it"
   | .grant (.nextSpellCopy false) .source =>
@@ -290,6 +287,84 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
   | .becomeCopy .targetLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
+  | .returnToHand .target .none =>
+    s!"Return {noun} to its owner's hand"
+  | .destroy .target .drawIfNotAttacking =>
+    s!"Destroy {noun}. If it wasn't attacking, its controller draws a card"
+  | .dealDamage (.fixed n) (.player .eachPlayer) _ =>
+    s!"This deals {n} damage to each player"
+  | .dealDamage (.fixed n) (.targetAt _) .none =>
+    s!"This deals {n} damage to {noun}"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.targetAt _) =>
+    s!"Put {plusOnePlusOneCountersPhrase n} on {noun}"
+  | .put .graveyardCard .asPrinted .none =>
+    s!"Return {noun} to the battlefield"
+  | .put .graveyardCard .asPrinted (.entering [.counter .plusOnePlusOne _ true]) =>
+    s!"Return {noun} to the battlefield with an additional +1/+1 counter on it"
+  | .destroy .creaturesNotChosenType _ =>
+    "Choose a creature type. Destroy all creatures that aren't of the chosen type"
+  | .searchLibrary (.putOnLibrary .top .planeswalkerCard) =>
+    "Search your library for a planeswalker card, reveal it, then shuffle and put that card on top"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) =>
+    s!"Put {plusOnePlusOneCountersPhrase n} on each of {noun}"
+  | .put .allNonlandPermanentsInGraveyard .asPrinted .none =>
+    "Return all nonland permanent cards from your graveyard to the battlefield"
+  | .draw .milledByTargetPlayerThisTurn _ =>
+    "Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn"
+  | .exile .allCreatures .forLater .empowerJace =>
+    "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this way"
+  | .draw .greatestPowerAndLoseLife _ =>
+    "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
+  | .discard .chosenNonlandPermanent =>
+    s!"{capitalizeAscii noun} reveals their hand. You choose a nonland permanent card from it. That player discards that card"
+  | .discard .chosenNonland =>
+    s!"{capitalizeAscii noun} reveals their hand. You choose a nonland card from it. That player discards that card"
+  | .discard .hand =>
+    "Discard your hand"
+  | .draw (.perControlled .creature) _ =>
+    "Draw a card for each creature you control"
+  | .returnToHand .outsideGameOpponentChoice _ =>
+    "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
+  | .exile .sphinxsApproach .forLater _ =>
+    "You may exile this spell and four cards named Sphinx's Approach from your graveyard. If you do, search your library for a Sphinx creature card, put it onto the battlefield, then shuffle"
+  | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent =>
+    "Put a +1/+1 counter on each other Wizard token you control"
+  | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ =>
+    s!"This deals {n} damage to each creature and planeswalker your opponents control"
+  | .lose .allAbilities (.targetAt _) =>
+    s!"{capitalizeAscii noun} loses all abilities until end of turn"
+  | .putOnLibrary .topOrBottomDamage2 .target =>
+    "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
+  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo =>
+    "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
+  | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken =>
+    "If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
+  | .grant (.keywords _) .createdToken =>
+    "It gains haste until end of turn"
+  | .ifElse .notFromHand (.draw (.fixed 2) _) (.draw (.fixed 1) _) =>
+    "Draw a card. If this spell wasn't cast from your hand, draw two cards instead"
+  | .destroy (.targetAt _) .none =>
+    s!"Destroy {noun}"
+  | .putCounters (.ofKind .plusOnePlusOne 1) (.creaturesControlledBy (.targetAt _)) =>
+    "Put a +1/+1 counter on each creature target player controls"
+  | .exile .target (.returnBrieflyIfMvAtMost n) _ =>
+    s!"Exile {noun}. If that permanent's mana value was {n} or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step"
+  | .discard (.mayWheel n _) =>
+    s!"Each player may discard their hand and draw {englishNumber n} cards"
+  | .grant .mountainsAddExtraRed .landsYouControl =>
+    "Until end of turn, whenever you tap a Mountain for mana, add an additional {R}"
+  | .searchLibrary (.mill (.fixed 1) _ _) =>
+    "Search your library for a land card, put it into your graveyard, then shuffle"
+  | .counter =>
+    s!"Counter {noun}"
+  | .unlessPays .counter n =>
+    s!"Counter {noun} unless its controller pays \{{n}}"
+  | .mill (.fixed n) .you (.permanentAndGainLife l) =>
+    s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life"
+  | .chooseModes _ (.fraTrigger n) =>
+    if n == 2 then "choose two" else "choose one"
+  | .pump .minusGraveyardCards (.fixed 0) .target =>
+    s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard"
   | .sequence rs =>
     match r.onPermanent? with
     | some action => PermanentAction.toNotation action noun (sentence := true)
@@ -304,9 +379,7 @@ private def phraseWith (r : Resolution) (noun : String)
       match r.onSource? with
       | some action => PermanentAction.toNotation action "this creature" (sentence := true)
       | none =>
-        match r.fraPhrase? noun with
-        | some phrase => phrase
-        | none => SpellResolution.toPhrase r noun
+        if r.isFra then "" else SpellResolution.toPhrase r noun
 
 /-- Oracle-style reminder from targeting and resolution. Source-deals-damage
 uses the creature as the subject rather than the generic `PermanentAction`
