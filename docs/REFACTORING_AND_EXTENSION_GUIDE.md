@@ -72,24 +72,19 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 3: Eliminate `Effect.sharedTrigger : Option SharedTrigger`
+### Priority 3: Eliminate `Effect.sharedTrigger : Option SharedTrigger` (COMPLETED)
 - **Files**:
-  - `Mtg/Engine/Card/Effect.lean` (lines 41–51)
-  - `Mtg/Engine/Card/SharedTrigger.lean` (lines 15–175)
-  - `Mtg/Engine/Card/Trigger.lean` (`SharedTrigger.timing` L216–800)
+  - `Mtg/Engine/Card/Effect.lean`
+  - `Mtg/Engine/Card/SharedTrigger.lean`
+  - `Mtg/Engine/Card/Trigger.lean`
   - `Mtg/Engine/Card/TriggerEffects.lean`
-  - `Mtg/Engine/Card/TriggeredAbility.lean` (lines 19–60, 1790–1910)
-  - `Mtg/Engine/Card/OracleArgs.lean` (lines 400–525)
+  - `Mtg/Engine/Card/TriggeredAbility.lean`
+  - `Mtg/Engine/Card/OracleArgs.lean`
 - **Completed**:
   - Eliminated `Mtg/Engine/Card/Chapter.lean`, `ChapterResolution`, `ChapterSpell`, `TriggeredAbility.chapterTiming`, `SharedTrigger.chapter`, `Effect.asChapter?`, `Effect.asTrigger?`, `Effect.mkChapter`, `Effect.ofChapter`, `Effect.chapterSpell`, and `OracleArgs.takeChapter` (CR 714.2b / CR 714.3): Saga chapters now use compositional `Effect` values directly (`Mtg/Engine/Card/ChapterEffects.lean`), with the chapter number carried by `CounterEvent.sagaChapter (n : Nat := 0)` (`TriggerEvent.sagaChapter`).
   - Eliminated `TriggeredAbility.shared` (`Mtg/Engine/Card/TriggeredAbility.lean`) and replaced all 16 runtime checks of `.shared` across `Mtg/Engine/Game/*.lean` (`CastSpell.lean`, `Combat.lean`, `Damage.lean`, `Entering.lean`, `Keywords.lean`, `Movement.lean`, `SpellResolution.lean`, `SpellTargets.lean`, `Triggers.lean`) with compositional `Effect.resolution`, `TriggeredAbility.firesOn`, and `TriggeredAbility.sagaChapterNumber?` checks.
   - Eliminated `EventLeftover`, the 9 event-specific `*Leftover` enums (`EnterLeftover`, `StepLeftover`, `DeathLeftover`, `ThisAttackLeftover`, `EnterOrAttackLeftover`, `WatchLeftover`, `YouAttackLeftover`, `CastLeftover`, `ResourceLeftover`), `SharedTrigger.leftover`, `EventLeftover.timing`, and the 8 `*Sentence` tables (`deathSentence`, `enterOrAttackSentence`, `thisAttackSentence`, `youAttackingSentence`, `resourceSentence`, `castingSentence`, `watchSentence`, `stepSentence`, ~1,000 lines removed): added `events : Array TriggerEvent := #[]`, `onceEachTurn : Bool := false`, and `optionalOnceEachTurn : Bool := false` directly onto `Effect` (`Mtg/Engine/Card/Effect.lean`), defined all 91 `Effect.enter*` / `step*` / `death*` / `thisAttack*` / `enterOrAttack*` / `watch*` / `youAttacking*` / `casting*` / `resource*` constructors directly as `Effect` values (`Mtg/Engine/Card/TriggerEffects.lean`), and unified `TriggeredAbility.timing` (`Mtg/Engine/Card/TriggeredAbility.lean`) to read `e.events`, `e.onceEachTurn`, and `e.optionalOnceEachTurn` directly without branching on `e.sharedTrigger`.
-- **What remains duplicated**:
-  - The 6 remaining `SharedTrigger` sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`) plus `.mayTo` and `.may` still store their payload twice on `Effect`: once in `Effect` fields (populated by `Effect.ofTrigger` via `SharedTrigger.timing`) and once as `sharedTrigger : Option SharedTrigger` (used only by `OracleArgs.takeEffect` / `finishEffect` and `TriggeredAbility.toNotation`).
-- **How to refactor**:
-  - Construct the remaining `Effect.ofTrigger` triggers directly with compositional `Resolution` trees and `Effect.phrase`.
-  - Update `OracleArgs.takeEffect` and `TriggeredAbility.toNotation` to read `e.resolution` / `e.phrase` directly instead of branching on `e.sharedTrigger`.
-  - Delete `SharedTrigger` (`SharedTrigger.lean`) and `SharedTrigger.timing` (`Trigger.lean`).
+  - Eliminated `Effect.sharedTrigger`, the `SharedTrigger` inductive and all 6 sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`), `LibraryTrigger.timing`..`PermanentTrigger.timing`, and `OracleArgs.takeTrigger` (~700 net lines removed): defined `def SharedTrigger : Type := Effect`, defined all 156 `SharedTrigger.*` constructors directly as `Effect` values in `Mtg/Engine/Card/Trigger.lean`, parameterized `CombatEvent.youAttackWithTotalPower (n : Int := 12)` (`TriggerEvent.youAttackWithTotalPower`), and updated `OracleArgs.takeEffect` / `finishEffect` (`Mtg/Engine/Card/OracleArgs.lean`) and `TriggeredAbility.toNotation` (`Mtg/Engine/Card/TriggeredAbility.lean`) to inspect `Effect` fields directly.
 
 ---
 

@@ -30,9 +30,6 @@ structure Effect where
   abilityCastKind : AbilityCastKind := .other
   preferAsDefaultMode : Bool := false
   resolution : Resolution := .draw 0
-  /-- Shared trigger this effect was built from, when any.
-  The steps themselves are `resolution`. -/
-  sharedTrigger : Option SharedTrigger := none
   phrase : String := ""
 deriving Repr, Inhabited, BEq
 

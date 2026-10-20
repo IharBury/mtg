@@ -182,7 +182,7 @@ namespace CardDef
     (.sequence [.sequence [.draw 1, .gainLife 1], .amass 2]) ==
   [.draw 1, .gainLife 1, .amass 2]
 #guard (Effect.ofTrigger (.scry 2)).resolution == .scry (.fixed 2)
-#guard (Effect.ofTrigger (.scry 2)).sharedTrigger == some (.scry 2)
+#guard (Effect.ofTrigger (.scry 2)).phrase == ""
 #guard (Effect.chapterRecruit).resolution == .recruit
 #guard (Effect.chapterDraw 2).resolution == .draw (.fixed 2)
 #guard (Effect.enterDealDamageUpToOne 4).allowsZeroTargets
@@ -191,8 +191,7 @@ namespace CardDef
     .putCounters (.ofKind .plusOnePlusOne) .source,
     .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
     .«if» .enrageGrantsCombat .additionalCombatPhase]
-#guard Effect.watchHulk.sharedTrigger == none &&
-  Effect.watchHulk.events == #[.sourceDealtDamage]
+#guard Effect.watchHulk.events == #[.sourceDealtDamage]
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution == .scry (.fixed 2)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
 #guard (Effect.pump 3 3).phrase == "target creature gets +3/+3 until end of turn"

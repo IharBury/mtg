@@ -113,7 +113,7 @@ inductive CombatEvent where
   | youAttack
   | youAttackWithElves
   | youAttackWithTwoOrMore
-  | youAttackWithTotalPower
+  | youAttackWithTotalPower (n : Int := 12)
   | equippedAttacks
   | equippedAttacksAlone
   | equippedCreatureYouControlAttacks
@@ -343,7 +343,7 @@ abbrev fra (e : TriggerEvent) : TriggerEvent := e
 @[match_pattern] abbrev youAttack : TriggerEvent := .combat .youAttack
 @[match_pattern] abbrev youAttackWithElves : TriggerEvent := .combat .youAttackWithElves
 @[match_pattern] abbrev youAttackWithTwoOrMore : TriggerEvent := .combat .youAttackWithTwoOrMore
-@[match_pattern] abbrev youAttackWithTotalPower : TriggerEvent := .combat .youAttackWithTotalPower
+@[match_pattern] abbrev youAttackWithTotalPower (n : Int := 12) : TriggerEvent := .combat (.youAttackWithTotalPower n)
 @[match_pattern] abbrev equippedAttacks : TriggerEvent := .combat .equippedAttacks
 @[match_pattern] abbrev equippedAttacksAlone : TriggerEvent := .combat .equippedAttacksAlone
 @[match_pattern] abbrev equippedCreatureYouControlAttacks : TriggerEvent := .combat .equippedCreatureYouControlAttacks
@@ -580,8 +580,8 @@ def spec : TriggerEvent → Spec
   | .opponentDrawsSecondCard =>
     { clause := "an opponent draws their second card each turn",
       label := "opponent-second-card trigger", checkTargets := false }
-  | .youAttackWithTotalPower =>
-    { clause := "you attack with creatures with total power 12 or greater",
+  | .youAttackWithTotalPower n =>
+    { clause := s!"you attack with creatures with total power {n} or greater",
       label := "total-power-attack trigger", checkTargets := false }
   | .eaglesCreateBirds =>
     { clause := "the beginning of the next upkeep", isWhenever := false,

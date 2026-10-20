@@ -13,18 +13,7 @@ namespace Mtg.Engine
 namespace Effect
 
 /-- Convert a shared trigger effect to the unified `Effect`. -/
-def ofTrigger (e : SharedTrigger) : Effect :=
-  let t := e.timing
-  { events := t.events
-    targeting := t.targeting
-    allowsZeroTargets := t.allowsZeroTargets
-    maxTargets := t.maxTargets
-    dividedDamage := t.dividedDamage
-    onceEachTurn := t.onceEachTurn
-    optionalOnceEachTurn := t.optionalOnceEachTurn
-    resolution := t.resolution
-    sharedTrigger := some e
-    phrase := "" }
+def ofTrigger (e : SharedTrigger) : Effect := e
 
 /-- Direct triggered-ability `Effect` factories (CR 603 / 608). -/
 def enterDestroy (kind : EffectTargetKind) : Effect :=

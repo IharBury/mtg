@@ -55,11 +55,11 @@ its own instance of “target”. -/
 def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
   let isFra :=
-    obj.abilityEffect.isSome ||
-      (t.effect.sharedTrigger.isNone && t.effect.events.isEmpty && t.sagaChapterNumber?.isNone &&
+    obj.abilityEffect.isSome || !t.opts.printed.isEmpty ||
+      (!t.effect.phrase.isEmpty && t.effect.events.isEmpty && t.sagaChapterNumber?.isNone &&
         match t.effect.resolution with
         | .sequence rs => rs.any Resolution.isFra
-        | r => r.isFra || !t.opts.printed.isEmpty)
+        | r => r.isFra)
   let e := obj.abilityEffect.getD t.effect
   let kind := e.targetKind
   isFra && !targets.isEmpty &&
