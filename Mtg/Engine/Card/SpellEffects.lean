@@ -27,7 +27,7 @@ def mkSpell (targeting : EffectTargeting) (resolution : SpellResolution)
     maxTargets
     spellCastKind := castKind
     preferAsDefaultMode
-    resolution := Resolution.ofSpell resolution
+    resolution := match resolution with | .sequence rs => .sequence (rs.flatMap Resolution.flatten) | r => r
     phrase := phraseOverride.getD (SpellResolution.toPhrase resolution targeting.kind.noun) }
 
 /-- Build an activated-ability `Effect` from targeting and resolution.

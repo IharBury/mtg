@@ -534,7 +534,7 @@ def spellBody (cardName : String) (e : Effect) : String :=
 def effectLines (cardName : String) (e : Effect) : List String :=
   let fallback :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
-  match e.spellResolution with
+  match e.resolution with
   | .sequence [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
     [s!"Tap target creature. Scry {scryN}.",
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]

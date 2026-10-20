@@ -4271,7 +4271,7 @@ def unrecognizedIsNotExtraLandOk : Bool :=
   let e : Effect := { resolution := .unrecognized }
   let before := (afterDraw.player ⟨0⟩).additionalLandsThisTurn
   let g := afterDraw.applyEffect ⟨0⟩ e #[]
-  e.spellResolution == .unrecognized &&
+  e.resolution == .unrecognized &&
     (g.player ⟨0⟩).additionalLandsThisTurn == before &&
     (let g2 := afterDraw.applyEffect ⟨0⟩ Effect.playAdditionalLandThisTurn #[]
      (g2.player ⟨0⟩).additionalLandsThisTurn == before + 1)

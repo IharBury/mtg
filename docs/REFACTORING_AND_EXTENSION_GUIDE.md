@@ -49,7 +49,7 @@ The sections below document the remaining duplication left over from earlier per
     - `TriggerResolution.ofPermanent` and `TriggerResolution.ofSource` (`SpellResolution.lean:3495–3571`) already translate all 21 `PermanentAction` constructors into compositional Stratum 1 constructors (`.pump`, `.destroy`, `.tap`, `.untap`, `.setBasePT`, `.exile`, `.grant`, `.putCounters`, `.putOnLibrary`, etc.).
 - **How to refactor**:
   1. Replace `.onPermanent action who` with `TriggerResolution.ofPermanent action` / `TriggerResolution.ofSource action`, then delete `PermanentAction.lean`.
-  2. Eliminate `TriggerResolution.ofSpell`, `Resolution.toSpellStep`, and `Effect.spellResolution`.
+  2. Eliminate `TriggerResolution.ofSpell` once `.onPermanent` is removed (`Resolution.ofSpell`, `Resolution.toSpellStep`, `Resolution.toSpell`, and `Effect.spellResolution` were eliminated in Batch 25).
 
 ---
 
@@ -63,6 +63,7 @@ The sections below document the remaining duplication left over from earlier per
   - Removed duplicate fallback arms (`.shuffleSource`, `.draw`, `.scry`, `.gainLife`, `.recruit`, `.amass`, `.createTokens`, `.addMana`, `.discard`, and `Resolution.toSpell`) from `applyTriggeredAbility` (`TriggeredAbilities.lean:4611–4625`), delegating directly to `applyUnifiedAbility`.
   - Collapsed 25 redundant specialized pattern-match arms across `applyTriggerPump`, `applyTriggerDraw`, `applyMill`, `applyUntap`, `applyTap`, `applyLoseLife`, and `applyGainLife` (`TriggeredAbilities.lean`) into the generic `TriggerArgs.lean` evaluators (`permanentsNamed`, `collectPlayers`, `triggerCount`, `millCollected`).
   - Eliminated `TriggerAffected` (`SpellResolution.lean`), parameterized `ofAffected`, `affectedNoun`, `withAffected`, and `applyAffectedCounters` directly over `ObjectSelector`, and collapsed redundant recipient match arms and local `where` helpers across `applyTriggerPump`, `applyTriggerDamage`, `applyPutCounters`, `applyExile`, `applyDestroy`, `applyGrant`, `applyUntap`, `applyTap`, `applyLose`, `applyCant`, `applyBecomeArtifact`, `applyBecomePrepared`, `applyPutOnLibrary`, and `applySetBasePT` (`TriggeredAbilities.lean`) and `toNotation` (`TriggeredAbility.lean`).
+  - Eliminated `Resolution.ofSpell`, `Resolution.toSpellStep`, `Resolution.toSpell`, and `Effect.spellResolution` (`Effect.lean`), simplified `Resolution.doesNothingAsSpell` to 4 lines matching `doesNothingAsActivated`, flattened `Game.applyUnified` and `Game.applyUnifiedAbility` (`EffectResolution.lean`) into single `match effect.resolution with` dispatchers without duplicate arms, and collapsed redundant specialized condition, counter, token, and grant arms in `triggerIfHolds`, `applyPutCounters`, `applyCreateTokens`, `applyGrant`, and `applyTriggeredAbility` (`TriggeredAbilities.lean`).
 - **Remaining**:
   1. **Duplicate Printed vs. Selector Arms in `TriggeredAbilities.lean`**:
      - `TriggeredAbilities.lean` still has specialized pattern-match arms in `applyTriggerDamage`, `applyPutCounters`, `applyCreateTokens`, `applyExile`, `applySacrifice`, `applyDestroy`, `applyReturnToHand`, `applyPut`, `applyGrant`, `applyFight`, and `applySetBasePT` that can be collapsed into the generic `TriggerArgs` evaluators.

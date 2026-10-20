@@ -780,7 +780,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
     match payer? with
     | none => g.logMsg "The target is no longer legal"
     | some (payer, spellId) =>
-      let inner := { effect with resolution := Resolution.ofSpell r }
+      let inner := { effect with resolution := r }
       { g with
           pending := .payOrLetCounter payer n spellId
           unlessPays := { effect := some inner, controller, targets, due := false } }.logMsg

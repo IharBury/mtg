@@ -319,102 +319,12 @@ wording. -/
 def toPhrase (r : Resolution) (noun : String) : String :=
   phraseWith r noun fun rs => String.intercalate ". " (rs.map (fun step => phraseWith step noun fun _ => ""))
 
-/-- Lift a spell resolution onto the shared `Resolution` vocabulary, flattening
-nested sequences. -/
-def ofSpell (r : SpellResolution) : Resolution :=
-  match r with
-  | .sequence rs => .sequence ((rs.map ofSpell).flatMap flatten)
-  | r => r
-
-/-- A shared resolution as a spell step, when every part of it is one.
-Activated-ability constructors stay `none`, so `spellResolution` is
-`.unrecognized` for them. -/
-def toSpellStep : Resolution → Option SpellResolution
-  | .unrecognized | .sequence _ => none
-  | .onSource _ | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _)
-  | .exile .top .playUntilNextTurn _ | .grant (.subtypeWithLandsPT _) .source
-  | .put .source .tapped _ | .returnToHand .source _
-  | .addMana #[] (.fixed 1) .anyColor | .put .source .asPrinted .forAttach | .searchLibrary (.returnToHand .basicLand _)
-  | .searchLibrary (.sequence [.put .basicLand .tapped _, .returnToHand .basicLand _])
-  | .grant (.keywords _) (.intersection [.creaturesYouControl, .union _])
-  | .exile (.target .eachPermanent) .nextEndStep _ | .searchLibrary (.put (.basicBeholdUntap _) .tapped _)
-  | .draw (.fixed 1) .targetPlayers
-  | .dealDamage _ .target _ | .draw .lastKnownPower _
-  | .draw .perBurden _ | .grant .arwenShare .target
-  | .grant .combatDamageCreateTreasure .target | .putCounters (.ofKind .shadow _) .target
-  | .dealDamage _ (.player .eachOpponent) _ | .destroy .allCreaturesExceptTwoChosen _
-  | .cant (.beBlockedByMostLifePlayer .target) | .putCounters (.ofKind .plusOnePlusOne _) (.othersOfSubtype _)
-  | .grant .extraTurn .youIfCast | .putCounters .plusOneChosenX .source
-  | .revealLibrary (.top _) (.put (.lookedTypes _) _ _) _ | .grant .transformed .source | .draw .chosenX _
-  | .revealLibrary (.top _) (.returnToHand .artifact _) _
-  | .addMana #[] (.fixed 1) (.subtypeSpellsOrAbilities _) | .addMana #[] (.fixed 1) .artifactSpell
-  | .addMana #[] (.fixed 2) .creatureSources | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact
-  | .addMana #[] .equalSourcePower .anyColor | .addMana #[] (.fixed 4) .anyCombination
-  | .addMana #[] (.fixed 2) .equipment | .draw .cardsDiscardedThisTurn _
-  | .createTokens _ .removedPlusOnes _ _ _ | .exile .topPower .playThisTurn _
-  | .becomeCopy (.stackAbility _)
-  | .proliferate (.fixed 1) .target | .grant .constructHero .source
-  | .revealLibrary (.top _) (.returnToHand (.milledSubtype _) _) _ | .mill _ .you (.subtypeOrEnchantmentToHand _)
-  | .createTokens .tigerGod (.fixed 1) false _ _ | .destroy .otherCreaturesOddOrEvenMv _
-  | .put .source .asPrinted (.entering [.counter .finality 1 true]) | .revealLibrary (.top 1) (.draw (.fixed 1) _) _
-  | .becomeCopy .secondArtifactTargetNotLegendary
-  | .grant (.typesPTAndKeywords _ _ _ _) .source | .grant (.nextSpellCopy _) .source
-  | .grant .harnessed .source | .connive (.target (.youControl (.subtype _)))
-  | .mill _ .you .none | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokens _ .lifeGainedThisTurn _ _ _
-  | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _ | .cant (.block .creaturesWithoutFlying)
-  | .becomePrepared .creaturesYouControl _
-  | .grant .jaceLoyaltyAtInstantSpeed .youIfCast
-  | .becomeCopy .targetLegendRuleOff | .becomeCopy (.creaturesControlledBy (.target .player))
-  | .proliferate .planeswalkerTypes .youControl
-  | .put .source .asPrinted (.entering [.counter .finality 1 false])
-  | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _
-  | .exile .top (.mayCastElseDamageOpponents _) _ | .grant (.emblemCastSpellDamage _) .youIfCast => none
-  | r@(.returnToHand .targetSpell _) | r@(.returnToHand (.target .graveyardCard) _)
-  | r@(.becomeCopy .sourceSpellXTimes) => some r
-  | r => if r.isFra then none else some r
-
-/-- The spell view of `r`. A sequence is a spell sequence only when every
-step lifts; otherwise it stays unrecognized, as before. -/
-def toSpell (r : Resolution) : Option SpellResolution :=
-  match r with
-  | .sequence rs =>
-    match rs.flatMap flatten |>.mapM toSpellStep with
-    | some steps => some (.sequence steps)
-    | none => none
-  | r => toSpellStep r
-
-/-- Recover the spell view. `onSource` is the spell `onPermanent` of the
-same action. Anything that does not lift is `.unrecognized`. -/
-def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
-  match e.resolution with
-  | .onSource a => .onPermanent a
-  | r => r.toSpell.getD .unrecognized
-
 /-- True when resolving `r` as a spell or Saga chapter would do nothing. -/
 partial def doesNothingAsSpell (r : Resolution) : Bool :=
   match r with
-  | .sequence rs => rs.any doesNothingAsSpell
-  | .putOnLibrary .shuffled .source | .gainLife _ _ | .dealDamage _ _ _
-  | .recruit _ | .addMana _ _ _ | .discard _ | .onSource _ => false
-  | .empowerJace _ | .surveil _ _ | .mill _ .you _
-  | .may (.discard (.cards 1 .you)) (.draw (.fixed _) _) .ifYouDo
-  | .createTokens _ .lifeGainedThisTurn _ _ _ | .sacrifice .oppGreatestMvCreatureOrPlaneswalker _
-  | .createTokens .tigerGod (.fixed 1) false _ _ | .grant .extraTurn .youIfCast | .draw .perBurden _
-  | .cant (.block .creaturesWithoutFlying)
-  | .destroy .otherCreaturesOddOrEvenMv _
-  | .becomePrepared .creaturesYouControl _
-  | .exile .top (.mayCastElseDamageOpponents _) _ | .grant (.emblemCastSpellDamage _) .youIfCast
-  | .put .source .asPrinted (.entering [.counter .finality 1 false])
-  | .grant (.nextSpellCopy false) .source | .proliferate .planeswalkerTypes .youControl
-  | .becomeCopy (.creaturesControlledBy (.target .player)) | .becomeCopy .targetLegendRuleOff
-  | .grant (.keywords _) .creaturesYouControl
-  | .grant .jaceLoyaltyAtInstantSpeed .youIfCast | .draw .lastKnownPower _ => false
-  | .searchLibrary (.put .basicLand .tapped _) | .searchLibrary (.returnToHand (.landSubtype _) _) | .searchLibrary (.returnToHand .basicLand _) | .exile .top .playUntilNextTurn _ => false
   | .unrecognized => true
-  | r =>
-    if r.isFra then false
-    else ({ resolution := r } : Effect).spellResolution == .unrecognized
+  | .sequence rs => rs.any doesNothingAsSpell
+  | _ => false
 
 /-- True when resolving `r` as an activated ability would do nothing. -/
 partial def doesNothingAsActivated (r : Resolution) : Bool :=

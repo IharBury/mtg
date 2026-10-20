@@ -105,7 +105,7 @@ def chapterSpell (e : Effect) : ChapterResolution :=
     targeting := e.targeting
     allowsZeroTargets := e.allowsZeroTargets
     phrase := e.phrase
-    resolution := e.spellResolution }
+    resolution := e.resolution }
 
 instance : Coe ChapterResolution Effect where
   coe := ofChapter
