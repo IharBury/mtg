@@ -54,17 +54,20 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         src.staticAbilities.foldl (fun acc ab =>
           let grant (cond : Bool) (k : Keywords) := if cond then Keywords.merge acc k else acc
           match ab with
-          | .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
+          | .ability (.creaturesYouControlHave k subtypes otherOnly) =>
+            if otherOnly && !subtypes.isEmpty then acc
+            else
+              let ok :=
+                (!otherOnly || other) &&
+                  (if subtypes.isEmpty then o.isCreature else subtypes.any (g.hasSubtype o))
+              grant ok k
           | .plusOneCreaturesHaveVigilance =>
             grant (o.isCreature && o.status.plusOnePlusOne > 0) Keyword.vigilance
           | .creatureTokensGetOneAndVigilance =>
             grant (o.isCreature && o.printed.isToken) Keyword.vigilance
           | .otherPlusOneCreaturesHaveHaste =>
             grant (other && o.isCreature && o.status.plusOnePlusOne > 0) Keyword.haste
-          | .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
-          | .otherCreaturesHaveTrample #[] => grant (other && o.isCreature) Keyword.trample
           | .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
-          | .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
           | .artifactCreaturesHaveVigilance =>
             grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
           | _ => acc) acc) Keywords.none
@@ -135,8 +138,7 @@ def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
   g.battlefield.any (fun aura =>
     aura.attachedTo == some o.id &&
       aura.staticAbilities.any (fun
-        | .enchantedLosesAbilitiesDoesntUntap => true
-        | .enchantedLosesAbilitiesCantUntap => true
+        | .ability (.enchantedLosesAbilitiesNoUntap _) => true
         | _ => false))
 
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)

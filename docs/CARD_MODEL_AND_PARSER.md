@@ -127,14 +127,14 @@ Recent refactorings unified trigger and spell parameters around six composable s
    - `.cascade` (CR 702.85a) and `.fromEffect` (deferred to the inner `SharedTrigger`'s timing).
 
 ### 2.6 `StaticAbility` Structure (`Mtg/Engine/Card/StaticAbility.lean`)
-`FraStatic` and `StaticShape` are both type aliases (`abbrev`) for `StaticAbility`. After consolidating the 3 separate static-ability inductives (previously 255 constructors across `StaticAbility`, `FraStatic`, and `StaticShape`), `StaticAbility` has **9 total constructors** (all 9 field-bearing) aligned with the CR 604 / CR 613 / CR 614 static-ability categories:
+`FraStatic` and `StaticShape` are both type aliases (`abbrev`) for `StaticAbility`. After consolidating the 3 separate static-ability inductives and parameterizing overlapping lord, attachment, and replacement variants inside the sub-inductives, `StaticAbility` has **9 total constructors** (all 9 field-bearing) aligned with the CR 604 / CR 613 / CR 614 static-ability categories:
 - `.typeChange (which : TypeStatic)` — CR 613.1d Layer 4 type-changing static effects
-- `.ability (which : AbilityStatic)` — CR 613.1f Layer 6 ability-adding and ability-removing static effects
+- `.ability (which : AbilityStatic)` — CR 613.1f Layer 6 ability-adding and ability-removing static effects (26 constructors, including parameterized `creaturesYouControlHave`, `keywordIfYouControlOtherSubtype`, `creaturesWithPlusOneHave`, and `enchantedLosesAbilitiesNoUntap`)
 - `.cda (which : CdaStatic)` — CR 604.3 / CR 613.4a Layer 7a characteristic-defining P/T abilities
-- `.pt (which : PtStatic)` — CR 613.4c Layer 7c power/toughness-modifying static effects
+- `.pt (which : PtStatic)` — CR 613.4c Layer 7c power/toughness-modifying static effects (22 constructors, including parameterized `creaturesYouControlGet`, `enchantedCreatureGetsAndHas`, and `equippedCreatureGetsAndHas`)
 - `.combat (which : CombatStatic)` — CR 508 / CR 509 / CR 510 combat requirements, restrictions, and damage assignment
 - `.costCast (which : CostCastStatic)` — CR 601.2f / CR 601.3 / CR 305.1 cost modifiers, casting permissions, and casting restrictions
-- `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects
+- `.rule (which : RuleStatic)` — CR 614 / CR 615 / CR 603.2d / CR 704 replacement, prevention, trigger-modification, and rule-modifying static effects (20 constructors, including parameterized `doesntUntap`, `exileOpponentsDyingCreatures`, `extraCounter`, and `noncombatDamageBonus`)
 - `.keyword (which : KeywordStatic)` — CR 702 / CR 303.4 / CR 605 keyword, enchant, and intrinsic mana static abilities
 - `.printed (text : String)` — fallback printed text for unmodeled lines
 
@@ -150,17 +150,8 @@ Recent refactorings unified trigger and spell parameters around six composable s
 - `.multi (fs : Array TargetFilter) (optional : Array Nat)` — sequential instances of "target" per filter
 - `.pair (a b : EffectTargetKind)` — combined target instances of two chosen modes (CR 700.2)
 
-### 2.8 `SharedTrigger` Structure (`Mtg/Engine/Card/SharedTrigger.lean`)
-After grouping its 166 effect and leftover constructors into 7 CR 603 / CR 608 / CR 701 effect-category sub-inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`) with `@[match_pattern] abbrev` aliases, `SharedTrigger` has **10 total constructors** (all 10 field-bearing):
-- `.library (t : LibraryTrigger)` — CR 121 / CR 701.13 / CR 701.18 / CR 701.20 / CR 701.25 / CR 701.48 draw, scry, surveil, mill, search/reveal library, connive, and cascade effects
-- `.tokenCounter (t : TokenCounterTrigger)` — CR 111 / CR 122 / CR 701.36 / CR 701.47 token creation, amass, recruit, investigate, counter placement/removal, Ring tempts, and Plan effects
-- `.combatDamage (t : CombatDamageTrigger)` — CR 119 / CR 120 / CR 506 / CR 701.3 / CR 701.12 damage, life gain/loss, P/T modification, Equipment attachment, fight, and extra combat effects
-- `.zoneChange (t : ZoneChangeTrigger)` — CR 400 / CR 701.8 / CR 701.9 / CR 701.17 exile, return from graveyard/exile, put onto battlefield, sacrifice, destroy, and discard effects
-- `.continuous (t : ContinuousTrigger)` — CR 611 / CR 700.2 / CR 701.21 / CR 706 continuous grants, tap/untap, control change, mana production, spell cast/copy, modal, and prepare effects
-- `.permanent (t : PermanentTrigger)` — `PermanentAction` applied to target, source, enchanted, or attached permanent
-- `.leftover (t : EventLeftover)` — event-specific leftover families (`enter`, `step`, `death`, `thisAttack`, `enterOrAttack`, `watch`, `youAttacking`, `casting`, `resource`)
-- `.chapter (n : Nat) (e : ChapterResolution)` — CR 714 Saga chapter effects
-- `.mayTo (can thenDo : SharedTrigger)` and `.may (action : SharedTrigger)` — CR 603.5 optional/reflexive trigger combinators
+### 2.8 Unified `SharedTrigger` / `Effect` Builders (`Mtg/Engine/Card/Trigger.lean` & `Mtg/Engine/Card/TriggerEffects.lean`)
+`SharedTrigger` is a type alias (`abbrev SharedTrigger := Effect`) for `Effect`, eliminating all intermediate trigger-effect wrapper inductives (`LibraryTrigger`, `TokenCounterTrigger`, `CombatDamageTrigger`, `ZoneChangeTrigger`, `ContinuousTrigger`, `PermanentTrigger`, `EventLeftover`, `ChapterResolution`). Triggered abilities (`TriggeredAbility.triggered (when : TriggerEvent) (effect : Effect) (opts : SharedTriggerOpts)`) and Saga chapters (`SagaChapter.effect : Effect`) store `Effect` values directly over `Resolution`.
 
 ---
 

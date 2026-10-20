@@ -436,16 +436,17 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
             (g.findObject? id).any (fun c => c.printed.isCreature || c.printed.isPlaneswalker))).size
           addStats acc (Int.ofNat n, 0)
         | _ => acc) (0, 0)
-      let fromSources (srcs : Array GameObject) : Int × Int :=
-        srcs.foldl (fun acc src =>
-          src.staticAbilities.foldl (fun acc ab =>
-            match ab with
-            | .creatureTokensGetOneAndVigilance =>
-              if o.isCreature && o.printed.isToken then addStats acc (1, 0) else acc
-            | .emblemCreaturesGetTwoTwo => if o.isCreature then addStats acc (2, 2) else acc
-            | _ => acc) acc) (0, 0)
-      let team := fromSources (g.permanentsOf p)
-      let emblems := fromSources (g.objects.filter (fun e => e.zone == .command && e.controlledBy p))
+      let team := (g.permanentsOf p).foldl (fun acc src =>
+        src.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .creatureTokensGetOneAndVigilance =>
+            if o.isCreature && o.printed.isToken then addStats acc (1, 0) else acc
+          | _ => acc) acc) (0, 0)
+      let emblems := (g.objects.filter (fun e => e.zone == .command && e.controlledBy p)).foldl (fun acc src =>
+        src.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .creaturesYouControlGet p t => if o.isCreature then addStats acc (p, t) else acc
+          | _ => acc) acc) (0, 0)
       let attached := g.battlefield.foldl (fun acc a =>
         if a.attachedTo != some o.id then acc
         else
@@ -453,7 +454,6 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
             match ab with
             | .equippedHuntersAxe => addStats acc (2, 0)
             | .equippedMedicsKitesail => addStats acc (1, 0)
-            | .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
             | _ => acc) acc) (0, 0)
       let flyingEmblem :=
         if o.isCreature &&
