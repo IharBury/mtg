@@ -146,7 +146,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | .oneUnusedThisTurn => src.status.allianceModesChosen
       | .vision => src.status.modesChosenThisTurn
       | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-        | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ =>
+        | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
+        | .«if» _ | .unlessPays _ =>
         src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
@@ -160,7 +161,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .vision =>
           g.logMsg "The Vision's ability is removed from the stack with no effect"
         | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ =>
+          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
+          | .«if» _ | .unlessPays _ =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -184,7 +186,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               chooseModesRest := some rest }.logMsg
             "Choose one that hasn't been chosen this turn"
         | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ => g
+          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
+          | .«if» _ | .unlessPays _ => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -3120,7 +3123,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           | some id => found := found.push id
           | none => pure ()
         | .topNumber _ | .untilCreaturesPerOpponent | .untilHistoric
-        | .firstResolveUntilCreature | .fromHand _ => pure ()
+        | .firstResolveUntilCreature | .fromHand _ | .search => pure ()
       return { g with thisWay := { g.thisWay with revealedIdsThisWay := found } }
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
@@ -4240,7 +4243,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some r =>
         g.applyTriggeredAbility controller ab sourceId targets dividedDamage
           lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-    | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _ => g
+    | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
+      | .«if» _ | .unlessPays _ => g
   | .grant .newTargets .causingSpell =>
     let targetingSource (e : StackEntry) : Bool :=
       e.targets.any (fun t =>
@@ -4321,7 +4325,8 @@ def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
   | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ | .fromLastKnown, _
-  | .hawkeyeIndices _, _ | .fraTrigger _, _ | .one, _ | .ifElse _, _ => g
+  | .hawkeyeIndices _, _ | .fraTrigger _, _ | .one, _ | .ifElse _, _
+  | .«if» _, _ | .unlessPays _, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=

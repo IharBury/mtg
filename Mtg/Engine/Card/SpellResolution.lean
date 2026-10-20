@@ -1978,6 +1978,10 @@ inductive TriggerModeHow where
   | hawkeyeIndices (indices : List Nat)
   /-- Choose `count` modes of `CardDef.fraTriggerModes` when put on the stack. -/
   | fraTrigger (count : Nat)
+  /-- Resolve the single mode when `cond` holds (CR 608.2c). -/
+  | «if» (cond : ConditionSelector)
+  /-- Resolve the single mode unless its controller pays `{n}` (CR 118.12). -/
+  | unlessPays (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- What a later step of `TriggerResolution.destroy` can read. -/
@@ -2167,6 +2171,10 @@ inductive RuleEffectGrant where
   | extraTurn
   /-- Protection from everything, life total can't change, and nonland permanents phase out until next turn. -/
   | teferisReproach
+  /-- Additional combat phase after this one (CR 500.8). -/
+  | additionalCombatPhase
+  /-- You win the game (CR 104.2a). -/
+  | winTheGame
 deriving Repr, Inhabited, BEq
 
 /-- One-shot keyword actions and permanent state changes (CR 701 / CR 702 / CR 724). -/
@@ -2203,6 +2211,18 @@ inductive ActionStateGrant where
   | noteResolveThisTurn (limit : Nat)
   /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
   | mshReflexive (kind paid : Nat)
+  /-- Connive (CR 701.48). -/
+  | connive
+  /-- Fight or deal power damage (CR 701.12). -/
+  | fight (how : TriggerFightHow := .mutual)
+  /-- Attach to `host` (CR 701.3). -/
+  | attachTo (host : ObjectSelector)
+  /-- Cascade (CR 702.85). -/
+  | cascade
+  /-- The Ring tempts you (CR 701.54). -/
+  | ringTempts
+  /-- Counter target spell (CR 701.5). -/
+  | counterSpell
 deriving Repr, Inhabited, BEq
 
 /-- What `TriggerResolution.grant` grants, organized by CR 613 layers, CR 614/615 rule effects, and CR 701 actions. -/
@@ -2273,6 +2293,8 @@ namespace TriggerGrantWhat
 @[match_pattern] abbrev extraLand : TriggerGrantWhat := .ruleEffect .extraLand
 @[match_pattern] abbrev extraTurn : TriggerGrantWhat := .ruleEffect .extraTurn
 @[match_pattern] abbrev teferisReproach : TriggerGrantWhat := .ruleEffect .teferisReproach
+@[match_pattern] abbrev additionalCombatPhase : TriggerGrantWhat := .ruleEffect .additionalCombatPhase
+@[match_pattern] abbrev winTheGame : TriggerGrantWhat := .ruleEffect .winTheGame
 
 -- ActionStateGrant aliases
 @[match_pattern] abbrev attacking : TriggerGrantWhat := .actionState .attacking
@@ -2291,6 +2313,12 @@ namespace TriggerGrantWhat
 @[match_pattern] abbrev recruit (who : RecruitSubject := .recruit) : TriggerGrantWhat := .actionState (.recruit who)
 @[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : TriggerGrantWhat := .actionState (.noteResolveThisTurn limit)
 @[match_pattern] abbrev mshReflexive (kind paid : Nat) : TriggerGrantWhat := .actionState (.mshReflexive kind paid)
+@[match_pattern] abbrev connive : TriggerGrantWhat := .actionState .connive
+@[match_pattern] abbrev fight (how : TriggerFightHow := .mutual) : TriggerGrantWhat := .actionState (.fight how)
+@[match_pattern] abbrev attachTo (host : ObjectSelector) : TriggerGrantWhat := .actionState (.attachTo host)
+@[match_pattern] abbrev cascade : TriggerGrantWhat := .actionState .cascade
+@[match_pattern] abbrev ringTempts : TriggerGrantWhat := .actionState .ringTempts
+@[match_pattern] abbrev counterSpell : TriggerGrantWhat := .actionState .counterSpell
 
 end TriggerGrantWhat
 
@@ -2344,6 +2372,8 @@ inductive TriggerLibraryHow where
   | firstResolveUntilCreature
   /-- Reveal cards from hand (CR 701.16). -/
   | fromHand (count : TriggerRevealCount)
+  /-- Search a library (CR 701.23). -/
+  | search
 deriving Repr, Inhabited, BEq
 
 /-- Where `TriggerResolution.putOnLibrary` puts the card. -/
@@ -2530,19 +2560,6 @@ inductive Resolution where
   One card for each permanent of `ty` the controller controls is
   `.draw (.perControlled ty)`. -/
   | draw (amount : NumberSelector) (who : PlayerSelector := .you)
-  /-- Search a library, then resolve `thenDo` for the card that was found.
-  A Forest onto the battlefield is `.searchLibrary (.put .forest)`.
-  A basic land into your hand is `.searchLibrary (.returnToHand .basicLand)`.
-  You may put a basic land on top is `.searchLibrary (.put .basicLandOnTop)`.
-  Declining that search does not shuffle.
-  A Dragon from your hand and/or library onto the battlefield is
-  `.searchLibrary (.put .dragon)`. A card from the library shuffles.
-  A card from the hand does not. Choosing not to find does not.
-  An empty hand and library still shuffles: nothing was eligible to choose.
-  A creature card onto the battlefield is `.searchLibrary (.put .creatureCard)`.
-  Any other follow-up is resolved on its own, and the library is not searched.
-  `thenDo` on its own, outside `searchLibrary`, does what that resolution does. -/
-  | searchLibrary (thenDo : Resolution)
   /-- Discard cards, as `what` says.
   One card from the controller is `.discard` (`.cards`).
   Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
@@ -3061,22 +3078,6 @@ inductive Resolution where
   creates nothing. -/
   | createTokens (kind : TokenKind) (amount : NumberSelector) (tapped : Bool := false)
       (who : PlayerSelector := .you) (note : TriggerTokenNote := .none)
-  /-- Attach `what` to `host`.
-  The source to the token created by the previous step is
-  `.attach .source .createdToken`.
-  The source to the targeted permanent is `.attach .source .target`.
-  Target Equipment to up to one target creature you control is
-  `.attach .target .optionalCreature`.
-  The source to the creature target is `.attach .source (.target .laterCreature)`.
-  Any number of Equipment you control to the target creature is
-  `.attach .anyYouControl .target`.
-  The token an earlier step remembered, attached to the source, is
-  `.attach .createdToken .source`.
-  The artifact put from hand, attached to the remembered creature, is
-  `.attach .putArtifact .notedHost`.
-  Any other pair attaches each permanent `what` names to the first permanent
-  `host` names. A card or a hand attaches nothing. -/
-  | attach (what host : ObjectSelector)
   /-- Add mana, as `amount` says. `types` is the printed mana, and `note`
   describes any color choice or spending restriction.
   Adding those types once is `.addMana types`.
@@ -3089,30 +3090,6 @@ inductive Resolution where
   nothing. A count that cannot be read adds nothing. -/
   | addMana (types : Array ManaType) (amount : NumberSelector := .fixed 1)
       (note : ManaSpendNote := .none)
-  /-- Resolve `thenDo` when `cond` holds, and `elseDo` otherwise.
-  Putting a card on the bottom when you control no legendary creature is
-  `.«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)`.
-  Drawing when an earlier step removed a hope counter is
-  `.«if» .removedHope (.draw (.fixed 1))`.
-  Doing `thenDo` on the nth resolution this turn is
-  `.«if» (.nthResolve n) thenDo`.
-  Attaching the artifact put from hand when it is Equipment is
-  `.«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)`.
-  Exiling and returning the announced permanent while the source is
-  harnessed is
-  `.«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)`.
-  An unharnessed source is reported. A missing source does nothing.
-  Drawing when an artifact entered under your control this turn is
-  `.«if» .artifactEnteredThisTurn (.draw (.fixed 1))`. None did is reported.
-  Drawing when the source's power is at least 4 is
-  `.«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))`. A source that has left uses
-  its last-known power. Power below 4 is reported.
-  Draining for the Equipment attached to the source is
-  `.«if» .attachedEquipment (.sequence [.loseLife .attachedEquipment .eachOpponent, .gainLife .attachedEquipment])`.
-  No Equipment is reported.
-  Discarding `n` cards when mana was spent to cast the triggering spell is
-  `.«if» .manaSpent (.discard (.cards n))`. Spending none discards nothing. -/
-  | «if» (cond : ConditionSelector) (thenDo : Resolution)
   /-- Resolve these modes, as `how` says.
   Alliance is `.chooseModes TriggerResolution.allianceModes .oneUnusedThisTurn`.
   Gollum is `.chooseModes TriggerResolution.gollumModes .oneUnused`.
@@ -3228,51 +3205,56 @@ inductive Resolution where
   note records what it says. A missing count or player mills nothing. -/
   | mill (amount : NumberSelector) (who : PlayerSelector := .you)
       (note : TriggerMillNote := .none)
-  /-- Connive (CR 701.48). `who` says which creature.
-  The source is `.connive`.
-  The announced creature is `.connive .target`. The kind of that target is
-  chosen when the ability is put on the stack.
-  The Villain that caused this is `.connive .enteringVillain`.
-  Already chosen this turn does nothing. A Villain that will not connive
-  is reported.
-  Any other permanent the selector names connives. A card or a hand
-  connives nothing. -/
-  | connive (who : ObjectSelector := .source)
-  /-- A creature fights, or deals damage equal to its power. `who` says
-  which creature, and `how` says which.
-  The source fights up to one other target creature with `.fight`.
-  Choosing none fights nothing. A missing source or an illegal target
-  fights nothing.
-  The creature that received Equipment deals damage equal to its power
-  to up to one target creature with `.fight .equipmentHost .reflexive`.
-  That target is chosen when the reflexive ability is put on the stack.
-  Nothing is queued when no creature received Equipment.
-  Any other permanent the selector names fights another targeted creature,
-  or deals damage equal to its power when `how` is `.reflexive`. A card or
-  a hand fights nothing. -/
-  | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
-  /-- Resolve `r` unless its controller pays `{n}`.
-  Countering unless they pay is `.unlessPays .counter n`. -/
-  | unlessPays (r : Resolution) (n : Nat)
-  /-
-  Nullary steps. A constructor with fields appended after this point
-  exceeds the runtime tag limit.
-  -/
-  /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
-  | cascade
-  /-- The Ring tempts you. -/
-  | ringTempts
-  /-- There is an additional combat phase after this one. -/
-  | additionalCombatPhase
-  /-- You win the game. -/
-  | winTheGame
-  /-- Counter the targeted spell. -/
-  | counter
   /-- A resolution that is not a spell shape. It does not play an extra land. -/
   | unrecognized
 deriving Repr, Inhabited, BEq
 
 namespace Resolution
+
+/-- Search a library (CR 701.23), then resolve `thenDo` for the card that was found. -/
+@[match_pattern] abbrev searchLibrary (thenDo : Resolution) : Resolution :=
+  .revealLibrary .search thenDo .you
+
+/-- Attach `what` to `host` (CR 701.3). -/
+@[match_pattern] abbrev attach (what host : ObjectSelector) : Resolution :=
+  .grant (.attachTo host) what
+
+/-- Resolve `thenDo` when `cond` holds (CR 608.2c). -/
+@[match_pattern] abbrev «if» (cond : ConditionSelector) (thenDo : Resolution) : Resolution :=
+  .chooseModes [thenDo] (.«if» cond)
+
+/-- Connive (CR 701.48). `who` says which creature. -/
+@[match_pattern] abbrev connive (who : ObjectSelector := .source) : Resolution :=
+  .grant .connive who
+
+/-- A creature fights, or deals damage equal to its power (CR 701.12). `who` says
+which creature, and `how` says which. -/
+@[match_pattern] abbrev fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual) : Resolution :=
+  .grant (.fight how) who
+
+/-- Resolve `r` unless its controller pays `{n}` (CR 118.12). -/
+@[match_pattern] abbrev unlessPays (r : Resolution) (n : Nat) : Resolution :=
+  .chooseModes [r] (.unlessPays n)
+
+/-- Cascade: exile until a cheaper nonland, then you may cast it (CR 702.85). -/
+@[match_pattern] abbrev cascade : Resolution :=
+  .grant .cascade .source
+
+/-- The Ring tempts you (CR 701.54). -/
+@[match_pattern] abbrev ringTempts : Resolution :=
+  .grant .ringTempts .youIfCast
+
+/-- There is an additional combat phase after this one (CR 500.8). -/
+@[match_pattern] abbrev additionalCombatPhase : Resolution :=
+  .grant .additionalCombatPhase .youIfCast
+
+/-- You win the game (CR 104.2a). -/
+@[match_pattern] abbrev winTheGame : Resolution :=
+  .grant .winTheGame .youIfCast
+
+/-- Counter the targeted spell (CR 701.5). -/
+@[match_pattern] abbrev counter : Resolution :=
+  .grant .counterSpell .target
 
 /-- Surveil, as `n` and `note` say (CR 701.25). -/
 @[match_pattern] abbrev surveil (n : NumberSelector) (note : TriggerSurveilNote := .none) : Resolution :=
