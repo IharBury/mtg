@@ -28,6 +28,14 @@ instance : ToString TapAddForEach where
 
 end TapAddForEach
 
+/-- Printed spell cost reduction (CR 601.2f), represented by the unified
+`CostReduction`. -/
+abbrev SpellCostReduction := CostReduction
+
+/-- Printed additional cost to cast a spell (CR 601.2b / 118.8), represented by
+the unified `CostSelector`. -/
+abbrev SpellAdditionalCost := CostSelector
+
 /-- Alternative characteristics of an adventurer card while it is a spell
 cast as an Adventure (CR 715.2). -/
 structure AdventureFace where
@@ -36,27 +44,47 @@ structure AdventureFace where
   types : Array CardType := #[.sorcery]
   subtypes : Array Subtype := #["Adventure"]
   spellEffect : Option Effect := none
-  /-- Additional cost: sacrifice a creature. -/
-  additionalCostSacrificeCreature : Bool := false
+  /-- Additional cost to cast this Adventure (CR 601.2b / 715.2). -/
+  additionalCost : SpellAdditionalCost := .none
   /-- Rules lines of this face that are not a modeled spell effect. -/
   extraLines : Array String := #[]
   /-- Empower Jace N on this alternate face. -/
   empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
+namespace AdventureFace
+
+def additionalCostSacrificeCreature (a : AdventureFace) : Bool :=
+  a.additionalCost == .sacrificeCreature
+
+end AdventureFace
+
 /-- Replacement rule for whether a permanent enters the battlefield tapped (CR 614.1c). -/
 inductive EntersTappedRule where
   | untapped
   | always
-  | unlessLegendary
-  | unlessEquipment
-  | unlessPlaneswalker
-  | unlessTwoOtherLands
+  | unless (cond : ConditionSelector)
   | unlessPayLife (life : Nat)
-  | unlessAnySubtype (subtypes : Array String)
-  | unlessNBasics (n : Nat)
-  | unlessOppLands (n : Nat)
-deriving Repr, Inhabited, BEq, DecidableEq
+deriving Repr, Inhabited, BEq
+
+namespace EntersTappedRule
+
+@[match_pattern] abbrev unlessLegendary : EntersTappedRule :=
+  .unless .youControlLegendary
+@[match_pattern] abbrev unlessEquipment : EntersTappedRule :=
+  .unless (.atLeast (.count .equipmentYouControl) (.fixed 1))
+@[match_pattern] abbrev unlessPlaneswalker : EntersTappedRule :=
+  .unless (.atLeast (.count .planeswalkersYouControl) (.fixed 1))
+@[match_pattern] abbrev unlessTwoOtherLands : EntersTappedRule :=
+  .unless (.atLeast (.count .landsYouControl) (.fixed 2))
+@[match_pattern] abbrev unlessAnySubtype (subtypes : Array String) : EntersTappedRule :=
+  .unless (.youControlAnySubtype subtypes)
+@[match_pattern] abbrev unlessNBasics (n : Nat) : EntersTappedRule :=
+  .unless (.atLeast .basicLandsYouControl (.fixed (Int.ofNat n)))
+@[match_pattern] abbrev unlessOppLands (n : Nat) : EntersTappedRule :=
+  .unless (.atLeast .opponentLands (.fixed (Int.ofNat n)))
+
+end EntersTappedRule
 
 /-- Choice made as a permanent enters the battlefield (CR 614.12). -/
 inductive AsEntersChoice where
@@ -67,47 +95,61 @@ inductive AsEntersChoice where
   | marduOrJeskai
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Printed spell cost reduction (CR 601.2f), represented by the unified
-`CostReduction`. -/
-abbrev SpellCostReduction := CostReduction
-
-/-- Printed additional cost to cast a spell (CR 601.2b / 118.8), represented by
-the unified `CostSelector`. -/
-abbrev SpellAdditionalCost := CostSelector
-
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
 (CR 605.1a). -/
 inductive TapManaAbility where
   | none
-  | oneOf (types : Array ManaType)
-  | oneOfIfEnteredOrBasic (types : Array ManaType)
-  | oneOfDealsDamage (types : Array ManaType) (damage : Nat)
-  | payLifeOneOf (life : Nat) (types : Array ManaType)
-  | together (types : Array ManaType)
+  | oneOf (types : Array ManaType) (ifEnteredOrBasic : Bool := false) (damage : Nat := 0) (payLife : Nat := 0)
+  | together (types : Array ManaType) (restriction : String := "")
   | twoAmong (types : Array ManaType)
   | filter (cost : ManaCost) (types : Array ManaType)
   | forEach (entries : Array TapAddForEach)
-  | colorlessPerSubtype (subtype : String)
-  | anyColor
-  | sacrificeAnyColor
+  | anyColor (restriction : ManaRestriction := .none) (sacrificeSelf : Bool := false)
   | anyColorEqualToPower
-  | anyColorForInstantOrSorcery
-  | anyColorForLegendary
   | anyColorAmongLegendaries
   | chosenColorPerDifferentPower
-  | restricted (types : Array ManaType) (restriction : String)
   | commanderIdentity (scryCreature : Bool := false)
-  | oppCouldProduce
-  | youCouldProduce
+  | couldProduce (opp : Bool)
 deriving Repr, Inhabited, BEq
+
+namespace TapManaAbility
+
+@[match_pattern] abbrev oneOfIfEnteredOrBasic (types : Array ManaType) : TapManaAbility :=
+  .oneOf types (ifEnteredOrBasic := true)
+@[match_pattern] abbrev oneOfDealsDamage (types : Array ManaType) (damage : Nat) : TapManaAbility :=
+  .oneOf types (damage := damage)
+@[match_pattern] abbrev payLifeOneOf (life : Nat) (types : Array ManaType) : TapManaAbility :=
+  .oneOf types (payLife := life)
+@[match_pattern] abbrev restricted (types : Array ManaType) (restriction : String) : TapManaAbility :=
+  .together types restriction
+@[match_pattern] abbrev sacrificeAnyColor : TapManaAbility :=
+  .anyColor .none true
+@[match_pattern] abbrev anyColorForInstantOrSorcery : TapManaAbility :=
+  .anyColor .instantOrSorcery false
+@[match_pattern] abbrev anyColorForLegendary : TapManaAbility :=
+  .anyColor (.only .legendarySpell) false
+@[match_pattern] abbrev oppCouldProduce : TapManaAbility :=
+  .couldProduce true
+@[match_pattern] abbrev youCouldProduce : TapManaAbility :=
+  .couldProduce false
+
+end TapManaAbility
 
 /-- Mode-selection rule for a modal spell (CR 700.2). -/
 inductive ModalRule where
   | chooseOne
   | chooseOneOrBoth
-  | chooseTwoIfYouControl (subtype : String)
-  | chooseBothIfTeamwork
-deriving Repr, Inhabited, BEq, DecidableEq
+  | chooseTwoIf (cond : ConditionSelector)
+deriving Repr, Inhabited, BEq
+
+namespace ModalRule
+
+@[match_pattern] abbrev chooseTwoIfYouControl (subtype : String) : ModalRule :=
+  .chooseTwoIf (.youControlSubtype subtype)
+@[match_pattern] abbrev chooseBothIfTeamwork : ModalRule :=
+  .chooseTwoIf .teamwork
+
+end ModalRule
 
 /-- Permission to look at or play/cast cards from the top of your library
 (CR 401.5 / 601.3). -/
@@ -123,6 +165,7 @@ deriving Repr, Inhabited, BEq, DecidableEq
 /-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
 inductive CardStaticRule where
   | none
+  | topOfLibrary (rule : TopOfLibraryRule)
   | foodAlsoCreatesTreasure
   | othersEnterWithPlusOneEqualToughness
   | powerPerMountain (n : Nat)
@@ -146,6 +189,16 @@ inductive CardStaticRule where
   | grantTeamPlusTwoFlying
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace CardStaticRule
+
+@[match_pattern] abbrev lookAnytime : CardStaticRule := .topOfLibrary .lookAnytime
+@[match_pattern] abbrev playLands : CardStaticRule := .topOfLibrary .playLands
+@[match_pattern] abbrev castCreatures : CardStaticRule := .topOfLibrary .castCreatures
+@[match_pattern] abbrev elvenChorus : CardStaticRule := .topOfLibrary .elvenChorus
+@[match_pattern] abbrev grantCreaturesTapAnyColor : CardStaticRule := .topOfLibrary .grantCreaturesTapAnyColor
+
+end CardStaticRule
+
 /-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
 inductive SpellCastOption where
   | none
@@ -164,10 +217,21 @@ deriving Repr, Inhabited, BEq
 inductive CastPermissionRule where
   | normal
   | cantBeCountered
-  | flashIfYouControl (subtype : String)
-  | castExiledWithSevenInGraveyard
-  | castOnlyIfGraveyardAtLeast (min : Nat)
-deriving Repr, Inhabited, BEq, DecidableEq
+  | flashIf (cond : ConditionSelector)
+  | castOnlyIf (cond : ConditionSelector)
+  | castExiledIf (cond : ConditionSelector)
+deriving Repr, Inhabited, BEq
+
+namespace CastPermissionRule
+
+@[match_pattern] abbrev flashIfYouControl (subtype : String) : CastPermissionRule :=
+  .flashIf (.youControlSubtype subtype)
+@[match_pattern] abbrev castExiledWithSevenInGraveyard : CastPermissionRule :=
+  .castExiledIf (.graveyardAtLeast 7)
+@[match_pattern] abbrev castOnlyIfGraveyardAtLeast (min : Nat) : CastPermissionRule :=
+  .castOnlyIf (.graveyardAtLeast min)
+
+end CastPermissionRule
 
 /-- Parameterized keyword or deck-building / blocking rule on a card
 (CR 702 / 100.2a / 903.3a). -/
@@ -264,9 +328,6 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
-  /-- Permission to look at or play/cast cards from the top of your library
-  (CR 401.5 / 601.3). -/
-  topOfLibraryRule : TopOfLibraryRule := .none
   /-- Continuous or replacement static rule on this card (CR 604 / 613 / 614). -/
   staticRule : CardStaticRule := .none
   /-- Alternative characteristics used when this card is cast as an Adventure
@@ -542,7 +603,7 @@ def tapAddAnyColorForInstantOrSorcery (c : CardDef) : Bool :=
 
 def tapAddOneOf (c : CardDef) : Array ManaType :=
   match c.tapManaAbility with
-  | .oneOf ts => ts
+  | .oneOf ts false 0 0 => ts
   | _ => #[]
 
 def tapAddOneOfIfEnteredOrBasic (c : CardDef) : Array ManaType :=
@@ -572,12 +633,12 @@ def tapAddAnyColorAmongLegendaries (c : CardDef) : Bool :=
 
 def tapAddRestricted (c : CardDef) : Option (Array ManaType × String) :=
   match c.tapManaAbility with
-  | .restricted ts r => some (ts, r)
+  | .together ts r => if r.isEmpty then none else some (ts, r)
   | _ => none
 
 def tapPayLifeAddOneOf (c : CardDef) : Option (Nat × Array ManaType) :=
   match c.tapManaAbility with
-  | .payLifeOneOf n ts => some (n, ts)
+  | .oneOf ts false 0 n => if n > 0 then some (n, ts) else none
   | _ => none
 
 def tapAddCommanderIdentity (c : CardDef) : Bool :=
@@ -588,19 +649,14 @@ def tapAddCommanderIdentity (c : CardDef) : Bool :=
 def commanderIdentityScryCreature (c : CardDef) : Bool :=
   c.tapManaAbility == .commanderIdentity true
 
-def tapAddColorlessPerSubtype (c : CardDef) : Option String :=
-  match c.tapManaAbility with
-  | .colorlessPerSubtype s => some s
-  | _ => none
-
 def tapAddTogether (c : CardDef) : Array ManaType :=
   match c.tapManaAbility with
-  | .together ts => ts
+  | .together ts "" => ts
   | _ => #[]
 
 def tapAddOneOfDealsDamage (c : CardDef) : Option (Array ManaType × Nat) :=
   match c.tapManaAbility with
-  | .oneOfDealsDamage ts n => some (ts, n)
+  | .oneOf ts false n 0 => if n > 0 then some (ts, n) else none
   | _ => none
 
 def tapAddOppCouldProduce (c : CardDef) : Bool :=
@@ -624,6 +680,11 @@ def chooseTwoIfYouControlSubtype (c : CardDef) : Option String :=
 
 def chooseBothIfTeamwork (c : CardDef) : Bool :=
   c.modalRule == .chooseBothIfTeamwork
+
+def topOfLibraryRule (c : CardDef) : TopOfLibraryRule :=
+  match c.staticRule with
+  | .topOfLibrary r => r
+  | _ => .none
 
 def mayLookAtTopAnytime (c : CardDef) : Bool :=
   match c.topOfLibraryRule with
@@ -1218,7 +1279,7 @@ def toCardDef (a : AdventureFace) : CardDef := {
   spellEffect := a.spellEffect
   staticAbilities := a.extraLines.map StaticAbility.printed
   empowerJace := a.empowerJace
-  additionalCost := if a.additionalCostSacrificeCreature then .sacrificeCreature else .none
+  additionalCost := a.additionalCost
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

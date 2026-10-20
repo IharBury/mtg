@@ -111,8 +111,10 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
     match o.exiledBy.bind g.findObject? with
     | some src =>
-      src.isOnBattlefield && src.controlledBy p && src.printed.castExiledWithSevenInGraveyard &&
-        (g.player p).graveyard.size ≥ 7
+      src.isOnBattlefield && src.controlledBy p &&
+        match src.printed.castPermission with
+        | .castExiledIf cond => g.boardConditionHolds p cond
+        | _ => false
     | none => false
 
 /-- Cards in exile that `p` currently may play. -/

@@ -15,30 +15,9 @@ planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype "Jace"
 
-/-- Loyalty counters among Jace planeswalkers `p` controls. -/
-def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).foldl (fun acc o =>
-    if o.printed.isPlaneswalker && g.hasSubtype o "Jace" then acc + o.status.loyaltyCounters
-    else acc) 0
-
 /-- Whether an “Activate only if …” condition holds (CR 602.5b). -/
-def activationConditionHolds (g : Game) (p : PlayerId) : ActivationCondition → Bool
-  | .none => true
-  | .scriedOrSurveilledThisTurn =>
-    let pl := g.player p
-    pl.scriedThisTurn || pl.surveilledThisTurn
-  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
-  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
-  | .youControlLegendary => g.controlsLegendaryCreature p
-  | .youAttackedWithTwoOrMore => (g.player p).creaturesAttackedWithThisTurn ≥ 2
-  | .opponentDealtNoncombatDamage =>
-    (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn)
-  | .youControlCreatureToughnessAtLeast n =>
-    (g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= (n : Int))
-  | .gyCreaturesAtLeast n =>
-    ((g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (·.printed.isCreature))).size ≥ n
-  | _ => true
+def activationConditionHolds (g : Game) (p : PlayerId) (cond : ActivationCondition) : Bool :=
+  g.boardConditionHolds p cond
 
 abbrev fraActivationConditionHolds := activationConditionHolds
 

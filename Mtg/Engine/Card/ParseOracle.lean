@@ -792,14 +792,14 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if named.contains "additional +1/+1 counters" && named.contains "equal to this toughness" then
     some { c with staticRule := .othersEnterWithPlusOneEqualToughness }
   else if low.contains "you may look at the top card of your library any time" then
-    some { c with topOfLibraryRule := .lookAnytime }
+    some { c with staticRule := .lookAnytime }
   else if low.contains "you may cast creature spells from the top of your library" then
-    some { c with topOfLibraryRule := .castCreatures }
+    some { c with staticRule := .castCreatures }
   else if low.contains "you may play lands from the top of your library" then
-    some { c with topOfLibraryRule := .playLands }
+    some { c with staticRule := .playLands }
   else if low.contains "creatures you control have" && low.contains "add one mana of any color" then
-    some { c with topOfLibraryRule :=
-      if c.topOfLibraryRule == .castCreatures then .elvenChorus else .grantCreaturesTapAnyColor }
+    some { c with staticRule :=
+      if c.staticRule == .castCreatures then .elvenChorus else .grantCreaturesTapAnyColor }
   else if low.contains "the first creature spell you cast each turn costs" then
     match n with
     | none => none
@@ -2396,7 +2396,7 @@ def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
             types := c.types
             subtypes := if c.subtypes.any (· == "Adventure") then c.subtypes else c.subtypes.push "Adventure"
             spellEffect := c.spellEffect
-            additionalCostSacrificeCreature := c.additionalCostSacrificeCreature
+            additionalCost := c.additionalCost
             extraLines := c.staticAbilities.filterMap fun
               | .printed t => some t
               | _ => none

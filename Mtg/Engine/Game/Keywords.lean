@@ -94,6 +94,10 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
   (g.permanentsOf p).any (fun o => subtypes.any (g.hasSubtype o))
 
+/-- Permanents `p` currently controls with this subtype. -/
+def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+  (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
+
 /-- Whether `p` currently controls a legendary creature. -/
 def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
@@ -102,30 +106,6 @@ def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
 /-- Whether `p` currently controls an Equipment. -/
 def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => o.printed.isEquipment)
-
-/-- Whether this face should enter tapped given the controller's board. It is
-checked before the permanent enters, so lands or planeswalkers entering at
-the same time are not counted (rulings 808 / 809). -/
-def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
-  card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
-    (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
-    (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
-    (card.entersTappedUnlessPlaneswalker &&
-      !(g.permanentsOf p).any (·.printed.isPlaneswalker)) ||
-    (card.entersTappedUnlessTwoOtherLands &&
-      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2) ||
-    (!card.entersTappedUnlessAnySubtype.isEmpty &&
-      !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
-    (match card.entersTappedUnlessNBasics with
-     | some n =>
-       ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size < n
-     | none => false) ||
-    (match card.entersTappedUnlessOppLands with
-     | some n =>
-       let nOpp := (g.livingOpponents p).foldl (fun acc pl =>
-         acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0
-       nOpp < n
-     | none => false)
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
 a blocker (CR 509.1b). Checked only when declaring blockers. -/
@@ -297,6 +277,140 @@ def hasVigilance (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.flying)
+
+/-- Loyalty counters among Jace planeswalkers `p` controls. -/
+def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.isPlaneswalker && g.hasSubtype o "Jace" then acc + o.status.loyaltyCounters
+    else acc) 0
+
+/-- Evaluate a `NumberSelector` on `p`'s board state (CR 107.1 / 601.2f). -/
+def boardNumber (g : Game) (p : PlayerId) (amount : NumberSelector)
+    (target : Option GameObject := none) : Option Int :=
+  match amount with
+  | .fixed n => some n
+  | .count .landsYouControl => some (Int.ofNat (g.landsYouControl p))
+  | .basicLandsYouControl =>
+    some (Int.ofNat ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size)
+  | .opponentLands =>
+    some (Int.ofNat ((g.livingOpponents p).foldl (fun acc pl =>
+      acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0))
+  | .count .planeswalkersYouControl =>
+    some (Int.ofNat ((g.permanentsOf p).filter (·.printed.isPlaneswalker)).size)
+  | .count .equipmentYouControl =>
+    some (Int.ofNat ((g.permanentsOf p).filter (·.printed.isEquipment)).size)
+  | .creaturesDiedThisTurn =>
+    some (Int.ofNat (Nat.max g.creatureDeathsThisTurn (if g.creatureDiedThisTurn then 1 else 0)))
+  | .subtypeCount st | .perSubtype st =>
+    let n :=
+      if st == "legendary creature" then
+        ((g.permanentsOf p).filter (fun o => o.isCreature && o.isLegendary)).size
+      else if st == "Equipment" then
+        ((g.permanentsOf p).filter (·.printed.isEquipment)).size
+      else
+        g.countSubtype p (if st == "Elves" then "Elf" else st)
+    some (Int.ofNat n)
+  | .totalFlyingPower =>
+    some (Int.ofNat ((g.permanentsOf p).foldl (fun acc o =>
+      if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0))
+  | .greatestPower =>
+    some (Int.ofNat ((g.creaturesControlledBy p).foldl (fun acc o => Nat.max acc (g.power o).toNat) 0))
+  | .greatestToughness =>
+    some (Int.ofNat ((g.creaturesControlledBy p).foldl (fun acc o => Nat.max acc (g.toughness o).toNat) 0))
+  | .oppArtifacts =>
+    some (Int.ofNat (g.players.foldl (fun acc pl =>
+      if pl.id == p || pl.lost then acc
+      else max acc ((g.permanentsOf pl.id).filter (·.printed.isArtifact)).size) 0))
+  | .targetPlusOneCounters =>
+    target.map (fun o => Int.ofNat o.status.plusOnePlusOne)
+  | _ => none
+
+/-- Evaluate a `ConditionSelector` on `p`'s board state (CR 601.2 / 602.5b / 603.4 / 614.1c). -/
+partial def boardConditionHolds (g : Game) (p : PlayerId) (cond : ConditionSelector)
+    (target : Option GameObject := none) (source : Option GameObject := none)
+    (causeStatus : Option Status := none) : Bool :=
+  let pl := g.player p
+  match cond with
+  | .none => true
+  | .not inner => !g.boardConditionHolds p inner target source causeStatus
+  | .or conds => conds.any (fun c => g.boardConditionHolds p c target source causeStatus)
+  | .atLeast left right =>
+    match g.boardNumber p left target, g.boardNumber p right target with
+    | some a, some b => a ≥ b
+    | _, _ => false
+  | .youControlLegendary => g.controlsLegendaryCreature p
+  | .youControlSubtype st =>
+    if st == "legendary creature" then g.controlsLegendaryCreature p
+    else if st == "Equipment" then g.controlsEquipment p
+    else g.controlsAnySubtype p #[st]
+  | .youControlAnySubtype sts => g.controlsAnySubtype p sts
+  | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures p ≥ n
+  | .youControlCreatureToughnessAtLeast n =>
+    (g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= (n : Int))
+  | .graveyardAtLeast n => pl.graveyard.size ≥ n
+  | .gyCreaturesAtLeast n =>
+    (pl.graveyard.filter (fun id => (g.findObject? id).any (·.printed.isCreature))).size ≥ n
+  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
+  | .sourceNotToken => !(source.any (·.printed.isToken))
+  | .sourceWasCast => source.any (·.wasCast)
+  | .causeHadCounters => causeStatus.any (·.hasCounters)
+  | .sourceHasCounters =>
+    source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
+  | .targetDamaged => target.any (fun o => o.status.damage > 0)
+  | .targetTapped => target.any (·.status.tapped)
+  | .targetAttackingNontoken => target.any (fun o => o.status.attacking && !o.printed.isToken)
+  | .targetAttacking => target.any (·.status.attacking)
+  | .targetPowerAtMost most => target.any (fun o => o.isCreature && g.power o ≤ most)
+  | .anotherCreaturePowerAtMost _ => true
+  | .scriedThisTurn => pl.scriedThisTurn
+  | .surveilledThisTurn => pl.surveilledThisTurn
+  | .scriedOrSurveilledThisTurn => pl.scriedThisTurn || pl.surveilledThisTurn
+  | .youAttackedWithTwoOrMore => pl.creaturesAttackedWithThisTurn ≥ 2
+  | .opponentDealtNoncombatDamage =>
+    (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn)
+  | .opponentDealtNoncombatDamageLastTurn =>
+    (g.livingOpponents p).any (·.dealtNoncombatDamageLastTurn)
+  | .twoCreaturesDiedThisTurn => g.creatureDeathsThisTurn ≥ 2
+  | .drewThreeThisTurn => pl.cardsDrawnThisTurn ≥ 3
+  | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
+  | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
+  | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n
+  | _ => false
+
+/-- Generic mana subtracted from a spell or activated ability cost by `r`
+(CR 601.2f / 602.2b). When `target` is `none`, target-dependent reductions
+evaluate to `0`; when `target` is `some o`, only target-dependent reductions
+evaluate. -/
+def costReductionAmount (g : Game) (p : PlayerId) (r : CostReduction)
+    (target : Option GameObject := none) : Nat :=
+  let isTargetCond : ConditionSelector → Bool
+    | .targetDamaged | .targetTapped | .targetAttackingNontoken
+    | .targetAttacking | .targetPowerAtMost _ => true
+    | _ => false
+  let isTargetNumber : NumberSelector → Bool
+    | .targetPlusOneCounters => true
+    | _ => false
+  match r with
+  | .none => 0
+  | .when n cond =>
+    if isTargetCond cond != target.isSome then 0
+    else if g.boardConditionHolds p cond (target := target) then n else 0
+  | .byAmount amount perUnit =>
+    if isTargetNumber amount != target.isSome then 0
+    else
+      match g.boardNumber p amount (target := target) with
+      | some k => k.toNat * perUnit
+      | none => 0
+
+/-- Whether this face should enter tapped given the controller's board. It is
+checked before the permanent enters, so lands or planeswalkers entering at
+the same time are not counted (rulings 808 / 809). -/
+def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+  card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
+    match card.entersTappedRule with
+    | .untapped | .unlessPayLife _ => false
+    | .always => true
+    | .unless cond => !g.boardConditionHolds p cond
 
 /-- Okoye: attacking creature tokens you control have first strike. -/
 def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=

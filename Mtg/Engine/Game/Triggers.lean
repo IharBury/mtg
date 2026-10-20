@@ -123,23 +123,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
 /-- A Reality Fracture intervening “if” clause on the trigger's options. -/
 def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
     (source : Option GameObject) (causeStatus : Option Status := none) : Bool :=
-  let pl := g.player controller
-  match cond with
-  | .none => true
-  | .sourceNotToken => !(source.any (·.printed.isToken))
-  | .twoCreaturesDiedThisTurn => g.creatureDeathsThisTurn ≥ 2
-  | .opponentDealtNoncombatDamageLastTurn =>
-    (g.livingOpponents controller).any (·.dealtNoncombatDamageLastTurn)
-  | .drewThreeThisTurn => pl.cardsDrawnThisTurn ≥ 3
-  | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
-  | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
-  | .sourceWasCast => source.any (·.wasCast)
-  | .causeHadCounters => causeStatus.any (·.hasCounters)
-  | .sourceHasCounters =>
-    source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
-  | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures controller ≥ n
-  | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n
-  | .anotherCreaturePowerAtMost _ | _ => true
+  g.boardConditionHolds controller cond (source := source) (causeStatus := causeStatus)
 
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/

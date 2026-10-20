@@ -1304,6 +1304,10 @@ inductive CountNumber where
   | colorsAmongOtherArtifacts
   /-- The number of planeswalker types among planeswalkers the controller controls. -/
   | planeswalkerTypes
+  /-- How many basic lands the controller controls. -/
+  | basicLandsYouControl
+  /-- How many lands opponents control. -/
+  | opponentLands
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Step-noted and turn-history numbers (CR 608 / CR 700). -/
@@ -1426,6 +1430,8 @@ namespace NumberSelector
 @[match_pattern] abbrev minusGraveyardCards : NumberSelector := .countKind .minusGraveyardCards
 @[match_pattern] abbrev colorsAmongOtherArtifacts : NumberSelector := .countKind .colorsAmongOtherArtifacts
 @[match_pattern] abbrev planeswalkerTypes : NumberSelector := .countKind .planeswalkerTypes
+@[match_pattern] abbrev basicLandsYouControl : NumberSelector := .countKind .basicLandsYouControl
+@[match_pattern] abbrev opponentLands : NumberSelector := .countKind .opponentLands
 
 -- TurnEventNumber aliases
 @[match_pattern] abbrev perLookedAt : NumberSelector := .turnEvent .perLookedAt
@@ -1547,6 +1553,10 @@ inductive StateCondition where
   | targetAttacking
   /-- The target is a creature with power `power` or less. -/
   | targetPowerAtMost (power : Int)
+  /-- You control a permanent with this subtype. -/
+  | youControlSubtype (subtype : String)
+  /-- You control a permanent with any of these subtypes. -/
+  | youControlAnySubtype (subtypes : Array String)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Turn history and spell cast conditions (CR 601.2 / CR 603). -/
@@ -1669,6 +1679,10 @@ namespace ConditionSelector
 @[match_pattern] abbrev targetAttackingNontoken : ConditionSelector := .state .targetAttackingNontoken
 @[match_pattern] abbrev targetAttacking : ConditionSelector := .state .targetAttacking
 @[match_pattern] abbrev targetPowerAtMost (power : Int) : ConditionSelector := .state (.targetPowerAtMost power)
+@[match_pattern] abbrev youControlAnySubtype (subtypes : Array String) : ConditionSelector :=
+  .state (.youControlAnySubtype subtypes)
+@[match_pattern] abbrev youControlSubtype (subtype : String) : ConditionSelector :=
+  .state (.youControlSubtype subtype)
 
 -- TurnHistoryCondition aliases
 @[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.attackedWithSubtype subtype)

@@ -104,20 +104,15 @@ def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
   if !c.isLand && !c.grantLandsTapAnyColor then #[]
   else
     let p := o.controller.getD o.owner
-    let identity :=
-      if c.tapAddCommanderIdentity && (g.player p).hasCommander then
-        ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
-      else #[]
-    let pain :=
-      match c.tapAddOneOfDealsDamage with
-      | some (ts, _) => ts
-      | none => #[]
-    let filter :=
-      match c.filterMana with
-      | some (_, ts) => ts
-      | none => #[]
-    let any :=
-      if c.tapAddAnyColor || c.tapSacrificeAddAnyColor then anyColorMana else #[]
+    let fromAbility : Array ManaType :=
+      match c.tapManaAbility with
+      | .oneOf ts false _ 0 | .together ts "" | .twoAmong ts | .filter _ ts => ts
+      | .commanderIdentity _ =>
+        if (g.player p).hasCommander then
+          ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
+        else #[]
+      | .anyColor .none _ => anyColorMana
+      | _ => #[]
     let lantern :=
       if o.isOnBattlefield && c.isLand then
         match o.controller with
@@ -126,8 +121,7 @@ def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
           else #[]
         | none => #[]
       else #[]
-    uniqMana (c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddTogether ++
-      pain ++ filter ++ identity ++ any ++ lantern ++ c.tapAddTwoAmong)
+    uniqMana (c.simpleTapAddMana ++ fromAbility ++ lantern)
 
 /-- Mana any of `lands` could produce from intrinsic abilities. -/
 def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
@@ -144,59 +138,48 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
     ({ output := .fixed #[t]
        restriction := if t == .colorless && c.hasSubtype "Vibranium" then .cantNonartifact else .none }
       : ManaAbilityDef))
-  let legendaryColors :=
-    (g.permanentsOf p).foldl (fun acc x =>
-      if x.isLegendary && (x.isCreature || x.printed.isPlaneswalker) then
-        ColorSet.union acc x.printed.colors
-      else acc) ColorSet.empty
-  let pl := g.player p
-  let identity := if pl.hasCommander then pl.commanderColorIdentity.toList else []
-  simple ++
-  (if c.tapAddOneOf.isEmpty then #[] else one (.oneOf c.tapAddOneOf 1)) ++
-  c.tapAddManaForEach.map (fun a =>
-    ({ output := .fixed (Array.replicate (count a.subtype) a.mana) } : ManaAbilityDef)) ++
-  (if c.tapAddOneOfIfEnteredOrBasic.isEmpty || !g.canUseEnteredOrBasicAdd o then #[]
-   else one (.oneOf c.tapAddOneOfIfEnteredOrBasic 1)) ++
-  (if c.tapAddAnyColorEqualToPower then one (.oneOf anyColorMana power) .elf else #[]) ++
-  (if c.tapAddAnyColorForInstantOrSorcery then
-    one (.oneOf anyColorMana 1) .instantOrSorcery else #[]) ++
-  (if c.tapAddAnyColor then one (.oneOf anyColorMana 1) else #[]) ++
-  (if c.tapSacrificeAddAnyColor then
-    #[{ output := .oneOf anyColorMana 1, sacrificeSelf := true }] else #[]) ++
-  (if c.tapAddAnyColorForLegendary then
-    one (.oneOf anyColorMana 1) (.fra .legendarySpell) else #[]) ++
-  (if c.tapAddTwoAmong.size ≥ 2 then one (.combination c.tapAddTwoAmong 2) else #[]) ++
-  (if c.tapAddAnyColorAmongLegendaries then
-    one (.colorAmong (legendaryColors.toList.map ManaType.colored).toArray) else #[]) ++
-  (if c.tapAddCommanderIdentity then
-    one (.colorAmong (identity.map ManaType.colored).toArray) else #[]) ++
-  (match c.tapAddRestricted with
-   | some (ts, text) => one (.fixed ts) (restrictionOfText text)
-   | none => #[]) ++
-  (match c.tapPayLifeAddOneOf with
-   | some (n, ts) => #[{ output := .oneOf ts 1, payLife := n }]
-   | none => #[]) ++
-  (if c.tapAddChosenColorPerDifferentPower then
-    one (.oneOf anyColorMana ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length)
-   else #[]) ++
-  (if c.tapAddTogether.isEmpty then #[] else #[{ output := .fixed c.tapAddTogether }]) ++
-  (match c.tapAddOneOfDealsDamage with
-   | some (ts, n) => #[{ output := .oneOf ts 1, damageYou := n }]
-   | none => #[]) ++
-  (match c.filterMana with
-   | some (cost, ts) =>
-     let types := ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
-     #[{ output := .combination types 2, cost, tap := true }]
-   | none => #[]) ++
-  (if c.tapAddOppCouldProduce then
-    let lands := g.livingOpponents p |>.foldl (fun acc pl =>
-      acc ++ (g.permanentsOf pl.id).filter (·.printed.isLand)) #[]
-    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
-   else #[]) ++
-  (if c.tapAddYouCouldProduce then
-    let lands := (g.permanentsOf p).filter (fun land => land.printed.isLand && land.id != o.id)
-    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
-   else #[])
+  let fromAbility : Array ManaAbilityDef :=
+    match c.tapManaAbility with
+    | .none => #[]
+    | .oneOf ts enteredOrBasic damageYou payLife =>
+      if ts.isEmpty || (enteredOrBasic && !g.canUseEnteredOrBasicAdd o) then #[]
+      else #[{ output := .oneOf ts 1, payLife, damageYou }]
+    | .together ts restriction =>
+      if ts.isEmpty then #[]
+      else one (.fixed ts) (if restriction.isEmpty then .none else restrictionOfText restriction)
+    | .forEach entries =>
+      entries.map (fun a =>
+        ({ output := .fixed (Array.replicate (count a.subtype) a.mana) } : ManaAbilityDef))
+    | .anyColor restriction sacrificeSelf =>
+      #[{ output := .oneOf anyColorMana 1, sacrificeSelf, restriction }]
+    | .anyColorEqualToPower => one (.oneOf anyColorMana power) .elf
+    | .twoAmong ts =>
+      if ts.size ≥ 2 then one (.combination ts 2) else #[]
+    | .anyColorAmongLegendaries =>
+      let legendaryColors :=
+        (g.permanentsOf p).foldl (fun acc x =>
+          if x.isLegendary && (x.isCreature || x.printed.isPlaneswalker) then
+            ColorSet.union acc x.printed.colors
+          else acc) ColorSet.empty
+      one (.colorAmong (legendaryColors.toList.map ManaType.colored).toArray)
+    | .commanderIdentity _ =>
+      let pl := g.player p
+      let identity := if pl.hasCommander then pl.commanderColorIdentity.toList else []
+      one (.colorAmong (identity.map ManaType.colored).toArray)
+    | .chosenColorPerDifferentPower =>
+      one (.oneOf anyColorMana ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length)
+    | .filter cost ts =>
+      let types := ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
+      #[{ output := .combination types 2, cost, tap := true }]
+    | .couldProduce opponentLands =>
+      let lands :=
+        if opponentLands then
+          g.livingOpponents p |>.foldl (fun acc pl =>
+            acc ++ (g.permanentsOf pl.id).filter (·.printed.isLand)) #[]
+        else
+          (g.permanentsOf p).filter (fun land => land.printed.isLand && land.id != o.id)
+      #[{ output := .colorAmong (g.landsCouldProduce lands) }]
+  simple ++ fromAbility
 
 /-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
 abilities and targeted abilities are not mana abilities. -/

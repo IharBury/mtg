@@ -25,9 +25,9 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
   let hasConditionalFlash :=
-    match face.flashIfYouControlSubtype with
-    | some t => g.controlsAnySubtype p #[t]
-    | none => false
+    match face.castPermission with
+    | .flashIf cond => g.boardConditionHolds p cond
+    | _ => false
   let radagastFlash :=
     face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
       (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
@@ -643,27 +643,13 @@ def lockInTargetCostReduction (g : Game) : Game :=
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
-          let isSpell := prop.kind == .spell
-          let nDamaged :=
-            if isSpell && face.costReductionIfTargetDamaged > 0 && o.status.damage > 0 then
-              face.costReductionIfTargetDamaged
-            else 0
-          let nTapped :=
-            if isSpell && face.costReductionIfTargetTapped > 0 && o.status.tapped then
-              face.costReductionIfTargetTapped
-            else 0
-          let nAttacking :=
-            if !isSpell || !o.status.attacking then 0
-            else if face.costReductionIfTargetAttackingNontoken > 0 then
-              if o.printed.isToken then 0 else face.costReductionIfTargetAttackingNontoken
-            else face.costReductionIfTargetAttacking
-          let nCounters :=
-            if prop.activation.any (·.costLessPerPlusOneOnTarget) then o.status.plusOnePlusOne
-            else 0
-          let nPower :=
-            match prop.activation.bind (·.costReductionIfTargetPowerAtMost) with
-            | some (k, most) => if o.isCreature && g.power o ≤ most then k else 0
-            | none => 0
+          let nBase :=
+            match prop.kind with
+            | .spell => g.costReductionAmount prop.caster face.spellCostReduction (some o)
+            | .activatedAbility =>
+              match prop.activation with
+              | some ab => g.costReductionAmount prop.caster ab.costReduction (some o)
+              | none => 0
           let nEquip :=
             if prop.activation.any (·.isEquip) && o.controlledBy prop.caster then
               o.staticAbilities.foldl (fun acc ab =>
@@ -671,7 +657,7 @@ def lockInTargetCostReduction (g : Game) : Game :=
                 | .equipAbilitiesTargetingThisCostLess k => acc + k
                 | _ => acc) 0
             else 0
-          let n := nDamaged + nTapped + nAttacking + nCounters + nPower + nEquip
+          let n := nBase + nEquip
           if n == 0 then g
           else
             { g with proposedSpell := some { prop with
@@ -850,13 +836,12 @@ def setProposedTargets (g : Game) (targets : Array Target) : Game :=
   | some prop => g.setStackEntryTargets prop.spellId targets
 
 /-- How many modes `p` may choose for `face` (CR 700.2): two for “choose one
-or both” and for “choose two if you control a [subtype]” while they do. -/
+or both” and for “choose two if …” while that condition holds. -/
 def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
-  if face.chooseOneOrBoth then 2
-  else
-    match face.chooseTwoIfYouControlSubtype with
-    | some s => if (g.permanentsOf p).any (fun o => g.hasSubtype o s) then 2 else 1
-    | none => 1
+  match face.modalRule with
+  | .chooseOne => 1
+  | .chooseOneOrBoth => 2
+  | .chooseTwoIf cond => if g.boardConditionHolds p cond then 2 else 1
 
 /-- Add `mode` to the proposed spell's chosen modes. -/
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=

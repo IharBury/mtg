@@ -126,65 +126,15 @@ kicker must already be included in `start`. -/
 def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (start : ManaCost) : ManaCost :=
   let caster := card.controller.getD card.owner
-  let afterDied :=
-    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
-      start.reduceGeneric face.costReductionIfCreatureDied
-    else start
-  let afterControl :=
-    match face.costReductionIfYouControl with
-    | some (n, subtype) =>
-      let controls :=
-        if subtype == "legendary creature" then
-          (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary)
-        else g.countSubtype caster subtype > 0
-      if controls then afterDied.reduceGeneric n
-      else afterDied
-    | none => afterDied
-  let afterGy :=
-    match face.costReductionIfGyCreaturesAtLeast with
-    | some (min, n) =>
-      let gy :=
-        (g.player caster).graveyard.filter (fun id =>
-          match g.findObject? id with
-          | some c => c.printed.isCreature
-          | none => false) |>.size
-      if gy >= min then afterControl.reduceGeneric n else afterControl
-    | none => afterControl
-  let afterFly :=
-    if face.costReductionEqualFlyingPower then
-      let n :=
-        (g.permanentsOf caster).foldl (fun acc o =>
-          if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
-      afterGy.reduceGeneric n
-    else afterGy
-  -- Ghalta: X is the greatest power or toughness among creatures you
-  -- control, determined after the spell is on the stack (rulings 824 / 874).
-  let afterGreatest :=
-    let creatures := (g.permanentsOf caster).filter (·.isCreature)
-    let greatest (f : GameObject → Int) : Nat :=
-      creatures.foldl (fun acc o => Nat.max acc (f o).toNat) 0
-    let n :=
-      (if face.costReductionGreatestPower then greatest g.power else 0) +
-        (if face.costReductionGreatestToughness then greatest g.toughness else 0)
-    afterFly.reduceGeneric n
+  let afterPrinted :=
+    start.reduceGeneric (g.costReductionAmount caster face.spellCostReduction)
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
       let st := if t == "Elves" then "Elf" else t
       let n := g.countSubtype caster st
-      afterGreatest.reduceGeneric n
-    | none => afterGreatest
-  let afterOpp :=
-    if face.costReductionEqualOppArtifacts then
-      let n :=
-        g.players.foldl (fun acc pl =>
-          if pl.id == caster || pl.lost then acc
-          else
-            let arts :=
-              (g.permanentsOf pl.id).filter (fun o => o.printed.isArtifact) |>.size
-            max acc arts) 0
-      afterAff.reduceGeneric n
-    else afterAff
+      afterPrinted.reduceGeneric n
+    | none => afterPrinted
   let afterSpell :=
     if face.isInstant || face.isSorcery then
       let n :=
@@ -200,8 +150,8 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
             | some host =>
               if host.isOnBattlefield then acc + (g.power host).toNat else acc
             | none => acc) 0
-      afterOpp.reduceGeneric n
-    else afterOpp
+      afterAff.reduceGeneric n
+    else afterAff
   let afterFirst :=
     if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
       let n :=
@@ -388,12 +338,8 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
           else ab.cost.mana
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
       | none => withX ab.cost.mana
-    else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
-      withX (ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary)
-    else if ab.costReductionPerEquipment > 0 then
-      let n := (g.permanentsOf p).filter (fun o => o.printed.isEquipment) |>.size
-      withX (ab.cost.mana.reduceGeneric (ab.costReductionPerEquipment * n))
-    else withX ab.cost.mana
+    else
+      withX (ab.cost.mana.reduceGeneric (g.costReductionAmount p ab.costReduction))
   ManaCost.afterReduction ab.cost.mana cost
 
 /-- True when `ab` has a mana cost that `p` would not pay to activate it. -/

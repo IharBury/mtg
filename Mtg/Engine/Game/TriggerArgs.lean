@@ -540,6 +540,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     | some #[o] => some (Int.ofNat o.status.loyaltyCounters)
     | _ => none
   | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
+  | .basicLandsYouControl | .opponentLands => g.boardNumber controller amount
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
   | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife
   | .greatestToughnessThenPutCreatures | .lifeLostThisTurn

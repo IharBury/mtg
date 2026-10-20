@@ -82,7 +82,6 @@ rules text. -/
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
-    (tapAddColorlessPerSubtype : Option String := none)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (tokenDoubling : Bool := false)
@@ -154,21 +153,17 @@ rules text. -/
         | some (ts, r) => .restricted ts r
         | none => match tapPayLifeAddOneOf with
           | some (n, ts) => .payLifeOneOf n ts
-          | none => match tapAddColorlessPerSubtype with
-            | some s => .colorlessPerSubtype s
-            | none => .none
+          | none => .none
     let modalRule : ModalRule :=
       if chooseOneOrBoth then .chooseOneOrBoth
       else if chooseBothIfTeamwork then .chooseBothIfTeamwork
       else match chooseTwoIfYouControlSubtype with
         | some s => .chooseTwoIfYouControl s
         | none => .chooseOne
-    let topOfLibraryRule : TopOfLibraryRule :=
+    let staticRule : CardStaticRule :=
       if mayPlayLandsFromTop then .playLands
       else if mayLookAtTopAnytime then .lookAnytime
-      else .none
-    let staticRule : CardStaticRule :=
-      if foodAlsoCreatesTreasure then .foodAlsoCreatesTreasure
+      else if foodAlsoCreatesTreasure then .foodAlsoCreatesTreasure
       else if othersEnterWithPlusOneEqualToughness then .othersEnterWithPlusOneEqualToughness
       else if powerPerMountain != 0 then .powerPerMountain powerPerMountain
       else if tokenDoubling then .tokenDoubling drawTwoExceptFirstDrawStep
@@ -218,7 +213,6 @@ rules text. -/
       staticAbilities
       triggeredAbilities
       activatedAbilities
-      topOfLibraryRule
       staticRule
       adventure }
   else
@@ -300,7 +294,6 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
-    (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
@@ -331,7 +324,6 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
-    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
@@ -362,7 +354,6 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
-    (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
@@ -387,7 +378,6 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
-    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
@@ -873,7 +863,7 @@ def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (additionalCostSacrificeCreature : Bool := false) : AdventureFace := {
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
   spellEffect := some spellEffect,
-  additionalCostSacrificeCreature
+  additionalCost := if additionalCostSacrificeCreature then .sacrificeCreature else .none
 }
 
 /-- A red instant that deals `amount` damage to any target. -/
