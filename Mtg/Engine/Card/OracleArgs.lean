@@ -234,18 +234,8 @@ def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
   return { t with kind := ← takeKind t.kind }
 
-def takeAction (a : PermanentAction) : ArgM PermanentAction := do
-  match a with
-  | .pump p t => return .pump (← takeInt p) (← takeInt t)
-  | .pumpAndTrample p t => return .pumpAndTrample (← takeInt p) (← takeInt t)
-  | .plusOne n => return .plusOne (← takeNat n)
-  | .dealDamage n => return .dealDamage (← takeNat n)
-  | .setBasePT p t => return .setBasePT (← takeInt p) (← takeInt t)
-  | a => return a
-
 def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   match r with
-  | .onPermanent a => return .onPermanent (← takeAction a)
   | .pump (.fixed p) (.fixed t) who =>
     return .pump (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
   | .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype s) =>
@@ -280,10 +270,10 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo =>
     return .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo
   | .may r thenDo how => return .may (← takeSpell r) (← takeSpell thenDo) how
-  | .«if» .teamwork (.onPermanent (.grantKeywords kw)) =>
+  | .«if» .teamwork (.grant (.keywords kw) .target) =>
     let name ← takeStr kw.joinedAnd
     let kw := (Keywords.ofName? name).getD kw
-    return .«if» .teamwork (.onPermanent (.grantKeywords kw))
+    return .«if» .teamwork (.grant (.keywords kw) .target)
   | .«if» cond r =>
     let r ← takeSpell r
     match cond with
@@ -424,7 +414,6 @@ def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
 
 def takeResolution (r : Resolution) : ArgM Resolution := do
   match r with
-  | .onSource a => return .onSource (← takeAction a)
   | .searchLibrary (.returnToHand (.landSubtype s) note) =>
     return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
   | .grant (.subtypeWithLandsPT s) .source =>
@@ -483,27 +472,33 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | r => takeSpell r
 
+def isCanonicalDestroy (e : Effect) : Bool :=
+  e.resolution == .destroy .target &&
+    e.events.isEmpty && !e.allowsZeroTargets && !e.phrase.isEmpty &&
+    match e.targeting.kind with
+    | .filtered _ | .oppArtifact => false
+    | _ => true
+
 def takeEffect (e : Effect) : ArgM Effect := do
   match e.resolution with
   | .put (.nonlandMvAtMost n) _ _ =>
     return SharedTrigger.putNonlandMvAtMostFromGy (← takeNat n)
-  | .onPermanent .destroy =>
-    let kind ← takeWholeKind e.targeting.kind
-    return { e with targeting := { e.targeting with kind } }
   | .destroy .target =>
-    if e.events.isEmpty then takeEffectRest e
-    else
+    if isCanonicalDestroy e || !e.events.isEmpty then
       let kind ← takeWholeKind e.targeting.kind
       return { e with targeting := { e.targeting with kind } }
-  | .onPermanent (.plusOne n) =>
-    match e.targeting.kind with
-    | .creatureYouControl | .creatureYouControlAnySubtype _ =>
-      let kind ← takeWholeKind e.targeting.kind
-      let n ← takeNat n
-      return { e with
-        targeting := { e.targeting with kind }
-        resolution := .onPermanent (.plusOne n) }
-    | _ => takeEffectRest e
+    else takeEffectRest e
+  | .putCounters (.ofKind .plusOnePlusOne n) .permanent =>
+    if e.events.isEmpty && !e.phrase.isEmpty then
+      match e.targeting.kind with
+      | .creatureYouControl | .creatureYouControlAnySubtype _ =>
+        let kind ← takeWholeKind e.targeting.kind
+        let n ← takeNat n
+        return { e with
+          targeting := { e.targeting with kind }
+          resolution := .putCounters (.ofKind .plusOnePlusOne n) .permanent }
+      | _ => takeEffectRest e
+    else takeEffectRest e
   | _ => takeEffectRest e
 where
   takeEffectRest (e : Effect) : ArgM Effect := do
@@ -1535,14 +1530,17 @@ def splicePhrase (phrase : String) (old new : Array SlotVal) : String :=
 def finishEffect (old new : Effect) : Effect :=
   let oldArgs := collectEffect old
   let newArgs := collectEffect new
-  match new.resolution with
-  | .onPermanent .destroy =>
+  if isCanonicalDestroy new then
     Effect.canonicalDestroy new.targeting.kind
-  | .onPermanent (.plusOne n) =>
-    match Effect.canonicalPlusOne n new.targeting.kind with
-    | some e => e
-    | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
-  | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+  else
+    match new.resolution with
+    | .putCounters (.ofKind .plusOnePlusOne n) .permanent =>
+      if new.events.isEmpty && !new.phrase.isEmpty then
+        match Effect.canonicalPlusOne n new.targeting.kind with
+        | some e => e
+        | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+      else { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+    | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
 
 def refillEffect (e : Effect) (vals : Array SlotVal) : Effect :=
   finishEffect e (runFill (takeEffect e) vals)

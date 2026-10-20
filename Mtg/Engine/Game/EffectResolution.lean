@@ -790,8 +790,8 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
     { effect with resolution := r }
   let g := g.clearSpellOr
   match rs with
-  | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
-  | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
+  | [.putOnLibrary .top .target, .putOnLibrary .bottom .target]
+  | [.putOnLibrary .bottom .target, .putOnLibrary .top .target] =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
@@ -860,25 +860,31 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-      g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat
-    | [.gainLife (.fixed life) .player, .searchLibrary (.put .basicLand .asPrinted _), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
-      g.applyGainLifeSearchBasicPlusOne controller targets life.toNat
-    | [.becomeCopy .sourceSpellXTimes, .onPermanent (.dealDamage n)] =>
-      g.applyDamageToKindTarget controller .creature targets n
-    | steps =>
-      if g.sequenceAllTargetsIllegal controller effect targets then
-        g.logIllegalSequenceTargets targets
-      else
-        match steps with
-        | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
-          g.shuffleSourceIntoLibrary none (.draw controller n.toNat)
+    match effect.resolution.onPermanent? with
+    | some a => g.applyOnPermanent controller effect.targetKind targets a
+    | none =>
+      match effect.resolution.onSource? with
+      | some a => g.applyOnPermanent controller effect.targetKind targets a
+      | none =>
+        match rs.flatMap Resolution.flatten with
+        | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+          g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat
+        | [.gainLife (.fixed life) .player, .searchLibrary (.put .basicLand .asPrinted _), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
+          g.applyGainLifeSearchBasicPlusOne controller targets life.toNat
+        | [.becomeCopy .sourceSpellXTimes, .dealDamage (.fixed n) .target .none] =>
+          g.applyDamageToKindTarget controller .creature targets n.toNat
         | steps =>
-          steps.foldl (fun g r =>
-            g.applyUnified controller { effect with resolution := r } targets
-              (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-              (giftPromised := giftPromised) (chosenX := chosenX)) g
+          if g.sequenceAllTargetsIllegal controller effect targets then
+            g.logIllegalSequenceTargets targets
+          else
+            match steps with
+            | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
+              g.shuffleSourceIntoLibrary none (.draw controller n.toNat)
+            | steps =>
+              steps.foldl (fun g r =>
+                g.applyUnified controller { effect with resolution := r } targets
+                  (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+                  (giftPromised := giftPromised) (chosenX := chosenX)) g
   | .putOnLibrary .shuffled .source =>
     g.shuffleSourceIntoLibrary none
   | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
@@ -889,8 +895,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.addManaLogged controller types
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
-  | .onSource a | .onPermanent a =>
-    g.applyOnPermanent controller effect.targetKind targets a
   | .dealDamage (.fixed n) .target .none =>
     g.applyDamageToKindTarget controller effect.targetKind targets n.toNat none
       (some "The target is no longer legal")
@@ -1443,14 +1447,15 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.forEachControlledCreature controller
       (fun g o => g.addPlusOnePlusOneTo o n) exclude
   | .putCounters (.ofKind .plusOnePlusOne n) .permanent =>
-    g.withLegalKindPermanent controller .creatureYouControl targets
+    g.withLegalKindPermanent controller effect.targetKind targets
       (fun g o => g.addPlusOnePlusOneTo o n)
   | .exile (.topN n) .playUntilNextTurn _ =>
     g.exileTopPlayThisTurn controller n
   | .destroy .target =>
     g.withLegalKindPermanent controller effect.targetKind targets
       (fun g o => g.destroyPermanent o) none
-      (if effect.allowsZeroTargets then none else some "The target is no longer legal")
+      (if effect.allowsZeroTargets || effect.phrase == s!"Destroy {effect.targetKind.noun}" then none
+       else some "The target is no longer legal")
   | .exile .allCreatures .forLater .worldsWithinWorlds =>
     g.applyWorldsWithinWorlds controller none
   | .exile .hand .playUntilNextTurn .thenDrawThree =>
@@ -1491,10 +1496,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match which with
     | .cardType ty => g.grantTypeCostLessThisTurn controller ty n.toNat
     | .supertype s => g.grantSupertypeCostLessThisTurn controller s n.toNat
-  | _ =>
-    -- Shared steps (`draw`, `loseLife`, `surveil`, …) resolve on `Resolution`
-    -- before this match. A leftover spell shape does nothing here.
-    g.logMsg "The effect does nothing"
+  | r =>
+    match r.onPermanent? with
+    | some a => g.applyOnPermanent controller effect.targetKind targets a
+    | none =>
+      match r.onSource? with
+      | some a => g.applyOnPermanent controller effect.targetKind targets a
+      | none =>
+        -- Shared steps (`draw`, `loseLife`, `surveil`, …) resolve on `Resolution`
+        -- before this match. A leftover spell shape does nothing here.
+        g.logMsg "The effect does nothing"
 
 /-- Resolve a stashed `unlessPays` effect after its payer left without paying
 (CR 800.4f). -/
@@ -1628,31 +1639,38 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | none =>
   match effect.resolution with
   | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-      g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat sourceId
-        (fizzle := fun g => g.logIllegalSequenceTargets targets)
-    | [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
-      let opps := (g.livingOpponents controller).map (·.id)
-      let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := sourceId } }
-      let g := g.beginDiscardCards opps
-      if g.pending == .none then
-        (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
-      else g
-    | steps =>
-      if g.sequenceAllTargetsIllegal controller effect targets sourceId then
-        g.logIllegalSequenceTargets targets
-      else
-        match steps with
-        | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
-          g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
-        | [.put .source .asPrinted (.entering [.counter .finality 1 true]),
-           .may (.attach .equipmentYouControl .target) (.sequence []) _] =>
-          g.returnFromGyFinalityAttach controller sourceId
+    match effect.resolution.onPermanent? with
+    | some action =>
+      g.applyOnPermanent controller effect.targetKind targets action sourceId
+    | none =>
+      match effect.resolution.onSource? with
+      | some action => g.applyOnSource sourceId action
+      | none =>
+        match rs.flatMap Resolution.flatten with
+        | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+          g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat sourceId
+            (fizzle := fun g => g.logIllegalSequenceTargets targets)
+        | [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
+          let opps := (g.livingOpponents controller).map (·.id)
+          let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := sourceId } }
+          let g := g.beginDiscardCards opps
+          if g.pending == .none then
+            (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+          else g
         | steps =>
-          steps.foldl (fun g r =>
-            g.applyUnifiedAbility controller { effect with resolution := r } targets
-              sourceId lastKnownPower chosenX) g
+          if g.sequenceAllTargetsIllegal controller effect targets sourceId then
+            g.logIllegalSequenceTargets targets
+          else
+            match steps with
+            | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
+              g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+            | [.put .source .asPrinted (.entering [.counter .finality 1 true]),
+               .may (.attach .equipmentYouControl .target) (.sequence []) _] =>
+              g.returnFromGyFinalityAttach controller sourceId
+            | steps =>
+              steps.foldl (fun g r =>
+                g.applyUnifiedAbility controller { effect with resolution := r } targets
+                  sourceId lastKnownPower chosenX) g
   | .putOnLibrary .shuffled .source =>
     g.shuffleSourceIntoLibrary sourceId
   | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
@@ -1669,8 +1687,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         else
           g.attachSourceTo src host)
         "The Equipment is no longer in play"
-  | .onPermanent action =>
-    g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .exile (.target .eachPermanent) .untilSourceLeaves _ =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
       targets.foldl (fun acc t =>
@@ -1680,8 +1696,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | some o => acc.exileUntilSourceLeaves sourceId o
           | none => acc
         | _ => acc) g
-  | .onSource action =>
-    g.applyOnSource sourceId action
   | .grant (.subtypeWithLandsPT subtype) .source =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let subtypes :=
@@ -1740,7 +1754,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       else g.draw a 1 |>.draw b 1
     | _, _ => g.logMsg "The targets are no longer legal"
   | .dealDamage (.fixed n) .target _ =>
-    if effect.targetKind == .playerOrCreature && sourceId.isSome then
+    if effect.targetKind == .creature && effect.phrase.startsWith "This creature deals" then
+      g.applyOnPermanent controller effect.targetKind targets (.dealDamage n.toNat) sourceId
+    else if effect.targetKind == .playerOrCreature && sourceId.isSome then
       g.applyEffect controller (Effect.dealDamage n.toNat) targets
     else
       let srcName := g.fraSourceName sourceId
@@ -1947,8 +1963,15 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | _ => g.applyConnive controller none
   | .unrecognized => g
   | r =>
-    g.applyUnified controller { effect with resolution := r } targets
-      (chosenX := chosenX)
+    match r.onPermanent? with
+    | some action =>
+      g.applyOnPermanent controller effect.targetKind targets action sourceId
+    | none =>
+      match r.onSource? with
+      | some action => g.applyOnSource sourceId action
+      | none =>
+        g.applyUnified controller { effect with resolution := r } targets
+          (chosenX := chosenX)
 
 /-- Resolve a printed activated ability (CR 608). -/
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : Effect)

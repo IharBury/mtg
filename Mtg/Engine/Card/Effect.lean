@@ -91,12 +91,6 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"Draw {cardPhrase n.toNat}"
   | .scry (.fixed n) =>
     s!"Scry {n}"
-  | .onPermanent (.dealDamage n) =>
-    s!"This creature deals {n} damage to {noun}"
-  | .onPermanent action =>
-    PermanentAction.toNotation action noun (sentence := true)
-  | .onSource action =>
-    PermanentAction.toNotation action "this creature" (sentence := true)
   | .gainLife (.fixed n) .you =>
     s!"You gain {n} life"
   | .recruit _ =>
@@ -171,7 +165,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .draw (.fixed 1) .targetPlayers =>
     "Two target players each draw a card"
   | .dealDamage (.fixed n) .target .none =>
-    s!"This creature deals {n} damage to any target"
+    s!"This creature deals {n} damage to {noun}"
   | .draw .lastKnownPower _ =>
     "Draw cards equal to the sacrificed creature's power"
   | .grant .arwenShare .target =>
@@ -274,7 +268,7 @@ private def phraseWith (r : Resolution) (noun : String)
     "Each creature you control becomes prepared"
   | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
     s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
-  | .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
+  | .sequence [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] =>
     s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
   | .grant .jaceLoyaltyAtInstantSpeed .youIfCast =>
     "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
@@ -297,11 +291,22 @@ private def phraseWith (r : Resolution) (noun : String)
   | .becomeCopy .targetLegendRuleOff =>
     s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
   | .sequence rs =>
-    sequence rs
+    match r.onPermanent? with
+    | some action => PermanentAction.toNotation action noun (sentence := true)
+    | none =>
+      match r.onSource? with
+      | some action => PermanentAction.toNotation action "this creature" (sentence := true)
+      | none => sequence rs
   | r =>
-    match r.fraPhrase? noun with
-    | some phrase => phrase
-    | none => SpellResolution.toPhrase r noun
+    match r.onPermanent? with
+    | some action => PermanentAction.toNotation action noun (sentence := true)
+    | none =>
+      match r.onSource? with
+      | some action => PermanentAction.toNotation action "this creature" (sentence := true)
+      | none =>
+        match r.fraPhrase? noun with
+        | some phrase => phrase
+        | none => SpellResolution.toPhrase r noun
 
 /-- Oracle-style reminder from targeting and resolution. Source-deals-damage
 uses the creature as the subject rather than the generic `PermanentAction`

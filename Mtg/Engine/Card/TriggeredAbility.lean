@@ -1806,31 +1806,31 @@ def sequenceClause (e : Effect) : Option String :=
     some "you draw a card and lose 1 life"
   | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
     some s!"draw {cardPhrase n.toNat}, then discard a card"
-  | .sequence [.onSource (.pump p 0), .grant (.keywords k) .creaturesYouControl] =>
+  | .sequence [.pump (.fixed p) (.fixed 0) .source, .grant (.keywords k) .creaturesYouControl] =>
     if k == Keyword.trample then
       some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
     else none
-  | .sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne n) .permanent, .grant (.keywords k) .target] =>
     if k == Keyword.lifelink && n == 1 then
       some s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
     else if k == Keyword.vigilance then
       some s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
     else none
-  | .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] =>
+  | .sequence [.pump (.fixed 1) (.fixed 0) .source, .cant (.beBlocked .source)] =>
     some "this gets +1/+0 until end of turn and can't be blocked this turn"
-  | .sequence [.draw 1, .onSource (.plusOne 1)] =>
+  | .sequence [.draw 1, .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
     some "draw a card and put a +1/+1 counter on this"
   | .sequence [.pump (.fixed p) (.fixed 0) .creaturesYouControl, .grant (.keywords k) .creaturesYouControl] =>
     if k == Keyword.firstStrike then
       some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
     else none
-  | .sequence [.onSource (.plusOne 1), .draw 1] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1] =>
     some "put a +1/+1 counter on this and draw a card"
-  | .sequence [.onSource (.pump p t), .dealDamage (.fixed n) (.player .eachOpponent)] =>
+  | .sequence [.pump (.fixed p) (.fixed t) .source, .dealDamage (.fixed n) (.player .eachOpponent)] =>
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
-      [.onPermanent .untap,
-       .«if» (.subtype subtype) (.onPermanent (.plusOne n))] =>
+      [.untap .target,
+       .«if» (.subtype subtype) (.putCounters (.ofKind .plusOnePlusOne n) .permanent)] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
   | .sequence [.loseLife (.fixed n) .you, .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"

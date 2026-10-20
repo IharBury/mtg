@@ -3493,10 +3493,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else if resolutionOverride.isSome ||
       (ab.opts.printed.isEmpty && ab.effect.phrase.isEmpty &&
-        (TriggeredAbility.sequenceClause ab.effect).isNone &&
-        match ab.effect.resolution with
-        | .onPermanent _ | .onSource _ => false
-        | _ => true) ||
+        (TriggeredAbility.sequenceClause ab.effect).isNone) ||
       !ab.effect.events.isEmpty || ab.sagaChapterNumber?.isSome then
   match resolutionOverride.getD ab.resolution with
   | .pump power toughness who =>
@@ -4269,32 +4266,44 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   else
   match ab.effect.resolution with
   | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-      g.resolveTapScryDraw controller ab.effect targets scryN.toNat drawN.toNat sourceId
-        (fizzle := fun g => g.logIllegalSequenceTargets targets)
-    | steps =>
-      if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
-        g.logIllegalSequenceTargets targets
-      else
-        match steps with
-        | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
-          g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+    match ab.effect.resolution.onPermanent? with
+    | some a =>
+      g.applyOnPermanent controller ab.targetKind targets a sourceId
+        (some "The target is no longer legal")
+    | none =>
+      match ab.effect.resolution.onSource? with
+      | some a => g.applyOnTriggerSource sourceId a
+      | none =>
+        match rs.flatMap Resolution.flatten with
+        | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+          g.resolveTapScryDraw controller ab.effect targets scryN.toNat drawN.toNat sourceId
+            (fizzle := fun g => g.logIllegalSequenceTargets targets)
         | steps =>
-        steps.foldl (fun g r =>
-          let step : TriggeredAbility :=
-            match ab with
-            | .triggered w _ opts =>
-              .triggered w { ab.effect with resolution := r } opts
-          g.applyTriggeredAbility controller step sourceId targets dividedDamage
-            lastKnownPower lastKnownToughness sourceName) g
-  | .onPermanent a =>
-    g.applyOnPermanent controller ab.targetKind targets a sourceId
-      (some "The target is no longer legal")
-  | .onSource a => g.applyOnTriggerSource sourceId a
+          if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
+            g.logIllegalSequenceTargets targets
+          else
+            match steps with
+            | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
+              g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+            | steps =>
+            steps.foldl (fun g r =>
+              let step : TriggeredAbility :=
+                match ab with
+                | .triggered w _ opts =>
+                  .triggered w { ab.effect with resolution := r } opts
+              g.applyTriggeredAbility controller step sourceId targets dividedDamage
+                lastKnownPower lastKnownToughness sourceName) g
   | r =>
-    g.applyUnifiedAbility controller { ab.effect with resolution := r }
-      targets sourceId lastKnownPower
+    match r.onPermanent? with
+    | some a =>
+      g.applyOnPermanent controller ab.targetKind targets a sourceId
+        (some "The target is no longer legal")
+    | none =>
+      match r.onSource? with
+      | some a => g.applyOnTriggerSource sourceId a
+      | none =>
+        g.applyUnifiedAbility controller { ab.effect with resolution := r }
+          targets sourceId lastKnownPower
 
 /-- Finish trigger-sequence steps that waited on a pending choice.
 Those steps are still part of the resolution that opened the choice. -/

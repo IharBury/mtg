@@ -536,7 +536,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   let fallback :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   match e.resolution with
-  | .sequence [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+  | .sequence [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
     [s!"Tap target creature. Scry {scryN}.",
       if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
   | .sequence [.returnToHand .targetSpell, .draw (.fixed 1)] =>
@@ -549,7 +549,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | .sequence [.dealDamage (.fixed n) (.nonSubtypeCreatures sub), .addMana #[] (.fixed m) (.subtypeSpells sub2)] =>
     [s!"{cardName} deals {n} damage to each non-{sub} creature.",
       s!"Add {englishNumber m.toNat} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
-  | .sequence [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
+  | .sequence [.grant (.keywords k) .target, .draw (.fixed 1)] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]

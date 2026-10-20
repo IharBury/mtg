@@ -3251,10 +3251,6 @@ inductive Resolution where
   or deals damage equal to its power when `how` is `.reflexive`. A card or
   a hand fights nothing. -/
   | fight (who : ObjectSelector := .source) (how : TriggerFightHow := .mutual)
-  /-- Affect a still-legal permanent (by default `.target`, or `.source` if the
-  source is still on the battlefield). Damage can hit a player or a creature;
-  other actions require a permanent. -/
-  | onPermanent (action : PermanentAction) (who : ObjectSelector := .target)
   /-- Resolve `r` unless its controller pays `{n}`.
   Countering unless they pay is `.unlessPays .counter n`. -/
   | unlessPays (r : Resolution) (n : Nat)
@@ -3277,10 +3273,6 @@ inductive Resolution where
 deriving Repr, Inhabited, BEq
 
 namespace Resolution
-
-/-- Affect the source if it is still on the battlefield. -/
-@[match_pattern] abbrev onSource (action : PermanentAction) : Resolution :=
-  .onPermanent action .source
 
 /-- Surveil, as `n` and `note` say (CR 701.25). -/
 @[match_pattern] abbrev surveil (n : NumberSelector) (note : TriggerSurveilNote := .none) : Resolution :=
@@ -3431,7 +3423,7 @@ def isFra : Resolution → Bool
   | .dealDamage (.fixed _) (.player .eachOpponent) .fromCause => true
   | .putCounters (.ofKind .plusOnePlusOne _) (.targetAt _) => true
   | .putCounters (.ofKind .plusOnePlusOne _) (.creaturesControlledBy (.targetAt _)) => true
-  | .putCounters (.ofKind .loyalty _) .planeswalkersYouControl | .putCounters (.ofKind .plusOnePlusOne _) .source => true
+  | .putCounters (.ofKind .loyalty _) .planeswalkersYouControl => true
   | .putCounters (.ofKind .plusOnePlusOne _) (.target .eachPermanent) | .putCounters .plusOnePerLand .target => true
   | .putCounters .plusOneEqualToHand .creaturesYouControl | .putCounters .causeCounters .source => true
   | .putCounters (.ofKind .plusOnePlusOne _) .creaturesWithPlusOne | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent => true
@@ -3454,7 +3446,7 @@ def isFra : Resolution → Bool
   | .queueReflexive (.dealDamage (.fixed _) .target _) => true
   | .queueReflexive (.destroy (.target .eachPermanent) _) => true
   | .queueReflexive (.put .landCard .tapped .none) => true
-  | .sacrifice .source _ | .grant (.keywords _) (.cause none) | .untap .source => true
+  | .sacrifice .source _ | .grant (.keywords _) (.cause none) => true
   | .pump (.fixed _) (.fixed _) (.cause none) => true
   | .pump (.count .artifact) (.fixed 0) .creaturesYouControl | .pump (.count .artifact) (.fixed 0) .source => true
   | .pump (.count .artifact) (.fixed 0) .target | .pump .causePower (.fixed 0) .source => true
@@ -3511,11 +3503,110 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .counter => some (s!"Counter {noun}")
   | .unlessPays .counter n => some (s!"Counter {noun} unless its controller pays \{{n}}")
   | .destroy .target .none => some (s!"Destroy {noun}")
-  | .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] => some (s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead")
+  | .sequence [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] => some (s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead")
   | .mill (.fixed n) .you (.permanentAndGainLife l) => some (s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life")
   | .chooseModes _ (.fraTrigger n) => some (if n == 2 then "choose two" else "choose one")
   | .pump .minusGraveyardCards (.fixed 0) .target => some (s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard")
   | r => if r.isFra then some "" else none
+
+/-- What `action` does to `who`. `target` is the announced permanent. -/
+def ofAffected (who : ObjectSelector) : PermanentAction → Resolution
+  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
+  | .pump p t => .pump (.fixed p) (.fixed t) who
+  | .pumpAndTrample p t =>
+    .sequence [.pump (.fixed p) (.fixed t) who, .grant (.keywords Keyword.trample) who]
+  | .destroy => .destroy who
+  | .dealDamage n => .dealDamage (.fixed n) who
+  | .grantKeywords k => .grant (.keywords k) who
+  | .tap => .tap (tapWho who)
+  | .untap => .untap who
+  | .loseIndestructible => .lose .indestructible who
+  | .cantBeBlocked => .cant (.beBlocked who)
+  | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
+  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
+  | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
+  | .becomeArtifactIndestructible =>
+    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) who]
+  | .becomePrepared => .becomePrepared who
+  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) who
+  | .tapAndStun =>
+    .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
+  | .putOnTopOfLibrary => .putOnLibrary .top who
+  | .putOnBottomOfLibrary => .putOnLibrary .bottom who
+  | .exile => .exile who .forLater
+  | .doublePowerAndToughness => .pump .double .double who
+where
+  counterWho : ObjectSelector → ObjectSelector
+    | .any | .target .any => .permanent
+    | w => w
+  tapWho : ObjectSelector → ObjectSelector
+    | .enchanted => .enchantedWhileSource
+    | w => w
+
+/-- Affect a still-legal permanent (by default `.target`, or `.source` if the
+source is still on the battlefield). -/
+def onPermanent (action : PermanentAction) (who : ObjectSelector := .target) : Resolution :=
+  ofAffected who action
+
+/-- Affect the source if it is still on the battlefield. -/
+def onSource (action : PermanentAction) : Resolution :=
+  ofAffected .source action
+
+/-- What `action` does to the announced permanent. -/
+def ofPermanent : PermanentAction → Resolution :=
+  ofAffected .target
+
+/-- What `action` does to the source if it is still on the battlefield. -/
+def ofSource : PermanentAction → Resolution :=
+  ofAffected .source
+
+/-- What `action` does to the creature this Aura enchants. -/
+def ofEnchanted : PermanentAction → Resolution :=
+  ofAffected .enchanted
+
+/-- What `action` does to the target while the source is still on the battlefield.
+A source that already left is silent. -/
+def ofTargetWhileSource : PermanentAction → Resolution :=
+  ofAffected (.target .whileSource)
+
+/-- The `PermanentAction` that `ofAffected who` built for `r`, if any. -/
+def affectedAction? (who : ObjectSelector) (r : Resolution) : Option PermanentAction :=
+  let cWho := match who with | .any | .target .any => .permanent | w => w
+  let tWho := match who with | .enchanted => .enchantedWhileSource | w => w
+  match r with
+  | .putCounters (.ofKind .plusOnePlusOne n) w => if w == cWho then some (.plusOne n) else none
+  | .pump (.fixed p) (.fixed t) w => if w == who then some (.pump p t) else none
+  | .sequence [.pump (.fixed p) (.fixed t) w1, .grant (.keywords k) w2] =>
+    if w1 == who && w2 == who && k == Keyword.trample then some (.pumpAndTrample p t) else none
+  | .destroy w .none => if w == who then some .destroy else none
+  | .dealDamage (.fixed n) w .none => if w == who then some (.dealDamage n.toNat) else none
+  | .grant (.keywords k) w => if w == who then some (.grantKeywords k) else none
+  | .tap w true => if w == tWho then some .tap else none
+  | .untap w => if w == who then some .untap else none
+  | .lose .indestructible w => if w == who then some .loseIndestructible else none
+  | .cant (.beBlocked w) => if w == who then some .cantBeBlocked else none
+  | .putCounters (.ofKind .indestructible 1) w => if w == cWho then some .indestructibleCounter else none
+  | .putCounters (.ofKind .doubleStrike 1) w => if w == cWho then some .doubleStrikeCounter else none
+  | .putCounters (.ofKind .burden 1) w => if w == cWho then some .burdenCounter else none
+  | .sequence [.becomeArtifact w1, .grant (.keywords k) w2] =>
+    if w1 == who && w2 == who && k == Keyword.indestructible then some .becomeArtifactIndestructible else none
+  | .becomePrepared w true => if w == who then some .becomePrepared else none
+  | .setBasePT (.fixed p) (.fixed t) w => if w == who then some (.setBasePT p t) else none
+  | .sequence [.tap w1 true, .putCounters (.ofKind .stun 1) w2] =>
+    if w1 == tWho && w2 == cWho then some .tapAndStun else none
+  | .putOnLibrary .top w => if w == who then some .putOnTopOfLibrary else none
+  | .putOnLibrary .bottom w => if w == who then some .putOnBottomOfLibrary else none
+  | .exile w .forLater .none => if w == who then some .exile else none
+  | .pump .double .double w => if w == who then some .doublePowerAndToughness else none
+  | _ => none
+
+/-- The `PermanentAction` that `onPermanent` built for `r`, if any. -/
+def onPermanent? : Resolution → Option PermanentAction :=
+  affectedAction? .target
+
+/-- The `PermanentAction` that `onSource` built for `r`, if any. -/
+def onSource? : Resolution → Option PermanentAction :=
+  affectedAction? .source
 
 end Resolution
 
@@ -3526,6 +3617,12 @@ abbrev TriggerResolution := Resolution
 namespace TriggerResolution
 
 export Resolution (
+  ofAffected
+  ofPermanent
+  ofSource
+  ofEnchanted
+  ofTargetWhileSource
+  onPermanent
   onSource
   lose
   cant
@@ -3660,64 +3757,8 @@ def visionModes : List TriggerResolution :=
    .grant (.keywords Keyword.indestructible) .source,
    .draw (.fixed 1)]
 
-/-- What `action` does to `who`. `target` is the announced permanent. -/
-def ofAffected (who : ObjectSelector) : PermanentAction → TriggerResolution
-  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
-  | .pump p t => .pump (.fixed p) (.fixed t) who
-  | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) who, .grant (.keywords Keyword.trample) who]
-  | .destroy => .destroy who
-  | .dealDamage n => .dealDamage (.fixed n) who
-  | .grantKeywords k => .grant (.keywords k) who
-  | .tap => .tap (tapWho who)
-  | .untap => .untap who
-  | .loseIndestructible => .lose .indestructible who
-  | .cantBeBlocked => .cant (.beBlocked who)
-  | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
-  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
-  | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
-  | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) who]
-  | .becomePrepared => .becomePrepared who
-  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) who
-  | .tapAndStun =>
-    .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
-  | .putOnTopOfLibrary => .putOnLibrary .top who
-  | .putOnBottomOfLibrary => .putOnLibrary .bottom who
-  | .exile => .exile who .forLater
-  | .doublePowerAndToughness => .pump .double .double who
-where
-  counterWho : ObjectSelector → ObjectSelector
-    | .any | .target .any => .permanent
-    | w => w
-  tapWho : ObjectSelector → ObjectSelector
-    | .enchanted => .enchantedWhileSource
-    | w => w
-
-/-- What `action` does to the announced permanent. -/
-def ofPermanent : PermanentAction → TriggerResolution :=
-  ofAffected .target
-
-/-- What `action` does to the source if it is still on the battlefield. -/
-def ofSource : PermanentAction → TriggerResolution :=
-  ofAffected .source
-
-/-- What `action` does to the creature this Aura enchants. -/
-def ofEnchanted : PermanentAction → TriggerResolution :=
-  ofAffected .enchanted
-
-/-- What `action` does to the target while the source is still on the battlefield.
-A source that already left is silent. -/
-def ofTargetWhileSource : PermanentAction → TriggerResolution :=
-  ofAffected (.target .whileSource)
-
-/-- A spell step as the same step in this vocabulary.
-Shapes whose spell constructor is a different step are rewritten.
-Every other shape passes through. -/
-def ofSpell : TriggerResolution → TriggerResolution
-  | .sequence rs => .sequence (rs.map ofSpell)
-  | .onPermanent a => ofPermanent a
-  | r => r
+/-- A spell step as the same step in this vocabulary. -/
+def ofSpell (r : TriggerResolution) : TriggerResolution := r
 
 end TriggerResolution
 
@@ -3846,7 +3887,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .grant (.keywords k) .creaturesYouControl => s!"creatures you control gain {k.joinedAnd} until end of turn"
   | .returnToHand .targetSpell _ => s!"return {noun} to its owner's hand"
   | .returnToHand (.target .graveyardCard) _ => s!"return up to one {noun} to your hand"
-  | .onPermanent action => PermanentAction.toNotation action noun
   | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .pump (.fixed p) (.fixed t) .allCreatures =>
@@ -3886,7 +3926,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     let base := trimPeriod (phraseOne r noun)
     let cond := ifClause cond noun
     if base.isEmpty then cond else s!"{cond}, {base}"
-  | .ifElse .teamwork (.onPermanent (.dealDamage teamworkN)) (.onPermanent (.dealDamage n)) =>
+  | .ifElse .teamwork (.dealDamage (.fixed teamworkN) .target .none) (.dealDamage (.fixed n) .target .none) =>
     s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
   | .ifElse .teamwork (.unlessPays .counter teamworkN) (.unlessPays .counter n) =>
     s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
@@ -4004,8 +4044,6 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
   | .exile (.topN _) .playUntilNextTurn _ =>
     s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .destroy .target _ =>
-    "Destroy up to one target nonland permanent"
   | .exile .allCreatures .forLater .worldsWithinWorlds =>
     "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
   | .exile .hand .playUntilNextTurn .thenDrawThree =>
@@ -4026,7 +4064,10 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"{ty} spells you cast this turn cost \{{n}} less to cast"
   | .spellsCostLess (.supertype s) (.fixed n) =>
     s!"{s} spells you cast this turn cost \{{n}} less to cast"
-  | _ => ""
+  | r =>
+    match r.onPermanent? with
+    | some action => PermanentAction.toNotation action noun
+    | none => ""
 
 /-- Nested `sequence` constructors, left to right. An `or` stays one step:
 flattening it would resolve every alternative. -/
@@ -4037,6 +4078,9 @@ def flatten : SpellResolution → List SpellResolution
 /-- Printed wording of a flat sequence. Known shapes keep their Oracle text;
 other sequences join each step. -/
 private def phraseSequence (rs : List SpellResolution) (noun : String) : String :=
+  match (Resolution.sequence rs).onPermanent? with
+  | some action => PermanentAction.toNotation action noun
+  | none =>
   match rs with
   | [.draw (.fixed n) .you, .discard (.cards 1)] =>
     s!"draw {cardPhrase n.toNat}, then discard a card"
@@ -4044,7 +4088,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"you draw {cardPhrase cards.toNat} and lose {life} life"
   | [.draw (.fixed cards) .player, .loseLife (.fixed life) .player] =>
     s!"{noun} draws {cardPhrase cards.toNat} and loses {life} life"
-  | [.onPermanent .destroy, .loseLife (.fixed n) (.controller .target)] =>
+  | [.destroy .target .none, .loseLife (.fixed n) (.controller .target)] =>
     s!"destroy {noun}. Its controller loses {n} life"
   | [.returnToHand .targetSpell _, .draw (.fixed 1)] =>
     s!"return {noun} to its owner's hand. Draw a card"
@@ -4057,28 +4101,28 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.createTokens kind (.fixed n) _ .you _, .pump (.fixed p) (.fixed t) .creaturesYouControl] =>
     let tokens := capitalizeAscii (TokenKind.createPhrase kind n.toNat)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
-  | [.onPermanent .destroy, .gainLife (.fixed n) .you] =>
+  | [.destroy .target .none, .gainLife (.fixed n) .you] =>
     s!"destroy {noun}. You gain {n} life"
-  | [.onPermanent .destroy, .surveil (.fixed 1) .none] =>
+  | [.destroy .target .none, .surveil (.fixed 1) .none] =>
     s!"destroy {noun}. Surveil 1"
-  | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+  | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
     s!"tap {noun}. Scry {scryN}. Draw {cardPhrase drawN.toNat}"
-  | [.onPermanent (.pump p t), .draw (.fixed 1)] =>
+  | [.pump (.fixed p) (.fixed t) .target, .draw (.fixed 1)] =>
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
-  | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
+  | [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .grant (.keywords k) .target] =>
     if k == Keyword.lifelink.merge Keyword.indestructible then
       "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
+  | [.grant (.keywords k) .target, .draw (.fixed 1)] =>
     if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
       s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.pump (.fixed p) (.fixed t) .creaturesYouControl, .grant (.keywords k) .creaturesYouControl] =>
     s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
-  | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.subtype subtype) (.may (.attach .equipmentYouControl .target) (.sequence []))] =>
+  | [.untap .target, .pump (.fixed p) (.fixed t) .target, .«if» (.subtype subtype) (.may (.attach .equipmentYouControl .target) (.sequence []))] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | [.putCounters (.ofKind kind k) .firstTargetCreatureYouControl, .fight .announced .mutual] =>
     s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
@@ -4089,9 +4133,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"deals {n} damage to each non-{sub} creature. Add {englishNumber m.toNat} mana in any combination of colors. Spend this mana only to cast {sub2} spells"
   | [.returnToHand .targetSpell _, .«if» .giftPromised (.cant (.castSpellsThisTurn .any))] =>
     "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
-  | [.onPermanent (.dealDamage n), .«if» .teamwork (.dealDamage (.fixed extra) (.player (.controller .target)) _)] =>
+  | [.dealDamage (.fixed n) .target .none, .«if» .teamwork (.dealDamage (.fixed extra) (.player (.controller .target)) _)] =>
     s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
-  | [.onPermanent (.grantKeywords k), .«if» .teamwork (.onPermanent (.grantKeywords kw))] =>
+  | [.grant (.keywords k) .target, .«if» .teamwork (.grant (.keywords kw) .target)] =>
     if k == Keyword.doubleStrike then
       s!"target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains {kw.joinedAnd} until end of turn"
     else
@@ -4106,26 +4150,26 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.putCounters (.ofKind kind k) .creatureTargets, .gainLife (.fixed n) .player] =>
     s!"put {kind.countersPhrase k} on up to one target creature. Target player gains {n} life"
-  | [.onPermanent .destroy, .searchLibrary (.put (.supertypeCard s ty) .tapped _)] =>
+  | [.destroy .target .none, .searchLibrary (.put (.supertypeCard s ty) .tapped _)] =>
     s!"destroy {noun}. Its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
   | [.draw (.fixed 3), .discard (.cardsUnlessType n ty)] =>
     s!"draw three cards. Then discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | [.replace .diesThisTurn .exile, .onPermanent (.dealDamage n)] =>
+  | [.replace .diesThisTurn .exile, .dealDamage (.fixed n) .target .none] =>
     s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
-  | [.onPermanent (.pump p t), .replace .diesThisTurn .exile] =>
+  | [.pump (.fixed p) (.fixed t) .target, .replace .diesThisTurn .exile] =>
     s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
-  | [.onPermanent (.dealDamage n), .onPermanent .loseIndestructible, .replace .diesThisTurn .exile] =>
+  | [.dealDamage (.fixed n) .target .none, .lose .indestructible .target, .replace .diesThisTurn .exile] =>
     s!"deals {n} damage to {noun}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-  | [.onPermanent (.pump p t), .exile (.topN 1) .playUntilNextTurn _] =>
+  | [.pump (.fixed p) (.fixed t) .target, .exile (.topN 1) .playUntilNextTurn _] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
-  | [.onPermanent .doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>
+  | [.pump .double .double .target, .grant (.keywords k) .target] =>
     if k == Keyword.trample then
       "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.gainLife (.fixed life) .player, .searchLibrary (.put .basicLand .asPrinted _), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
     s!"Target player gains {life} life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
-  | [.becomeCopy .sourceSpellXTimes, .onPermanent (.dealDamage n)] =>
+  | [.becomeCopy .sourceSpellXTimes, .dealDamage (.fixed n) .target .none] =>
     s!"When you cast this spell, copy it X times. You may choose new targets for the copies.\ndeals {n} damage to target creature."
   | _ =>
     String.intercalate ". " (rs.map (phraseOne · noun))
@@ -4134,9 +4178,9 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
 other choices join each alternative. -/
 private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
   match rs with
-  | [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary] =>
+  | [.putOnLibrary .top .target, .putOnLibrary .bottom .target] =>
     s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
-  | [.onPermanent .putOnBottomOfLibrary, .onPermanent .putOnTopOfLibrary] =>
+  | [.putOnLibrary .bottom .target, .putOnLibrary .top .target] =>
     s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
   | _ =>
     String.intercalate " or " ((rs.map (phraseOne · noun)).filter (· != ""))

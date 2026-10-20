@@ -611,6 +611,7 @@ def destroyUpToOneNonland : Effect :=
   mkSpell (.of .nonland) (.destroy .target)
     (castKind := .destroyArtifactOrLand)
     (allowsZeroTargets := true)
+    (phraseOverride := some "Destroy up to one target nonland permanent")
 
 def createGalactus : Effect :=
   mkSpell (.of .none) (.createTokens .galactus (.fixed 1) false)
