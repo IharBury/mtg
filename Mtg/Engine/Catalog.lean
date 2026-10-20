@@ -130,10 +130,10 @@ rules text. -/
       else match entersTappedUnlessPayLife with
         | some n => .unlessPayLife n
         | none => .untapped
-    let entersWithCounters : EntersWithCounters :=
-      if entersWithHopePerCreature then .hopePerCreature
-      else if entersWithShield != 0 then .shield entersWithShield
-      else .none
+    let entersWithCounters : Option (CounterKind × NumberSelector) :=
+      if entersWithHopePerCreature then some (.hope, .count .creature)
+      else if entersWithShield != 0 then some (.shield, .fixed (Int.ofNat entersWithShield))
+      else none
     let asEntersChoose : AsEntersChoice :=
       if asEntersChooseCreatureType then .creatureType
       else .none

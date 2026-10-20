@@ -1682,7 +1682,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   ActivatedAbility.fra
     "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
     (FraCandidates.ab (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .grant (.choiceOfKeywords [0, 1, 2]) .source]) "Put a +1/+1 counter on this creature")
-    { mana := ManaCost.ofGeneric 1, extra := .sacrificeAnotherArtifact },
+    { mana := ManaCost.ofGeneric 1, picks := #[.sacrificeAnotherArtifact] },
   ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
     (FraCandidates.ab (.returnToHand .source) "Return this card from your graveyard to your hand")
     { mana := ⟨#[.generic 4, .colored .green]⟩ } (activateFromGraveyard := true),
@@ -1719,10 +1719,10 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { mana := ⟨#[.colored .white, .colored .blue]⟩ } (activateFromGraveyard := true)
     (cond := .scriedOrSurveilledThisTurn),
   ActivatedAbility.fra "{1}, {T}, Discard a legendary card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 1, tap := true, extra := .discardLegendaryCard },
+    { mana := ManaCost.ofGeneric 1, tap := true, picks := #[.discardLegendaryCard] },
   ActivatedAbility.fra "Tap two untapped artifacts you control: Put two +1/+1 counters on this creature."
     (FraCandidates.ab (.onSource (.plusOne 2)) "Put two +1/+1 counters on this creature")
-    { extra := .tapTwoUntappedArtifacts },
+    { picks := #[.tapTwoUntappedArtifacts] },
   { ActivatedAbility.fra
       "Equip {3}. This ability costs {1} less to activate for each +1/+1 counter on the creature it targets."
       Effect.attachToTargetCreatureYouControl { mana := ManaCost.ofGeneric 3 } (onlyAsSorcery := true)
@@ -1783,7 +1783,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   ActivatedAbility.fra
     "{4}{B}, Exile another creature card from your graveyard: Return this card from your graveyard to the battlefield tapped with a +1/+1 counter on her."
     (FraCandidates.ab (.put .source .tapped (.entering [.counter .plusOnePlusOne 1 true])) "Return this card from your graveyard to the battlefield tapped")
-    { mana := ⟨#[.generic 4, .colored .black]⟩, extra := .exileAnotherCreatureCardFromGraveyard }
+    { mana := ⟨#[.generic 4, .colored .black]⟩, picks := #[.exileAnotherCreatureCardFromGraveyard] }
     (activateFromGraveyard := true),
   ActivatedAbility.fra
     "{5}{B}: Return target creature or planeswalker card from your graveyard to the battlefield. Put a +1/+1 counter on this creature. Activate only as a sorcery."
@@ -1796,7 +1796,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   ActivatedAbility.fra
     "Sacrifice another creature or planeswalker: This creature gets -2/-0 until end of turn. Activate only if there are seven or more cards in your graveyard."
     (FraCandidates.ab (.onSource (.pump (-2) 0)) "This creature gets -2/-0 until end of turn")
-    { extra := .sacrificeAnotherCreatureOrPlaneswalker } (cond := .graveyardAtLeast 7),
+    { picks := #[.sacrificeAnotherCreatureOrPlaneswalker] } (cond := .graveyardAtLeast 7),
   ActivatedAbility.fra "{B}, Discard this card: Target creature gets -3/-1 until end of turn."
     (FraCandidates.ab (.onPermanent (.pump (-3) (-1))) "Target creature gets -3/-1 until end of turn" (.filtered TargetFilter.creature))
     { mana := ⟨#[.colored .black]⟩, discardSource := true } (activateFromHand := true),
@@ -1808,7 +1808,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     (FraCandidates.ab (.createTokens .dragon55flying 1) "Create a 5/5 red Dragon creature token with flying")
     { mana := ManaCost.ofGeneric 8 },
   ActivatedAbility.fra "{2}, {T}, Sacrifice an artifact or land: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 2, tap := true, extra := .sacrificeArtifactOrLand },
+    { mana := ManaCost.ofGeneric 2, tap := true, picks := #[.sacrificeArtifactOrLand] },
   ActivatedAbility.fra
     "{5}{R}: Target creature gets +X/+0 until end of turn, where X is the number of artifacts you control."
     (FraCandidates.ab (.pump (.count .artifact) (.fixed 0) .target) "Target creature gets +X/+0 until end of turn" (.filtered TargetFilter.creature))
@@ -1823,7 +1823,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   ActivatedAbility.fra
     "{2}, Sacrifice another creature or planeswalker: Put a +1/+1 counter on this creature. He gains menace until end of turn."
     (FraCandidates.ab (.sequence [.onSource (.plusOne 1), .onSource (.grantKeywords Keyword.menace)]) "Put a +1/+1 counter on this creature")
-    { mana := ManaCost.ofGeneric 2, extra := .sacrificeAnotherCreatureOrPlaneswalker },
+    { mana := ManaCost.ofGeneric 2, picks := #[.sacrificeAnotherCreatureOrPlaneswalker] },
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[

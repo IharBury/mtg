@@ -897,15 +897,6 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       | none => g
     g.logMsg s!"A copy of {src.name} is created"
 
-/-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
-def revealHand (g : Game) (p : PlayerId) : Game :=
-  let names :=
-    (g.player p).hand.foldl (fun acc id =>
-      match g.findObject? id with
-      | some o => if acc == "" then o.name else s!"{acc}, {o.name}"
-      | none => acc) ""
-  g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
-
 /-- After every player has chosen, the chosen creature cards enter together,
 the exiled cards return to their owners' hands, and the spell is exiled. -/
 def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)

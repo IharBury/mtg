@@ -12,37 +12,12 @@ The unified `TriggeredAbility` carrier plus its stack/resolution metadata
 
 namespace Mtg.Engine
 
-/-- An intervening “if” or trigger condition (CR 603.2 / 603.4). -/
-inductive InterveningCondition where
-  /-- “while you control a creature with power ≥ n” (e.g. Ferocious). -/
-  | youControlCreatureWithPower (n : Int)
-  /-- “if you gained `n` or more life this turn”. -/
-  | gainedLifeAtLeast (n : Nat)
-  /-- “another creature you control with power ≤ n”. -/
-  | anotherCreaturePowerAtMost (n : Int)
-  | none
-  /-- “if it isn't a token” (the source, as it last existed). -/
-  | sourceNotToken
-  /-- “if two or more creatures died this turn”. -/
-  | twoCreaturesDiedThisTurn
-  /-- “if an opponent was dealt noncombat damage last turn”. -/
-  | opponentDealtNoncombatDamageLastTurn
-  /-- “if you've drawn three or more cards this turn”. -/
-  | drewThreeThisTurn
-  /-- “if you didn't cast a spell this turn”. -/
-  | castNoSpellThisTurn
-  /-- “if you've activated a loyalty ability this turn”. -/
-  | activatedLoyaltyThisTurn
-  /-- “if you cast it”. -/
-  | sourceWasCast
-  /-- “if it had counters on it” (the object that caused the trigger). -/
-  | causeHadCounters
-  /-- “if this has counters on it”. -/
-  | sourceHasCounters
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- An intervening “if” or trigger condition (CR 603.2 / 603.4), represented by
+the unified `ConditionSelector`. -/
+abbrev InterveningCondition := ConditionSelector
 
 /-- Backward-compatible alias for `InterveningCondition` (CR 603.4). -/
-abbrev FraCondition := InterveningCondition
+abbrev FraCondition := ConditionSelector
 
 /-- Optional intervening conditions and wording filters for `triggered` (CR 603). -/
 structure SharedTriggerOpts where

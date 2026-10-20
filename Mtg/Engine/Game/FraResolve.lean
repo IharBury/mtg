@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.FraHelpers
+import Mtg.Engine.Game.ModeledTriggers
 
 /-!
 # Reality Fracture effect resolution

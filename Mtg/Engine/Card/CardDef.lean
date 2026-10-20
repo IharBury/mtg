@@ -58,15 +58,6 @@ inductive EntersTappedRule where
   | unlessOppLands (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Counters a permanent enters the battlefield with (CR 614.1c). -/
-inductive EntersWithCounters where
-  | none
-  | plusOne (n : Nat)
-  | shield (n : Nat)
-  | indestructible
-  | hopePerCreature
-deriving Repr, Inhabited, BEq, DecidableEq
-
 /-- Choice made as a permanent enters the battlefield (CR 614.12). -/
 inductive AsEntersChoice where
   | none
@@ -76,31 +67,13 @@ inductive AsEntersChoice where
   | marduOrJeskai
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Printed spell cost reduction (CR 601.2f). -/
-inductive SpellCostReduction where
-  | none
-  | ifCreatureDied (n : Nat)
-  | ifTargetDamaged (n : Nat)
-  | ifTargetTapped (n : Nat)
-  | ifTargetAttackingNontoken (n : Nat)
-  | ifTargetAttacking (n : Nat)
-  | ifYouControl (n : Nat) (subtype : String)
-  | ifGyCreaturesAtLeast (min : Nat) (n : Nat)
-  | equalFlyingPower
-  | greatestPower
-  | greatestToughness
-  | equalOppArtifacts
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- Printed spell cost reduction (CR 601.2f), represented by the unified
+`CostReduction`. -/
+abbrev SpellCostReduction := CostReduction
 
-/-- Printed additional cost to cast a spell (CR 601.2b / 118.8). -/
-inductive SpellAdditionalCost where
-  | none
-  | sacrificeCreature
-  | sacrificeArtifactOrCreature (orPayGeneric : Option Nat := none)
-  | sacrificeCreatureOrPlaneswalkerOrPay (generic : Nat)
-  | discardOrPay (generic : Nat)
-  | beholdOrPay (quality : String) (generic : Nat)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- Printed additional cost to cast a spell (CR 601.2b / 118.8), represented by
+the unified `CostSelector`. -/
+abbrev SpellAdditionalCost := CostSelector
 
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
 (CR 605.1a). -/
@@ -274,7 +247,7 @@ structure CardDef where
   /-- Replacement rule for whether this permanent enters tapped (CR 614.1c). -/
   entersTappedRule : EntersTappedRule := .untapped
   /-- Counters this permanent enters the battlefield with (CR 614.1c). -/
-  entersWithCounters : EntersWithCounters := .none
+  entersWithCounters : Option (CounterKind × NumberSelector) := none
   /-- Choice made as this permanent enters the battlefield (CR 614.12). -/
   asEntersChoose : AsEntersChoice := .none
   /-- This object is a token (CR 111). -/
@@ -452,19 +425,19 @@ def entersTappedUnlessOppLands (c : CardDef) : Option Nat :=
   | _ => none
 
 def entersWithHopePerCreature (c : CardDef) : Bool :=
-  c.entersWithCounters == .hopePerCreature
+  c.entersWithCounters == some (.hope, .count .creature)
 
 def entersWithPlusOneCounters (c : CardDef) : Nat :=
   match c.entersWithCounters with
-  | .plusOne n => n
+  | some (.plusOnePlusOne, .fixed n) => n.toNat
   | _ => 0
 
 def entersWithIndestructibleCounter (c : CardDef) : Bool :=
-  c.entersWithCounters == .indestructible
+  c.entersWithCounters == some (.indestructible, .fixed 1)
 
 def entersWithShield (c : CardDef) : Nat :=
   match c.entersWithCounters with
-  | .shield n => n
+  | some (.shield, .fixed n) => n.toNat
   | _ => 0
 
 def asEntersChooseCreatureType (c : CardDef) : Bool :=
@@ -528,7 +501,8 @@ def costReductionEqualOppArtifacts (c : CardDef) : Bool :=
 
 def additionalCostSacrificeArtifactOrCreature (c : CardDef) : Bool :=
   match c.additionalCost with
-  | .sacrificeArtifactOrCreature _ | .sacrificeCreatureOrPlaneswalkerOrPay _ => true
+  | .sacrificeArtifactOrCreatureOnly | .sacrificeArtifactOrCreatureOrPay _
+  | .sacrificeCreatureOrPlaneswalkerOrPay _ => true
   | _ => false
 
 def additionalCostSacrificeCreatureOrPlaneswalker (c : CardDef) : Bool :=
@@ -538,7 +512,7 @@ def additionalCostSacrificeCreatureOrPlaneswalker (c : CardDef) : Bool :=
 
 def additionalCostOrPayGeneric (c : CardDef) : Option Nat :=
   match c.additionalCost with
-  | .sacrificeArtifactOrCreature opt => opt
+  | .sacrificeArtifactOrCreatureOrPay n
   | .sacrificeCreatureOrPlaneswalkerOrPay n => some n
   | _ => none
 

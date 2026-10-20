@@ -38,6 +38,7 @@ def activationConditionHolds (g : Game) (p : PlayerId) : ActivationCondition →
   | .gyCreaturesAtLeast n =>
     ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.isCreature))).size ≥ n
+  | _ => true
 
 abbrev fraActivationConditionHolds := activationConditionHolds
 
@@ -63,10 +64,6 @@ def validateActivationCondition (g : Game) (p : PlayerId) (o : GameObject)
 def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : ExtraActivationCost) : Bool :=
   match c with
   | .none => true
-  | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
-  | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
-  | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p o.id (costPicksOf { cost := { extra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>

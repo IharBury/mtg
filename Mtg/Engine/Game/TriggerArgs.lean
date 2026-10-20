@@ -542,7 +542,8 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .creaturesDiedThisTurn => some g.battlefieldCreaturesToGyThisTurn.size
   | .otherSpellsManaValue | .removedPlusOnes | .colorsAmongOtherArtifacts
   | .chosenX | .planeswalkerTypes | .greatestPowerAndLoseLife
-  | .greatestToughnessThenPutCreatures | .lifeLostThisTurn => none
+  | .greatestToughnessThenPutCreatures | .lifeLostThisTurn
+  | .totalFlyingPower | .greatestToughness | .targetPlusOneCounters => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

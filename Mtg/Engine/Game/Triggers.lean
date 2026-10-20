@@ -139,7 +139,7 @@ def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
     source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
   | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures controller ≥ n
   | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n
-  | .anotherCreaturePowerAtMost _ => true
+  | .anotherCreaturePowerAtMost _ | _ => true
 
 /-- Reality Fracture intervening “if” clauses, checked when the ability would
 trigger and again as it resolves (rulings 743 / 889). -/

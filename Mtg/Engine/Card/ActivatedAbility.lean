@@ -96,34 +96,20 @@ def CostPick.phrase : CostPick → String
 /-- Additional non-mana activation costs (CR 602.1 / 118). -/
 inductive ExtraActivationCost where
   | none
-  /-- Exile another creature card from your graveyard. -/
-  | exileAnotherCreatureCardFromGraveyard
   /-- Exile this card from your graveyard. -/
   | exileSourceFromGraveyard
-  /-- Sacrifice another artifact. -/
-  | sacrificeAnotherArtifact
   /-- Sacrifice another creature or artifact you control (CR 701.17). -/
   | sacrificeAnotherCreatureOrArtifact
-  /-- Sacrifice another creature or planeswalker. -/
-  | sacrificeAnotherCreatureOrPlaneswalker
-  /-- Sacrifice an artifact or land. -/
-  | sacrificeArtifactOrLand
-  /-- Discard a legendary card. -/
-  | discardLegendaryCard
-  /-- Tap two untapped artifacts you control. -/
-  | tapTwoUntappedArtifacts
   /-- Exile this card from your hand. -/
   | exileSourceFromHand
   /-- Exile this permanent. -/
   | exileSource
-  /-- Remove an indestructible counter from the source (Arwen). -/
-  | removeIndestructibleCounter
+  /-- Remove a counter of `kind` from the source. -/
+  | removeCounter (kind : CounterKind)
   /-- Remove any number of +1/+1 counters from the source. -/
   | removeAnyNumberPlusOne
   /-- Put a stun counter on the source. -/
   | putStunCounterOnSource
-  /-- Remove a story counter from the source. -/
-  | removeStoryCounter
   /-- Crew N: tap any number of untapped creatures you control with total
   power N or more (CR 702.122). -/
   | crew (power : Nat)
@@ -135,42 +121,15 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 abbrev FraCost := ExtraActivationCost
 
-/-- An “Activate only if …” restriction on an activated ability (CR 602.5b). -/
-inductive ActivationCondition where
-  | none
-  /-- “Activate only if you've scried or surveilled this turn.” -/
-  | scriedOrSurveilledThisTurn
-  /-- “Activate only if there are `n` or more cards in your graveyard.” -/
-  | graveyardAtLeast (n : Nat)
-  /-- “Activate only if there are `n` or more loyalty counters among Jaces you
-  control.” -/
-  | jaceLoyaltyAtLeast (n : Nat)
-  /-- “Activate only if you control a legendary creature.” -/
-  | youControlLegendary
-  /-- “Activate only if you attacked with two or more creatures this turn.” -/
-  | youAttackedWithTwoOrMore
-  /-- “Activate only if an opponent has been dealt noncombat damage this turn.” -/
-  | opponentDealtNoncombatDamage
-  /-- “Activate only if you control a creature with toughness `n` or greater.” -/
-  | youControlCreatureToughnessAtLeast (n : Nat)
-  /-- “Activate only if there are `n` or more creature cards in your graveyard.” -/
-  | gyCreaturesAtLeast (n : Nat)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- An “Activate only if …” restriction on an activated ability (CR 602.5b),
+represented by the unified `ConditionSelector`. -/
+abbrev ActivationCondition := ConditionSelector
 
-abbrev FraActivationCondition := ActivationCondition
+abbrev FraActivationCondition := ConditionSelector
 
-/-- Cost reduction on an activated ability (CR 602.2b / 601.2f). -/
-inductive ActivationCostReduction where
-  | none
-  /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
-  | perPlusOneOnTarget
-  /-- Costs `n` generic mana less if you control a legendary creature. -/
-  | ifYouControlLegendary (n : Nat)
-  /-- Costs `n` generic mana less for each Equipment you control. -/
-  | perEquipment (n : Nat)
-  /-- Costs `n` generic mana less if it targets a creature with power at most `power`. -/
-  | ifTargetPowerAtMost (n : Nat) (power : Int)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- Cost reduction on an activated ability (CR 602.2b / 601.2f), represented by
+the unified `CostReduction`. -/
+abbrev ActivationCostReduction := CostReduction
 
 /-- Target quality restriction on an equip ability (CR 702.6). -/
 inductive EquipRestriction where
@@ -211,7 +170,7 @@ def sacrificeAnotherCreatureOrArtifact (c : ActivationCost) : Bool :=
   c.extra == .sacrificeAnotherCreatureOrArtifact
 
 def removeIndestructibleCounter (c : ActivationCost) : Bool :=
-  c.extra == .removeIndestructibleCounter
+  c.extra == .removeCounter .indestructible
 
 def removeAnyNumberPlusOne (c : ActivationCost) : Bool :=
   c.extra == .removeAnyNumberPlusOne
@@ -220,7 +179,7 @@ def putStunCounterOnSource (c : ActivationCost) : Bool :=
   c.extra == .putStunCounterOnSource
 
 def removeStoryCounter (c : ActivationCost) : Bool :=
-  c.extra == .removeStoryCounter
+  c.extra == .removeCounter .story
 
 /-- True when this cost contains a loyalty symbol (CR 209.2). -/
 def isLoyalty (c : ActivationCost) : Bool :=
@@ -345,17 +304,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
 def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
-  let c := ab.cost
-  let fra : Array CostPick :=
-    match c.extra with
-    | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
-    | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
-    | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
-    | .sacrificeArtifactOrLand => #[.sacrificeArtifactOrLand]
-    | .discardLegendaryCard => #[.discardLegendaryCard]
-    | .tapTwoUntappedArtifacts => #[.tapTwoUntappedArtifacts]
-    | _ => #[]
-  c.picks ++ fra
+  ab.cost.picks
 
 namespace ActivatedAbility
 

@@ -1,5 +1,5 @@
 import Mtg.Engine.Game.Decisions
-import Mtg.Engine.Game.FraHelpers
+import Mtg.Engine.Game.ModeledTriggers
 
 /-!
 # Reality Fracture choices

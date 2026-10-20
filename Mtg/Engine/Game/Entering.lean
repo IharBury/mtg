@@ -379,29 +379,27 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
     else g
   | _, _ => g
 
-/-- “This creature enters with N +1/+1 counters on it.” -/
-def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
-  let base := o.printed.entersWithPlusOneCounters
-  if base == 0 then g
-  else
-    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller base)
-    let g := g.setObject { o with status := o.status.addPlusOnePlusOne n }
-    g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
-
-def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if o.printed.entersWithIndestructibleCounter then
-    let n := g.extraCountersOn o.controller 1
-    let g := g.setObject { o with status := o.status.addCounters .indestructible n }
-    g.logMsg s!"{o.name} enters with an indestructible counter"
-  else g
-
-def enterWithShield (g : Game) (o : GameObject) : Game :=
-  let base := o.printed.entersWithShield
-  if base == 0 then g
-  else
-    let n := g.extraCountersOn o.controller base
-    let g := g.setObject { o with status := { o.status with shield := o.status.shield + n } }
-    g.logMsg s!"{o.name} enters with {n} shield counter(s)"
+/-- Put counters from `o.printed.entersWithCounters` on `o` as it enters (CR 614.1c). -/
+def enterWithPrintedCounters (g : Game) (o : GameObject) : Game :=
+  match o.printed.entersWithCounters with
+  | none => g
+  | some (kind, amount) =>
+    let base? : Option Nat :=
+      match amount with
+      | .fixed n => if n > 0 then some n.toNat else none
+      | .count .creature => o.controller.map g.countCreaturesControlledBy
+      | _ => none
+    match base? with
+    | none => g
+    | some base =>
+      let n := g.extraCountersOn o.controller base
+      let n := if kind == .plusOnePlusOne then g.extraPlusOneOnCreature o n else n
+      let g := g.setObject { o with status := o.status.addCounters kind n }
+      let msg :=
+        match kind with
+        | .indestructible => s!"{o.name} enters with an indestructible counter"
+        | _ => s!"{o.name} enters with {n} {kind.oracleName} counter(s)"
+      g.logMsg msg
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if o.staticAbilities.any (fun
@@ -415,32 +413,19 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
       g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g
 
-def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if o.printed.entersWithHopePerCreature then
-    match o.controller with
-    | some p =>
-      let n := g.extraCountersOn (some p) (g.countCreaturesControlledBy p)
-      let g := g.setObject { o with status := { o.status with hope := n } }
-      g.logMsg s!"{o.name} enters with {n} hope counter(s)"
-    | none => g
-  else g
-
 /-- Counters and statuses a permanent enters with (CR 614.1c / 614.12):
-loyalty, +1/+1, indestructible, shield, X +1/+1, prepared, and hope. These
-replacement effects apply even when entering causes no triggers (ruling
-890). -/
+loyalty, printed counters (+1/+1, indestructible, shield, hope, etc.),
+X +1/+1, and prepared. These replacement effects apply even when entering
+causes no triggers (ruling 890). -/
 def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let id := o.id
   let g := g.enterWithLoyalty (g.object! id)
-  let g := g.enterWithPlusOnes (g.object! id)
-  let g := g.enterWithIndestructibleCounter (g.object! id)
-  let g := g.enterWithShield (g.object! id)
+  let g := g.enterWithPrintedCounters (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
   let o := g.object! id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
   let o := g.object! id
-  let g := if o.printed.entersPrepared then g.becomePrepared o else g
-  g.enterWithHope (g.object! id)
+  if o.printed.entersPrepared then g.becomePrepared o else g
 
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/

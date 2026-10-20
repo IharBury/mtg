@@ -58,10 +58,9 @@ The 50 files in `Mtg/Engine/Game/` form a strict, acyclic import hierarchy from 
 | `Damage.lean` | `destroyPermanent`, `markDamageOn`, `replacedDamageAmount`, `gainLife`, `loseLife`, `dealDamageFrom`, `dealDamageToPlayer`, `dealDamageToTarget`, `fightCreatures`. |
 | `Pumps.lean` | `pumpPermanent`, `setUntilEotForm`, `addCounters`, `amass`. |
 | `LibrarySearch.lean` | `beginLibrarySearch`, `finishLibrarySearch`, `placeSearched`, `shuffleThen`. |
-| `ResolutionHelpers.lean` | Target legality wrappers (`withLegal*`), `applyPermanentAction`, `applyOnPermanent`, `beginSurveil`, `mill`. |
+| `ResolutionHelpers.lean` | Target legality wrappers (`withLegal*`, `targetLegalAt`, `legalPermanentAt?`), `applyPermanentAction`, `applyOnPermanent`, `beginSurveil`, `mill`, `revealHand`, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
 | `ResolutionEffects.lean` | `copyStackSpell`, `castAsPartOfResolution`, `counterStackSpell`, `exileUntilSourceLeaves`, `putReflexiveTrigger`, `resolveModeledReflexive`, `becomeCopyOf`, `copyStackAbility`, `beginUnlessPays`, `exileThenReturn`. |
 | `ModeledTriggers.lean` | Shared trigger and spell resolution helpers (`applyBecomeCopy`, `applyEnterMod`, `offerVisionModes`, `offerHydeChoice`, `beginUnlessPays`, `exileThenReturn`, etc.). |
-| `FraHelpers.lean` | Target slot legality, `beginFraChoice`, `discardFromHand`, `removeUpToCountersFrom`. |
 | `FraResolve.lean` | Reality Fracture and Reality Fracture Commander (`Resolution.isFra`) resolver (`applyFra`, `applyDelayedSynthetic`). |
 | `EffectResolution.lean` | Unified `Effect` interpreter (`applyUnified`, with thin wrappers `applyEffect`, `applyUnifiedAbility`, and `applyAbilityEffect`), plus `flushUnlessPays`. |
 | `CastExtras.lean` | Kicker/morph/impending (`announceKicker`), gift (`announceGift`), teamwork (`announceTeamwork`, `payTeamworkCreatures`), cascade (`resolveCascade`), and The Ring (`temptWithTheRing`, `announceRingBearer`). |

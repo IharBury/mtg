@@ -1264,6 +1264,12 @@ inductive StatNumber where
   | greatestPowerAndLoseLife
   /-- Greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield. -/
   | greatestToughnessThenPutCreatures
+  /-- Total power of creatures you control with flying. -/
+  | totalFlyingPower
+  /-- Greatest toughness among creatures you control. -/
+  | greatestToughness
+  /-- Number of +1/+1 counters on the target creature. -/
+  | targetPlusOneCounters
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Zone, permanent, subtype, and feature counts (CR 109 / CR 400). -/
@@ -1400,6 +1406,9 @@ namespace NumberSelector
 @[match_pattern] abbrev causePower : NumberSelector := .stat .causePower
 @[match_pattern] abbrev greatestPowerAndLoseLife : NumberSelector := .stat .greatestPowerAndLoseLife
 @[match_pattern] abbrev greatestToughnessThenPutCreatures : NumberSelector := .stat .greatestToughnessThenPutCreatures
+@[match_pattern] abbrev totalFlyingPower : NumberSelector := .stat .totalFlyingPower
+@[match_pattern] abbrev greatestToughness : NumberSelector := .stat .greatestToughness
+@[match_pattern] abbrev targetPlusOneCounters : NumberSelector := .stat .targetPlusOneCounters
 
 -- CountNumber aliases
 @[match_pattern] abbrev perOtherCreature : NumberSelector := .countKind .perOtherCreature
@@ -1446,9 +1455,10 @@ instance : Coe Int NumberSelector where
 instance (n : Nat) : OfNat NumberSelector n where
   ofNat := .fixed (Int.ofNat n)
 
-/-- What `TriggerResolution.pay` pays.
+/-- What `TriggerResolution.pay` or a spell's additional cost pays (CR 118.8 / CR 601.2b).
 `sacrifice` pays by sacrificing permanents.
 `discard` pays by discarding cards.
+`behold` pays by beholding a quality (CR 701.60).
 `or` pays any one of its costs. -/
 inductive CostSelector where
   /-- Pay these mana symbols.
@@ -1459,12 +1469,38 @@ inductive CostSelector where
   | sacrifice (n : NumberSelector) (what : ObjectSelector)
   /-- Discard `n` cards `what` names. -/
   | discard (n : NumberSelector) (what : ObjectSelector)
+  /-- Behold a permanent or card of `quality` (CR 701.60). -/
+  | behold (quality : String)
   /-- Pay any one of `costs`. -/
   | or (costs : List CostSelector)
+  /-- No additional cost. -/
+  | none
 deriving Repr, Inhabited, BEq
+
+namespace CostSelector
+
+@[match_pattern] abbrev sacrificeCreature : CostSelector := .sacrifice (.fixed 1) .creature
+@[match_pattern] abbrev sacrificeArtifactOrCreatureOnly : CostSelector :=
+  .sacrifice (.fixed 1) .anotherCreatureOrArtifact
+@[match_pattern] abbrev sacrificeArtifactOrCreatureOrPay (n : Nat) : CostSelector :=
+  .or [.sacrifice (.fixed 1) .anotherCreatureOrArtifact, .mana #[.generic n]]
+def sacrificeArtifactOrCreature (orPayGeneric : Option Nat := Option.none) : CostSelector :=
+  match orPayGeneric with
+  | some n => .sacrificeArtifactOrCreatureOrPay n
+  | Option.none => .sacrificeArtifactOrCreatureOnly
+@[match_pattern] abbrev sacrificeCreatureOrPlaneswalkerOrPay (n : Nat) : CostSelector :=
+  .or [.sacrifice (.fixed 1) .creatureOrPlaneswalker, .mana #[.generic n]]
+@[match_pattern] abbrev discardOrPay (n : Nat) : CostSelector :=
+  .or [.discard (.fixed 1) .card, .mana #[.generic n]]
+@[match_pattern] abbrev beholdOrPay (quality : String) (n : Nat) : CostSelector :=
+  .or [.behold quality, .mana #[.generic n]]
+
+end CostSelector
 
 /-- Permanent, source, and target state conditions (CR 110 / CR 205 / CR 208). -/
 inductive StateCondition where
+  /-- Unconditional (always holds). -/
+  | always
   /-- The source is missing, has left the battlefield, or has a hope counter. -/
   | hopeOnSource
   /-- Equipment is attached to the source, or its last-known power is positive when the source has left. -/
@@ -1479,6 +1515,38 @@ inductive StateCondition where
   | mvAtMost (n : Nat)
   /-- The source is already prepared. -/
   | preparedSource
+  /-- You control a creature with power `n` or greater (e.g. Ferocious). -/
+  | youControlCreatureWithPower (n : Int)
+  /-- Another creature you control has power `n` or less. -/
+  | anotherCreaturePowerAtMost (n : Int)
+  /-- You control a creature with toughness `n` or greater. -/
+  | youControlCreatureToughnessAtLeast (n : Nat)
+  /-- You control a legendary creature. -/
+  | youControlLegendary
+  /-- There are `n` or more cards in your graveyard. -/
+  | graveyardAtLeast (n : Nat)
+  /-- There are `n` or more creature cards in your graveyard. -/
+  | gyCreaturesAtLeast (n : Nat)
+  /-- There are `n` or more loyalty counters among Jaces you control. -/
+  | jaceLoyaltyAtLeast (n : Nat)
+  /-- The source is not a token. -/
+  | sourceNotToken
+  /-- You cast the source. -/
+  | sourceWasCast
+  /-- The object that caused the trigger had counters on it. -/
+  | causeHadCounters
+  /-- The source has counters on it. -/
+  | sourceHasCounters
+  /-- The target was dealt damage this turn. -/
+  | targetDamaged
+  /-- The target is a tapped creature. -/
+  | targetTapped
+  /-- The target is an attacking nontoken creature. -/
+  | targetAttackingNontoken
+  /-- The target is an attacking creature. -/
+  | targetAttacking
+  /-- The target is a creature with power `power` or less. -/
+  | targetPowerAtMost (power : Int)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Turn history and spell cast conditions (CR 601.2 / CR 603). -/
@@ -1505,6 +1573,24 @@ inductive TurnHistoryCondition where
   | giftPromised
   /-- The resolving spell was not cast from your hand. -/
   | notFromHand
+  /-- You gained `n` or more life this turn. -/
+  | gainedLifeAtLeast (n : Nat)
+  /-- You have scried or surveilled this turn. -/
+  | scriedOrSurveilledThisTurn
+  /-- You attacked with two or more creatures this turn. -/
+  | youAttackedWithTwoOrMore
+  /-- An opponent has been dealt noncombat damage this turn. -/
+  | opponentDealtNoncombatDamage
+  /-- An opponent was dealt noncombat damage last turn. -/
+  | opponentDealtNoncombatDamageLastTurn
+  /-- Two or more creatures died this turn. -/
+  | twoCreaturesDiedThisTurn
+  /-- You have drawn three or more cards this turn. -/
+  | drewThreeThisTurn
+  /-- You didn't cast a spell this turn. -/
+  | castNoSpellThisTurn
+  /-- You have activated a loyalty ability this turn. -/
+  | activatedLoyaltyThisTurn
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Earlier-step resolution note conditions (CR 608.2c). -/
@@ -1533,18 +1619,21 @@ inductive StepNoteCondition where
   | enrageGrantsCombat
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
+/-- Unified condition vocabulary for resolution branching (`Resolution.if` / `Resolution.ifElse`, CR 608.2c),
+activation restrictions (`ActivatedAbility.condition`, CR 602.5b),
+intervening “if” clauses (`SharedTriggerOpts.condition`, CR 603.4), and
+conditional cost reductions (`CostReduction.when`, CR 601.2f).
 `not` negates another condition. `or` holds when any of its conditions hold.
 `atLeast` holds when its first number is at least its second. -/
 inductive ConditionSelector where
+  /-- Permanent, source, or target state condition (CR 110 / CR 205 / CR 208). -/
+  | state (s : StateCondition := .always)
   /-- The first number is at least the second. -/
   | atLeast (left right : NumberSelector)
   /-- `cond` does not hold. -/
   | not (cond : ConditionSelector)
   /-- Any of `conds` holds. Once one holds, later conditions are not checked. -/
   | or (conds : List ConditionSelector)
-  /-- Permanent, source, or target state condition (CR 110 / CR 205 / CR 208). -/
-  | state (s : StateCondition)
   /-- Turn history or spell cast condition (CR 601.2 / CR 603). -/
   | turnHistory (t : TurnHistoryCondition)
   /-- Earlier-step resolution note condition (CR 608.2c). -/
@@ -1554,6 +1643,7 @@ deriving Repr, Inhabited, BEq
 namespace ConditionSelector
 
 -- StateCondition aliases
+@[match_pattern] abbrev none : ConditionSelector := .state .always
 @[match_pattern] abbrev hopeOnSource : ConditionSelector := .state .hopeOnSource
 @[match_pattern] abbrev attachedEquipment : ConditionSelector := .state .attachedEquipment
 @[match_pattern] abbrev causeGreaterPower : ConditionSelector := .state .causeGreaterPower
@@ -1563,6 +1653,22 @@ namespace ConditionSelector
 @[match_pattern] abbrev preparedSource : ConditionSelector := .state .preparedSource
 @[match_pattern] abbrev ifNotPrepared : ConditionSelector := .not .preparedSource
 @[match_pattern] abbrev ifThreeCreaturesDied : ConditionSelector := .atLeast .creaturesDiedThisTurn (.fixed 3)
+@[match_pattern] abbrev youControlCreatureWithPower (n : Int) : ConditionSelector := .state (.youControlCreatureWithPower n)
+@[match_pattern] abbrev anotherCreaturePowerAtMost (n : Int) : ConditionSelector := .state (.anotherCreaturePowerAtMost n)
+@[match_pattern] abbrev youControlCreatureToughnessAtLeast (n : Nat) : ConditionSelector := .state (.youControlCreatureToughnessAtLeast n)
+@[match_pattern] abbrev youControlLegendary : ConditionSelector := .state .youControlLegendary
+@[match_pattern] abbrev graveyardAtLeast (n : Nat) : ConditionSelector := .state (.graveyardAtLeast n)
+@[match_pattern] abbrev gyCreaturesAtLeast (n : Nat) : ConditionSelector := .state (.gyCreaturesAtLeast n)
+@[match_pattern] abbrev jaceLoyaltyAtLeast (n : Nat) : ConditionSelector := .state (.jaceLoyaltyAtLeast n)
+@[match_pattern] abbrev sourceNotToken : ConditionSelector := .state .sourceNotToken
+@[match_pattern] abbrev sourceWasCast : ConditionSelector := .state .sourceWasCast
+@[match_pattern] abbrev causeHadCounters : ConditionSelector := .state .causeHadCounters
+@[match_pattern] abbrev sourceHasCounters : ConditionSelector := .state .sourceHasCounters
+@[match_pattern] abbrev targetDamaged : ConditionSelector := .state .targetDamaged
+@[match_pattern] abbrev targetTapped : ConditionSelector := .state .targetTapped
+@[match_pattern] abbrev targetAttackingNontoken : ConditionSelector := .state .targetAttackingNontoken
+@[match_pattern] abbrev targetAttacking : ConditionSelector := .state .targetAttacking
+@[match_pattern] abbrev targetPowerAtMost (power : Int) : ConditionSelector := .state (.targetPowerAtMost power)
 
 -- TurnHistoryCondition aliases
 @[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.attackedWithSubtype subtype)
@@ -1576,6 +1682,15 @@ namespace ConditionSelector
 @[match_pattern] abbrev teamwork : ConditionSelector := .turnHistory .teamwork
 @[match_pattern] abbrev giftPromised : ConditionSelector := .turnHistory .giftPromised
 @[match_pattern] abbrev notFromHand : ConditionSelector := .turnHistory .notFromHand
+@[match_pattern] abbrev gainedLifeAtLeast (n : Nat) : ConditionSelector := .turnHistory (.gainedLifeAtLeast n)
+@[match_pattern] abbrev scriedOrSurveilledThisTurn : ConditionSelector := .turnHistory .scriedOrSurveilledThisTurn
+@[match_pattern] abbrev youAttackedWithTwoOrMore : ConditionSelector := .turnHistory .youAttackedWithTwoOrMore
+@[match_pattern] abbrev opponentDealtNoncombatDamage : ConditionSelector := .turnHistory .opponentDealtNoncombatDamage
+@[match_pattern] abbrev opponentDealtNoncombatDamageLastTurn : ConditionSelector := .turnHistory .opponentDealtNoncombatDamageLastTurn
+@[match_pattern] abbrev twoCreaturesDiedThisTurn : ConditionSelector := .turnHistory .twoCreaturesDiedThisTurn
+@[match_pattern] abbrev drewThreeThisTurn : ConditionSelector := .turnHistory .drewThreeThisTurn
+@[match_pattern] abbrev castNoSpellThisTurn : ConditionSelector := .turnHistory .castNoSpellThisTurn
+@[match_pattern] abbrev activatedLoyaltyThisTurn : ConditionSelector := .turnHistory .activatedLoyaltyThisTurn
 
 -- StepNoteCondition aliases
 @[match_pattern] abbrev removedHope : ConditionSelector := .stepNote .removedHope
@@ -1591,6 +1706,50 @@ namespace ConditionSelector
 @[match_pattern] abbrev enrageGrantsCombat : ConditionSelector := .stepNote .enrageGrantsCombat
 
 end ConditionSelector
+
+/-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b). -/
+inductive CostReduction where
+  | none
+  /-- Costs `n` generic mana less if `cond` holds. -/
+  | when (n : Nat) (cond : ConditionSelector)
+  /-- Costs `perUnit` generic mana less per unit of `amount`. -/
+  | byAmount (amount : NumberSelector) (perUnit : Nat := 1)
+deriving Repr, Inhabited, BEq
+
+namespace CostReduction
+
+@[match_pattern] abbrev ifCreatureDied (n : Nat) : CostReduction :=
+  .when n (.atLeast .creaturesDiedThisTurn (.fixed 1))
+@[match_pattern] abbrev ifTargetDamaged (n : Nat) : CostReduction :=
+  .when n .targetDamaged
+@[match_pattern] abbrev ifTargetTapped (n : Nat) : CostReduction :=
+  .when n .targetTapped
+@[match_pattern] abbrev ifTargetAttackingNontoken (n : Nat) : CostReduction :=
+  .when n .targetAttackingNontoken
+@[match_pattern] abbrev ifTargetAttacking (n : Nat) : CostReduction :=
+  .when n .targetAttacking
+@[match_pattern] abbrev ifYouControl (n : Nat) (subtype : String) : CostReduction :=
+  .when n (.atLeast (.subtypeCount subtype) (.fixed 1))
+@[match_pattern] abbrev ifGyCreaturesAtLeast (min : Nat) (n : Nat) : CostReduction :=
+  .when n (.gyCreaturesAtLeast min)
+@[match_pattern] abbrev equalFlyingPower : CostReduction :=
+  .byAmount .totalFlyingPower
+@[match_pattern] abbrev greatestPower : CostReduction :=
+  .byAmount .greatestPower
+@[match_pattern] abbrev greatestToughness : CostReduction :=
+  .byAmount .greatestToughness
+@[match_pattern] abbrev equalOppArtifacts : CostReduction :=
+  .byAmount .oppArtifacts
+@[match_pattern] abbrev perPlusOneOnTarget : CostReduction :=
+  .byAmount .targetPlusOneCounters
+@[match_pattern] abbrev ifYouControlLegendary (n : Nat) : CostReduction :=
+  .when n .youControlLegendary
+@[match_pattern] abbrev perEquipment (n : Nat) : CostReduction :=
+  .byAmount (.perSubtype "Equipment") n
+@[match_pattern] abbrev ifTargetPowerAtMost (n : Nat) (power : Int) : CostReduction :=
+  .when n (.targetPowerAtMost power)
+
+end CostReduction
 
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
@@ -2416,6 +2575,7 @@ export TriggeredAbility (
   NumberSelector
   CostSelector
   ConditionSelector
+  CostReduction
   ActionSelector
 )
 

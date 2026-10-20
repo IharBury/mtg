@@ -704,7 +704,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some o => (g, o.isOnBattlefield && o.status.prepared)
     | none => (g, false)
   | .castFromGraveyard => (g, false)
-  | .giftPromised | .notFromHand => (g, false)
+  | .giftPromised | .notFromHand | _ => (g, false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -805,6 +805,8 @@ def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       | c :: rest =>
         costPayable g controller sourceId c targets lastKnownPower lastKnownToughness || go rest
     go costs
+  | .none => true
+  | .behold _ => false
 
 /-- Offer `pick` as an optional payment. Nothing legal skips the follow-up
 of a `may`. Outside `may`, paying finishes the ability. Gaining no life is
@@ -4133,6 +4135,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.applyTriggeredAbility controller ab sourceId targets dividedDamage
             lastKnownPower lastKnownToughness sourceName
             (some (.or (cs.map fun c => .pay c))) sequencedCardPower
+    | .none => g
+    | .behold _ => g.failMayThen
   | .queueReflexive followup =>
     match TriggeredAbility.TriggerResolution.queuedReflexive followup with
     | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0

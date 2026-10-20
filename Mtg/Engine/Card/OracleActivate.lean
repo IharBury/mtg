@@ -66,7 +66,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
   let extra : ExtraActivationCost :=
     if sacrificeAnotherCreatureOrArtifact then .sacrificeAnotherCreatureOrArtifact
     else if exileSourceFromGraveyard then .exileSourceFromGraveyard
-    else if removeIndestructibleCounter then .removeIndestructibleCounter
+    else if removeIndestructibleCounter then .removeCounter .indestructible
     else if removeAnyNumberPlusOne then .removeAnyNumberPlusOne
     else if putStunCounterOnSource then .putStunCounterOnSource
     else .none
