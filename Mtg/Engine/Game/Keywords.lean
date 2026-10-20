@@ -301,7 +301,9 @@ def boardNumber (g : Game) (p : PlayerId) (amount : NumberSelector)
     some (Int.ofNat ((g.permanentsOf p).filter (·.printed.isEquipment)).size)
   | .creaturesDiedThisTurn =>
     some (Int.ofNat (Nat.max g.creatureDeathsThisTurn (if g.creatureDiedThisTurn then 1 else 0)))
-  | .subtypeCount st | .perSubtype st =>
+  | .cardsDrawnThisTurn =>
+    some (Int.ofNat (g.player p).cardsDrawnThisTurn)
+  | .subtypeCount st =>
     let n :=
       if st == "legendary creature" then
         ((g.permanentsOf p).filter (fun o => o.isCreature && o.isLegendary)).size
@@ -347,31 +349,28 @@ partial def boardConditionHolds (g : Game) (p : PlayerId) (cond : ConditionSelec
   | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures p ≥ n
   | .youControlCreatureToughnessAtLeast n =>
     (g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= (n : Int))
-  | .graveyardAtLeast n => pl.graveyard.size ≥ n
-  | .gyCreaturesAtLeast n =>
-    (pl.graveyard.filter (fun id => (g.findObject? id).any (·.printed.isCreature))).size ≥ n
+  | .state (.graveyardAtLeast n creaturesOnly) =>
+    (if creaturesOnly then
+      pl.graveyard.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
+    else pl.graveyard).size ≥ n
   | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
-  | .sourceNotToken => !(source.any (·.printed.isToken))
-  | .sourceWasCast => source.any (·.wasCast)
-  | .causeHadCounters => causeStatus.any (·.hasCounters)
-  | .sourceHasCounters =>
-    source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
+  | .state (.sourceOrigin wasCast) =>
+    if wasCast then source.any (·.wasCast) else !(source.any (·.printed.isToken))
+  | .state (.objectHadCounters onSource) =>
+    if onSource then source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
+    else causeStatus.any (·.hasCounters)
   | .targetDamaged => target.any (fun o => o.status.damage > 0)
   | .targetTapped => target.any (·.status.tapped)
-  | .targetAttackingNontoken => target.any (fun o => o.status.attacking && !o.printed.isToken)
-  | .targetAttacking => target.any (·.status.attacking)
+  | .state (.targetAttacking nontokenOnly) =>
+    target.any (fun o => o.status.attacking && (!nontokenOnly || !o.printed.isToken))
   | .targetPowerAtMost most => target.any (fun o => o.isCreature && g.power o ≤ most)
   | .anotherCreaturePowerAtMost n => target.all (fun o => g.power o ≤ n)
-  | .scriedThisTurn => pl.scriedThisTurn
-  | .surveilledThisTurn => pl.surveilledThisTurn
-  | .scriedOrSurveilledThisTurn => pl.scriedThisTurn || pl.surveilledThisTurn
+  | .turnHistory (.scriedThisTurn surveil) =>
+    if surveil then pl.surveilledThisTurn else pl.scriedThisTurn
   | .youAttackedWithTwoOrMore => pl.creaturesAttackedWithThisTurn ≥ 2
-  | .opponentDealtNoncombatDamage =>
-    (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn)
-  | .opponentDealtNoncombatDamageLastTurn =>
-    (g.livingOpponents p).any (·.dealtNoncombatDamageLastTurn)
-  | .twoCreaturesDiedThisTurn => g.creatureDeathsThisTurn ≥ 2
-  | .drewThreeThisTurn => pl.cardsDrawnThisTurn ≥ 3
+  | .turnHistory (.opponentDealtNoncombatDamage lastTurn) =>
+    (g.livingOpponents p).any (fun q =>
+      if lastTurn then q.dealtNoncombatDamageLastTurn else q.dealtNoncombatDamageThisTurn)
   | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
   | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
   | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n

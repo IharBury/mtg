@@ -512,12 +512,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (srcId.bind g.findObject?).any (·.isOnBattlefield)
       if holds then (g, true)
       else ({ g with thisWay := { g.thisWay with handDiscardedThisWay := none, notedSourceThisWay := none } }, false)
-  | .sourceWasSacrificed =>
-    let yes := g.sourceWasSacrificed
-    ({ g with thisWay := { g.thisWay with sourceWasSacrificed := false } }, yes)
-  | .planWasSacrificed =>
-    let yes := g.planWasSacrificed
-    ({ g with thisWay := { g.thisWay with planWasSacrificed := false } }, yes)
+  | .stepNote (.wasSacrificed plan) =>
+    if plan then ({ g with thisWay := { g.thisWay with planWasSacrificed := false } }, g.planWasSacrificed)
+    else ({ g with thisWay := { g.thisWay with sourceWasSacrificed := false } }, g.sourceWasSacrificed)
   | .equipmentAttached =>
     match g.equipmentAttachedHost with
     | none => (g, false)
@@ -575,15 +572,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if g.enrageGrantsAdditionalCombat > 0 then
       ({ g with combat := { g.combat with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1 } }, true)
     else (g, false)
-  | .causeGreaterPower =>
+  | .state (.causeGreaterStat toughness) =>
     let (g, stats?) := g.causeAndSourcePT? sourceId targets
     match stats? with
-    | some (op, _, hp, _) => (g, op > hp)
-    | none => (g, false)
-  | .causeGreaterToughness =>
-    let (g, stats?) := g.causeAndSourcePT? sourceId targets
-    match stats? with
-    | some (_, ot, _, ht) => (g, ot > ht)
+    | some (op, ot, hp, ht) => (g, if toughness then ot > ht else op > hp)
     | none => (g, false)
   | .manaSpent =>
     let spent :=

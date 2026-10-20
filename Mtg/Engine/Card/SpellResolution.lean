@@ -396,24 +396,15 @@ inductive BattlefieldObject where
   It deals damage equal to its power with `.fight .equipmentHost .reflexive`.
   Nothing is queued when no creature received Equipment. -/
   | equipmentHost
-  /-- The Villain that caused this trigger. You may have it connive.
-  Already chosen this turn does nothing. A Villain that will not connive
-  is reported.
-  `.connive .enteringVillain`. -/
-  | enteringVillain
   /-- Any number of Equipment the controller chooses.
   `.attach .anyYouControl .target`. -/
   | anyYouControl
-  /-- The artifact an earlier step put from hand.
+  /-- The artifact an earlier step put from hand (or only when it is Equipment).
   `.attach .putArtifact .notedHost`. -/
-  | putArtifact
+  | putArtifact (equipmentOnly : Bool := false)
   /-- The creature remembered with the artifact put from hand.
   `.attach .putArtifact .notedHost`. -/
   | notedHost
-  /-- The creature the source enchants. A missing creature leaves Equipment
-  where it is.
-  `.attach (.target .eachEquipment) .enchantedCreature`. -/
-  | enchantedCreature
   /-- Each legendary creature the controller controls.
   You control one is
   `.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)`. -/
@@ -431,10 +422,6 @@ inductive BattlefieldObject where
   At least `n` is `.atLeast (.count .questCounters) (.fixed n)`.
   A missing source is reported. A source that has left is reported. -/
   | questCounters
-  /-- The artifact an earlier step put from hand, when it is Equipment.
-  Equipment is `.atLeast (.count .putEquipment) (.fixed 1)`.
-  An artifact that is not Equipment clears that note. -/
-  | putEquipment
   /-- The source, when it is harnessed.
   Harnessed is `.atLeast (.count .harnessedSource) (.fixed 1)`.
   An unharnessed source is reported. A missing source does nothing. -/
@@ -474,12 +461,10 @@ inductive BattlefieldObject where
   | creatureOrPlaneswalker
   /-- Permanents of type `ty` opponents control. -/
   | oppPermanents (ty : CardType := .artifact)
-  /-- Two nonlegendary token copies of the source. -/
-  | sourceTwoNonlegendaryTokens
   /-- Each nontoken creature the controller controls. -/
   | nontokenCreaturesYouControl
-  /-- A token copy of the source if the source wasn't a token. -/
-  | sourceIfNotToken
+  /-- A token copy of the source if the source wasn't a token, or two nonlegendary token copies of the source. -/
+  | sourceTokenCopy (twoNonlegendary : Bool := false)
   /-- All creatures except up to two chosen by the controller. -/
   | allCreaturesExceptTwoChosen
   /-- Each other creature with mana value of the chosen odd or even quality. -/
@@ -490,10 +475,8 @@ inductive BattlefieldObject where
   | oppGreatestMvCreatureOrPlaneswalker
   /-- Creatures attacking the player recorded as the cause's controller, also gaining trample. -/
   | attackersOfCauseControllerWithTrample
-  /-- Creatures attacking the controller or a planeswalker they control until their next turn. -/
-  | attackersAgainstYouUntilYourTurn
-  /-- Creatures attacking one of the controller's opponents until the controller's next turn, also gaining trample. -/
-  | attackersAgainstOpponentsUntilYourTurn
+  /-- Creatures attacking the controller (or one of their opponents if `againstOpponents`) until the controller's next turn. -/
+  | attackersUntilYourTurn (againstOpponents : Bool := false)
   /-- An Equipment the controller controls. -/
   | equipmentYouControl
   /-- All tapped creatures opponents control. -/
@@ -780,8 +763,8 @@ inductive SacrificeStackObject where
   | spellTargets
   /-- A creature of each opponent's choice. -/
   | eachOpponentsCreature
-  /-- The targeted spell on the stack. -/
-  | targetSpell
+  /-- The targeted spell on the stack (or copied twice if `twice`). -/
+  | targetSpell (twice : Bool := false)
   /-- The targeted activated or triggered ability on the stack from a creature or artifact source. -/
   | stackAbility (fromCreature : Bool := true)
   /-- The source spell, copied X times. -/
@@ -792,8 +775,6 @@ inductive SacrificeStackObject where
   | causingSpell
   /-- Target opponent sacrifices a creature or planeswalker, discards a card, and loses 3 life; you draw a card and gain 3 life. -/
   | archonCruelty
-  /-- Target instant or sorcery spell an opponent controls, copied twice. -/
-  | targetSpellTwice
 deriving Repr, Inhabited, BEq
 
 mutual
@@ -1097,16 +1078,16 @@ namespace ObjectSelector
 @[match_pattern] abbrev equippedAttackers : ObjectSelector := .battlefield .equippedAttackers
 @[match_pattern] abbrev attackingAlone : ObjectSelector := .battlefield .attackingAlone
 @[match_pattern] abbrev equipmentHost : ObjectSelector := .battlefield .equipmentHost
-@[match_pattern] abbrev enteringVillain : ObjectSelector := .battlefield .enteringVillain
+@[match_pattern] abbrev enteringVillain : ObjectSelector := .cause (some "Villain")
 @[match_pattern] abbrev anyYouControl : ObjectSelector := .battlefield .anyYouControl
-@[match_pattern] abbrev putArtifact : ObjectSelector := .battlefield .putArtifact
+@[match_pattern] abbrev putArtifact : ObjectSelector := .battlefield (.putArtifact false)
 @[match_pattern] abbrev notedHost : ObjectSelector := .battlefield .notedHost
-@[match_pattern] abbrev enchantedCreature : ObjectSelector := .battlefield .enchantedCreature
+@[match_pattern] abbrev enchantedCreature : ObjectSelector := .enchanted
 @[match_pattern] abbrev legendaryCreaturesYouControl : ObjectSelector := .battlefield .legendaryCreaturesYouControl
 @[match_pattern] abbrev planeswalkersYouControl : ObjectSelector := .battlefield .planeswalkersYouControl
 @[match_pattern] abbrev forestsExceptCause : ObjectSelector := .battlefield .forestsExceptCause
 @[match_pattern] abbrev questCounters : ObjectSelector := .battlefield .questCounters
-@[match_pattern] abbrev putEquipment : ObjectSelector := .battlefield .putEquipment
+@[match_pattern] abbrev putEquipment : ObjectSelector := .battlefield (.putArtifact true)
 @[match_pattern] abbrev harnessedSource : ObjectSelector := .battlefield .harnessedSource
 @[match_pattern] abbrev artifact : ObjectSelector := .battlefield .artifact
 @[match_pattern] abbrev anotherCreatureOrArtifact : ObjectSelector := .battlefield .anotherCreatureOrArtifact
@@ -1122,16 +1103,16 @@ namespace ObjectSelector
 @[match_pattern] abbrev land : ObjectSelector := .battlefield .land
 @[match_pattern] abbrev creatureOrPlaneswalker : ObjectSelector := .battlefield .creatureOrPlaneswalker
 @[match_pattern] abbrev oppPermanents (ty : CardType := .artifact) : ObjectSelector := .battlefield (.oppPermanents ty)
-@[match_pattern] abbrev sourceTwoNonlegendaryTokens : ObjectSelector := .battlefield .sourceTwoNonlegendaryTokens
+@[match_pattern] abbrev sourceTwoNonlegendaryTokens : ObjectSelector := .battlefield (.sourceTokenCopy true)
 @[match_pattern] abbrev nontokenCreaturesYouControl : ObjectSelector := .battlefield .nontokenCreaturesYouControl
-@[match_pattern] abbrev sourceIfNotToken : ObjectSelector := .battlefield .sourceIfNotToken
+@[match_pattern] abbrev sourceIfNotToken : ObjectSelector := .battlefield (.sourceTokenCopy false)
 @[match_pattern] abbrev allCreaturesExceptTwoChosen : ObjectSelector := .battlefield .allCreaturesExceptTwoChosen
 @[match_pattern] abbrev otherCreaturesOddOrEvenMv : ObjectSelector := .battlefield .otherCreaturesOddOrEvenMv
 @[match_pattern] abbrev creaturesNotChosenType : ObjectSelector := .battlefield .creaturesNotChosenType
 @[match_pattern] abbrev oppGreatestMvCreatureOrPlaneswalker : ObjectSelector := .battlefield .oppGreatestMvCreatureOrPlaneswalker
 @[match_pattern] abbrev attackersOfCauseControllerWithTrample : ObjectSelector := .battlefield .attackersOfCauseControllerWithTrample
-@[match_pattern] abbrev attackersAgainstYouUntilYourTurn : ObjectSelector := .battlefield .attackersAgainstYouUntilYourTurn
-@[match_pattern] abbrev attackersAgainstOpponentsUntilYourTurn : ObjectSelector := .battlefield .attackersAgainstOpponentsUntilYourTurn
+@[match_pattern] abbrev attackersAgainstYouUntilYourTurn : ObjectSelector := .battlefield (.attackersUntilYourTurn false)
+@[match_pattern] abbrev attackersAgainstOpponentsUntilYourTurn : ObjectSelector := .battlefield (.attackersUntilYourTurn true)
 @[match_pattern] abbrev equipmentYouControl : ObjectSelector := .battlefield .equipmentYouControl
 @[match_pattern] abbrev oppTappedCreatures : ObjectSelector := .battlefield .oppTappedCreatures
 @[match_pattern] abbrev creaturesPowerAtLeast4 : ObjectSelector := .battlefield .creaturesPowerAtLeast4
@@ -1219,23 +1200,21 @@ namespace ObjectSelector
 @[match_pattern] abbrev youIfCast : ObjectSelector := .sacrificeStack .youIfCast
 @[match_pattern] abbrev spellTargets : ObjectSelector := .sacrificeStack .spellTargets
 @[match_pattern] abbrev eachOpponentsCreature : ObjectSelector := .sacrificeStack .eachOpponentsCreature
-@[match_pattern] abbrev targetSpell : ObjectSelector := .sacrificeStack .targetSpell
+@[match_pattern] abbrev targetSpell : ObjectSelector := .sacrificeStack (.targetSpell false)
 @[match_pattern] abbrev stackAbility (fromCreature : Bool := true) : ObjectSelector := .sacrificeStack (.stackAbility fromCreature)
 @[match_pattern] abbrev sourceSpellXTimes : ObjectSelector := .sacrificeStack .sourceSpellXTimes
 @[match_pattern] abbrev nextSpellThisTurn : ObjectSelector := .sacrificeStack .nextSpellThisTurn
 @[match_pattern] abbrev causingSpell : ObjectSelector := .sacrificeStack .causingSpell
 @[match_pattern] abbrev archonCruelty : ObjectSelector := .sacrificeStack .archonCruelty
-@[match_pattern] abbrev targetSpellTwice : ObjectSelector := .sacrificeStack .targetSpellTwice
+@[match_pattern] abbrev targetSpellTwice : ObjectSelector := .sacrificeStack (.targetSpell true)
 
 end ObjectSelector
 
 
 /-- Characteristic, power/toughness, mana value, and counter numbers (CR 202.3 / CR 208). -/
 inductive StatNumber where
-  /-- The source's toughness. -/
-  | equalSourceToughness
-  /-- The source's power. -/
-  | equalSourcePower
+  /-- The source's power (or toughness if `toughness`). -/
+  | equalSourceStat (toughness : Bool := false)
   /-- This statistic's current value, which doubles it. -/
   | double
   /-- The source's last-known power. -/
@@ -1246,8 +1225,8 @@ inductive StatNumber where
   | spellManaValue
   /-- X cards, where X is the mana spent to cast the triggering spell. -/
   | equalToManaSpent
-  /-- The number of +1/+1 counters on the source. -/
-  | plusOneCounters
+  /-- The number of +1/+1 counters on the source (or on the target creature if `ofTarget`). -/
+  | plusOneCounters (ofTarget : Bool := false)
   /-- The targeted card's power. -/
   | equalToTargetPower
   /-- One life for each burden counter on the source. -/
@@ -1268,16 +1247,12 @@ inductive StatNumber where
   | totalFlyingPower
   /-- Greatest toughness among creatures you control. -/
   | greatestToughness
-  /-- Number of +1/+1 counters on the target creature. -/
-  | targetPlusOneCounters
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Zone, permanent, subtype, and feature counts (CR 109 / CR 400). -/
 inductive CountNumber where
   /-- One for each other creature the controller controls. -/
   | perOtherCreature
-  /-- One for each Plains the controller controls. -/
-  | perPlains
   /-- How many permanents of this subtype the controller controls. -/
   | subtypeCount (subtype : String)
   /-- One card for each graveyard with seven or more cards. -/
@@ -1288,14 +1263,10 @@ inductive CountNumber where
   | upToHandSize (n : Nat)
   /-- One for each Equipment attached to the source. -/
   | attachedEquipment
-  /-- One tapped Treasure for each artifact opponents control. -/
-  | oppArtifacts
-  /-- One Treasure for each artifact the damaged player controls. -/
-  | damagedPlayerArtifacts
+  /-- One Treasure for each artifact opponents (or the damaged player if `damagedPlayerOnly`) control. -/
+  | oppArtifacts (damagedPlayerOnly : Bool := false)
   /-- One Treasure for each creature the controller controls of a chosen type. -/
   | chosenCreatureType
-  /-- One token for each permanent of this subtype the controller controls. -/
-  | perSubtype (subtype : String)
   /-- How many cards are in the controller's library. -/
   | libraryCards
   /-- Minus X, where X is the number of cards in the controller's graveyard. -/
@@ -1393,15 +1364,15 @@ deriving Repr, Inhabited, BEq
 namespace NumberSelector
 
 -- StatNumber aliases
-@[match_pattern] abbrev equalSourceToughness : NumberSelector := .stat .equalSourceToughness
-@[match_pattern] abbrev equalSourcePower : NumberSelector := .stat .equalSourcePower
+@[match_pattern] abbrev equalSourceToughness : NumberSelector := .stat (.equalSourceStat true)
+@[match_pattern] abbrev equalSourcePower : NumberSelector := .stat (.equalSourceStat false)
 @[match_pattern] abbrev double : NumberSelector := .stat .double
 @[match_pattern] abbrev lastKnownPower : NumberSelector := .stat .lastKnownPower
 @[match_pattern] abbrev sourcePower : NumberSelector := .stat .lastKnownPower
 @[match_pattern] abbrev greatestArtifactMv : NumberSelector := .stat .greatestArtifactMv
 @[match_pattern] abbrev spellManaValue : NumberSelector := .stat .spellManaValue
 @[match_pattern] abbrev equalToManaSpent : NumberSelector := .stat .equalToManaSpent
-@[match_pattern] abbrev plusOneCounters : NumberSelector := .stat .plusOneCounters
+@[match_pattern] abbrev plusOneCounters : NumberSelector := .stat (.plusOneCounters false)
 @[match_pattern] abbrev equalToTargetPower : NumberSelector := .stat .equalToTargetPower
 @[match_pattern] abbrev perBurden : NumberSelector := .stat .perBurden
 @[match_pattern] abbrev perChargeCounter : NumberSelector := .stat .perChargeCounter
@@ -1412,20 +1383,20 @@ namespace NumberSelector
 @[match_pattern] abbrev greatestToughnessThenPutCreatures : NumberSelector := .stat .greatestToughnessThenPutCreatures
 @[match_pattern] abbrev totalFlyingPower : NumberSelector := .stat .totalFlyingPower
 @[match_pattern] abbrev greatestToughness : NumberSelector := .stat .greatestToughness
-@[match_pattern] abbrev targetPlusOneCounters : NumberSelector := .stat .targetPlusOneCounters
+@[match_pattern] abbrev targetPlusOneCounters : NumberSelector := .stat (.plusOneCounters true)
 
 -- CountNumber aliases
 @[match_pattern] abbrev perOtherCreature : NumberSelector := .countKind .perOtherCreature
-@[match_pattern] abbrev perPlains : NumberSelector := .countKind .perPlains
 @[match_pattern] abbrev subtypeCount (subtype : String) : NumberSelector := .countKind (.subtypeCount subtype)
+@[match_pattern] abbrev perPlains : NumberSelector := .subtypeCount "Plains"
 @[match_pattern] abbrev perFatGraveyard : NumberSelector := .countKind .perFatGraveyard
 @[match_pattern] abbrev perControlled (ty : CardType) : NumberSelector := .countKind (.perControlled ty)
 @[match_pattern] abbrev upToHandSize (n : Nat) : NumberSelector := .countKind (.upToHandSize n)
 @[match_pattern] abbrev attachedEquipment : NumberSelector := .countKind .attachedEquipment
-@[match_pattern] abbrev oppArtifacts : NumberSelector := .countKind .oppArtifacts
-@[match_pattern] abbrev damagedPlayerArtifacts : NumberSelector := .countKind .damagedPlayerArtifacts
+@[match_pattern] abbrev oppArtifacts : NumberSelector := .countKind (.oppArtifacts false)
+@[match_pattern] abbrev damagedPlayerArtifacts : NumberSelector := .countKind (.oppArtifacts true)
 @[match_pattern] abbrev chosenCreatureType : NumberSelector := .countKind .chosenCreatureType
-@[match_pattern] abbrev perSubtype (subtype : String) : NumberSelector := .countKind (.perSubtype subtype)
+@[match_pattern] abbrev perSubtype (subtype : String) : NumberSelector := .subtypeCount subtype
 @[match_pattern] abbrev libraryCards : NumberSelector := .countKind .libraryCards
 @[match_pattern] abbrev minusGraveyardCards : NumberSelector := .countKind .minusGraveyardCards
 @[match_pattern] abbrev colorsAmongOtherArtifacts : NumberSelector := .countKind .colorsAmongOtherArtifacts
@@ -1511,10 +1482,8 @@ inductive StateCondition where
   | hopeOnSource
   /-- Equipment is attached to the source, or its last-known power is positive when the source has left. -/
   | attachedEquipment
-  /-- The creature that caused this has greater power than the source. -/
-  | causeGreaterPower
-  /-- The creature that caused this has greater toughness than the source. -/
-  | causeGreaterToughness
+  /-- The creature that caused this has greater power (or toughness if `toughness`) than the source. -/
+  | causeGreaterStat (toughness : Bool := false)
   /-- The targeted permanent has this subtype. -/
   | subtype (subtype : String)
   /-- The targeted spell's mana value was this much or less (CR 202.3e). -/
@@ -1529,48 +1498,34 @@ inductive StateCondition where
   | youControlCreatureToughnessAtLeast (n : Nat)
   /-- You control a legendary creature. -/
   | youControlLegendary
-  /-- There are `n` or more cards in your graveyard. -/
-  | graveyardAtLeast (n : Nat)
-  /-- There are `n` or more creature cards in your graveyard. -/
-  | gyCreaturesAtLeast (n : Nat)
+  /-- There are `n` or more cards (or creature cards if `creaturesOnly`) in your graveyard. -/
+  | graveyardAtLeast (n : Nat) (creaturesOnly : Bool := false)
   /-- There are `n` or more loyalty counters among Jaces you control. -/
   | jaceLoyaltyAtLeast (n : Nat)
-  /-- The source is not a token. -/
-  | sourceNotToken
-  /-- You cast the source. -/
-  | sourceWasCast
-  /-- The object that caused the trigger had counters on it. -/
-  | causeHadCounters
-  /-- The source has counters on it. -/
-  | sourceHasCounters
+  /-- The source is not a token (`wasCast = false`) or was cast (`wasCast = true`). -/
+  | sourceOrigin (wasCast : Bool := false)
+  /-- The object that caused the trigger (`onSource = false`) or the source (`onSource = true`) has counters on it. -/
+  | objectHadCounters (onSource : Bool := false)
   /-- The target was dealt damage this turn. -/
   | targetDamaged
   /-- The target is a tapped creature. -/
   | targetTapped
-  /-- The target is an attacking nontoken creature. -/
-  | targetAttackingNontoken
-  /-- The target is an attacking creature. -/
-  | targetAttacking
+  /-- The target is an attacking creature (nontoken if `nontokenOnly`). -/
+  | targetAttacking (nontokenOnly : Bool := false)
   /-- The target is a creature with power `power` or less. -/
   | targetPowerAtMost (power : Int)
-  /-- You control a permanent with this subtype. -/
-  | youControlSubtype (subtype : String)
   /-- You control a permanent with any of these subtypes. -/
   | youControlAnySubtype (subtypes : Array String)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Turn history and spell cast conditions (CR 601.2 / CR 603). -/
 inductive TurnHistoryCondition where
-  /-- You attacked with a permanent of this subtype this turn. -/
-  | attackedWithSubtype (subtype : String)
-  /-- A permanent of this subtype entered under your control this turn. -/
-  | subtypeEntered (subtype : String)
+  /-- You attacked with (`entered = false`) or had enter under your control (`entered = true`) a permanent of this subtype this turn. -/
+  | subtypeTurnEvent (subtype : String) (entered : Bool := false)
   /-- `noteResolveThisTurn` recorded ordinal `n`. -/
   | nthResolve (n : Nat)
-  /-- You have scried this turn. -/
-  | scriedThisTurn
-  /-- You have surveilled this turn. -/
-  | surveilledThisTurn
+  /-- You have scried (`surveil = false`) or surveilled (`surveil = true`) this turn. -/
+  | scriedThisTurn (surveil : Bool := false)
   /-- An artifact entered the battlefield under your control this turn. -/
   | artifactEnteredThisTurn
   /-- Mana was spent to cast the triggering spell. -/
@@ -1585,18 +1540,10 @@ inductive TurnHistoryCondition where
   | notFromHand
   /-- You gained `n` or more life this turn. -/
   | gainedLifeAtLeast (n : Nat)
-  /-- You have scried or surveilled this turn. -/
-  | scriedOrSurveilledThisTurn
   /-- You attacked with two or more creatures this turn. -/
   | youAttackedWithTwoOrMore
-  /-- An opponent has been dealt noncombat damage this turn. -/
-  | opponentDealtNoncombatDamage
-  /-- An opponent was dealt noncombat damage last turn. -/
-  | opponentDealtNoncombatDamageLastTurn
-  /-- Two or more creatures died this turn. -/
-  | twoCreaturesDiedThisTurn
-  /-- You have drawn three or more cards this turn. -/
-  | drewThreeThisTurn
+  /-- An opponent has been dealt noncombat damage this turn (or last turn if `lastTurn`). -/
+  | opponentDealtNoncombatDamage (lastTurn : Bool := false)
   /-- You didn't cast a spell this turn. -/
   | castNoSpellThisTurn
   /-- You have activated a loyalty ability this turn. -/
@@ -1615,10 +1562,8 @@ inductive StepNoteCondition where
   | youControlledDestroyed
   /-- You have an enduring story, and an earlier step discarded your hand. -/
   | enduringStoryNoted
-  /-- An earlier `.sacrifice .source .noted` sacrificed the source. -/
-  | sourceWasSacrificed
-  /-- An earlier `.sacrifice .plan .forReflexive` sacrificed the Plan. -/
-  | planWasSacrificed
+  /-- An earlier step sacrificed the source (`plan = false`) or the Plan (`plan = true`). -/
+  | wasSacrificed (plan : Bool := false)
   /-- An earlier step attached Equipment to a creature that is still in play. -/
   | equipmentAttached
   /-- `.mill` noted `.opponentsMilled`: an opponent milled a card. -/
@@ -1656,8 +1601,8 @@ namespace ConditionSelector
 @[match_pattern] abbrev none : ConditionSelector := .state .always
 @[match_pattern] abbrev hopeOnSource : ConditionSelector := .state .hopeOnSource
 @[match_pattern] abbrev attachedEquipment : ConditionSelector := .state .attachedEquipment
-@[match_pattern] abbrev causeGreaterPower : ConditionSelector := .state .causeGreaterPower
-@[match_pattern] abbrev causeGreaterToughness : ConditionSelector := .state .causeGreaterToughness
+@[match_pattern] abbrev causeGreaterPower : ConditionSelector := .state (.causeGreaterStat false)
+@[match_pattern] abbrev causeGreaterToughness : ConditionSelector := .state (.causeGreaterStat true)
 @[match_pattern] abbrev subtype (subtype : String) : ConditionSelector := .state (.subtype subtype)
 @[match_pattern] abbrev mvAtMost (n : Nat) : ConditionSelector := .state (.mvAtMost n)
 @[match_pattern] abbrev preparedSource : ConditionSelector := .state .preparedSource
@@ -1667,29 +1612,29 @@ namespace ConditionSelector
 @[match_pattern] abbrev anotherCreaturePowerAtMost (n : Int) : ConditionSelector := .state (.anotherCreaturePowerAtMost n)
 @[match_pattern] abbrev youControlCreatureToughnessAtLeast (n : Nat) : ConditionSelector := .state (.youControlCreatureToughnessAtLeast n)
 @[match_pattern] abbrev youControlLegendary : ConditionSelector := .state .youControlLegendary
-@[match_pattern] abbrev graveyardAtLeast (n : Nat) : ConditionSelector := .state (.graveyardAtLeast n)
-@[match_pattern] abbrev gyCreaturesAtLeast (n : Nat) : ConditionSelector := .state (.gyCreaturesAtLeast n)
+@[match_pattern] abbrev graveyardAtLeast (n : Nat) : ConditionSelector := .state (.graveyardAtLeast n false)
+@[match_pattern] abbrev gyCreaturesAtLeast (n : Nat) : ConditionSelector := .state (.graveyardAtLeast n true)
 @[match_pattern] abbrev jaceLoyaltyAtLeast (n : Nat) : ConditionSelector := .state (.jaceLoyaltyAtLeast n)
-@[match_pattern] abbrev sourceNotToken : ConditionSelector := .state .sourceNotToken
-@[match_pattern] abbrev sourceWasCast : ConditionSelector := .state .sourceWasCast
-@[match_pattern] abbrev causeHadCounters : ConditionSelector := .state .causeHadCounters
-@[match_pattern] abbrev sourceHasCounters : ConditionSelector := .state .sourceHasCounters
+@[match_pattern] abbrev sourceNotToken : ConditionSelector := .state (.sourceOrigin false)
+@[match_pattern] abbrev sourceWasCast : ConditionSelector := .state (.sourceOrigin true)
+@[match_pattern] abbrev causeHadCounters : ConditionSelector := .state (.objectHadCounters false)
+@[match_pattern] abbrev sourceHasCounters : ConditionSelector := .state (.objectHadCounters true)
 @[match_pattern] abbrev targetDamaged : ConditionSelector := .state .targetDamaged
 @[match_pattern] abbrev targetTapped : ConditionSelector := .state .targetTapped
-@[match_pattern] abbrev targetAttackingNontoken : ConditionSelector := .state .targetAttackingNontoken
-@[match_pattern] abbrev targetAttacking : ConditionSelector := .state .targetAttacking
+@[match_pattern] abbrev targetAttackingNontoken : ConditionSelector := .state (.targetAttacking true)
+@[match_pattern] abbrev targetAttacking : ConditionSelector := .state (.targetAttacking false)
 @[match_pattern] abbrev targetPowerAtMost (power : Int) : ConditionSelector := .state (.targetPowerAtMost power)
 @[match_pattern] abbrev youControlAnySubtype (subtypes : Array String) : ConditionSelector :=
   .state (.youControlAnySubtype subtypes)
 @[match_pattern] abbrev youControlSubtype (subtype : String) : ConditionSelector :=
-  .state (.youControlSubtype subtype)
+  .youControlAnySubtype #[subtype]
 
 -- TurnHistoryCondition aliases
-@[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.attackedWithSubtype subtype)
-@[match_pattern] abbrev subtypeEntered (subtype : String) : ConditionSelector := .turnHistory (.subtypeEntered subtype)
+@[match_pattern] abbrev attackedWithSubtype (subtype : String) : ConditionSelector := .turnHistory (.subtypeTurnEvent subtype false)
+@[match_pattern] abbrev subtypeEntered (subtype : String) : ConditionSelector := .turnHistory (.subtypeTurnEvent subtype true)
 @[match_pattern] abbrev nthResolve (n : Nat) : ConditionSelector := .turnHistory (.nthResolve n)
-@[match_pattern] abbrev scriedThisTurn : ConditionSelector := .turnHistory .scriedThisTurn
-@[match_pattern] abbrev surveilledThisTurn : ConditionSelector := .turnHistory .surveilledThisTurn
+@[match_pattern] abbrev scriedThisTurn : ConditionSelector := .turnHistory (.scriedThisTurn false)
+@[match_pattern] abbrev surveilledThisTurn : ConditionSelector := .turnHistory (.scriedThisTurn true)
 @[match_pattern] abbrev artifactEnteredThisTurn : ConditionSelector := .turnHistory .artifactEnteredThisTurn
 @[match_pattern] abbrev manaSpent : ConditionSelector := .turnHistory .manaSpent
 @[match_pattern] abbrev castFromGraveyard : ConditionSelector := .turnHistory .castFromGraveyard
@@ -1697,12 +1642,12 @@ namespace ConditionSelector
 @[match_pattern] abbrev giftPromised : ConditionSelector := .turnHistory .giftPromised
 @[match_pattern] abbrev notFromHand : ConditionSelector := .turnHistory .notFromHand
 @[match_pattern] abbrev gainedLifeAtLeast (n : Nat) : ConditionSelector := .turnHistory (.gainedLifeAtLeast n)
-@[match_pattern] abbrev scriedOrSurveilledThisTurn : ConditionSelector := .turnHistory .scriedOrSurveilledThisTurn
+@[match_pattern] abbrev scriedOrSurveilledThisTurn : ConditionSelector := .or [.scriedThisTurn, .surveilledThisTurn]
 @[match_pattern] abbrev youAttackedWithTwoOrMore : ConditionSelector := .turnHistory .youAttackedWithTwoOrMore
-@[match_pattern] abbrev opponentDealtNoncombatDamage : ConditionSelector := .turnHistory .opponentDealtNoncombatDamage
-@[match_pattern] abbrev opponentDealtNoncombatDamageLastTurn : ConditionSelector := .turnHistory .opponentDealtNoncombatDamageLastTurn
-@[match_pattern] abbrev twoCreaturesDiedThisTurn : ConditionSelector := .turnHistory .twoCreaturesDiedThisTurn
-@[match_pattern] abbrev drewThreeThisTurn : ConditionSelector := .turnHistory .drewThreeThisTurn
+@[match_pattern] abbrev opponentDealtNoncombatDamage : ConditionSelector := .turnHistory (.opponentDealtNoncombatDamage false)
+@[match_pattern] abbrev opponentDealtNoncombatDamageLastTurn : ConditionSelector := .turnHistory (.opponentDealtNoncombatDamage true)
+@[match_pattern] abbrev twoCreaturesDiedThisTurn : ConditionSelector := .atLeast .creaturesDiedThisTurn (.fixed 2)
+@[match_pattern] abbrev drewThreeThisTurn : ConditionSelector := .atLeast .cardsDrawnThisTurn (.fixed 3)
 @[match_pattern] abbrev castNoSpellThisTurn : ConditionSelector := .turnHistory .castNoSpellThisTurn
 @[match_pattern] abbrev activatedLoyaltyThisTurn : ConditionSelector := .turnHistory .activatedLoyaltyThisTurn
 
@@ -1712,8 +1657,8 @@ namespace ConditionSelector
 @[match_pattern] abbrev returnedPermanent : ConditionSelector := .stepNote .returnedPermanent
 @[match_pattern] abbrev youControlledDestroyed : ConditionSelector := .stepNote .youControlledDestroyed
 @[match_pattern] abbrev enduringStoryNoted : ConditionSelector := .stepNote .enduringStoryNoted
-@[match_pattern] abbrev sourceWasSacrificed : ConditionSelector := .stepNote .sourceWasSacrificed
-@[match_pattern] abbrev planWasSacrificed : ConditionSelector := .stepNote .planWasSacrificed
+@[match_pattern] abbrev sourceWasSacrificed : ConditionSelector := .stepNote (.wasSacrificed false)
+@[match_pattern] abbrev planWasSacrificed : ConditionSelector := .stepNote (.wasSacrificed true)
 @[match_pattern] abbrev equipmentAttached : ConditionSelector := .stepNote .equipmentAttached
 @[match_pattern] abbrev opponentsMilled : ConditionSelector := .stepNote .opponentsMilled
 @[match_pattern] abbrev revealedManaValueAtMostLands : ConditionSelector := .stepNote .revealedManaValueAtMostLands
@@ -2279,10 +2224,8 @@ inductive Layer6AbilityGrant where
   | landfallCreateElf
   /-- Until end of turn, the source gains "{T}: This deals damage equal to its power to any other target." -/
   | ironFistTap
-  /-- Until end of turn, "Whenever this creature deals combat damage to a player, create a Treasure token." -/
-  | combatDamageCreateTreasure
-  /-- Until end of turn, "Whenever this creature deals combat damage to a player, draw two cards." -/
-  | combatDamageDrawTwo
+  /-- Until end of turn, "Whenever this creature deals combat damage to a player, create a Treasure token" (or "draw two cards" if `drawTwo`). -/
+  | combatDamageTrigger (drawTwo : Bool := false)
   /-- Flashback until end of turn equal to its mana cost. -/
   | flashback
   /-- "{T}: Add {C}{C}" until the exiled source is cast, and you may cast the source while exiled. -/
@@ -2321,10 +2264,8 @@ inductive RuleEffectGrant where
   | emblemCastSpellDamage (n : Nat)
   /-- Emblem with "Whenever you cast a spell, draw a card." -/
   | emblemDrawOnCast
-  /-- Emblem with "Creatures you control get +2/+2." -/
-  | emblemCreaturesGetTwoTwo
-  /-- Emblem with "Creatures you control get +2/+2 and have flying." -/
-  | emblemCreaturesGetTwoTwoFlying
+  /-- Emblem with "Creatures you control get +2/+2" (and "have flying" if `flying`). -/
+  | emblemCreaturesGetTwoTwo (flying : Bool := false)
   /-- Copy the next instant or sorcery spell you cast this turn (optionally limited to source's power). -/
   | nextSpellCopy (mvAtMostSourcePower : Bool := false)
   /-- Play an additional land this turn (CR 305.2). -/
@@ -2428,8 +2369,8 @@ def doubleStrike : TriggerGrantWhat := .keywords Keyword.doubleStrike
 @[match_pattern] abbrev choiceOfKeywords (options : List Nat) : TriggerGrantWhat := .layer6Ability (.choiceOfKeywords options)
 @[match_pattern] abbrev landfallCreateElf : TriggerGrantWhat := .layer6Ability .landfallCreateElf
 @[match_pattern] abbrev ironFistTap : TriggerGrantWhat := .layer6Ability .ironFistTap
-@[match_pattern] abbrev combatDamageCreateTreasure : TriggerGrantWhat := .layer6Ability .combatDamageCreateTreasure
-@[match_pattern] abbrev combatDamageDrawTwo : TriggerGrantWhat := .layer6Ability .combatDamageDrawTwo
+@[match_pattern] abbrev combatDamageCreateTreasure : TriggerGrantWhat := .layer6Ability (.combatDamageTrigger false)
+@[match_pattern] abbrev combatDamageDrawTwo : TriggerGrantWhat := .layer6Ability (.combatDamageTrigger true)
 @[match_pattern] abbrev flashback : TriggerGrantWhat := .layer6Ability .flashback
 @[match_pattern] abbrev emrakulManaAndCast : TriggerGrantWhat := .layer6Ability .emrakulManaAndCast
 @[match_pattern] abbrev lose (what : AbilitySelector) : TriggerGrantWhat := .layer6Ability (.lose what)
@@ -2449,8 +2390,8 @@ def doubleStrike : TriggerGrantWhat := .keywords Keyword.doubleStrike
 @[match_pattern] abbrev mountainsAddExtraRed : TriggerGrantWhat := .ruleEffect .mountainsAddExtraRed
 @[match_pattern] abbrev emblemCastSpellDamage (n : Nat) : TriggerGrantWhat := .ruleEffect (.emblemCastSpellDamage n)
 @[match_pattern] abbrev emblemDrawOnCast : TriggerGrantWhat := .ruleEffect .emblemDrawOnCast
-@[match_pattern] abbrev emblemCreaturesGetTwoTwo : TriggerGrantWhat := .ruleEffect .emblemCreaturesGetTwoTwo
-@[match_pattern] abbrev emblemCreaturesGetTwoTwoFlying : TriggerGrantWhat := .ruleEffect .emblemCreaturesGetTwoTwoFlying
+@[match_pattern] abbrev emblemCreaturesGetTwoTwo : TriggerGrantWhat := .ruleEffect (.emblemCreaturesGetTwoTwo false)
+@[match_pattern] abbrev emblemCreaturesGetTwoTwoFlying : TriggerGrantWhat := .ruleEffect (.emblemCreaturesGetTwoTwo true)
 @[match_pattern] abbrev nextSpellCopy (mvAtMostSourcePower : Bool := false) : TriggerGrantWhat := .ruleEffect (.nextSpellCopy mvAtMostSourcePower)
 @[match_pattern] abbrev extraLand : TriggerGrantWhat := .ruleEffect .extraLand
 @[match_pattern] abbrev extraTurn : TriggerGrantWhat := .ruleEffect .extraTurn

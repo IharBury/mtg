@@ -93,7 +93,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .eachUpToLastKnown | .announcedEquipment
     | .creatureOrGraveyardCard =>
     some permanentTargets
-  | .enchanted | .enchantedWhileSource | .enchantedCreature =>
+  | .enchanted | .enchantedWhileSource =>
     match sourceId.bind g.findObject? with
     | some src =>
       if src.isOnBattlefield then
@@ -190,10 +190,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match g.notedHostId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .enteringVillain =>
-    match g.recordedCauseId.bind onBf with
-    | some o => if g.hasSubtype o "Villain" then some #[o] else someEmpty
-    | none => someEmpty
   | .landsYouControl =>
     some ((g.permanentsOf controller).filter (·.printed.isLand))
   | .legendaryCreaturesYouControl =>
@@ -213,12 +209,12 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     some (permanentTargets.filter fun o =>
       g.hasSubtype o subtype && some o.id != sourceId)
   | .target _ => none
-  | .putArtifact | .putEquipment =>
+  | .battlefield (.putArtifact equipmentOnly) =>
     match g.putArtifactThisWay with
     | some (oid, _) =>
       match onBf oid with
       | some o =>
-        if who == .putEquipment && !o.printed.isEquipment then someEmpty else some #[o]
+        if equipmentOnly && !o.printed.isEquipment then someEmpty else some #[o]
       | none => someEmpty
     | none => someEmpty
   | .harnessedSource =>
@@ -506,7 +502,6 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .perOtherCreature =>
     some (g.battlefield.filter (fun c =>
       c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
-  | .perPlains => some (g.countSubtype controller "Plains")
   | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
   | .equalSourceToughness =>
     some <|
@@ -516,7 +511,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
         else ctx.lastKnownToughness.getD (g.toughness src)
       | none => ctx.lastKnownToughness.getD 0
   | .lastKnownPower => some (ctx.lastKnownPower.getD 0)
-  | .subtypeCount subtype | .perSubtype subtype =>
+  | .subtypeCount subtype =>
     some (g.countSubtype controller subtype)
   | .discardedHand => g.handDiscardedThisWay.map Int.ofNat
   | .greatestArtifactMv =>
@@ -572,10 +567,11 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
         | none => n
       else n
     some n
-  | .oppArtifacts => some (g.countOpponentArtifacts controller)
-  | .damagedPlayerArtifacts =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    some (g.countArtifactsControlledBy pid)
+  | .countKind (.oppArtifacts damagedPlayerOnly) =>
+    if damagedPlayerOnly then
+      let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+      some (g.countArtifactsControlledBy pid)
+    else some (g.countOpponentArtifacts controller)
   | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
   | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn

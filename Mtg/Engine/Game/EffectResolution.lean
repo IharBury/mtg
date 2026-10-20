@@ -1220,13 +1220,20 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     if (g.player controller).lifeGainedThisTurn > 0 then g.createKindTokens controller .angel else g
   | .destroy .creaturesPowerAtLeast4 _ =>
     g.destroyIds (g.battlefield.filter (fun o => o.isCreature && g.snapshotPower o >= 4) |>.map (·.id))
-  | .grant .emblemCreaturesGetTwoTwoFlying .youIfCast =>
-    let (g, emb) := g.allocObject {
-        name := "Elspeth emblem"
-        types := #[.enchantment]
-        staticRule := .grantTeamPlusTwoFlying
-      } controller .command (some controller)
-    g.logMsg s!"{pl.name} gets an emblem ({emb.name})"
+  | .grant (.ruleEffect (.emblemCreaturesGetTwoTwo flying)) .youIfCast =>
+    if flying then
+      let (g, emb) := g.allocObject {
+          name := "Elspeth emblem"
+          types := #[.enchantment]
+          staticRule := .grantTeamPlusTwoFlying
+        } controller .command (some controller)
+      g.logMsg s!"{pl.name} gets an emblem ({emb.name})"
+    else
+      let emblem : CardDef := {
+        name := s!"{srcName} Emblem", types := #[]
+        staticAbilities := #[.fra .emblemCreaturesGetTwoTwo] }
+      (g.createCommandObject controller emblem).logMsg
+        s!"{pl.name} gets an emblem with \"Creatures you control get +2/+2.\""
   | .putOnLibrary .bottomAfterDrawTwo .cardFromHand =>
     let g := g.draw controller 2
     g.handDiscardToBottom controller
@@ -2205,14 +2212,24 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         "Whenever you cast a spell, draw a card." (.draw 1)] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
-  | .pump (.fixed (-5)) (.fixed 0) .attackersAgainstYouUntilYourTurn =>
-    let effectCard : CardDef := {
-      name := s!"{srcName} effect", types := #[]
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
-        "Whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn."
-        (.pump (.fixed (-5)) (.fixed 0) .cause)] }
-    (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
-      s!"Until {(g.player controller).name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
+  | .pump _ _ (.battlefield (.attackersUntilYourTurn againstOpponents)) =>
+    let effectCard : CardDef :=
+      if againstOpponents then {
+        name := s!"{srcName} effect", types := #[]
+        triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent)
+          "Whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn."
+          (.pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample)] }
+      else {
+        name := s!"{srcName} effect", types := #[]
+        triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
+          "Whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn."
+          (.pump (.fixed (-5)) (.fixed 0) .cause)] }
+    let msg :=
+      if againstOpponents then
+        s!"Until {pl.name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
+      else
+        s!"Until {pl.name}'s next turn, whenever a creature attacks them or a planeswalker they control, it gets -5/-0 until end of turn"
+    (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg msg
   | .exile .opponentLibrariesButBottom .forLater _ =>
     g.forEachOpponent controller (fun g pid =>
       let lib := (g.player pid).library
@@ -2229,12 +2246,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.continueSacrificeEach controller g.apnapOrder #[]
   | .discard .eachOpponentTwoDrawPerNonlandShortfall =>
     g.continueDiscardTwo controller (g.apnapOrder.filter (· != controller)) 0
-  | .grant .emblemCreaturesGetTwoTwo .youIfCast =>
-    let emblem : CardDef := {
-      name := s!"{srcName} Emblem", types := #[]
-      staticAbilities := #[.fra .emblemCreaturesGetTwoTwo] }
-    (g.createCommandObject controller emblem).logMsg
-      s!"{(g.player controller).name} gets an emblem with \"Creatures you control get +2/+2.\""
   | .untap (.target .eachPermanent) =>
     (List.range targets.size).foldl (fun g i =>
       match targets[i]! with
@@ -2245,14 +2256,6 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           | none => g
         else g.illegalAbilityTarget t
       | _ => g) g
-  | .pump (.fixed 2) (.fixed 2) .attackersAgainstOpponentsUntilYourTurn =>
-    let effectCard : CardDef := {
-      name := s!"{srcName} effect", types := #[]
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent)
-        "Whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn."
-        (.pump (.fixed 2) (.fixed 2) .attackersOfCauseControllerWithTrample)] }
-    (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
-      s!"Until {(g.player controller).name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
   | .putCounters .plusOnePerLand .target =>
     let n := ((g.permanentsOf controller).filter (·.printed.isLand)).size
     g.withLegalKindPermanent controller kind targets (fun g o =>
