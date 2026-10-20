@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.ActivatedAbility
-import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.OracleNorm
 import Mtg.Engine.Card.TriggeredAbility

@@ -12,6 +12,108 @@ The unified `TriggeredAbility` carrier plus its stack/resolution metadata
 
 namespace Mtg.Engine
 
+/-- Who `SharedTrigger.connive` makes connive. -/
+inductive ConniveSubject where
+  /-- The trigger's source. -/
+  | source
+  /-- The announced target of this kind. -/
+  | target (kind : EffectTargetKind)
+  /-- The Villain that caused this trigger. You may have it connive.
+  Already chosen this turn does nothing. A Villain that will not connive
+  is reported. -/
+  | enteringVillain
+deriving Repr, Inhabited, BEq
+
+/-- An intervening “if” or trigger condition (CR 603.2 / 603.4). -/
+inductive InterveningCondition where
+  /-- “while you control a creature with power ≥ n” (e.g. Ferocious). -/
+  | youControlCreatureWithPower (n : Int)
+  /-- “if you gained `n` or more life this turn”. -/
+  | gainedLifeAtLeast (n : Nat)
+  /-- “another creature you control with power ≤ n”. -/
+  | anotherCreaturePowerAtMost (n : Int)
+  | none
+  /-- “if it isn't a token” (the source, as it last existed). -/
+  | sourceNotToken
+  /-- “if two or more creatures died this turn”. -/
+  | twoCreaturesDiedThisTurn
+  /-- “if an opponent was dealt noncombat damage last turn”. -/
+  | opponentDealtNoncombatDamageLastTurn
+  /-- “if you've drawn three or more cards this turn”. -/
+  | drewThreeThisTurn
+  /-- “if you didn't cast a spell this turn”. -/
+  | castNoSpellThisTurn
+  /-- “if you've activated a loyalty ability this turn”. -/
+  | activatedLoyaltyThisTurn
+  /-- “if you cast it”. -/
+  | sourceWasCast
+  /-- “if it had counters on it” (the object that caused the trigger). -/
+  | causeHadCounters
+  /-- “if this has counters on it”. -/
+  | sourceHasCounters
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Backward-compatible alias for `InterveningCondition` (CR 603.4). -/
+abbrev FraCondition := InterveningCondition
+
+/-- Optional intervening conditions and wording filters for `triggered` (CR 603). -/
+structure SharedTriggerOpts where
+  onceEachTurn : Bool := false
+  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
+  condition : InterveningCondition := .none
+  /-- Subtype filter watched by the trigger event. -/
+  subtype : Option String := none
+  allowsZeroTargets : Bool := false
+  /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
+  untargeted : Bool := false
+  /-- The ability's printed sentence, when its wording isn't built from the
+  event and resolution (Reality Fracture). -/
+  printed : String := ""
+  /-- The other permanent must be legendary (“another legendary Elf”). -/
+  anotherLegendary : Bool := false
+deriving Repr, Inhabited, BEq
+
+namespace SharedTriggerOpts
+
+def youControlCreatureWithPower (o : SharedTriggerOpts) : Option Int :=
+  match o.condition with
+  | .youControlCreatureWithPower n => some n
+  | _ => none
+
+def gainedLifeAtLeast (o : SharedTriggerOpts) : Option Nat :=
+  match o.condition with
+  | .gainedLifeAtLeast n => some n
+  | _ => none
+
+def anotherCreaturePowerAtMost (o : SharedTriggerOpts) : Option Int :=
+  match o.condition with
+  | .anotherCreaturePowerAtMost n => some n
+  | _ => none
+
+def fraCondition (o : SharedTriggerOpts) : InterveningCondition :=
+  match o.condition with
+  | .youControlCreatureWithPower _ | .gainedLifeAtLeast _ | .anotherCreaturePowerAtMost _ => .none
+  | c => c
+
+def thisOrNontokenSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+def thisOrAnotherSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+def anotherSubtypeOrEquipment (o : SharedTriggerOpts) : Option String := o.subtype
+def watchedSubtype (o : SharedTriggerOpts) : Option String := o.subtype
+
+/-- Ferocious intervening condition (power 4 or greater). -/
+def ferocious : SharedTriggerOpts :=
+  { condition := .youControlCreatureWithPower 4 }
+
+/-- “This ability triggers only once each turn.” -/
+def once : SharedTriggerOpts :=
+  { onceEachTurn := true }
+
+/-- Shared effect has targeting; this printed ability does not. -/
+def noTarget : SharedTriggerOpts :=
+  { untargeted := true }
+
+end SharedTriggerOpts
+
 /-- A triggered ability the engine currently understands (CR 603).
 One constructor keeps the C runtime tag under the limit; leftover printed
 names are aliases of `triggered`. -/
@@ -196,14 +298,8 @@ def maySacArtifactOrDiscardDraw : Effect :=
 def createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false) : Effect :=
   { resolution := .createTokens kind (.fixed n) tapped }
 def amass (n : Nat) (subtype : String := "Goblin")
-    (amount : AmassAmount := .fixed) (attachSource : Bool := false) : Effect :=
-  let resolved : TriggeredAbility.NumberSelector :=
-    match amount with
-    | .fixed => .fixed n
-    | .sourcePower => .lastKnownPower
-    | .notedExcess => .notedExcess
-    | .notedPower => .notedPower
-  { resolution := .amass resolved subtype attachSource }
+    (amount : TriggeredAbility.NumberSelector := .fixed n) (attachSource : Bool := false) : Effect :=
+  { resolution := .amass amount subtype attachSource }
 def recruit (who : RecruitSubject := .recruit) : Effect := { resolution := .recruit who }
 def investigate : Effect := { resolution := .investigate }
 def plusOneEachYouControl (which : YouControlPlusOne := .eachCreature) : Effect :=
@@ -441,11 +537,9 @@ def opponentSacrificesCreature : Effect :=
     resolution := .sacrifice .opponentChosenCreature }
 def exileTop : Effect := { resolution := .exile .top .playUntilNextTurn }
 def discard (n : Nat := 1) : Effect := { resolution := .discard (.cards n) }
-def opponentDiscards (n : Nat := 1) (who : OpponentDiscard := .each) : Effect :=
-  match who with
-  | .each => { resolution := .discard (.cards n .eachOpponent) }
-  | .target =>
-    { targeting := .of .opponent, resolution := .discard (.cards n (.target .opponent)) }
+def opponentDiscards (n : Nat := 1) (who : TriggeredAbility.PlayerSelector := .eachOpponent) : Effect :=
+  { targeting := if who == .target .opponent then .of .opponent else .of .none
+    resolution := .discard (.cards n who) }
 def eachPlayerSacrificesCreature : Effect :=
   { resolution := .sacrifice .eachPlayersCreature }
 def exileTarget (kind : EffectTargetKind) : Effect :=

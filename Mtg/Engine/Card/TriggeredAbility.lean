@@ -1,4 +1,4 @@
-import Mtg.Engine.Card.ChapterEffects
+import Mtg.Engine.Card.Saga
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.TriggerEffects
@@ -232,7 +232,7 @@ def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
 def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger (.pumpCause power toughness))
 def onEnterTargetOpponentDiscards (n : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.opponentDiscards n .target))
+  .triggered .enter (Effect.ofTrigger (.opponentDiscards n (.target .opponent)))
 def onEquipmentYouControlEntersDraw : TriggeredAbility :=
   .triggered .equipmentYouControlEnters (Effect.ofTrigger (.draw 1))
 def onEnterSearchForest : TriggeredAbility :=

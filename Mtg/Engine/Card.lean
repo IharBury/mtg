@@ -4,13 +4,11 @@ import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.SpellResolution
-import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.Card.Trigger
-import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.TriggerEffects
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.TriggeredAbility
@@ -33,18 +31,13 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Counter`: counter kinds a permanent can carry (CR 122).
 - `Token`: token kinds (CR 111).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
-- `PermanentAction`: shared actions on permanents (CR 608.2b).
-- `SpellResolution` / `AbilityResolution`: how spells resolve and how the
-  demo agent classifies activated abilities (CR 608).
-- `SharedTrigger`: reusable trigger payloads (CR 603).
-- `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary
-  (activated-ability leftovers live on `Resolution`).
+- `SpellResolution`: unified `Resolution`, selector vocabulary, and `PermanentAction` (CR 608).
+- `Effect`: the unified one-shot `Effect` carrier (CR 608).
 - `ActivatedAbility` / `StaticAbility`: printed abilities (CR 602 / 604).
-- `TriggerEvent` / `Trigger`: trigger events, timing, and resolutions.
-- `ChapterEffects` / `TriggerEffects` / `SpellEffects`: named `Effect`
-  constructors per family.
+- `TriggerEvent` / `Trigger`: trigger events, timing, intervening conditions, and `SharedTrigger` builders (CR 603).
+- `TriggerEffects` / `SpellEffects`: named `Effect` constructors per family.
 - `TriggeredAbility`: printed triggered abilities (CR 603).
-- `Saga`: printed Sagas (CR 714).
+- `Saga`: printed Sagas and `Effect.chapter*` constructors (CR 714).
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/

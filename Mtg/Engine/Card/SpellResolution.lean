@@ -1069,6 +1069,12 @@ deriving Repr, Inhabited, BEq
 
 end
 
+namespace PlayerSelector
+
+@[match_pattern] abbrev each : PlayerSelector := .eachOpponent
+
+end PlayerSelector
+
 namespace ObjectSelector
 
 -- TargetObject aliases
@@ -1408,6 +1414,7 @@ namespace NumberSelector
 @[match_pattern] abbrev equalSourcePower : NumberSelector := .stat .equalSourcePower
 @[match_pattern] abbrev double : NumberSelector := .stat .double
 @[match_pattern] abbrev lastKnownPower : NumberSelector := .stat .lastKnownPower
+@[match_pattern] abbrev sourcePower : NumberSelector := .stat .lastKnownPower
 @[match_pattern] abbrev greatestArtifactMv : NumberSelector := .stat .greatestArtifactMv
 @[match_pattern] abbrev spellManaValue : NumberSelector := .stat .spellManaValue
 @[match_pattern] abbrev equalToManaSpent : NumberSelector := .stat .equalToManaSpent

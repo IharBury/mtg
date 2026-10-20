@@ -1,5 +1,6 @@
-import Mtg.Engine.Card.SharedTrigger
+import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.StaticAbility
+import Mtg.Engine.Card.TriggerEvent
 
 /-!
 # Unified one-shot effects (CR 608)
