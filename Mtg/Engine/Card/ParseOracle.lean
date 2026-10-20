@@ -532,6 +532,7 @@ def spellBody (cardName : String) (e : Effect) : String :=
 
 /-- Lines a spell effect contributes, in printed order. -/
 def effectLines (cardName : String) (e : Effect) : List String :=
+  if !e.events.isEmpty then [] else
   let fallback :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   match e.resolution with

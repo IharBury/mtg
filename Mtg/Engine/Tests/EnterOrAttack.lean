@@ -40,9 +40,9 @@ carry `EnterOrAttackLeftover`. The printed sentence stays the Oracle line. -/
   .createTokens .squirrel11green (.fixed 1) false
 
 #guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords) ==
-  TriggeredAbility.enterOrAttackSentence .copyKeywords
+  Effect.enterOrAttackCopyKeywords.phrase
 #guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) ==
-  TriggeredAbility.enterOrAttackSentence .createSquirrel
+  Effect.enterOrAttackCreateSquirrel.phrase
 
 /- A creature with no extra keywords gives Super-Adaptoid nothing.
 Double strike does not also grant first strike. Targeting itself is illegal.

@@ -56,7 +56,7 @@ def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameOb
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
   let isFra :=
     obj.abilityEffect.isSome ||
-      (t.effect.sharedTrigger.isNone && t.sagaChapterNumber?.isNone &&
+      (t.effect.sharedTrigger.isNone && t.effect.events.isEmpty && t.sagaChapterNumber?.isNone &&
         match t.effect.resolution with
         | .sequence rs => rs.any Resolution.isFra
         | r => r.isFra || !t.opts.printed.isEmpty)

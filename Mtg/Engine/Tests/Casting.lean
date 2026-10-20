@@ -82,33 +82,33 @@ def casting (e : Effect) : TriggeredAbility :=
   .tap .target
 
 #guard toString (casting Effect.castingVillainToken) ==
-  TriggeredAbility.castingSentence .villainToken
+  Effect.castingVillainToken.phrase
 #guard toString (casting Effect.castingMerfolkFromBlue) ==
-  TriggeredAbility.castingSentence .merfolkFromBlue
+  Effect.castingMerfolkFromBlue.phrase
 #guard toString (casting Effect.castingMayPayHasteUnblockable) ==
-  TriggeredAbility.castingSentence .mayPayHasteUnblockable
+  Effect.castingMayPayHasteUnblockable.phrase
 #guard toString (casting Effect.castingPlusOneEachOther) ==
-  TriggeredAbility.castingSentence .plusOneEachOther
+  Effect.castingPlusOneEachOther.phrase
 #guard toString (casting Effect.castingExileFlicker) ==
-  TriggeredAbility.castingSentence .exileFlicker
+  Effect.castingExileFlicker.phrase
 #guard toString (casting Effect.castingVisionModes) ==
-  TriggeredAbility.castingSentence .visionModes
+  Effect.castingVisionModes.phrase
 #guard toString (casting Effect.castingDamageEqualMv) ==
-  TriggeredAbility.castingSentence .damageEqualMv
+  Effect.castingDamageEqualMv.phrase
 #guard toString (casting Effect.castingDrawPowerEqualHand) ==
-  TriggeredAbility.castingSentence .drawPowerEqualHand
+  Effect.castingDrawPowerEqualHand.phrase
 #guard toString (casting Effect.castingPlusOneThis) ==
-  TriggeredAbility.castingSentence .plusOneThis
+  Effect.castingPlusOneThis.phrase
 #guard toString (casting Effect.castingPlusOneScry) ==
-  TriggeredAbility.castingSentence .plusOneScry
+  Effect.castingPlusOneScry.phrase
 #guard toString (casting Effect.castingIronFistTap) ==
-  TriggeredAbility.castingSentence .ironFistTap
+  Effect.castingIronFistTap.phrase
 #guard toString (casting Effect.castingTargetsGainFlying) ==
-  TriggeredAbility.castingSentence .targetsGainFlying
+  Effect.castingTargetsGainFlying.phrase
 #guard toString (casting Effect.castingCopyIfArtifactOrLand) ==
-  TriggeredAbility.castingSentence .copyIfArtifactOrLand
+  Effect.castingCopyIfArtifactOrLand.phrase
 #guard toString (casting Effect.castingTapCreatureOrLand) ==
-  TriggeredAbility.castingSentence .tapCreatureOrLand
+  Effect.castingTapCreatureOrLand.phrase
 
 /- A Villain spell creates one 2/1 Villain token with menace. -/
 def villainBoard : Game :=

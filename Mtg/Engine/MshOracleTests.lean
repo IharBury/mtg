@@ -2481,7 +2481,7 @@ def mightyThorBlinkOk : Bool :=
   let land := namedPermanent g "Mountain"
   let gTok := g.setObject { bears with printed := { bears.printed with isToken := true } }
   let tok := namedPermanent gTok "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.kind
+  let kind := Effect.thisAttackBlinkNontoken.targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some thor.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent stone.id) &&
@@ -2521,7 +2521,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.mapObjectStatus bears (fun s => { s with untilEotKeywords := kw })
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind
+  let kind := Effect.enterOrAttackCopyKeywords.targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some adaptoid.id)
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
@@ -2687,7 +2687,7 @@ def swordsmanAttachTargetsOk : Bool :=
   let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
   let bow := namedPermanent g "Hawkeye's Bow"
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.kind
+  let kind := Effect.watchVillainAttachEquipment.targeting.kind
   let equip := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 0) (some sw.id)
   let creatures := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 1) (some sw.id)
   kind == .upToOneEquipmentThenCreatureYouControl &&
@@ -2783,7 +2783,7 @@ def shieldTapsDefendingPlayerOk : Bool :=
   let shield := namedPermanent g "Captain America's Shield"
   let giant := namedPermanent g "Hill Giant"
   let ogre := namedPermanent g "Gray Ogre"
-  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.kind
+  let kind := Effect.watchEquippedAttacksTap.targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some shield.id)
   kind == .defendingPlayerCreature &&
     legal.contains (Target.permanent ogre.id) &&
@@ -2961,7 +2961,7 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let g := g.setObject { giant with printed := { giant.printed with isToken := true } }
   let giant := namedPermanent g "Hill Giant"
-  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.kind
+  let kind := Effect.castingExileFlicker.targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some wiccan.id)
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent wiccan.id) &&
@@ -2988,7 +2988,7 @@ def quakeTapsCreatureOrLandOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let feast := namedPermanent g "Heroic Feast"
-  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.kind
+  let kind := Effect.castingTapCreatureOrLand.targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some quake.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent land.id) &&

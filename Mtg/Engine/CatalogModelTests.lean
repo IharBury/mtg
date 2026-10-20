@@ -1542,7 +1542,7 @@ copy nothing. -/
   let g := addPermanent (addPermanent afterDraw absorbingMan me me) forest me me
   let g := addPermanent g grizzlyBears me me
   let legal := g.legalTargetsForKind me
-    (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.kind (some (idOf g "Absorbing Man"))
+    Effect.stepCopyAbsorbingMan.targeting.kind (some (idOf g "Absorbing Man"))
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let g := g.applyTriggeredAbility me (.onStep Effect.stepCopyAbsorbingMan)
@@ -1593,7 +1593,7 @@ line is Human Mercenary Villain. -/
   let g := g.setObject { stone with status := { stone.status with harnessed := true } }
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForKind me
-    (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
+    Effect.stepHarnessedFlicker.targeting.kind
     (some (idOf g "The Mind Stone"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let landOk := legal.contains (Target.permanent (idOf g "Forest"))

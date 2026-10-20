@@ -19,10 +19,13 @@ namespace Mtg.Engine
 and triggered abilities. Targeting, printed wording, and resolution live
 here so Game has one apply path. -/
 structure Effect where
+  events : Array TriggerEvent := #[]
   targeting : EffectTargeting := .of .none
   allowsZeroTargets : Bool := false
   maxTargets : Nat := 0
   dividedDamage : Option (Nat × Nat) := none
+  onceEachTurn : Bool := false
+  optionalOnceEachTurn : Bool := false
   spellCastKind : SpellCastKind := .extraLand
   abilityCastKind : AbilityCastKind := .other
   preferAsDefaultMode : Bool := false

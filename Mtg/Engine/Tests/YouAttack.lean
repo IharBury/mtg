@@ -52,11 +52,11 @@ do not carry `YouAttackLeftover`. The printed sentence stays the Oracle line. -/
   .revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)
 
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness) ==
-  TriggeredAbility.youAttackingSentence .pay2LifeToughness
+  Effect.youAttackingPay2LifeToughness.phrase
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) ==
-  TriggeredAbility.youAttackingSentence .exileTopHeroPump
+  Effect.youAttackingExileTopHeroPump.phrase
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast) ==
-  TriggeredAbility.youAttackingSentence .lookSixCast
+  Effect.youAttackingLookSixCast.phrase
 
 /- The Kingpin may pay 2 life. Declining and being unable to pay leave
 power and combat damage alone. Paying does not change power; a 1/5 assigns

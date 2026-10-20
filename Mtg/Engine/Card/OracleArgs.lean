@@ -382,12 +382,6 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .sequence rs => return .sequence (← rs.mapM takeSpell)
   | r => return r
 
-def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
-  match e with
-  | .destroy k => return .destroy (← takeWholeKind k)
-  | .dealDamageUpToOne n => return .dealDamageUpToOne (← takeNat n)
-  | e => return e
-
 def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
   match w with
   | .subtypeYouControlEnters s => return .subtypeYouControlEnters (← takeStr s)
@@ -468,7 +462,6 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
     | .subtype s => return .plusOneEachYouControl (.subtype (← takeStr s))
   | .onEnchanted a => return .onEnchanted (← takeAction a)
   | .attachThen a => return .attachThen (← takeAction a)
-  | .enter e => return .enter (← takeEnter e)
   | e => return e
 
 def takeResolution (r : Resolution) : ArgM Resolution := do
@@ -516,14 +509,27 @@ def takeEffect (e : Effect) : ArgM Effect := do
   match e.sharedTrigger with
   | some te =>
     let te ← takeTrigger te
+    let t := te.timing
     return { e with
+      events := t.events
+      targeting := t.targeting
+      allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
+      dividedDamage := t.dividedDamage
+      onceEachTurn := t.onceEachTurn
+      optionalOnceEachTurn := t.optionalOnceEachTurn
       sharedTrigger := some te
-      resolution := te.timing.resolution }
+      resolution := t.resolution }
   | none =>
   match e.resolution with
   | .onPermanent .destroy =>
     let kind ← takeWholeKind e.targeting.kind
     return { e with targeting := { e.targeting with kind } }
+  | .destroy .target =>
+    if e.events.isEmpty then takeEffectRest e
+    else
+      let kind ← takeWholeKind e.targeting.kind
+      return { e with targeting := { e.targeting with kind } }
   | .onPermanent (.plusOne n) =>
     match e.targeting.kind with
     | .creatureYouControl | .creatureYouControlAnySubtype _ =>
@@ -1564,9 +1570,13 @@ def finishEffect (old new : Effect) : Effect :=
   | some te =>
     let t := te.timing
     { new with
+      events := t.events
       targeting := t.targeting
       allowsZeroTargets := t.allowsZeroTargets
+      maxTargets := t.maxTargets
       dividedDamage := t.dividedDamage
+      onceEachTurn := t.onceEachTurn
+      optionalOnceEachTurn := t.optionalOnceEachTurn
       resolution := t.resolution
       phrase := "" }
   | none =>

@@ -18,29 +18,19 @@ namespace TriggeredAbility
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .triggered w e opts =>
-    match e.sharedTrigger with
-    | some te =>
-      let t := te.timing
-      { t with
-        events :=
-          match w with
-          | .fromEffect => t.events
-          | _ => w.events
-        onceEachTurn := t.onceEachTurn || opts.onceEachTurn
-        condition := opts.condition
-        subtype := opts.subtype
-        targeting := if opts.untargeted then {} else e.targeting
-        allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
-    | none =>
-      { events := w.events
-        targeting := if opts.untargeted then {} else e.targeting
-        allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets
-        maxTargets := e.maxTargets
-        dividedDamage := e.dividedDamage
-        resolution := e.resolution
-        onceEachTurn := opts.onceEachTurn
-        condition := opts.condition
-        subtype := opts.subtype }
+    { events :=
+        match w with
+        | .fromEffect => e.events
+        | _ => w.events
+      targeting := if opts.untargeted then {} else e.targeting
+      allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets
+      maxTargets := e.maxTargets
+      dividedDamage := e.dividedDamage
+      resolution := e.resolution
+      onceEachTurn := e.onceEachTurn || opts.onceEachTurn
+      optionalOnceEachTurn := e.optionalOnceEachTurn
+      condition := opts.condition
+      subtype := opts.subtype }
 
 /-- Unified effect this trigger resolves. -/
 def effect (ab : TriggeredAbility) : Effect :=
@@ -1848,186 +1838,6 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
-/-- Printed sentence for a leftover dies trigger. Its resolution is a
-`TriggerResolution` that does not carry `DeathLeftover`. -/
-def deathSentence : DeathLeftover → String
-  | .hellcatReturn =>
-    "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
-  | .villainReturnAsHero =>
-    "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
-  | .attackingReturnHand =>
-    "Whenever an attacking creature you control dies, return that card to its owner's hand."
-  | .deathtouchOppSac =>
-    "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
-
-/-- Printed sentence for a leftover “enters or attacks” trigger.
-Its resolution is a `TriggerResolution` that does not carry
-`EnterOrAttackLeftover`. -/
-def enterOrAttackSentence : EnterOrAttackLeftover → String
-  | .copyKeywords =>
-    "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
-  | .createSquirrel =>
-    "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
-
-/-- Printed sentence for a leftover “whenever this attacks” trigger.
-Its resolution is a `TriggerResolution` that does not carry
-`ThisAttackLeftover`. -/
-def thisAttackSentence : ThisAttackLeftover → String
-  | .mayPayPlusOne =>
-    "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
-  | .payReturnAttacking =>
-    "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
-  | .ifArtifactEnteredDraw =>
-    "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
-  | .blinkNontoken =>
-    "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
-  | .equippedDrain =>
-    "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
-  | .drawIfPower4 =>
-    "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
-  | .attacksAlonePlus2Indestructible =>
-    "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
-
-/-- Printed sentence for a leftover “whenever you attack” trigger.
-Its resolution is a `TriggerResolution` that does not carry
-`YouAttackLeftover`. -/
-def youAttackingSentence : YouAttackLeftover → String
-  | .pay2LifeToughness =>
-    "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
-  | .exileTopHeroPump =>
-    "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
-  | .lookSixCast =>
-    s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
-
-/-- Printed sentence for a leftover draw, discard, life, or +1/+1-counter
-trigger. Its resolution is a `TriggerResolution` that does not carry
-`ResourceLeftover`. -/
-def resourceSentence : ResourceLeftover → String
-  | .discardExilePlay =>
-    "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
-  | .drawIfAnotherHeroDamage =>
-    "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
-  | .secondDrawBecome66 =>
-    "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
-  | .secondDrawPlusOneTarget =>
-    "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
-  | .secondDrawDrain =>
-    "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
-  | .gainLifePlusOnes =>
-    "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
-  | .plusOneCreateInsectOnce =>
-    "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
-  | .plusOneOnThisOnce =>
-    "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
-  | .plusOneOnHeroesCreateWall =>
-    "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
-
-/-- Printed sentence for a leftover “whenever you cast …” trigger.
-Its resolution is a `TriggerResolution` that does not carry `CastLeftover`. -/
-def castingSentence : CastLeftover → String
-  | .villainToken =>
-    "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
-  | .merfolkFromBlue =>
-    "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
-  | .mayPayHasteUnblockable =>
-    "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
-  | .plusOneEachOther =>
-    "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
-  | .exileFlicker =>
-    "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
-  | .visionModes =>
-    "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
-  | .damageEqualMv =>
-    "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
-  | .drawPowerEqualHand =>
-    "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
-  | .plusOneThis =>
-    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
-  | .plusOneScry =>
-    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
-  | .ironFistTap =>
-    "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
-  | .targetsGainFlying =>
-    "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
-  | .copyIfArtifactOrLand =>
-    "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
-  | .tapCreatureOrLand =>
-    "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
-
-/-- Printed sentence for a leftover watch trigger. Its resolution is a
-`TriggerResolution` that does not carry `WatchLeftover`. -/
-def watchSentence : WatchLeftover → String
-  | .combatDamageExileUntilNonland =>
-    "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
-  | .attacksAloneDrain =>
-    "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
-  | .attacksAloneFirstStrikeMenace =>
-    "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
-  | .firstTapUntap =>
-    "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
-  | .sheHulkRedirectOnce =>
-    "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
-  | .speedballTargeted =>
-    "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
-  | .anyPlayerSecondDraw =>
-    "Whenever a player draws their second card each turn, you draw a card."
-  | .youTargetDrawOnce =>
-    "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
-  | .villainOrArtifactDamage =>
-    "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
-  | .villainConniveOnce =>
-    "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
-  | .villainPlusOneDamageOnce =>
-    "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
-  | .villainAttachEquipment =>
-    "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
-  | .villainPlusOneLifelink =>
-    "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
-  | .hulklingCompare =>
-    "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
-  | .justiceBounce =>
-    "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
-  | .nontokenHeroModal =>
-    "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
-  | .ultronCopy =>
-    "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
-  | .enchantedAttachEquipment =>
-    "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
-  | .equippedAttacksAloneUntapScry =>
-    "Whenever equipped creature attacks alone, untap it and scry 1."
-  | .equippedAttacksTap =>
-    "Whenever equipped creature attacks, tap target creature defending player controls."
-  | .equippedTappedDamage =>
-    "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
-  | .heroesDamagePlusTwo =>
-    "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
-  | .merfolkAttackDraw =>
-    "Whenever one or more Merfolk you control attack a player, draw a card."
-  | .tokensEnterMayDraw =>
-    "Whenever one or more tokens you control enter, you may draw a card."
-  | .hawkeyeModes =>
-    "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
-  | .redHulk =>
-    "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
-  | .hulk =>
-    "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
-
-/-- Printed sentence for a leftover step trigger. Its resolution is a
-`TriggerResolution` that does not carry `StepLeftover`. -/
-def stepSentence : StepLeftover → String
-  | .enchantedControllerDraws =>
-    "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
-  | .drawToTen =>
-    "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
-  | .copyAbsorbingMan =>
-    "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
-  | .hydeChoose =>
-    "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
-  | .copyTaskmaster =>
-    "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
-  | .harnessedFlicker =>
-    "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
-
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
@@ -2146,18 +1956,9 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .enter, some (.opponentDiscards n .target), _ =>
     let cards := if n == 2 then "two cards" else cardPhrase n
     s!"When this enchantment enters, target opponent discards {cards}."
-    | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
-    s!"When this permanent enters, it deals {n} damage to up to one target creature."
-    | _, some (.step e), _ => stepSentence e
-    | _, some (.death e), _ => deathSentence e
-    | _, some (.thisAttack e), _ => thisAttackSentence e
-    | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
-    | _, some (.watch e), _ => watchSentence e
-    | _, some (.youAttacking e), _ => youAttackingSentence e
-    | _, some (.casting e), _ => castingSentence e
-    | _, some (.resource e), _ => resourceSentence e
 
     | _, _, _ =>
+    if !e.phrase.isEmpty then e.phrase else
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then
       "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."

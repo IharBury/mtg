@@ -55,17 +55,17 @@ def onBoard (g : Game) (name : String) : Bool :=
   .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)
 
 #guard toString (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  TriggeredAbility.stepSentence .enchantedControllerDraws
+  Effect.stepEnchantedControllerDraws.phrase
 #guard toString (TriggeredAbility.onStep Effect.stepDrawToTen) ==
-  TriggeredAbility.stepSentence .drawToTen
+  Effect.stepDrawToTen.phrase
 #guard toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan) ==
-  TriggeredAbility.stepSentence .copyAbsorbingMan
+  Effect.stepCopyAbsorbingMan.phrase
 #guard toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster) ==
-  TriggeredAbility.stepSentence .copyTaskmaster
+  Effect.stepCopyTaskmaster.phrase
 #guard toString (TriggeredAbility.onStep Effect.stepHydeChoose) ==
-  TriggeredAbility.stepSentence .hydeChoose
+  Effect.stepHydeChoose.phrase
 #guard toString (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
-  TriggeredAbility.stepSentence .harnessedFlicker
+  Effect.stepHarnessedFlicker.phrase
 
 /- The enchanted creature's controller draws. The Aura's controller does not.
 Nothing enchanted draws nothing. -/

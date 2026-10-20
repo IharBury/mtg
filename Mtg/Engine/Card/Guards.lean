@@ -191,7 +191,8 @@ namespace CardDef
     .putCounters (.ofKind .plusOnePlusOne) .source,
     .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
     .«if» .enrageGrantsCombat .additionalCombatPhase]
-#guard Effect.watchHulk.sharedTrigger == some (.watch .hulk)
+#guard Effect.watchHulk.sharedTrigger == none &&
+  Effect.watchHulk.events == #[.sourceDealtDamage]
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution == .scry (.fixed 2)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
 #guard (Effect.pump 3 3).phrase == "target creature gets +3/+3 until end of turn"
@@ -1654,10 +1655,10 @@ end CardDef
   .sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))]
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
-#guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
+#guard Effect.enterCreateSturdyShieldAttach.resolution ==
   .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
-#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
+#guard Effect.enterTapLoseAbilitiesWhileSource.resolution ==
   .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."

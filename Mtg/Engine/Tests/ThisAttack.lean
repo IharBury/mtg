@@ -53,19 +53,19 @@ def hand (g : Game) : Nat :=
   .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
 
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
-  TriggeredAbility.thisAttackSentence .mayPayPlusOne
+  Effect.thisAttackMayPayPlusOne.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
-  TriggeredAbility.thisAttackSentence .payReturnAttacking
+  Effect.thisAttackPayReturnAttacking.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
-  TriggeredAbility.thisAttackSentence .ifArtifactEnteredDraw
+  Effect.thisAttackIfArtifactEnteredDraw.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==
-  TriggeredAbility.thisAttackSentence .blinkNontoken
+  Effect.thisAttackBlinkNontoken.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain) ==
-  TriggeredAbility.thisAttackSentence .equippedDrain
+  Effect.thisAttackEquippedDrain.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
-  TriggeredAbility.thisAttackSentence .drawIfPower4
+  Effect.thisAttackDrawIfPower4.phrase
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
-  TriggeredAbility.thisAttackSentence .attacksAlonePlus2Indestructible
+  Effect.thisAttackAttacksAlonePlus2Indestructible.phrase
 
 /- Ant-Man may pay {1}. Declining queues nothing. Paying queues the
 +1/+1 counter. -/

@@ -270,7 +270,7 @@ enchanted by that source, is left alone. -/
   .cant (.beBlocked .enchanted)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .cantBeBlocked ==
   .cant (.beBlocked (.target .whileSource))
-#guard (SharedTrigger.timing (.enter .tapOppCantUntapWhileControl)).resolution ==
+#guard Effect.enterTapOppCantUntapWhileControl.resolution ==
   tapThenFrozen
 #guard TriggeredAbility.resolution spider == tapThenFrozen
 

@@ -275,7 +275,7 @@ source remains lose what the selector names. -/
   .lose .indestructible .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
   .lose .indestructible (.target .whileSource)
-#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
+#guard Effect.enterTapLoseAbilitiesWhileSource.resolution ==
   targetLose
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
   targetLose

@@ -50,13 +50,13 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
   .sacrifice .chosenNontokenCreature
 
 #guard toString (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
-  TriggeredAbility.deathSentence .hellcatReturn
+  Effect.deathHellcatReturn.phrase
 #guard toString (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  TriggeredAbility.deathSentence .villainReturnAsHero
+  Effect.deathVillainReturnAsHero.phrase
 #guard toString (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  TriggeredAbility.deathSentence .attackingReturnHand
+  Effect.deathAttackingReturnHand.phrase
 #guard toString (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  TriggeredAbility.deathSentence .deathtouchOppSac
+  Effect.deathDeathtouchOppSac.phrase
 
 /- Hellcat returns with a +1/+1 counter, haste, and no abilities.
 A Hellcat still on the battlefield is reported and stays there. -/

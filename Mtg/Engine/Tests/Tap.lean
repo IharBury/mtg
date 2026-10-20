@@ -280,7 +280,7 @@ source to still be there. -/
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw == humansDraw
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters == enchantedRemove
-#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution == targetLose
+#guard Effect.enterTapLoseAbilitiesWhileSource.resolution == targetLose
 #guard (SharedTrigger.timing .tapHumansDraw).resolution == humansDraw
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution == enchantedRemove
 

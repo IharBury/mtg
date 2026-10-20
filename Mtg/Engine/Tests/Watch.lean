@@ -97,11 +97,11 @@ def onWatch (e : Effect) : TriggeredAbility :=
     .«if» .enrageGrantsCombat .additionalCombatPhase]
 
 #guard toString (onWatch Effect.watchJusticeBounce) ==
-  TriggeredAbility.watchSentence .justiceBounce
+  Effect.watchJusticeBounce.phrase
 #guard toString (onWatch Effect.watchHulk) ==
-  TriggeredAbility.watchSentence .hulk
+  Effect.watchHulk.phrase
 #guard toString (onWatch Effect.watchHawkeyeModes) ==
-  TriggeredAbility.watchSentence .hawkeyeModes
+  Effect.watchHawkeyeModes.phrase
 #guard Effect.watchHulk.resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
