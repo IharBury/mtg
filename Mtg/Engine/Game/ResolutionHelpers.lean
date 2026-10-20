@@ -145,26 +145,29 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
     s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
-def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
-  | .pump pw tw => g.pumpPermanent o pw tw
-  | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
-  | .destroy => g.destroyPermanent o
-  | .plusOne n => g.addPlusOnePlusOneTo o n
-  | .dealDamage n => g.dealDamageToPermanent o n
-  | .loseIndestructible =>
+def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction) : Game :=
+  let r : Resolution := action
+  match r with
+  | .pump (.fixed pw) (.fixed tw) _ => g.pumpPermanent o pw tw
+  | .sequence [.pump (.fixed pw) (.fixed tw) _, .grant (.keywords _) _] =>
+    g.pumpAndGrantTrample o pw tw
+  | .destroy _ _ => g.destroyPermanent o
+  | .putCounters (.ofKind .plusOnePlusOne n) _ => g.addPlusOnePlusOneTo o n
+  | .dealDamage (.fixed n) _ _ => g.dealDamageToPermanent o n.toNat
+  | .lose .indestructible _ =>
     let g := g.mapObjectStatus o (fun s => { s with untilEotLosesIndestructible := true })
     g.logMsg s!"{o.name} loses indestructible until end of turn"
-  | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
-  | .grantKeywords k =>
+  | .cant (.beBlocked _) => g.grantCantBeBlockedThisTurn o
+  | .grant (.keywords k) _ =>
     g.grantUntilEotLogged o k
-  | .indestructibleCounter => g.addIndestructibleCounter o
-  | .doubleStrikeCounter =>
+  | .putCounters (.ofKind .indestructible _) _ => g.addIndestructibleCounter o
+  | .putCounters (.ofKind .doubleStrike _) _ =>
     let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
       { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + 1 } })
     g.logMsg s!"{o.name} gets a double strike counter"
-  | .burdenCounter => g.addBurdenCounter o
-  | .tap => g.becomeTapped o
-  | .untap =>
+  | .putCounters (.ofKind .burden _) _ => g.addBurdenCounter o
+  | .tap _ true => g.becomeTapped o
+  | .untap _ =>
     if g.hostCantBecomeUntapped o then
       g.logMsg s!"{o.name} can't become untapped"
     else if !o.status.tapped then
@@ -175,35 +178,37 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     else
       let g := g.mapObjectStatus o (fun s => { s with tapped := false })
       g.logMsg s!"{o.name} untaps"
-  | .becomeArtifactIndestructible =>
+  | .sequence [.becomeArtifact _, .grant (.keywords _) _] =>
     let g := g.mapObjectStatus o (fun s =>
       { s with
         additionalArtifactUntilEot := true
         untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.indestructible })
     g.logMsg
       s!"{o.name} becomes an artifact and gains indestructible until end of turn"
-  | .becomePrepared => g.becomePrepared o
-  | .tapAndStun =>
+  | .becomePrepared _ true => g.becomePrepared o
+  | .sequence [.tap _ true, .putCounters (.ofKind .stun _) _] =>
     -- Ruling 764: an already tapped creature still gets the stun counter.
     let g := if o.status.tapped then g else g.becomeTapped o
     let n := g.countersYouPut (g.object! o.id) 1
     let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })
     g.logMsg s!"A stun counter is put on {o.name}"
-  | .setBasePT pw tw =>
+  | .setBasePT (.fixed pw) (.fixed tw) _ =>
     let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
-  | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
-  | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
-  | .exile => (g.move o.id .exile none).1
-  | .doublePowerAndToughness =>
+  | .putOnLibrary .top _ => g.putOnOwnerLibrary o true
+  | .putOnLibrary .bottom _ => g.putOnOwnerLibrary o false
+  | .exile _ .forLater _ => (g.move o.id .exile none).1
+  | .pump .double .double _ =>
     g.pumpPermanent o (g.power o) (g.toughness o)
+  | _ => g
 
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  match action with
-  | .dealDamage n =>
-    g.applyDamageToKindTarget controller kind targets n sourceId missing
+  let r : Resolution := action
+  match r with
+  | .dealDamage (.fixed n) _ _ =>
+    g.applyDamageToKindTarget controller kind targets n.toNat sourceId missing
   | _ =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
       g.applyPermanentAction o action) sourceId missing

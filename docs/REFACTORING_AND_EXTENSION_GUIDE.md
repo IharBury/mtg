@@ -43,9 +43,10 @@ The sections below document the remaining duplication left over from earlier per
 - **Files**:
   - `Mtg/Engine/Card/SpellResolution.lean`
   - `Mtg/Engine/Card/Effect.lean`, `Mtg/Engine/Card/OracleArgs.lean`
-  - `Mtg/Engine/Game/EffectResolution.lean`, `Mtg/Engine/Game/TriggeredAbilities.lean`
+  - `Mtg/Engine/Game/EffectResolution.lean`, `Mtg/Engine/Game/TriggeredAbilities.lean`, `Mtg/Engine/Game/ResolutionHelpers.lean`
 - **Completed**:
   - Eliminated `Resolution.onPermanent` from `inductive Resolution`, defined `Resolution.onPermanent` and `Resolution.onSource` as compositional builders via `Resolution.ofAffected` (with `Resolution.onPermanent?` and `Resolution.onSource?` views), deleted `OracleArgs.takeAction`, and simplified `TriggerResolution.ofSpell` to the identity function.
+  - Eliminated `inductive PermanentAction` (`Mtg/Engine/Card/PermanentAction.lean`, 21 constructors) and `Mtg/Engine/Card/AbilityResolution.lean`: defined `def PermanentAction : Type := Resolution` with all 21 `PermanentAction.*` builders and `PermanentAction.toNotation` directly over `Resolution`, simplified `Resolution.ofAffected` to retarget `Resolution` steps directly, and updated `Game.applyPermanentAction` and `Game.applyOnPermanent` (`ResolutionHelpers.lean`) to match `Resolution` directly.
 
 ---
 

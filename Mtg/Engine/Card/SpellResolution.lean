@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.Counter
-import Mtg.Engine.Card.PermanentAction
+import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Targeting
+import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Mana
 import Mtg.Engine.TypeLine
@@ -41,6 +42,16 @@ inductive SpellCastKind where
   | draw
   /-- Counter a spell. -/
   | counter
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- How the demonstration agent classifies an activated-ability mode. -/
+inductive AbilityCastKind where
+  /-- Damage to a creature. -/
+  | creatureDamage
+  /-- Destroy a colorless nonland permanent. -/
+  | destroyColorless
+  /-- Any other mode. -/
+  | other
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Which milled cards `SpellResolution.millThenPut` puts into hand. -/
@@ -3491,32 +3502,177 @@ def fraPhrase? (r : Resolution) (noun : String) : Option String :=
   | .pump .minusGraveyardCards (.fixed 0) .target => some (s!"{capitalizeAscii noun} gets -X/-0 until end of turn, where X is the number of cards in your graveyard")
   | r => if r.isFra then some "" else none
 
+end Resolution
+
+/-- What a spell, activated ability, or trigger does to a permanent (CR 608.2b).
+Defined as a type alias for `Resolution` (targeting `.target` by default). -/
+def PermanentAction : Type := Resolution
+deriving Repr, Inhabited, BEq
+
+namespace PermanentAction
+
+/-- Until-end-of-turn +P/+T. -/
+def pump (power toughness : Int) : PermanentAction :=
+  Resolution.pump (.fixed power) (.fixed toughness) .target
+
+/-- Until-end-of-turn +P/+T and trample. -/
+def pumpAndTrample (power toughness : Int) : PermanentAction :=
+  Resolution.sequence [.pump (.fixed power) (.fixed toughness) .target, .grant (.keywords Keyword.trample) .target]
+
+/-- Destroy the permanent (CR 701.7). -/
+def destroy : PermanentAction :=
+  Resolution.destroy .target
+
+/-- Put `n` +1/+1 counters on the permanent (CR 122.1). -/
+def plusOne (n : Nat) : PermanentAction :=
+  Resolution.putCounters (.ofKind .plusOnePlusOne n) .permanent
+
+/-- Deal `amount` damage. -/
+def dealDamage (amount : Nat) : PermanentAction :=
+  Resolution.dealDamage (.fixed amount) .target
+
+/-- The permanent loses indestructible until end of turn. -/
+def loseIndestructible : PermanentAction :=
+  Resolution.lose .indestructible .target
+
+/-- The permanent can't be blocked this turn. -/
+def cantBeBlocked : PermanentAction :=
+  Resolution.cant (.beBlocked .target)
+
+/-- Grant these keywords until end of turn. -/
+def grantKeywords (k : Keywords) : PermanentAction :=
+  Resolution.grant (.keywords k) .target
+
+/-- Put an indestructible counter on the permanent. -/
+def indestructibleCounter : PermanentAction :=
+  Resolution.putCounters (.ofKind .indestructible) .permanent
+
+/-- Put a double strike counter on the permanent. -/
+def doubleStrikeCounter : PermanentAction :=
+  Resolution.putCounters (.ofKind .doubleStrike) .permanent
+
+/-- Put a burden counter on the permanent. -/
+def burdenCounter : PermanentAction :=
+  Resolution.putCounters (.ofKind .burden) .permanent
+
+/-- Tap the permanent. -/
+def tap : PermanentAction :=
+  Resolution.tap .target
+
+/-- Untap the permanent. -/
+def untap : PermanentAction :=
+  Resolution.untap .target
+
+/-- Until end of turn, this becomes an artifact in addition to its other
+types and gains indestructible. -/
+def becomeArtifactIndestructible : PermanentAction :=
+  Resolution.sequence [.becomeArtifact .target, .grant (.keywords Keyword.indestructible) .target]
+
+/-- The permanent becomes prepared (Reality Fracture). -/
+def becomePrepared : PermanentAction :=
+  Resolution.becomePrepared .target
+
+/-- Until-end-of-turn layer-7b base power and toughness (CR 613.4b). -/
+def setBasePT (power toughness : Int) : PermanentAction :=
+  Resolution.setBasePT (.fixed power) (.fixed toughness) .target
+
+/-- Tap the permanent and put a stun counter on it (CR 122.1d). -/
+def tapAndStun : PermanentAction :=
+  Resolution.sequence [.tap .target, .putCounters (.ofKind .stun) .permanent]
+
+/-- The owner puts this permanent on top of their library. -/
+def putOnTopOfLibrary : PermanentAction :=
+  Resolution.putOnLibrary .top .target
+
+/-- The owner puts this permanent on the bottom of their library. -/
+def putOnBottomOfLibrary : PermanentAction :=
+  Resolution.putOnLibrary .bottom .target
+
+/-- Exile the permanent. -/
+def exile : PermanentAction :=
+  Resolution.exile .target .forLater
+
+/-- Until end of turn, add this permanent's power and toughness to itself,
+which doubles them. -/
+def doublePowerAndToughness : PermanentAction :=
+  Resolution.pump .double .double .target
+
+/-- Oracle-style text for this action on `noun` (e.g. `target creature`).
+`sentence` capitalizes the first letter for activated-ability lines. -/
+def toNotation (action : PermanentAction) (noun : String) (sentence := false) : String :=
+  let damage (n : Nat) : String := s!"deals {n} damage to {noun}"
+  let r : Resolution := action
+  let raw :=
+    match r with
+    | .pump (.fixed p) (.fixed t) _ =>
+      s!"{noun} gets {signedStat p}/{signedStat t} until end of turn"
+    | .sequence [.pump (.fixed p) (.fixed t) _, .grant (.keywords k) _] =>
+      if k == Keyword.trample then
+        s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
+      else ""
+    | .destroy _ .none => s!"destroy {noun}"
+    | .putCounters (.ofKind .plusOnePlusOne n) _ => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+    | .dealDamage (.fixed n) _ .none => damage n.toNat
+    | .lose .indestructible _ =>
+      s!"{noun} loses indestructible until end of turn"
+    | .cant (.beBlocked _) => s!"{noun} can't be blocked this turn"
+    | .grant (.keywords k) _ =>
+      s!"{noun} gains {k.joinedAnd} until end of turn"
+    | .putCounters (.ofKind .indestructible 1) _ =>
+      s!"put an indestructible counter on {noun}"
+    | .putCounters (.ofKind .doubleStrike 1) _ =>
+      s!"put a double strike counter on {noun}"
+    | .putCounters (.ofKind .burden 1) _ =>
+      s!"put a burden counter on {noun}"
+    | .tap _ true => s!"tap {noun}"
+    | .untap _ => s!"untap {noun}"
+    | .sequence [.becomeArtifact _, .grant (.keywords k) _] =>
+      if k == Keyword.indestructible then
+        s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+      else ""
+    | .becomePrepared _ true => s!"{noun} becomes prepared"
+    | .setBasePT (.fixed p) (.fixed t) _ =>
+      s!"{noun} has base power and toughness {p}/{t} until end of turn"
+    | .sequence [.tap _ true, .putCounters (.ofKind .stun 1) _] =>
+      s!"tap {noun} and put a stun counter on it"
+    | .putOnLibrary .top _ =>
+      s!"{noun}'s owner puts it on top of their library"
+    | .putOnLibrary .bottom _ =>
+      s!"{noun}'s owner puts it on the bottom of their library"
+    | .exile _ .forLater .none => s!"exile {noun}"
+    | .pump .double .double _ =>
+      s!"double {noun}'s power and toughness until end of turn"
+    | _ => ""
+  if sentence then capitalizeAscii raw else raw
+
+end PermanentAction
+
+namespace Resolution
+
 /-- What `action` does to `who`. `target` is the announced permanent. -/
-def ofAffected (who : ObjectSelector) : PermanentAction → Resolution
-  | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
-  | .pump p t => .pump (.fixed p) (.fixed t) who
-  | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) who, .grant (.keywords Keyword.trample) who]
-  | .destroy => .destroy who
-  | .dealDamage n => .dealDamage (.fixed n) who
-  | .grantKeywords k => .grant (.keywords k) who
-  | .tap => .tap (tapWho who)
-  | .untap => .untap who
-  | .loseIndestructible => .lose .indestructible who
-  | .cantBeBlocked => .cant (.beBlocked who)
-  | .indestructibleCounter => .putCounters (.ofKind .indestructible) (counterWho who)
-  | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
-  | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
-  | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact who, .grant (.keywords Keyword.indestructible) who]
-  | .becomePrepared => .becomePrepared who
-  | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) who
-  | .tapAndStun =>
-    .sequence [.tap (tapWho who), .putCounters (.ofKind .stun) (counterWho who)]
-  | .putOnTopOfLibrary => .putOnLibrary .top who
-  | .putOnBottomOfLibrary => .putOnLibrary .bottom who
-  | .exile => .exile who .forLater
-  | .doublePowerAndToughness => .pump .double .double who
+def ofAffected (who : ObjectSelector) (action : PermanentAction) : Resolution :=
+  let r : Resolution := action
+  match r with
+  | .putCounters what _ => .putCounters what (counterWho who)
+  | .pump p t _ => .pump p t who
+  | .sequence [.pump p t _, .grant what _] =>
+    .sequence [.pump p t who, .grant what who]
+  | .destroy _ note => .destroy who note
+  | .dealDamage n _ note => .dealDamage n who note
+  | .lose what _ => .lose what who
+  | .cant (.beBlocked _) => .cant (.beBlocked who)
+  | .sequence [.becomeArtifact _, .grant what _] =>
+    .sequence [.becomeArtifact who, .grant what who]
+  | .becomePrepared _ prep => .becomePrepared who prep
+  | .setBasePT p t _ => .setBasePT p t who
+  | .grant what _ => .grant what who
+  | .tap _ true => .tap (tapWho who) true
+  | .untap _ => .untap who
+  | .sequence [.tap _ true, .putCounters what _] =>
+    .sequence [.tap (tapWho who), .putCounters what (counterWho who)]
+  | .putOnLibrary place _ => .putOnLibrary place who
+  | .exile _ how note => .exile who how note
+  | r => r
 where
   counterWho : ObjectSelector → ObjectSelector
     | .any | .target .any => .permanent

@@ -1,4 +1,3 @@
-import Mtg.Engine.Card.AbilityResolution
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.StaticAbility
 

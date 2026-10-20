@@ -3,9 +3,7 @@ import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
-import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
-import Mtg.Engine.Card.AbilityResolution
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
