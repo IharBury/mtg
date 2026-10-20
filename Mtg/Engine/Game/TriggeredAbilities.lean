@@ -473,33 +473,22 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         (g.battlefield.any (fun o =>
           o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
     (g, holds)
-  | (.atLeast (.count .landsYouControl) (.fixed n)) =>
-    let n := n.toNat
-    let lands := ((g.permanentsOf controller).filter (·.printed.isLand)).size
-    if lands < n then
-      let g :=
-        if n == 6 then
-          g.logMsg "You control fewer than six lands. The ability doesn't resolve (ruling 889)"
-        else g
-      (g, false)
+  | (.atLeast (.count .landsYouControl) (.fixed 6)) =>
+    if ((g.permanentsOf controller).filter (·.printed.isLand)).size < 6 then
+      (g.logMsg "You control fewer than six lands. The ability doesn't resolve (ruling 889)", false)
     else (g, true)
   | (.atLeast (.count .planeswalkersYouControl) (.fixed 1)) =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
       (g.logMsg "You control a planeswalker. The ability does nothing", true)
     else (g, false)
-  | (.atLeast (.count .forestsExceptCause) (.fixed n)) =>
+  | (.atLeast (.count .forestsExceptCause) (.fixed 5)) =>
     -- Rulings 818 / 819: count Forests other than the one that caused the
     -- trigger, whether or not that one is still on the battlefield.
     let cause : Option ObjectId := lastKnownPower.map (fun k => ⟨k.toNat⟩)
     let others := ((g.permanentsOf controller).filter (fun o =>
       g.hasSubtype o "Forest" && some o.id != cause)).size
-    let n := n.toNat
-    if others < n then
-      let g :=
-        if n == 5 then
-          g.logMsg "You control fewer than five other Forests. The ability doesn't resolve"
-        else g
-      (g, false)
+    if others < 5 then
+      (g.logMsg "You control fewer than five other Forests. The ability doesn't resolve", false)
     else (g, true)
   | .returnedPermanent =>
     let returned := g.returnedPermanentThisWay
@@ -559,8 +548,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if hostOk then (g, true)
       else
         (g.logMsg s!"{(g.player controller).name} creates two tapped Spirit tokens", false)
-  | .scriedThisTurn => (g, (g.player controller).scriedThisTurn)
-  | .surveilledThisTurn => (g, (g.player controller).surveilledThisTurn)
+  | .scriedThisTurn | .surveilledThisTurn => (g, g.boardConditionHolds controller cond)
   | .revealedManaValueAtMostLands =>
     match g.revealedIdsThisWay[0]?.bind g.findObject? with
     | some o => (g, o.printed.manaValue ≤ g.landsYouControl controller)
@@ -607,18 +595,12 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
     let (g, counted) :=
       match what with
-      | .creature | .target .creature =>
+      | .creature | .target .creature | .planeswalker | .target .planeswalker =>
+        let isPw := match what with | .planeswalker | .target .planeswalker => true | _ => false
         let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
         let n :=
           match o? with
-          | some o => if o.isCreature then 1 else 0
-          | none => 0
-        (g, some n)
-      | .planeswalker | .target .planeswalker =>
-        let (g, o?) := g.legalTriggerPermanent? controller ab sourceId targets
-        let n :=
-          match o? with
-          | some o => if o.printed.isPlaneswalker then 1 else 0
+          | some o => if (if isPw then o.printed.isPlaneswalker else o.isCreature) then 1 else 0
           | none => 0
         (g, some n)
       | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
@@ -648,18 +630,6 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some src =>
           if src.isOnBattlefield then (g, some src.status.quest)
           else (g.logMsg s!"{src.name} is no longer on the battlefield", none)
-      | .intersection [.equipped, .legendaryCreaturesYouControl] =>
-        match sourceId.bind g.findObject? with
-        | none => (g.logMsg "The Equipment is no longer in play", some 0)
-        | some eq =>
-          let n :=
-            match eq.attachedTo.bind g.findObject? with
-            | some host =>
-              if host.isOnBattlefield && host.isLegendary && host.controller == some controller then
-                1
-              else 0
-            | none => 0
-          (g, some n)
       | .harnessedSource =>
         match sourceId.bind g.findObject? with
         | none => (g, some 0)
@@ -680,14 +650,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .subtype subtype =>
     let holds :=
       match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some o => g.hasSubtype o subtype
-        | none => false
-      | some (Target.card id) =>
-        match g.findObject? id with
-        | some o => g.hasSubtype o subtype
-        | none => false
+      | some (Target.permanent id) | some (Target.card id) =>
+        (g.findObject? id).any (g.hasSubtype · subtype)
       | _ => false
     (g, holds)
   | .mvAtMost n =>
@@ -962,18 +926,14 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
           for b in blockers do
             g := g.dealDamageFrom o.name (g.object! b.id) n (source := some o)
           return g
-  | .permanent, .lastKnownPower, .excess =>
-    let amt := lastKnownPower.getD 0
-    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let remain := g.toughness o - o.status.damage
-      let raw := amt - remain
-      let excess : Nat := if raw > 0 then raw.toNat else 0
-      let g := { g with thisWay := { g.thisWay with excessDamageThisWay := excess } }
-      g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?))
-      "The target is no longer legal"
-  | .permanent, .lastKnownPower, _ =>
-    let amt := (lastKnownPower.getD 0).toNat
+  | .permanent, .lastKnownPower, note =>
+    let amt := if note == .excess then lastKnownPower.getD 0 else Int.ofNat (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
+      let g :=
+        if note == .excess then
+          let raw := amt - (g.toughness o - o.status.damage)
+          { g with thisWay := { g.thisWay with excessDamageThisWay := if raw > 0 then raw.toNat else 0 } }
+        else g
       g.dealDamageFrom sourceName o amt (source := sourceId.bind g.findObject?)
   | .player .eachOpponent, .fixed n, .none =>
     let n := n.toNat
@@ -1021,19 +981,17 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
             | none => false
           if marked then { g with thisWay := { g.thisWay with permanentDealtDamageThisWay := some oid } } else g
       | _ => g.logMsg "The target is no longer legal")
-  | .player (.target .opponent), .greatestArtifactMv, _ =>
-    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
-    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid x)
   | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
     let n := n.toNat
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
     g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
-  | .player (.target .opponent), .fixed n, _ =>
-    let n := n.toNat
+  | .player (.target .opponent), .greatestArtifactMv, _
+  | .player (.target .opponent), .fixed _, _ =>
+    let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
+    let x := (g.triggerCount ctx amount).getD 0
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid n)
+      g.dealDamageToPlayer pid x)
   | .target, .fixed n, .none =>
     let n := n.toNat
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
@@ -1049,26 +1007,16 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
+      let fromTargets : Array (Sum PlayerId GameObject) :=
+        targets.filterMap fun
+          | Target.player pid => some (.inl pid)
+          | Target.permanent id =>
+            (g.findObject? id).bind fun o => if o.isOnBattlefield then some (.inr o) else none
+          | _ => none
       let recipients : Array (Sum PlayerId GameObject) :=
         match g.permanentsNamed ctx who with
-        | some objs =>
-          if objs.isEmpty then
-            targets.filterMap fun
-              | Target.player pid => some (.inl pid)
-              | Target.permanent id =>
-                match g.findObject? id with
-                | some o => if o.isOnBattlefield then some (.inr o) else none
-                | none => none
-              | _ => none
-          else objs.map .inr
-        | none =>
-          targets.filterMap fun
-            | Target.player pid => some (.inl pid)
-            | Target.permanent id =>
-              match g.findObject? id with
-              | some o => if o.isOnBattlefield then some (.inr o) else none
-              | none => none
-            | _ => none
+        | some objs => if objs.isEmpty then fromTargets else objs.map .inr
+        | none => fromTargets
       if recipients.isEmpty || n == 0 then g
       else
         let base := n / recipients.size
@@ -1296,13 +1244,13 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .ofKind .doubleStrike n, .permanent false
   | .ofKind .burden n, .permanent false
   | .ofKind .stun n, .permanent false
-  | .ofKind .loyalty n, .permanent _ =>
+  | .ofKind .loyalty n, .permanent _
+  | .ofKind _ n, .source | .ofKind _ n, .enchanted
+  | .ofKind _ n, .whileSource | .ofKind _ n, .target .whileSource =>
+    let affectedWho := if who == .permanent false || who == .permanent true then .target else who
     match what with
-    | .ofKind kind _ => g.applyAffectedCounters controller ab sourceId targets kind n .target
+    | .ofKind kind _ => g.applyAffectedCounters controller ab sourceId targets kind n affectedWho
     | _ => g
-  | .ofKind kind n, .source | .ofKind kind n, .enchanted
-  | .ofKind kind n, .whileSource | .ofKind kind n, .target .whileSource =>
-    g.applyAffectedCounters controller ab sourceId targets kind n who
   | .ofKind .plusOnePlusOne n, .sourceIfPresent =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -1434,27 +1382,10 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
-  | _, .you, .lastKnownPower, _ =>
-    if kind == .birdSoldier then
-      let n := lastKnownPower.getD 0
-      g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
-        s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
-    else
-      let n := (lastKnownPower.getD 0).toNat
-      g.createTreasureTokens controller n
-  | _, .you, .perSubtype subtype, _ =>
-    g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
-  | _, .you, .fixed n, _ =>
-    g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | _, .controller .target, _, _ =>
-    -- Destroy may already have moved the permanent. The controller who
-    -- creates the token is the one it had on the battlefield.
-    let n := counted.getD 0
-    match (g.collectPlayers ctx (.controller .target)).bind (·[0]?) with
-    | some pid =>
-      if kind == .treasure && !tapped then g.createTreasureTokens pid n
-      else g.createKindTokens pid kind n (tapped := tapped)
-    | none => g
+  | .birdSoldier, .you, .lastKnownPower, _ =>
+    let n := lastKnownPower.getD 0
+    g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
+      s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
   | _, _who, .chosenCreatureType, _ =>
     let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc) #[]
@@ -1466,11 +1397,11 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
   | kind, who, _, note =>
     let n := counted.getD 0
     let pids := recipients kind who
-    if n == 0 || pids.isEmpty then g
+    if pids.isEmpty then g
     else
       let g : Game := pids.foldl (fun (g : Game) (pid : PlayerId) =>
         g.createKindTokens pid kind n (tapped := tapped)) g
-      let last := g.recentTokenIds.back?
+      let last := if n == 0 then none else g.recentTokenIds.back?
       match note, last with
       | .remember, some id => { g with thisWay := { g.thisWay with createdTokenThisWay := some id } }
       | .invasion, some id =>
@@ -1728,9 +1659,9 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.beginSacDamagers controller ((g.livingOpponents controller).map (·.id))
   | .chosenNontokenCreature, .none =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | .source, .noted | .source, .none =>
-    sacrificeSource .isSacrificed (note == .noted)
-  | .sacrificedSource how, .noted | .sacrificedSource how, .none =>
+  | .source, .noted | .source, .none
+  | .sacrificedSource _, .noted | .sacrificedSource _, .none =>
+    let how := match what with | .sacrificedSource h => h | _ => .isSacrificed
     sacrificeSource how (note == .noted)
   | .sacrificedSource how, .forReflexive =>
     let stillThere :=
@@ -2478,119 +2409,6 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
         g.afterPermanentEnters (g.object! newId)) g
 
-/-- Resolve `TriggerResolution.grant`. Each printed combination keeps
-the behavior of the constructor it replaced. -/
-def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.TriggerGrantWhat)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
-  match what, who with
-  | .bearType, .target =>
-    match targets[0]? with
-    | some (Target.permanent oid) =>
-      match g.findObject? oid with
-      | some o =>
-        if g.hasSubtype o "Bear" then g
-        else
-          let g := g.setObject { o with status :=
-            { o.status with additionalSubtypes := o.status.additionalSubtypes.push "Bear" } }
-          g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
-      | none => g
-    | _ => g
-  | .playNotedUntilNextTurn, .target =>
-    match g.playExiledThisWay with
-    | none => g
-    | some newId =>
-      let g := { g with thisWay := { g.thisWay with playExiledThisWay := none } }
-      match g.findObject? newId with
-      | some o =>
-        let name := o.name
-        let g := g.setObject { o with
-          playPermission := some { player := controller, turnEndsRemaining := 2 } }
-        g.logMsg
-          s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
-      | none => g
-  | .protectionEverything, .youIfCast =>
-    if !(sourceId.bind g.findObject?).any (·.wasCast) then
-      g.logMsg "It wasn't cast. The ability does nothing."
-    else
-      g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
-        |>.logMsg s!"{(g.player controller).name} gains protection from everything"
-  | .keywords k, .attackingAlone =>
-    match g.attackingAlone? controller with
-    | none => g.logMsg "No creature is attacking alone"
-    | some o => g.grantUntilEotLogged o k
-  | .keywords k, .spellTargets =>
-    g.grantKeywordsToSpellCreatureTargets k
-  | .keywords k, who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.grantUntilEotLogged o k
-  | .hexproofWhileSource, .target =>
-    g.grantHexproofWhileSource controller sourceId targets ab.targetKind
-  | .preventDamageWhileSource, .target =>
-    g.preventDamageWhileSource controller sourceId targets ab.targetKind
-  | .assignCombatDamageEqualToughness, .creaturesYouControl =>
-    { g with assignCombatDamageEqualToughness := some controller }
-      |>.logMsg "Creatures you control assign combat damage equal to their toughness"
-  | .basePowerEqualHand, .source =>
-    g.grantHandSizePower sourceId
-  | .ironFistTap, .source =>
-    g.grantIronFistTap sourceId
-  | .protectionEverything, who =>
-    let ctx : TriggerRead := { controller, sourceId, targets }
-    match g.permanentsNamed ctx who with
-    | none => g
-    | some objs =>
-      let pids := objs.foldl (fun acc o =>
-        match o.controller with
-        | some pid => if acc.contains pid then acc else acc.push pid
-        | none => acc) #[]
-      pids.foldl (fun g pid =>
-        g.modifyPlayer pid (fun pl => { pl with protectionFromEverything := true })
-          |>.logMsg s!"{(g.player pid).name} gains protection from everything") g
-  | .assignCombatDamageEqualToughness, who =>
-    let ctx : TriggerRead := { controller, sourceId, targets }
-    match g.permanentsNamed ctx who with
-    | some objs =>
-      match objs.findSome? (·.controller) with
-      | some pid =>
-        { g with assignCombatDamageEqualToughness := some pid }.logMsg
-          "Creatures you control assign combat damage equal to their toughness"
-      | none => g
-    | none => g
-  | what, who =>
-    let ctx : TriggerRead := { controller, sourceId, targets }
-    let grantOne (g : Game) (o : GameObject) : Game :=
-      match what with
-      | .hexproofWhileSource =>
-        match sourceId with
-        | some sid =>
-          let g := g.mapObjectStatus o (fun s =>
-            { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
-          g.logMsg s!"{o.name} gains hexproof for as long as the source remains"
-        | none => g
-      | .preventDamageWhileSource =>
-        match sourceId with
-        | some sid =>
-          let g := g.mapObjectStatus o (fun s =>
-            { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
-          g.logMsg
-            s!"damage that would be dealt by {o.name} is prevented while the source remains"
-        | none => g
-      | .landfallCreateElf => g.gainLandfallCreateElf (some o.id)
-      | .basePowerEqualHand =>
-        g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
-          |>.logMsg
-            s!"{o.name}'s base power is the number of cards in your hand until end of turn"
-      | .ironFistTap =>
-        g.mapObjectStatus o (fun s =>
-          { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
-          |>.logMsg s!"{o.name} gains a tap ability until end of turn"
-      | _ => g
-    match g.permanentsNamed ctx who with
-    | some objs => objs.foldl grantOne g
-    | none => g
-
 /-- Resolve `TriggerResolution.fight`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
 def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -3209,92 +3027,6 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
       s!"a basic {subtype} card" (.exileLinked sourceId) (count := max))
   | _ => none
 
-/-- Resolve `TriggerResolution.lose`. Each printed combination keeps
-the behavior of the constructor it replaced. Any other permanent the
-selector names loses that ability. A card or a hand loses nothing. -/
-def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (what : TriggeredAbility.AbilitySelector)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
-  match what with
-  | .indestructible =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .loseIndestructible
-  | .allAbilities =>
-    let ctx : TriggerRead := { controller, sourceId, targets }
-    match g.permanentsNamed ctx who with
-    | none => g
-    | some objs =>
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then
-          objs.foldl (fun g o =>
-            let o := g.object! o.id
-            g.mapObjectStatus o (fun s =>
-              { s with losesAbilitiesGrantedBy := s.losesAbilitiesGrantedBy.push src.id })) g
-        else
-          objs.foldl (fun g o =>
-            g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
-      | none =>
-        objs.foldl (fun g o =>
-          g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
-
-/-- Resolve `TriggerResolution.cant`. Each printed selector keeps
-the behavior of the combination it replaced. Any other permanent the
-selector names can't do that. A card or a hand is unchanged. -/
-def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (action : TriggeredAbility.ActionSelector) : Game :=
-  match action with
-  | .beBlocked who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o .cantBeBlocked
-  | .beBlockedExceptByHaste who =>
-    g.withAffected controller ab sourceId targets who fun g o =>
-      g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
-        |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
-  | .untapWhileYouControl .target =>
-    g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      let o := g.object! o.id
-      let sid := sourceId.getD ⟨0⟩
-      g.mapObjectStatus o (fun s =>
-        { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
-      sourceId (some "The target is no longer legal")
-  | .untapWhileYouControl who =>
-    let ctx : TriggerRead := { controller, sourceId, targets }
-    match g.permanentsNamed ctx who with
-    | none => g
-    | some objs =>
-      objs.foldl (fun g o =>
-        if o.controlledBy controller then g
-        else
-          let sid := sourceId.getD ⟨0⟩
-          g.mapObjectStatus (g.object! o.id) (fun s =>
-            { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
-  | .block _ | .castSpellsThisTurn _ | .beCountered _
-    | .beBlockedByMostLifePlayer _ | .attackJaces _ => g
-
-/-- Resolve `TriggerResolution.becomeArtifact`. Each printed recipient keeps
-the behavior of the constructor it replaced. Any other permanent the
-selector names becomes an artifact until end of turn. A card or a hand
-does not. -/
-def applyBecomeArtifact (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
-  g.withAffected controller ab sourceId targets who fun g o =>
-    let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
-    g.logMsg s!"{o.name} becomes an artifact until end of turn"
-
-/-- Resolve `TriggerResolution.becomePrepared`. Each printed recipient keeps
-the behavior of the constructor it replaced. A creature that is already
-prepared, or has no prepare spell, does not. Any other permanent the
-selector names becomes prepared. A card or a hand does not. -/
-def applyBecomePrepared (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (who : TriggeredAbility.ObjectSelector) : Game :=
-  g.withAffected controller ab sourceId targets who fun g o =>
-    g.applyPermanentAction o .becomePrepared
-
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
 puts nothing. Any other permanent the selector names is put there.
@@ -3324,30 +3056,320 @@ where
       | .topAfterDraw _ _ => .putOnTopOfLibrary
     | .bottom | .bottomRevealCreature | .bottomAfterDrawTwo => .putOnBottomOfLibrary
 
-/-- Resolve `TriggerResolution.setBasePT`. `power` and `toughness` are read
-separately. Each printed combination keeps the behavior of the constructor
-it replaced. Any other combination sets nothing. -/
-def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower lastKnownToughness : Option Int)
-    (power toughness : TriggeredAbility.NumberSelector)
+/-- Resolve `TriggerResolution.grant` (including its `@[match_pattern] abbrev`
+specializations `.lose`, `.cant`, `.becomeArtifact`, `.becomePrepared`,
+`.setBasePT`, `.attach`, `.fight`, `.connive`, `.becomeCopy`, `.gainControl`,
+`.recruit`, `.cascade`, `.noteResolveThisTurn`, `.additionalCombatPhase`,
+`.winTheGame`, `.ringTempts`, `.spellsCostLess`, `.investigate`, and `.empowerJace`). -/
+def applyGrant (g : Game) (ctx : TriggerRead) (ab : TriggeredAbility)
+    (sourceName : String) (what : TriggeredAbility.TriggerGrantWhat)
     (who : TriggeredAbility.ObjectSelector) : Game :=
-  match power, toughness, who with
-  | .equalSourcePower, .equalSourceToughness, .target =>
+  let controller := ctx.controller
+  let sourceId := ctx.sourceId
+  let targets := ctx.targets
+  let lastKnownPower := ctx.lastKnownPower
+  let lastKnownToughness := ctx.lastKnownToughness
+  match what, who with
+  | .lose .indestructible, who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .loseIndestructible
+  | .lose .allAbilities, who =>
+    match g.permanentsNamed ctx who with
+    | none => g
+    | some objs =>
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then
+          objs.foldl (fun g o =>
+            let o := g.object! o.id
+            g.mapObjectStatus o (fun s =>
+              { s with losesAbilitiesGrantedBy := s.losesAbilitiesGrantedBy.push src.id })) g
+        else
+          objs.foldl (fun g o =>
+            g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
+      | none =>
+        objs.foldl (fun g o =>
+          g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
+  | .cant action, _ =>
+    match action with
+    | .beBlocked who =>
+      g.withAffected controller ab sourceId targets who fun g o =>
+        g.applyPermanentAction o .cantBeBlocked
+    | .beBlockedExceptByHaste who =>
+      g.withAffected controller ab sourceId targets who fun g o =>
+        g.mapObjectStatus o (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
+          |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+    | .untapWhileYouControl .target =>
+      g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
+        let o := g.object! o.id
+        let sid := sourceId.getD ⟨0⟩
+        g.mapObjectStatus o (fun s =>
+          { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
+        sourceId (some "The target is no longer legal")
+    | .untapWhileYouControl who =>
+      match g.permanentsNamed ctx who with
+      | none => g
+      | some objs =>
+        objs.foldl (fun g o =>
+          if o.controlledBy controller then g
+          else
+            let sid := sourceId.getD ⟨0⟩
+            g.mapObjectStatus (g.object! o.id) (fun s =>
+              { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
+    | .block _ | .castSpellsThisTurn _ | .beCountered _
+      | .beBlockedByMostLifePlayer _ | .attackJaces _ => g
+  | .artifact, who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
+      g.logMsg s!"{o.name} becomes an artifact until end of turn"
+  | .prepared _, who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.applyPermanentAction o .becomePrepared
+  | .basePT .equalSourcePower .equalSourceToughness, .target =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
       let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | power, toughness, who =>
-    let ctx : TriggerRead :=
-      { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
+  | .basePT power toughness, who =>
     match g.triggerInt ctx power, g.triggerInt ctx toughness with
     | some pw, some tw =>
       g.withAffected controller ab sourceId targets who fun g o =>
         g.applyPermanentAction o (.setBasePT pw tw)
     | _, _ => g
+  | .recruit _, .youIfCast =>
+    g.beginRecruit controller
+  | .attachTo host, what =>
+    g.applyAttach controller ab sourceId targets what host
+  | .control how, .target =>
+    match how with
+    | .untilEndOfTurn =>
+      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let g := g.giveControlUntilEot o controller
+        let g := g.applyPermanentAction (g.object! o.id) .untap
+        g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
+    | .whileSourceRemains =>
+      g.gainControlWhileSource controller sourceId targets
+    | .duringNextTurn =>
+      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
+        let g := g.setPlayerControl controller pid
+        { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
+        sourceId (some "The target is no longer legal")
+    | .oppArtifacts | .untilEotOrNextIfVillain | .exchangeTargets => g
+  | .cascade, .source =>
+    let maxMv := (sourceId.bind g.findObject?).map (·.printed.manaCost.manaValue) |>.getD 0
+    g.resolveCascade controller maxMv
+  | .noteResolveThisTurn limit, .source =>
+    let n := (g.player controller).belladonnaResolvesThisTurn + 1
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with belladonnaResolvesThisTurn := n })
+    let g := { g with thisWay := { g.thisWay with nthResolveThisWay := some n } }
+    if n > limit then
+      let name := (sourceId.bind g.findObject?).map (·.name) |>.getD sourceName
+      g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
+    else g
+  | .attacking, .createdToken =>
+    let dest := some g.defendingPlayer
+    let g :=
+      g.recentTokenIds.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          g.setObject { o with status := { o.status with
+            attacking := true, attackingWhom := dest } }
+        | none => g) g
+    g.logMsg
+      s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+  | .additionalCombatPhase, .youIfCast =>
+    { g with combat := { g.combat with additionalCombatPhases := g.additionalCombatPhases + 1 } }.logMsg
+      "Attacking creatures untap. After this phase, there is an additional combat phase"
+  | .fight how, who =>
+    g.applyFight controller sourceId targets who how
+  | .winTheGame, .youIfCast =>
+    -- Ruling 835: you win while the ability resolves, before the
+    -- state-based action for drawing from an empty library.
+    { g with result := some (.won controller) }.logMsg
+      s!"{(g.player controller).name} wins the game"
+  | .ringTempts, .youIfCast =>
+    g.temptWithTheRing controller
+  | .spellsCostLess which amount, .youIfCast =>
+    match g.triggerCount ctx amount with
+    | none => g
+    | some n => g.grantSpellsCostLessThisTurn controller which n
+  | .investigate, .player _ =>
+    let (g, _) := g.createToken controller clueToken
+    g.logMsg s!"{(g.player controller).name} investigates"
+  | .connive, who =>
+    match who with
+    | .source => g.applyConnive controller sourceId
+    | .target =>
+      match targets[0]? with
+      | some (Target.permanent id) => g.applyConnive controller (some id)
+      | _ => g.applyConnive controller sourceId
+    | .enteringVillain =>
+      match sourceId.bind g.findObject? with
+      | none =>
+        g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
+      | some src =>
+        if src.status.optionalOnceUsed then
+          g.logMsg
+            "The optional connive was already chosen this turn. This instance has no effect."
+        else
+          match g.villainConniveTarget? controller src.id targets lastKnownPower with
+          | none => g.logMsg "The Villain does not connive"
+          | some vid => g.beginMayHaveVillainConnive controller src.id vid
+    | who =>
+      match g.permanentsNamed ctx who with
+      | some objs => objs.foldl (fun g o => g.applyConnive controller (some o.id)) g
+      | none => g
+  | .empowerJace amount, .youIfCast =>
+    match g.triggerCount ctx amount with
+    | some n => g.empowerJace controller n
+    | none => g
+  | .copy of, .source =>
+    match of with
+    | .sourceTwoNonlegendaryTokens =>
+      match sourceId.bind g.findObject? with
+      | none => g
+      | some src =>
+        if src.printed.isToken then g
+        else
+          let face := { src.printed with
+            isToken := true
+            supertypes := src.printed.supertypes.filter (· != .legendary) }
+          let (g, _) := g.createToken controller face
+          let (g, _) := g.createToken controller face
+          g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
+    | .causingSpell =>
+      g.copyCastTriggerSpell controller
+    | .noted | .cause none | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
+      g.applyBecomeCopy controller sourceId targets of
+    | of =>
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if !src.isOnBattlefield then g
+        else
+          match g.permanentsNamed ctx of with
+          | some objs =>
+            match objs.find? (·.id != src.id) with
+            | some tgt => g.becomeCopyOf src tgt
+            | none => g
+          | none => g
+      | none => g
+  | .newTargets, .causingSpell =>
+    let targetingSource (e : StackEntry) : Bool :=
+      e.targets.any (fun t =>
+        match t, sourceId with
+        | Target.permanent id, some sid => id == sid
+        | _, _ => false)
+    let fromStack :=
+      g.stack.foldl (fun acc e =>
+        if targetingSource e then some e.objectId else acc) none
+    match g.resolvingCauseId.orElse (fun _ => fromStack) with
+    | none => g
+    | some spellId => g.offerSpellRetarget controller spellId 0
+  | .bearType, .target =>
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | some o =>
+        if g.hasSubtype o "Bear" then g
+        else
+          let g := g.setObject { o with status :=
+            { o.status with additionalSubtypes := o.status.additionalSubtypes.push "Bear" } }
+          g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
+      | none => g
+    | _ => g
+  | .playNotedUntilNextTurn, .target =>
+    match g.playExiledThisWay with
+    | none => g
+    | some newId =>
+      let g := { g with thisWay := { g.thisWay with playExiledThisWay := none } }
+      match g.findObject? newId with
+      | some o =>
+        let name := o.name
+        let g := g.setObject { o with
+          playPermission := some { player := controller, turnEndsRemaining := 2 } }
+        g.logMsg
+          s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
+      | none => g
+  | .protectionEverything, .youIfCast =>
+    if !(sourceId.bind g.findObject?).any (·.wasCast) then
+      g.logMsg "It wasn't cast. The ability does nothing."
+    else
+      g.modifyPlayer controller (fun pl => { pl with protectionFromEverything := true })
+        |>.logMsg s!"{(g.player controller).name} gains protection from everything"
+  | .keywords k, .attackingAlone =>
+    match g.attackingAlone? controller with
+    | none => g.logMsg "No creature is attacking alone"
+    | some o => g.grantUntilEotLogged o k
+  | .keywords k, .spellTargets =>
+    g.grantKeywordsToSpellCreatureTargets k
+  | .keywords k, who =>
+    g.withAffected controller ab sourceId targets who fun g o =>
+      g.grantUntilEotLogged o k
+  | .hexproofWhileSource, .target =>
+    g.grantHexproofWhileSource controller sourceId targets ab.targetKind
+  | .preventDamageWhileSource, .target =>
+    g.preventDamageWhileSource controller sourceId targets ab.targetKind
+  | .assignCombatDamageEqualToughness, .creaturesYouControl =>
+    { g with assignCombatDamageEqualToughness := some controller }
+      |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+  | .basePowerEqualHand, .source =>
+    g.grantHandSizePower sourceId
+  | .ironFistTap, .source =>
+    g.grantIronFistTap sourceId
+  | .protectionEverything, who =>
+    match g.permanentsNamed ctx who with
+    | none => g
+    | some objs =>
+      let pids := objs.foldl (fun acc o =>
+        match o.controller with
+        | some pid => if acc.contains pid then acc else acc.push pid
+        | none => acc) #[]
+      pids.foldl (fun g pid =>
+        g.modifyPlayer pid (fun pl => { pl with protectionFromEverything := true })
+          |>.logMsg s!"{(g.player pid).name} gains protection from everything") g
+  | .assignCombatDamageEqualToughness, who =>
+    match g.permanentsNamed ctx who with
+    | some objs =>
+      match objs.findSome? (·.controller) with
+      | some pid =>
+        { g with assignCombatDamageEqualToughness := some pid }.logMsg
+          "Creatures you control assign combat damage equal to their toughness"
+      | none => g
+    | none => g
+  | what, who =>
+    let grantOne (g : Game) (o : GameObject) : Game :=
+      match what with
+      | .hexproofWhileSource =>
+        match sourceId with
+        | some sid =>
+          let g := g.mapObjectStatus o (fun s =>
+            { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
+          g.logMsg s!"{o.name} gains hexproof for as long as the source remains"
+        | none => g
+      | .preventDamageWhileSource =>
+        match sourceId with
+        | some sid =>
+          let g := g.mapObjectStatus o (fun s =>
+            { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
+          g.logMsg
+            s!"damage that would be dealt by {o.name} is prevented while the source remains"
+        | none => g
+      | .landfallCreateElf => g.gainLandfallCreateElf (some o.id)
+      | .basePowerEqualHand =>
+        g.mapObjectStatus o (fun s => { s with cardsInHandPowerUntilEot := true })
+          |>.logMsg
+            s!"{o.name}'s base power is the number of cards in your hand until end of turn"
+      | .ironFistTap =>
+        g.mapObjectStatus o (fun s =>
+          { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
+          |>.logMsg s!"{o.name} gains a tap ability until end of turn"
+      | _ => g
+    match g.permanentsNamed ctx who with
+    | some objs => objs.foldl grantOne g
+    | none => g
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -3356,6 +3378,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     (sourceName : String := "This creature")
     (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
     (sequencedCardPower : Option Nat := none) : Game :=
+  let ctx : TriggerRead := {
+    controller, sourceId, targets, lastKnownPower, lastKnownToughness,
+    sequencedCardPower }
   if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else if resolutionOverride.isSome ||
@@ -3378,13 +3403,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .dealDamage amount who note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       amount who note
-  | .scry amount =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
+  | .scry amount none =>
     match g.triggerCount ctx amount with
     | some n => g.beginScry controller n
     | none => g
+  | .surveil (.fixed 0) .armReturnLifeGained =>
+    -- Ruling 750: the following surveil reads life gained as this ability resolves.
+    { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := true } }
+  | .surveil amount _ =>
+    match g.triggerCount ctx amount with
+    | none => g
+    | some n =>
+      let armed := g.armSurveilReturn
+      let life := (g.player controller).lifeGainedThisTurn
+      let g := { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := false } }
+      let g := g.beginSurveil controller n
+      if armed then
+        match g.pending with
+        | .surveil _ _ => { g with afterScrySurveil := { g.afterScrySurveil with surveilReturnMvAtMost := some life } }
+        | _ => g
+      else g
   | .draw amount who =>
     g.applyTriggerDraw controller sourceId amount who targets lastKnownPower
       lastKnownToughness sequencedCardPower
@@ -3398,17 +3436,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyDiscard controller sourceId targets what
   | .sacrifice what note =>
     g.applySacrifice controller ab sourceId targets what note
-  | .lose what who =>
-    g.applyLose controller ab sourceId targets what who
-  | .cant action =>
-    g.applyCant controller ab sourceId targets action
-  | .becomeArtifact who =>
-    g.applyBecomeArtifact controller ab sourceId targets who
-  | .becomePrepared who _ =>
-    g.applyBecomePrepared controller ab sourceId targets who
-  | .setBasePT power toughness who =>
-    g.applySetBasePT controller ab sourceId targets lastKnownPower lastKnownToughness
-      power toughness who
+  | .may (.sacrifice .another _) _ =>
+    g.applySacrifice controller ab sourceId targets .another .none
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
   | .sequence rs =>
@@ -3483,9 +3512,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             sourceName
             cardPower
             steps := combined } }
-  | .gainLife amount .you =>
+  | .gainLife amount .you false =>
     g.applyGainLife controller ab sourceId targets amount sequencedCardPower
       lastKnownPower
+  | .loseLife amount who =>
+    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
   | .may (.put (.creatureFromHand subtype maxMv) _ _) (.draw (.fixed _) _) =>
@@ -3494,29 +3525,22 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyPut controller ab sourceId targets what how note
   | .removeCounters what who =>
     g.applyRemoveCounters controller sourceId targets what who
-  | .tap who | .may (.tap who) _ =>
+  | .tap who true | .may (.tap who true) _ =>
     g.applyTap controller ab sourceId targets who
   | .untap who =>
     g.applyUntap controller ab sourceId targets who
   | .destroy what note =>
     g.applyDestroy controller ab sourceId targets lastKnownPower what note
-  | .recruit _ =>
-    g.beginRecruit controller
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
   | .createTokens kind amount tapped who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
       kind amount tapped who note (lastKnownToughness := lastKnownToughness)
-  | .attach what host =>
-    g.applyAttach controller ab sourceId targets what host
   | .addMana types amount _ =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower
       lastKnownToughness
   | .may (.setBasePT power toughness .source) (.sequence []) _ =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
     match g.triggerInt ctx power, g.triggerInt ctx toughness with
     | some p, some t =>
       match sourceId.bind g.findObject? with
@@ -3528,9 +3552,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => g
     | _, _ => g
   | .revealLibrary (.topNumber amount) (.returnToHand (.lookedTypes types) _) _ =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
     match g.triggerCount ctx amount with
     | none => g
     | some n =>
@@ -3546,42 +3567,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => false)
       g.beginFraChoice controller (.mayRevealToHand ids eligible false)
         s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
-  | .gainControl how =>
-    match how with
-    | .untilEndOfTurn =>
-      g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-        let g := g.giveControlUntilEot o controller
-        let g := g.applyPermanentAction (g.object! o.id) .untap
-        g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
-    | .whileSourceRemains =>
-      g.gainControlWhileSource controller sourceId targets
-    | .duringNextTurn =>
-      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
-        let g := g.setPlayerControl controller pid
-        { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
-        sourceId (some "The target is no longer legal")
-    | .oppArtifacts | .untilEotOrNextIfVillain | .exchangeTargets => g
-  | .cascade =>
-    let maxMv :=
-      match sourceId with
-      | some sid =>
-        match g.findObject? sid with
-        | some src => src.printed.manaCost.manaValue
-        | none => 0
-      | none => 0
-    g.resolveCascade controller maxMv
-  | .noteResolveThisTurn limit =>
-    let n := (g.player controller).belladonnaResolvesThisTurn + 1
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with belladonnaResolvesThisTurn := n })
-    let g := { g with thisWay := { g.thisWay with nthResolveThisWay := some n } }
-    if n > limit then
-      let name :=
-        match sourceId.bind g.findObject? with
-        | some o => o.name
-        | none => sourceName
-      g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
-    else g
   | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -3639,22 +3624,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               cardPower := sequencedCardPower
               alternatives := rs.toArray } }.logMsg
           (triggerOrLog (g.player controller).name rs)
-  | .may (.sacrifice .another _) _ =>
-    g.applySacrifice controller ab sourceId targets .another .none
-  | .grant .attacking .createdToken =>
-    let dest := some g.defendingPlayer
-    let g :=
-      g.recentTokenIds.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          g.setObject { o with status := { o.status with
-            attacking := true, attackingWhom := dest } }
-        | none => g) g
-    g.logMsg
-      s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-  | .additionalCombatPhase =>
-    { g with combat := { g.combat with additionalCombatPhases := g.additionalCombatPhases + 1 } }.logMsg
-      "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .returnToHand what note =>
     g.applyReturnToHand controller ab sourceId targets what note
   | .may (.discard .hand) _ =>
@@ -3664,10 +3633,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .mill amount who note =>
     g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
       amount who note
-  | .fight who how =>
-    g.applyFight controller sourceId targets who how
-  | .loseLife amount who =>
-    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .may (.draw _ .opponentHasYou) _ =>
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
@@ -3678,47 +3643,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let disc := if n == 2 then "two" else toString n
       g.beginFraChoice controller (.mayDrawThenDiscard spent n)
         s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
-  | .winTheGame =>
-    -- Ruling 835: you win while the ability resolves, before the
-    -- state-based action for drawing from an empty library.
-    { g with result := some (.won controller) }.logMsg
-      s!"{(g.player controller).name} wins the game"
-  | .ringTempts =>
-    g.temptWithTheRing controller
-  | .spellsCostLess which amount =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
-    match g.triggerCount ctx amount with
-    | none => g
-    | some n => g.grantSpellsCostLessThisTurn controller which n
-  | .investigate _ =>
-    let (g, _) := g.createToken controller clueToken
-    g.logMsg s!"{(g.player controller).name} investigates"
-  | .connive who =>
-    match who with
-    | .source => g.applyConnive controller sourceId
-    | .target =>
-      match targets[0]? with
-      | some (Target.permanent id) => g.applyConnive controller (some id)
-      | _ => g.applyConnive controller sourceId
-    | .enteringVillain =>
-      match sourceId.bind g.findObject? with
-      | none =>
-        g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
-      | some src =>
-        if src.status.optionalOnceUsed then
-          g.logMsg
-            "The optional connive was already chosen this turn. This instance has no effect."
-        else
-          match g.villainConniveTarget? controller src.id targets lastKnownPower with
-          | none => g.logMsg "The Villain does not connive"
-          | some vid => g.beginMayHaveVillainConnive controller src.id vid
-    | who =>
-      let ctx : TriggerRead := { controller, sourceId, targets, lastKnownPower }
-      match g.permanentsNamed ctx who with
-      | some objs => objs.foldl (fun g o => g.applyConnive controller (some o.id)) g
-      | none => g
   | .revealFromHand count thenDo =>
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none
@@ -3745,63 +3669,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})") g
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
-  | .surveil (.fixed 0) .armReturnLifeGained =>
-    -- Ruling 750: the following surveil reads life gained as this ability resolves.
-    { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := true } }
-  | .surveil amount _ =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
-    match g.triggerCount ctx amount with
-    | none => g
-    | some n =>
-      let armed := g.armSurveilReturn
-      let life := (g.player controller).lifeGainedThisTurn
-      let g := { g with afterScrySurveil := { g.afterScrySurveil with armSurveilReturn := false } }
-      let g := g.beginSurveil controller n
-      if armed then
-        match g.pending with
-        | .surveil _ _ => { g with afterScrySurveil := { g.afterScrySurveil with surveilReturnMvAtMost := some life } }
-        | _ => g
-      else g
-  | .empowerJace amount =>
-    let ctx : TriggerRead := {
-      controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-      sequencedCardPower }
-    match g.triggerCount ctx amount with
-    | some n => g.empowerJace controller n
-    | none => g
-  | .becomeCopy of =>
-    match of with
-    | .sourceTwoNonlegendaryTokens =>
-      match sourceId.bind g.findObject? with
-      | none => g
-      | some src =>
-        if src.printed.isToken then g
-        else
-          let face := { src.printed with
-            isToken := true
-            supertypes := src.printed.supertypes.filter (· != .legendary) }
-          let (g, _) := g.createToken controller face
-          let (g, _) := g.createToken controller face
-          g.logMsg s!"two nonlegendary tokens that are copies of {src.name} are created"
-    | .causingSpell =>
-      g.copyCastTriggerSpell controller
-    | .noted | .cause none | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
-      g.applyBecomeCopy controller sourceId targets of
-    | of =>
-      let ctx : TriggerRead := { controller, sourceId, targets }
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if !src.isOnBattlefield then g
-        else
-          match g.permanentsNamed ctx of with
-          | some objs =>
-            match objs.find? (·.id != src.id) with
-            | some tgt => g.becomeCopyOf src tgt
-            | none => g
-          | none => g
-      | none => g
   | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
     g.offerPay2LifeToughness controller
@@ -3826,9 +3693,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         { g with pending := .fraChoice controller (.sheHulkMayDamage amt t sourceId) }
           |>.logMsg "You may have The Sensational She-Hulk deal that much damage"
   | .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo =>
-    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName (some (.grant .newTargets .causingSpell))
-      sequencedCardPower
+    g.applyGrant ctx ab sourceName .newTargets .causingSpell
   | .may (.pay (.mana symbols)) (.queueReflexive followup) .ifYouDo =>
     -- Paying more than once records that count for the reflexive ability.
     match TriggeredAbility.TriggerResolution.queuedReflexive followup with
@@ -3946,9 +3811,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       -- Printed sacrifices above keep their choices and logs. Every other
       -- count offers that many permanents `what` names. A count that is not
       -- a positive number, or fewer permanents than that count, pays nothing.
-      let ctx : TriggerRead := {
-        controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-        sequencedCardPower }
       match g.triggerCount ctx n with
       | some k =>
         let ids := (g.sacrificeCostCandidates ctx what).map (·.id)
@@ -3970,9 +3832,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       -- Printed discards above keep their choices and logs. Every other
       -- count offers that many cards `what` names. A count that is not a
       -- positive number, or fewer cards than that count, pays nothing.
-      let ctx : TriggerRead := {
-        controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-        sequencedCardPower }
       match g.triggerCount ctx n with
       | some k =>
         let ids := (g.discardCostCandidates controller what).map (·.id)
@@ -4056,7 +3915,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.attackPumpPerPlains controller
     | .none => g.queueFollowupReflexive controller sourceId followup
   | .may action follow .ifYouDont =>
-    let ctx : TriggerSequenceRest := {
+    let restCtx : TriggerSequenceRest := {
       controller
       ability := ab
       sourceId
@@ -4072,7 +3931,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         triggerMayBranch := {
           onAccept := some action
           onDecline := some follow
-          context := some ctx } }.logMsg
+          context := some restCtx } }.logMsg
       s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
   | .putCounters what who =>
     g.applyPutCounters controller ab sourceId targets lastKnownPower what who
@@ -4108,20 +3967,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
     | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
       | .«if» _ | .unlessPays _ => g
-  | .grant .newTargets .causingSpell =>
-    let targetingSource (e : StackEntry) : Bool :=
-      e.targets.any (fun t =>
-        match t, sourceId with
-        | Target.permanent id, some sid => id == sid
-        | _, _ => false)
-    let fromStack :=
-      g.stack.foldl (fun acc e =>
-        if targetingSource e then some e.objectId else acc) none
-    match g.resolvingCauseId.orElse (fun _ => fromStack) with
-    | none => g
-    | some spellId => g.offerSpellRetarget controller spellId 0
   | .grant what who =>
-    g.applyGrant controller ab sourceId targets what who
+    g.applyGrant ctx ab sourceName what who
   | .revealLibrary how thenDo who =>
     match g.applyRevealLibrary controller sourceId targets how thenDo who with
     | some g => g
