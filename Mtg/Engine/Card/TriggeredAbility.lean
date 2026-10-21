@@ -948,7 +948,7 @@ private def ifAtLeastResolutionPhrase (left right : NumberSelector) (thenDo : Tr
     "if that is true"
 
 /-- Effect clause for `Resolution.«if» cond thenDo` in `resolutionPhrase`. -/
-private def ifResolutionPhrase (cond : ConditionSelector) (thenDo : TriggerResolution) (noun : String) : String :=
+private def ifResolutionPhrase (cond : @& ConditionSelector) (thenDo : @& TriggerResolution) (noun : @& String) : String :=
   match cond, thenDo with
   | .atLeast left right, _ =>
     ifAtLeastResolutionPhrase left right thenDo noun
@@ -991,44 +991,42 @@ private def ifResolutionPhrase (cond : ConditionSelector) (thenDo : TriggerResol
   | _, _ =>
     "if that is true"
 
-/-- Part 1 of `chooseModesResolutionPhrase`. -/
-private def chooseModesResolutionPhrasePart1 (t : TriggerTiming) (r : TriggerResolution) (noun : String) : Option String :=
-  match r with
-  | .«if» cond thenDo =>
-    some (ifResolutionPhrase cond thenDo noun)
-  | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
-      (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
-    some s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
-  | .or [.tap .target, .untap .target] =>
-    some <|
+/-- Effect clause for `Resolution.chooseModes` (including `.«if»`, `.ifElse`, `.or`) in `resolutionPhrase`. -/
+private def chooseModesResolutionPhrase (t : @& TriggerTiming) (r : @& TriggerResolution)
+    (modes : @& List TriggerResolution) (how : @& TriggerModeHow) (noun : @& String) : String :=
+  match modes, how with
+  | [thenDo], .«if» cond =>
+    ifResolutionPhrase cond thenDo noun
+  | [thenDo, elseDo], .ifElse cond =>
+    if cond == (.or [.scriedThisTurn, .surveilledThisTurn]) &&
+        thenDo == (.putCounters (.ofKind .plusOnePlusOne) .permanent) &&
+        elseDo == (.pump (.fixed 1) (.fixed 1) .target) then
+      s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
+    else if cond == (.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)) &&
+        thenDo == (.createTokens .villain21menace (.fixed 1) true) &&
+        elseDo == (.mill (.fixed 2)) then
+      "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
+    else if cond == (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)) &&
+        thenDo == (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) &&
+        elseDo == (.putCounters (.ofKind .plusOnePlusOne) .permanent) then
+      "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
+    else
+      "if that is true"
+  | _, .one =>
+    if modes == [.tap .target, .untap .target] then
       if t.targeting.kind == .nonland then
         "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
       else
         "choose one — tap target creature an opponent controls; untap target creature you control"
-  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] =>
-    some "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
-  | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
-    some "create a Food token or a Treasure token"
-  | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-      (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
-    some "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
-  | .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
-      (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
-      (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
-    some "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | _ => none
-
-/-- Effect clause for `Resolution.chooseModes` (including `.«if»`, `.ifElse`, `.or`) in `resolutionPhrase`. -/
-private def chooseModesResolutionPhrase (t : TriggerTiming) (r : TriggerResolution) (noun : String) : String :=
-  if let some s := chooseModesResolutionPhrasePart1 t r noun then s
-  else match r with
-  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
-    "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .ifElse _ _ _ =>
-    "if that is true"
-  | .or _ =>
-    "choose one"
-  | .chooseModes modes how =>
+    else if modes == [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] then
+      "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
+    else if modes == [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] then
+      "create a Food token or a Treasure token"
+    else if modes == [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] then
+      "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
+    else
+      "choose one"
+  | _, _ =>
     if modes == TriggerResolution.allianceModes && how == .oneUnusedThisTurn then
       "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
     else if modes == TriggerResolution.gollumModes && how == .oneUnused then
@@ -1042,10 +1040,9 @@ private def chooseModesResolutionPhrase (t : TriggerTiming) (r : TriggerResoluti
     else
       let s := SpellResolution.toPhrase r noun
       if s.isEmpty then "choose a mode" else s
-  | _ => ""
 
 /-- Part 1 of `grantResolutionPhrase`. -/
-private def grantResolutionPhrasePart1 (what : TriggerGrantWhat) (who : ObjectSelector) (noun : String) : Option String :=
+private def grantResolutionPhrasePart1 (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (noun : @& String) : Option String :=
   match what, who with
   | .basePT .equalSourcePower .equalSourceToughness, .target =>
     some "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
@@ -1115,7 +1112,7 @@ private def grantResolutionPhrasePart1 (what : TriggerGrantWhat) (who : ObjectSe
   | _, _ => none
 
 /-- Part 2 of `grantResolutionPhrase`. -/
-private def grantResolutionPhrasePart2 (what : TriggerGrantWhat) (who : ObjectSelector) (noun : String) : Option String :=
+private def grantResolutionPhrasePart2 (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (noun : @& String) : Option String :=
   match what, who with
   | .control .untilEndOfTurn, .target =>
     some s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
@@ -1172,7 +1169,7 @@ private def grantResolutionPhrasePart2 (what : TriggerGrantWhat) (who : ObjectSe
   | _, _ => none
 
 /-- Effect clause for `Resolution.grant` (and its `[match_pattern]` aliases) in `resolutionPhrase`. -/
-private def grantResolutionPhrase (what : TriggerGrantWhat) (who : ObjectSelector) (r : TriggerResolution) (noun : String) : String :=
+private def grantResolutionPhrase (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (r : @& TriggerResolution) (noun : @& String) : String :=
   if let some s := grantResolutionPhrasePart1 what who noun then s
   else if let some s := grantResolutionPhrasePart2 what who noun then s
   else match what, who with
@@ -1219,7 +1216,7 @@ private def grantResolutionPhrase (what : TriggerGrantWhat) (who : ObjectSelecto
     if s.isEmpty then "grant" else s
 
 /-- Part 1 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
-private def mayResolutionPhrasePart1 (action follow : TriggerResolution) : Option String :=
+private def mayResolutionPhrasePart1 (action follow : @& TriggerResolution) : Option String :=
   match action, follow with
   | .pay (.mana symbols), .sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)] =>
     some <|
@@ -1255,7 +1252,7 @@ private def mayResolutionPhrasePart1 (action follow : TriggerResolution) : Optio
   | _, _ => none
 
 /-- Part 2 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
-private def mayResolutionPhrasePart2 (action follow : TriggerResolution) : String :=
+private def mayResolutionPhrasePart2 (action follow : @& TriggerResolution) : String :=
   match action, follow with
   | .pay (.mana symbols), .draw (.fixed 1) =>
     match symbols.toList with
@@ -1295,7 +1292,7 @@ private def mayResolutionPhrasePart2 (action follow : TriggerResolution) : Strin
     "you may do it. If you do, do that"
 
 /-- Effect clause for `Resolution.may` in `resolutionPhrase`. -/
-private def mayResolutionPhrase (action follow : TriggerResolution) (when : TriggerMayWhen) : String :=
+private def mayResolutionPhrase (action follow : @& TriggerResolution) (when : @& TriggerMayWhen) : String :=
   match action, follow with
   | .setBasePT (.fixed p) (.fixed t) .source, .sequence [] =>
     s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
@@ -1330,7 +1327,7 @@ private def mayResolutionPhrase (action follow : TriggerResolution) (when : Trig
       else mayResolutionPhrasePart2 action follow
 
 /-- `resolutionPhrase` for `pumpOrDamage`: pump and dealDamage. -/
-private def resolutionPhrasePumpOrDamage (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhrasePumpOrDamage (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
   | .pump power toughness who =>
     some <|
@@ -1431,14 +1428,19 @@ private def resolutionPhrasePumpOrDamage (t : TriggerTiming) (noun : String) : O
   | _ => none
 
 /-- `resolutionPhrase` for `playerNumeric`: surveil, scry, draw, gainLife, mill, and loseLife. -/
-private def resolutionPhrasePlayerNumeric (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhrasePlayerNumeric (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
-  | .surveil (.fixed 0) .armReturnLifeGained =>
-    some "if you gained life this turn"
-  | .surveil (.fixed n) _ => some s!"surveil {n}"
-  | .surveil _ _ => some "surveil"
-  | .scry (.fixed n) => some s!"scry {n}"
-  | .scry _ => some "scry"
+  | .surveil amount note =>
+    some <|
+      match amount, note with
+      | .fixed 0, .armReturnLifeGained => "if you gained life this turn"
+      | .fixed n, _ => s!"surveil {n}"
+      | _, _ => "surveil"
+  | .scry amount =>
+    some <|
+      match amount with
+      | .fixed n => s!"scry {n}"
+      | _ => "scry"
   | .draw amount who =>
     some <|
       match who, amount with
@@ -1508,24 +1510,25 @@ private def resolutionPhrasePlayerNumeric (t : TriggerTiming) (noun : String) : 
   | _ => none
 
 /-- `resolutionPhrase` for `tapDiscardOrReturn`: putOnLibrary, discard, returnToHand, tap, and untap. -/
-private def resolutionPhraseTapDiscardOrReturn (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseTapDiscardOrReturn (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
-  | .putOnLibrary .shuffled .source =>
-    some "its owner shuffles it into their library"
-  | .putOnLibrary .bottom .cardFromHand =>
-    some "put a card from your hand on the bottom of your library"
-  | .putOnLibrary .top who =>
+  | .putOnLibrary place who =>
     some <|
-      match affectedNoun? who noun with
-      | some n => s!"{n}'s owner puts it on top of their library"
-      | none => "put on library"
-  | .putOnLibrary .bottom who =>
-    some <|
-      match affectedNoun? who noun with
-      | some n => s!"{n}'s owner puts it on the bottom of their library"
-      | none => "put on library"
-  | .putOnLibrary _ _ =>
-    some "put on library"
+      match place, who with
+      | .shuffled, .source =>
+        "its owner shuffles it into their library"
+      | .bottom, .cardFromHand =>
+        "put a card from your hand on the bottom of your library"
+      | .top, _ =>
+        match affectedNoun? who noun with
+        | some n => s!"{n}'s owner puts it on top of their library"
+        | none => "put on library"
+      | .bottom, _ =>
+        match affectedNoun? who noun with
+        | some n => s!"{n}'s owner puts it on the bottom of their library"
+        | none => "put on library"
+      | _, _ =>
+        "put on library"
   | .discard what =>
     some <|
       match what with
@@ -1565,17 +1568,20 @@ private def resolutionPhraseTapDiscardOrReturn (t : TriggerTiming) (noun : Strin
         "return that card to its owner's hand"
       | _, _ =>
         "return it to a hand"
-  | .tap .humans =>
-    some "tap any number of untapped Humans you control"
-  | .tap .enchanted | .tap .enchantedWhileSource => some "tap enchanted creature"
-  | .tap .source => some "tap this creature"
-  | .tap (.target .whileSource) => some "tap that creature"
-  | .tap (.target .ifPresent) =>
-    some "tap up to one target creature"
-  | .tap .target =>
-    some s!"tap {noun}"
-  | .tap _ =>
-    some "tap it"
+  | .tap who =>
+    some <|
+      match who with
+      | .humans =>
+        "tap any number of untapped Humans you control"
+      | .enchanted | .enchantedWhileSource => "tap enchanted creature"
+      | .source => "tap this creature"
+      | (.target .whileSource) => "tap that creature"
+      | (.target .ifPresent) =>
+        "tap up to one target creature"
+      | .target =>
+        s!"tap {noun}"
+      | _ =>
+        "tap it"
   | .untap who =>
     some <|
       match who with
@@ -1588,7 +1594,7 @@ private def resolutionPhraseTapDiscardOrReturn (t : TriggerTiming) (noun : Strin
   | _ => none
 
 /-- `resolutionPhrase` for `manaPayOrCast`: addMana, mayCast, and pay. -/
-private def resolutionPhraseManaPayOrCast (t : TriggerTiming) (_noun : String) : Option String :=
+private def resolutionPhraseManaPayOrCast (t : @& TriggerTiming) (_noun : @& String) : Option String :=
   match t.resolution with
   | .addMana types amount _ =>
     some <|
@@ -1621,7 +1627,7 @@ private def resolutionPhraseManaPayOrCast (t : TriggerTiming) (_noun : String) :
   | _ => none
 
 /-- `resolutionPhrase` for `putOrExile`: exile and put. -/
-private def resolutionPhrasePutOrExile (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhrasePutOrExile (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
   | .exile what how note =>
     some <|
@@ -1700,7 +1706,7 @@ private def resolutionPhrasePutOrExile (t : TriggerTiming) (noun : String) : Opt
   | _ => none
 
 /-- `resolutionPhrase` for `sacrificeOrDestroy`: sacrifice and destroy. -/
-private def resolutionPhraseSacrificeOrDestroy (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseSacrificeOrDestroy (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
   | .sacrifice what _ =>
     some <|
@@ -1721,81 +1727,91 @@ private def resolutionPhraseSacrificeOrDestroy (t : TriggerTiming) (noun : Strin
         "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
       | _ =>
         "sacrifice it"
-  | .destroy .oppArtifactsEnchantments .countDestroyed =>
-    some "destroy all artifacts and enchantments your opponents control"
-  | .destroy .permanentDealtDamage .none =>
-    some "destroy the permanent dealt damage this way"
-  | .destroy .target .forAmass | .destroy .target .none | .destroy .target .chosenToken =>
-    some (if noun.isEmpty then "destroy it" else s!"destroy {noun}")
-  | .destroy .source _ =>
-    some "destroy this creature"
-  | .destroy .enchanted _ =>
-    some "destroy enchanted creature"
-  | .destroy (.target .whileSource) _ =>
-    some "destroy that creature"
-  | .destroy _ _ =>
-    some "destroy it"
+  | .destroy what note =>
+    some <|
+      match what, note with
+      | .oppArtifactsEnchantments, .countDestroyed =>
+        "destroy all artifacts and enchantments your opponents control"
+      | .permanentDealtDamage, .none =>
+        "destroy the permanent dealt damage this way"
+      | .target, .forAmass | .target, .none | .target, .chosenToken =>
+        if noun.isEmpty then "destroy it" else s!"destroy {noun}"
+      | .source, _ =>
+        "destroy this creature"
+      | .enchanted, _ =>
+        "destroy enchanted creature"
+      | (.target .whileSource), _ =>
+        "destroy that creature"
+      | _, _ =>
+        "destroy it"
   | _ => none
 
 /-- `resolutionPhrase` for `createOrAmass`: amass and createTokens. -/
-private def resolutionPhraseCreateOrAmass (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseCreateOrAmass (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
-  | .amass .lastKnownPower subtype _ _ =>
-    some s!"amass {pluralizeName subtype} X, where X is this creature's power"
-  | .amass .notedExcess subtype _ _ =>
-    some s!"amass {pluralizeName subtype} X, where X is the excess damage"
-  | .amass .notedPower subtype _ (.controller .target) =>
-    some s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
-  | .amass (.fixed n) subtype true _ =>
-    some s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-  | .amass (.fixed n) subtype _ _ =>
-    some s!"amass {pluralizeName subtype} {n}"
-  | .amass _ _ _ _ =>
-    some "amass"
+  | .amass amount subtype attach who =>
+    some <|
+      match amount, attach, who with
+      | .lastKnownPower, _, _ =>
+        s!"amass {pluralizeName subtype} X, where X is this creature's power"
+      | .notedExcess, _, _ =>
+        s!"amass {pluralizeName subtype} X, where X is the excess damage"
+      | .notedPower, _, (.controller .target) =>
+        s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
+      | (.fixed n), true, _ =>
+        s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
+      | (.fixed n), _, _ =>
+        s!"amass {pluralizeName subtype} {n}"
+      | _, _, _ =>
+        "amass"
   | .createTokens kind amount tapped who note =>
     some <|
-      match kind, who, amount, note with
-      | .axe, _, _, .attachReflexive =>
-        "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
-      | .axe, _, _, _ =>
-        "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
-      | .zabu, _, _, _ =>
-        "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-      | .theVoid, _, _, _ =>
-        s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
-      | .redwing, _, _, _ =>
-        "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-      | .alien, _, _, _ =>
-        "create a 1/1 red Alien creature token with haste"
-      | .galactus, _, _, _ =>
-        "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
-      | .sturdyShield, _, _, _ =>
-        "create a colorless Equipment artifact token named Sturdy Shield"
-      | .merfolk, _, .blueManaSymbols, _ =>
-        "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
-      | _, .you, .oppArtifacts, _ =>
-        "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
-      | _, .you, .damagedPlayerArtifacts, _ =>
-        "you create a Treasure token for each artifact that player controls"
-      | _, .you, .lastKnownPower, _ =>
-        if kind == .birdSoldier then
-          "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+      if kind == .axe then
+        if note == .attachReflexive then
+          "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
         else
-          "create that many Treasure tokens"
-      | _, .you, .perSubtype subtype, _ =>
-        s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
-      | _, .you, .chosenCreatureType, _ =>
-        "choose a creature type. Create a Treasure token for each creature you control of that type"
-      | _, .controller .target, _, _ =>
-        "they create a Treasure token"
-      | _, .you, .fixed n, _ =>
-        TokenKind.createPhrase kind n.toNat (tapped := tapped)
-      | _, _, _, _ =>
-        "create a token"
+          "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+      else if kind == .zabu then
+        "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+      else if kind == .theVoid then
+        s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+      else if kind == .redwing then
+        "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
+      else if kind == .alien then
+        "create a 1/1 red Alien creature token with haste"
+      else if kind == .galactus then
+        "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
+      else if kind == .sturdyShield then
+        "create a colorless Equipment artifact token named Sturdy Shield"
+      else
+        match who, amount with
+        | _, .blueManaSymbols =>
+          if kind == .merfolk then
+            "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
+          else "create a token"
+        | .you, .oppArtifacts =>
+          "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
+        | .you, .damagedPlayerArtifacts =>
+          "you create a Treasure token for each artifact that player controls"
+        | .you, .lastKnownPower =>
+          if kind == .birdSoldier then
+            "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+          else
+            "create that many Treasure tokens"
+        | .you, .perSubtype subtype =>
+          s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
+        | .you, .chosenCreatureType =>
+          "choose a creature type. Create a Treasure token for each creature you control of that type"
+        | .controller .target, _ =>
+          "they create a Treasure token"
+        | .you, .fixed n =>
+          TokenKind.createPhrase kind n.toNat (tapped := tapped)
+        | _, _ =>
+          "create a token"
   | _ => none
 
-private def putCountersResolutionPhrase (r : TriggerResolution) (what : CounterSelector)
-    (who : ObjectSelector) (noun : String) : String :=
+private def putCountersResolutionPhrase (r : @& TriggerResolution) (what : @& CounterSelector)
+    (who : @& ObjectSelector) (noun : @& String) : String :=
   match what, who with
   | .ofKind .plusOnePlusOne _, .youControl .eachCreature =>
     "put a +1/+1 counter on each creature you control"
@@ -1853,7 +1869,7 @@ private def putCountersResolutionPhrase (r : TriggerResolution) (what : CounterS
     if s.isEmpty then "put counters" else s
 
 /-- `resolutionPhrase` for `putCounters`: removeCounters and putCounters. -/
-private def resolutionPhraseCounters (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseCounters (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
   | .removeCounters what who =>
     some <|
@@ -1868,8 +1884,8 @@ private def resolutionPhraseCounters (t : TriggerTiming) (noun : String) : Optio
     some (putCountersResolutionPhrase r what who noun)
   | _ => none
 
-private def revealLibraryResolutionPhrase (r : TriggerResolution) (how : TriggerLibraryHow)
-    (thenDo : TriggerResolution) (who : PlayerSelector) (noun : String) : String :=
+private def revealLibraryResolutionPhrase (r : @& TriggerResolution) (how : @& TriggerLibraryHow)
+    (thenDo : @& TriggerResolution) (who : @& PlayerSelector) (noun : @& String) : String :=
   match how, thenDo, who with
   | .topNumber (.fixed n), .returnToHand (.lookedTypes types) _, _ =>
     let joined :=
@@ -1902,27 +1918,33 @@ private def revealLibraryResolutionPhrase (r : TriggerResolution) (how : Trigger
     if s.isEmpty then "reveal cards from a library" else s
 
 /-- `resolutionPhrase` for `revealOrReflexive`: searchLibrary, queueReflexive, revealFromHand, and revealLibrary. -/
-private def resolutionPhraseRevealOrReflexive (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseRevealOrReflexive (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
-  | .searchLibrary (.put .forest .asPrinted .none) =>
-    some "search your library for a Forest card, put that card onto the battlefield, then shuffle"
-  | .searchLibrary (.returnToHand .basicLand .none) =>
-    some (searchLibraryToHandPhrase "a basic land card")
-  | .searchLibrary (.put .basicLandOnTop .asPrinted .none) =>
-    some "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-  | .searchLibrary (.put .dragon .asPrinted .none) =>
-    some "search your hand and/or library for a Dragon card and put it onto the battlefield"
   | .searchLibrary thenDo =>
-    let s := SpellResolution.toPhrase (.searchLibrary thenDo) noun
-    some (if s.isEmpty then "search your library" else s)
-  | .queueReflexive (.pump .perPlains .perPlains .target) =>
-    some "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
-  | .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying) =>
-    some "exile and copy a card"
-  | .queueReflexive (.dealDamage (.fixed n) .target .divided) =>
-    some s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .queueReflexive _ =>
-    some "when you do, that ability triggers"
+    some <|
+      match thenDo with
+      | .put .forest .asPrinted .none =>
+        "search your library for a Forest card, put that card onto the battlefield, then shuffle"
+      | .returnToHand .basicLand .none =>
+        searchLibraryToHandPhrase "a basic land card"
+      | .put .basicLandOnTop .asPrinted .none =>
+        "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+      | .put .dragon .asPrinted .none =>
+        "search your hand and/or library for a Dragon card and put it onto the battlefield"
+      | _ =>
+        let s := SpellResolution.toPhrase (.searchLibrary thenDo) noun
+        if s.isEmpty then "search your library" else s
+  | .queueReflexive followup =>
+    some <|
+      match followup with
+      | .pump .perPlains .perPlains .target =>
+        "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
+      | .mayCast .milledSpell .causingSpell .withoutPaying =>
+        "exile and copy a card"
+      | .dealDamage (.fixed n) .target .divided =>
+        s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+      | _ =>
+        "when you do, that ability triggers"
   | .revealFromHand count thenDo =>
     some <|
       match count, thenDo with
@@ -1937,16 +1959,16 @@ private def resolutionPhraseRevealOrReflexive (t : TriggerTiming) (noun : String
   | _ => none
 
 /-- `resolutionPhrase` for `sequenceOrModes`: sequence and chooseModes. -/
-private def resolutionPhraseControlFlow (t : TriggerTiming) (noun : String) : Option String :=
+private def resolutionPhraseControlFlow (t : @& TriggerTiming) (noun : @& String) : Option String :=
   match t.resolution with
   | .sequence rs =>
     some (sequenceResolutionPhrase rs noun)
-  | r@(.chooseModes _ _) =>
-    some (chooseModesResolutionPhrase t r noun)
+  | r@(.chooseModes modes how) =>
+    some (chooseModesResolutionPhrase t r modes how noun)
   | _ => none
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
-def resolutionPhrase (t : TriggerTiming) : String :=
+def resolutionPhrase (t : @& TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
   let opt :=
     match t.resolution with

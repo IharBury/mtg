@@ -21,7 +21,7 @@ namespace FraAnswer
 
 @[match_pattern] abbrev fraAnswerKind (ids : Array ObjectId := #[]) (idx : Nat := 0) (nameStr : String := "")
     (accepted : Bool := false) (objectsFlag : Bool := false) (modeFlag : Bool := false) (nameFlag : Bool := false) : FraAnswer :=
-  .afterRandomKind ⟨0⟩ idx ⟨0⟩ nameStr #[] ids .battlefield accepted objectsFlag modeFlag nameFlag false
+  .afterRandomKind ⟨0⟩ idx ⟨0⟩ Option.none nameStr #[] ids .battlefield accepted objectsFlag modeFlag nameFlag false
 @[match_pattern] abbrev accept : FraAnswer :=
   .fraAnswerKind #[] 0 "" true false false false
 @[match_pattern] abbrev decline : FraAnswer :=

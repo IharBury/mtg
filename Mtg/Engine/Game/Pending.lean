@@ -15,6 +15,7 @@ namespace Mtg.Engine
 applied. The RNG path runs the same work immediately. -/
 inductive AfterRandom where
   | afterRandomKind (p : PlayerId := ⟨0⟩) (n : Nat := 0) (id : ObjectId := ⟨0⟩)
+      (sourceId : Option ObjectId := Option.none)
       (subtype : String := "") (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
       (dest : Zone := .battlefield)
       (alt1 : Bool := false) (alt2 : Bool := false) (beholdOrPlusOne : Bool := false)
@@ -24,14 +25,14 @@ deriving DecidableEq, Repr, Inhabited, BEq
 namespace AfterRandom
 
 @[match_pattern] abbrev none : AfterRandom :=
-  .afterRandomKind ⟨0⟩ 0 ⟨0⟩ "" #[] #[] .battlefield false false false false false
+  .afterRandomKind ⟨0⟩ 0 ⟨0⟩ Option.none "" #[] #[] .battlefield false false false false false
 @[match_pattern] abbrev stepOrTargetAfter (p : PlayerId := ⟨0⟩) (n : Nat := 0) (id : ObjectId := ⟨0⟩)
     (subtype : String := "") (alt : Bool := false)
     (opening : Bool := false) (beholdOrPlusOne : Bool := false) : AfterRandom :=
-  .afterRandomKind p n id subtype #[] #[] .battlefield alt opening beholdOrPlusOne true false
+  .afterRandomKind p n id Option.none subtype #[] #[] .battlefield alt opening beholdOrPlusOne true false
 @[match_pattern] abbrev arrayAfter (p : PlayerId) (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
     (putOnTop : Bool := false) (isCards : Bool := false) : AfterRandom :=
-  .afterRandomKind p 0 ⟨0⟩ "" rest ids .battlefield putOnTop isCards false false true
+  .afterRandomKind p 0 ⟨0⟩ Option.none "" rest ids .battlefield putOnTop isCards false false true
 @[match_pattern] abbrev playerAmount (p : PlayerId) (n : Nat) (gainLife : Bool := false) : AfterRandom :=
   .stepOrTargetAfter p n ⟨0⟩ "" gainLife false false
 @[match_pattern] abbrev openingStep (idx : Nat) (setStarting : Bool := false) : AfterRandom :=
@@ -61,7 +62,7 @@ abbrev RandomRequest := AfterRandom
 namespace RandomRequest
 @[match_pattern] abbrev randomRequestKind (player : PlayerId := ⟨0⟩) (n : Nat := 0) (ids : Array ObjectId := #[])
     (dest : Zone := .battlefield) (alt : Bool := false) (isObjects : Bool := false) : RandomRequest :=
-  .afterRandomKind player n ⟨0⟩ "" #[] ids dest alt isObjects false false false
+  .afterRandomKind player n ⟨0⟩ Option.none "" #[] ids dest alt isObjects false false false
 @[match_pattern] abbrev playerOrIndexRandom (player : PlayerId := ⟨0⟩) (n : Nat := 0) (isIndex : Bool := false) : RandomRequest :=
   .randomRequestKind player n #[] .battlefield isIndex false
 @[match_pattern] abbrev objectsRandom (ids : Array ObjectId) (dest : Zone := .battlefield) (chooseOne : Bool := false) : RandomRequest :=
@@ -88,7 +89,7 @@ namespace WardCost
 
 @[match_pattern] abbrev wardCostKind (n : Nat := 0) (paid : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
     (nonMana : Bool := false) (sacPerms : Bool := false) : WardCost :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ n paid alt1 alt2 nonMana sacPerms false
+  .copyDurationKind ⟨0⟩ ⟨0⟩ n paid #[] alt1 alt2 nonMana sacPerms false
 @[match_pattern] abbrev manaOrDiscard (n : Nat) (orDiscard : Bool := false) : WardCost :=
   .wardCostKind n 0 orDiscard false false false
 @[match_pattern] abbrev nonManaWard (sacrificeLegendary : Bool := false) (fivePoison : Bool := false) : WardCost :=
@@ -116,18 +117,18 @@ structure WardObligation where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Where cards found by a library search go (CR 701.19). -/
-inductive SearchDest where
-  | searchDestKind (sourceId : Option ObjectId := none) (subtype : String := "")
-      (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (zoneDestFlag : Bool := false) (fromHandOrLibrary : Bool := false) (paramDest : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev SearchDest := AfterRandom
 
 namespace SearchDest
 
+@[match_pattern] abbrev searchDestKind (sourceId : Option ObjectId := Option.none) (subtype : String := "")
+    (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+    (zoneDestFlag : Bool := false) (fromHandOrLibrary : Bool := false) (paramDest : Bool := false) : SearchDest :=
+  .afterRandomKind ⟨0⟩ n ⟨0⟩ sourceId subtype #[] #[] .battlefield alt1 alt2 zoneDestFlag fromHandOrLibrary paramDest
 @[match_pattern] abbrev simpleSearchDest (alt1 : Bool := false) (alt2 : Bool := false)
     (zoneDestFlag : Bool := false) (fromHandOrLibrary : Bool := false) : SearchDest :=
-  .searchDestKind none "" 0 alt1 alt2 zoneDestFlag fromHandOrLibrary false
-@[match_pattern] abbrev paramSearchDest (sourceId : Option ObjectId := none) (subtype : String := "") (beholdUntap : Bool := false) : SearchDest :=
+  .searchDestKind Option.none "" 0 alt1 alt2 zoneDestFlag fromHandOrLibrary false
+@[match_pattern] abbrev paramSearchDest (sourceId : Option ObjectId := Option.none) (subtype : String := "") (beholdUntap : Bool := false) : SearchDest :=
   .searchDestKind sourceId subtype 0 beholdUntap false false false true
 @[match_pattern] abbrev battlefield (tapped : Bool) : SearchDest :=
   .simpleSearchDest tapped false false false
@@ -138,7 +139,7 @@ namespace SearchDest
 @[match_pattern] abbrev exileLinked (sourceId : Option ObjectId) : SearchDest :=
   .paramSearchDest sourceId "" false
 @[match_pattern] abbrev battlefieldTappedBeholdUntap (subtype : String) : SearchDest :=
-  .paramSearchDest none subtype true
+  .paramSearchDest Option.none subtype true
 @[match_pattern] abbrev hand : SearchDest := .zoneDest false false
 @[match_pattern] abbrev graveyard : SearchDest := .zoneDest true false
 @[match_pattern] abbrev topAfterShuffle : SearchDest := .zoneDest false true
@@ -151,16 +152,16 @@ abbrev CardChoice := SearchDest
 
 namespace CardChoice
 
-@[match_pattern] abbrev cardChoiceKind (n : Nat := 0) (subtype : String := "") (attach : Option ObjectId := none)
+@[match_pattern] abbrev cardChoiceKind (n : Nat := 0) (subtype : String := "") (attach : Option ObjectId := Option.none)
     (alt : Bool := false) (creatures : Bool := false) (paramKind : Bool := false) : CardChoice :=
   .searchDestKind attach subtype n alt creatures paramKind false false
 @[match_pattern] abbrev booleanCardChoice (alt : Bool := false) (creatures : Bool := false) : CardChoice :=
-  .cardChoiceKind 0 "" none alt creatures false
-@[match_pattern] abbrev paramCardChoice (n : Nat) (subtype : String := "") (attach : Option ObjectId := none) (amass : Bool := false) : CardChoice :=
+  .cardChoiceKind 0 "" Option.none alt creatures false
+@[match_pattern] abbrev paramCardChoice (n : Nat) (subtype : String := "") (attach : Option ObjectId := Option.none) (amass : Bool := false) : CardChoice :=
   .cardChoiceKind n subtype attach amass false true
 @[match_pattern] abbrev toHand (mustOne : Bool) : CardChoice := .booleanCardChoice mustOne false
 @[match_pattern] abbrev creaturesChoice (keepDestroyRest : Bool := false) : CardChoice := .booleanCardChoice keepDestroyRest true
-@[match_pattern] abbrev landsTappedGainLife (life : Nat) : CardChoice := .paramCardChoice life "" none false
+@[match_pattern] abbrev landsTappedGainLife (life : Nat) : CardChoice := .paramCardChoice life "" Option.none false
 @[match_pattern] abbrev amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId) : CardChoice :=
   .paramCardChoice n subtype attach true
 @[match_pattern] abbrev creaturesToBattlefield : CardChoice := .creaturesChoice false
@@ -171,6 +172,10 @@ end CardChoice
 namespace SearchDest
 export CardChoice (cardChoiceKind booleanCardChoice paramCardChoice toHand creaturesChoice landsTappedGainLife amassArmy creaturesToBattlefield keepDestroyRest)
 end SearchDest
+
+namespace AfterRandom
+export SearchDest (searchDestKind simpleSearchDest paramSearchDest battlefield zoneDest battlefieldFromHandOrLibrary exileLinked battlefieldTappedBeholdUntap hand graveyard topAfterShuffle battlefieldTappedThenHand cardChoiceKind booleanCardChoice paramCardChoice toHand creaturesChoice landsTappedGainLife amassArmy creaturesToBattlefield keepDestroyRest)
+end AfterRandom
 
 /-- Library, search, reveal, and draw choices made while an effect resolves (CR 401 / CR 701.19). -/
 inductive LibraryChoice where
@@ -811,7 +816,7 @@ namespace TurnCombatPending
 
 @[match_pattern] abbrev turnCombatPendingKind (player : PlayerId := ⟨0⟩) (count : Nat := 0) (name : String := "") (ids : Array ObjectId := #[])
     (alt1 : Bool := false) (alt2 : Bool := false) (playerStep : Bool := false) (bottom : Bool := false) (legend : Bool := false) : TurnCombatPending :=
-  .afterRandomKind player count ⟨0⟩ name #[] ids .battlefield alt1 alt2 playerStep bottom legend
+  .afterRandomKind player count ⟨0⟩ Option.none name #[] ids .battlefield alt1 alt2 playerStep bottom legend
 @[match_pattern] abbrev stepOrBottomPending (player : PlayerId := ⟨0⟩) (count : Nat := 0)
     (alt1 : Bool := false) (alt2 : Bool := false) (playerStep : Bool := false) (bottom : Bool := false) : TurnCombatPending :=
   .turnCombatPendingKind player count "" #[] alt1 alt2 playerStep bottom false
@@ -847,7 +852,7 @@ namespace CastPending
 
 @[match_pattern] abbrev castPendingKind (sourceId : ObjectId := ⟨0⟩) (need : Nat := 0) (alt1 : Bool := false)
     (alt2 : Bool := false) (additional : Bool := false) (teamwork : Bool := false) (costObjects : Bool := false) : CastPending :=
-  .copyDurationKind sourceId ⟨0⟩ need 0 alt1 alt2 additional teamwork costObjects
+  .copyDurationKind sourceId ⟨0⟩ need 0 #[] alt1 alt2 additional teamwork costObjects
 @[match_pattern] abbrev castStep (alt1 : Bool := false) (alt2 : Bool := false) (additional : Bool := false) (teamwork : Bool := false) : CastPending :=
   .castPendingKind ⟨0⟩ 0 alt1 alt2 additional teamwork false
 @[match_pattern] abbrev costObjectsStep (sourceId : ObjectId := ⟨0⟩) (need : Nat := 0) (teamworkCreatures : Bool := false) : CastPending :=

@@ -20,8 +20,9 @@ namespace Mtg.Engine
 Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
-  /-- Spell classification for agent heuristics or reflexive trigger classification. -/
-  | spellCastKind (n : Nat := 0) (times : Nat := 0)
+  /-- Spell classification for agent heuristics, ability/trigger note, or reflexive trigger classification. -/
+  | spellCastKind (nOpt : Option Nat := Option.none) (timesOpt : Option Nat := Option.none)
+      (subtypeOpt : Option String := Option.none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -29,13 +30,24 @@ deriving Repr, Inhabited, BEq, DecidableEq
 namespace SpellCastKind
 
 @[match_pattern] abbrev damageOrFight (creatureOnly : Bool := false) (fight : Bool := false) : SpellCastKind :=
-  .spellCastKind 0 0 creatureOnly fight false false false false
+  .spellCastKind Option.none Option.none Option.none creatureOnly fight false false false false
 @[match_pattern] abbrev destroyOrCounter (flying : Bool := false) (artifactOrLand : Bool := false) (counterSpell : Bool := false) : SpellCastKind :=
-  .spellCastKind 0 0 flying artifactOrLand counterSpell true false false
+  .spellCastKind Option.none Option.none Option.none flying artifactOrLand counterSpell true false false
 @[match_pattern] abbrev pumpSpell (mass : Bool := false) : SpellCastKind :=
-  .spellCastKind 0 0 mass false false false true false
+  .spellCastKind Option.none Option.none Option.none mass false false false true false
 @[match_pattern] abbrev utilitySpell (draw : Bool := false) : SpellCastKind :=
-  .spellCastKind 0 0 draw false false true true false
+  .spellCastKind Option.none Option.none Option.none draw false false true true false
+@[match_pattern] abbrev abilityCastKind (destroyColorless : Bool := false) (other : Bool := false) : SpellCastKind :=
+  .spellCastKind Option.none Option.none Option.none destroyColorless other
+@[match_pattern] abbrev plusOneGroupKind (citysBlessing : Bool := false) (b2 : Bool := false)
+    (subtype : Option String := Option.none) (upTo : Option Nat := Option.none) : SpellCastKind :=
+  .spellCastKind upTo Option.none subtype citysBlessing b2
+@[match_pattern] abbrev manaSpendNoteKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (chosenColor : Bool := false) (spellType : Bool := false)
+    (subtype : Option String := Option.none) : SpellCastKind :=
+  .spellCastKind Option.none Option.none subtype alt1 alt2 chosenColor spellType
+@[match_pattern] abbrev damageNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (mode : Bool := false) : SpellCastKind :=
+  .spellCastKind Option.none Option.none Option.none alt1 alt2 mode
 @[match_pattern] abbrev burn : SpellCastKind := .damageOrFight false false
 @[match_pattern] abbrev creatureDamage : SpellCastKind := .damageOrFight true false
 @[match_pattern] abbrev fight : SpellCastKind := .damageOrFight false true
@@ -51,10 +63,7 @@ namespace SpellCastKind
 end SpellCastKind
 
 /-- How the demonstration agent classifies an activated-ability mode. -/
-inductive AbilityCastKind where
-  /-- Activated ability classification: creature damage (`false, false`), destroy colorless (`true, false`), or other (`false, true`). -/
-  | abilityCastKind (destroyColorless : Bool := false) (other : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev AbilityCastKind := SpellCastKind
 
 namespace AbilityCastKind
 
@@ -110,11 +119,7 @@ namespace SpellCostLess
 end SpellCostLess
 
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on, or counter-removal / fight mode. -/
-inductive YouControlPlusOne where
-  /-- Each creature you control (`subtype = none`, or two counters with the city's blessing when `citysBlessing = true`), each permanent of `subtype` you control (`subtype = some subtype`), or counter-removal / fight mode. -/
-  | plusOneGroupKind (citysBlessing : Bool := false) (b2 : Bool := false)
-      (subtype : Option String := none) (upTo : Option Nat := none)
-deriving Repr, Inhabited, BEq
+abbrev YouControlPlusOne := SpellCastKind
 
 namespace YouControlPlusOne
 
@@ -130,12 +135,7 @@ end YouControlPlusOne
 namespace TriggeredAbility
 
 /-- Spending restriction or color choice for `Resolution.addMana` (CR 106.4). -/
-inductive ManaSpendNote where
-  /-- Spend scope (`false, false`), chosen color (`true, false`), spell type restriction (`false, true`), or subtype spend restriction (`subtype = some s`). -/
-  | manaSpendNoteKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (chosenColor : Bool := false) (spellType : Bool := false)
-      (subtype : Option String := Option.none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev ManaSpendNote := SpellCastKind
 
 namespace ManaSpendNote
 
@@ -183,7 +183,7 @@ namespace TriggerReflexiveKind
 
 @[match_pattern] abbrev reflexiveKind (alt1 : Bool := false) (alt2 : Bool := false)
     (zoneOrDamage : Bool := false) (targetOrReturn : Bool := false) : TriggerReflexiveKind :=
-  .spellCastKind 0 0 alt1 alt2 false zoneOrDamage targetOrReturn false
+  .spellCastKind Option.none Option.none Option.none alt1 alt2 false zoneOrDamage targetOrReturn false
 @[match_pattern] abbrev combatOrControlReflexive (trickArrows : Bool := false) (counterOrControl : Bool := false) : TriggerReflexiveKind :=
   .reflexiveKind trickArrows counterOrControl false false
 @[match_pattern] abbrev zoneOrDamageReflexive (returnAttacking : Bool := false) (destroyOrDamage : Bool := false) : TriggerReflexiveKind :=
@@ -329,7 +329,7 @@ end BattlefieldObject
 /-- Card selectors in graveyards, exile, or noted across zones (CR 404 / CR 406). -/
 inductive GraveyardExileObject where
   /-- Graveyard, discarded, linked exile, noted, copy-target, card-group, subtype, or MV/count-bounded selector. -/
-  | graveyardExileKind (subtype : Option String := none) (n : Nat := 0) (tyOpt : Option CardType := none)
+  | graveyardExileKind (subtype : Option String := none) (nOpt : Option Nat := none) (tyOpt : Option CardType := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
       (notedOrCopy : Bool := false) (cardGroup : Bool := false) (paramKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -337,21 +337,21 @@ deriving Repr, Inhabited, BEq, DecidableEq
 namespace GraveyardExileObject
 
 @[match_pattern] abbrev paramGraveyardObject (subtype : Option String := none) (milledOnly : Bool := false)
-    (n : Nat := 0) (creatureOnly : Bool := true) (orTeamwork : Bool := false) (instants : Bool := false)
+    (nOpt : Option Nat := none) (creatureOnly : Bool := true) (orTeamwork : Bool := false) (instants : Bool := false)
     (tyOpt : Option CardType := none) (isCardOfType : Bool := false) : GraveyardExileObject :=
-  .graveyardExileKind subtype n tyOpt milledOnly creatureOnly orTeamwork instants isCardOfType false true
+  .graveyardExileKind subtype nOpt tyOpt milledOnly creatureOnly orTeamwork instants isCardOfType false true
 @[match_pattern] abbrev subtypeInGraveyard (subtype : String) (milledOnly : Bool := false) : GraveyardExileObject :=
-  .paramGraveyardObject (some subtype) milledOnly 0 true false false none false
+  .paramGraveyardObject (some subtype) milledOnly none true false false none false
 @[match_pattern] abbrev natGraveyardObject (n : Nat) (creatureOnly : Bool := true) (orTeamwork : Bool := false) (instants : Bool := false) : GraveyardExileObject :=
-  .paramGraveyardObject none false n creatureOnly orTeamwork instants none false
+  .paramGraveyardObject none false (some n) creatureOnly orTeamwork instants none false
 @[match_pattern] abbrev cardOfType (ty : CardType := .creature) : GraveyardExileObject :=
-  .paramGraveyardObject none false 0 true false false (some ty) true
+  .paramGraveyardObject none false none true false false (some ty) true
 @[match_pattern] abbrev graveyardDiscardedOrLinked (alt1 : Bool := false) (alt2 : Bool := false) (linkedOrSpecial : Bool := false) : GraveyardExileObject :=
-  .graveyardExileKind none 0 none alt1 alt2 linkedOrSpecial false false false false
+  .graveyardExileKind none none none alt1 alt2 linkedOrSpecial false false false false
 @[match_pattern] abbrev notedOrCopyTarget (copyTarget : Bool := false) (flag : Bool := false) : GraveyardExileObject :=
-  .graveyardExileKind none 0 none copyTarget flag false false true false false
+  .graveyardExileKind none none none copyTarget flag false false true false false
 @[match_pattern] abbrev graveyardCardGroup (modalTwo : Bool := false) (creaturesOnly : Bool := true) : GraveyardExileObject :=
-  .graveyardExileKind none 0 none modalTwo creaturesOnly false false false true false
+  .graveyardExileKind none none none modalTwo creaturesOnly false false false true false
 @[match_pattern] abbrev graveyardInstants (n : Nat) : GraveyardExileObject :=
   .natGraveyardObject n false false true
 @[match_pattern] abbrev mvAtMost (mv : Nat) (creatureOnly : Bool := true) (orTeamwork : Bool := false) : GraveyardExileObject :=
@@ -368,7 +368,7 @@ inductive LibraryHandObject where
   /-- Hand, revealed, chosen, top/typed, or subtype/array card selector in libraries and hands (CR 401 / CR 402). -/
   | libraryHandKind (count : Option Nat := none) (s : Option Supertype := none)
       (tyOpt : Option CardType := none) (unlessCount : Option Nat := none)
-      (subtypeOpt : Option String := none) (bound : Nat := 0) (typesOpt : Option (Array String) := none)
+      (subtypeOpt : Option String := none) (boundOpt : Option Nat := none) (typesOpt : Option (Array String) := none)
       (untapAt : Option Nat := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
       (cardOrSpecial : Bool := false) (pilesOrLoot : Bool := false)
@@ -380,35 +380,35 @@ namespace LibraryHandObject
 @[match_pattern] abbrev topOrTypedCard (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false)
     (s : Option Supertype := none) (tyOpt : Option CardType := none) (fromHandOnly : Bool := false)
     (unlessCount : Option Nat := none) (isTyped : Bool := false) : LibraryHandObject :=
-  .libraryHandKind count s tyOpt unlessCount none 0 none none opponentTop byPowerOrLands fromHandOnly isTyped false false true false
-@[match_pattern] abbrev subtypeOrArrayLibraryHand (subtypeOpt : Option String := none) (bound : Nat := 0)
+  .libraryHandKind count s tyOpt unlessCount none none none none opponentTop byPowerOrLands fromHandOnly isTyped false false true false
+@[match_pattern] abbrev subtypeOrArrayLibraryHand (subtypeOpt : Option String := none) (boundOpt : Option Nat := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (search : Bool := false)
     (typesOpt : Option (Array String) := none) (untapAt : Option Nat := none) (isArray : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none subtypeOpt bound typesOpt untapAt alt1 alt2 search isArray false false false true
+  .libraryHandKind none none none none subtypeOpt boundOpt typesOpt untapAt alt1 alt2 search isArray false false false true
 @[match_pattern] abbrev topOrLandsCount (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false) : LibraryHandObject :=
   .topOrTypedCard count opponentTop byPowerOrLands none none false none false
 @[match_pattern] abbrev typedLibraryOrHandCard (s : Option Supertype := some .legendary) (ty : CardType := .creature) (fromHandOnly : Bool := false) : LibraryHandObject :=
   .topOrTypedCard none false false s (some ty) fromHandOnly none true
 @[match_pattern] abbrev cardsUnlessType (n : Nat := 2) (ty : CardType := .artifact) : LibraryHandObject :=
   .topOrTypedCard none false false none (some ty) false (some n) false
-@[match_pattern] abbrev subtypeLibraryHand (subtype : String) (bound : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false) (search : Bool := false) : LibraryHandObject :=
-  .subtypeOrArrayLibraryHand (some subtype) bound alt1 alt2 search none none false
+@[match_pattern] abbrev subtypeLibraryHand (subtype : String) (boundOpt : Option Nat := none) (alt1 : Bool := false) (alt2 : Bool := false) (search : Bool := false) : LibraryHandObject :=
+  .subtypeOrArrayLibraryHand (some subtype) boundOpt alt1 alt2 search none none false
 @[match_pattern] abbrev typesOrSubtypesArray (types : Array String) (untapAt : Option Nat := none) : LibraryHandObject :=
-  .subtypeOrArrayLibraryHand none 0 false false false (some types) untapAt true
+  .subtypeOrArrayLibraryHand none none false false false (some types) untapAt true
 @[match_pattern] abbrev handRevealedOrChosenObject (alt1 : Bool := false) (alt2 : Bool := false) (chosenOrBasic : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none 0 none none alt1 alt2 chosenOrBasic false false false false false
+  .libraryHandKind none none none none none none none none alt1 alt2 chosenOrBasic false false false false false
 @[match_pattern] abbrev handCardOrLibrarySpecial (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none 0 none none alt1 alt2 special false true false false false
+  .libraryHandKind none none none none none none none none alt1 alt2 special false true false false false
 @[match_pattern] abbrev pilesOrDrawDiscard (drawDiscard : Bool := false) (lootX : Bool := false) (flag : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none 0 none none drawDiscard lootX flag false false true false false
+  .libraryHandKind none none none none none none none none drawDiscard lootX flag false false true false false
 @[match_pattern] abbrev handOrRevealedObject (revealed : Bool := false) (cardFromHandOrRandom : Bool := false) : LibraryHandObject :=
   .handRevealedOrChosenObject revealed cardFromHandOrRandom false
 @[match_pattern] abbrev chosenNonlandOrBasic (basicLand : Bool := false) (flag : Bool := false) : LibraryHandObject :=
   .handRevealedOrChosenObject basicLand flag true
 @[match_pattern] abbrev subtypeWithBound (subtype : String) (bound : Nat) (creatureFromHand : Bool := false) : LibraryHandObject :=
-  .subtypeLibraryHand subtype bound creatureFromHand false false
+  .subtypeLibraryHand subtype (some bound) creatureFromHand false false
 @[match_pattern] abbrev searchSubtype (subtype : String) (landOnly : Bool := true) (beholdUntap : Bool := false) : LibraryHandObject :=
-  .subtypeLibraryHand subtype 0 landOnly beholdUntap true
+  .subtypeLibraryHand subtype none landOnly beholdUntap true
 @[match_pattern] abbrev cardOfTypeFromHand (ty : CardType := .land) : LibraryHandObject :=
   .typedLibraryOrHandCard none ty true
 @[match_pattern] abbrev supertypeCard (s : Option Supertype := some .legendary) (ty : CardType := .creature) : LibraryHandObject :=
@@ -490,7 +490,7 @@ inductive ObjectSelector where
       (lhObjOpt : Option LibraryHandObject := none)
       (ssObjOpt : Option SacrificeStackObject := none)
       (whoOpt : Option PlayerSelector)
-      (n : Nat := 0) (ty : Option CardType := none)
+      (nOpt : Option Nat := none) (ty : Option CardType := none)
       (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false)
       (isAny : Bool := false)
   /-- Objects every selector (`isUnion = false, isTarget = false`) or any selector (`isUnion = true, isTarget = false`) in `what` names, or the announced target (`isTarget = true, what = [which]`). -/
@@ -533,34 +533,34 @@ end PlayerSelector
 namespace ObjectSelector
 
 @[match_pattern] abbrev atomicObject (isAny : Bool := false) : ObjectSelector :=
-  .leafObject none none none none none none 0 none false false false isAny
-@[match_pattern] abbrev target (which : ObjectSelector := .leafObject none none none none none none 0 none false false false true) : ObjectSelector :=
+  .leafObject none none none none none none none none false false false isAny
+@[match_pattern] abbrev target (which : ObjectSelector := .leafObject none none none none none none none none false false false true) : ObjectSelector :=
   .combineOrTarget [which] false true
 @[match_pattern] abbrev targetObj (o : TargetObject) : ObjectSelector :=
-  .leafObject (some o) none none none none none 0 none false false false false
+  .leafObject (some o) none none none none none none none false false false false
 @[match_pattern] abbrev battlefield (o : BattlefieldObject) : ObjectSelector :=
-  .leafObject none (some o) none none none none 0 none false false false false
+  .leafObject none (some o) none none none none none none false false false false
 @[match_pattern] abbrev graveyardExile (o : GraveyardExileObject) : ObjectSelector :=
-  .leafObject none none (some o) none none none 0 none false false false false
+  .leafObject none none (some o) none none none none none false false false false
 @[match_pattern] abbrev libraryHand (o : LibraryHandObject) : ObjectSelector :=
-  .leafObject none none none (some o) none none 0 none false false false false
+  .leafObject none none none (some o) none none none none false false false false
 @[match_pattern] abbrev sacrificeStack (o : SacrificeStackObject) : ObjectSelector :=
-  .leafObject none none none none (some o) none 0 none false false false false
+  .leafObject none none none none (some o) none none none false false false false
 @[match_pattern] abbrev source : ObjectSelector := .atomicObject false
 @[match_pattern] abbrev any : ObjectSelector := .atomicObject true
-@[match_pattern] abbrev playerObjects (who : PlayerSelector) (n : Nat := 0) (ty : Option CardType := none)
+@[match_pattern] abbrev playerObjects (who : PlayerSelector) (nOpt : Option Nat := none) (ty : Option CardType := none)
     (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false) : ObjectSelector :=
-  .leafObject none none none none none (some who) n ty creatures cardsFlag wheel false
+  .leafObject none none none none none (some who) nOpt ty creatures cardsFlag wheel false
 @[match_pattern] abbrev player (who : PlayerSelector) : ObjectSelector :=
-  .playerObjects who 0 none false false false
+  .playerObjects who none none false false false
 @[match_pattern] abbrev creaturesControlledBy (who : PlayerSelector) : ObjectSelector :=
-  .playerObjects who 0 none true false false
+  .playerObjects who none none true false false
 @[match_pattern] abbrev graveyardCardsOfType (ty : CardType) (who : PlayerSelector) : ObjectSelector :=
-  .playerObjects who 0 (some ty) false false false
+  .playerObjects who none (some ty) false false false
 @[match_pattern] abbrev cards (n : Nat := 1) (who : PlayerSelector := .you) : ObjectSelector :=
-  .playerObjects who n none false true false
+  .playerObjects who (some n) none false true false
 @[match_pattern] abbrev mayWheel (n : Nat) (who : PlayerSelector := .eachPlayer) : ObjectSelector :=
-  .playerObjects who n none false false true
+  .playerObjects who (some n) none false false true
 @[match_pattern] abbrev combine (what : List ObjectSelector) (isUnion : Bool := false) : ObjectSelector :=
   .combineOrTarget what isUnion false
 @[match_pattern] abbrev intersection (what : List ObjectSelector) : ObjectSelector :=
@@ -750,9 +750,11 @@ end ObjectSelector
 
 /-- Characteristic, power/toughness, mana value, and counter numbers (CR 202.3 / CR 208). -/
 inductive StatNumber where
-  /-- Characteristic, power/toughness, mana value, or counter statistic selector. -/
+  /-- Characteristic, power/toughness, mana value, count, or turn-event statistic selector. -/
   | statNumberKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (cat1 : Bool := false) (cat2 : Bool := false) (greatestToughnessFlag : Bool := false)
+      (subtype : Option String := none) (tyOpt : Option CardType := none)
+      (handSize : Option Nat := none) (isParam : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StatNumber
@@ -791,15 +793,15 @@ namespace StatNumber
 end StatNumber
 
 /-- Zone, permanent, subtype, and feature counts (CR 109 / CR 400). -/
-inductive CountNumber where
-  /-- Zone, library, graveyard, attachment, artifact, or land count (`!isParam`), or parameterized subtype/card-type/hand-size count (`isParam = true`). -/
-  | countNumberKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (artifactsOrLands : Bool := false)
-      (subtype : Option String := none) (tyOpt : Option CardType := none)
-      (handSize : Option Nat := none) (isParam : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev CountNumber := StatNumber
 
 namespace CountNumber
+
+@[match_pattern] abbrev countNumberKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (artifactsOrLands : Bool := false)
+    (subtype : Option String := none) (tyOpt : Option CardType := none)
+    (handSize : Option Nat := none) (isParam : Bool := false) : CountNumber :=
+  .statNumberKind alt1 alt2 alt3 artifactsOrLands false false subtype tyOpt handSize isParam
 
 @[match_pattern] abbrev paramCountNumber (subtype : Option String := none) (tyOpt : Option CardType := none)
     (handSize : Option Nat := none) : CountNumber :=
@@ -834,13 +836,13 @@ namespace CountNumber
 end CountNumber
 
 /-- Step-noted and turn-history numbers (CR 608 / CR 700). -/
-inductive TurnEventNumber where
-  /-- Step-noted, damage-noted, or turn-accumulated number selector. -/
-  | turnEventNumberKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TurnEventNumber := StatNumber
 
 namespace TurnEventNumber
+
+@[match_pattern] abbrev turnEventNumberKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (cat1 : Bool := false) (cat2 : Bool := false) : TurnEventNumber :=
+  .statNumberKind alt1 alt2 alt3 cat1 cat2 false
 
 @[match_pattern] abbrev stepOrDamageNotedNumber (alt1 : Bool := false) (alt2 : Bool := false) (damageOrPower : Bool := false) : TurnEventNumber :=
   .turnEventNumberKind alt1 alt2 damageOrPower false false
@@ -1049,29 +1051,29 @@ inductive StateCondition where
   | stateConditionKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (causeOrTarget : Bool := false) (subtypeOpt : Option String := none) (subtypesOpt : Option (Array String) := none)
       (isSubtype : Bool := false)
-      (n : Nat := 0) (power : Int := 0) (graveyardOrMv : Bool := false) (isPower : Bool := false)
+      (nOpt : Option Nat := none) (powerOpt : Option Int := none) (graveyardOrMv : Bool := false) (isPower : Bool := false)
       (isNumeric : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StateCondition
 
 @[match_pattern] abbrev subtypeOrArrayCondition (subtypeOpt : Option String := none) (subtypesOpt : Option (Array String) := none) : StateCondition :=
-  .stateConditionKind false false false false subtypeOpt subtypesOpt true 0 0 false false false
-@[match_pattern] abbrev numericBoundCondition (n : Nat := 0) (power : Int := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+  .stateConditionKind false false false false subtypeOpt subtypesOpt true none none false false false
+@[match_pattern] abbrev numericBoundCondition (nOpt : Option Nat := none) (powerOpt : Option Int := none) (alt1 : Bool := false) (alt2 : Bool := false)
     (graveyardOrMv : Bool := false) (isPower : Bool := false) : StateCondition :=
-  .stateConditionKind alt1 alt2 false false none none false n power graveyardOrMv isPower true
+  .stateConditionKind alt1 alt2 false false none none false nOpt powerOpt graveyardOrMv isPower true
 @[match_pattern] abbrev subtype (subtype : String) : StateCondition :=
   .subtypeOrArrayCondition (some subtype) none
 @[match_pattern] abbrev youControlAnySubtype (subtypes : Array String) : StateCondition :=
   .subtypeOrArrayCondition none (some subtypes)
 @[match_pattern] abbrev natBoundCondition (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (graveyardOrMv : Bool := false) : StateCondition :=
-  .numericBoundCondition n 0 alt1 alt2 graveyardOrMv false
+  .numericBoundCondition (some n) none alt1 alt2 graveyardOrMv false
 @[match_pattern] abbrev powerBoundCondition (n : Int) (anotherAtMost : Bool := false) (targetPower : Bool := false) : StateCondition :=
-  .numericBoundCondition 0 n anotherAtMost targetPower false true
+  .numericBoundCondition none (some n) anotherAtMost targetPower false true
 @[match_pattern] abbrev sourceOrCounterState (alt1 : Bool := false) (alt2 : Bool := false) (originOrCounters : Bool := false) : StateCondition :=
-  .stateConditionKind alt1 alt2 originOrCounters false none none false 0 0 false false false
+  .stateConditionKind alt1 alt2 originOrCounters false none none false none none false false false
 @[match_pattern] abbrev causeTargetOrLegendary (alt1 : Bool := false) (alt2 : Bool := false) (targetOrLegendary : Bool := false) : StateCondition :=
-  .stateConditionKind alt1 alt2 targetOrLegendary true none none false 0 0 false false false
+  .stateConditionKind alt1 alt2 targetOrLegendary true none none false none none false false false
 @[match_pattern] abbrev sourceState (hope : Bool := false) (equipmentOrPrepared : Bool := false) : StateCondition :=
   .sourceOrCounterState hope equipmentOrPrepared false
 @[match_pattern] abbrev always : StateCondition := .sourceOrCounterState false false false
@@ -1105,14 +1107,14 @@ namespace StateCondition
 end StateCondition
 
 /-- Turn history and spell cast conditions (CR 601.2 / CR 603). -/
-inductive TurnHistoryCondition where
-  /-- Scried/noncombat-damage (`false, false`), turn/spell-cast history (`true, false`), not cast from hand (`false, true`), subtype turn event (`subtype = some s`), or resolve/life-gained bound (`bound = some n`). -/
-  | turnHistoryKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (turnOrCast : Bool := false) (notFromHandFlag : Bool := false)
-      (subtype : Option String := none) (bound : Option Nat := none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TurnHistoryCondition := StateCondition
 
 namespace TurnHistoryCondition
+
+@[match_pattern] abbrev turnHistoryKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (turnOrCast : Bool := false) (notFromHandFlag : Bool := false)
+    (subtype : Option String := none) (bound : Option Nat := none) : TurnHistoryCondition :=
+  .stateConditionKind alt1 alt2 alt3 turnOrCast subtype none notFromHandFlag bound none false false false
 
 @[match_pattern] abbrev subtypeTurnEvent (subtype : String) (entered : Bool := false) : TurnHistoryCondition :=
   .turnHistoryKind entered false false false false (some subtype) none
@@ -1144,13 +1146,13 @@ namespace TurnHistoryCondition
 end TurnHistoryCondition
 
 /-- Earlier-step resolution note conditions (CR 608.2c). -/
-inductive StepNoteCondition where
-  /-- Permanent/effect step note (`!wasSacrificedFlag`), earlier-step sacrifice note (`wasSacrificedFlag`), or dealt damage to `subtype` (`subtype = some s`). -/
-  | stepNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (effectNote : Bool := false)
-      (wasSacrificedFlag : Bool := false) (subtype : Option String := none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev StepNoteCondition := StateCondition
 
 namespace StepNoteCondition
+
+@[match_pattern] abbrev stepNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (effectNote : Bool := false)
+    (wasSacrificedFlag : Bool := false) (subtype : Option String := none) : StepNoteCondition :=
+  .stateConditionKind alt1 alt2 effectNote wasSacrificedFlag subtype none false none none false false false
 
 @[match_pattern] abbrev dealtDamageToSubtype (subtype : String) : StepNoteCondition :=
   .stepNoteKind false false false false (some subtype)
@@ -1274,22 +1276,52 @@ namespace ConditionSelector
 
 end ConditionSelector
 
-/-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b). -/
+/-- What `TriggerResolution.lose` removes. -/
+inductive AbilitySelector where
+  /-- Indestructible until end of turn (`allAbilities = false`), or all abilities while the source remains (`allAbilities = true`). -/
+  | abilitySelectorKind (allAbilities : Bool := false)
+deriving Repr, Inhabited, BEq
+
+namespace AbilitySelector
+
+@[match_pattern] abbrev indestructible : AbilitySelector := .abilitySelectorKind false
+@[match_pattern] abbrev allAbilities : AbilitySelector := .abilitySelectorKind true
+@[match_pattern] abbrev castCostKind (withoutPaying : Bool := false) : AbilitySelector := .abilitySelectorKind withoutPaying
+@[match_pattern] abbrev pay : AbilitySelector := .castCostKind false
+@[match_pattern] abbrev withoutPaying : AbilitySelector := .castCostKind true
+@[match_pattern] abbrev castNoteKind (exileInstead : Bool := false) : AbilitySelector := .abilitySelectorKind exileInstead
+@[match_pattern] abbrev none : AbilitySelector := .castNoteKind false
+@[match_pattern] abbrev exileInstead : AbilitySelector := .castNoteKind true
+@[match_pattern] abbrev revealCountKind (onePlusCreatureCards : Bool := false) : AbilitySelector := .abilitySelectorKind onePlusCreatureCards
+@[match_pattern] abbrev hand : AbilitySelector := .revealCountKind false
+@[match_pattern] abbrev onePlusCreatureCards : AbilitySelector := .revealCountKind true
+@[match_pattern] abbrev mayWhenKind (ifYouDont : Bool := false) : AbilitySelector := .abilitySelectorKind ifYouDont
+@[match_pattern] abbrev ifYouDo : AbilitySelector := .mayWhenKind false
+@[match_pattern] abbrev ifYouDont : AbilitySelector := .mayWhenKind true
+
+end AbilitySelector
+
+/-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b), or mode/library/grant modifier. -/
 inductive CostReduction where
-  | costReductionKind (n : Nat := 0) (condOpt : Option ConditionSelector := Option.none)
-      (amountOpt : Option NumberSelector := Option.none)
+  | costReductionKind (nOpt : Option Nat := Option.none) (condOpt : Option ConditionSelector := Option.none)
+      (amountOpt : Option NumberSelector := Option.none) (amount2Opt : Option NumberSelector := Option.none)
+      (costLess : Option SpellCostLess := Option.none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (cat1 : Bool := false) (cat2 : Bool := false)
+      (indicesOpt : Option (List Nat) := Option.none)
+      (fromHandOpt : Option AbilitySelector := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace CostReduction
 
 @[match_pattern] abbrev none : CostReduction :=
-  .costReductionKind 0 Option.none Option.none
+  .costReductionKind Option.none Option.none Option.none
 /-- Costs `n` generic mana less if `cond` holds. -/
 @[match_pattern] abbrev when (n : Nat) (cond : ConditionSelector) : CostReduction :=
-  .costReductionKind n (some cond) Option.none
+  .costReductionKind (some n) (some cond) Option.none
 /-- Costs `perUnit` generic mana less per unit of `amount`. -/
 @[match_pattern] abbrev byAmount (amount : NumberSelector) (perUnit : Nat := 1) : CostReduction :=
-  .costReductionKind perUnit Option.none (some amount)
+  .costReductionKind (some perUnit) Option.none (some amount)
 @[match_pattern] abbrev ifCreatureDied (n : Nat) : CostReduction :=
   .when n (.atLeast .creaturesDiedThisTurn (.fixed 1))
 @[match_pattern] abbrev ifTargetDamaged (n : Nat) : CostReduction :=
@@ -1325,10 +1357,7 @@ end CostReduction
 
 
 /-- What `TriggerResolution.dealDamage` records for a later step. -/
-inductive TriggerDamageNote where
-  /-- Damage record (`!mode`) or damage distribution/rider (`mode`). -/
-  | damageNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (mode : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerDamageNote := SpellCastKind
 
 namespace TriggerDamageNote
 
@@ -1414,31 +1443,6 @@ namespace TriggerDamageNote
 
 end TriggerDamageNote
 
-/-- What `TriggerResolution.lose` removes. -/
-inductive AbilitySelector where
-  /-- Indestructible until end of turn (`allAbilities = false`), or all abilities while the source remains (`allAbilities = true`). -/
-  | abilitySelectorKind (allAbilities : Bool := false)
-deriving Repr, Inhabited, BEq
-
-namespace AbilitySelector
-
-@[match_pattern] abbrev indestructible : AbilitySelector := .abilitySelectorKind false
-@[match_pattern] abbrev allAbilities : AbilitySelector := .abilitySelectorKind true
-@[match_pattern] abbrev castCostKind (withoutPaying : Bool := false) : AbilitySelector := .abilitySelectorKind withoutPaying
-@[match_pattern] abbrev pay : AbilitySelector := .castCostKind false
-@[match_pattern] abbrev withoutPaying : AbilitySelector := .castCostKind true
-@[match_pattern] abbrev castNoteKind (exileInstead : Bool := false) : AbilitySelector := .abilitySelectorKind exileInstead
-@[match_pattern] abbrev none : AbilitySelector := .castNoteKind false
-@[match_pattern] abbrev exileInstead : AbilitySelector := .castNoteKind true
-@[match_pattern] abbrev revealCountKind (onePlusCreatureCards : Bool := false) : AbilitySelector := .abilitySelectorKind onePlusCreatureCards
-@[match_pattern] abbrev hand : AbilitySelector := .revealCountKind false
-@[match_pattern] abbrev onePlusCreatureCards : AbilitySelector := .revealCountKind true
-@[match_pattern] abbrev mayWhenKind (ifYouDont : Bool := false) : AbilitySelector := .abilitySelectorKind ifYouDont
-@[match_pattern] abbrev ifYouDo : AbilitySelector := .mayWhenKind false
-@[match_pattern] abbrev ifYouDont : AbilitySelector := .mayWhenKind true
-
-end AbilitySelector
-
 /-- What `TriggerResolution.removeCounters` removes. -/
 abbrev TriggerRemoveWhat := YouControlPlusOne
 
@@ -1459,24 +1463,24 @@ inductive CounterSelector where
   | counterSelectorKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (copied : Bool := false) (dynamic : Bool := false)
       (proliferate : Option NumberSelector := none)
-      (kindOpt : Option CounterKind := none) (n : Nat := 1)
+      (kindOpt : Option CounterKind := none) (nOpt : Option Nat := none)
       (remove : Option TriggerRemoveWhat := none)
 deriving Repr, Inhabited, BEq
 
 namespace CounterSelector
 
 @[match_pattern] abbrev ofKind (kind : CounterKind) (n : Nat := 1) : CounterSelector :=
-  .counterSelectorKind false false false false false none (some kind) n none
+  .counterSelectorKind false false false false false none (some kind) (some n) none
 @[match_pattern] abbrev remove (what : TriggerRemoveWhat) : CounterSelector :=
-  .counterSelectorKind false false false false false none none 1 (some what)
+  .counterSelectorKind false false false false false none none none (some what)
 @[match_pattern] abbrev eachKindOnIt (times : NumberSelector := .fixed 1) : CounterSelector :=
-  .counterSelectorKind false false false false false (some times) none 1 none
+  .counterSelectorKind false false false false false (some times) none none none
 @[match_pattern] abbrev notedOrSpecialCounters (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) : CounterSelector :=
-  .counterSelectorKind alt1 alt2 special false false none none 1 none
+  .counterSelectorKind alt1 alt2 special false false none none none none
 @[match_pattern] abbrev copiedCounters (fromCause : Bool := false) : CounterSelector :=
-  .counterSelectorKind fromCause false false true false none none 1 none
+  .counterSelectorKind fromCause false false true false none none none none
 @[match_pattern] abbrev plusOneDynamic (byHand : Bool := false) (byChosenX : Bool := false) (byGyThree : Bool := false) : CounterSelector :=
-  .counterSelectorKind byHand byChosenX byGyThree false true none none 1 none
+  .counterSelectorKind byHand byChosenX byGyThree false true none none none none
 @[match_pattern] abbrev plusOneFromNote (sacrificedPower : Bool := false) (notedCount : Bool := false) : CounterSelector :=
   .notedOrSpecialCounters sacrificedPower notedCount false
 @[match_pattern] abbrev specialCounterAction (missingKeywords : Bool := false) (minusOneGyOrStunLoyalty : Bool := false) : CounterSelector :=
@@ -1497,15 +1501,24 @@ namespace CounterSelector
 
 end CounterSelector
 
-/-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
-inductive TriggerTokenNote where
-  /-- Token follow-up (`false, false`), remember/conditional creation (`true, false`), or destroy/currency note (`false, true`). -/
-  | tokenNoteKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (rememberOrCond : Bool := false) (destroyOrCurrency : Bool := false)
+/-- How long `TriggerResolution.exile` lasts, or resolution follow-up/note for tokens, exile, mill, or library placement. -/
+inductive TriggerExileHow where
+  /-- Unified trigger step follow-up, duration, or placement kind. -/
+  | exileHowKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (duration : Bool := false) (playUntilFlag : Bool := false)
+      (followupCount : Option Nat := Option.none) (subtype : Option String := Option.none)
+      (alt3 : Bool := false) (toHand : Option MilledToHand := Option.none)
+      (putNOpt : Option Nat := Option.none)
 deriving Repr, Inhabited, BEq
+
+/-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
+abbrev TriggerTokenNote := TriggerExileHow
 
 namespace TriggerTokenNote
 
+@[match_pattern] abbrev tokenNoteKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (rememberOrCond : Bool := false) (destroyOrCurrency : Bool := false) : TriggerTokenNote :=
+  .exileHowKind alt1 alt2 rememberOrCond destroyOrCurrency
 @[match_pattern] abbrev tokenFollowup (attachReflexive : Bool := false) (indestructibleOrMardu : Bool := false) : TriggerTokenNote :=
   .tokenNoteKind attachReflexive indestructibleOrMardu false false
 @[match_pattern] abbrev rememberOrIfCondition (alt : Bool := false) (ifCond : Bool := false) : TriggerTokenNote :=
@@ -1528,14 +1541,6 @@ namespace TriggerTokenNote
 @[match_pattern] abbrev lose1Life : TriggerTokenNote := .destroyOrCurrencyNote true true
 
 end TriggerTokenNote
-
-/-- How long `TriggerResolution.exile` lasts. -/
-inductive TriggerExileHow where
-  /-- Linked/immediate exile (`false, false`), exile duration (`true, false`), play-until (`false, true`), numeric exile follow-up (`followupCount = some n`), or play while you control `subtype` (`subtype = some s`). -/
-  | exileHowKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (duration : Bool := false) (playUntilFlag : Bool := false)
-      (followupCount : Option Nat := none) (subtype : Option String := none)
-deriving Repr, Inhabited, BEq
 
 namespace TriggerExileHow
 
@@ -1567,13 +1572,13 @@ namespace TriggerExileHow
 end TriggerExileHow
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
-inductive TriggerExileNote where
-  /-- Exile object/link (`false, false`), revealed cast (`true, false`), count/reveal creatures (`false, true`), spell exile note (`true, true`), or gain `teamworkLife` life if teamwork was paid (`teamworkLife = some life`). -/
-  | exileNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false) (teamworkLife : Option Nat := Option.none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerExileNote := TriggerExileHow
 
 namespace TriggerExileNote
+
+@[match_pattern] abbrev exileNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (cat1 : Bool := false) (cat2 : Bool := false) (teamworkLife : Option Nat := Option.none) : TriggerExileNote :=
+  .exileHowKind alt1 alt2 cat1 cat2 teamworkLife Option.none alt3 Option.none Option.none
 
 @[match_pattern] abbrev gainLifeIfTeamwork (life : Nat) : TriggerExileNote :=
   .exileNoteKind false false false false false (some life)
@@ -1700,21 +1705,21 @@ inductive TriggerEnterWith where
   /-- Lose all abilities / enter attacking / gain `subtype` (`kOpt = none && kindOpt = none`), or gain `k` keywords (`kOpt = some k`) / put `n` counters of `kind` (`kindOpt = some kind`). -/
   | enterWithKind (attacking : Bool := false) (subtype : Option String := none)
       (kOpt : Option Keywords := none) (kindOpt : Option CounterKind := none)
-      (n : Nat := 1) (asEnters : Bool := false)
+      (nOpt : Option Nat := none) (asEnters : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerEnterWith
 
 @[match_pattern] abbrev enterStateOrSubtype (attacking : Bool := false) (subtype : Option String := none) : TriggerEnterWith :=
-  .enterWithKind attacking subtype none none 1 false
+  .enterWithKind attacking subtype none none none false
 @[match_pattern] abbrev loseAllAbilities : TriggerEnterWith := .enterStateOrSubtype false none
 @[match_pattern] abbrev attacking : TriggerEnterWith := .enterStateOrSubtype true none
 @[match_pattern] abbrev additionalSubtype (subtype : String) : TriggerEnterWith :=
   .enterStateOrSubtype false (some subtype)
 @[match_pattern] abbrev keywords (k : Keywords) : TriggerEnterWith :=
-  .enterWithKind false none (some k) none 1 false
+  .enterWithKind false none (some k) none none false
 @[match_pattern] abbrev counter (kind : CounterKind) (n : Nat := 1) (asEnters : Bool := false) : TriggerEnterWith :=
-  .enterWithKind false none none (some kind) n asEnters
+  .enterWithKind false none none (some kind) (some n) asEnters
 
 end TriggerEnterWith
 
@@ -1759,16 +1764,16 @@ def enterMods : TriggerPutNote → List TriggerEnterWith
 end TriggerPutNote
 
 /-- How `TriggerResolution.chooseModes` chooses those modes. -/
-inductive TriggerModeHow where
-  /-- Unused/one/preset/fromLastKnown/numeric mode (`condOpt = none && indicesOpt = none`), or conditional (`condOpt = some cond`, CR 608.2c) / Hawkeye (`indicesOpt = some indices`) mode. -/
-  | modeHowKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (preset : Bool := false) (fromLastKnownFlag : Bool := false)
-      (count : Option Nat := none)
-      (condOpt : Option ConditionSelector := none)
-      (indicesOpt : Option (List Nat) := none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerModeHow := CostReduction
 
 namespace TriggerModeHow
+
+@[match_pattern] abbrev modeHowKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (preset : Bool := false) (fromLastKnownFlag : Bool := false)
+    (count : Option Nat := Option.none)
+    (condOpt : Option ConditionSelector := Option.none)
+    (indicesOpt : Option (List Nat) := Option.none) : TriggerModeHow :=
+  .costReductionKind count condOpt Option.none Option.none Option.none alt1 alt2 false preset fromLastKnownFlag indicesOpt Option.none
 
 @[match_pattern] abbrev numericMode (n : Nat) (unlessPays : Bool := false) : TriggerModeHow :=
   .modeHowKind unlessPays false false false (some n) none none
@@ -1887,9 +1892,9 @@ end ActionSelector
 inductive Layer4TypeGrant where
   /-- Additional type / subtype / animate source land (`!isPtCreature`), or become a creature with base P/T and keywords (`isPtCreature = true`). -/
   | layer4TypeKind (artifactCreature : Bool := false) (flag : Bool := false)
-      (subtype : Option String := none) (power toughness : Nat := 0)
+      (subtype : Option String := none) (ptNatOpt : Option (Nat × Nat) := none)
       (flying : Bool := false) (firstStrike : Bool := false) (isAnimateLand : Bool := false)
-      (p : Int := 4) (t : Int := 4) (kwOpt : Option String := none)
+      (ptIntOpt : Option (Int × Int) := none) (kwOpt : Option String := none)
       (typesOpt : Option (Array String) := none) (kOpt : Option Keywords := none)
       (isPtCreature : Bool := false)
 deriving Repr, Inhabited, BEq
@@ -1897,19 +1902,19 @@ deriving Repr, Inhabited, BEq
 namespace Layer4TypeGrant
 
 @[match_pattern] abbrev typeSubtypeOrAnimateLand (artifactCreature : Bool := false) (flag : Bool := false)
-    (subtype : Option String := none) (power toughness : Nat := 0)
+    (subtype : Option String := none) (ptNatOpt : Option (Nat × Nat) := none)
     (flying : Bool := false) (firstStrike : Bool := false) (isAnimateLand : Bool := false) : Layer4TypeGrant :=
-  .layer4TypeKind artifactCreature flag subtype power toughness flying firstStrike isAnimateLand 4 4 none none none false
+  .layer4TypeKind artifactCreature flag subtype ptNatOpt flying firstStrike isAnimateLand none none none none false
 @[match_pattern] abbrev typeOrArtifactCreature (artifactCreature : Bool := false) (flag : Bool := false) : Layer4TypeGrant :=
-  .typeSubtypeOrAnimateLand artifactCreature flag none 0 0 false false false
+  .typeSubtypeOrAnimateLand artifactCreature flag none none false false false
 @[match_pattern] abbrev subtypeWithLandsPT (subtype : String) : Layer4TypeGrant :=
-  .typeSubtypeOrAnimateLand false false (some subtype) 0 0 false false false
+  .typeSubtypeOrAnimateLand false false (some subtype) none false false false
 @[match_pattern] abbrev animateLand (power toughness : Nat) (flying firstStrike : Bool) : Layer4TypeGrant :=
-  .typeSubtypeOrAnimateLand false false none power toughness flying firstStrike true
+  .typeSubtypeOrAnimateLand false false none (some (power, toughness)) flying firstStrike true
 @[match_pattern] abbrev artifactCreature (p : Int := 4) (t : Int := 4) (kw : String := "flying") : Layer4TypeGrant :=
-  .layer4TypeKind false false none 0 0 false false false p t (some kw) none none true
+  .layer4TypeKind false false none none false false false (some (p, t)) (some kw) none none true
 @[match_pattern] abbrev typesPTAndKeywords (types : Array String) (power toughness : Int) (k : Keywords) : Layer4TypeGrant :=
-  .layer4TypeKind false false none 0 0 false false false power toughness none (some types) (some k) true
+  .layer4TypeKind false false none none false false false (some (power, toughness)) none (some types) (some k) true
 @[match_pattern] abbrev artifact : Layer4TypeGrant := .typeOrArtifactCreature false false
 @[match_pattern] abbrev bearType : Layer4TypeGrant := .typeOrArtifactCreature false true
 @[match_pattern] abbrev constructHero : Layer4TypeGrant := .typeOrArtifactCreature true false
@@ -1957,13 +1962,14 @@ namespace Layer6AbilityGrant
 end Layer6AbilityGrant
 
 /-- Layer 7 power/toughness and combat damage assignment grants (CR 613.1g / CR 510.1c). -/
-inductive Layer7PtGrant where
-  /-- Set base P/T to `power`/`toughness` (`powerOpt = some power, toughnessOpt = some toughness`, CR 613.4b Layer 7b), or base power equal hand / assign combat damage equal toughness (`powerOpt = none`). -/
-  | layer7PtKind (powerOpt : Option NumberSelector := none) (toughnessOpt : Option NumberSelector := none)
-      (assignToughness : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev Layer7PtGrant := CostReduction
 
 namespace Layer7PtGrant
+
+@[match_pattern] abbrev layer7PtKind (powerOpt : Option NumberSelector := Option.none)
+    (toughnessOpt : Option NumberSelector := Option.none)
+    (assignToughness : Bool := false) : Layer7PtGrant :=
+  .costReductionKind Option.none Option.none powerOpt toughnessOpt Option.none assignToughness
 
 @[match_pattern] abbrev basePT (power toughness : NumberSelector) : Layer7PtGrant :=
   .layer7PtKind (some power) (some toughness) false
@@ -1975,15 +1981,15 @@ namespace Layer7PtGrant
 end Layer7PtGrant
 
 /-- Replacement, prevention, permission, cost-reduction, turn, and emblem grants (CR 614 / CR 615 / CR 114). -/
-inductive RuleEffectGrant where
-  /-- Replacement/turn/emblem/win rule (`costLess = none, emblemDamage = none`), spells of `which` cost `n` less (`costLess = some which`), or emblem cast-spell damage `d` (`emblemDamage = some d`). -/
-  | ruleEffectKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false)
-      (costLess : Option SpellCostLess := none) (nOpt : Option NumberSelector := none)
-      (emblemDamage : Option Nat := none)
-deriving Repr, Inhabited, BEq
+abbrev RuleEffectGrant := CostReduction
 
 namespace RuleEffectGrant
+
+@[match_pattern] abbrev ruleEffectKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (cat1 : Bool := false) (cat2 : Bool := false)
+    (costLess : Option SpellCostLess := Option.none) (nOpt : Option NumberSelector := Option.none)
+    (emblemDamage : Option Nat := Option.none) : RuleEffectGrant :=
+  .costReductionKind emblemDamage Option.none nOpt Option.none costLess alt1 alt2 alt3 cat1 cat2
 
 @[match_pattern] abbrev spellsCostLess (which : SpellCostLess) (n : NumberSelector) : RuleEffectGrant :=
   .ruleEffectKind false false false false false (some which) (some n) none
@@ -2020,27 +2026,27 @@ end RuleEffectGrant
 inductive ActionStateGrant where
   /-- Permanent/target/keyword/numeric action (`empowerOpt = none && fightHow = none && recruitOpt = none && hostOpt = none`), empower/fight (`empowerOpt = some n` or `fightHow = some how`), or recruit/attach (`recruitOpt = some who` or `hostOpt = some host`). -/
   | actionStateKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (keywordOrSpecial : Bool := false) (natN : Option Nat := none) (paid : Nat := 0)
+      (keywordOrSpecial : Bool := false) (natN : Option Nat := none) (paidOpt : Option Nat := none)
       (empowerOpt : Option NumberSelector := none) (fightHow : Option TriggerFightHow := none)
       (recruitOpt : Option PlayerSelector := none) (hostOpt : Option ObjectSelector := none)
 deriving Repr, Inhabited, BEq
 
 namespace ActionStateGrant
 
-@[match_pattern] abbrev natActionState (n : Nat) (paid : Nat := 0) (reflexive : Bool := false) : ActionStateGrant :=
-  .actionStateKind reflexive false false false false (some n) paid none none none none
+@[match_pattern] abbrev natActionState (n : Nat) (paidOpt : Option Nat := none) (reflexive : Bool := false) : ActionStateGrant :=
+  .actionStateKind reflexive false false false false (some n) paidOpt none none none none
 @[match_pattern] abbrev empowerJace (n : NumberSelector) : ActionStateGrant :=
-  .actionStateKind false false false false false none 0 (some n) none none none
+  .actionStateKind false false false false false none none (some n) none none none
 @[match_pattern] abbrev fight (how : TriggerFightHow := .mutual) : ActionStateGrant :=
-  .actionStateKind false false false false false none 0 none (some how) none none
+  .actionStateKind false false false false false none none none (some how) none none
 @[match_pattern] abbrev recruit (who : PlayerSelector := .recruit) : ActionStateGrant :=
-  .actionStateKind false false false false false none 0 none none (some who) none
+  .actionStateKind false false false false false none none none none (some who) none
 @[match_pattern] abbrev attachTo (host : ObjectSelector) : ActionStateGrant :=
-  .actionStateKind false false false false false none 0 none none none (some host)
+  .actionStateKind false false false false false none none none none none (some host)
 @[match_pattern] abbrev permanentOrTargetAction (alt1 : Bool := false) (alt2 : Bool := false) (targetOrToken : Bool := false) : ActionStateGrant :=
-  .actionStateKind alt1 alt2 targetOrToken false false none 0 none none none none
+  .actionStateKind alt1 alt2 targetOrToken false false none none none none none none
 @[match_pattern] abbrev keywordOrSpecialAction (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) (counterSpell : Bool := false) : ActionStateGrant :=
-  .actionStateKind alt1 alt2 special counterSpell true none 0 none none none none
+  .actionStateKind alt1 alt2 special counterSpell true none none none none none none
 @[match_pattern] abbrev permanentStateChange (transformed : Bool := false) (harnessedOrFaceUp : Bool := false) : ActionStateGrant :=
   .permanentOrTargetAction transformed harnessedOrFaceUp false
 @[match_pattern] abbrev attacking : ActionStateGrant := .permanentOrTargetAction false false false
@@ -2066,8 +2072,8 @@ namespace ActionStateGrant
 @[match_pattern] abbrev cascade : ActionStateGrant := .keywordOrSpecialAction false true true false
 @[match_pattern] abbrev ringTempts : ActionStateGrant := .keywordOrSpecialAction true true true false
 @[match_pattern] abbrev counterSpell : ActionStateGrant := .keywordOrSpecialAction false false false true
-@[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : ActionStateGrant := .natActionState limit 0 false
-@[match_pattern] abbrev mshReflexive (kind paid : Nat) : ActionStateGrant := .natActionState kind paid true
+@[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : ActionStateGrant := .natActionState limit none false
+@[match_pattern] abbrev mshReflexive (kind paid : Nat) : ActionStateGrant := .natActionState kind (some paid) true
 
 end ActionStateGrant
 
@@ -2177,14 +2183,14 @@ end TriggerGrantWhat
 
 
 /-- What a later step of `TriggerResolution.mill` can read. -/
-inductive TriggerMillNote where
-  /-- Mill record (`toHand = none, life = none, subtype = none`), put milled cards into hand (`toHand = some which`), permanent and gain life (`life = some n`), or subtype/enchantment to hand (`subtype = some s`). -/
-  | millNoteKind (milledCards : Bool := false) (opponentsOrFreeCast : Bool := false)
-      (toHand : Option MilledToHand := Option.none) (life : Option Nat := Option.none)
-      (subtype : Option String := Option.none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerMillNote := TriggerExileHow
 
 namespace TriggerMillNote
+
+@[match_pattern] abbrev millNoteKind (milledCards : Bool := false) (opponentsOrFreeCast : Bool := false)
+    (toHand : Option MilledToHand := Option.none) (life : Option Nat := Option.none)
+    (subtype : Option String := Option.none) : TriggerMillNote :=
+  .exileHowKind milledCards opponentsOrFreeCast false false life subtype false toHand Option.none
 
 @[match_pattern] abbrev millRecord (milledCards : Bool := false) (opponentsOrFreeCast : Bool := false) : TriggerMillNote :=
   .millNoteKind milledCards opponentsOrFreeCast Option.none Option.none Option.none
@@ -2212,14 +2218,14 @@ namespace TriggerRevealCount
 end TriggerRevealCount
 
 /-- How far `TriggerResolution.revealLibrary` looks from the top of a library. -/
-inductive TriggerLibraryHow where
-  /-- Top `n` (`topN = some n`), `topNumber` (`topNum = some num`), reveal from hand (`fromHand = some count`, CR 701.16), or reveal until / search (`topN = none && topNum = none && fromHand = none`). -/
-  | libraryHowKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (searchOrSpecialFlag : Bool := false) (fromHand : Option TriggerRevealCount := none)
-      (topN : Option Nat := none) (topNum : Option NumberSelector := none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerLibraryHow := CostReduction
 
 namespace TriggerLibraryHow
+
+@[match_pattern] abbrev libraryHowKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (searchOrSpecialFlag : Bool := false) (fromHand : Option TriggerRevealCount := Option.none)
+    (topN : Option Nat := Option.none) (topNum : Option NumberSelector := Option.none) : TriggerLibraryHow :=
+  .costReductionKind topN Option.none topNum Option.none Option.none alt1 alt2 alt3 searchOrSpecialFlag false Option.none fromHand
 
 @[match_pattern] abbrev top (n : Nat) : TriggerLibraryHow :=
   .libraryHowKind false false false false none (some n) none
@@ -2243,20 +2249,19 @@ namespace TriggerLibraryHow
 end TriggerLibraryHow
 
 /-- Where `TriggerResolution.putOnLibrary` puts the card. -/
-inductive TriggerLibraryPlace where
-  /-- Top/bottom placement (`!special, drawN = none`), shuffled/special placement (`special, drawN = none`), or draw `drawN` then put `putN` on top (`drawN = some d`). -/
-  | libraryPlaceKind (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
-      (drawN : Option Nat := none) (putN : Nat := 0)
-deriving Repr, Inhabited, BEq
+abbrev TriggerLibraryPlace := TriggerExileHow
 
 namespace TriggerLibraryPlace
 
+@[match_pattern] abbrev libraryPlaceKind (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
+    (drawN : Option Nat := Option.none) (putNOpt : Option Nat := Option.none) : TriggerLibraryPlace :=
+  .exileHowKind alt1 alt2 special false drawN Option.none false Option.none putNOpt
 @[match_pattern] abbrev topAfterDraw (drawN putN : Nat) : TriggerLibraryPlace :=
-  .libraryPlaceKind false false false (some drawN) putN
+  .libraryPlaceKind false false false (some drawN) (some putN)
 @[match_pattern] abbrev topOrBottomPlace (ownerChoice : Bool := false) (flag : Bool := false) : TriggerLibraryPlace :=
-  .libraryPlaceKind ownerChoice flag false none 0
+  .libraryPlaceKind ownerChoice flag false Option.none Option.none
 @[match_pattern] abbrev specialLibraryPlace (secondConnive : Bool := false) (revealCreatureOrAfterDraw2 : Bool := false) : TriggerLibraryPlace :=
-  .libraryPlaceKind secondConnive revealCreatureOrAfterDraw2 true none 0
+  .libraryPlaceKind secondConnive revealCreatureOrAfterDraw2 true Option.none Option.none
 @[match_pattern] abbrev top : TriggerLibraryPlace := .topOrBottomPlace false false
 @[match_pattern] abbrev bottom : TriggerLibraryPlace := .topOrBottomPlace false true
 @[match_pattern] abbrev topOrBottom (damage2 : Bool := false) : TriggerLibraryPlace := .topOrBottomPlace true damage2
@@ -2458,7 +2463,7 @@ inductive Resolution where
       (whatCostOpt : Option CostSelector := none) (noteOpt : Option ManaSpendNote := none)
       (originOpt : Option TriggerCastFrom := none) (maxMvOpt : Option TriggerCastMv := none)
       (costOpt : Option TriggerCastCost := none) (castNoteOpt : Option TriggerCastNote := none)
-      (types : Array ManaType := #[])
+      (typesOpt : Option (Array ManaType) := none)
       (whoOpt : Option PlayerSelector := none) (amountOpt : Option NumberSelector := none)
   /-- Tap or untap permanents, discard cards, return cards to a hand, or put a card onto a library (CR 400.7 / CR 401 / CR 701.8 / CR 701.21).
   Discard cards, as `what` says.
@@ -2933,22 +2938,22 @@ namespace Resolution
 /-- Scry, as `n` says (CR 701.18). -/
 @[match_pattern] abbrev scry (n : NumberSelector)
     (surveil : Option TriggerSurveilNote := none) : Resolution :=
-  .playerResource false false false false surveil none none none none none none none #[] none (some n)
+  .playerResource false false false false surveil none none none none none none none none none (some n)
 
 /-- Mill cards (CR 701.13), as `amount` and `who` say. -/
 @[match_pattern] abbrev mill (amount : NumberSelector) (who : PlayerSelector := .you)
     (note : TriggerMillNote := .none) : Resolution :=
-  .playerResource false false false false none (some note) none none none none none none #[] (some who) (some amount)
+  .playerResource false false false false none (some note) none none none none none none none (some who) (some amount)
 
 /-- `who` draws cards (CR 121), as `amount` says. -/
 @[match_pattern] abbrev draw (amount : NumberSelector)
     (who : PlayerSelector := .you) : Resolution :=
-  .playerResource false true false false none none none none none none none none #[] (some who) (some amount)
+  .playerResource false true false false none none none none none none none none none (some who) (some amount)
 
 /-- `who` gains or loses life (CR 118.2 / CR 118.3a), as `amount` says. -/
 @[match_pattern] abbrev gainLife (amount : NumberSelector)
     (who : PlayerSelector := .you) (lose : Bool := false) : Resolution :=
-  .playerResource false true true lose none none none none none none none none #[] (some who) (some amount)
+  .playerResource false true true lose none none none none none none none none none (some who) (some amount)
 
 /-- Tap or untap permanents (CR 701.21), as `who` and `tapped` say. -/
 @[match_pattern] abbrev tap (who : ObjectSelector)
@@ -2961,13 +2966,13 @@ namespace Resolution
 
 /-- Pay `what` (CR 118). -/
 @[match_pattern] abbrev pay (what : CostSelector) : Resolution :=
-  .playerResource true false false false none none (some what) none none none none none #[] none none
+  .playerResource true false false false none none (some what) none none none none none none none none
 
 /-- Add mana (CR 106), as `amount` says. -/
 @[match_pattern] abbrev addMana (types : Array ManaType)
     (amount : NumberSelector := .fixed 1)
     (note : ManaSpendNote := .none) : Resolution :=
-  .playerResource true false false false none none none (some note) none none none none types none (some amount)
+  .playerResource true false false false none none none (some note) none none none none (some types) none (some amount)
 
 /-- Return cards to a hand (CR 400.7). -/
 @[match_pattern] abbrev returnToHand (what : ObjectSelector := .graveyardCard)
@@ -3004,11 +3009,11 @@ namespace Resolution
 /-- You may cast a spell (CR 601). -/
 @[match_pattern] abbrev mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
     (cost : TriggerCastCost) (note : TriggerCastNote := .none) : Resolution :=
-  .playerResource true false false false none none none none (some origin) (some maxMv) (some cost) (some note) #[] none none
+  .playerResource true false false false none none none none (some origin) (some maxMv) (some cost) (some note) none none none
 
 /-- A resolution that is not a spell shape. It does not play an extra land. -/
 @[match_pattern] abbrev unrecognized : Resolution :=
-  .playerResource true false false false none none none none none none none none #[] none none
+  .playerResource true false false false none none none none none none none none none none none
 
 /-- Search a library (CR 701.23), then resolve `thenDo` for the card that was found. -/
 @[match_pattern] abbrev searchLibrary (thenDo : Resolution) : Resolution :=
@@ -3246,7 +3251,7 @@ def doublePowerAndToughness : PermanentAction :=
 
 /-- Oracle-style text for this action on `noun` (e.g. `target creature`).
 `sentence` capitalizes the first letter for activated-ability lines. -/
-def toNotation (action : PermanentAction) (noun : String) (sentence := false) : String :=
+def toNotation (action : @& PermanentAction) (noun : @& String) (sentence := false) : String :=
   let damage (n : Nat) : String := s!"deals {n} damage to {noun}"
   let r : Resolution := action
   let raw :=
@@ -3297,26 +3302,28 @@ end PermanentAction
 namespace Resolution
 
 /-- What `action` does to `who`. `target` is the announced permanent. -/
-def ofAffected (who : ObjectSelector) (action : PermanentAction) : Resolution :=
+def ofAffected (who : ObjectSelector) (action : @& PermanentAction) : Resolution :=
   let r : Resolution := action
   match r with
+  | .sequence [a, b] =>
+    match a, b with
+    | .pump p t _, .grant what _ => .sequence [.pump p t who, .grant what who]
+    | .grant what1 _, .grant what2 _ =>
+      match what1 with
+      | .artifact => .sequence [.becomeArtifact who, .grant what2 who]
+      | _ => r
+    | .tap _ true, .putCounters what _ => .sequence [.tap (tapWho who), .putCounters what (counterWho who)]
+    | _, _ => r
   | .putCounters what _ => .putCounters what (counterWho who)
   | .pump p t _ => .pump p t who
-  | .sequence [.pump p t _, .grant what _] =>
-    .sequence [.pump p t who, .grant what who]
   | .destroy _ note => .destroy who note
   | .dealDamage n _ note => .dealDamage n who note
-  | .lose what _ => .lose what who
-  | .cant (.beBlocked _) => .cant (.beBlocked who)
-  | .sequence [.becomeArtifact _, .grant what _] =>
-    .sequence [.becomeArtifact who, .grant what who]
-  | .becomePrepared _ prep => .becomePrepared who prep
-  | .setBasePT p t _ => .setBasePT p t who
-  | .grant what _ => .grant what who
+  | .grant what _ =>
+    match what with
+    | .cant (.beBlocked _) => .cant (.beBlocked who)
+    | _ => .grant what who
   | .tap _ true => .tap (tapWho who) true
   | .untap _ => .untap who
-  | .sequence [.tap _ true, .putCounters what _] =>
-    .sequence [.tap (tapWho who), .putCounters what (counterWho who)]
   | .putOnLibrary place _ => .putOnLibrary place who
   | .exile _ how note => .exile who how note
   | r => r
@@ -3355,7 +3362,7 @@ def ofTargetWhileSource : PermanentAction → Resolution :=
   ofAffected (.target .whileSource)
 
 /-- The `PermanentAction` that `ofAffected who` built for `r`, if any. -/
-def affectedAction? (who : ObjectSelector) (r : Resolution) : Option PermanentAction :=
+def affectedAction? (who : @& ObjectSelector) (r : @& Resolution) : Option PermanentAction :=
   let cWho := match who with | .any | .target .any => .permanent | w => w
   let tWho := match who with | .enchanted => .enchantedWhileSource | w => w
   match r with
@@ -3386,12 +3393,12 @@ def affectedAction? (who : ObjectSelector) (r : Resolution) : Option PermanentAc
   | _ => none
 
 /-- The `PermanentAction` that `onPermanent` built for `r`, if any. -/
-def onPermanent? : Resolution → Option PermanentAction :=
-  affectedAction? .target
+def onPermanent? (r : @& Resolution) : Option PermanentAction :=
+  affectedAction? .target r
 
 /-- The `PermanentAction` that `onSource` built for `r`, if any. -/
-def onSource? : Resolution → Option PermanentAction :=
-  affectedAction? .source
+def onSource? (r : @& Resolution) : Option PermanentAction :=
+  affectedAction? .source r
 
 end Resolution
 
@@ -3482,24 +3489,24 @@ abbrev QueuedReflexive := SpellCastKind
 
 namespace QueuedReflexive
 
-@[match_pattern] abbrev queuedReflexiveKind (n : Nat := 0) (times : Nat := 0)
+@[match_pattern] abbrev queuedReflexiveKind (nOpt : Option Nat := Option.none) (timesOpt : Option Nat := Option.none)
     (countersFlag : Bool := false) (damageFlag : Bool := false) (dividedFlag : Bool := false)
     (copyFlag : Bool := false) (attackPumpFlag : Bool := false) (noneFlag : Bool := false) : QueuedReflexive :=
-  .spellCastKind n times countersFlag damageFlag dividedFlag copyFlag attackPumpFlag noneFlag
+  .spellCastKind nOpt timesOpt Option.none countersFlag damageFlag dividedFlag copyFlag attackPumpFlag noneFlag
 @[match_pattern] abbrev modeled (kind times : Nat) : QueuedReflexive :=
-  .queuedReflexiveKind kind times false false false false false false
+  .queuedReflexiveKind (some kind) (some times) false false false false false false
 @[match_pattern] abbrev counters (kind : Nat) : QueuedReflexive :=
-  .queuedReflexiveKind kind 0 true false false false false false
+  .queuedReflexiveKind (some kind) Option.none true false false false false false
 @[match_pattern] abbrev damage (n : Nat) : QueuedReflexive :=
-  .queuedReflexiveKind n 0 false true false false false false
+  .queuedReflexiveKind (some n) Option.none false true false false false false
 @[match_pattern] abbrev divided (amount : Nat) : QueuedReflexive :=
-  .queuedReflexiveKind amount 0 false false true false false false
+  .queuedReflexiveKind (some amount) Option.none false false true false false false
 @[match_pattern] abbrev copy : QueuedReflexive :=
-  .queuedReflexiveKind 0 0 false false false true false false
+  .queuedReflexiveKind Option.none Option.none false false false true false false
 @[match_pattern] abbrev attackPump : QueuedReflexive :=
-  .queuedReflexiveKind 0 0 false false false false true false
+  .queuedReflexiveKind Option.none Option.none false false false false true false
 @[match_pattern] abbrev none : QueuedReflexive :=
-  .queuedReflexiveKind 0 0 false false false false false true
+  .queuedReflexiveKind Option.none Option.none false false false false false true
 
 end QueuedReflexive
 
@@ -3513,7 +3520,8 @@ def trickArrowModes : List TriggerResolution :=
 
 /-- Which reflexive `follow` queues as a printed MSH ability. Any other
 resolution is `.none`; the caller still puts that follow-up on the stack. -/
-def queuedReflexive : TriggerResolution → QueuedReflexive
+def queuedReflexive (r : @& TriggerResolution) : QueuedReflexive :=
+  match r with
   | .grant (.keywords k) .target =>
     if k == Keyword.indestructible then
       .modeled (TriggerReflexiveKind.toNat .grantIndestructible) 1
@@ -3671,7 +3679,7 @@ export Resolution (
 
 
 /-- The “if …” clause for `cond`, without a following resolution. -/
-private def ifClause (cond : TriggeredAbility.ConditionSelector) (noun : String) : String :=
+private def ifClause (cond : @& TriggeredAbility.ConditionSelector) (noun : @& String) : String :=
   match cond with
   | .subtype subtype => s!"if {noun} is {indefinite subtype} {subtype}"
   | .mvAtMost n => s!"if that spell's mana value was {n} or less"
@@ -3685,207 +3693,283 @@ private def ifClause (cond : TriggeredAbility.ConditionSelector) (noun : String)
 private def trimPeriod (s : String) : String :=
   if s.endsWith "." then (s.dropEnd 1).toString else s
 
-private def phraseOneFallback (r : SpellResolution) (noun : String) : String :=
+private def phraseOneFallback (r : @& SpellResolution) (noun : @& String) : String :=
   match r.onPermanent? with
   | some action => PermanentAction.toNotation action noun
   | none => ""
 
-private def phraseOneCombat (r : SpellResolution) (noun : String) : String :=
+private def phraseOneCombat (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
-    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
-  | .pump (.fixed p) (.fixed t) .allCreatures =>
-    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-  | .pump (.fixed p) (.fixed t) .creaturesOfTargetPlayer =>
-    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
-  | .pump (.fixed p) (.fixed t) .creatureTargets =>
-    PermanentAction.toNotation (.pump p t) "target creature"
-  | .dealDamage .otherSpellsManaValue .opponentsCreatures _ =>
-    "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
-  | .dealDamage (.fixed n) .allCreatures _ =>
-    s!"deals {n} damage to each creature"
-  | .dealDamage (.fixed n) .opponentsCreatures _ =>
-    s!"deals {n} damage to each creature your opponents control"
-  | .dealDamage (.fixed n) (.nonSubtypeCreatures subtype) _ =>
-    s!"deals {n} damage to each non-{subtype} creature"
-  | .dealDamage .otherSpellsManaValue .allCreatures _ =>
-    "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
-  | .dealDamage .otherSpellsManaValue (.nonSubtypeCreatures subtype) _ =>
-    s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
-  | .dealDamage (.fixed n) (.player (.controller .target)) _ =>
-    s!"it also deals {n} damage to that creature's controller"
+  | .pump pOpt tOpt who =>
+    match pOpt, tOpt, who with
+    | .fixed p, .fixed t, .creaturesYouControl =>
+      s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+    | .fixed p, .fixed t, .allCreatures =>
+      s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
+    | .fixed p, .fixed t, .creaturesOfTargetPlayer =>
+      s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
+    | .fixed p, .fixed t, .creatureTargets =>
+      PermanentAction.toNotation (.pump p t) "target creature"
+    | _, _, _ => phraseOneFallback r noun
+  | .dealDamage amount who _ =>
+    match amount, who with
+    | .otherSpellsManaValue, .opponentsCreatures =>
+      "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
+    | .fixed n, .allCreatures =>
+      s!"deals {n} damage to each creature"
+    | .fixed n, .opponentsCreatures =>
+      s!"deals {n} damage to each creature your opponents control"
+    | .fixed n, .nonSubtypeCreatures subtype =>
+      s!"deals {n} damage to each non-{subtype} creature"
+    | .otherSpellsManaValue, .allCreatures =>
+      "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
+    | .otherSpellsManaValue, .nonSubtypeCreatures subtype =>
+      s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
+    | .fixed n, .player (.controller .target) =>
+      s!"it also deals {n} damage to that creature's controller"
+    | _, _ => phraseOneFallback r noun
   | r => phraseOneFallback r noun
 
-private def phraseOneGrant (r : SpellResolution) (noun : String) : String :=
+private def phraseOneGrant (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .fight _ (.timesPower 1) =>
-    "target creature you control deals damage equal to its power to target creature an opponent controls"
-  | .fight _ (.timesPower k) =>
-    s!"Target creature you control deals damage equal to {timesPhrase k} its power to target creature an opponent controls."
-  | .fight .announced .mutual =>
-    "target creature you control fights target creature an opponent controls"
-  | .fight .announced .upToOneOther =>
-    "target creature you control fights up to one other target creature"
-  | .grant .extraLand .youIfCast => "you may play an additional land this turn"
-  | .grant (.keywords k) .creaturesYouControl =>
-    s!"creatures you control gain {k.joinedAnd} until end of turn"
-  | .counter => s!"counter {noun}"
-  | .attach .equipmentYouControl .target =>
-    "attach an Equipment you control to it"
-  | .recruit => "recruit"
-  | .gainControl .exchangeTargets =>
-    "exchange control of two target nonland permanents that share a card type"
-  | .replace =>
-    s!"if {noun} would die this turn, exile it instead"
-  | .cant (.castSpellsThisTurn .any) =>
-    "players can't cast spells this turn"
-  | .gainControl .oppArtifacts =>
-    "for each opponent, gain control of up to one target artifact that player controls"
-  | .grant .phaseOutKicker .target =>
-    "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
-  | .investigate (.target .player) =>
-    "target player investigates"
-  | .grant (.keywords k) .creatureTargets =>
-    PermanentAction.toNotation (.grantKeywords k) "target creature"
-  | .grant (.artifactCreature p t kw) .target =>
-    s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
-  | .becomeCopy .nontokenCreaturesYouControl =>
-    "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
-  | .gainControl .untilEotOrNextIfVillain =>
-    "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
-  | .spellsCostLess (.cardType ty) (.fixed n) =>
-    s!"{ty} spells you cast this turn cost \{{n}} less to cast"
-  | .spellsCostLess (.supertype s) (.fixed n) =>
-    s!"{s} spells you cast this turn cost \{{n}} less to cast"
+  | .grant what who =>
+    match what with
+    | .fight how =>
+      match how, who with
+      | .timesPower 1, _ =>
+        "target creature you control deals damage equal to its power to target creature an opponent controls"
+      | .timesPower k, _ =>
+        s!"Target creature you control deals damage equal to {timesPhrase k} its power to target creature an opponent controls."
+      | .mutual, .announced =>
+        "target creature you control fights target creature an opponent controls"
+      | .upToOneOther, .announced =>
+        "target creature you control fights up to one other target creature"
+      | _, _ => phraseOneFallback r noun
+    | .extraLand =>
+      if who == .youIfCast then "you may play an additional land this turn" else phraseOneFallback r noun
+    | .keywords k =>
+      match who with
+      | .creaturesYouControl => s!"creatures you control gain {k.joinedAnd} until end of turn"
+      | .creatureTargets => PermanentAction.toNotation (.grantKeywords k) "target creature"
+      | _ => phraseOneFallback r noun
+    | .counterSpell =>
+      if who == .target then s!"counter {noun}" else phraseOneFallback r noun
+    | .attachTo host =>
+      if host == .target && who == .equipmentYouControl then "attach an Equipment you control to it"
+      else phraseOneFallback r noun
+    | .recruit whoRec =>
+      if whoRec == .recruit && who == .youIfCast then "recruit" else phraseOneFallback r noun
+    | .control how =>
+      if who == .target then
+        match how with
+        | .exchangeTargets => "exchange control of two target nonland permanents that share a card type"
+        | .oppArtifacts => "for each opponent, gain control of up to one target artifact that player controls"
+        | .untilEotOrNextIfVillain =>
+          "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
+        | _ => phraseOneFallback r noun
+      else phraseOneFallback r noun
+    | .replace =>
+      if who == .target then s!"if {noun} would die this turn, exile it instead" else phraseOneFallback r noun
+    | .cant action =>
+      match action with
+      | .castSpellsThisTurn .any =>
+        if who == .target then "players can't cast spells this turn" else phraseOneFallback r noun
+      | _ => phraseOneFallback r noun
+    | .phaseOutKicker =>
+      if who == .target then
+        "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
+      else phraseOneFallback r noun
+    | .investigate =>
+      if who == .player (.target .player) then "target player investigates" else phraseOneFallback r noun
+    | .artifactCreature p t kw =>
+      if who == .target then
+        s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
+      else phraseOneFallback r noun
+    | .copy ofObj =>
+      if ofObj == .nontokenCreaturesYouControl && who == .source then
+        "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
+      else phraseOneFallback r noun
+    | .spellsCostLess which (.fixed n) =>
+      if who == .youIfCast then
+        match which with
+        | .cardType ty => s!"{ty} spells you cast this turn cost \{{n}} less to cast"
+        | .supertype s => s!"{s} spells you cast this turn cost \{{n}} less to cast"
+        | _ => phraseOneFallback r noun
+      else phraseOneFallback r noun
+    | _ => phraseOneFallback r noun
   | r => phraseOneFallback r noun
 
-private def phraseOnePlayerResource (r : SpellResolution) (noun : String) : String :=
+private def phraseOnePlayerResource (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
   | .unrecognized => "this effect does nothing"
-  | .loseLife (.fixed n) .you => s!"lose {n} life"
-  | .loseLife (.fixed n) .player => s!"{noun} loses {n} life"
-  | .loseLife (.fixed n) (.controller .target) => s!"its controller loses {n} life"
-  | .loseLife (.fixed n) .eachOpponent => s!"each opponent loses {n} life"
-  | .gainLife (.fixed n) .you => s!"you gain {n} life"
-  | .gainLife (.fixed n) .player => s!"Target player gains {n} life"
-  | .surveil (.fixed n) .none => s!"surveil {n}"
-  | .draw (.fixed n) .you => s!"draw {cardPhrase n.toNat}"
-  | .draw (.fixed n) .player => s!"{noun} draws {cardPhrase n.toNat}"
-  | .scry (.fixed n) => s!"scry {n}"
-  | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
-    s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
-  | .draw .greatestToughnessThenPutCreatures _ =>
-    "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
-  | .mill (.fixed n) _ (.toHand (.oneOf a b)) =>
-    s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
-  | .mill (.fixed n) _ (.toHand (.upTo max ty)) =>
-    s!"mill {n} cards, then put up to {englishNumber max} {ty.oracleWord} cards from among them into your hand"
-  | .mill (.fixed n) _ (.toHand (.allOf a b)) =>
-    s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
-  | .addMana #[] (.fixed n) (.subtypeSpells subtype) =>
-    s!"add {englishNumber n.toNat} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
-  | .mill (.fixed n) _ (.permanentAndGainLife life) =>
-    s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
+  | .gainLife amount who isLose =>
+    match amount, who, isLose with
+    | .fixed n, .you, true => s!"lose {n} life"
+    | .fixed n, .player, true => s!"{noun} loses {n} life"
+    | .fixed n, .controller .target, true => s!"its controller loses {n} life"
+    | .fixed n, .eachOpponent, true => s!"each opponent loses {n} life"
+    | .fixed n, .you, false => s!"you gain {n} life"
+    | .fixed n, .player, false => s!"Target player gains {n} life"
+    | _, _, _ => phraseOneFallback r noun
+  | .scry (.fixed n) surveilOpt =>
+    match surveilOpt with
+    | some .none => s!"surveil {n}"
+    | none => s!"scry {n}"
+    | _ => phraseOneFallback r noun
+  | .draw amount who =>
+    match amount, who with
+    | .fixed n, .you => s!"draw {cardPhrase n.toNat}"
+    | .fixed n, .player => s!"{noun} draws {cardPhrase n.toNat}"
+    | .greatestToughnessThenPutCreatures, _ =>
+      "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
+    | _, _ => phraseOneFallback r noun
+  | .addMana types amount note =>
+    match types, amount, note with
+    | #[.colored .red], .count (.oppPermanents ty), _ =>
+      s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
+    | #[], .fixed n, .subtypeSpells subtype =>
+      s!"add {englishNumber n.toNat} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
+    | _, _, _ => phraseOneFallback r noun
+  | .mill (.fixed n) _ note =>
+    match note with
+    | .toHand (.oneOf a b) =>
+      s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
+    | .toHand (.upTo max ty) =>
+      s!"mill {n} cards, then put up to {englishNumber max} {ty.oracleWord} cards from among them into your hand"
+    | .toHand (.allOf a b) =>
+      s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
+    | .permanentAndGainLife life =>
+      s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
+    | _ => phraseOneFallback r noun
   | .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying _ =>
     "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   | r => phraseOneFallback r noun
 
-private def phraseOneTapDiscardOrReturn (r : SpellResolution) (noun : String) : String :=
+private def phraseOneTapDiscardOrReturn (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .discard (.cards n) => s!"discard {cardPhrase n}"
-  | .returnToHand .targetSpell _ => s!"return {noun} to its owner's hand"
-  | .returnToHand (.target .graveyardCard) _ => s!"return up to one {noun} to your hand"
-  | .tap (.target .eachPermanent) => "tap one or two target creatures"
-  | .returnToHand .creaturesNotChosenType _ =>
-    "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
-  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
-    "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
-  | .returnToHand .eachPermanent _ =>
-    "return one or two target nonland permanents to their owners' hands"
-  | .untap .creatureTargets =>
-    PermanentAction.toNotation .untap "target creature"
-  | .returnToHand (.graveyardSubtype subtype) _ =>
-    s!"return target {subtype} card from your graveyard to your hand"
-  | .discard (.cardsUnlessType n ty) =>
-    s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
+  | .discard what =>
+    match what with
+    | .cards n => s!"discard {cardPhrase n}"
+    | .cardsUnlessType n ty =>
+      s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
+    | _ => phraseOneFallback r noun
+  | .returnToHand what note =>
+    match what, note with
+    | .targetSpell, _ => s!"return {noun} to its owner's hand"
+    | .target .graveyardCard, _ => s!"return up to one {noun} to your hand"
+    | .creaturesNotChosenType, _ =>
+      "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
+    | .ownedCreaturesKicker, .delayedBirds =>
+      "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+    | .eachPermanent, _ =>
+      "return one or two target nonland permanents to their owners' hands"
+    | .graveyardSubtype subtype, _ =>
+      s!"return target {subtype} card from your graveyard to your hand"
+    | .upToTwoGyModal, _ =>
+      "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
+    | _, _ => phraseOneFallback r noun
+  | .tap who tapped =>
+    match who, tapped with
+    | .target .eachPermanent, true => "tap one or two target creatures"
+    | .creatureTargets, false => PermanentAction.toNotation .untap "target creature"
+    | _, _ => phraseOneFallback r noun
   | .putOnLibrary .secondOrBottomThenConnive .target =>
     "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
-  | .returnToHand .upToTwoGyModal _ =>
-    "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
   | r => phraseOneFallback r noun
 
-private def phraseOneTokensOrCounters (r : SpellResolution) (noun : String) : String :=
+private def phraseOneTokensOrCounters (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .putCounters (.ofKind kind n) .creatureTargets =>
-    s!"put {kind.countersPhrase n} on up to one target creature"
-  | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
-    s!"put {kind.countersPhrase n} on target creature you control"
+  | .putCounters what who =>
+    match what, who with
+    | .ofKind kind n, .creatureTargets =>
+      s!"put {kind.countersPhrase n} on up to one target creature"
+    | .ofKind kind n, .firstTargetCreatureYouControl =>
+      s!"put {kind.countersPhrase n} on target creature you control"
+    | .ofKind .plusOnePlusOne n, .youControl .eachCreature =>
+      s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
+    | .ofKind .plusOnePlusOne n, .eachOther =>
+      s!"put {plusOnePlusOneCountersPhrase n} on each other creature you control"
+    | .ofKind .plusOnePlusOne n, .permanent _ =>
+      s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+    | _, _ => phraseOneFallback r noun
   | .amass (.fixed n) subtype =>
     s!"amass {pluralizeName subtype} {n}"
-  | .createTokens kind .chosenX _ _ _ =>
-    s!"create X {kind.pluralNoun}"
-  | .createTokens kind (.perSubtype subtype) _ _ _ =>
-    s!"Create a {kind.oracleNoun} for each {subtype} you control"
-  | .createTokens .galactus (.fixed 1) false .you .none =>
-    "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-  | .createTokens kind (.fixed n) _ .you _ =>
-    TokenKind.createPhrase kind n.toNat
-  | .createTokens kind (.fixed n) _ .player _ =>
-    s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.youControl .eachCreature) =>
-    s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
-  | .putCounters (.ofKind .plusOnePlusOne n) .eachOther =>
-    s!"put {plusOnePlusOneCountersPhrase n} on each other creature you control"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.permanent _) =>
-    s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+  | .createTokens kind amount tapped who note =>
+    match kind, amount, tapped, who, note with
+    | _, .chosenX, _, _, _ =>
+      s!"create X {kind.pluralNoun}"
+    | _, .perSubtype subtype, _, _, _ =>
+      s!"Create a {kind.oracleNoun} for each {subtype} you control"
+    | .galactus, .fixed 1, false, .you, .none =>
+      "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+    | _, .fixed n, _, .you, _ =>
+      TokenKind.createPhrase kind n.toNat
+    | _, .fixed n, _, .player, _ =>
+      s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
+    | _, _, _, _, _ => phraseOneFallback r noun
   | r => phraseOneFallback r noun
 
-private def phraseOnePutExileOrDestroy (r : SpellResolution) (noun : String) : String :=
+private def phraseOnePutExileOrDestroy (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .exile (.graveyardCardsOfType ty (.target .player)) .anyManaWhileExiled _ =>
-    s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
-  | .exile .targetSpell .forLater .counteredPermanentMayCast =>
-    s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
-  | .exile .eachPermanent .returnImmediately _ =>
-    "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
-  | .exile .attackingCreatures .forLater .controllerMaySearchBasic =>
-    s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
-  | .exile (.topN n) (.playIfYouControlSubtype subtype) _ =>
-    s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
-  | .exile .opponentTopX .playForLifeThisTurn _ =>
-    "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
-  | .put .creaturesDiedThisTurn .tapped .asFood =>
-    "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
-  | .exile (.creatureMvAtMostOrTeamwork n) .forLater (.gainLifeIfTeamwork life) =>
-    s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
-  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted _ =>
-    s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
-  | .exile (.topN _) .playUntilNextTurn _ =>
-    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .exile .allCreatures .forLater .worldsWithinWorlds =>
-    "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
-  | .exile .hand .playUntilNextTurn .thenDrawThree =>
-    "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+  | .exile what how note =>
+    match what, how, note with
+    | .graveyardCardsOfType ty (.target .player), .anyManaWhileExiled, _ =>
+      s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
+    | .targetSpell, .forLater, .counteredPermanentMayCast =>
+      s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
+    | .eachPermanent, .returnImmediately, _ =>
+      "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
+    | .attackingCreatures, .forLater, .controllerMaySearchBasic =>
+      s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
+    | .topN n, .playIfYouControlSubtype subtype, _ =>
+      s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
+    | .opponentTopX, .playForLifeThisTurn, _ =>
+      "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
+    | .creatureMvAtMostOrTeamwork n, .forLater, .gainLifeIfTeamwork life =>
+      s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
+    | .topN _, .playUntilNextTurn, _ =>
+      s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+    | .allCreatures, .forLater, .worldsWithinWorlds =>
+      "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
+    | .hand, .playUntilNextTurn, .thenDrawThree =>
+      "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+    | _, _, _ => phraseOneFallback r noun
+  | .put what how note =>
+    match what, how, note with
+    | .creaturesDiedThisTurn, .tapped, .asFood =>
+      "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
+    | .creatureMvAtMostOrTeamwork n, .asPrinted, _ =>
+      s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
+    | _, _, _ => phraseOneFallback r noun
   | r => phraseOneFallback r noun
 
-private def phraseOneRevealOrReflexive (r : SpellResolution) (noun : String) : String :=
+private def phraseOneRevealOrReflexive (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
-  | .searchLibrary (.returnToHand (.supertypeCard s ty) _) =>
-    searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .searchLibrary (.put (.supertypeCard s ty) .tapped _) =>
-    s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
-  | .searchLibrary (.put .artifactCreatureX _ _) =>
-    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
-  | .revealLibrary (.top n) (.returnToHand .twoPiles _) _ =>
-    s!"look at the top {englishNumber n} cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
-  | .revealLibrary (.top n) (.sequence [.put .landsYouControl .tapped _, .gainLife (.fixed life) _]) _ =>
-    s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
-  | .revealLibrary (.top n) (.put .creaturesYouControl _ _) _ =>
-    s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
+  | .revealLibrary how thenDo who =>
+    match how, who with
+    | .search, .you =>
+      match thenDo with
+      | .returnToHand (.supertypeCard s ty) _ =>
+        searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
+      | .put (.supertypeCard s ty) .tapped _ =>
+        s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
+      | .put .artifactCreatureX _ _ =>
+        "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
+      | _ => phraseOneFallback r noun
+    | .top n, _ =>
+      match thenDo with
+      | .returnToHand .twoPiles _ =>
+        s!"look at the top {englishNumber n} cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
+      | .sequence [.put .landsYouControl .tapped _, .gainLife (.fixed life) _] =>
+        s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
+      | .put .creaturesYouControl _ _ =>
+        s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
+      | _ => phraseOneFallback r noun
+    | _, _ => phraseOneFallback r noun
   | r => phraseOneFallback r noun
 
-private def phraseOneMay (action follow : SpellResolution) (when : TriggerMayWhen)
-    (noun : String) (recurse : SpellResolution → String → String) : String :=
+private def phraseOneMay (action follow : @& SpellResolution) (when : @& TriggerMayWhen)
+    (noun : @& String) (recurse : SpellResolution → String → String) : String :=
   match action, follow, when with
   | .draw (.perControlled ty) _, .draw (.fixed 1) .eachOpponent, .ifYouDo =>
     s!"You may draw a card for each {ty.oracleWord} you control. If you do, each opponent draws a card"
@@ -3899,7 +3983,7 @@ private def phraseOneMay (action follow : SpellResolution) (when : TriggerMayWhe
     let base := if base.startsWith "you " then (base.drop 4).toString else base
     if base.isEmpty then "you may" else s!"you may {base}"
 
-private def phraseOneModes (r : SpellResolution) (noun : String)
+private def phraseOneModes (r : @& SpellResolution) (noun : @& String)
     (recurse : SpellResolution → String → String) : String :=
   match r with
   | .sequence _ | .or _ => ""
@@ -3912,23 +3996,29 @@ private def phraseOneModes (r : SpellResolution) (noun : String)
     let base := trimPeriod (recurse r noun)
     let cond := ifClause cond noun
     if base.isEmpty then cond else s!"{cond}, {base}"
-  | .ifElse .teamwork (.dealDamage (.fixed teamworkN) .target .none) (.dealDamage (.fixed n) .target .none) =>
-    s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
-  | .ifElse .teamwork (.unlessPays .counter teamworkN) (.unlessPays .counter n) =>
-    s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
   | .ifElse cond whenTrue whenFalse =>
-    let no := trimPeriod (recurse whenFalse noun)
-    let yes := trimPeriod (recurse whenTrue noun)
-    let cond := ifClause cond noun
-    if no.isEmpty then
-      if yes.isEmpty then cond else s!"{cond}, {yes}"
-    else if yes.isEmpty then no
-    else s!"{no}. {capitalizeAscii cond}, {yes} instead"
+    let defaultPhrase := fun () =>
+      let no := trimPeriod (recurse whenFalse noun)
+      let yes := trimPeriod (recurse whenTrue noun)
+      let condStr := ifClause cond noun
+      if no.isEmpty then
+        if yes.isEmpty then condStr else s!"{condStr}, {yes}"
+      else if yes.isEmpty then no
+      else s!"{no}. {capitalizeAscii condStr}, {yes} instead"
+    if cond == .teamwork then
+      match whenTrue, whenFalse with
+      | .dealDamage (.fixed teamworkN) .target .none, .dealDamage (.fixed n) .target .none =>
+        s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
+      | .unlessPays .counter teamworkN, .unlessPays .counter n =>
+        s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
+      | _, _ => defaultPhrase ()
+    else
+      defaultPhrase ()
   | r => phraseOneFallback r noun
 
 /-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
 outside this match so the constructor splitter is not recursive. -/
-private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
+private partial def phraseOne (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
   | .combatCountersOrTokens (some _) .. => phraseOneGrant r noun
   | .combatCountersOrTokens none (some _) ..
@@ -3944,7 +4034,7 @@ private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
 
 export Resolution (flatten)
 
-private def phraseSequencePart2 (rs : List SpellResolution) (noun : String) : String :=
+private def phraseSequencePart2 (rs : @& List SpellResolution) (noun : @& String) : String :=
   match rs with
   | [.putCounters (.ofKind kind k) .firstTargetCreatureYouControl, .fight .announced .mutual] =>
     s!"put {kind.countersPhrase k} on target creature you control. Then it fights target creature an opponent controls"
@@ -3998,7 +4088,7 @@ private def phraseSequencePart2 (rs : List SpellResolution) (noun : String) : St
 
 /-- Printed wording of a flat sequence. Known shapes keep their Oracle text;
 other sequences join each step. -/
-private def phraseSequence (rs : List SpellResolution) (noun : String) : String :=
+private def phraseSequence (rs : @& List SpellResolution) (noun : @& String) : String :=
   match (Resolution.sequence rs).onPermanent? with
   | some action => PermanentAction.toNotation action noun
   | none =>
@@ -4050,7 +4140,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
 
 /-- Printed wording of a choice. The library pair keeps its Oracle sentence;
 other choices join each alternative. -/
-private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
+private def phraseOr (rs : @& List SpellResolution) (noun : @& String) : String :=
   match rs with
   | [.putOnLibrary .top .target, .putOnLibrary .bottom .target] =>
     s!"{noun}'s owner puts it on their choice of the top or bottom of their library"
@@ -4063,7 +4153,7 @@ private def phraseOr (rs : List SpellResolution) (noun : String) : String :=
 `.timesPower` is the one-sided Quarrel wording, including a multiple of that
 power. `.fight .announced` is the two-creature fight, including the later step
 of a counter-then-fight sequence and a fight of up to one other creature. -/
-def toPhrase (r : SpellResolution) (noun : String) : String :=
+def toPhrase (r : @& SpellResolution) (noun : @& String) : String :=
   match r with
   | .sequence rs => phraseSequence (rs.flatMap flatten) noun
   | .or rs => phraseOr rs noun

@@ -558,22 +558,21 @@ def effectLines (cardName : String) (e : Effect) : List String :=
       "Draw a card."]
   | _ => fallback
 
-inductive ParsedAbility where
-  | parsedAbilityKind (k : StaticAbility ⊕ TriggeredAbility ⊕ ActivatedAbility ⊕ Effect ⊕ (Array Effect × ModalRule))
-deriving Repr, Inhabited
+abbrev ParsedAbility :=
+  StaticAbility ⊕ TriggeredAbility ⊕ ActivatedAbility ⊕ Effect ⊕ (Array Effect × ModalRule)
 
 namespace ParsedAbility
 
 @[match_pattern] abbrev static (ab : StaticAbility) : ParsedAbility :=
-  .parsedAbilityKind (.inl ab)
+  Sum.inl ab
 @[match_pattern] abbrev triggered (ab : TriggeredAbility) : ParsedAbility :=
-  .parsedAbilityKind (.inr (.inl ab))
+  Sum.inr (Sum.inl ab)
 @[match_pattern] abbrev activated (ab : ActivatedAbility) : ParsedAbility :=
-  .parsedAbilityKind (.inr (.inr (.inl ab)))
+  Sum.inr (Sum.inr (Sum.inl ab))
 @[match_pattern] abbrev spell (e : Effect) : ParsedAbility :=
-  .parsedAbilityKind (.inr (.inr (.inr (.inl e))))
+  Sum.inr (Sum.inr (Sum.inr (Sum.inl e)))
 @[match_pattern] abbrev modes (es : Array Effect) (rule : ModalRule) : ParsedAbility :=
-  .parsedAbilityKind (.inr (.inr (.inr (.inr (es, rule)))))
+  Sum.inr (Sum.inr (Sum.inr (Sum.inr (es, rule))))
 
 end ParsedAbility
 

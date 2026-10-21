@@ -1973,7 +1973,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
           (o.printed.isEnchantment || o.printed.isInstantOrSorcery) && within o
       offer g eligible
         s!"{(g.player controller).name} may cast a spell from among the milled cards"
-    | .specialCastOrigin _ true => g
+    | _ => g
 
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other selector amasses
@@ -2150,8 +2150,7 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             amassYouControlledThisWay := o.controller == some controller } }
       | .chosenToken =>
         objs.foldl (fun g o => if o.printed.isToken then g.destroyPermanent o else g) g
-      | .none | .drawIfNotAttacking | .drawIfLegendaryEnchantment
-        | .controllerCreatesHuman | .gainLifeEach =>
+      | _ =>
         objs.foldl (fun g o => g.destroyPermanent o) g
 
 /-- Resolve `TriggerResolution.addMana`. Each printed combination keeps

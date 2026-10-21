@@ -54,7 +54,7 @@ namespace DelayedEndStepTrigger
 @[match_pattern] abbrev delayedEndStepKind (id : ObjectId := ⟨0⟩) (controller : PlayerId := ⟨0⟩) (count : Nat := 0)
     (exileOrSac : Bool := false) (sacFlag : Bool := false) (fromGy : Bool := false) (destiny : Bool := false)
     (b5 : Bool := false) : DelayedEndStepTrigger :=
-  .copyDurationKind id controller count 0 exileOrSac sacFlag fromGy destiny b5
+  .copyDurationKind id controller count 0 #[] exileOrSac sacFlag fromGy destiny b5
 @[match_pattern] abbrev returnExiled (id : ObjectId) : DelayedEndStepTrigger :=
   .delayedEndStepKind id ⟨0⟩ 0 false false false false false
 @[match_pattern] abbrev exilePermanent (id : ObjectId) : DelayedEndStepTrigger :=
@@ -124,7 +124,7 @@ abbrev AfterLibrarySearch := CopyDuration
 namespace AfterLibrarySearch
 
 @[match_pattern] abbrev afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false) : AfterLibrarySearch :=
-  .copyDurationKind id ⟨0⟩ minLands 0 plusOne untapLands false false false
+  .copyDurationKind id ⟨0⟩ minLands 0 #[] plusOne untapLands false false false
 @[match_pattern] abbrev none : AfterLibrarySearch :=
   .afterSearchKind ⟨0⟩ 0 false false
 @[match_pattern] abbrev plusOneOn (id : ObjectId) : AfterLibrarySearch :=

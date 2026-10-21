@@ -14,16 +14,16 @@ namespace Game
 abbrev ManaRestriction := Mtg.Engine.ManaRestriction
 
 /-- The mana a mana ability adds (CR 106.1). -/
-inductive ManaOutput where
-  /-- Parameterized mana output: `fixed` (`!chooseType && !colorAmongFlag`), `oneOf` (`chooseType && !combinationFlag && !colorAmongFlag`), `combination` (`chooseType && combinationFlag && !colorAmongFlag`), or `colorAmong` (`colorAmongFlag`). -/
-  | manaOutputKind (types : Array ManaType) (amount : Nat := 1)
-      (chooseType : Bool := false) (combinationFlag : Bool := false) (colorAmongFlag : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ManaOutput := CopyDuration
 
 /-- One mana of each color. -/
 def anyColorMana : Array ManaType := (Color.all.map ManaType.colored).toArray
 
 namespace ManaOutput
+
+@[match_pattern] abbrev manaOutputKind (types : Array ManaType) (amount : Nat := 1)
+    (chooseType : Bool := false) (combinationFlag : Bool := false) (colorAmongFlag : Bool := false) : ManaOutput :=
+  .copyDurationKind ⟨0⟩ ⟨0⟩ amount 0 types chooseType combinationFlag colorAmongFlag false false
 
 /-- Exactly these mana. -/
 @[match_pattern] abbrev fixed (mana : Array ManaType) : ManaOutput :=
@@ -81,6 +81,10 @@ def amount : ManaOutput → Nat
   | _ => 0
 
 end ManaOutput
+
+namespace _root_.Mtg.Engine.CopyDuration
+export ManaOutput (manaOutputKind fixed oneOf combination colorAmong types withType allows amount)
+end _root_.Mtg.Engine.CopyDuration
 
 /-- A mana ability of a permanent (CR 605.1a). -/
 structure ManaAbilityDef where
