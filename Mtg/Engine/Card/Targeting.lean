@@ -247,24 +247,15 @@ silently offering no targets. Multiple instances of the word “target” list
 each slot in `spec` and are announced sequentially. Multiple targets of one
 instance are chosen together. -/
 inductive EffectTargetKind where
-  /-- No target (CR 115.1). -/
-  | none
-  /-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
-  | battlefield (t : BattlefieldTarget)
-  /-- A card target in a graveyard (CR 115.1 / 404.1). -/
-  | graveyard (t : GraveyardTarget)
-  /-- A spell or ability target on the stack (CR 115.1 / 405.1). -/
-  | stack (t : StackTarget)
-  /-- A player target, or a cross-category target involving a player or
-  graveyard (CR 115.1 / 115.4). -/
-  | playerTarget (t : PlayerTarget)
+  /-- Atomic or filtered targeting shape (CR 115.1): `none` (all `none`), battlefield (`battlefieldOpt = some t`), graveyard (`graveyardOpt = some t`), stack (`stackOpt = some t`), player (`playerOpt = some t`), filtered (`filteredOpt = some f`), or multi-filtered (`multiOpt = some (fs, optional)`). -/
+  | atomicTargetKind (battlefieldOpt : Option BattlefieldTarget := Option.none)
+      (graveyardOpt : Option GraveyardTarget := Option.none)
+      (stackOpt : Option StackTarget := Option.none)
+      (playerOpt : Option PlayerTarget := Option.none)
+      (filteredOpt : Option TargetFilter := Option.none)
+      (multiOpt : Option (Array TargetFilter × Array Nat) := Option.none)
   /-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
   | sequence (t : MultiTarget)
-  /-- One instance of the word “target” described by a `TargetFilter`. -/
-  | filtered (f : TargetFilter)
-  /-- One instance of “target” per filter, announced in order. Indices in
-  `optional` are “up to one” instances. -/
-  | multi (fs : Array TargetFilter) (optional : Array Nat)
   /-- The instances of “target” of `a`, then those of `b`: two modes of one
   modal spell chosen together (CR 700.2). -/
   | pair (a b : EffectTargetKind)
@@ -288,6 +279,21 @@ namespace TargetPreference
 end TargetPreference
 
 namespace EffectTargetKind
+
+@[match_pattern] abbrev none : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none Option.none
+@[match_pattern] abbrev battlefield (t : BattlefieldTarget) : EffectTargetKind :=
+  .atomicTargetKind (some t) Option.none Option.none Option.none Option.none Option.none
+@[match_pattern] abbrev graveyard (t : GraveyardTarget) : EffectTargetKind :=
+  .atomicTargetKind Option.none (some t) Option.none Option.none Option.none Option.none
+@[match_pattern] abbrev stack (t : StackTarget) : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none (some t) Option.none Option.none Option.none
+@[match_pattern] abbrev playerTarget (t : PlayerTarget) : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none Option.none (some t) Option.none Option.none
+@[match_pattern] abbrev filtered (f : TargetFilter) : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none Option.none Option.none (some f) Option.none
+@[match_pattern] abbrev multi (fs : Array TargetFilter) (optional : Array Nat) : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none (some (fs, optional))
 
 -- Battlefield permanent target aliases (CR 115.1 / 110.1)
 @[match_pattern] abbrev creatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl false false)
@@ -664,6 +670,7 @@ def spec : EffectTargetKind → Spec
       slots := la ++ lb
       optionalSlots := sa.optionalSlots ++ sb.optionalSlots.map (· + la.size)
       stackSpell := sa.stackSpell || sb.stackSpell }
+  | _ => { count := 0, prefer := .own }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=

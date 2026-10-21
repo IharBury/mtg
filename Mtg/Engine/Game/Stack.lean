@@ -12,14 +12,26 @@ ability whose total cost is being determined and paid
 
 namespace Mtg.Engine
 
+instance {α β : Type} [Inhabited α] : Inhabited (α ⊕ β) := ⟨.inl default⟩
+
 /-- A target chosen while casting a spell or putting an ability on the stack
 (CR 115). -/
 inductive Target where
-  | player (id : PlayerId)
-  | permanent (id : ObjectId)
-  /-- A card in a graveyard or a spell on the stack (CR 404 / 115.1). -/
-  | card (id : ObjectId)
+  /-- Unified target (CR 115): player (`.inl id`), permanent (`.inr (id, false)`), or card/spell (`.inr (id, true)`). -/
+  | targetKind (val : PlayerId ⊕ (ObjectId × Bool) := .inl ⟨0⟩)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace Target
+
+@[match_pattern] abbrev player (id : PlayerId) : Target :=
+  .targetKind (.inl id)
+@[match_pattern] abbrev permanent (id : ObjectId) : Target :=
+  .targetKind (.inr (id, false))
+/-- A card in a graveyard or a spell on the stack (CR 404 / 115.1). -/
+@[match_pattern] abbrev card (id : ObjectId) : Target :=
+  .targetKind (.inr (id, true))
+
+end Target
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
 structure StackEntry where
@@ -44,9 +56,15 @@ deriving Repr, Inhabited
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
 inductive ProposalKind where
-  | spell
-  | activatedAbility
+  | proposalKind (isActivatedAbility : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace ProposalKind
+
+@[match_pattern] abbrev spell : ProposalKind := .proposalKind false
+@[match_pattern] abbrev activatedAbility : ProposalKind := .proposalKind true
+
+end ProposalKind
 
 /-- Rollback snapshot of the game state before a spell or activated ability
 was proposed (CR 733.1). -/

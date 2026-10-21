@@ -385,27 +385,18 @@ namespace KeywordStatic
 @[match_pattern] abbrev tapSacrificeAddThreeOfOneColor : KeywordStatic := .intrinsicManaStatic true true
 end KeywordStatic
 
-/-- A static ability the engine understands (CR 604).
-9 field-bearing constructors aligned with CR 604 / CR 613 / CR 614 categories. -/
+/-- A static ability the engine understands (CR 604), aligned with CR 604 / CR 613 / CR 614 categories. -/
 inductive StaticAbility where
-  /-- Layer 4 type-changing static effects (CR 613.1d). -/
-  | typeChange (which : TypeStatic := .enchantedIsConstruct55)
-  /-- Layer 6 ability-adding and ability-removing static effects (CR 613.1f). -/
-  | ability (which : AbilityStatic := .creaturesYouControlHave Keyword.trample)
-  /-- Layer 7a characteristic-defining P/T static abilities (CR 604.3 / CR 613.4a). -/
-  | cda (which : CdaStatic := .powerToughnessEqualLandsYouControl)
-  /-- Layer 7c power/toughness-modifying static effects (CR 613.4c). -/
-  | pt (which : PtStatic := .creaturesYouControlGet 2 2)
-  /-- Combat requirements, restrictions, and damage-assignment static abilities (CR 508 / CR 509 / CR 510). -/
-  | combat (which : CombatStatic := .attacksEachCombatIfAble)
-  /-- Cost modifiers, casting permissions, and casting restrictions (CR 601.2f / CR 601.3 / CR 305.1). -/
-  | costCast (which : CostCastStatic := .noncreatureSpellsCostLess)
-  /-- Replacement, prevention, trigger-modification, and rule-modifying static effects (CR 614 / CR 615 / CR 603.2d / CR 704). -/
-  | rule (which : RuleStatic := .maximumHandSize 0)
-  /-- Keyword, enchant, and intrinsic mana static abilities (CR 702 / CR 303.4 / CR 605). -/
-  | keyword (which : KeywordStatic := .improvise)
-  /-- Rules text kept when the line is not a modeled static ability. -/
-  | printed (text : String)
+  /-- Unified static ability (CR 604 / CR 613 / CR 614). -/
+  | staticAbilityKind (typeOpt : Option TypeStatic := none)
+      (abilityOpt : Option AbilityStatic := none)
+      (cdaOpt : Option CdaStatic := none)
+      (ptOpt : Option PtStatic := none)
+      (combatOpt : Option CombatStatic := none)
+      (costCastOpt : Option CostCastStatic := none)
+      (ruleOpt : Option RuleStatic := none)
+      (keywordOpt : Option KeywordStatic := none)
+      (printedOpt : Option String := none)
 deriving Repr, Inhabited, BEq
 
 /-- Type alias unifying `FraStatic` with `StaticAbility`. -/
@@ -415,6 +406,25 @@ namespace StaticAbility
 
 /-- Identity wrapper for backward-compatible `.fra s` construction. -/
 abbrev fra (s : StaticAbility) : StaticAbility := s
+
+@[match_pattern] abbrev typeChange (which : TypeStatic := .enchantedIsConstruct55) : StaticAbility :=
+  .staticAbilityKind (some which) none none none none none none none none
+@[match_pattern] abbrev ability (which : AbilityStatic := .creaturesYouControlHave Keyword.trample) : StaticAbility :=
+  .staticAbilityKind none (some which) none none none none none none none
+@[match_pattern] abbrev cda (which : CdaStatic := .powerToughnessEqualLandsYouControl) : StaticAbility :=
+  .staticAbilityKind none none (some which) none none none none none none
+@[match_pattern] abbrev pt (which : PtStatic := .creaturesYouControlGet 2 2) : StaticAbility :=
+  .staticAbilityKind none none none (some which) none none none none none
+@[match_pattern] abbrev combat (which : CombatStatic := .attacksEachCombatIfAble) : StaticAbility :=
+  .staticAbilityKind none none none none (some which) none none none none
+@[match_pattern] abbrev costCast (which : CostCastStatic := .noncreatureSpellsCostLess) : StaticAbility :=
+  .staticAbilityKind none none none none none (some which) none none none
+@[match_pattern] abbrev rule (which : RuleStatic := .maximumHandSize 0) : StaticAbility :=
+  .staticAbilityKind none none none none none none (some which) none none
+@[match_pattern] abbrev keyword (which : KeywordStatic := .improvise) : StaticAbility :=
+  .staticAbilityKind none none none none none none none (some which) none
+@[match_pattern] abbrev printed (text : String) : StaticAbility :=
+  .staticAbilityKind none none none none none none none none (some text)
 
 -- TypeStatic aliases
 @[match_pattern] abbrev enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String) : StaticAbility := .typeChange (.enchantedIsOnlySubtypeCantAttackOrBlock subtype)

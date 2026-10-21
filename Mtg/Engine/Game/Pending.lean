@@ -570,17 +570,20 @@ end CostModeChoice
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
 inductive FraChoice where
-  /-- Hand, discard, graveyard, or exile cast choice (CR 402 / CR 404 / CR 406). -/
-  | handGraveyard (c : HandGraveyardChoice)
-  /-- Library, search, reveal, or draw choice (CR 401 / CR 701.19). -/
-  | library (c : LibraryChoice)
-  /-- Battlefield, sacrifice, counter, or permanent choice (CR 403 / CR 701.17). -/
-  | battlefield (c : BattlefieldChoice)
-  /-- Cost, mode, enters, or target choice (CR 118 / CR 601.2 / CR 614.12 / CR 700.2). -/
-  | costMode (c : CostModeChoice)
+  /-- Unified resolution choice (CR 608 / CR 701): hand/graveyard, library, battlefield, or cost/mode. -/
+  | fraChoiceKind (val : HandGraveyardChoice ⊕ LibraryChoice ⊕ BattlefieldChoice ⊕ CostModeChoice := .inl default)
 deriving Repr, Inhabited, BEq
 
 namespace FraChoice
+
+@[match_pattern] abbrev handGraveyard (c : HandGraveyardChoice) : FraChoice :=
+  .fraChoiceKind (.inl c)
+@[match_pattern] abbrev library (c : LibraryChoice) : FraChoice :=
+  .fraChoiceKind (.inr (.inl c))
+@[match_pattern] abbrev battlefield (c : BattlefieldChoice) : FraChoice :=
+  .fraChoiceKind (.inr (.inr (.inl c)))
+@[match_pattern] abbrev costMode (c : CostModeChoice) : FraChoice :=
+  .fraChoiceKind (.inr (.inr (.inr c)))
 
 -- LibraryChoice aliases
 @[match_pattern] abbrev mayWheel (n : Nat) (rest : Array PlayerId) : FraChoice := .library (.mayWheel n rest)
@@ -884,20 +887,24 @@ end ResolvePending
 
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
-  | none
-  /-- Turn-based, combat, mulligan, state-based action, or trigger-stacking choice (CR 103 / CR 508–510 / CR 603.3b / CR 704.5j). -/
-  | turnCombat (step : TurnCombatPending)
-  /-- Spell casting or ability activation announcement step (CR 601.2 / CR 602.2 / CR 702). -/
-  | cast (player : PlayerId) (step : CastPending)
-  /-- Resolution, keyword action, or trigger choice (CR 608 / CR 701). -/
-  | resolve (player : PlayerId) (choice : ResolvePending)
-  /-- A Reality Fracture choice made while an effect resolves. -/
-  | fraChoice (player : PlayerId) (choice : FraChoice)
-  /-- A random event must be resolved by supplying its result (`--norandom`). -/
-  | resolveRandom (req : RandomRequest)
+  /-- Unified pending choice (CR 103 / 508–510 / 601 / 608): `none`, `turnCombat`, `cast`, `resolve`, `fraChoice`, or `resolveRandom`. -/
+  | pendingKind (val : Option (TurnCombatPending ⊕ (PlayerId × CastPending) ⊕ (PlayerId × ResolvePending) ⊕ (PlayerId × FraChoice) ⊕ RandomRequest) := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace Pending
+
+@[match_pattern] abbrev none : Pending :=
+  .pendingKind Option.none
+@[match_pattern] abbrev turnCombat (step : TurnCombatPending) : Pending :=
+  .pendingKind (some (.inl step))
+@[match_pattern] abbrev cast (player : PlayerId) (step : CastPending) : Pending :=
+  .pendingKind (some (.inr (.inl (player, step))))
+@[match_pattern] abbrev resolve (player : PlayerId) (choice : ResolvePending) : Pending :=
+  .pendingKind (some (.inr (.inr (.inl (player, choice)))))
+@[match_pattern] abbrev fraChoice (player : PlayerId) (choice : FraChoice) : Pending :=
+  .pendingKind (some (.inr (.inr (.inr (.inl (player, choice))))))
+@[match_pattern] abbrev resolveRandom (req : RandomRequest) : Pending :=
+  .pendingKind (some (.inr (.inr (.inr (.inr req)))))
 
 -- TurnCombatPending aliases
 @[match_pattern] abbrev declareAttackers : Pending := .turnCombat .declareAttackers

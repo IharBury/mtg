@@ -80,19 +80,25 @@ end CreatureToken
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
 cards reconstruct printed “create a …” lines. -/
 inductive TokenKind where
-  /-- Non-creature artifact token (CR 111.10). -/
-  | artifact (a : ArtifactToken)
-  /-- Non-artifact, non-legendary creature token (CR 111). -/
-  | creature (c : CreatureToken)
-  /-- Artifact creature token (CR 111). -/
-  | artifactCreature (a : ArtifactCreatureToken)
-  /-- Legendary creature token (CR 111 / CR 205.4a). -/
-  | legendary (l : LegendaryToken)
-  /-- A blue Jace planeswalker token (FRA). -/
-  | jace
+  /-- Unified token kind (CR 111): non-creature artifact (`artifactOpt = some a`), creature (`creatureOpt = some c`), artifact creature (`artCreatureOpt = some a`), legendary (`legendaryOpt = some l`), or Jace planeswalker (all `none`). -/
+  | tokenKind (artifactOpt : Option ArtifactToken := none)
+      (creatureOpt : Option CreatureToken := none)
+      (artCreatureOpt : Option ArtifactCreatureToken := none)
+      (legendaryOpt : Option LegendaryToken := none)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TokenKind
+
+@[match_pattern] abbrev artifact (a : ArtifactToken) : TokenKind :=
+  .tokenKind (some a) none none none
+@[match_pattern] abbrev creature (c : CreatureToken) : TokenKind :=
+  .tokenKind none (some c) none none
+@[match_pattern] abbrev artifactCreature (a : ArtifactCreatureToken) : TokenKind :=
+  .tokenKind none none (some a) none
+@[match_pattern] abbrev legendary (l : LegendaryToken) : TokenKind :=
+  .tokenKind none none none (some l)
+@[match_pattern] abbrev jace : TokenKind :=
+  .tokenKind none none none none
 
 -- ArtifactToken aliases
 @[match_pattern] abbrev treasure : TokenKind := .artifact (.predefinedOrSet false false false)

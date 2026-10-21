@@ -73,17 +73,21 @@ end NamedCounter
 
 /-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
 inductive CounterKind where
-  /-- Power/toughness counter: +1/+1 (`plus = true`) or minus-one (`plus = false`, CR 122.1a). -/
-  | pt (plus : Bool := true)
-  /-- Keyword counter (CR 122.1b). -/
-  | keyword (k : KeywordCounter)
-  /-- Rule-defined counter (loyalty, stun, shield, finality, lore, time; CR 122.1c–d / CR 306.5 / CR 714). -/
-  | rule (k : RuleCounter)
-  /-- Named ability or card counter (CR 122.1). -/
-  | named (k : NamedCounter)
+  /-- Unified counter kind (CR 122.1): P/T counter (`keywordOpt = none && ruleOpt = none && namedOpt = none`), keyword counter (`keywordOpt = some k`), rule counter (`ruleOpt = some k`), or named counter (`namedOpt = some k`). -/
+  | counterKind (plus : Bool := true) (keywordOpt : Option KeywordCounter := none)
+      (ruleOpt : Option RuleCounter := none) (namedOpt : Option NamedCounter := none)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CounterKind
+
+@[match_pattern] abbrev pt (plus : Bool := true) : CounterKind :=
+  .counterKind plus none none none
+@[match_pattern] abbrev keyword (k : KeywordCounter) : CounterKind :=
+  .counterKind true (some k) none none
+@[match_pattern] abbrev rule (k : RuleCounter) : CounterKind :=
+  .counterKind true none (some k) none
+@[match_pattern] abbrev named (k : NamedCounter) : CounterKind :=
+  .counterKind true none none (some k)
 
 @[match_pattern] abbrev plusOnePlusOne : CounterKind := .pt true
 @[match_pattern] abbrev minusOneMinusOne : CounterKind := .pt false

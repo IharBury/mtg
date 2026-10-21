@@ -221,18 +221,8 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
     some (g.battlefield.filter fun o => !o.controlledBy controller && o.types.contains ty)
   | _ => none
 
-/-- Permanents `who` names. Selectors that name a card, a hand, or a
-choice that has not been offered are `none`. An empty array means the
-selector named permanents and none of them are on the battlefield.
-`.any` and `.target .any` are the announced permanents. A restriction
-read on its own names the same permanents as `.target` of that
-restriction. Any other `.target` restriction names nothing.
-`.intersection` names permanents every selector names. One selector that
-does not name permanents names nothing. `.union` names permanents any
-selector names. A selector that does not name permanents adds nothing.
-An empty list names nothing. -/
-def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.ObjectSelector) :
-    Option (Array GameObject) :=
+private def permanentsNamedSingle (g : Game) (ctx : TriggerRead)
+    (who : TriggeredAbility.ObjectSelector) : Option (Array GameObject) :=
   let controller := ctx.controller
   let sourceId := ctx.sourceId
   let onBf (id : ObjectId) : Option GameObject :=
@@ -308,12 +298,27 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match permanentTargets.find? (fun o => o.isCreature && o.controlledBy controller) with
     | some o => some #[o]
     | none => someEmpty
+  | _ =>
+    none
+
+/-- Permanents `who` names. Selectors that name a card, a hand, or a
+choice that has not been offered are `none`. An empty array means the
+selector named permanents and none of them are on the battlefield.
+`.any` and `.target .any` are the announced permanents. A restriction
+read on its own names the same permanents as `.target` of that
+restriction. Any other `.target` restriction names nothing.
+`.intersection` names permanents every selector names. One selector that
+does not name permanents names nothing. `.union` names permanents any
+selector names. A selector that does not name permanents adds nothing.
+An empty list names nothing. -/
+def permanentsNamed (g : Game) (ctx : TriggerRead) :
+    TriggeredAbility.ObjectSelector → Option (Array GameObject)
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
   | .union sels =>
     unionPermanentSets (sels.map (g.permanentsNamed ctx))
-  | _ =>
-    none
+  | who =>
+    g.permanentsNamedSingle ctx who
 
 /-- Non-battlefield cards `what` names (CR 400.1 / 603). -/
 def cardsNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSelector) :

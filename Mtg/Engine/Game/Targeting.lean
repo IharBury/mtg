@@ -362,7 +362,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .playerTarget t => g.legalPlayerTargetKind caster t
   | .sequence t => g.legalMultiTargetKind caster t
   | .filtered f => g.legalFilteredTargets caster f sourceId
-  | .multi .. | .pair .. => #[]
+  | _ => #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with

@@ -2764,11 +2764,11 @@ def applyUnifiedPart3 (g : Game) (controller : PlayerId) (effect : Effect)
   | _ => fallback g
 
 /-- Resolve a unified `Effect` as a spell or ability (CR 608), part 4. -/
-def applyUnifiedTail (g : Game) (controller : PlayerId) (effect : Effect)
+def applyUnifiedPart4 (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
     (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
-    (isAbility : Bool := false) : Game :=
+    (isAbility : Bool := false) (fallback : Game → Game) : Game :=
   let pl := g.player controller
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
@@ -2781,7 +2781,7 @@ def applyUnifiedTail (g : Game) (controller : PlayerId) (effect : Effect)
     | some o => if o.isOnBattlefield then f g o else g
     | none => g
   let chosenX := if chosenX != 0 then chosenX else g.spellX
-  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower)
+  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower, isAbility)
   match effect.resolution with
   | .gainControl .exchangeTargets =>
     match targets[0]?, targets[1]? with
@@ -3172,6 +3172,28 @@ def applyUnifiedTail (g : Game) (controller : PlayerId) (effect : Effect)
       g.setUntilEotForm o (p, t) ((Keywords.ofName? kw).getD Keywords.none)
         s!"{o.name} becomes a {p}/{t} artifact creature with {kw} until end of turn"
         (additionalCreature := true) (additionalArtifact := true))
+  | _ => fallback g
+
+/-- Resolve a unified `Effect` as a spell or ability (CR 608), part 5. -/
+def applyUnifiedTail (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
+    (isAbility : Bool := false) : Game :=
+  let pl := g.player controller
+  let kind := effect.targetKind
+  let illegal := some "The target is no longer legal"
+  let srcName := g.fraSourceName sourceId
+  let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+  let source? : Option GameObject :=
+    (sourceId.map g.followMoved).bind g.findObject?
+  let onSource (f : Game → GameObject → Game) : Game :=
+    match source? with
+    | some o => if o.isOnBattlefield then f g o else g
+    | none => g
+  let chosenX := if chosenX != 0 then chosenX else g.spellX
+  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower)
+  match effect.resolution with
   | .discard (.cardsUnlessType n ty) =>
     let g := { g with discardReq := { g.discardReq with thirstDiscardsLeft := n, thirstDiscardType := ty } }
     g.beginDiscardCards #[controller]
@@ -3519,7 +3541,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   g.applyUnifiedPart1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
     g.applyUnifiedPart2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
       g.applyUnifiedPart3 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse (fun g =>
-        g.applyUnifiedTail controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility)))
+        g.applyUnifiedPart4 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
+          g.applyUnifiedTail controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility))))
 
 /-- Resolve a single `Resolution` step in ability context. -/
 def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
