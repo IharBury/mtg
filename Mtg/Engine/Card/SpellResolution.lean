@@ -2330,41 +2330,13 @@ inductive Resolution where
   The announced permanent gets +P/+T is `.pump (.fixed p) (.fixed t) .target`.
   Doubling that permanent's power and toughness is `.pump .double .double .target`.
   +P/+T and trample is
-  `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`. -/
-  | pump (power toughness : NumberSelector) (who : ObjectSelector)
-  /-- Deal damage. `amount` is how much. `.fixed` carries that `n`.
-  `who` is who is dealt it, and `note` records a later step.
-  Pump and damage share `NumberSelector` and `ObjectSelector`.
-  Draw shares `NumberSelector`. Its player is a `PlayerSelector`.
-  Each creature blocking the source is `.dealDamage (.fixed n) .blockers`.
-  Last-known power to the announced creature is
-  `.dealDamage .lastKnownPower .permanent`.
-  `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
-  When that ability targets, only the announced opponent is dealt damage.
-  Damage equal to permanents of `subtype` you control, to each opponent, is
-  `.dealDamage (.subtypeCount subtype) (.player .eachOpponent)`.
-  Damage equal to Treasures you control, to the target, is
-  `.dealDamage (.subtypeCount "Treasure") .target`.
-  `n` damage to the target, remembering a marked permanent, is
-  `.dealDamage (.fixed n) .target .markedPermanent`.
-  Last-known power, noting excess damage, is
-  `.dealDamage .lastKnownPower .permanent .excess`.
-  Damage to each opponent equal to the hand discarded by an earlier step is
-  `.dealDamage .discardedHand (.player .eachOpponent)`.
-  `n` damage to the announced opponent is `.dealDamage (.fixed n) (.player (.target .opponent))`.
-  `n` damage to the announced target is `.dealDamage (.fixed n) .target`.
-  `n` damage to each creature that is not `subtype`, and to each opponent, is
-  `.dealDamage (.fixed n) (.eachNonSubtypeAndOpponents subtype)`.
-  Damage equal to the greatest mana value among artifacts you control, to
-  the announced opponent, is
-  `.dealDamage .greatestArtifactMv (.player (.target .opponent))`.
-  Damage equal to the mana value of the spell that caused this, to the
-  announced player or permanent, is `.dealDamage .spellManaValue .target`.
+  `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
-  | dealDamage (amount : NumberSelector) (who : ObjectSelector)
-      (note : TriggerDamageNote := .none)
-  /-- Scry, surveil, or mill cards (CR 701.13 / CR 701.18 / CR 701.25).
+  | pumpOrDamage (noteOpt : Option TriggerDamageNote := none)
+      (power : NumberSelector := .greatestPower) (toughnessOpt : Option NumberSelector := none)
+      (who : ObjectSelector := .source)
+  /-- Scry, surveil, mill, draw, or gain/lose life (CR 118.2 / CR 118.3a / CR 121 / CR 701.13 / CR 701.18 / CR 701.25).
   Scry, as `amount` says. `.fixed` is that many cards.
   Scry 2 is `.scry (.fixed 2)`. Any other count scries that many cards.
   Scry 0 looks at nothing and does not trigger “whenever you scry.” A
@@ -2385,11 +2357,8 @@ inductive Resolution where
   Each opponent mills `n`, and a later step sees whether any card was
   milled, with `.mill (.fixed n) .eachOpponent (note := .opponentsMilled)`.
   Any other count is milled by the players the selector names, and the
-  note records what it says. A missing count or player mills nothing. -/
-  | scryOrMill (amount : NumberSelector) (whoOpt : Option PlayerSelector := none)
-      (surveil : Option TriggerSurveilNote := none)
-      (millNoteOpt : Option TriggerMillNote := none)
-  /-- `who` draws cards or gains/loses life (CR 118.2 / CR 118.3a / CR 121), as `amount` says.
+  note records what it says. A missing count or player mills nothing.
+  `who` draws cards or gains/loses life (CR 118.2 / CR 118.3a / CR 121), as `amount` says.
   `.fixed` is that many cards.
   The controller is `.you`.
   The controller draws `n` is `.draw (.fixed n)`.
@@ -2421,9 +2390,11 @@ inductive Resolution where
   power. Zero gains nothing.
   Any other count gains that much life. A count that cannot be read
   gains nothing. -/
-  | drawOrLife (amount : NumberSelector) (who : PlayerSelector := .you)
-      (isLife : Bool := false) (lose : Bool := false)
-  /-- Tap or untap permanents, or discard cards (CR 701.8 / CR 701.21).
+  | playerNumeric (isDrawOrLife : Bool := false) (isLife : Bool := false) (lose : Bool := false)
+      (surveil : Option TriggerSurveilNote := none)
+      (millNoteOpt : Option TriggerMillNote := none)
+      (whoOpt : Option PlayerSelector := none) (amount : NumberSelector := .greatestPower)
+  /-- Tap or untap permanents, discard cards, return cards to a hand, or put a card onto a library (CR 400.7 / CR 401 / CR 701.8 / CR 701.21).
   Discard cards, as `what` says.
   One card from the controller is `.discard` (`.cards`).
   Inside `.may _ _ .ifYouDo`, one card is optional: declining skips the follow-up.
@@ -2453,8 +2424,10 @@ inductive Resolution where
   `.tap .enchantedWhileSource`.
   Any other permanent the selector names is tapped or untapped. A card or a hand
   is not. -/
-  | tapOrDiscard (what : ObjectSelector := .cards) (tapped : Bool := true)
-      (isDiscard : Bool := false)
+  | tapDiscardOrReturn (noteOpt : Option TriggerReturnNote := none)
+      (placeOpt : Option TriggerLibraryPlace := none)
+      (isDiscard : Bool := false) (tapped : Bool := true)
+      (what : ObjectSelector := .cards)
   /-- Pay a cost or add mana (CR 106 / CR 118).
   Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
@@ -2480,8 +2453,10 @@ inductive Resolution where
   A source that has left uses its last-known charge counters.
   Any other count adds the printed types that many times. Zero adds
   nothing. A count that cannot be read adds nothing. -/
-  | manaOrPay (whatOpt : Option CostSelector := none) (types : Array ManaType := #[])
-      (amountOpt : Option NumberSelector := none) (noteOpt : Option ManaSpendNote := none)
+  | manaPayOrCast (whatOpt : Option CostSelector := none) (noteOpt : Option ManaSpendNote := none)
+      (originOpt : Option TriggerCastFrom := none) (maxMvOpt : Option TriggerCastMv := none)
+      (costOpt : Option TriggerCastCost := none) (castNoteOpt : Option TriggerCastNote := none)
+      (types : Array ManaType := #[]) (amountOpt : Option NumberSelector := none)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
   Each permanent of a subtype is
@@ -2530,47 +2505,6 @@ inductive Resolution where
   Any other permanent the selector names gets `n` counters of that kind.
   A card or a hand receives none. -/
   | putCounters (what : CounterSelector) (who : ObjectSelector)
-  /-- Return cards to a hand or put a card onto a library (CR 400.7 / CR 401).
-  Return cards to a hand. `what` says which cards and whose hand.
-  `note` says what a later step can read.
-  A creature card from your graveyard to your hand is
-  `.returnToHand` (`.graveyardCard`).
-  The targeted permanent to its owner's hand, noting the return, is
-  `.returnToHand .permanent .returnedPermanent`.
-  A graveyard permanent card to your hand is
-  `.returnToHand .graveyardPermanent`.
-  Milled cards of a subtype are `.returnToHand (.milledSubtype subtype)`.
-  The source from its owner's graveyard to their hand is
-  `.returnToHand .source`.
-  The card revealed until a creature, when it does not enter, is
-  `.returnToHand .revealed`. Outside that resolution, it does nothing.
-  A basic land found by searching is `.returnToHand .basicLand`.
-  Outside `searchLibrary`, it does nothing.
-  A card the source exiled, to its owner's hand, is
-  `.returnToHand .linkedExile`.
-  The card that caused this trigger, to its owner's hand, is
-  `.returnToHand .cause`. A token ceases to exist.
-  Any other permanent the selector names returns to its owner's hand.
-  `.revealed` returns the cards an earlier reveal found. A card or a hand
-  that is not one of those returns nothing.
-  Put a card onto a library. `place` says top or bottom, and `what`
-  says which card.
-  The announced permanent on top of its owner's library is `.putOnLibrary .top`.
-  The announced permanent on the bottom is `.putOnLibrary .bottom`.
-  The source is `.putOnLibrary .top .source` or `.putOnLibrary .bottom .source`.
-  The enchanted creature is `.putOnLibrary .top .enchanted` or
-  `.putOnLibrary .bottom .enchanted`.
-  The target, while the source remains, is
-  `.putOnLibrary .top (.target .whileSource)` or
-  `.putOnLibrary .bottom (.target .whileSource)`.
-  A card from your hand on the bottom of your library is
-  `.putOnLibrary .bottom .cardFromHand`. An empty hand skips the choice.
-  A card from your hand on top puts nothing.
-  Any other permanent the selector names is put there. A card or a hand
-  that is not that choice puts nothing. -/
-  | returnOrLibrary (what : ObjectSelector := .graveyardCard)
-      (noteOpt : Option TriggerReturnNote := none)
-      (placeOpt : Option TriggerLibraryPlace := none)
   /-- Put later ability `thenDo` on the stack (“When you do”), or arm it
   for a later event (`howOpt = none`), or look at cards from the top of a library (`howOpt = some how`), as `how` and `whoOpt` say, then resolve `thenDo` for the cards that were found.
   Another nonattacking creature gains indestructible is
@@ -2641,8 +2575,8 @@ inductive Resolution where
   Whose library is a `PlayerSelector`.
   Any other combination reveals the cards `how` and `who` name, then
   resolves `thenDo`. A player the selector does not name reveals nothing. -/
-  | revealOrReflexive (howOpt : Option TriggerLibraryHow := none) (thenDo : Resolution)
-      (whoOpt : Option PlayerSelector := none)
+  | revealOrReflexive (howOpt : Option TriggerLibraryHow := none)
+      (whoOpt : Option PlayerSelector := none) (thenDo : Resolution)
   /-- Sacrifice or destroy permanents (CR 701.7 / CR 701.17).
   Sacrifice a permanent. `what` says who sacrifices and which permanent.
   `sacNote` says what a later step can read.
@@ -2687,9 +2621,9 @@ inductive Resolution where
   The target, while the source remains, is `.destroy (.target .whileSource)`.
   Any other permanent the selector names is destroyed. A card or a hand
   is not. -/
-  | sacrificeOrDestroy (what : ObjectSelector)
-      (sacNoteOpt : Option TriggerSacrificeNote := none)
+  | sacrificeOrDestroy (sacNoteOpt : Option TriggerSacrificeNote := none)
       (destroyNoteOpt : Option TriggerDestroyNote := none)
+      (what : ObjectSelector)
   /-- Apply each resolution in order (`howOpt = none`, CR 608.2b), or resolve these modes as `how` says (`howOpt = some how`, CR 700.2).
   Return a graveyard card, then gain life equal to its power, is `.sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
@@ -2762,7 +2696,7 @@ inductive Resolution where
   `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
   One unused Vision mode this turn is
   `.chooseModes TriggerResolution.visionModes .vision`. -/
-  | sequenceOrModes (rs : List Resolution) (howOpt : Option TriggerModeHow := none)
+  | sequenceOrModes (howOpt : Option TriggerModeHow := none) (rs : List Resolution)
   /-- The controller may resolve `action`. `when` says which outcome resolves
   `follow`. `.ifYouDont` is the default: declining resolves `follow`, and
   performing `action` skips it. `.ifYouDo` resolves `follow` only when
@@ -2887,50 +2821,15 @@ inductive Resolution where
   A graveyard card, the top of a library, a linked exile, a milled card, a
   discarded card, or a card an earlier reveal found is exiled the same way.
   `.top` with `.impulse` or `.anyManaThisTurn` exiles nothing unless an
-  earlier reveal found a card. A hand or an unmade choice exiles nothing. -/
-  | exile (what : ObjectSelector) (how : TriggerExileHow)
-      (note : TriggerExileNote := .none)
-  /-- Put cards onto the battlefield. `what` says which cards, `how` says
-  how they enter, and `note` says what a later step can read.
-  Which cards is an `ObjectSelector`.
-  Cards the source exiled are `.put .linkedExile`.
-  A nonland permanent card with mana value at most `mv` from a graveyard is
-  `.put (.nonlandMvAtMost mv)`.
-  The source, returned as an artifact, is `.put .source (how := .asArtifact)`.
-  Lands an earlier step exiled, returned tapped, are
-  `.put .notedLands (how := .tapped)`.
-  The land an earlier step discarded, entering tapped, is
-  `.put .discardedLand (how := .tapped)`.
-  A land card from your hand, entering tapped, is
-  `.put .landFromHand (how := .tapped)`.
-  Optional as `.may (.put .landFromHand (how := .tapped)) (.sequence [])`.
-  An artifact card from your hand, remembered for a later attach, is
-  `.put .artifactFromHand (note := .forAttach)`.
-  Optional as `.may (.put .artifactFromHand (note := .forAttach)) (.sequence [])`.
-  An empty hand skips that choice.
-  A random creature from the cards revealed off the top is
-  `.put .randomCreature`. The card revealed until a Saga, or the cheap
-  creature, is `.put .revealed`. Outside those resolutions, both do nothing.
-  A Forest found by searching is `.put .forest`. A basic land put on top
-  after that search is `.put .basicLandOnTop`.   A Dragon found in the hand
-  and/or library is `.put .dragon`. Outside `searchLibrary`, those do nothing.
-  The announced creature card with mana value at most `n` is
-  `.put (.creatureMvAtMost n)`.
-  The source from its owner's graveyard, under its owner's control,
-  losing all abilities, gaining haste, and entering with a +1/+1 counter, is
-  `.put .source .underOwner (.entering [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)])`.
-  A source that has left the graveyard is reported.
-  The Villain that caused this, under its owner's control, as a Hero with
-  a finality counter, is
-  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
-  A missing cause puts nothing.
+  earlier reveal found a card. A hand or an unmade choice exiles nothing.
   Any other graveyard card the selector names, the top card of your library,
   or the source in its owner's graveyard is put onto the battlefield as
   `how` and `note` say. `.revealed` and `.randomCreature` use the cards an
   earlier reveal found. Outside that reveal, both do nothing. A permanent
   already on the battlefield is not put again. -/
-  | put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
-      (note : TriggerPutNote := .none)
+  | putOrExile (putHowOpt : Option TriggerPutHow := none) (putNoteOpt : Option TriggerPutNote := none)
+      (exileHowOpt : Option TriggerExileHow := none) (exileNoteOpt : Option TriggerExileNote := none)
+      (what : ObjectSelector)
   /-- Create tokens or amass (CR 111.10 / CR 701.47).
   Amass `subtypeOpt` for `who`, as `amount` says. Attach the source when
   `tappedOrAttach` is true.
@@ -2978,32 +2877,9 @@ inductive Resolution where
   Any other count creates that many of the named token for the players
   the selector names. Zero creates nothing. A count that cannot be read
   creates nothing. -/
-  | createOrAmass (kindOpt : Option TokenKind := none) (amount : NumberSelector)
+  | createOrAmass (kindOpt : Option TokenKind := none) (noteOpt : Option TriggerTokenNote := none)
       (subtypeOpt : Option String := none) (tappedOrAttach : Bool := false)
-      (who : PlayerSelector := .you) (noteOpt : Option TriggerTokenNote := none)
-  /-- You may cast a spell (CR 601), or an unrecognized resolution that is not a spell shape.
-  `origin` says where the card is, `maxMv` limits
-  its mana value, `cost` says whether that cost is paid, and `note` says
-  what happens to an instant or sorcery cast this way.
-  An artifact, instant, or sorcery from your graveyard, with instants and
-  sorceries exiled instead, is
-  `.mayCast .graveyard .unlimited .pay .exileInstead`.
-  An instant or sorcery from your hand with mana value at most twice the
-  legendary Wizards you control, without paying, is
-  `.mayCast .hand .twiceLegendaryWizards .withoutPaying`.
-  An instant or sorcery from your hand with mana value at most that damage,
-  without paying, is `.mayCast .hand .lastKnown .withoutPaying`.
-  The instant or sorcery exiled by the previous step, without paying, is
-  `.mayCast .impulse .unlimited .withoutPaying`.
-  A spell from the cards `revealLibrary (.top n)` just looked at, with mana
-  value at most the greatest power among attacking creatures you control,
-  without paying, is
-  `.mayCast .looked .greatestAttackingPower .withoutPaying` inside that
-  resolution. Outside it, the cast does nothing.
-  When `originOpt = none`, a resolution that is not a spell shape; it does not play an extra land. -/
-  | mayCastOrUnrecognized (originOpt : Option TriggerCastFrom := none)
-      (maxMvOpt : Option TriggerCastMv := none) (costOpt : Option TriggerCastCost := none)
-      (noteOpt : Option TriggerCastNote := none)
+      (who : PlayerSelector := .you) (amount : NumberSelector)
   /-- Grant an ability or continuous effect. `what` says which, and `who` says to whom.
   Each equipped attacking creature gains double strike until end of turn
   with `.grant .doubleStrike .equippedAttackers`.
@@ -3035,99 +2911,114 @@ inductive Resolution where
   Any other permanent the selector names receives that ability. A card, a
   hand, or an unmade choice receives nothing. -/
   | grant (what : TriggerGrantWhat) (who : ObjectSelector := .target)
-deriving Repr, Inhabited, BEq
+deriving Repr, BEq
+
+instance : Inhabited Resolution where
+  default := .pumpOrDamage none .greatestPower (some .greatestPower) .source
 
 namespace Resolution
 
+  @[match_pattern] abbrev pump (power toughness : NumberSelector)
+      (who : ObjectSelector := .target) : Resolution :=
+    .pumpOrDamage none power (some toughness) who
+  @[match_pattern] abbrev dealDamage (amount : NumberSelector) (who : ObjectSelector)
+      (note : TriggerDamageNote := .none) : Resolution :=
+    .pumpOrDamage (some note) amount none who
+  @[match_pattern] abbrev exile (what : ObjectSelector) (how : TriggerExileHow)
+      (note : TriggerExileNote := .none) : Resolution :=
+    .putOrExile none none (some how) (some note) what
+  @[match_pattern] abbrev put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
+      (note : TriggerPutNote := .none) : Resolution :=
+    .putOrExile (some how) (some note) none none what
   @[match_pattern] abbrev queueReflexive (followup : Resolution) : Resolution :=
-    .revealOrReflexive none followup none
+    .revealOrReflexive none none followup
   @[match_pattern] abbrev revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
       (who : PlayerSelector := .you) : Resolution :=
-    .revealOrReflexive (some how) thenDo (some who)
+    .revealOrReflexive (some how) (some who) thenDo
   @[match_pattern] abbrev sequence (rs : List Resolution) : Resolution :=
-    .sequenceOrModes rs none
+    .sequenceOrModes none rs
   @[match_pattern] abbrev chooseModes (modes : List Resolution) (how : TriggerModeHow := .one) : Resolution :=
-    .sequenceOrModes modes (some how)
+    .sequenceOrModes (some how) modes
 
 /-- Scry, as `n` says (CR 701.18). -/
 @[match_pattern] abbrev scry (n : NumberSelector)
     (surveil : Option TriggerSurveilNote := none) : Resolution :=
-  .scryOrMill n none surveil none
+  .playerNumeric false false false surveil none none n
 
 /-- Mill cards (CR 701.13), as `amount` and `who` say. -/
 @[match_pattern] abbrev mill (amount : NumberSelector) (who : PlayerSelector := .you)
     (note : TriggerMillNote := .none) : Resolution :=
-  .scryOrMill amount (some who) none (some note)
+  .playerNumeric false false false none (some note) (some who) amount
 
 /-- `who` draws cards (CR 121), as `amount` says. -/
 @[match_pattern] abbrev draw (amount : NumberSelector)
     (who : PlayerSelector := .you) : Resolution :=
-  .drawOrLife amount who false false
+  .playerNumeric true false false none none (some who) amount
 
 /-- `who` gains or loses life (CR 118.2 / CR 118.3a), as `amount` says. -/
 @[match_pattern] abbrev gainLife (amount : NumberSelector)
     (who : PlayerSelector := .you) (lose : Bool := false) : Resolution :=
-  .drawOrLife amount who true lose
+  .playerNumeric true true lose none none (some who) amount
 
 /-- Tap or untap permanents (CR 701.21), as `who` and `tapped` say. -/
 @[match_pattern] abbrev tap (who : ObjectSelector)
     (tapped : Bool := true) : Resolution :=
-  .tapOrDiscard who tapped false
+  .tapDiscardOrReturn none none false tapped who
 
 /-- Discard cards (CR 701.8), as `what` says. -/
 @[match_pattern] abbrev discard (what : ObjectSelector := .cards) : Resolution :=
-  .tapOrDiscard what true true
+  .tapDiscardOrReturn none none true true what
 
 /-- Pay `what` (CR 118). -/
 @[match_pattern] abbrev pay (what : CostSelector) : Resolution :=
-  .manaOrPay (some what) #[] none none
+  .manaPayOrCast (some what) none none none none none #[] none
 
 /-- Add mana (CR 106), as `amount` says. -/
 @[match_pattern] abbrev addMana (types : Array ManaType)
     (amount : NumberSelector := .fixed 1)
     (note : ManaSpendNote := .none) : Resolution :=
-  .manaOrPay none types (some amount) (some note)
+  .manaPayOrCast none (some note) none none none none types (some amount)
 
 /-- Return cards to a hand (CR 400.7). -/
 @[match_pattern] abbrev returnToHand (what : ObjectSelector := .graveyardCard)
     (note : TriggerReturnNote := .none) : Resolution :=
-  .returnOrLibrary what (some note) none
+  .tapDiscardOrReturn (some note) none false false what
 
 /-- Put a card onto a library (CR 401). -/
 @[match_pattern] abbrev putOnLibrary (place : TriggerLibraryPlace := .top)
     (what : ObjectSelector := .target) : Resolution :=
-  .returnOrLibrary what none (some place)
+  .tapDiscardOrReturn none (some place) false false what
 
 /-- Sacrifice a permanent (CR 701.17). -/
 @[match_pattern] abbrev sacrifice (what : ObjectSelector)
     (note : TriggerSacrificeNote := .none) : Resolution :=
-  .sacrificeOrDestroy what (some note) none
+  .sacrificeOrDestroy (some note) none what
 
 /-- Destroy permanents (CR 701.7). -/
 @[match_pattern] abbrev destroy (what : ObjectSelector)
     (note : TriggerDestroyNote := .none) : Resolution :=
-  .sacrificeOrDestroy what none (some note)
+  .sacrificeOrDestroy none (some note) what
 
 /-- Amass `subtype` for `who` (CR 701.47), as `amount` says. -/
 @[match_pattern] abbrev amass (amount : NumberSelector)
     (subtype : String := "Goblin") (attachSource : Bool := false)
     (who : PlayerSelector := .you) : Resolution :=
-  .createOrAmass none amount (some subtype) attachSource who none
+  .createOrAmass none none (some subtype) attachSource who amount
 
 /-- Create tokens (CR 111.10). -/
 @[match_pattern] abbrev createTokens (kind : TokenKind) (amount : NumberSelector)
     (tapped : Bool := false) (who : PlayerSelector := .you)
     (note : TriggerTokenNote := .none) : Resolution :=
-  .createOrAmass (some kind) amount none tapped who (some note)
+  .createOrAmass (some kind) (some note) none tapped who amount
 
 /-- You may cast a spell (CR 601). -/
 @[match_pattern] abbrev mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
     (cost : TriggerCastCost) (note : TriggerCastNote := .none) : Resolution :=
-  .mayCastOrUnrecognized (some origin) (some maxMv) (some cost) (some note)
+  .manaPayOrCast none none (some origin) (some maxMv) (some cost) (some note) #[] none
 
 /-- A resolution that is not a spell shape. It does not play an extra land. -/
 @[match_pattern] abbrev unrecognized : Resolution :=
-  .mayCastOrUnrecognized none none none none
+  .manaPayOrCast none none none none none none #[] none
 
 /-- Search a library (CR 701.23), then resolve `thenDo` for the card that was found. -/
 @[match_pattern] abbrev searchLibrary (thenDo : Resolution) : Resolution :=
