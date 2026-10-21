@@ -14,30 +14,33 @@ namespace Mtg.Engine
 `[+N]` puts N loyalty counters on the source, `[-N]` removes N, and `[0]`
 puts zero. `[+X]` and `[-X]` use X in place of a fixed number (CR 107.3a). -/
 inductive LoyaltySymbol where
-  | plus (n : Nat)
-  | minus (n : Nat)
+  | fixed (n : Nat) (minus : Bool := false)
   | zero
-  | plusX
-  | minusX
+  | variableX (minus : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace LoyaltySymbol
 
+@[match_pattern] abbrev plus (n : Nat) : LoyaltySymbol := .fixed n false
+@[match_pattern] abbrev minus (n : Nat) : LoyaltySymbol := .fixed n true
+@[match_pattern] abbrev plusX : LoyaltySymbol := .variableX false
+@[match_pattern] abbrev minusX : LoyaltySymbol := .variableX true
+
 /-- Rules notation: `[+N]`, `[-N]`, `[0]`, `[+X]`, or `[-X]`. -/
 def toNotation : LoyaltySymbol → String
-  | .plus n => s!"[+{n}]"
-  | .minus n => s!"[-{n}]"
+  | .fixed n false => s!"[+{n}]"
+  | .fixed n true => s!"[-{n}]"
   | .zero => "[0]"
-  | .plusX => "[+X]"
-  | .minusX => "[-X]"
+  | .variableX false => "[+X]"
+  | .variableX true => "[-X]"
 
 /-- Counters this symbol adds, or removes when negative.
 `[+X]` and `[-X]` are not a fixed number. -/
 def counters : LoyaltySymbol → Option Int
-  | .plus n => some (Int.ofNat n)
-  | .minus n => some (-Int.ofNat n)
+  | .fixed n false => some (Int.ofNat n)
+  | .fixed n true => some (-Int.ofNat n)
   | .zero => some 0
-  | .plusX | .minusX => none
+  | .variableX _ => none
 
 end LoyaltySymbol
 
@@ -47,26 +50,35 @@ inductive CostPick where
   /-- Sacrifice another permanent of this subtype, or another creature when
   the subtype is `Creature`. -/
   | sacrificeAnotherSubtype (subtype : String)
-  | sacrificeArtifact
-  | sacrificeLegendaryArtifact
-  | sacrificeArtifactOrCreature
-  | sacrificeAnotherArtifact
-  | sacrificeAnotherCreatureOrPlaneswalker
-  | sacrificeArtifactOrLand
-  | sacrificeEquipmentAttachedToSource
-  /-- Sacrifice an artifact, or discard a nonland card. -/
-  | sacrificeArtifactOrDiscardNonland
-  | discardACard
-  /-- Discard a nonland card. -/
-  | discardNonland
-  | discardLegendaryCard
-  /-- Discard a legendary card with the same name as a legendary permanent
-  you control. -/
-  | discardLegendarySameName
+  /-- Sacrifice an artifact (`!legendary && !anotherOrEquip`), a legendary artifact (`legendary && !anotherOrEquip`), another artifact (`!legendary && anotherOrEquip`), or an Equipment attached to the source (`legendary && anotherOrEquip`). -/
+  | sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false)
+  /-- Sacrifice an artifact or creature (`!anotherCreatureOrPw && !landOrDiscard`), another creature or planeswalker (`anotherCreatureOrPw && !landOrDiscard`), an artifact or land (`!anotherCreatureOrPw && landOrDiscard`), or an artifact or discard a nonland card (`anotherCreatureOrPw && landOrDiscard`). -/
+  | sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false)
+  /-- Discard a card (`!nonland && !legendary`), a nonland card (`nonland && !legendary`), a legendary card (`!nonland && legendary`), or a legendary card with the same name as a legendary permanent you control (`nonland && legendary`). -/
+  | discardChoice (nonland : Bool := false) (legendary : Bool := false)
   | exileAnotherCreatureCardFromGraveyard
-  | tapUntappedCreature
-  | tapTwoUntappedArtifacts
+  /-- Tap an untapped creature you control (`!twoArtifacts`) or tap two untapped artifacts you control (`twoArtifacts`). -/
+  | tapChoice (twoArtifacts : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace CostPick
+
+@[match_pattern] abbrev sacrificeArtifact : CostPick := .sacrificeArtifactChoice false false
+@[match_pattern] abbrev sacrificeLegendaryArtifact : CostPick := .sacrificeArtifactChoice true false
+@[match_pattern] abbrev sacrificeAnotherArtifact : CostPick := .sacrificeArtifactChoice false true
+@[match_pattern] abbrev sacrificeEquipmentAttachedToSource : CostPick := .sacrificeArtifactChoice true true
+@[match_pattern] abbrev sacrificeArtifactOrCreature : CostPick := .sacrificeTwoKindChoice false false
+@[match_pattern] abbrev sacrificeAnotherCreatureOrPlaneswalker : CostPick := .sacrificeTwoKindChoice true false
+@[match_pattern] abbrev sacrificeArtifactOrLand : CostPick := .sacrificeTwoKindChoice false true
+@[match_pattern] abbrev sacrificeArtifactOrDiscardNonland : CostPick := .sacrificeTwoKindChoice true true
+@[match_pattern] abbrev discardACard : CostPick := .discardChoice false false
+@[match_pattern] abbrev discardNonland : CostPick := .discardChoice true false
+@[match_pattern] abbrev discardLegendaryCard : CostPick := .discardChoice false true
+@[match_pattern] abbrev discardLegendarySameName : CostPick := .discardChoice true true
+@[match_pattern] abbrev tapUntappedCreature : CostPick := .tapChoice false
+@[match_pattern] abbrev tapTwoUntappedArtifacts : CostPick := .tapChoice true
+
+end CostPick
 
 /-- How many objects `pick` takes. -/
 def CostPick.count : CostPick → Nat
@@ -96,20 +108,12 @@ def CostPick.phrase : CostPick → String
 /-- Additional non-mana activation costs (CR 602.1 / 118). -/
 inductive ExtraActivationCost where
   | none
-  /-- Exile this card from your graveyard. -/
-  | exileSourceFromGraveyard
-  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
-  | sacrificeAnotherCreatureOrArtifact
-  /-- Exile this card from your hand. -/
-  | exileSourceFromHand
-  /-- Exile this permanent. -/
-  | exileSource
+  /-- Exile this card from your graveyard (`!fromHand && !battlefield`), exile this card from your hand (`fromHand && !battlefield`), exile this permanent (`!fromHand && battlefield`), or sacrifice another creature or artifact you control (`fromHand && battlefield`, CR 701.17). -/
+  | exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false)
   /-- Remove a counter of `kind` from the source. -/
   | removeCounter (kind : CounterKind)
-  /-- Remove any number of +1/+1 counters from the source. -/
-  | removeAnyNumberPlusOne
-  /-- Put a stun counter on the source. -/
-  | putStunCounterOnSource
+  /-- Remove any number of +1/+1 counters from the source (`!putStun`) or put a stun counter on the source (`putStun`). -/
+  | counterModCost (putStun : Bool := false)
   /-- Crew N: tap any number of untapped creatures you control with total
   power N or more (CR 702.122). -/
   | crew (power : Nat)
@@ -118,6 +122,17 @@ inductive ExtraActivationCost where
   costs. -/
   | zemoBoast
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace ExtraActivationCost
+
+@[match_pattern] abbrev exileSourceFromGraveyard : ExtraActivationCost := .exileOrSacrificeCost false false
+@[match_pattern] abbrev exileSourceFromHand : ExtraActivationCost := .exileOrSacrificeCost true false
+@[match_pattern] abbrev exileSource : ExtraActivationCost := .exileOrSacrificeCost false true
+@[match_pattern] abbrev sacrificeAnotherCreatureOrArtifact : ExtraActivationCost := .exileOrSacrificeCost true true
+@[match_pattern] abbrev removeAnyNumberPlusOne : ExtraActivationCost := .counterModCost false
+@[match_pattern] abbrev putStunCounterOnSource : ExtraActivationCost := .counterModCost true
+
+end ExtraActivationCost
 
 abbrev FraCost := ExtraActivationCost
 

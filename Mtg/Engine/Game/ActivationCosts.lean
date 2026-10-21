@@ -50,27 +50,27 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
   match pick with
   | .sacrificeAnotherSubtype t =>
     perm && other && (if t == "Creature" then o.isCreature else g.hasSubtype o t)
-  | .sacrificeArtifact => perm && artifact
-  | .sacrificeLegendaryArtifact => perm && artifact && o.isLegendary
-  | .sacrificeArtifactOrCreature => perm && (artifact || o.isCreature)
-  | .sacrificeAnotherArtifact => perm && other && artifact
-  | .sacrificeAnotherCreatureOrPlaneswalker =>
-    perm && other && (o.isCreature || o.printed.isPlaneswalker)
-  | .sacrificeArtifactOrLand => perm && (artifact || o.printed.isLand)
-  | .sacrificeEquipmentAttachedToSource =>
+  | .sacrificeArtifactChoice legendary false =>
+    perm && artifact && (!legendary || o.isLegendary)
+  | .sacrificeArtifactChoice false true =>
+    perm && other && artifact
+  | .sacrificeArtifactChoice true true =>
     perm && o.printed.isEquipment && o.attachedTo == some sourceId
-  | .sacrificeArtifactOrDiscardNonland =>
+  | .sacrificeTwoKindChoice false land =>
+    perm && (artifact || (if land then o.printed.isLand else o.isCreature))
+  | .sacrificeTwoKindChoice true false =>
+    perm && other && (o.isCreature || o.printed.isPlaneswalker)
+  | .sacrificeTwoKindChoice true true =>
     (perm && artifact) || (inHand && !o.printed.isLand)
-  | .discardACard => inHand
-  | .discardNonland => inHand && !o.printed.isLand
-  | .discardLegendaryCard => inHand && o.isLegendary
-  | .discardLegendarySameName =>
+  | .discardChoice nonland false =>
+    inHand && (!nonland || !o.printed.isLand)
+  | .discardChoice sameName true =>
     inHand && o.isLegendary &&
-      (g.permanentsOf p).any (fun x => x.isLegendary && x.name == o.name)
+      (!sameName || (g.permanentsOf p).any (fun x => x.isLegendary && x.name == o.name))
   | .exileAnotherCreatureCardFromGraveyard =>
     other && o.owner == p && o.zone == .graveyard p && o.printed.isCreature
-  | .tapUntappedCreature => perm && o.isCreature && !o.status.tapped
-  | .tapTwoUntappedArtifacts => perm && artifact && !o.status.tapped
+  | .tapChoice twoArtifacts =>
+    perm && !o.status.tapped && (if twoArtifacts then artifact else o.isCreature)
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
 permanents first). -/

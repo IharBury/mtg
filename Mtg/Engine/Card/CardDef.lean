@@ -89,32 +89,41 @@ end EntersTappedRule
 /-- Choice or state replacement as a permanent enters the battlefield (CR 614.1c / 614.12). -/
 inductive AsEntersChoice where
   | none
-  | creatureType
-  | oddEven
-  | cardType
-  | marduOrJeskai
+  /-- Choose a creature type (`!oddEven && !cardType`), odd or even (`oddEven && !cardType`), a card type (`!oddEven && cardType`), or Mardu or Jeskai (`oddEven && cardType`). -/
+  | chooseOption (oddEven : Bool := false) (cardType : Bool := false)
   | prepared
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace AsEntersChoice
+
+@[match_pattern] abbrev creatureType : AsEntersChoice := .chooseOption false false
+@[match_pattern] abbrev oddEven : AsEntersChoice := .chooseOption true false
+@[match_pattern] abbrev cardType : AsEntersChoice := .chooseOption false true
+@[match_pattern] abbrev marduOrJeskai : AsEntersChoice := .chooseOption true true
+
+end AsEntersChoice
 
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
 (CR 605.1a). -/
 inductive TapManaAbility where
-  | none
+  /-- No special `{T}: Add` ability (`!anyColorPower && !legendariesOrChosen`), any color equal to power (`anyColorPower && !legendariesOrChosen`), any color among legendaries you control (`!anyColorPower && legendariesOrChosen`), or chosen color per different power (`anyColorPower && legendariesOrChosen`). -/
+  | dynamicOrNone (anyColorPower : Bool := false) (legendariesOrChosen : Bool := false)
   | oneOf (types : Array ManaType) (ifEnteredOrBasic : Bool := false) (damage : Nat := 0) (payLife : Nat := 0)
   | together (types : Array ManaType) (restriction : String := "")
   | twoAmong (types : Array ManaType)
   | filter (cost : ManaCost) (types : Array ManaType)
   | forEach (entries : Array TapAddForEach)
   | anyColor (restriction : ManaRestriction := .none) (sacrificeSelf : Bool := false)
-  | anyColorEqualToPower
-  | anyColorAmongLegendaries
-  | chosenColorPerDifferentPower
-  | commanderIdentity (scryCreature : Bool := false)
-  | couldProduce (opp : Bool)
+  /-- Add one mana of any color in your commander's color identity (`!couldProduce`, `flag = scryCreature`), or add one mana of any type that a land you (`!flag`) or an opponent (`flag`) controls could produce (`couldProduce`). -/
+  | specialSourceMana (flag : Bool := false) (couldProduce : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TapManaAbility
 
+@[match_pattern] abbrev none : TapManaAbility := .dynamicOrNone false false
+@[match_pattern] abbrev anyColorEqualToPower : TapManaAbility := .dynamicOrNone true false
+@[match_pattern] abbrev anyColorAmongLegendaries : TapManaAbility := .dynamicOrNone false true
+@[match_pattern] abbrev chosenColorPerDifferentPower : TapManaAbility := .dynamicOrNone true true
 @[match_pattern] abbrev oneOfIfEnteredOrBasic (types : Array ManaType) : TapManaAbility :=
   .oneOf types (ifEnteredOrBasic := true)
 @[match_pattern] abbrev oneOfDealsDamage (types : Array ManaType) (damage : Nat) : TapManaAbility :=
@@ -129,10 +138,14 @@ namespace TapManaAbility
   .anyColor .instantOrSorcery false
 @[match_pattern] abbrev anyColorForLegendary : TapManaAbility :=
   .anyColor (.only .legendarySpell) false
+@[match_pattern] abbrev commanderIdentity (scryCreature : Bool := false) : TapManaAbility :=
+  .specialSourceMana scryCreature false
+@[match_pattern] abbrev couldProduce (opp : Bool) : TapManaAbility :=
+  .specialSourceMana opp true
 @[match_pattern] abbrev oppCouldProduce : TapManaAbility :=
-  .couldProduce true
+  .specialSourceMana true true
 @[match_pattern] abbrev youCouldProduce : TapManaAbility :=
-  .couldProduce false
+  .specialSourceMana false true
 
 end TapManaAbility
 
@@ -156,38 +169,37 @@ end ModalRule
 (CR 401.5 / 601.3). -/
 inductive TopOfLibraryRule where
   | none
-  | lookAnytime
-  | playLands
-  | castCreatures
-  | elvenChorus
+  /-- Look at the top card any time (`!playLands && !castCreatures`), play lands from the top (`playLands && !castCreatures`), cast creature spells from the top (`!playLands && castCreatures`), or Elven Chorus (`playLands && castCreatures`). -/
+  | libraryAccess (playLands : Bool := false) (castCreatures : Bool := false)
   | grantCreaturesTapAnyColor
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace TopOfLibraryRule
+
+@[match_pattern] abbrev lookAnytime : TopOfLibraryRule := .libraryAccess false false
+@[match_pattern] abbrev playLands : TopOfLibraryRule := .libraryAccess true false
+@[match_pattern] abbrev castCreatures : TopOfLibraryRule := .libraryAccess false true
+@[match_pattern] abbrev elvenChorus : TopOfLibraryRule := .libraryAccess true true
+
+end TopOfLibraryRule
 
 /-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
 inductive CardStaticRule where
   | none
   | topOfLibrary (rule : TopOfLibraryRule)
-  | foodAlsoCreatesTreasure
-  | othersEnterWithPlusOneEqualToughness
-  | powerPerMountain (n : Nat)
+  /-- Replacement or draw static rule: Food also creates Treasure (`!othersPlusOne && !drawOrExile`), others enter with +1/+1 counters equal to toughness (`othersPlusOne && !drawOrExile`), draw two except first draw step (`!othersPlusOne && drawOrExile`), or exile opposing dying creatures instead (`othersPlusOne && drawOrExile`). -/
+  | replacementOrDrawRule (othersPlusOne : Bool := false) (drawOrExile : Bool := false)
+  /-- Numeric static rule: power per Mountain (`!ifLore && !costReduction`), hexproof and indestructible if lore ≥ `n` (`ifLore && !costReduction`), spells not from hand cost `{n}` less (`!ifLore && costReduction`), or eminence Sphinx spells cost `{n}` less (`ifLore && costReduction`). -/
+  | numericStaticRule (n : Nat) (ifLore : Bool := false) (costReduction : Bool := false)
   | extraLandIfOtherSubtype (subtype : String)
-  | tokenDoubling (andDrawTwo : Bool := false)
-  | drawTwoExceptFirstDrawStep
-  | exileOppCreaturesInstead
+  /-- Boolean-parameterized static rule: token doubling (`!cantLose`, `flag = andDrawTwo`) or can't lose and opponents can't win (`cantLose`, `flag = andNoMinusCounters`). -/
+  | booleanStaticRule (flag : Bool := false) (cantLose : Bool := false)
   | firstCreatureDiscount (costReduction : Nat) (hasFlash : Bool)
-  | hexproofIndestructibleIfLore (minLore : Nat)
-  | costReductionNotFromHand (n : Nat)
-  | grantLandsTapAnyColor
-  | freeCastIfControlCommander
-  | opponentsCantGainLife
-  | cantLoseAndOpponentsCantWin (andNoMinusCounters : Bool := false)
-  | creaturesCantGetMinusCounters
+  /-- Mana or prohibition static rule: lands you control tap for any color (`!freeCastCommander && !cantGainOrMinus`), free cast if you control your commander (`freeCastCommander && !cantGainOrMinus`), opponents can't gain life (`!freeCastCommander && cantGainOrMinus`), or creatures can't have -1 / -1 counters put on them (`freeCastCommander && cantGainOrMinus`). -/
+  | manaOrCantRule (freeCastCommander : Bool := false) (cantGainOrMinus : Bool := false)
   | powerPerUnspentMana (andColorless : Bool := false)
-  | unspentManaBecomesColorless
-  | eminenceSphinxReduction (n : Nat)
-  | protectionFromChosenCardType
-  | corruptedToxicLifelink
-  | grantTeamPlusTwoFlying
+  /-- Mana-retention or combat static rule: unspent mana becomes colorless (`!protectionCardType && !corruptedOrTeam`), protection from chosen card type (`protectionCardType && !corruptedOrTeam`), corrupted toxic creatures have lifelink (`!protectionCardType && corruptedOrTeam`), or attacking team gets +2/+0 and flying (`protectionCardType && corruptedOrTeam`). -/
+  | combatOrManaKeepRule (protectionCardType : Bool := false) (corruptedOrTeam : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CardStaticRule
@@ -197,6 +209,25 @@ namespace CardStaticRule
 @[match_pattern] abbrev castCreatures : CardStaticRule := .topOfLibrary .castCreatures
 @[match_pattern] abbrev elvenChorus : CardStaticRule := .topOfLibrary .elvenChorus
 @[match_pattern] abbrev grantCreaturesTapAnyColor : CardStaticRule := .topOfLibrary .grantCreaturesTapAnyColor
+@[match_pattern] abbrev foodAlsoCreatesTreasure : CardStaticRule := .replacementOrDrawRule false false
+@[match_pattern] abbrev othersEnterWithPlusOneEqualToughness : CardStaticRule := .replacementOrDrawRule true false
+@[match_pattern] abbrev drawTwoExceptFirstDrawStep : CardStaticRule := .replacementOrDrawRule false true
+@[match_pattern] abbrev exileOppCreaturesInstead : CardStaticRule := .replacementOrDrawRule true true
+@[match_pattern] abbrev powerPerMountain (n : Nat) : CardStaticRule := .numericStaticRule n false false
+@[match_pattern] abbrev hexproofIndestructibleIfLore (minLore : Nat) : CardStaticRule := .numericStaticRule minLore true false
+@[match_pattern] abbrev costReductionNotFromHand (n : Nat) : CardStaticRule := .numericStaticRule n false true
+@[match_pattern] abbrev eminenceSphinxReduction (n : Nat) : CardStaticRule := .numericStaticRule n true true
+@[match_pattern] abbrev tokenDoubling (andDrawTwo : Bool := false) : CardStaticRule := .booleanStaticRule andDrawTwo false
+@[match_pattern] abbrev cantLoseAndOpponentsCantWin (andNoMinusCounters : Bool := false) : CardStaticRule :=
+  .booleanStaticRule andNoMinusCounters true
+@[match_pattern] abbrev grantLandsTapAnyColor : CardStaticRule := .manaOrCantRule false false
+@[match_pattern] abbrev freeCastIfControlCommander : CardStaticRule := .manaOrCantRule true false
+@[match_pattern] abbrev opponentsCantGainLife : CardStaticRule := .manaOrCantRule false true
+@[match_pattern] abbrev creaturesCantGetMinusCounters : CardStaticRule := .manaOrCantRule true true
+@[match_pattern] abbrev unspentManaBecomesColorless : CardStaticRule := .combatOrManaKeepRule false false
+@[match_pattern] abbrev protectionFromChosenCardType : CardStaticRule := .combatOrManaKeepRule true false
+@[match_pattern] abbrev corruptedToxicLifelink : CardStaticRule := .combatOrManaKeepRule false true
+@[match_pattern] abbrev grantTeamPlusTwoFlying : CardStaticRule := .combatOrManaKeepRule true true
 
 end CardStaticRule
 
@@ -204,33 +235,44 @@ end CardStaticRule
 inductive SpellCastOption where
   | none
   | flashback (cost : ManaCost) (discard : Bool := false)
-  | kicker (cost : ManaCost)
+  /-- Optional kicker cost (`!morph`) or alternative morph cost (`morph`). -/
+  | manaCastOption (cost : ManaCost) (morph : Bool := false)
   | giftTreasure
-  | teamwork (minPower : Nat)
-  | morph (cost : ManaCost)
+  /-- Optional teamwork cost (`!cascade`, `n = minPower`) or cascade `n` instances (`cascade`). -/
+  | numericCastOption (n : Nat) (cascade : Bool := false)
   | impending (counters : Nat) (cost : ManaCost)
   | affinity (subtype : String)
-  | cascade (n : Nat)
 deriving Repr, Inhabited, BEq
+
+namespace SpellCastOption
+
+@[match_pattern] abbrev kicker (cost : ManaCost) : SpellCastOption := .manaCastOption cost false
+@[match_pattern] abbrev morph (cost : ManaCost) : SpellCastOption := .manaCastOption cost true
+@[match_pattern] abbrev teamwork (minPower : Nat) : SpellCastOption := .numericCastOption minPower false
+@[match_pattern] abbrev cascade (n : Nat) : SpellCastOption := .numericCastOption n true
+
+end SpellCastOption
 
 /-- Casting permission, restriction, or counterability rule on a card
 (CR 601.2 / 601.3 / 608.2a). -/
 inductive CastPermissionRule where
-  | normal
-  | cantBeCountered
-  | flashIf (cond : ConditionSelector)
-  | castOnlyIf (cond : ConditionSelector)
+  | normalOrUncounterable (cantBeCountered : Bool := false)
+  | conditionalPermission (cond : ConditionSelector) (castOnly : Bool := false)
   | castExiledIf (cond : ConditionSelector)
 deriving Repr, Inhabited, BEq
 
 namespace CastPermissionRule
 
+@[match_pattern] abbrev normal : CastPermissionRule := .normalOrUncounterable false
+@[match_pattern] abbrev cantBeCountered : CastPermissionRule := .normalOrUncounterable true
+@[match_pattern] abbrev flashIf (cond : ConditionSelector) : CastPermissionRule := .conditionalPermission cond false
+@[match_pattern] abbrev castOnlyIf (cond : ConditionSelector) : CastPermissionRule := .conditionalPermission cond true
 @[match_pattern] abbrev flashIfYouControl (subtype : String) : CastPermissionRule :=
-  .flashIf (.youControlSubtype subtype)
+  .conditionalPermission (.youControlSubtype subtype) false
 @[match_pattern] abbrev castExiledWithSevenInGraveyard : CastPermissionRule :=
   .castExiledIf (.graveyardAtLeast 7)
 @[match_pattern] abbrev castOnlyIfGraveyardAtLeast (min : Nat) : CastPermissionRule :=
-  .castOnlyIf (.graveyardAtLeast min)
+  .conditionalPermission (.graveyardAtLeast min) true
 
 end CastPermissionRule
 
@@ -238,17 +280,26 @@ end CastPermissionRule
 (CR 702 / 100.2a / 903.3a). -/
 inductive CardKeywordRule where
   | none
-  | ward (n : Nat)
-  | crew (n : Nat)
+  /-- Ward `{n}` (`!crew`, CR 702.21) or Crew `n` (`crew`, CR 702.122). -/
+  | wardOrCrew (n : Nat) (crew : Bool := false)
   | prowess (n : Nat)
   | protectionFromColors (colors : Array Color)
   | cycling (cost : ManaCost)
-  | daybound
   | toxic (n : Nat) (cantBlock : Bool := false)
-  | cantBlock
-  | anyNumberInDeck
-  | canBeCommander
+  /-- Daybound (`!cantBlock && !deckRule`), can't block (`cantBlock && !deckRule`), any number in deck (`!cantBlock && deckRule`, CR 100.2a), or can be your commander (`cantBlock && deckRule`, CR 903.3a). -/
+  | staticKeywordFlag (cantBlock : Bool := false) (deckRule : Bool := false)
 deriving Repr, Inhabited, BEq
+
+namespace CardKeywordRule
+
+@[match_pattern] abbrev ward (n : Nat) : CardKeywordRule := .wardOrCrew n false
+@[match_pattern] abbrev crew (n : Nat) : CardKeywordRule := .wardOrCrew n true
+@[match_pattern] abbrev daybound : CardKeywordRule := .staticKeywordFlag false false
+@[match_pattern] abbrev cantBlock : CardKeywordRule := .staticKeywordFlag true false
+@[match_pattern] abbrev anyNumberInDeck : CardKeywordRule := .staticKeywordFlag false true
+@[match_pattern] abbrev canBeCommander : CardKeywordRule := .staticKeywordFlag true true
+
+end CardKeywordRule
 
 set_option maxRecDepth 1024 in
 /-- Printed (Oracle) characteristics of a card. -/
@@ -690,12 +741,12 @@ def topOfLibraryRule (c : CardDef) : TopOfLibraryRule :=
 
 def mayLookAtTopAnytime (c : CardDef) : Bool :=
   match c.topOfLibraryRule with
-  | .lookAnytime | .playLands | .castCreatures | .elvenChorus => true
+  | .libraryAccess _ _ => true
   | _ => false
 
 def mayCastCreaturesFromTop (c : CardDef) : Bool :=
   match c.topOfLibraryRule with
-  | .castCreatures | .elvenChorus => true
+  | .libraryAccess _ true => true
   | _ => false
 
 def mayPlayLandsFromTop (c : CardDef) : Bool :=
