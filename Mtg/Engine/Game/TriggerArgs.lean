@@ -85,15 +85,13 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match sourceId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .any | .ifPresent | .eachPermanent | .laterCreature | .eachEquipment
-    | .target .any | .target .ifPresent | .target .eachPermanent
-    | .target .laterCreature | .target .eachEquipment
-    | .permanent _ | .announced | .announcedCreature
-    | .optionalCreature | .artifactEnchantmentOrLand
-    | .eachUpToLastKnown | .announcedEquipment
-    | .creatureOrGraveyardCard =>
+  | .any | .ifPresent | .targetObj (.eachPermanent _) | .laterCreature
+    | .target .any | .target .ifPresent | .target (.targetObj (.eachPermanent _))
+    | .target .laterCreature
+    | .permanent _ | .announced | .targetObj (.announcedPair _)
+    | .optionalCreature | .eachUpToLastKnown | .graveyardExile (.copyTarget _) =>
     some permanentTargets
-  | .enchanted | .enchantedWhileSource =>
+  | .battlefield (.enchanted _) =>
     match sourceId.bind g.findObject? with
     | some src =>
       if src.isOnBattlefield then
@@ -113,11 +111,18 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
       | some s => if g.hasSubtype o s then some #[o] else someEmpty
       | none => some #[o]
     | none => someEmpty
-  | .creaturesYouControl => some (g.creaturesControlledBy controller)
+  | .battlefield (.permanentsOfTypeYouControl ty) =>
+    some ((g.permanentsOf controller).filter fun o =>
+      match ty with
+      | .creature => o.isCreature
+      | .land => o.printed.isLand
+      | .planeswalker => o.printed.isPlaneswalker
+      | .artifact => o.printed.isArtifact
+      | _ => o.types.contains ty)
   | .othersOfSubtype subtype =>
     some (g.battlefield.filter fun o =>
       o.controlledBy controller && some o.id != sourceId && g.hasSubtype o subtype)
-  | .opponentsCreatures =>
+  | .battlefield (.opponentsCreatures false) =>
     some (g.battlefield.filter fun o => o.isCreature && !o.controlledBy controller)
   | .blockers =>
     match sourceId with
@@ -140,7 +145,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
   | .humans =>
     some (g.battlefield.filter fun o =>
       o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
-  | .attackingCreatures =>
+  | .battlefield (.attackingCreatures false) =>
     some (g.battlefield.filter (·.status.attacking))
   | .equipped =>
     match g.attachedHost? sourceId with
@@ -151,15 +156,16 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match id.bind onBf with
     | some o => if o.status.tapped then some #[o] else someEmpty
     | none => someEmpty
-  | .oppArtifactsEnchantments =>
+  | .battlefield (.oppTwoTypes creaturesAndPw) =>
     some (g.battlefield.filter fun o =>
       !o.controlledBy controller &&
-        (o.types.contains .artifact || o.types.contains .enchantment))
+        if creaturesAndPw then o.isCreature || o.printed.isPlaneswalker
+        else o.types.contains .artifact || o.types.contains .enchantment)
   | .permanentDealtDamage =>
     match g.permanentDealtDamageThisWay.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .equippedAttackers =>
+  | .battlefield (.attackingCreatures true) =>
     some (g.battlefield.filter fun o =>
       o.isCreature && o.status.attacking &&
         g.battlefield.any (fun eq => eq.attachedTo == some o.id))
@@ -190,21 +196,19 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match g.notedHostId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .landsYouControl =>
-    some ((g.permanentsOf controller).filter (·.printed.isLand))
   | .legendaryCreaturesYouControl =>
     some ((g.permanentsOf controller).filter fun o => o.isCreature && o.isLegendary)
-  | .planeswalkersYouControl =>
-    some ((g.permanentsOf controller).filter (·.printed.isPlaneswalker))
   | .forestsExceptCause =>
     -- The causing Forest's id is this trigger's last-known power.
     let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
     some ((g.permanentsOf controller).filter fun o =>
       g.hasSubtype o "Forest" && some o.id != cause)
-  | .creature | .target .creature =>
-    some (permanentTargets.filter (·.isCreature))
-  | .planeswalker | .target .planeswalker =>
-    some (permanentTargets.filter (·.printed.isPlaneswalker))
+  | .targetObj (.ofCardType ty) | .target (.targetObj (.ofCardType ty)) =>
+    some (permanentTargets.filter fun o =>
+      match ty with
+      | .creature => o.isCreature
+      | .planeswalker => o.printed.isPlaneswalker
+      | _ => o.types.contains ty)
   | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
     some (permanentTargets.filter fun o =>
       g.hasSubtype o subtype && some o.id != sourceId)
@@ -221,15 +225,13 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match sourceId.bind onBf with
     | some o => if o.status.harnessed then some #[o] else someEmpty
     | none => someEmpty
-  | .artifact =>
-    some ((g.permanentsOf controller).filter (·.printed.isArtifact))
   | .anotherCreatureOrArtifact =>
     match sourceId with
     | some sid =>
       some ((g.permanentsOf controller).filter fun o =>
         o.id != sid && (o.isCreature || o.printed.isArtifact))
     | none => someEmpty
-  | .allCreatures =>
+  | .battlefield (.allCreatures false) =>
     some (g.battlefield.filter (·.isCreature))
   | .creaturesOfTargetPlayer =>
     match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
@@ -237,20 +239,17 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .nonSubtypeCreatures subtype =>
     some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
-  | .oppCreaturesAndPlaneswalkers =>
-    some (g.battlefield.filter fun o =>
-      !o.controlledBy controller && (o.isCreature || o.printed.isPlaneswalker))
   | .creaturesExceptYourTokens =>
     some (g.battlefield.filter fun o =>
       o.isCreature && !(o.printed.isToken && o.controlledBy controller))
   | .creaturesWithPlusOne =>
     some (g.battlefield.filter fun o =>
       o.isCreature && o.controlledBy controller && o.status.plusOnePlusOne > 0)
-  | .wizardTokensExceptRecent =>
+  | .battlefield (.tokensYouControl true) =>
     some (g.battlefield.filter fun o =>
       o.controlledBy controller && o.printed.isToken && g.hasSubtype o "Wizard" &&
         !g.recentTokenIds.contains o.id)
-  | .tokensYouControl =>
+  | .battlefield (.tokensYouControl false) =>
     some ((g.permanentsOf controller).filter (·.printed.isToken))
   | .targetAt idx =>
     match ctx.targets[idx]? with
@@ -274,41 +273,41 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     some (g.battlefield.filter fun o => o.isCreature && !g.hasKeyword o (·.flying))
   | .oppPermanents ty =>
     some (g.battlefield.filter fun o => !o.controlledBy controller && o.types.contains ty)
-  | .player _ | .youIfCast | .cards _ _ | .hand | .chosenNonland
-    | .graveyardCard | .graveyardPermanent | .milledSubtype _
-    | .revealed | .basicLand | .linkedExile | .graveyardInstants _
-    | .opponentChosenCreature | .eachPlayersCreature | .eachOpponentsCreature | .leastPower
-    | .combatDamager | .another | .chosenNontokenCreature
-    | .cardFromHand | .top | .basicUpTo _ _ | .discarded | .opponentTop _
-    | .nonlandMvAtMost _ | .notedLands | .discardedLand | .landFromHand
-    | .artifactFromHand | .randomCreature | .forest | .basicLandOnTop
-    | .dragon | .creatureMvAtMost _ | .creatureFromHand _ _
-    | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
-    | .card | .nonland | .targetSpell | .graveyardSubtype _
-    | .allNonlandPermanentsInGraveyard | .chosenNonlandPermanent | .topPower
-    | .land | .creatureOrPlaneswalker | .landCard
-    | .landsUpTo _ | .landsEqualDamage | .planeswalkerCard | .enchantmentCard
-    | .supertypeCard _ _ | .landSubtype _ | .basicBeholdUntap _
-    | .basicLandsDifferentNamesX | .artifactCreatureX | .random
-    | .topN _ | .opponentTopX | .lookedTypes _
-    | .graveyardCardsOfType _ _ | .twoPiles | .creatureMvAtMostOrTeamwork _
+  | .player _ | .youIfCast | .cards _ _ | .hand | .libraryHand (.chosenNonland _)
+    | .graveyardExile (.graveyardCard _) | .graveyardExile (.cardOfType _) | .milledSubtype _
+    | .revealed | .libraryHand (.basicLand _) | .linkedExile | .graveyardInstants _
+    | .sacrificeStack (.chosenCreature _ _ _) | .leastPower
+    | .combatDamager | .another
+    | .cardFromHand | .libraryHand (.top _ _) | .basicUpTo _ _
+    | .graveyardExile (.discarded _) | .libraryHand (.opponentTop _)
+    | .graveyardExile (.mvAtMost _ _ _) | .notedLands
+    | .libraryHand (.cardOfTypeFromHand _) | .randomCreature
+    | .libraryHand (.landSubtype _ _) | .creatureFromHand _ _
+    | .anyYouControl | .questCounters | .graveyardExile (.cardsInYourGraveyard _)
+    | .libraryHand (.card _ _) | .sacrificeStack (.targetSpell _) | .sacrificeStack (.copiedSpell _) | .graveyardSubtype _
+    | .battlefield (.sacrificePermanentChoice _)
+    | .libraryHand (.landsUpTo _) | .libraryHand (.supertypeCard _ _)
+    | .basicBeholdUntap _
+    | .basicLandsDifferentNamesX | .artifactCreatureX
+    | .lookedTypes _
+    | .graveyardCardsOfType _ _ | .libraryHand (.twoPiles _)
     | .cardsUnlessType _ _ | .stackAbility _ | .mayWheel _ _
-    | .sourceTwoNonlegendaryTokens | .nontokenCreaturesYouControl
+    | .battlefield (.sourceTokenCopy _)
+    | .targetPermanentTwoTokensHasteSacrifice | .battlefield (.filteredCreaturesYouControl _ _)
     | .secondArtifactTargetNotLegendary | .targetLegendRuleOff
-    | .sourceIfNotToken | .sourceSpellXTimes | .allCreaturesExceptTwoChosen
+    | .allCreaturesExceptTwoChosen
     | .otherCreaturesOddOrEvenMv | .creaturesNotChosenType
     | .opponentLibrariesButBottom | .oppGreatestMvCreatureOrPlaneswalker
-    | .nextSpellThisTurn | .untilYourNextTurn | .attackersOfCauseControllerWithTrample
-    | .attackersAgainstYouUntilYourTurn | .attackersAgainstOpponentsUntilYourTurn
+    | .causingSpell | .untilYourNextTurn | .attackersOfCauseControllerWithTrample
+    | .battlefield (.attackersUntilYourTurn _)
     | .equipmentYouControl | .upToTwoGyModal | .creaturesDiedThisTurn
-    | .causingSpell | .ownedCreaturesKicker | .outsideGameOpponentChoice
-    | .sphinxsApproach | .drawTwoDiscardTwoStun
-    | .eachOpponentTwoDrawPerNonlandShortfall | .lootThenCountersPerDiscard
-    | .drawAndDiscardXCreateSpiritPerType | .basicSubtypesUntapAt _ _
+    | .ownedCreaturesKicker | .outsideGameOpponentChoice
+    | .sphinxsApproach | .libraryHand (.drawAndDiscard _)
+    | .eachOpponentTwoDrawPerNonlandShortfall | .libraryHand (.lootOrDiscardX _)
+    | .basicSubtypesUntapAt _ _
     | .archonCruelty | .oppTappedCreatures | .creaturesPowerAtLeast4
-    | .combatDamagerIfMonarch | .targetSpellTwice
-    | .targetPermanentTwoTokensHasteSacrifice | .drawOneDiscardOne
-    | .anyCreatureOnBattlefieldWithHaste | .factOrFiction =>
+    | .combatDamagerIfMonarch
+    | .anyCreatureOnBattlefieldWithHaste =>
     none
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
@@ -336,7 +335,7 @@ def cardsNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSel
     match sourceId.bind g.findObject? with
     | some src => fromIds src.linkedExile
     | none => some #[]
-  | .graveyardCard | .graveyardPermanent | .creatureCard =>
+  | .graveyardExile (.graveyardCard _) | .creatureCard =>
     some (targets.filterMap fun
       | Target.card id | Target.permanent id =>
         match g.findObject? id with
@@ -369,7 +368,7 @@ def cardsNamed (g : Game) (ctx : TriggerRead) (what : TriggeredAbility.ObjectSel
     fromIds (g.milledIdsThisWay.filter fun id =>
       (g.findObject? id).any (·.printed.hasSubtype subtype))
   | .notedLands => fromIds g.exiledIdsThisWay
-  | .discarded | .discardedLand =>
+  | .graveyardExile (.discarded _) =>
     match g.discardedCardThisWay with
     | some (_, id) => fromIds #[id]
     | none => some #[]
@@ -453,7 +452,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
       match (g.resolvingAbility.bind g.findObject?).bind (·.lastKnownToughness) with
       | some idx => one ⟨idx.toNat⟩
       | none => none
-  | .opponentHasYou | .extort | .eachOpponentAndYouGain1 | .youLose1Life => none
+  | .opponentHasYou | .extort | .drainEachOpponent _ | .youLose1Life => none
 
 /-- How many objects `what` names.
 `none` means `what` does not name a counted set. An empty set is `some 0`.

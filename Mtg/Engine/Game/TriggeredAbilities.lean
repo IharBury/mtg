@@ -1276,9 +1276,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
     match what with
     | .ofKind kind n => putN kind n
-    | .plusOneLastKnownMv => putN .plusOnePlusOne (lastKnownPower.getD 0).toNat
-    | .plusOneSacrificedPower =>
-      putN .plusOnePlusOne (g.sacrificedPowerThisWay.getD 0)
+    | .plusOneFromNote sacrificedPower false =>
+      putN .plusOnePlusOne (if sacrificedPower then g.sacrificedPowerThisWay.getD 0 else (lastKnownPower.getD 0).toNat)
     | .honePerOpponent =>
       let opp :=
         match targets[0]? with
@@ -1312,8 +1311,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .plusOnePerLand | .plusOneEqualToHand | .causeCounters | .plusOneChosenX
-    | .plusOnePerThreeGraveyardIfFromGy | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
+    | .plusOneFromNote _ true | .copiedCounters _ | .plusOneDynamic _ _ _
+    | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
     | .eachKindOnIt _ | .remove _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
@@ -1507,7 +1506,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .lands => { g with thisWay := { g.thisWay with exiledIdsThisWay := #[] } }
         | .copyAndHost => { g with thisWay := { g.thisWay with notedCopyObject := none, notedHostId := none } }
         | .playCard => { g with thisWay := { g.thisWay with playExiledThisWay := none } }
-        | .impulse | .anyManaThisTurn => { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
+        | .revealedCast _ => { g with thisWay := { g.thisWay with revealedIdsThisWay := #[] } }
         | _ => g
       let exileOne (g : Game) (o : GameObject) : Game :=
         match how with
@@ -1518,21 +1517,14 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             if src.isOnBattlefield then g.exileUntilSourceLeaves sourceId o else g
           | none => g
         | .nextEndStep => g.exileUntilNextEndStep o
-        | .playUntilNextTurn =>
+        | .playUntil thisTurn false =>
           let name := o.name
           let (g, newId) := g.move o.id .exile none
           let moved := g.object! newId
           let g := g.setObject { moved with
-            playPermission := some { player := controller, turnEndsRemaining := 2 } }
+            playPermission := some { player := controller, turnEndsRemaining := if thisTurn then 1 else 2 } }
           g.logMsg
-            s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
-        | .playThisTurn =>
-          let name := o.name
-          let (g, newId) := g.move o.id .exile none
-          let moved := g.object! newId
-          let g := g.setObject { moved with
-            playPermission := some { player := controller, turnEndsRemaining := 1 } }
-          g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
+            s!"{(g.player controller).name} exiles {name} and may play it {if thisTurn then "this turn" else "until the end of their next turn"}"
         | .forLater =>
           let name := o.name
           let (g, newId) := g.move o.id .exile none
@@ -1572,26 +1564,22 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | .none | .gainLifeIfTeamwork _ | .controllerMaySearchBasic
             | .thenDrawThree | .counteredPermanentMayCast
             | .worldsWithinWorlds | .revealUntilCreatureOrPlaneswalker
-            | .despark | .controllerGainsLifePower | .incubateCount
-            | .revealCreaturesToBattlefield | .revealCreaturesAtEndStep => g.logMsg s!"{name} is exiled"
-        | .returnImmediately =>
-          let owner := o.owner
-          let name := o.name
-          let (g, exId) := g.move o.id .exile none
-          let (g, retId) := g.move exId .battlefield (some owner)
-          g.afterPermanentEnters (g.object! retId)
-            |>.logMsg s!"{name} is exiled, then returned"
-        | .returnTapped =>
-          if o.printed.isToken || !(o.printed.isArtifact || o.isCreature) then g
+            | .despark | .controllerGainsLifePower
+            | .countExiledCreatures _ | .revealCreaturesToBattlefield _ => g.logMsg s!"{name} is exiled"
+        | .returnImmediately tapped =>
+          if tapped && (o.printed.isToken || !(o.printed.isArtifact || o.isCreature)) then g
           else
             let owner := o.owner
             let name := o.name
             let (g, exId) := g.move o.id .exile none
             let (g, retId) := g.move exId .battlefield (some owner)
-            let ret := g.object! retId
-            let g := g.setObject { ret with status := { ret.status with tapped := true } }
+            let g :=
+              if tapped then
+                let ret := g.object! retId
+                g.setObject { ret with status := { ret.status with tapped := true } }
+              else g
             g.afterPermanentEnters (g.object! retId)
-              |>.logMsg s!"{name} is exiled, then returned tapped"
+              |>.logMsg s!"{name} is exiled, then returned{if tapped then " tapped" else ""}"
         | .mayCastUpTo casts =>
           let (g, newId) := g.move o.id .exile none
           let prev :=
@@ -1600,7 +1588,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             | _ => #[]
           { g with pending :=
               .fraChoice controller (.mayCastUpToFromExile (prev.push newId) casts) }
-        | .playIfYouControlSubtype _ | .playForLifeThisTurn
+        | .playIfYouControlSubtype _ | .playUntil _ true
           | .mayCastElseDamageOpponents _ | .anyManaWhileExiled
           | .returnBrieflyIfMvAtMost _ =>
           (g.move o.id .exile none).1
@@ -2768,35 +2756,19 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
             | some o => g := g.logMsg s!"{(g.player pid).name} reveals {o.name}"
             | none => pure ()
           found := found ++ ids
-        | .untilCreature =>
+        | .untilCard saga instantOrSorcery nonland =>
+          let pred (o : GameObject) : Bool :=
+            if saga then o.printed.saga.isSome
+            else if instantOrSorcery then o.printed.isInstantOrSorcery
+            else if nonland then !o.printed.isLand
+            else o.printed.isCreature
           let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (·.printed.isCreature) #[]
+            revealUntil g pid (g.player pid).library.size pred #[]
           g := g'.putRestOnBottomRandom pid rest
           match hit with
           | some id => found := found.push id
           | none => pure ()
-        | .untilSaga =>
-          let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (fun o => o.printed.saga.isSome) #[]
-          g := g'.putRestOnBottomRandom pid rest
-          match hit with
-          | some id => found := found.push id
-          | none => pure ()
-        | .untilInstantOrSorcery =>
-          let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (·.printed.isInstantOrSorcery) #[]
-          g := g'.putRestOnBottomRandom pid rest
-          match hit with
-          | some id => found := found.push id
-          | none => pure ()
-        | .untilNonland =>
-          let (g', hit, rest) :=
-            revealUntil g pid (g.player pid).library.size (fun o => !o.printed.isLand) #[]
-          g := g'.putRestOnBottomRandom pid rest
-          match hit with
-          | some id => found := found.push id
-          | none => pure ()
-        | .topNumber _ | .untilCreaturesPerOpponent | .untilHistoric
+        | .topNumber _ | .untilSpecial _
         | .firstResolveUntilCreature | .fromHand _ | .search => pure ()
       return { g with thisWay := { g.thisWay with revealedIdsThisWay := found } }
 
