@@ -10,20 +10,16 @@ namespace Mtg.Engine
 
 /-- Non-creature artifact tokens (CR 111.10). -/
 inductive ArtifactToken where
-  /-- Standard predefined artifact token: Treasure (`!food && !clueOrMap`), Food (`food && !clueOrMap`), Clue (`!food && clueOrMap`), or Map (`food && clueOrMap`). -/
-  | predefined (food : Bool := false) (clueOrMap : Bool := false)
-  /-- Set-specific artifact token: Vibranium (`!heartwood && !lotusOrIncubator`), Heartwood (`heartwood && !lotusOrIncubator`), Lotus (`!heartwood && lotusOrIncubator`), or Incubator (`heartwood && lotusOrIncubator`). -/
-  | setArtifact (heartwood : Bool := false) (lotusOrIncubator : Bool := false)
+  /-- Predefined or set-specific artifact token: Treasure (`!alt1 && !alt2 && !setArtifact`), Food (`alt1 && !alt2 && !setArtifact`), Clue (`!alt1 && alt2 && !setArtifact`), Map (`alt1 && alt2 && !setArtifact`), Vibranium (`!alt1 && !alt2 && setArtifact`), Heartwood (`alt1 && !alt2 && setArtifact`), Lotus (`!alt1 && alt2 && setArtifact`), or Incubator (`alt1 && alt2 && setArtifact`). -/
+  | predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false) (setArtifact : Bool := false)
   /-- Colorless Equipment artifact token: Axe (`!sturdyShield`) or Sturdy Shield (`sturdyShield`). -/
   | equipment (sturdyShield : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Artifact creature tokens (CR 111). -/
 inductive ArtifactCreatureToken where
-  /-- 2/2 Robot Villain (`!doombot && !wallOrSculpture`), 3/3 Doombot (`doombot && !wallOrSculpture`), 3/1 Stone Boulder Wall (`!doombot && wallOrSculpture`), or 1/1 Sculpture Treasure (`doombot && wallOrSculpture`). -/
-  | robotOrWall (doombot : Bool := false) (wallOrSculpture : Bool := false)
-  /-- 1/1 flying Thopter (`!myr && !miteOrGingerbrute`), 1/1 Myr (`myr && !miteOrGingerbrute`), 1/1 Phyrexian Mite (`!myr && miteOrGingerbrute`), or 1/1 Gingerbrute (`myr && miteOrGingerbrute`). -/
-  | constructToken (myr : Bool := false) (miteOrGingerbrute : Bool := false)
+  /-- 2/2 Robot Villain (`!alt1 && !alt2 && !construct`), 3/3 Doombot (`alt1 && !alt2 && !construct`), 3/1 Stone Boulder Wall (`!alt1 && alt2 && !construct`), 1/1 Sculpture Treasure (`alt1 && alt2 && !construct`), 1/1 flying Thopter (`!alt1 && !alt2 && construct`), 1/1 Myr (`alt1 && !alt2 && construct`), 1/1 Phyrexian Mite (`!alt1 && alt2 && construct`), or 1/1 Gingerbrute (`alt1 && alt2 && construct`). -/
+  | kind (alt1 : Bool := false) (alt2 : Bool := false) (construct : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Legendary creature tokens (CR 111 / CR 205.4a). -/
@@ -36,22 +32,14 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Non-artifact, non-legendary creature tokens (CR 111). -/
 inductive CreatureToken where
-  /-- 1/1 white creature token: Human Soldier (`!soldierOnly && !humanOnly`), Soldier (`soldierOnly && !humanOnly`), Human (`!soldierOnly && humanOnly`), or Warrior (`soldierOnly && humanOnly`). -/
-  | white11 (soldierOnly : Bool := false) (humanOnly : Bool := false)
-  /-- Green creature token: 2/2 Wolf (`!bear && !elfOrSquirrel`), 2/2 Bear (`bear && !elfOrSquirrel`), 1/1 Elf (`!bear && elfOrSquirrel`), or 1/1 Squirrel (`bear && elfOrSquirrel`). -/
-  | greenCreature (bear : Bool := false) (elfOrSquirrel : Bool := false)
-  /-- White flying creature token: 1/1 Spirit (`!birdSoldier && !angelOrInsect`), 4/4 Bird Soldier (`birdSoldier && !angelOrInsect`), 4/4 Angel (`!birdSoldier && angelOrInsect`), or 2/1 Insect (`birdSoldier && angelOrInsect`). -/
-  | flyingWhite (birdSoldier : Bool := false) (angelOrInsect : Bool := false)
-  /-- Red flying Dragon creature token: 6/6 (`!fiveFive`) or 5/5 (`fiveFive`). -/
-  | dragonKind (fiveFive : Bool := false)
-  /-- Blue hexproof Leviathan creature token: 6/5 (`!eightEight`) or 8/8 (`eightEight`). -/
-  | leviathanKind (eightEight : Bool := false)
-  /-- Blue creature token: 3/3 flying Angel (`!illusion && !merfolkOrShark`), 1/1 Illusion (`illusion && !merfolkOrShark`), 1/1 Merfolk (`!illusion && merfolkOrShark`), or X/X flying Shark (`illusion && merfolkOrShark`). -/
-  | blueCreature (illusion : Bool := false) (merfolkOrShark : Bool := false)
-  /-- Red creature token: 2/2 Dwarf (`!goblin && !koboldOrAlien`), 1/1 Goblin (`goblin && !koboldOrAlien`), 0/1 Kobold (`!goblin && koboldOrAlien`), or 1/1 haste Alien (`goblin && koboldOrAlien`). -/
-  | redCreature (goblin : Bool := false) (koboldOrAlien : Bool := false)
-  /-- Keyword creature token: 3/2 vigilance Hero (`!villain && !wall04OrBeast`), 2/1 menace Villain (`villain && !wall04OrBeast`), 0/4 defender Wall (`!villain && wall04OrBeast`), or 4/4 trample Beast (`villain && wall04OrBeast`). -/
-  | heroOrVillain (villain : Bool := false) (wall04OrBeast : Bool := false)
+  /-- White 1/1 or green creature token: Human Soldier (`!alt1 && !alt2 && !green`), Soldier (`alt1 && !alt2 && !green`), Human (`!alt1 && alt2 && !green`), Warrior (`alt1 && alt2 && !green`), 2/2 Wolf (`!alt1 && !alt2 && green`), 2/2 Bear (`alt1 && !alt2 && green`), 1/1 Elf (`!alt1 && alt2 && green`), or 1/1 Squirrel (`alt1 && alt2 && green`). -/
+  | whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false) (green : Bool := false)
+  /-- White flying or blue creature token: 1/1 Spirit (`!alt1 && !alt2 && !blue`), 4/4 Bird Soldier (`alt1 && !alt2 && !blue`), 4/4 Angel (`!alt1 && alt2 && !blue`), 2/1 Insect (`alt1 && alt2 && !blue`), 3/3 blue Angel (`!alt1 && !alt2 && blue`), 1/1 Illusion (`alt1 && !alt2 && blue`), 1/1 Merfolk (`!alt1 && alt2 && blue`), or X/X Shark (`alt1 && alt2 && blue`). -/
+  | whiteFlyingOrBlue (alt1 : Bool := false) (alt2 : Bool := false) (blue : Bool := false)
+  /-- Red flying Dragon (`!leviathan`: 6/6 when `!alt`, 5/5 when `alt`) or blue hexproof Leviathan (`leviathan`: 6/5 when `!alt`, 8/8 when `alt`). -/
+  | dragonOrLeviathan (alt : Bool := false) (leviathan : Bool := false)
+  /-- Red or alignment/keyword creature token: 2/2 Dwarf (`!alt1 && !alt2 && !alignment`), 1/1 Goblin (`alt1 && !alt2 && !alignment`), 0/1 Kobold (`!alt1 && alt2 && !alignment`), 1/1 Alien (`alt1 && alt2 && !alignment`), 3/2 Hero (`!alt1 && !alt2 && alignment`), 2/1 Villain (`alt1 && !alt2 && alignment`), 0/4 Wall (`!alt1 && alt2 && alignment`), or 4/4 Beast (`alt1 && alt2 && alignment`). -/
+  | redOrAlignment (alt1 : Bool := false) (alt2 : Bool := false) (alignment : Bool := false)
   /-- 1/1 green Insect (`!moloid && !cadetOrCitizen`), 1/1 green Minion named Moloid (`moloid && !cadetOrCitizen`), 2/2 colorless Wizard Soldier named Cadet (`!moloid && cadetOrCitizen`), or 1/1 green and white Citizen (`moloid && cadetOrCitizen`). -/
   | otherCreature (moloid : Bool := false) (cadetOrCitizen : Bool := false)
   /-- 2/2 white Cat Soldier named Ajani's Pridemate (`!forestTentacle`) or 3/3 green Forest Tentacle land creature (`forestTentacle`). -/
@@ -78,26 +66,26 @@ deriving Repr, Inhabited, BEq, DecidableEq
 namespace TokenKind
 
 -- ArtifactToken aliases
-@[match_pattern] abbrev treasure : TokenKind := .artifact (.predefined false false)
-@[match_pattern] abbrev food : TokenKind := .artifact (.predefined true false)
-@[match_pattern] abbrev clue : TokenKind := .artifact (.predefined false true)
-@[match_pattern] abbrev map : TokenKind := .artifact (.predefined true true)
-@[match_pattern] abbrev vibranium : TokenKind := .artifact (.setArtifact false false)
-@[match_pattern] abbrev heartwood : TokenKind := .artifact (.setArtifact true false)
-@[match_pattern] abbrev lotus : TokenKind := .artifact (.setArtifact false true)
-@[match_pattern] abbrev incubator : TokenKind := .artifact (.setArtifact true true)
+@[match_pattern] abbrev treasure : TokenKind := .artifact (.predefinedOrSet false false false)
+@[match_pattern] abbrev food : TokenKind := .artifact (.predefinedOrSet true false false)
+@[match_pattern] abbrev clue : TokenKind := .artifact (.predefinedOrSet false true false)
+@[match_pattern] abbrev map : TokenKind := .artifact (.predefinedOrSet true true false)
+@[match_pattern] abbrev vibranium : TokenKind := .artifact (.predefinedOrSet false false true)
+@[match_pattern] abbrev heartwood : TokenKind := .artifact (.predefinedOrSet true false true)
+@[match_pattern] abbrev lotus : TokenKind := .artifact (.predefinedOrSet false true true)
+@[match_pattern] abbrev incubator : TokenKind := .artifact (.predefinedOrSet true true true)
 @[match_pattern] abbrev axe : TokenKind := .artifact (.equipment false)
 @[match_pattern] abbrev sturdyShield : TokenKind := .artifact (.equipment true)
 
 -- ArtifactCreatureToken aliases
-@[match_pattern] abbrev robotVillain22 : TokenKind := .artifactCreature (.robotOrWall false false)
-@[match_pattern] abbrev doombot : TokenKind := .artifactCreature (.robotOrWall true false)
-@[match_pattern] abbrev wall : TokenKind := .artifactCreature (.robotOrWall false true)
-@[match_pattern] abbrev sculpture : TokenKind := .artifactCreature (.robotOrWall true true)
-@[match_pattern] abbrev thopter : TokenKind := .artifactCreature (.constructToken false false)
-@[match_pattern] abbrev myr : TokenKind := .artifactCreature (.constructToken true false)
-@[match_pattern] abbrev mite : TokenKind := .artifactCreature (.constructToken false true)
-@[match_pattern] abbrev gingerbrute : TokenKind := .artifactCreature (.constructToken true true)
+@[match_pattern] abbrev robotVillain22 : TokenKind := .artifactCreature (.kind false false false)
+@[match_pattern] abbrev doombot : TokenKind := .artifactCreature (.kind true false false)
+@[match_pattern] abbrev wall : TokenKind := .artifactCreature (.kind false true false)
+@[match_pattern] abbrev sculpture : TokenKind := .artifactCreature (.kind true true false)
+@[match_pattern] abbrev thopter : TokenKind := .artifactCreature (.kind false false true)
+@[match_pattern] abbrev myr : TokenKind := .artifactCreature (.kind true false true)
+@[match_pattern] abbrev mite : TokenKind := .artifactCreature (.kind false true true)
+@[match_pattern] abbrev gingerbrute : TokenKind := .artifactCreature (.kind true true true)
 
 -- LegendaryToken aliases
 @[match_pattern] abbrev mowu : TokenKind := .legendary (.mowuOrZabu false)
@@ -108,34 +96,34 @@ namespace TokenKind
 @[match_pattern] abbrev tigerGod : TokenKind := .legendary (.mshLegend true true)
 
 -- CreatureToken aliases
-@[match_pattern] abbrev humanSoldier : TokenKind := .creature (.white11 false false)
-@[match_pattern] abbrev soldier11white : TokenKind := .creature (.white11 true false)
-@[match_pattern] abbrev human : TokenKind := .creature (.white11 false true)
-@[match_pattern] abbrev warrior : TokenKind := .creature (.white11 true true)
-@[match_pattern] abbrev wolf : TokenKind := .creature (.greenCreature false false)
-@[match_pattern] abbrev bear : TokenKind := .creature (.greenCreature true false)
-@[match_pattern] abbrev elf : TokenKind := .creature (.greenCreature false true)
-@[match_pattern] abbrev squirrel11green : TokenKind := .creature (.greenCreature true true)
-@[match_pattern] abbrev spirit : TokenKind := .creature (.flyingWhite false false)
-@[match_pattern] abbrev birdSoldier : TokenKind := .creature (.flyingWhite true false)
-@[match_pattern] abbrev angel : TokenKind := .creature (.flyingWhite false true)
-@[match_pattern] abbrev insect : TokenKind := .creature (.flyingWhite true true)
-@[match_pattern] abbrev dragon : TokenKind := .creature (.dragonKind false)
-@[match_pattern] abbrev dragon55flying : TokenKind := .creature (.dragonKind true)
-@[match_pattern] abbrev leviathan65hexproof : TokenKind := .creature (.leviathanKind false)
-@[match_pattern] abbrev leviathan88hexproof : TokenKind := .creature (.leviathanKind true)
-@[match_pattern] abbrev angel33blue : TokenKind := .creature (.blueCreature false false)
-@[match_pattern] abbrev illusion11blue : TokenKind := .creature (.blueCreature true false)
-@[match_pattern] abbrev merfolk : TokenKind := .creature (.blueCreature false true)
-@[match_pattern] abbrev shark : TokenKind := .creature (.blueCreature true true)
-@[match_pattern] abbrev dwarf : TokenKind := .creature (.redCreature false false)
-@[match_pattern] abbrev goblin : TokenKind := .creature (.redCreature true false)
-@[match_pattern] abbrev kobold : TokenKind := .creature (.redCreature false true)
-@[match_pattern] abbrev alien : TokenKind := .creature (.redCreature true true)
-@[match_pattern] abbrev hero32vigilance : TokenKind := .creature (.heroOrVillain false false)
-@[match_pattern] abbrev villain21menace : TokenKind := .creature (.heroOrVillain true false)
-@[match_pattern] abbrev wall04defender : TokenKind := .creature (.heroOrVillain false true)
-@[match_pattern] abbrev beast44trample : TokenKind := .creature (.heroOrVillain true true)
+@[match_pattern] abbrev humanSoldier : TokenKind := .creature (.whiteOrGreen false false false)
+@[match_pattern] abbrev soldier11white : TokenKind := .creature (.whiteOrGreen true false false)
+@[match_pattern] abbrev human : TokenKind := .creature (.whiteOrGreen false true false)
+@[match_pattern] abbrev warrior : TokenKind := .creature (.whiteOrGreen true true false)
+@[match_pattern] abbrev wolf : TokenKind := .creature (.whiteOrGreen false false true)
+@[match_pattern] abbrev bear : TokenKind := .creature (.whiteOrGreen true false true)
+@[match_pattern] abbrev elf : TokenKind := .creature (.whiteOrGreen false true true)
+@[match_pattern] abbrev squirrel11green : TokenKind := .creature (.whiteOrGreen true true true)
+@[match_pattern] abbrev spirit : TokenKind := .creature (.whiteFlyingOrBlue false false false)
+@[match_pattern] abbrev birdSoldier : TokenKind := .creature (.whiteFlyingOrBlue true false false)
+@[match_pattern] abbrev angel : TokenKind := .creature (.whiteFlyingOrBlue false true false)
+@[match_pattern] abbrev insect : TokenKind := .creature (.whiteFlyingOrBlue true true false)
+@[match_pattern] abbrev dragon : TokenKind := .creature (.dragonOrLeviathan false false)
+@[match_pattern] abbrev dragon55flying : TokenKind := .creature (.dragonOrLeviathan true false)
+@[match_pattern] abbrev leviathan65hexproof : TokenKind := .creature (.dragonOrLeviathan false true)
+@[match_pattern] abbrev leviathan88hexproof : TokenKind := .creature (.dragonOrLeviathan true true)
+@[match_pattern] abbrev angel33blue : TokenKind := .creature (.whiteFlyingOrBlue false false true)
+@[match_pattern] abbrev illusion11blue : TokenKind := .creature (.whiteFlyingOrBlue true false true)
+@[match_pattern] abbrev merfolk : TokenKind := .creature (.whiteFlyingOrBlue false true true)
+@[match_pattern] abbrev shark : TokenKind := .creature (.whiteFlyingOrBlue true true true)
+@[match_pattern] abbrev dwarf : TokenKind := .creature (.redOrAlignment false false false)
+@[match_pattern] abbrev goblin : TokenKind := .creature (.redOrAlignment true false false)
+@[match_pattern] abbrev kobold : TokenKind := .creature (.redOrAlignment false true false)
+@[match_pattern] abbrev alien : TokenKind := .creature (.redOrAlignment true true false)
+@[match_pattern] abbrev hero32vigilance : TokenKind := .creature (.redOrAlignment false false true)
+@[match_pattern] abbrev villain21menace : TokenKind := .creature (.redOrAlignment true false true)
+@[match_pattern] abbrev wall04defender : TokenKind := .creature (.redOrAlignment false true true)
+@[match_pattern] abbrev beast44trample : TokenKind := .creature (.redOrAlignment true true true)
 @[match_pattern] abbrev insect11green : TokenKind := .creature (.otherCreature false false)
 @[match_pattern] abbrev moloid : TokenKind := .creature (.otherCreature true false)
 @[match_pattern] abbrev cadet : TokenKind := .creature (.otherCreature false true)

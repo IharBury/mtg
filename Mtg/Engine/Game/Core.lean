@@ -342,62 +342,36 @@ structure GameTurnState where
   pendingFreeRGCreature : Option PlayerId := none
 deriving Repr, Inhabited, BEq, DecidableEq
 
-structure Game extends GameTurnState where
-  players : Array Player
-  objects : Array GameObject
-  stack : Array StackEntry := #[]
+/-- Turn-order, active-player, priority, step, and day/night state
+(CR 103.2 / CR 117 / CR 500–514 / CR 702.145). -/
+structure GameTurnOrderState where
   activePlayer : PlayerId := ⟨0⟩
   priority : PlayerId := ⟨0⟩
   step : Step := .untap
   turnNumber : Nat := 1
   startingPlayer : PlayerId := ⟨0⟩
   isFirstTurn : Bool := true
-  pending : Pending := .none
-  nextObjectId : Nat := 0
-  timestamp : Nat := 0
-  rng : Rng := Rng.ofSeed 1
-  /-- When true, random events become `Pending.resolveRandom` instead of
-  using `rng`. -/
-  norandom : Bool := false
-  /-- Continuation after a `--norandom` result is applied. -/
-  afterRandom : AfterRandom := .none
-  result : Option GameResult := none
-  log : Array String := #[]
-  format : Format := .constructed
-  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
-  brawl : Bool := false
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
-  /-- Spell or ability proposed and waiting for mana abilities / payment
-  (CR 601.2f–h / 602.2b). -/
-  proposedSpell : Option ProposedSpell := none
-  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
-  mulligan : MulliganState := {}
-  /-- Combat phase state (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
-  combat : CombatPhaseState := {}
-  /-- Triggered abilities waiting to be put onto the stack the next time a
-  player would receive priority (CR 603.3 / 603.3b). Distinguished by
-  `WaitingTrigger.event`. -/
-  waitingTriggers : Array WaitingTrigger := #[]
   /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
   isNight : Bool := false
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Active resolution and pending-choice continuation state for spells and
+abilities (CR 603.3 / CR 608.2). -/
+structure GameContinuationState where
+  /-- Continuation after a `--norandom` result is applied. -/
+  afterRandom : AfterRandom := .none
   /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
   afterScrySurveil : AfterScrySurveil := {}
-  /-- Cross-step resolution notes ("this way", CR 608.2c / CR 608.2h). -/
-  thisWay : ResolutionNotes := {}
-  /-- Last-known status of objects that left the battlefield, newest last
-  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
-  lastKnownStatus : Array (ObjectId × Status) := #[]
   /-- The spell whose effect is currently resolving (CR 608.2). -/
   resolvingSpell : Option ObjectId := none
   /-- The activated or triggered ability currently resolving. -/
   resolvingAbility : Option ObjectId := none
-  /-- Where recently moved objects went (old id, new id), most recent last. -/
-  movedTo : Array (ObjectId × ObjectId) := #[]
-  /-- Tokens created by the most recent `createKindTokens` call, so a following
-  sequence step can haste them or leave them out of a plus-one. -/
-  recentTokenIds : Array ObjectId := #[]
+  /-- Damage assigned to each target of the resolving divided-damage ability
+  (CR 601.2d). -/
+  resolvingDivision : Array Nat := #[]
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
   pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
@@ -426,6 +400,33 @@ structure Game extends GameTurnState where
   mayEffectState : MayEffectRest := {}
   /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
   spellOrState : SpellOrRest := {}
+  /-- Source of the current connive action, if any (MSH / CR 701.47). -/
+  conniveSource : Option ObjectId := none
+  /-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
+  discardReq : DiscardRequirement := {}
+  /-- Follow-up action after a library search completes (CR 701.23). -/
+  afterLibrarySearch : AfterLibrarySearch := .none
+  /-- Ward payments still to announce after the current one (CR 702.21). -/
+  wardQueue : Array WardObligation := #[]
+deriving Repr, Inhabited
+
+/-- Zone-change tracking, waiting/delayed triggers, and cross-step resolution
+notes (CR 113.7a / CR 400.7 / CR 603.2 / CR 603.3 / CR 603.7 / CR 608.2h). -/
+structure GameZoneBatchState where
+  /-- Triggered abilities waiting to be put onto the stack the next time a
+  player would receive priority (CR 603.3 / 603.3b). Distinguished by
+  `WaitingTrigger.event`. -/
+  waitingTriggers : Array WaitingTrigger := #[]
+  /-- Cross-step resolution notes ("this way", CR 608.2c / CR 608.2h). -/
+  thisWay : ResolutionNotes := {}
+  /-- Last-known status of objects that left the battlefield, newest last
+  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
+  lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- Where recently moved objects went (old id, new id), most recent last. -/
+  movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Tokens created by the most recent `createKindTokens` call, so a following
+  sequence step can haste them or leave them out of a plus-one. -/
+  recentTokenIds : Array ObjectId := #[]
   /-- Simultaneous zone-change batch state (CR 614.6 / CR 603.2c). -/
   batchMove : BatchMoveState := {}
   /-- Most recent event parameters read by triggered abilities (CR 603.2 / CR 608.2c). -/
@@ -436,28 +437,42 @@ structure Game extends GameTurnState where
   /-- Delayed triggered abilities waiting to fire at the beginning of the next
   end step (CR 603.7). -/
   delayedEndStep : Array DelayedEndStepTrigger := #[]
-  /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
-  turnControl : TurnControlState := {}
-  /-- Source of the current connive action, if any (MSH / CR 701.47). -/
-  conniveSource : Option ObjectId := none
-  /-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
-  discardReq : DiscardRequirement := {}
-  /-- Damage assigned to each target of the resolving divided-damage ability
-(CR 601.2d). -/
-  resolvingDivision : Array Nat := #[]
   /-- Tokens created since enters triggers were last processed. -/
   pendingTokenEnters : Array ObjectId := #[]
   /-- Loki delayed copy: (controller, Loki's id if still known, last-known
   power). Compared at cast time (MSH 109). -/
   pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
-  /-- Follow-up action after a library search completes (CR 701.23). -/
-  afterLibrarySearch : AfterLibrarySearch := .none
-  /-- Ward payments still to announce after the current one (CR 702.21). -/
-  wardQueue : Array WardObligation := #[]
   /-- Players who created one or more creature tokens since the last priority. -/
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
   ancestryLandsTapped : Array ObjectId := #[]
+deriving Repr, Inhabited
+
+structure Game extends GameTurnOrderState, GameTurnState, GameContinuationState, GameZoneBatchState where
+  players : Array Player
+  objects : Array GameObject
+  stack : Array StackEntry := #[]
+  pending : Pending := .none
+  nextObjectId : Nat := 0
+  timestamp : Nat := 0
+  rng : Rng := Rng.ofSeed 1
+  /-- When true, random events become `Pending.resolveRandom` instead of
+  using `rng`. -/
+  norandom : Bool := false
+  result : Option GameResult := none
+  log : Array String := #[]
+  format : Format := .constructed
+  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
+  brawl : Bool := false
+  /-- Spell or ability proposed and waiting for mana abilities / payment
+  (CR 601.2f–h / 602.2b). -/
+  proposedSpell : Option ProposedSpell := none
+  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
+  mulligan : MulliganState := {}
+  /-- Combat phase state (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
+  combat : CombatPhaseState := {}
+  /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
+  turnControl : TurnControlState := {}
 deriving Repr, Inhabited
 
 namespace Game

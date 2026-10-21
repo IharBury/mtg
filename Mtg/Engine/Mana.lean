@@ -315,39 +315,20 @@ end ManaCost
 
 /-- What a restricted mana ability's mana may be spent on (CR 106.6 / 106.10). -/
 inductive ManaUse where
-  /-- Only casting spells of this subtype. -/
-  | subtypeSpell (subtype : String)
-  /-- Only casting spells of this subtype or activating abilities of sources of this subtype (CR 106.6). -/
-  | subtypeSpellOrAbility (subtype : String)
-  /-- Only casting an instant or sorcery spell (Pelargir Survivor). -/
-  | instantOrSorcery
-  /-- Cannot be spent to cast a nonartifact spell (Vibranium tokens, Hydraulic Helper). -/
-  | cantNonartifact
-  /-- Only activating abilities of creature sources in any zone (Shang-Chi; MSH 75). -/
-  | creatureSource
-  /-- Anything except casting spells from your hand (Heartwood Crafter). -/
-  | notSpellsFromHand
-  /-- Only casting a planeswalker spell (Gideon's Memorial). -/
-  | planeswalkerSpell
-  /-- Only casting a noncreature spell (Chandra, Chill of Compliance). -/
-  | noncreatureSpell
-  /-- No restriction; tracked so “if mana from a Treasure was spent” can be
-  checked (Smaug, Wicked Worm). -/
-  | fromTreasure
-  /-- Only casting a legendary spell, which then can't be countered
-  (Delighted Halfling). -/
-  | legendarySpell
-  /-- Only casting Dwarf, Equipment, and Saga spells (Fíli and Kíli, Joyous). -/
-  | dwarfEquipmentSagaSpell
-  /-- Only casting Equipment spells or activating equip abilities (Ronin,
-  Shadow Stalker). -/
-  | equipmentOrEquip
-  /-- Only casting an artifact spell (Castle Doom). -/
-  | artifactSpell
+  /-- Only casting spells of this subtype (`!orAbility`) or casting spells of this subtype / activating abilities of sources of this subtype (`orAbility`, CR 106.6). -/
+  | subtypeUse (subtype : String) (orAbility : Bool := false)
+  /-- Instant/sorcery spells (`!cantNonartifact && !creatureOrEquip`), not a nonartifact spell (`cantNonartifact && !creatureOrEquip`), abilities of creature sources (`!cantNonartifact && creatureOrEquip`), or Equipment spells and equip abilities (`cantNonartifact && creatureOrEquip`). -/
+  | sourceOrAbilityRestriction (cantNonartifact : Bool := false) (creatureOrEquip : Bool := false)
+  /-- Planeswalker spell (`!noncreature && !legendaryOrArtifact`), noncreature spell (`noncreature && !legendaryOrArtifact`), legendary spell (`!noncreature && legendaryOrArtifact`), or artifact spell (`noncreature && legendaryOrArtifact`). -/
+  | cardTypeOrSupertypeSpell (noncreature : Bool := false) (legendaryOrArtifact : Bool := false)
+  /-- Not spells from hand (`!fromTreasure && !dwarfEquipmentSaga`), from Treasure (`fromTreasure && !dwarfEquipmentSaga`), or Dwarf, Equipment, and Saga spells (`dwarfEquipmentSaga`). -/
+  | handOrTreasureSpend (fromTreasure : Bool := false) (dwarfEquipmentSaga : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaUse
 
+@[match_pattern] abbrev subtypeSpell (subtype : String) : ManaUse := .subtypeUse subtype false
+@[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaUse := .subtypeUse subtype true
 /-- Only casting Elf spells or activating abilities of Elf sources (Woodland Weavemaster). -/
 @[match_pattern] abbrev elf : ManaUse := .subtypeSpellOrAbility "Elf"
 /-- Only casting a Hero spell or activating an ability of a Hero source (Avengers Tower). -/
@@ -356,6 +337,28 @@ namespace ManaUse
 @[match_pattern] abbrev villain : ManaUse := .subtypeSpellOrAbility "Villain"
 /-- Only casting Dragon spells (Desolation of Smaug). -/
 @[match_pattern] abbrev dragonSpell : ManaUse := .subtypeSpell "Dragon"
+/-- Only casting an instant or sorcery spell (Pelargir Survivor). -/
+@[match_pattern] abbrev instantOrSorcery : ManaUse := .sourceOrAbilityRestriction false false
+/-- Cannot be spent to cast a nonartifact spell (Vibranium tokens, Hydraulic Helper). -/
+@[match_pattern] abbrev cantNonartifact : ManaUse := .sourceOrAbilityRestriction true false
+/-- Only activating abilities of creature sources in any zone (Shang-Chi; MSH 75). -/
+@[match_pattern] abbrev creatureSource : ManaUse := .sourceOrAbilityRestriction false true
+/-- Only casting Equipment spells or activating equip abilities (Ronin, Shadow Stalker). -/
+@[match_pattern] abbrev equipmentOrEquip : ManaUse := .sourceOrAbilityRestriction true true
+/-- Only casting a planeswalker spell (Gideon's Memorial). -/
+@[match_pattern] abbrev planeswalkerSpell : ManaUse := .cardTypeOrSupertypeSpell false false
+/-- Only casting a noncreature spell (Chandra, Chill of Compliance). -/
+@[match_pattern] abbrev noncreatureSpell : ManaUse := .cardTypeOrSupertypeSpell true false
+/-- Only casting a legendary spell, which then can't be countered (Delighted Halfling). -/
+@[match_pattern] abbrev legendarySpell : ManaUse := .cardTypeOrSupertypeSpell false true
+/-- Only casting an artifact spell (Castle Doom). -/
+@[match_pattern] abbrev artifactSpell : ManaUse := .cardTypeOrSupertypeSpell true true
+/-- Anything except casting spells from your hand (Heartwood Crafter). -/
+@[match_pattern] abbrev notSpellsFromHand : ManaUse := .handOrTreasureSpend false false
+/-- No restriction; tracked so “if mana from a Treasure was spent” can be checked (Smaug, Wicked Worm). -/
+@[match_pattern] abbrev fromTreasure : ManaUse := .handOrTreasureSpend true false
+/-- Only casting Dwarf, Equipment, and Saga spells (Fíli and Kíli, Joyous). -/
+@[match_pattern] abbrev dwarfEquipmentSagaSpell : ManaUse := .handOrTreasureSpend false true
 
 end ManaUse
 
@@ -413,7 +416,7 @@ def ManaUse.allows : ManaUse → ManaSpend → Bool
   | .noncreatureSpell, s => s.spell && s.noncreature
   | .fromTreasure, _ => true
   | .legendarySpell, s => s.spell && s.legendary
-  | .dwarfEquipmentSagaSpell, s =>
+  | .dwarfEquipmentSagaSpell, s | .handOrTreasureSpend true true, s =>
     s.spell && (s.subtypes.contains "Dwarf" || s.subtypes.contains "Equipment" ||
       s.subtypes.contains "Saga")
   | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
@@ -431,7 +434,7 @@ def ManaUse.label : ManaUse → String
   | .noncreatureSpell => "noncreature spells"
   | .fromTreasure => "Treasure"
   | .legendarySpell => "legendary spells"
-  | .dwarfEquipmentSagaSpell => "Dwarf, Equipment, and Saga spells"
+  | .dwarfEquipmentSagaSpell | .handOrTreasureSpend true true => "Dwarf, Equipment, and Saga spells"
   | .equipmentOrEquip => "Equipment spells and equip abilities"
   | .artifactSpell => "artifact spells"
   | .subtypeSpell sub => s!"{sub} spells"

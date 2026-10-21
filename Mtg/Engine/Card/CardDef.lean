@@ -106,24 +106,22 @@ end AsEntersChoice
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
 (CR 605.1a). -/
 inductive TapManaAbility where
-  /-- No special `{T}: Add` ability (`!anyColorPower && !legendariesOrChosen`), any color equal to power (`anyColorPower && !legendariesOrChosen`), any color among legendaries you control (`!anyColorPower && legendariesOrChosen`), or chosen color per different power (`anyColorPower && legendariesOrChosen`). -/
-  | dynamicOrNone (anyColorPower : Bool := false) (legendariesOrChosen : Bool := false)
+  /-- Dynamic or special-source `{T}: Add` ability: none (`!alt1 && !alt2 && !specialSource`), any color equal to power (`alt1 && !alt2 && !specialSource`), any color among legendaries you control (`!alt1 && alt2 && !specialSource`), chosen color per different power (`alt1 && alt2 && !specialSource`), commander color identity (`!alt2 && specialSource`, `alt1 = scryCreature`), or any type a land you (`!alt1`) / an opponent (`alt1`) controls could produce (`alt2 && specialSource`). -/
+  | dynamicOrSpecialMana (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false)
   | oneOf (types : Array ManaType) (ifEnteredOrBasic : Bool := false) (damage : Nat := 0) (payLife : Nat := 0)
   | together (types : Array ManaType) (restriction : String := "")
   | twoAmong (types : Array ManaType)
   | filter (cost : ManaCost) (types : Array ManaType)
   | forEach (entries : Array TapAddForEach)
   | anyColor (restriction : ManaRestriction := .none) (sacrificeSelf : Bool := false)
-  /-- Add one mana of any color in your commander's color identity (`!couldProduce`, `flag = scryCreature`), or add one mana of any type that a land you (`!flag`) or an opponent (`flag`) controls could produce (`couldProduce`). -/
-  | specialSourceMana (flag : Bool := false) (couldProduce : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TapManaAbility
 
-@[match_pattern] abbrev none : TapManaAbility := .dynamicOrNone false false
-@[match_pattern] abbrev anyColorEqualToPower : TapManaAbility := .dynamicOrNone true false
-@[match_pattern] abbrev anyColorAmongLegendaries : TapManaAbility := .dynamicOrNone false true
-@[match_pattern] abbrev chosenColorPerDifferentPower : TapManaAbility := .dynamicOrNone true true
+@[match_pattern] abbrev none : TapManaAbility := .dynamicOrSpecialMana false false false
+@[match_pattern] abbrev anyColorEqualToPower : TapManaAbility := .dynamicOrSpecialMana true false false
+@[match_pattern] abbrev anyColorAmongLegendaries : TapManaAbility := .dynamicOrSpecialMana false true false
+@[match_pattern] abbrev chosenColorPerDifferentPower : TapManaAbility := .dynamicOrSpecialMana true true false
 @[match_pattern] abbrev oneOfIfEnteredOrBasic (types : Array ManaType) : TapManaAbility :=
   .oneOf types (ifEnteredOrBasic := true)
 @[match_pattern] abbrev oneOfDealsDamage (types : Array ManaType) (damage : Nat) : TapManaAbility :=
@@ -139,13 +137,13 @@ namespace TapManaAbility
 @[match_pattern] abbrev anyColorForLegendary : TapManaAbility :=
   .anyColor (.only .legendarySpell) false
 @[match_pattern] abbrev commanderIdentity (scryCreature : Bool := false) : TapManaAbility :=
-  .specialSourceMana scryCreature false
+  .dynamicOrSpecialMana scryCreature false true
 @[match_pattern] abbrev couldProduce (opp : Bool) : TapManaAbility :=
-  .specialSourceMana opp true
+  .dynamicOrSpecialMana opp true true
 @[match_pattern] abbrev oppCouldProduce : TapManaAbility :=
-  .specialSourceMana true true
+  .dynamicOrSpecialMana true true true
 @[match_pattern] abbrev youCouldProduce : TapManaAbility :=
-  .specialSourceMana false true
+  .dynamicOrSpecialMana false true true
 
 end TapManaAbility
 
@@ -185,59 +183,59 @@ end TopOfLibraryRule
 
 /-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
 inductive CardStaticRule where
-  | none
+  /-- No static rule (`!unspentMana`) or power per unspent mana (`unspentMana`, with `andColorless`). -/
+  | noneOrUnspentMana (unspentMana : Bool := false) (andColorless : Bool := false)
   | topOfLibrary (rule : TopOfLibraryRule)
-  /-- Replacement or draw static rule: Food also creates Treasure (`!othersPlusOne && !drawOrExile`), others enter with +1/+1 counters equal to toughness (`othersPlusOne && !drawOrExile`), draw two except first draw step (`!othersPlusOne && drawOrExile`), or exile opposing dying creatures instead (`othersPlusOne && drawOrExile`). -/
-  | replacementOrDrawRule (othersPlusOne : Bool := false) (drawOrExile : Bool := false)
-  /-- Numeric static rule: power per Mountain (`!ifLore && !costReduction`), hexproof and indestructible if lore ≥ `n` (`ifLore && !costReduction`), spells not from hand cost `{n}` less (`!ifLore && costReduction`), or eminence Sphinx spells cost `{n}` less (`ifLore && costReduction`). -/
-  | numericStaticRule (n : Nat) (ifLore : Bool := false) (costReduction : Bool := false)
+  /-- Replacement, draw, or boolean-parameterized static rule: Food also creates Treasure (`!alt1 && !alt2 && !cantLoseOrDoubling`), others enter with +1/+1 counters equal to toughness (`alt1 && !alt2 && !cantLoseOrDoubling`), draw two except first draw step (`!alt1 && alt2 && !cantLoseOrDoubling`), exile opposing dying creatures instead (`alt1 && alt2 && !cantLoseOrDoubling`), token doubling (`!alt2 && cantLoseOrDoubling`, `alt1 = andDrawTwo`), or can't lose and opponents can't win (`alt2 && cantLoseOrDoubling`, `alt1 = andNoMinusCounters`). -/
+  | replacementOrBooleanRule (alt1 : Bool := false) (alt2 : Bool := false) (cantLoseOrDoubling : Bool := false)
+  /-- Numeric static rule: power per Mountain (`!alt1 && !alt2 && !firstCreature`), hexproof and indestructible if lore ≥ `n` (`alt1 && !alt2 && !firstCreature`), spells not from hand cost `{n}` less (`!alt1 && alt2 && !firstCreature`), eminence Sphinx spells cost `{n}` less (`alt1 && alt2 && !firstCreature`), or first creature discount (`firstCreature`, `alt1 = hasFlash`). -/
+  | numericStaticRule (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (firstCreature : Bool := false)
   | extraLandIfOtherSubtype (subtype : String)
-  /-- Boolean-parameterized static rule: token doubling (`!cantLose`, `flag = andDrawTwo`) or can't lose and opponents can't win (`cantLose`, `flag = andNoMinusCounters`). -/
-  | booleanStaticRule (flag : Bool := false) (cantLose : Bool := false)
-  | firstCreatureDiscount (costReduction : Nat) (hasFlash : Bool)
-  /-- Mana or prohibition static rule: lands you control tap for any color (`!freeCastCommander && !cantGainOrMinus`), free cast if you control your commander (`freeCastCommander && !cantGainOrMinus`), opponents can't gain life (`!freeCastCommander && cantGainOrMinus`), or creatures can't have -1 / -1 counters put on them (`freeCastCommander && cantGainOrMinus`). -/
-  | manaOrCantRule (freeCastCommander : Bool := false) (cantGainOrMinus : Bool := false)
-  | powerPerUnspentMana (andColorless : Bool := false)
-  /-- Mana-retention or combat static rule: unspent mana becomes colorless (`!protectionCardType && !corruptedOrTeam`), protection from chosen card type (`protectionCardType && !corruptedOrTeam`), corrupted toxic creatures have lifelink (`!protectionCardType && corruptedOrTeam`), or attacking team gets +2/+0 and flying (`protectionCardType && corruptedOrTeam`). -/
-  | combatOrManaKeepRule (protectionCardType : Bool := false) (corruptedOrTeam : Bool := false)
+  /-- Mana, prohibition, or combat static rule: lands you control tap for any color (`!alt1 && !alt2 && !combatOrKeep`), free cast if you control your commander (`alt1 && !alt2 && !combatOrKeep`), opponents can't gain life (`!alt1 && alt2 && !combatOrKeep`), creatures can't have -1 / -1 counters put on them (`alt1 && alt2 && !combatOrKeep`), unspent mana becomes colorless (`!alt1 && !alt2 && combatOrKeep`), protection from chosen card type (`alt1 && !alt2 && combatOrKeep`), corrupted toxic creatures have lifelink (`!alt1 && alt2 && combatOrKeep`), or attacking team gets +2/+0 and flying (`alt1 && alt2 && combatOrKeep`). -/
+  | manaOrCombatRule (alt1 : Bool := false) (alt2 : Bool := false) (combatOrKeep : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CardStaticRule
 
+@[match_pattern] abbrev none : CardStaticRule := .noneOrUnspentMana false false
+@[match_pattern] abbrev powerPerUnspentMana (andColorless : Bool := false) : CardStaticRule :=
+  .noneOrUnspentMana true andColorless
 @[match_pattern] abbrev lookAnytime : CardStaticRule := .topOfLibrary .lookAnytime
 @[match_pattern] abbrev playLands : CardStaticRule := .topOfLibrary .playLands
 @[match_pattern] abbrev castCreatures : CardStaticRule := .topOfLibrary .castCreatures
 @[match_pattern] abbrev elvenChorus : CardStaticRule := .topOfLibrary .elvenChorus
 @[match_pattern] abbrev grantCreaturesTapAnyColor : CardStaticRule := .topOfLibrary .grantCreaturesTapAnyColor
-@[match_pattern] abbrev foodAlsoCreatesTreasure : CardStaticRule := .replacementOrDrawRule false false
-@[match_pattern] abbrev othersEnterWithPlusOneEqualToughness : CardStaticRule := .replacementOrDrawRule true false
-@[match_pattern] abbrev drawTwoExceptFirstDrawStep : CardStaticRule := .replacementOrDrawRule false true
-@[match_pattern] abbrev exileOppCreaturesInstead : CardStaticRule := .replacementOrDrawRule true true
-@[match_pattern] abbrev powerPerMountain (n : Nat) : CardStaticRule := .numericStaticRule n false false
-@[match_pattern] abbrev hexproofIndestructibleIfLore (minLore : Nat) : CardStaticRule := .numericStaticRule minLore true false
-@[match_pattern] abbrev costReductionNotFromHand (n : Nat) : CardStaticRule := .numericStaticRule n false true
-@[match_pattern] abbrev eminenceSphinxReduction (n : Nat) : CardStaticRule := .numericStaticRule n true true
-@[match_pattern] abbrev tokenDoubling (andDrawTwo : Bool := false) : CardStaticRule := .booleanStaticRule andDrawTwo false
+@[match_pattern] abbrev foodAlsoCreatesTreasure : CardStaticRule := .replacementOrBooleanRule false false false
+@[match_pattern] abbrev othersEnterWithPlusOneEqualToughness : CardStaticRule := .replacementOrBooleanRule true false false
+@[match_pattern] abbrev drawTwoExceptFirstDrawStep : CardStaticRule := .replacementOrBooleanRule false true false
+@[match_pattern] abbrev exileOppCreaturesInstead : CardStaticRule := .replacementOrBooleanRule true true false
+@[match_pattern] abbrev tokenDoubling (andDrawTwo : Bool := false) : CardStaticRule :=
+  .replacementOrBooleanRule andDrawTwo false true
 @[match_pattern] abbrev cantLoseAndOpponentsCantWin (andNoMinusCounters : Bool := false) : CardStaticRule :=
-  .booleanStaticRule andNoMinusCounters true
-@[match_pattern] abbrev grantLandsTapAnyColor : CardStaticRule := .manaOrCantRule false false
-@[match_pattern] abbrev freeCastIfControlCommander : CardStaticRule := .manaOrCantRule true false
-@[match_pattern] abbrev opponentsCantGainLife : CardStaticRule := .manaOrCantRule false true
-@[match_pattern] abbrev creaturesCantGetMinusCounters : CardStaticRule := .manaOrCantRule true true
-@[match_pattern] abbrev unspentManaBecomesColorless : CardStaticRule := .combatOrManaKeepRule false false
-@[match_pattern] abbrev protectionFromChosenCardType : CardStaticRule := .combatOrManaKeepRule true false
-@[match_pattern] abbrev corruptedToxicLifelink : CardStaticRule := .combatOrManaKeepRule false true
-@[match_pattern] abbrev grantTeamPlusTwoFlying : CardStaticRule := .combatOrManaKeepRule true true
+  .replacementOrBooleanRule andNoMinusCounters true true
+@[match_pattern] abbrev powerPerMountain (n : Nat) : CardStaticRule := .numericStaticRule n false false false
+@[match_pattern] abbrev hexproofIndestructibleIfLore (minLore : Nat) : CardStaticRule := .numericStaticRule minLore true false false
+@[match_pattern] abbrev costReductionNotFromHand (n : Nat) : CardStaticRule := .numericStaticRule n false true false
+@[match_pattern] abbrev eminenceSphinxReduction (n : Nat) : CardStaticRule := .numericStaticRule n true true false
+@[match_pattern] abbrev firstCreatureDiscount (costReduction : Nat) (hasFlash : Bool) : CardStaticRule :=
+  .numericStaticRule costReduction hasFlash false true
+@[match_pattern] abbrev grantLandsTapAnyColor : CardStaticRule := .manaOrCombatRule false false false
+@[match_pattern] abbrev freeCastIfControlCommander : CardStaticRule := .manaOrCombatRule true false false
+@[match_pattern] abbrev opponentsCantGainLife : CardStaticRule := .manaOrCombatRule false true false
+@[match_pattern] abbrev creaturesCantGetMinusCounters : CardStaticRule := .manaOrCombatRule true true false
+@[match_pattern] abbrev unspentManaBecomesColorless : CardStaticRule := .manaOrCombatRule false false true
+@[match_pattern] abbrev protectionFromChosenCardType : CardStaticRule := .manaOrCombatRule true false true
+@[match_pattern] abbrev corruptedToxicLifelink : CardStaticRule := .manaOrCombatRule false true true
+@[match_pattern] abbrev grantTeamPlusTwoFlying : CardStaticRule := .manaOrCombatRule true true true
 
 end CardStaticRule
 
 /-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
 inductive SpellCastOption where
-  | none
-  | flashback (cost : ManaCost) (discard : Bool := false)
-  /-- Optional kicker cost (`!morph`) or alternative morph cost (`morph`). -/
-  | manaCastOption (cost : ManaCost) (morph : Bool := false)
-  | giftTreasure
+  /-- No optional casting cost (`!giftTreasure`) or Gift a Treasure (`giftTreasure`). -/
+  | noneOrGift (giftTreasure : Bool := false)
+  /-- Optional kicker cost (`!alt && !flashback`), alternative morph cost (`alt && !flashback`), or flashback cost (`flashback`, `alt = discard`). -/
+  | manaCastOption (cost : ManaCost) (alt : Bool := false) (flashback : Bool := false)
   /-- Optional teamwork cost (`!cascade`, `n = minPower`) or cascade `n` instances (`cascade`). -/
   | numericCastOption (n : Nat) (cascade : Bool := false)
   | impending (counters : Nat) (cost : ManaCost)
@@ -246,8 +244,12 @@ deriving Repr, Inhabited, BEq
 
 namespace SpellCastOption
 
-@[match_pattern] abbrev kicker (cost : ManaCost) : SpellCastOption := .manaCastOption cost false
-@[match_pattern] abbrev morph (cost : ManaCost) : SpellCastOption := .manaCastOption cost true
+@[match_pattern] abbrev none : SpellCastOption := .noneOrGift false
+@[match_pattern] abbrev giftTreasure : SpellCastOption := .noneOrGift true
+@[match_pattern] abbrev kicker (cost : ManaCost) : SpellCastOption := .manaCastOption cost false false
+@[match_pattern] abbrev morph (cost : ManaCost) : SpellCastOption := .manaCastOption cost true false
+@[match_pattern] abbrev flashback (cost : ManaCost) (discard : Bool := false) : SpellCastOption :=
+  .manaCastOption cost discard true
 @[match_pattern] abbrev teamwork (minPower : Nat) : SpellCastOption := .numericCastOption minPower false
 @[match_pattern] abbrev cascade (n : Nat) : SpellCastOption := .numericCastOption n true
 
@@ -279,36 +281,31 @@ end CastPermissionRule
 /-- Parameterized keyword or deck-building / blocking rule on a card
 (CR 702 / 100.2a / 903.3a). -/
 inductive CardKeywordRule where
-  | none
-  /-- Ward `{n}` (`!crew`, CR 702.21) or Crew `n` (`crew`, CR 702.122). -/
-  | wardOrCrew (n : Nat) (crew : Bool := false)
-  | prowess (n : Nat)
+  /-- No keyword rule (`!active`), daybound (`!cantBlock && !deckRule && active`), can't block (`cantBlock && !deckRule && active`), any number in deck (`!cantBlock && deckRule && active`, CR 100.2a), or can be your commander (`cantBlock && deckRule && active`, CR 903.3a). -/
+  | noneOrStaticFlag (cantBlock : Bool := false) (deckRule : Bool := false) (active : Bool := false)
+  /-- Ward `{n}` (`!crew && !prowess`, CR 702.21), Crew `n` (`crew && !prowess`, CR 702.122), or `n` instances of prowess (`prowess`, CR 702.108). -/
+  | wardCrewOrProwess (n : Nat) (crew : Bool := false) (prowess : Bool := false)
   | protectionFromColors (colors : Array Color)
   | cycling (cost : ManaCost)
   | toxic (n : Nat) (cantBlock : Bool := false)
-  /-- Daybound (`!cantBlock && !deckRule`), can't block (`cantBlock && !deckRule`), any number in deck (`!cantBlock && deckRule`, CR 100.2a), or can be your commander (`cantBlock && deckRule`, CR 903.3a). -/
-  | staticKeywordFlag (cantBlock : Bool := false) (deckRule : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CardKeywordRule
 
-@[match_pattern] abbrev ward (n : Nat) : CardKeywordRule := .wardOrCrew n false
-@[match_pattern] abbrev crew (n : Nat) : CardKeywordRule := .wardOrCrew n true
-@[match_pattern] abbrev daybound : CardKeywordRule := .staticKeywordFlag false false
-@[match_pattern] abbrev cantBlock : CardKeywordRule := .staticKeywordFlag true false
-@[match_pattern] abbrev anyNumberInDeck : CardKeywordRule := .staticKeywordFlag false true
-@[match_pattern] abbrev canBeCommander : CardKeywordRule := .staticKeywordFlag true true
+@[match_pattern] abbrev none : CardKeywordRule := .noneOrStaticFlag false false false
+@[match_pattern] abbrev ward (n : Nat) : CardKeywordRule := .wardCrewOrProwess n false false
+@[match_pattern] abbrev crew (n : Nat) : CardKeywordRule := .wardCrewOrProwess n true false
+@[match_pattern] abbrev prowess (n : Nat) : CardKeywordRule := .wardCrewOrProwess n false true
+@[match_pattern] abbrev daybound : CardKeywordRule := .noneOrStaticFlag false false true
+@[match_pattern] abbrev cantBlock : CardKeywordRule := .noneOrStaticFlag true false true
+@[match_pattern] abbrev anyNumberInDeck : CardKeywordRule := .noneOrStaticFlag false true true
+@[match_pattern] abbrev canBeCommander : CardKeywordRule := .noneOrStaticFlag true true true
 
 end CardKeywordRule
 
-set_option maxRecDepth 1024 in
-/-- Printed (Oracle) characteristics of a card. -/
-structure CardDef where
-  name : String
-  manaCost : ManaCost := ManaCost.empty
-  types : Array CardType
-  subtypes : Array Subtype := #[]
-  supertypes : Array Supertype := #[]
+/-- Printed power, toughness, loyalty, defense, and vanguard modifiers on a card
+(CR 208–212). -/
+structure PrintedCombatStats where
   power : Option Int := none
   toughness : Option Int := none
   /-- Printed power includes a star added to `power` (CR 208.2).
@@ -335,11 +332,11 @@ structure CardDef where
   a number preceded by a plus sign, a number preceded by a minus sign, or
   zero. It modifies its owner's starting life total. -/
   lifeModifier : Option Int := none
-  /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
-  colorIndicator : Option ColorSet := none
-  keywords : Keywords := Keywords.none
-  /-- Parameterized keyword or deck-building / blocking rule (CR 702 / 100.2a / 903.3a). -/
-  keywordRule : CardKeywordRule := .none
+deriving Repr, Inhabited, BEq
+
+/-- Printed spell-resolution, casting, modal, and alternate-face rules on a card
+(CR 601 / 700 / 702 / 715). -/
+structure PrintedSpellRules where
   spellEffect : Option Effect := none
   /-- Additional cost to cast this spell (CR 601.2b / 118.8). -/
   additionalCost : SpellAdditionalCost := .none
@@ -353,6 +350,20 @@ structure CardDef where
   spellModes : Array Effect := #[]
   /-- Mode-selection rule for a modal spell (CR 700.2). -/
   modalRule : ModalRule := .chooseOne
+  /-- Alternative characteristics used when this card is cast as an Adventure
+  (CR 715). -/
+  adventure : Option AdventureFace := none
+  /-- Empower Jace N on this spell (Reality Fracture). When the spell
+  resolves, put N loyalty counters on a Jace planeswalker token you control,
+  creating one first if you control none. -/
+  empowerJace : Option Nat := none
+  /-- Sorcery or instant copied while this permanent is prepared. -/
+  prepareFace : Option AdventureFace := none
+deriving Repr, Inhabited
+
+/-- Printed permanent abilities, enters-the-battlefield replacements, and Saga
+chapters on a card (CR 602–605 / 614 / 714). -/
+structure PrintedPermanentRules where
   /-- Modes of this card's modal triggered ability (“When this creature
   enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
   fraTriggerModes : Array Effect := #[]
@@ -366,8 +377,6 @@ structure CardDef where
   entersWithCounters : Option (CounterKind × NumberSelector) := none
   /-- Choice made as this permanent enters the battlefield (CR 614.12). -/
   asEntersChoose : AsEntersChoice := .none
-  /-- This object is a token (CR 111). -/
-  isToken : Bool := false
   /-- Abilities planeswalkers you control have (“Planeswalkers you control
   have …”). -/
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
@@ -382,17 +391,25 @@ structure CardDef where
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- Continuous or replacement static rule on this card (CR 604 / 613 / 614). -/
   staticRule : CardStaticRule := .none
-  /-- Alternative characteristics used when this card is cast as an Adventure
-  (CR 715). -/
-  adventure : Option AdventureFace := none
+deriving Repr, Inhabited
+
+set_option maxRecDepth 1024 in
+/-- Printed (Oracle) characteristics of a card. -/
+structure CardDef extends PrintedCombatStats, PrintedSpellRules, PrintedPermanentRules where
+  name : String
+  manaCost : ManaCost := ManaCost.empty
+  types : Array CardType
+  subtypes : Array Subtype := #[]
+  supertypes : Array Supertype := #[]
+  /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
+  colorIndicator : Option ColorSet := none
+  keywords : Keywords := Keywords.none
+  /-- Parameterized keyword or deck-building / blocking rule (CR 702 / 100.2a / 903.3a). -/
+  keywordRule : CardKeywordRule := .none
+  /-- This object is a token (CR 111). -/
+  isToken : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
-  /-- Empower Jace N on this spell (Reality Fracture). When the spell
-  resolves, put N loyalty counters on a Jace planeswalker token you control,
-  creating one first if you control none. -/
-  empowerJace : Option Nat := none
-  /-- Sorcery or instant copied while this permanent is prepared. -/
-  prepareFace : Option AdventureFace := none
 deriving Repr, Inhabited
 
 namespace CardDef

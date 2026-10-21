@@ -48,20 +48,19 @@ inductive ProposalKind where
   | activatedAbility
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Snapshot of a spell or activated ability whose total cost is being paid
-(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
-structure ProposedSpell where
-  caster : PlayerId
-  cost : ManaCost
-  spellId : ObjectId
+/-- Rollback snapshot of the game state before a spell or activated ability
+was proposed (CR 733.1). -/
+structure ProposalSnapshot where
   original : GameObject
   handBefore : Array ObjectId
   stackBefore : Array StackEntry
   manaBefore : ManaPool
   tapped : Array ObjectId := #[]
-  kind : ProposalKind := .spell
-  /-- Source permanent of an activated ability; unused for spells. -/
-  sourceId : Option ObjectId := none
+deriving Repr, Inhabited
+
+/-- Additional and alternative cost flags announced or awaiting payment on a
+proposed spell or activated ability (CR 601.2b–f / 602.2b). -/
+structure ProposedAdditionalCosts where
   tapSource : Bool := false
   sacrificeSource : Bool := false
   /-- After mana is paid, the player must sacrifice an artifact or creature
@@ -74,10 +73,6 @@ structure ProposedSpell where
   payLife : Nat := 0
   /-- Discard the source from hand as part of the activation cost (CR 702.29). -/
   discardSource : Bool := false
-  /-- Modes of a modal activated ability, announced at CR 601.2b. -/
-  abilityModes : Array Effect := #[]
-  /-- Override the announced targeting shape (e.g. Equip Human). -/
-  targetKindOverride : Option EffectTargetKind := none
   /-- The proposed spell will be kicked if this is true. -/
   kicked : Bool := false
   /-- Kicker has been announced (paid or declined). -/
@@ -90,8 +85,6 @@ structure ProposedSpell where
   teamworkPaid : Bool := false
   /-- Teamwork has been announced (paid or declined). -/
   teamworkAnnounced : Bool := false
-  /-- Activated ability being paid, for extra costs. -/
-  activation : Option ActivatedAbility := none
   /-- The ability's cost is −X loyalty; X is announced before targets and
   the loyalty is paid then (CR 107.3 / 606.4). -/
   loyaltyX : Bool := false
@@ -101,6 +94,23 @@ structure ProposedSpell where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Snapshot of a spell or activated ability whose total cost is being paid
+(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
+structure ProposedSpell extends ProposalSnapshot, ProposedAdditionalCosts where
+  caster : PlayerId
+  cost : ManaCost
+  spellId : ObjectId
+  kind : ProposalKind := .spell
+  /-- Source permanent of an activated ability; unused for spells. -/
+  sourceId : Option ObjectId := none
+  /-- Modes of a modal activated ability, announced at CR 601.2b. -/
+  abilityModes : Array Effect := #[]
+  /-- Override the announced targeting shape (e.g. Equip Human). -/
+  targetKindOverride : Option EffectTargetKind := none
+  /-- Activated ability being paid, for extra costs. -/
+  activation : Option ActivatedAbility := none
 deriving Repr, Inhabited
 
 end Mtg.Engine
