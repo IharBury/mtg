@@ -91,6 +91,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .optionalDesignation _ id true => g.announceRingBearer p id
   | .booleanOrConcede _ _ _ true => return g.concede p
   | .chooseName name => g.answerFraChoice p (.name name)
+  | _ => throw "Unrecognized action"
 
 
 /-- Apply an action, then process entering for tokens it created (CR 603.6a)
@@ -128,10 +129,11 @@ def actor (g : Game) : Option PlayerId :=
         | .library p | .hand p | .graveyard p => some p
         | _ =>
           if g.players.isEmpty then none else some g.startingPlayer
-      | .chooseObject _ | .chooseIndex _ =>
+      | .chooseObject _ | .chooseIndex _ | _ =>
         if g.players.isEmpty then none else some g.startingPlayer
     | .none =>
       if g.playersReceivePriority then some g.priority else none
+    | _ => none
 
 /-- Return owned creatures to hand and schedule that many Bird Soldiers
 for the next upkeep (The Eagles Are Coming!). Tokens returned this way

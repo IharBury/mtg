@@ -353,6 +353,7 @@ def randomPromptBlock (g : Game) : Option String :=
       some "Coin toss: flip heads  or  flip tails  (also random 0 / random 1)"
     else
       some s!"Choose a number from 0 to {n - 1}: random <n>"
+  | some _ => none
 
 /-- Pending cost, combat-damage assignment, legend-rule, trigger order, or
 a `--norandom` result. -/

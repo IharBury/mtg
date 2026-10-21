@@ -182,7 +182,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q == p then { g with pending := .none }.clearSpellOr else g
   | .putOnBottom q _ | .declareMulligan q | .resolve q _ | .fraChoice q _ =>
     if q == p then { g with pending := .none, chooseModesRest := none } else g
-  | .resolveRandom _ => g
+  | .resolveRandom _ | _ => g
 
 /-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave
 immediately (until-leaves one-shots return); control-changing effects that

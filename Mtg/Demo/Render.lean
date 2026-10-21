@@ -736,6 +736,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
         else
           s!" [sacrifice {left} more permanent(s) (ward, {who})]"
+      | _ => ""
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
@@ -852,6 +853,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             | .landsTappedGainLife _ => "put any number of land cards onto the battlefield tapped"
             | .keepDestroyRest => s!"choose up to {max} creature(s) to keep"
             | .amassArmy subtype n _ => s!"choose an Army to amass {subtype}s {n}"
+            | _ => ""
           s!"{what} ({ids.size} card(s)): choose <id> ..., or decline"
         | .blackGatePlayer _ players =>
           let names := (List.range players.size).map (fun i =>
@@ -969,6 +971,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       | .chooseIndex n =>
         if n == 2 then " [coin toss (--norandom)]"
         else s!" [random index 0..{n - 1} (--norandom)]"
+      | _ => ""
     | _ => ""
   let result :=
     match g.result with

@@ -186,6 +186,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
           match perms[0]? with
           | some o => some (.sacrifice o.id)
           | none => some .decline
+      | _ => some .decline
     | .recruitDiscard _ =>
       discardBackOrDecline g p
     | .chooseKicker _ =>

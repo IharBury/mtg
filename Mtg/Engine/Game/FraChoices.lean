@@ -1223,6 +1223,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       let yours := ids.filter (fun id => (g.findObject? id).any (·.controlledBy p))
       let pick := if yours.isEmpty then ids else yours
       .choosePermanents (pick.extract 0 max)
+    | _ => .decline
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .hawkeyeModes _ chosen _ =>

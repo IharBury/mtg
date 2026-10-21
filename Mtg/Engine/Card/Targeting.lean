@@ -28,13 +28,14 @@ end TargetZone
 
 /-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
 inductive TargetController where
-  /-- Controller filter: any (`false, false, false`), you (`true, false, false`), opponent (`false, true, false`), or each opponent (`false, true, true`). -/
-  | controllerKind (you : Bool := false) (opponent : Bool := false) (eachOpponent : Bool := false)
-  /-- One particular player, by seat index. -/
-  | specific (idx : Nat)
+  | targetControllerKind (idx : Nat := 0) (you : Bool := false) (opponent : Bool := false)
+      (eachOpponent : Bool := false) (specificSeat : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TargetController
+@[match_pattern] abbrev controllerKind (you : Bool := false) (opponent : Bool := false) (eachOpponent : Bool := false) : TargetController :=
+  .targetControllerKind 0 you opponent eachOpponent false
+@[match_pattern] abbrev specific (idx : Nat) : TargetController := .targetControllerKind idx false false false true
 @[match_pattern] abbrev any : TargetController := .controllerKind false false false
 @[match_pattern] abbrev you : TargetController := .controllerKind true false false
 @[match_pattern] abbrev opponent : TargetController := .controllerKind false true false
@@ -98,27 +99,33 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
 inductive BattlefieldTarget where
-  /-- Target creature you control (`youControl = true`, optionally `another` or `legendary`) or target creature (`youControl = false`, optionally `another` or `withFlying`). -/
-  | creatureTarget (youControl : Bool := false) (another : Bool := false) (legendaryOrFlying : Bool := false)
-  /-- Target creature an opponent controls (`!defendingOrEquip`, optionally `tapped` or `dealtDamageThisTurn`) or target creature defending player controls / Equipment you control (`defendingOrEquip`). -/
-  | oppOrEquipmentTarget (alt1 : Bool := false) (alt2 : Bool := false) (defendingOrEquip : Bool := false)
-  /-- Target two-type permanent (`!orEnchantment`: `artifactOrLand`, `artifactOrCreatureYouControl`, `creatureOrLandYouControl`) or target artifact or enchantment (`orEnchantment = true`, noncreature if `includeCreature`). -/
-  | twoTypes (includeCreature : Bool := false) (includeArtifact : Bool := true) (youControl : Bool := false) (orEnchantment : Bool := false)
-  /-- Target nonland permanent (`!attacking`: `opp`, `nontoken`, `colorless`) or target attacking creature (`attacking = true`: `withoutFlying`, `orBlocking`, `aloneYouControl`). -/
-  | nonlandOrAttacking (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (attacking : Bool := false)
+  | booleanBattlefieldTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false)
+  | controlledPermanentTarget (controller : TargetController := .any) (alt1 : Bool := false)
+      (alt2 : Bool := false) (artifactTarget : Bool := false)
+  | boundPermanentTarget (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
+      (alt1 : Bool := false) (alt2 : Bool := false) (mvBound : Bool := false)
   /-- Target creature you control with `subtype` (`multi = false`) or any of `subtypes` (`multi = true`). -/
   | creatureYouControlSubtypes (subtype : String := "") (subtypes : Array String := #[]) (multi : Bool := false)
-  /-- Target creature with power/toughness `n` or greater (`atLeast = true`, toughness if `anotherOrToughness`) or power `n` or less (`atLeast = false`, filtered by `controller` and `another`). -/
-  | creatureStatBound (n : Int) (controller : TargetController := .any) (anotherOrToughness : Bool := false) (atLeast : Bool := false)
-  /-- Target permanent (`creatureOrPw = false`) or creature/planeswalker (`creatureOrPw = true`, `planeswalkerOnly`). -/
-  | permanentOrPlaneswalker (controller : TargetController := .any) (creatureOrPw : Bool := false) (planeswalkerOnly : Bool := false)
-  /-- Target artifact (filtered by `controller`, `tokenOnly`, and `noncreature`). -/
-  | artifact (controller : TargetController := .any) (tokenOnly : Bool := false) (noncreature : Bool := false)
-  /-- Target creature with mana value `n` or less (`!enchantmentAtLeast`) or enchantment with mana value `n` or greater (`enchantmentAtLeast`). -/
-  | permanentMvBound (n : Nat) (enchantmentAtLeast : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace BattlefieldTarget
+@[match_pattern] abbrev creatureTarget (youControl : Bool := false) (another : Bool := false) (legendaryOrFlying : Bool := false) : BattlefieldTarget :=
+  .booleanBattlefieldTarget youControl another legendaryOrFlying false false false
+@[match_pattern] abbrev oppOrEquipmentTarget (alt1 : Bool := false) (alt2 : Bool := false) (defendingOrEquip : Bool := false) : BattlefieldTarget :=
+  .booleanBattlefieldTarget alt1 alt2 defendingOrEquip false true false
+@[match_pattern] abbrev twoTypes (includeCreature : Bool := false) (includeArtifact : Bool := true) (youControl : Bool := false) (orEnchantment : Bool := false) : BattlefieldTarget :=
+  .booleanBattlefieldTarget includeCreature includeArtifact youControl orEnchantment false true
+@[match_pattern] abbrev nonlandOrAttacking (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (attacking : Bool := false) : BattlefieldTarget :=
+  .booleanBattlefieldTarget alt1 alt2 alt3 attacking true true
+@[match_pattern] abbrev permanentOrPlaneswalker (controller : TargetController := .any) (creatureOrPw : Bool := false) (planeswalkerOnly : Bool := false) : BattlefieldTarget :=
+  .controlledPermanentTarget controller creatureOrPw planeswalkerOnly false
+@[match_pattern] abbrev artifact (controller : TargetController := .any) (tokenOnly : Bool := false) (noncreature : Bool := false) : BattlefieldTarget :=
+  .controlledPermanentTarget controller tokenOnly noncreature true
+@[match_pattern] abbrev creatureStatBound (n : Int) (controller : TargetController := .any) (anotherOrToughness : Bool := false) (atLeast : Bool := false) : BattlefieldTarget :=
+  .boundPermanentTarget n 0 controller anotherOrToughness atLeast false
+@[match_pattern] abbrev permanentMvBound (n : Nat) (enchantmentAtLeast : Bool := false) : BattlefieldTarget :=
+  .boundPermanentTarget 0 n .any enchantmentAtLeast false true
 @[match_pattern] abbrev creatureYouControl (another : Bool := false) (legendary : Bool := false) : BattlefieldTarget :=
   .creatureTarget true another legendary
 @[match_pattern] abbrev creature (another : Bool := false) (withFlying : Bool := false) : BattlefieldTarget :=
@@ -154,13 +161,15 @@ end BattlefieldTarget
 
 /-- A card target in a graveyard (CR 115.1 / 404.1). -/
 inductive GraveyardTarget where
-  /-- Graveyard card target: Elf or opponent's card (`!alt2 && !multiType`), creature or permanent card in your graveyard (`alt2 && !multiType`), or artifact/enchantment vs. Equipment/instant/sorcery card in your graveyard (`multiType`). -/
-  | graveyardCardKind (alt1 : Bool := false) (alt2 : Bool := false) (multiType : Bool := false)
-  /-- Target creature card with mana value `n` or less in your graveyard. -/
-  | creatureCardInYourGraveyardMvAtMost (n : Nat)
+  | graveyardTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+      (multiType : Bool := false) (mvAtMost : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace GraveyardTarget
+@[match_pattern] abbrev graveyardCardKind (alt1 : Bool := false) (alt2 : Bool := false) (multiType : Bool := false) : GraveyardTarget :=
+  .graveyardTargetKind 0 alt1 alt2 multiType false
+@[match_pattern] abbrev creatureCardInYourGraveyardMvAtMost (n : Nat) : GraveyardTarget :=
+  .graveyardTargetKind n false false false true
 @[match_pattern] abbrev elfOrOppGraveyardCard (opp : Bool := false) : GraveyardTarget := .graveyardCardKind opp false false
 @[match_pattern] abbrev elfInYourGraveyard : GraveyardTarget := .graveyardCardKind false false false
 @[match_pattern] abbrev oppGraveyardCard : GraveyardTarget := .graveyardCardKind true false false
@@ -170,13 +179,14 @@ end GraveyardTarget
 
 /-- A spell or ability target on the stack (CR 115.1 / 405.1). -/
 inductive StackTarget where
-  /-- A spell (`ability = false`, `creatureOnly = alt`) or an activated/triggered ability you control (`ability = true`, `fromCreature = alt`). -/
-  | spellOrAbility (alt : Bool := false) (ability : Bool := false)
-  /-- A creature spell with power or toughness at most `n`. -/
-  | creatureSpellPTAtMost (n : Nat)
+  | stackTargetKind (n : Nat := 0) (alt : Bool := false) (ability : Bool := false) (ptAtMost : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StackTarget
+@[match_pattern] abbrev spellOrAbility (alt : Bool := false) (ability : Bool := false) : StackTarget :=
+  .stackTargetKind 0 alt ability false
+@[match_pattern] abbrev creatureSpellPTAtMost (n : Nat) : StackTarget :=
+  .stackTargetKind n false false true
 @[match_pattern] abbrev spell (creatureOnly : Bool := false) : StackTarget := .spellOrAbility creatureOnly false
 @[match_pattern] abbrev stackAbilityFromSource (fromCreature : Bool := true) : StackTarget := .spellOrAbility fromCreature true
 end StackTarget
@@ -184,7 +194,7 @@ end StackTarget
 /-- A player target, or a cross-category target involving a player or graveyard
 (CR 115.1 / 115.4). -/
 inductive PlayerTarget where
-  /-- Target player/opponent (`crossZone = false`, `opponentOnly = alt1`) or cross-zone target (`crossZone = true`: “any target”, permanent or player if `alt1`, or creature/graveyard creature card if `alt2`). -/
+  /-- Target player/opponent (`crossZone = false`, `opponentOnly = alt1`) or cross-category target (`crossZone = true`: “any target”, permanent or player if `alt1`, or creature/graveyard creature card if `alt2`). -/
   | playerOrCrossZoneTarget (alt1 : Bool := false) (alt2 : Bool := false) (crossZone : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
@@ -198,15 +208,18 @@ end PlayerTarget
 
 /-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
 inductive MultiTarget where
-  /-- Two-step player/creature or Equipment/creature target (`twoTargets = false`, Equipment if `alt2`) or two targets of the same kind / sharing a card type (`twoTargets = true`). -/
-  | twoStepOrSameTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (twoTargets : Bool := false)
-  /-- Sequential own and opponent creature/planeswalker targets. -/
-  | ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false)
-  /-- Up to two target creatures whose total mana value is `n` or less. -/
-  | upToTwoCreaturesTotalMvAtMost (n : Nat)
+  | multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+      (alt3 : Bool := false) (alt4 : Bool := false)
+      (ownAndOpp : Bool := false) (mvAtMost : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace MultiTarget
+@[match_pattern] abbrev twoStepOrSameTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (twoTargets : Bool := false) : MultiTarget :=
+  .multiTargetKind 0 alt1 alt2 alt3 twoTargets false false
+@[match_pattern] abbrev ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false) : MultiTarget :=
+  .multiTargetKind 0 oppFirst orPlaneswalker planeswalkerFirst false true false
+@[match_pattern] abbrev upToTwoCreaturesTotalMvAtMost (n : Nat) : MultiTarget :=
+  .multiTargetKind n false false false false false true
 @[match_pattern] abbrev playerAndCreature (creatureFirstUpToOne : Bool := false) : MultiTarget :=
   .twoStepOrSameTarget creatureFirstUpToOne false false false
 @[match_pattern] abbrev equipmentThenCreatureYouControl (optionalEquipment : Bool := false) : MultiTarget :=
@@ -275,10 +288,10 @@ namespace EffectTargetKind
 @[match_pattern] abbrev oppTappedCreature : EffectTargetKind := .battlefield (.oppCreature true false)
 @[match_pattern] abbrev creature : EffectTargetKind := .battlefield (.creature false)
 @[match_pattern] abbrev creatureWithFlying : EffectTargetKind := .battlefield .creatureWithFlying
-@[match_pattern] abbrev artifactOrLand : EffectTargetKind := .battlefield (.twoTypes false true false)
+@[match_pattern] abbrev artifactOrLand : EffectTargetKind := .battlefield (.twoTypes false true false false)
 @[match_pattern] abbrev colorlessNonland : EffectTargetKind := .battlefield (.nonland false false true)
 @[match_pattern] abbrev artifactOrEnchantment : EffectTargetKind := .battlefield (.artifactOrEnchantment false)
-@[match_pattern] abbrev artifactOrCreatureYouControl : EffectTargetKind := .battlefield (.twoTypes true true true)
+@[match_pattern] abbrev artifactOrCreatureYouControl : EffectTargetKind := .battlefield (.twoTypes true true true false)
 @[match_pattern] abbrev nonland : EffectTargetKind := .battlefield (.nonland false false false)
 @[match_pattern] abbrev oppNonland : EffectTargetKind := .battlefield (.nonland true false false)
 @[match_pattern] abbrev attackingCreatureWithoutFlying : EffectTargetKind := .battlefield (.attackingCreature true false false)
@@ -298,7 +311,7 @@ namespace EffectTargetKind
 @[match_pattern] abbrev artifactToken : EffectTargetKind := .battlefield (.artifact .any true false)
 @[match_pattern] abbrev attackingCreature : EffectTargetKind := .battlefield (.attackingCreature false false false)
 @[match_pattern] abbrev equipmentYouControl : EffectTargetKind := .battlefield .equipmentYouControl
-@[match_pattern] abbrev creatureOrLandYouControl : EffectTargetKind := .battlefield (.twoTypes true false true)
+@[match_pattern] abbrev creatureOrLandYouControl : EffectTargetKind := .battlefield (.twoTypes true false true false)
 @[match_pattern] abbrev attackingOrBlockingCreature : EffectTargetKind := .battlefield (.attackingCreature false true false)
 @[match_pattern] abbrev creatureMvAtMost (n : Nat) : EffectTargetKind := .battlefield (.creatureMvAtMost n)
 @[match_pattern] abbrev creatureToughnessAtLeast (n : Int) : EffectTargetKind :=
@@ -407,7 +420,7 @@ def specBattlefield : BattlefieldTarget → Spec
       else if dealtDamageThisTurn then "target creature an opponent controls that dealt damage this turn"
       else "target creature an opponent controls"
     { noun }
-  | .twoTypes includeCreature includeArtifact youControl =>
+  | .twoTypes includeCreature includeArtifact youControl false =>
     let noun :=
       if !includeCreature then "target artifact or land"
       else if includeArtifact then "target artifact or creature you control"
@@ -486,6 +499,7 @@ def specBattlefield : BattlefieldTarget → Spec
         { noun := "target creature or planeswalker an opponent controls", prefer := .opponent }
       | _ =>
         { noun := "target creature or planeswalker" }
+  | _ => {}
 
 /-- Classification of a graveyard card targeting shape (CR 115.1 / 404.1). -/
 def specGraveyard (t : GraveyardTarget) : Spec :=
@@ -501,6 +515,7 @@ def specGraveyard (t : GraveyardTarget) : Spec :=
       "target Equipment, instant, or sorcery card from your graveyard"
     | .graveyardCardKind false _ true =>
       "target artifact or enchantment card from your graveyard"
+    | _ => ""
   { noun, prefer := .last }
 
 /-- Classification of a stack spell or ability targeting shape (CR 115.1 / 405.1). -/
@@ -515,6 +530,7 @@ def specStack (t : StackTarget) : Spec :=
       "target activated or triggered ability you control from a creature source"
     | .stackAbilityFromSource false =>
       "target activated or triggered ability you control from an artifact source"
+    | _ => ""
   { noun, stackSpell := true }
 
 /-- Classification of a player or cross-category targeting shape (CR 115.1 / 115.4). -/

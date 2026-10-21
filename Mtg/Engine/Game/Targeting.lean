@@ -196,7 +196,7 @@ def legalBattlefieldTargets (g : Game) (caster : PlayerId) (t : BattlefieldTarge
       (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id) &&
         (!tapped || o.status.tapped) &&
         (!dealtDamageThisTurn || o.status.dealtDamageThisTurn))
-  | .twoTypes includeCreature includeArtifact youControl =>
+  | .twoTypes includeCreature includeArtifact youControl false =>
     if !includeCreature then
       g.legalPermanentTargets caster (·.isArtifactOrLand)
     else
@@ -288,6 +288,7 @@ def legalBattlefieldTargets (g : Game) (caster : PlayerId) (t : BattlefieldTarge
          | .you => o.controlledBy caster
          | .opponent => o.controller.isSome && !o.controlledBy caster
          | _ => true))
+  | _ => #[]
 
 /-- Legal targets for a graveyard card targeting shape (CR 115.1 / 404.1). -/
 def legalGraveyardTargets (g : Game) (caster : PlayerId) (t : GraveyardTarget) : Array Target :=
@@ -310,6 +311,7 @@ def legalGraveyardTargets (g : Game) (caster : PlayerId) (t : GraveyardTarget) :
         o.printed.isEquipment || o.printed.isInstant || o.printed.isSorcery
       else
         o.printed.isArtifact || o.printed.isEnchantment)
+  | _ => #[]
 
 /-- Legal targets for a stack spell or ability targeting shape (CR 115.1 / 405.1). -/
 def legalStackTargets (g : Game) (caster : PlayerId) (t : StackTarget) : Array Target :=
@@ -324,6 +326,7 @@ def legalStackTargets (g : Game) (caster : PlayerId) (t : StackTarget) : Array T
   | .stackAbilityFromSource fromCreature =>
     g.legalStackAbilityTargets caster (fun src =>
       if fromCreature then src.printed.isCreature else src.printed.isArtifact)
+  | _ => #[]
 
 /-- Legal targets for a player or cross-category targeting shape (CR 115.1 / 115.4). -/
 def legalPlayerTargetKind (g : Game) (caster : PlayerId) (t : PlayerTarget) : Array Target :=

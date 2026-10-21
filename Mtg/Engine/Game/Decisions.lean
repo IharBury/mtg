@@ -897,6 +897,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .putOnTop p ids => g.putIdsOnTop p ids
     | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
     | .plusOne id => g.addPlusOneIfStillCreature id
+    | _ => g
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     let g := g.resumeTriggerSequence
@@ -941,6 +942,7 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
       | _, _ => throw "Pick exactly one of the listed objects"
     | .chooseIndex _ =>
       throw "Supply an index (random <n> or flip heads/tails)"
+    | _ => throw "No random event is waiting for a result"
   | _ => throw "No random event is waiting for a result"
 
 /-- Apply a `--norandom` index (starting player, coin toss). -/

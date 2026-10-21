@@ -697,6 +697,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     match chosen[0]? with
     | some id => g.finishAmassOn p id subtype n attach
     | none => g.logMsg s!"{(g.player p).name} doesn't choose an Army"
+  | _ => g
 
 /-- Ask `p` to choose up to `max` of `ids`, or resolve immediately when there
 is nothing to decide. -/

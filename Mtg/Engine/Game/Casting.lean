@@ -525,6 +525,7 @@ def promptNextWard (g : Game) : Game :=
           s!"{who} may discard a card or the spell is countered (ward)"
         | .sacrificePermanents n _ =>
           s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
+        | _ => ""
       { g with pending := .payWard w.player w.spellId w.cost, wardQueue := rest
         }.logMsg msg
   | _ => g

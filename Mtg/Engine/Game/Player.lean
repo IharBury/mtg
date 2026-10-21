@@ -236,21 +236,21 @@ structure StartConfig where
   norandom : Bool := false
 
 inductive Action where
-  /-- Priority, cost payment, mulligan, or choice response: pass (`false, false, false`), pay (`true, false, false`), keep (`false, true, false`), mulligan (`true, true, false`), decline (`false, false, true`), accept (`true, false, true`), villain connive (`false, true, true`), or pay generic (`true, true, true`). -/
-  | stepOrResponse (alt1 : Bool := false) (alt2 : Bool := false) (response : Bool := false)
-  /-- Single-object action: play land (`false, false, false`), keep legend (`false, false, true`), cast (`true, false, false`), cast Adventure (`true, false, true`), sacrifice (`false, true, false`), or discard (`false, true, true`). -/
-  | objectAction (id : ObjectId) (cast : Bool := false) (sacOrDiscard : Bool := false) (flag : Bool := false)
+  | simpleOrNatAction (n : Nat := 0) (name : String := "")
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+      (natChoice : Bool := false) (boolOrConcede : Bool := false) (nameChoice : Bool := false)
+  | singleObjectOrDesignationAction (id : ObjectId := ⟨0⟩) (abilityIdx : Nat := 0)
+      (attackerId : ObjectId := ⟨0⟩) (to : Option PlayerId := none) (optId : Option ObjectId := none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (actOrSneak : Bool := false) (designation : Bool := false)
+  | targetsOrObjectsAction (t : Target := .player ⟨0⟩) (ts : Array Target := #[])
+      (ids : Array ObjectId := #[]) (rest : Array ObjectId := #[])
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (isObjects : Bool := false)
   | tapForMana (id : ObjectId) (mana : ManaType)
   /-- Activate mana ability `idx` of `id` (CR 605.3), adding exactly `mana`
   and paying costs that need chosen objects with `costIds`, in order. -/
   | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
       (costIds : Array ObjectId := #[])
-  /-- Activate a non-mana activated ability (`sneak = false`, CR 602) or cast for sneak cost returning `attackerId` (`sneak = true`, MSH sneak). -/
-  | activateOrSneak (id : ObjectId) (abilityIdx : Nat := 0) (attackerId : ObjectId := ⟨0⟩) (sneak : Bool := false)
-  /-- Choose a mode (`mode = true`, CR 601.2b), announce `{X}` (`mode = false, supplyRandom = false`, CR 107.3a), or supply a random index (`mode = false, supplyRandom = true`). -/
-  | chooseNat (n : Nat) (mode : Bool := false) (supplyRandom : Bool := false)
-  /-- Announce a single target (`multi = false`, CR 601.2c) or all targets of one target instance together (`multi = true`). -/
-  | announceTargetAction (t : Target := .player ⟨0⟩) (ts : Array Target := #[]) (multi : Bool := false)
   /-- Announce every target of one instance of the word “target” on a
   “divided as you choose” effect, together with the damage assigned to each
   (CR 601.2c / 601.2d). -/
@@ -267,17 +267,28 @@ inductive Action where
   legal default; listed sources must divide their power among legal creature
   recipients (and leftover to the defending player only with trample). -/
   | assignCombatDamage (assignments : Array CreatureCombatAssignment)
-  /-- Select/stack objects (`lookLibrary = false, order = false`), order/bottom cards (`lookLibrary = false, order = true`), or finish scrying/surveilling (`lookLibrary = true`, surveil if `flag`, CR 701.20 / 701.25). -/
-  | arrayObjectAction (ids : Array ObjectId) (rest : Array ObjectId := #[]) (order : Bool := false) (flag : Bool := false) (lookLibrary : Bool := false)
-  /-- Boolean choice or concession: library top/bottom (`false, false, false`), additional cost (`false, true, false`), kicker (`true, false, false`), teamwork (`true, true, false`), or concede (`concede = true`). -/
-  | booleanOrConcede (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) (concede : Bool := false)
-  /-- Promise a gift (`ringBearer = false`) or choose a Ring-bearer (`ringBearer = true`). -/
-  | optionalDesignation (to : Option PlayerId := none) (id : Option ObjectId := none) (ringBearer : Bool := false)
-  /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
-  | chooseName (name : String)
 deriving Repr
 
 namespace Action
+
+@[match_pattern] abbrev stepOrResponse (alt1 : Bool := false) (alt2 : Bool := false) (response : Bool := false) : Action :=
+  .simpleOrNatAction 0 "" alt1 alt2 response false false false false
+@[match_pattern] abbrev chooseNat (n : Nat) (mode : Bool := false) (supplyRandom : Bool := false) : Action :=
+  .simpleOrNatAction n "" mode supplyRandom false false true false false
+@[match_pattern] abbrev booleanOrConcede (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) (concede : Bool := false) : Action :=
+  .simpleOrNatAction 0 "" flag optionalCost teamworkOrAdditional concede false true false
+@[match_pattern] abbrev chooseName (name : String) : Action :=
+  .simpleOrNatAction 0 name false false false false false false true
+@[match_pattern] abbrev objectAction (id : ObjectId) (cast : Bool := false) (sacOrDiscard : Bool := false) (flag : Bool := false) : Action :=
+  .singleObjectOrDesignationAction id 0 ⟨0⟩ none none cast sacOrDiscard flag false false
+@[match_pattern] abbrev activateOrSneak (id : ObjectId) (abilityIdx : Nat := 0) (attackerId : ObjectId := ⟨0⟩) (sneak : Bool := false) : Action :=
+  .singleObjectOrDesignationAction id abilityIdx attackerId none none sneak false false true false
+@[match_pattern] abbrev optionalDesignation (to : Option PlayerId := none) (id : Option ObjectId := none) (ringBearer : Bool := false) : Action :=
+  .singleObjectOrDesignationAction ⟨0⟩ 0 ⟨0⟩ to id ringBearer false false false true
+@[match_pattern] abbrev announceTargetAction (t : Target := .player ⟨0⟩) (ts : Array Target := #[]) (multi : Bool := false) : Action :=
+  .targetsOrObjectsAction t ts #[] #[] multi false false false
+@[match_pattern] abbrev arrayObjectAction (ids : Array ObjectId) (rest : Array ObjectId := #[]) (order : Bool := false) (flag : Bool := false) (lookLibrary : Bool := false) : Action :=
+  .targetsOrObjectsAction (.player ⟨0⟩) #[] ids rest order flag lookLibrary true
 
 @[match_pattern] abbrev stepAction (pay : Bool := false) (keep : Bool := false) : Action := .stepOrResponse pay keep false
 @[match_pattern] abbrev pass : Action := .stepOrResponse false false false

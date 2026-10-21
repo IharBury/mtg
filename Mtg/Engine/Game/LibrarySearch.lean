@@ -203,6 +203,7 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
         (g.findObject? id).any (·.zone == .library p))
       let g := ids.foldl (fun g id => (g.placeSearched p id false).1) g
       if fromLibrary then g.shuffleSearch p after else g.applyWaitingPlusOne
+    | _ => g
 
 /-- Search `p`'s library for up to `count` cards matching `pred` (CR 701.19).
 The player chooses which, or none (CR 701.19b). `optional` may skip the
