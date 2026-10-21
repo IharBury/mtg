@@ -13,7 +13,10 @@ namespace Mtg.Engine
 /-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
   | cardTypeKind (k0 : Option (Option (Option Bool)) := none) (k1 : Option Bool := none)
-      (isSupertype : Bool := false)
+      (isSupertype : Bool := false) (n : Nat := 0) (s : String := "")
+      (b1 : Bool := false) (b2 : Bool := false) (b3 : Bool := false)
+      (b4 : Bool := false) (b5 : Bool := false) (b6 : Bool := false)
+      (b7 : Bool := false) (b8 : Bool := false) (b9 : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CardType

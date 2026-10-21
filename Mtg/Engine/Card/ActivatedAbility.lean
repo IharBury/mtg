@@ -11,13 +11,19 @@ namespace Mtg.Engine
 
 /-- Part of an activation cost that needs the player to choose what to pay
 with, additional activation cost, or equip target restriction (CR 601.2h / 602.1 / 602.2b / 702.6). -/
-inductive CostPick where
-  /-- Chosen-object activation cost, additional activation cost, or equip restriction kind. -/
-  | costPickKind (subtype : String := "") (power : Nat := 0) (kind : CounterKind := .plusOnePlusOne)
-      (alt1 : Bool := false) (alt2 : Bool := false)
-      (twoKind : Bool := false) (discardFlag : Bool := false)
-      (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev CostPick := SpellCastKind
+
+namespace CostPick
+
+/-- Chosen-object activation cost, additional activation cost, or equip restriction kind. -/
+@[match_pattern] abbrev costPickKind (subtypeOpt : Option String := Option.none) (powerOpt : Option Nat := Option.none)
+    (kindOpt : Option CounterKind := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false)
+    (twoKind : Bool := false) (discardFlag : Bool := false)
+    (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false) : CostPick :=
+  .spellCastKind powerOpt Option.none subtypeOpt alt1 alt2 twoKind discardFlag exileOrTap tapFlag (some subtypeSac) kindOpt
+
+end CostPick
 
 /-- A loyalty symbol in an activation cost (CR 107.7 / 209.2).
 
@@ -29,7 +35,7 @@ namespace LoyaltySymbol
 
 @[match_pattern] abbrev loyaltySymbolKind (n : Nat := 0) (minus : Bool := false)
     (variableXFlag : Bool := false) (zeroFlag : Bool := false) : LoyaltySymbol :=
-  .costPickKind "" n .plusOnePlusOne minus variableXFlag zeroFlag false false false false
+  CostPick.costPickKind Option.none (some n) Option.none minus variableXFlag zeroFlag false false false false
 @[match_pattern] abbrev fixed (n : Nat) (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind n minus false false
 @[match_pattern] abbrev zero : LoyaltySymbol := .loyaltySymbolKind 0 false false true
 @[match_pattern] abbrev variableX (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind 0 minus true false
@@ -63,17 +69,17 @@ export LoyaltySymbol (loyaltySymbolKind fixed zero variableX plus minus plusX mi
 /-- Sacrifice another permanent of this subtype, or another creature when
 the subtype is `Creature`. -/
 @[match_pattern] abbrev sacrificeAnotherSubtype (subtype : String) : CostPick :=
-  .costPickKind subtype 0 .plusOnePlusOne false false false false false false true
+  costPickKind (some subtype) Option.none Option.none false false false false false false true
 @[match_pattern] abbrev sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false) : CostPick :=
-  .costPickKind "" 0 .plusOnePlusOne legendary anotherOrEquip false false false false false
+  costPickKind Option.none Option.none Option.none legendary anotherOrEquip false false false false false
 @[match_pattern] abbrev sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false) : CostPick :=
-  .costPickKind "" 0 .plusOnePlusOne anotherCreatureOrPw landOrDiscard true false false false false
+  costPickKind Option.none Option.none Option.none anotherCreatureOrPw landOrDiscard true false false false false
 @[match_pattern] abbrev discardChoice (nonland : Bool := false) (legendary : Bool := false) : CostPick :=
-  .costPickKind "" 0 .plusOnePlusOne nonland legendary false true false false false
+  costPickKind Option.none Option.none Option.none nonland legendary false true false false false
 @[match_pattern] abbrev exileAnotherCreatureCardFromGraveyard : CostPick :=
-  .costPickKind "" 0 .plusOnePlusOne false false false false true false false
+  costPickKind Option.none Option.none Option.none false false false false true false false
 @[match_pattern] abbrev tapChoice (twoArtifacts : Bool := false) : CostPick :=
-  .costPickKind "" 0 .plusOnePlusOne twoArtifacts false false false false true false
+  costPickKind Option.none Option.none Option.none twoArtifacts false false false false true false
 @[match_pattern] abbrev sacrificeArtifact : CostPick := .sacrificeArtifactChoice false false
 @[match_pattern] abbrev sacrificeLegendaryArtifact : CostPick := .sacrificeArtifactChoice true false
 @[match_pattern] abbrev sacrificeAnotherArtifact : CostPick := .sacrificeArtifactChoice false true
@@ -122,25 +128,25 @@ abbrev ExtraActivationCost := CostPick
 
 namespace ExtraActivationCost
 
-@[match_pattern] abbrev extraCostKind (power : Nat := 0) (kind : CounterKind := .plusOnePlusOne)
+@[match_pattern] abbrev extraCostKind (powerOpt : Option Nat := Option.none) (kindOpt : Option CounterKind := Option.none)
     (alt1 : Bool := false) (alt2 : Bool := false)
     (exileOrSac : Bool := false) (counterMod : Bool := false) (zemo : Bool := false)
     (removeKind : Bool := false) (crewFlag : Bool := false) : ExtraActivationCost :=
-  .costPickKind "" power kind alt1 alt2 exileOrSac counterMod zemo removeKind crewFlag
+  CostPick.costPickKind Option.none powerOpt kindOpt alt1 alt2 exileOrSac counterMod zemo removeKind crewFlag
 
 /-- Remove a counter of `kind` from the source. -/
 @[match_pattern] abbrev removeCounter (kind : CounterKind) : ExtraActivationCost :=
-  .extraCostKind 0 kind false false false false false true false
+  .extraCostKind Option.none (some kind) false false false false false true false
 /-- Crew N: tap any number of untapped creatures you control with total
 power N or more (CR 702.122). -/
 @[match_pattern] abbrev crew (power : Nat) : ExtraActivationCost :=
-  .extraCostKind power .plusOnePlusOne false false false false false false true
-@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind 0 .plusOnePlusOne false false false false false false false
+  .extraCostKind (some power) Option.none false false false false false false true
+@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind Option.none Option.none false false false false false false false
 @[match_pattern] abbrev exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false) : ExtraActivationCost :=
-  .extraCostKind 0 .plusOnePlusOne fromHand battlefield true false false false false
+  .extraCostKind Option.none Option.none fromHand battlefield true false false false false
 @[match_pattern] abbrev counterModCost (putStun : Bool := false) : ExtraActivationCost :=
-  .extraCostKind 0 .plusOnePlusOne putStun false false true false false false
-@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind 0 .plusOnePlusOne false false false false true false false
+  .extraCostKind Option.none Option.none putStun false false true false false false
+@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind Option.none Option.none false false false false true false false
 @[match_pattern] abbrev exileSourceFromGraveyard : ExtraActivationCost := .exileOrSacrificeCost false false
 @[match_pattern] abbrev exileSourceFromHand : ExtraActivationCost := .exileOrSacrificeCost true false
 @[match_pattern] abbrev exileSource : ExtraActivationCost := .exileOrSacrificeCost false true
@@ -166,11 +172,11 @@ abbrev ActivationCostReduction := CostReduction
 abbrev EquipRestriction := CostPick
 
 namespace EquipRestriction
-@[match_pattern] abbrev equipRestrictionKind (s : String := "") (subtypeFlag : Bool := false) (worthyFlag : Bool := false) : EquipRestriction :=
-  .costPickKind s 0 .plusOnePlusOne subtypeFlag worthyFlag false false false false false
-@[match_pattern] abbrev none : EquipRestriction := .equipRestrictionKind "" false false
-@[match_pattern] abbrev subtype (s : String) : EquipRestriction := .equipRestrictionKind s true false
-@[match_pattern] abbrev worthy : EquipRestriction := .equipRestrictionKind "" false true
+@[match_pattern] abbrev equipRestrictionKind (sOpt : Option String := Option.none) (subtypeFlag : Bool := false) (worthyFlag : Bool := false) : EquipRestriction :=
+  CostPick.costPickKind sOpt Option.none Option.none subtypeFlag worthyFlag false false false false false
+@[match_pattern] abbrev none : EquipRestriction := .equipRestrictionKind Option.none false false
+@[match_pattern] abbrev subtype (s : String) : EquipRestriction := .equipRestrictionKind (some s) true false
+@[match_pattern] abbrev worthy : EquipRestriction := .equipRestrictionKind Option.none false true
 end EquipRestriction
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/

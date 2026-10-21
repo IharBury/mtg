@@ -14,20 +14,20 @@ namespace Mtg.Engine
 
 /-- A target chosen while casting a spell or putting an ability on the stack
 (CR 115). -/
-inductive Target where
-  /-- Unified target (CR 115): player (`.inl id`), permanent (`.inr (id, false)`), or card/spell (`.inr (id, true)`). -/
-  | targetKind (k : PlayerId ⊕ (ObjectId × Bool))
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev Target := PlayerId ⊕ (ObjectId × Bool)
 
 namespace Target
 
+/-- Unified target (CR 115): player (`.inl id`), permanent (`.inr (id, false)`), or card/spell (`.inr (id, true)`). -/
+@[match_pattern] abbrev targetKind (k : PlayerId ⊕ (ObjectId × Bool)) : Target := k
+
 @[match_pattern] abbrev player (id : PlayerId) : Target :=
-  .targetKind (.inl id)
+  .inl id
 @[match_pattern] abbrev permanent (id : ObjectId) : Target :=
-  .targetKind (.inr (id, false))
+  .inr (id, false)
 /-- A card in a graveyard or a spell on the stack (CR 404 / 115.1). -/
 @[match_pattern] abbrev card (id : ObjectId) : Target :=
-  .targetKind (.inr (id, true))
+  .inr (id, true)
 
 end Target
 
@@ -58,7 +58,7 @@ abbrev ProposalKind := Target
 namespace ProposalKind
 
 @[match_pattern] abbrev proposalKind (isActivatedAbility : Bool := false) : ProposalKind :=
-  .targetKind (.inr (⟨0⟩, isActivatedAbility))
+  .inr (⟨0⟩, isActivatedAbility)
 @[match_pattern] abbrev spell : ProposalKind := .proposalKind false
 @[match_pattern] abbrev activatedAbility : ProposalKind := .proposalKind true
 

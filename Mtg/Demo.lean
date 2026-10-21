@@ -131,15 +131,16 @@ deciding player (heuristic) chooses to go first.
 "
 
 /-- A Welcome Deck color or a path to a text deck list. -/
-inductive DemoDeck where
-  | demoDeckKind (k : Color ⊕ String := .inl .white) (turnScoped : Bool := false)
-      (combatOrAttackers : Bool := false) (isIgnore : Bool := false)
-deriving Repr, Inhabited, DecidableEq
+abbrev DemoDeck := (Color ⊕ String) × Bool × Bool × Bool
 
 namespace DemoDeck
 
-@[match_pattern] abbrev welcome (color : Color) : DemoDeck := .demoDeckKind (.inl color) false false false
-@[match_pattern] abbrev file (path : String) : DemoDeck := .demoDeckKind (.inr path) false false false
+@[match_pattern] abbrev demoDeckKind (k : Color ⊕ String := .inl .white) (turnScoped : Bool := false)
+    (combatOrAttackers : Bool := false) (isIgnore : Bool := false) : DemoDeck :=
+  (k, turnScoped, combatOrAttackers, isIgnore)
+
+@[match_pattern] abbrev welcome (color : Color) : DemoDeck := demoDeckKind (.inl color) false false false
+@[match_pattern] abbrev file (path : String) : DemoDeck := demoDeckKind (.inr path) false false false
 
 end DemoDeck
 
@@ -1396,7 +1397,7 @@ abbrev PassUntilTarget := DemoDeck
 namespace PassUntilTarget
 
 @[match_pattern] abbrev passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false) : PassUntilTarget :=
-  .demoDeckKind (.inl .white) turnScoped combatOrAttackers false
+  DemoDeck.demoDeckKind (.inl .white) turnScoped combatOrAttackers false
 @[match_pattern] abbrev nextTurnCombat : PassUntilTarget := .passUntilTargetKind true true
 @[match_pattern] abbrev nextTurnMain : PassUntilTarget := .passUntilTargetKind true false
 @[match_pattern] abbrev nextMain : PassUntilTarget := .passUntilTargetKind false false
@@ -1477,7 +1478,7 @@ abbrev PassUntilKind := DemoDeck
 
 namespace PassUntilKind
 
-@[match_pattern] abbrev ignore : PassUntilKind := .demoDeckKind (.inl .white) false false true
+@[match_pattern] abbrev ignore : PassUntilKind := DemoDeck.demoDeckKind (.inl .white) false false true
 @[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := target
 
 end PassUntilKind

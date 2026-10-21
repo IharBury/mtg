@@ -58,6 +58,9 @@ inductive CopyDuration where
       (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
       (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
       (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
+      (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
+      (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+      (destOpt : Option Zone := Option.none)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CopyDuration

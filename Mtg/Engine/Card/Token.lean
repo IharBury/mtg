@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Text
+import Mtg.Engine.TypeLine
 
 /-!
 # Token kinds (CR 111)
@@ -10,12 +11,15 @@ namespace Mtg.Engine
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
 cards reconstruct printed “create a …” lines. -/
-inductive TokenKind where
-  /-- Unified token kind (CR 111): non-creature artifact (`!cat1 && !cat2 && !isJace`), artifact creature (`cat1 && !cat2 && !isJace`), legendary (`!cat1 && cat2 && !isJace`), creature (`cat1 && cat2 && !isJace`), or Jace planeswalker (`isJace`). -/
-  | tokenKind (cat1 : Bool := false) (cat2 : Bool := false) (isJace : Bool := false)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TokenKind := CardType
+
+namespace TokenKind
+/-- Unified token kind (CR 111): non-creature artifact (`!cat1 && !cat2 && !isJace`), artifact creature (`cat1 && !cat2 && !isJace`), legendary (`!cat1 && cat2 && !isJace`), creature (`cat1 && cat2 && !isJace`), or Jace planeswalker (`isJace`). -/
+@[match_pattern] abbrev tokenKind (cat1 : Bool := false) (cat2 : Bool := false) (isJace : Bool := false)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : TokenKind :=
+  .cardTypeKind (some none) (some false) true 0 "" cat1 cat2 isJace alt1 alt2 alt3 g1 g2 g3
+end TokenKind
 
 /-- Non-creature artifact tokens (CR 111.10). -/
 abbrev ArtifactToken := TokenKind
@@ -24,12 +28,12 @@ namespace ArtifactToken
 
 @[match_pattern] abbrev artifactTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
     (setArtifact : Bool := false) (equipment : Bool := false) : ArtifactToken :=
-  .tokenKind false false false alt1 alt2 false setArtifact equipment false
+  TokenKind.tokenKind false false false alt1 alt2 false setArtifact equipment false
 @[match_pattern] abbrev predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false)
     (setArtifact : Bool := false) : ArtifactToken :=
-  .artifactTokenKind alt1 alt2 setArtifact false
+  artifactTokenKind alt1 alt2 setArtifact false
 @[match_pattern] abbrev equipment (sturdyShield : Bool := false) : ArtifactToken :=
-  .artifactTokenKind sturdyShield false false true
+  artifactTokenKind sturdyShield false false true
 
 end ArtifactToken
 
@@ -39,7 +43,7 @@ abbrev ArtifactCreatureToken := TokenKind
 namespace ArtifactCreatureToken
 
 @[match_pattern] abbrev kind (alt1 : Bool := false) (alt2 : Bool := false) (construct : Bool := false) : ArtifactCreatureToken :=
-  .tokenKind true false false alt1 alt2 construct false false false
+  TokenKind.tokenKind true false false alt1 alt2 construct false false false
 
 end ArtifactCreatureToken
 
@@ -49,11 +53,11 @@ abbrev LegendaryToken := TokenKind
 namespace LegendaryToken
 
 @[match_pattern] abbrev legendaryTokenKind (alt1 : Bool := false) (alt2 : Bool := false) (msh : Bool := false) : LegendaryToken :=
-  .tokenKind false true false alt1 alt2 msh false false false
+  TokenKind.tokenKind false true false alt1 alt2 msh false false false
 @[match_pattern] abbrev mowuOrZabu (zabu : Bool := false) : LegendaryToken :=
-  .legendaryTokenKind zabu false false
+  legendaryTokenKind zabu false false
 @[match_pattern] abbrev mshLegend (redwing : Bool := false) (galactusOrTigerGod : Bool := false) : LegendaryToken :=
-  .legendaryTokenKind redwing galactusOrTigerGod true
+  legendaryTokenKind redwing galactusOrTigerGod true
 
 end LegendaryToken
 
@@ -64,26 +68,26 @@ namespace CreatureToken
 
 @[match_pattern] abbrev creatureTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : CreatureToken :=
-  .tokenKind true true false alt1 alt2 alt3 g1 g2 g3
+  TokenKind.tokenKind true true false alt1 alt2 alt3 g1 g2 g3
 @[match_pattern] abbrev whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false)
     (green : Bool := false) : CreatureToken :=
-  .creatureTokenKind alt1 alt2 green false false false
+  creatureTokenKind alt1 alt2 green false false false
 @[match_pattern] abbrev whiteFlyingOrBlue (alt1 : Bool := false) (alt2 : Bool := false)
     (blue : Bool := false) : CreatureToken :=
-  .creatureTokenKind alt1 alt2 blue true false false
+  creatureTokenKind alt1 alt2 blue true false false
 @[match_pattern] abbrev dragonOrLeviathan (alt : Bool := false)
     (leviathan : Bool := false) : CreatureToken :=
-  .creatureTokenKind alt leviathan false false true false
+  creatureTokenKind alt leviathan false false true false
 @[match_pattern] abbrev redOrAlignment (alt1 : Bool := false) (alt2 : Bool := false)
     (alignment : Bool := false) : CreatureToken :=
-  .creatureTokenKind alt1 alt2 alignment true true false
+  creatureTokenKind alt1 alt2 alignment true true false
 @[match_pattern] abbrev otherCreature (moloid : Bool := false)
     (cadetOrCitizen : Bool := false) : CreatureToken :=
-  .creatureTokenKind moloid cadetOrCitizen false false false true
+  creatureTokenKind moloid cadetOrCitizen false false false true
 @[match_pattern] abbrev fraCreature (forestTentacle : Bool := false) : CreatureToken :=
-  .creatureTokenKind forestTentacle false false true false true
+  creatureTokenKind forestTentacle false false true false true
 @[match_pattern] abbrev rogue : CreatureToken :=
-  .creatureTokenKind false false false false true true
+  creatureTokenKind false false false false true true
 
 end CreatureToken
 

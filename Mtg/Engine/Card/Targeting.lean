@@ -11,27 +11,30 @@ abilities, plus the `HasTargeting` interface.
 namespace Mtg.Engine
 
 /-- Where a filtered target is found (CR 115.1). -/
-inductive TargetZone where
-  /-- Target zone kind: battlefield (`false, false, false`), your graveyard (`true, false, false`), any graveyard (`false, true, false`), stack (`true, true, false`), player (`false, false, true`), spell or creature (`true, false, true`), or any target (`false, true, true`, CR 115.4). -/
-  | targetZoneKind (alt1 : Bool := false) (alt2 : Bool := false) (crossOrPlayer : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TargetZone := CardType
 
 namespace TargetZone
-@[match_pattern] abbrev battlefield : TargetZone := .targetZoneKind false false false
-@[match_pattern] abbrev yourGraveyard : TargetZone := .targetZoneKind true false false
-@[match_pattern] abbrev anyGraveyard : TargetZone := .targetZoneKind false true false
-@[match_pattern] abbrev stack : TargetZone := .targetZoneKind true true false
-@[match_pattern] abbrev player : TargetZone := .targetZoneKind false false true
-@[match_pattern] abbrev spellOrCreature : TargetZone := .targetZoneKind true false true
-@[match_pattern] abbrev anyTarget : TargetZone := .targetZoneKind false true true
+/-- Target zone kind: battlefield (`false, false, false`), your graveyard (`true, false, false`), any graveyard (`false, true, false`), stack (`true, true, false`), player (`false, false, true`), spell or creature (`true, false, true`), or any target (`false, true, true`, CR 115.4). -/
+@[match_pattern] abbrev targetZoneKind (alt1 : Bool := false) (alt2 : Bool := false) (crossOrPlayer : Bool := false) : TargetZone :=
+  .cardTypeKind (some none) (some true) true 0 "" alt1 alt2 crossOrPlayer false false false false false false
+@[match_pattern] abbrev battlefield : TargetZone := targetZoneKind false false false
+@[match_pattern] abbrev yourGraveyard : TargetZone := targetZoneKind true false false
+@[match_pattern] abbrev anyGraveyard : TargetZone := targetZoneKind false true false
+@[match_pattern] abbrev stack : TargetZone := targetZoneKind true true false
+@[match_pattern] abbrev player : TargetZone := targetZoneKind false false true
+@[match_pattern] abbrev spellOrCreature : TargetZone := targetZoneKind true false true
+@[match_pattern] abbrev anyTarget : TargetZone := targetZoneKind false true true
 end TargetZone
 
 /-- Multiple-target, sequential-slot, controller, graveyard, stack, or player targeting shapes (CR 115.1 / 601.2c). -/
-inductive MultiTarget where
-  | multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (alt4 : Bool := false)
-      (ownAndOpp : Bool := false) (mvAtMost : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev MultiTarget := CardType
+
+namespace MultiTarget
+@[match_pattern] abbrev multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (alt4 : Bool := false)
+    (ownAndOpp : Bool := false) (mvAtMost : Bool := false) : MultiTarget :=
+  .cardTypeKind (some (some none)) (some false) true n "" alt1 alt2 alt3 alt4 ownAndOpp mvAtMost false false false
+end MultiTarget
 
 /-- Who controls (or, for a card in a graveyard, owns) a filtered target, unified with `MultiTarget`. -/
 abbrev TargetController := MultiTarget
@@ -39,14 +42,14 @@ abbrev TargetController := MultiTarget
 namespace TargetController
 @[match_pattern] abbrev targetControllerKind (idx : Nat := 0) (you : Bool := false) (opponent : Bool := false)
     (eachOpponent : Bool := false) (specificSeat : Bool := false) : TargetController :=
-  .multiTargetKind idx you opponent eachOpponent specificSeat false false
+  MultiTarget.multiTargetKind idx you opponent eachOpponent specificSeat false false
 @[match_pattern] abbrev controllerKind (you : Bool := false) (opponent : Bool := false) (eachOpponent : Bool := false) : TargetController :=
-  .targetControllerKind 0 you opponent eachOpponent false
-@[match_pattern] abbrev specific (idx : Nat) : TargetController := .targetControllerKind idx false false false true
-@[match_pattern] abbrev any : TargetController := .controllerKind false false false
-@[match_pattern] abbrev you : TargetController := .controllerKind true false false
-@[match_pattern] abbrev opponent : TargetController := .controllerKind false true false
-@[match_pattern] abbrev eachOpponent : TargetController := .controllerKind false true true
+  targetControllerKind 0 you opponent eachOpponent false
+@[match_pattern] abbrev specific (idx : Nat) : TargetController := targetControllerKind idx false false false true
+@[match_pattern] abbrev any : TargetController := controllerKind false false false
+@[match_pattern] abbrev you : TargetController := controllerKind true false false
+@[match_pattern] abbrev opponent : TargetController := controllerKind false true false
+@[match_pattern] abbrev eachOpponent : TargetController := controllerKind false true true
 end TargetController
 
 /-- Type-line restrictions on a `TargetFilter` (CR 205). -/
@@ -106,26 +109,28 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
 inductive BattlefieldTarget where
-  | battlefieldTargetKind (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
-      (subtype : String := "") (subtypes : Array String := #[])
+  | battlefieldTargetKind (subtypeOpt : Option String := none) (subtypesOpt : Option (Array String) := none)
+      (colorOpt : Option Color := none) (nOpt : Option Int := none) (mOpt : Option Nat := none)
+      (controllerOpt : Option TargetController := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false)
+      (flag3 : Bool := false) (paramKind : Bool := false)
       (controlledKind : Bool := false) (boundKind : Bool := false) (subtypeKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace BattlefieldTarget
 @[match_pattern] abbrev booleanBattlefieldTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind 0 0 .any "" #[] alt1 alt2 alt3 alt4 g1 g2 false false false
+  .battlefieldTargetKind none none none none none none alt1 alt2 alt3 alt4 g1 g2 false false false false false
 @[match_pattern] abbrev controlledPermanentTarget (controller : TargetController := .any) (alt1 : Bool := false)
     (alt2 : Bool := false) (artifactTarget : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind 0 0 controller "" #[] alt1 alt2 artifactTarget false false false true false false
+  .battlefieldTargetKind none none none none none (some controller) alt1 alt2 artifactTarget false false false false false true false false
 @[match_pattern] abbrev boundPermanentTarget (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
     (alt1 : Bool := false) (alt2 : Bool := false) (mvBound : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind n mv controller "" #[] alt1 alt2 mvBound false false false false true false
+  .battlefieldTargetKind none none none (some n) (some mv) (some controller) alt1 alt2 mvBound false false false false false false true false
 /-- Target creature you control with `subtype` (`multi = false`) or any of `subtypes` (`multi = true`). -/
 @[match_pattern] abbrev creatureYouControlSubtypes (subtype : String := "") (subtypes : Array String := #[]) (multi : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind 0 0 .any subtype subtypes multi false false false false false false false true
+  .battlefieldTargetKind (some subtype) (some subtypes) none none none none multi false false false false false false false false false true
 @[match_pattern] abbrev creatureTarget (youControl : Bool := false) (another : Bool := false) (legendaryOrFlying : Bool := false) : BattlefieldTarget :=
   .booleanBattlefieldTarget youControl another legendaryOrFlying false false false
 @[match_pattern] abbrev oppOrEquipmentTarget (alt1 : Bool := false) (alt2 : Bool := false) (defendingOrEquip : Bool := false) : BattlefieldTarget :=
@@ -181,16 +186,16 @@ abbrev GraveyardTarget := MultiTarget
 namespace GraveyardTarget
 @[match_pattern] abbrev graveyardTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
     (multiType : Bool := false) (mvAtMost : Bool := false) : GraveyardTarget :=
-  .multiTargetKind n alt1 alt2 multiType mvAtMost false false
+  MultiTarget.multiTargetKind n alt1 alt2 multiType mvAtMost false false
 @[match_pattern] abbrev graveyardCardKind (alt1 : Bool := false) (alt2 : Bool := false) (multiType : Bool := false) : GraveyardTarget :=
-  .graveyardTargetKind 0 alt1 alt2 multiType false
+  graveyardTargetKind 0 alt1 alt2 multiType false
 @[match_pattern] abbrev creatureCardInYourGraveyardMvAtMost (n : Nat) : GraveyardTarget :=
-  .graveyardTargetKind n false false false true
-@[match_pattern] abbrev elfOrOppGraveyardCard (opp : Bool := false) : GraveyardTarget := .graveyardCardKind opp false false
-@[match_pattern] abbrev elfInYourGraveyard : GraveyardTarget := .graveyardCardKind false false false
-@[match_pattern] abbrev oppGraveyardCard : GraveyardTarget := .graveyardCardKind true false false
-@[match_pattern] abbrev cardInYourGraveyard (permanentAny : Bool := false) : GraveyardTarget := .graveyardCardKind permanentAny true false
-@[match_pattern] abbrev multiTypeInYourGraveyard (equipInstSorc : Bool := false) : GraveyardTarget := .graveyardCardKind equipInstSorc false true
+  graveyardTargetKind n false false false true
+@[match_pattern] abbrev elfOrOppGraveyardCard (opp : Bool := false) : GraveyardTarget := graveyardCardKind opp false false
+@[match_pattern] abbrev elfInYourGraveyard : GraveyardTarget := graveyardCardKind false false false
+@[match_pattern] abbrev oppGraveyardCard : GraveyardTarget := graveyardCardKind true false false
+@[match_pattern] abbrev cardInYourGraveyard (permanentAny : Bool := false) : GraveyardTarget := graveyardCardKind permanentAny true false
+@[match_pattern] abbrev multiTypeInYourGraveyard (equipInstSorc : Bool := false) : GraveyardTarget := graveyardCardKind equipInstSorc false true
 end GraveyardTarget
 
 /-- A spell or ability target on the stack (CR 115.1 / 405.1), unified with `MultiTarget`. -/
@@ -198,13 +203,13 @@ abbrev StackTarget := MultiTarget
 
 namespace StackTarget
 @[match_pattern] abbrev stackTargetKind (n : Nat := 0) (alt : Bool := false) (ability : Bool := false) (ptAtMost : Bool := false) : StackTarget :=
-  .multiTargetKind n alt ability ptAtMost false false false
+  MultiTarget.multiTargetKind n alt ability ptAtMost false false false
 @[match_pattern] abbrev spellOrAbility (alt : Bool := false) (ability : Bool := false) : StackTarget :=
-  .stackTargetKind 0 alt ability false
+  stackTargetKind 0 alt ability false
 @[match_pattern] abbrev creatureSpellPTAtMost (n : Nat) : StackTarget :=
-  .stackTargetKind n false false true
-@[match_pattern] abbrev spell (creatureOnly : Bool := false) : StackTarget := .spellOrAbility creatureOnly false
-@[match_pattern] abbrev stackAbilityFromSource (fromCreature : Bool := true) : StackTarget := .spellOrAbility fromCreature true
+  stackTargetKind n false false true
+@[match_pattern] abbrev spell (creatureOnly : Bool := false) : StackTarget := spellOrAbility creatureOnly false
+@[match_pattern] abbrev stackAbilityFromSource (fromCreature : Bool := true) : StackTarget := spellOrAbility fromCreature true
 end StackTarget
 
 /-- A player target, or a cross-category target involving a player or graveyard
@@ -214,12 +219,12 @@ abbrev PlayerTarget := MultiTarget
 namespace PlayerTarget
 /-- Target player/opponent (`crossZone = false`, `opponentOnly = alt1`) or cross-category target (`crossZone = true`: “any target”, permanent or player if `alt1`, or creature/graveyard creature card if `alt2`). -/
 @[match_pattern] abbrev playerOrCrossZoneTarget (alt1 : Bool := false) (alt2 : Bool := false) (crossZone : Bool := false) : PlayerTarget :=
-  .multiTargetKind 0 alt1 alt2 crossZone false false false
-@[match_pattern] abbrev player (opponentOnly : Bool := false) : PlayerTarget := .playerOrCrossZoneTarget opponentOnly false false
+  MultiTarget.multiTargetKind 0 alt1 alt2 crossZone false false false
+@[match_pattern] abbrev player (opponentOnly : Bool := false) : PlayerTarget := playerOrCrossZoneTarget opponentOnly false false
 @[match_pattern] abbrev crossZoneTarget (anyPermanent : Bool := false) (creatureOrGy : Bool := false) : PlayerTarget :=
-  .playerOrCrossZoneTarget anyPermanent creatureOrGy true
-@[match_pattern] abbrev playerOrPermanent (anyPermanent : Bool := false) : PlayerTarget := .playerOrCrossZoneTarget anyPermanent false true
-@[match_pattern] abbrev creatureOrGyCreatureCard : PlayerTarget := .playerOrCrossZoneTarget false true true
+  playerOrCrossZoneTarget anyPermanent creatureOrGy true
+@[match_pattern] abbrev playerOrPermanent (anyPermanent : Bool := false) : PlayerTarget := playerOrCrossZoneTarget anyPermanent false true
+@[match_pattern] abbrev creatureOrGyCreatureCard : PlayerTarget := playerOrCrossZoneTarget false true true
 end PlayerTarget
 
 namespace MultiTarget
@@ -232,20 +237,20 @@ export GraveyardTarget (
 export StackTarget (stackTargetKind spellOrAbility creatureSpellPTAtMost spell stackAbilityFromSource)
 export PlayerTarget (playerOrCrossZoneTarget player crossZoneTarget playerOrPermanent creatureOrGyCreatureCard)
 @[match_pattern] abbrev twoStepOrSameTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (twoTargets : Bool := false) : MultiTarget :=
-  .multiTargetKind 0 alt1 alt2 alt3 twoTargets false false
+  multiTargetKind 0 alt1 alt2 alt3 twoTargets false false
 @[match_pattern] abbrev ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false) : MultiTarget :=
-  .multiTargetKind 0 oppFirst orPlaneswalker planeswalkerFirst false true false
+  multiTargetKind 0 oppFirst orPlaneswalker planeswalkerFirst false true false
 @[match_pattern] abbrev upToTwoCreaturesTotalMvAtMost (n : Nat) : MultiTarget :=
-  .multiTargetKind n false false false false false true
+  multiTargetKind n false false false false false true
 @[match_pattern] abbrev playerAndCreature (creatureFirstUpToOne : Bool := false) : MultiTarget :=
-  .twoStepOrSameTarget creatureFirstUpToOne false false false
+  twoStepOrSameTarget creatureFirstUpToOne false false false
 @[match_pattern] abbrev equipmentThenCreatureYouControl (optionalEquipment : Bool := false) : MultiTarget :=
-  .twoStepOrSameTarget optionalEquipment true false false
+  twoStepOrSameTarget optionalEquipment true false false
 @[match_pattern] abbrev twoTargets (artifacts : Bool := false) (players : Bool := false) (sharingType : Bool := false) : MultiTarget :=
-  .twoStepOrSameTarget artifacts players sharingType true
+  twoStepOrSameTarget artifacts players sharingType true
 @[match_pattern] abbrev twoSameKind (artifacts : Bool := false) (players : Bool := false) : MultiTarget :=
-  .twoStepOrSameTarget artifacts players false true
-@[match_pattern] abbrev twoNonlandsSharingType : MultiTarget := .twoStepOrSameTarget false false true true
+  twoStepOrSameTarget artifacts players false true
+@[match_pattern] abbrev twoNonlandsSharingType : MultiTarget := twoStepOrSameTarget false false true true
 end MultiTarget
 
 /-- Whom a spell, activated ability, or triggered ability may target
@@ -274,13 +279,13 @@ abbrev TargetPreference := TargetZone
 namespace TargetPreference
 /-- Preference kind: own (`false, false, false`), opponent (`true, false, false`), last (`false, true, false`), own then opponent (`true, true, false`), opponent player (`false, false, true`), or self player (`true, false, true`). -/
 @[match_pattern] abbrev preferenceKind (alt1 : Bool := false) (alt2 : Bool := false) (playerPref : Bool := false) : TargetPreference :=
-  .targetZoneKind alt1 alt2 playerPref
-@[match_pattern] abbrev own : TargetPreference := .preferenceKind false false false
-@[match_pattern] abbrev opponent : TargetPreference := .preferenceKind true false false
-@[match_pattern] abbrev last : TargetPreference := .preferenceKind false true false
-@[match_pattern] abbrev ownThenOpponent : TargetPreference := .preferenceKind true true false
-@[match_pattern] abbrev opponentPlayer : TargetPreference := .preferenceKind false false true
-@[match_pattern] abbrev selfPlayer : TargetPreference := .preferenceKind true false true
+  TargetZone.targetZoneKind alt1 alt2 playerPref
+@[match_pattern] abbrev own : TargetPreference := preferenceKind false false false
+@[match_pattern] abbrev opponent : TargetPreference := preferenceKind true false false
+@[match_pattern] abbrev last : TargetPreference := preferenceKind false true false
+@[match_pattern] abbrev ownThenOpponent : TargetPreference := preferenceKind true true false
+@[match_pattern] abbrev opponentPlayer : TargetPreference := preferenceKind false false true
+@[match_pattern] abbrev selfPlayer : TargetPreference := preferenceKind true false true
 end TargetPreference
 
 namespace TargetZone

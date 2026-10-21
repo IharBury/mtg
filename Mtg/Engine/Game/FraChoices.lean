@@ -21,7 +21,7 @@ namespace FraAnswer
 
 @[match_pattern] abbrev fraAnswerKind (ids : Array ObjectId := #[]) (idx : Nat := 0) (nameStr : String := "")
     (accepted : Bool := false) (objectsFlag : Bool := false) (modeFlag : Bool := false) (nameFlag : Bool := false) : FraAnswer :=
-  .afterRandomKind ⟨0⟩ idx ⟨0⟩ Option.none nameStr #[] ids .battlefield accepted objectsFlag modeFlag nameFlag false
+  AfterRandom.afterRandomKind ⟨0⟩ idx ⟨0⟩ Option.none nameStr #[] ids Option.none accepted objectsFlag modeFlag nameFlag false
 @[match_pattern] abbrev accept : FraAnswer :=
   .fraAnswerKind #[] 0 "" true false false false
 @[match_pattern] abbrev decline : FraAnswer :=
@@ -38,6 +38,10 @@ end FraAnswer
 namespace _root_.Mtg.Engine.AfterRandom
 export FraAnswer (fraAnswerKind accept decline objects mode name)
 end _root_.Mtg.Engine.AfterRandom
+
+namespace _root_.Mtg.Engine.CopyDuration
+export FraAnswer (fraAnswerKind accept decline objects mode name)
+end _root_.Mtg.Engine.CopyDuration
 
 /-- Clear the choice and let the game continue. A trigger sequence that paused
 on this choice runs its remaining steps first. -/

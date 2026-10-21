@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.Text
+import Mtg.Engine.TypeLine
 
 /-!
 # Counters (CR 122)
@@ -10,12 +11,15 @@ puts any one of them; `Status` stores each kind in its own field.
 namespace Mtg.Engine
 
 /-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
-inductive CounterKind where
-  /-- Unified counter kind (CR 122.1): P/T counter (`!cat1 && !cat2`, CR 122.1a), keyword counter (`cat1 && !cat2`, CR 122.1b), rule counter (`!cat1 && cat2`, CR 122.1c–d), or named counter (`cat1 && cat2`, CR 122.1). -/
-  | counterKind (cat1 : Bool := false) (cat2 : Bool := false)
-      (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (alt4 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev CounterKind := CardType
+
+namespace CounterKind
+/-- Unified counter kind (CR 122.1): P/T counter (`!cat1 && !cat2`, CR 122.1a), keyword counter (`cat1 && !cat2`, CR 122.1b), rule counter (`!cat1 && cat2`, CR 122.1c–d), or named counter (`cat1 && cat2`, CR 122.1). -/
+@[match_pattern] abbrev counterKind (cat1 : Bool := false) (cat2 : Bool := false)
+    (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (alt4 : Bool := false) : CounterKind :=
+  .cardTypeKind none (some true) true 0 "" cat1 cat2 alt1 alt2 alt3 alt4 false false false
+end CounterKind
 
 /-- A keyword counter a permanent can have (CR 122.1b). -/
 abbrev KeywordCounter := CounterKind
@@ -24,7 +28,7 @@ namespace KeywordCounter
 
 @[match_pattern] abbrev keywordCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false) : KeywordCounter :=
-  .counterKind true false alt1 alt2 alt3 alt4
+  CounterKind.counterKind true false alt1 alt2 alt3 alt4
 @[match_pattern] abbrev trample : KeywordCounter := .keywordCounterKind false false false false
 @[match_pattern] abbrev indestructible : KeywordCounter := .keywordCounterKind true false false false
 @[match_pattern] abbrev lifelink : KeywordCounter := .keywordCounterKind false true false false
@@ -46,7 +50,7 @@ abbrev RuleCounter := CounterKind
 namespace RuleCounter
 
 @[match_pattern] abbrev ruleCounterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) : RuleCounter :=
-  .counterKind false true alt1 alt2 alt3 false
+  CounterKind.counterKind false true alt1 alt2 alt3 false
 @[match_pattern] abbrev loyalty : RuleCounter := .ruleCounterKind false false false
 @[match_pattern] abbrev stun : RuleCounter := .ruleCounterKind true false false
 @[match_pattern] abbrev shield : RuleCounter := .ruleCounterKind false true false
@@ -63,7 +67,7 @@ namespace NamedCounter
 
 @[match_pattern] abbrev namedCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false) : NamedCounter :=
-  .counterKind true true alt1 alt2 alt3 alt4
+  CounterKind.counterKind true true alt1 alt2 alt3 alt4
 @[match_pattern] abbrev hope : NamedCounter := .namedCounterKind false false false false
 @[match_pattern] abbrev charge : NamedCounter := .namedCounterKind true false false false
 @[match_pattern] abbrev plan : NamedCounter := .namedCounterKind false true false false

@@ -1,4 +1,5 @@
 import Mtg.Engine.Color
+import Mtg.Engine.TypeLine
 
 /-!
 # Mana (CR 106, 107.4, 202)
@@ -10,12 +11,11 @@ five colors and colorless (CR 106.1b). Players spend mana to pay costs.
 namespace Mtg.Engine
 
 /-- A type of mana that can exist in a mana pool (CR 106.1b). -/
-inductive ManaType where
-  | manaTypeKind (color : Option Color := none)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ManaType := Option Color
 
 namespace ManaType
 
+@[match_pattern] abbrev manaTypeKind (color : Option Color := none) : ManaType := color
 @[match_pattern] abbrev colored (color : Color) : ManaType := .manaTypeKind (some color)
 @[match_pattern] abbrev colorless : ManaType := .manaTypeKind none
 
@@ -33,11 +33,11 @@ end ManaType
 instance {α β : Type} [Inhabited α] : Inhabited (α ⊕ β) := ⟨.inl default⟩
 
 /-- A symbol that can appear in a mana cost (subset of CR 107.4). -/
-inductive ManaSymbol where
-  | manaSymbolKind (k : Nat ⊕ (Color × Option (Option Color)) ⊕ Bool := .inl 0)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ManaSymbol := Nat ⊕ (Color × Option (Option Color)) ⊕ Bool
 
 namespace ManaSymbol
+
+@[match_pattern] abbrev manaSymbolKind (k : ManaSymbol := .inl 0) : ManaSymbol := k
 
 /-- Generic mana in costs, payable with any type (CR 107.4b). -/
 @[match_pattern] abbrev generic (n : Nat) : ManaSymbol :=
@@ -326,14 +326,15 @@ instance : BEq ManaCost where
 end ManaCost
 
 /-- What a restricted mana ability's mana may be spent on (CR 106.6 / 106.10). -/
-inductive ManaUse where
-  /-- Parameterized mana spending restriction (CR 106.6 / 106.10): source/ability (`!cardTypeGroup && !handOrTreasureGroup && !bySubtype`), card-type/supertype spell (`cardTypeGroup && !handOrTreasureGroup && !bySubtype`), hand/Treasure/Dwarf-Equipment-Saga (`handOrTreasureGroup && !bySubtype`), or subtype spell/ability (`bySubtype`). -/
-  | manaUseKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
-      (cardTypeGroup : Bool := false) (handOrTreasureGroup : Bool := false) (bySubtype : Bool := false)
-      (restricted : Bool := true)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ManaUse := CardType
 
 namespace ManaUse
+
+/-- Parameterized mana spending restriction (CR 106.6 / 106.10): source/ability (`!cardTypeGroup && !handOrTreasureGroup && !bySubtype`), card-type/supertype spell (`cardTypeGroup && !handOrTreasureGroup && !bySubtype`), hand/Treasure/Dwarf-Equipment-Saga (`handOrTreasureGroup && !bySubtype`), or subtype spell/ability (`bySubtype`). -/
+@[match_pattern] abbrev manaUseKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
+    (cardTypeGroup : Bool := false) (handOrTreasureGroup : Bool := false) (bySubtype : Bool := false)
+    (restricted : Bool := true) : ManaUse :=
+  .cardTypeKind none (some false) true 0 subtype alt1 alt2 cardTypeGroup handOrTreasureGroup bySubtype restricted false false false
 
 @[match_pattern] abbrev subtypeUse (subtype : String) (orAbility : Bool := false) : ManaUse :=
   .manaUseKind subtype orAbility false false false true true
@@ -385,6 +386,12 @@ abbrev FraManaUse := ManaUse
 abbrev ManaRestriction := ManaUse
 
 namespace ManaRestriction
+export ManaUse (
+  manaUseKind subtypeUse sourceOrAbilityRestriction cardTypeOrSupertypeSpell
+  handOrTreasureSpend subtypeSpell dragonSpell equipmentOrEquip
+  planeswalkerSpell noncreatureSpell legendarySpell artifactSpell
+  notSpellsFromHand fromTreasure dwarfEquipmentSagaSpell
+)
 
 @[match_pattern] abbrev none : ManaRestriction := .manaUseKind "" false false false false false false
 @[match_pattern] abbrev only (u : ManaUse) : ManaRestriction := u

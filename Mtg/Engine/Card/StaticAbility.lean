@@ -436,19 +436,20 @@ export KeywordStatic (
 end CombatStatic
 
 /-- A static ability the engine understands (CR 604), aligned with CR 604 / CR 613 / CR 614 categories. -/
-inductive StaticAbility where
-  /-- Unified static ability (CR 604 / CR 613 / CR 614). -/
-  | staticAbilityKind (abilityOpt : Option AbilityStatic := none)
-      (ptOpt : Option PtStatic := none)
-      (combatOpt : Option CombatStatic := none)
-      (ruleOpt : Option RuleStatic := none)
-      (printedOpt : Option String := none)
-deriving Repr, Inhabited, BEq
+abbrev StaticAbility := Option AbilityStatic × Option PtStatic × Option CombatStatic × Option RuleStatic × Option String
 
 /-- Type alias unifying `FraStatic` with `StaticAbility`. -/
 abbrev FraStatic := StaticAbility
 
 namespace StaticAbility
+
+/-- Unified static ability (CR 604 / CR 613 / CR 614). -/
+@[match_pattern] abbrev staticAbilityKind (abilityOpt : Option AbilityStatic := none)
+    (ptOpt : Option PtStatic := none)
+    (combatOpt : Option CombatStatic := none)
+    (ruleOpt : Option RuleStatic := none)
+    (printedOpt : Option String := none) : StaticAbility :=
+  (abilityOpt, ptOpt, combatOpt, ruleOpt, printedOpt)
 
 /-- Identity wrapper for backward-compatible `.fra s` construction. -/
 abbrev fra (s : StaticAbility) : StaticAbility := s

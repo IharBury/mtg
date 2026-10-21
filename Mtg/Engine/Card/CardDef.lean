@@ -60,15 +60,25 @@ def additionalCostSacrificeCreature (a : AdventureFace) : Bool :=
 end AdventureFace
 
 /-- Continuous, replacement, top-of-library, enters-choice, enters-tapped, modal, casting-permission, tap-mana, or keyword static rule on a card (CR 601 / 604 / 605 / 613 / 614 / 700 / 702). -/
-inductive CardStaticRule where
-  | cardStaticRuleKind (nOpt : Option Nat := Option.none) (subtypeOpt : Option String := Option.none)
-      (colorsOpt : Option (Array Color) := Option.none) (costOpt : Option ManaCost := Option.none)
-      (countersOpt : Option Nat := Option.none) (condOpt : Option ConditionSelector := Option.none)
-      (typesOpt : Option (Array ManaType) := Option.none) (entriesOpt : Option (Array TapAddForEach) := Option.none)
-      (restrictionOpt : Option ManaRestriction := Option.none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (unspentGroup : Bool := false) (numeric : Bool := false) (topOfLib : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev CardStaticRule :=
+  Option Nat × Option String × Option (Array Color) × Option ManaCost ×
+    Option Nat × Option ConditionSelector × Option (Array ManaType) ×
+    Option (Array TapAddForEach) × Option ManaRestriction ×
+    Bool × Bool × Bool × Bool × Bool × Bool × Bool
+
+namespace CardStaticRule
+
+@[match_pattern] abbrev cardStaticRuleKind (nOpt : Option Nat := Option.none) (subtypeOpt : Option String := Option.none)
+    (colorsOpt : Option (Array Color) := Option.none) (costOpt : Option ManaCost := Option.none)
+    (countersOpt : Option Nat := Option.none) (condOpt : Option ConditionSelector := Option.none)
+    (typesOpt : Option (Array ManaType) := Option.none) (entriesOpt : Option (Array TapAddForEach) := Option.none)
+    (restrictionOpt : Option ManaRestriction := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (unspentGroup : Bool := false) (numeric : Bool := false) (topOfLib : Bool := false) : CardStaticRule :=
+  (nOpt, subtypeOpt, colorsOpt, costOpt, countersOpt, condOpt, typesOpt, entriesOpt, restrictionOpt,
+    alt1, alt2, alt3, alt4, unspentGroup, numeric, topOfLib)
+
+end CardStaticRule
 
 /-- Replacement, modal, or casting-permission rule on a card (CR 601.2 / 601.3 / 614.1c / 700.2). -/
 abbrev EntersTappedRule := CardStaticRule
@@ -78,7 +88,7 @@ namespace EntersTappedRule
 @[match_pattern] abbrev entersTappedKind (condOpt : Option ConditionSelector := Option.none) (lifeOpt : Option Nat := Option.none)
     (tapped : Bool := false) (unlessFlag : Bool := false) (payLifeFlag : Bool := false)
     (conditional : Bool := false) : EntersTappedRule :=
-  .cardStaticRuleKind lifeOpt Option.none Option.none Option.none Option.none condOpt Option.none Option.none Option.none tapped unlessFlag payLifeFlag conditional
+  CardStaticRule.cardStaticRuleKind lifeOpt Option.none Option.none Option.none Option.none condOpt Option.none Option.none Option.none tapped unlessFlag payLifeFlag conditional
 
 @[match_pattern] abbrev unconditional (tapped : Bool := false) : EntersTappedRule :=
   .entersTappedKind Option.none Option.none tapped false false false
@@ -111,7 +121,7 @@ abbrev AsEntersChoice := CardStaticRule
 namespace AsEntersChoice
 
 @[match_pattern] abbrev asEntersKind (alt1 : Bool := false) (alt2 : Bool := false) (choose : Bool := false) : AsEntersChoice :=
-  .cardStaticRuleKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 choose false false false false
+  CardStaticRule.cardStaticRuleKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 choose false false false false
 @[match_pattern] abbrev none : AsEntersChoice := .asEntersKind false false false
 @[match_pattern] abbrev prepared : AsEntersChoice := .asEntersKind true false false
 @[match_pattern] abbrev chooseOption (oddEven : Bool := false) (cardType : Bool := false) : AsEntersChoice :=
@@ -134,7 +144,7 @@ namespace TapManaAbility
     (restrictionOpt : Option ManaRestriction := Option.none) (damage : Nat := 0) (payLife : Nat := 0)
     (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false)
     (typesFlag : Bool := false) (filterOrEach : Bool := false) (anyColorFlag : Bool := false) : TapManaAbility :=
-  .cardStaticRuleKind (some damage) restrictionStr Option.none costOpt (some payLife) Option.none typesOpt entriesOpt restrictionOpt alt1 alt2 specialSource typesFlag filterOrEach anyColorFlag false
+  CardStaticRule.cardStaticRuleKind (some damage) restrictionStr Option.none costOpt (some payLife) Option.none typesOpt entriesOpt restrictionOpt alt1 alt2 specialSource typesFlag filterOrEach anyColorFlag false
 
 @[match_pattern] abbrev dynamicOrSpecialMana (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false) : TapManaAbility :=
   .tapManaAbilityKind Option.none Option.none Option.none Option.none Option.none 0 0 alt1 alt2 specialSource false false false
@@ -187,7 +197,7 @@ abbrev ModalRule := EntersTappedRule
 namespace ModalRule
 
 @[match_pattern] abbrev modalRuleKind (condOpt : Option ConditionSelector := Option.none) (oneOrBoth : Bool := false) (twoIf : Bool := false) : ModalRule :=
-  .entersTappedKind condOpt Option.none oneOrBoth twoIf false false
+  EntersTappedRule.entersTappedKind condOpt Option.none oneOrBoth twoIf false false
 @[match_pattern] abbrev unconditionalModal (oneOrBoth : Bool := false) : ModalRule :=
   .modalRuleKind Option.none oneOrBoth false
 @[match_pattern] abbrev chooseTwoIf (cond : ConditionSelector) : ModalRule :=
@@ -208,7 +218,7 @@ abbrev TopOfLibraryRule := CardStaticRule
 namespace TopOfLibraryRule
 
 @[match_pattern] abbrev topOfLibraryKind (alt1 : Bool := false) (alt2 : Bool := false) (access : Bool := false) : TopOfLibraryRule :=
-  .cardStaticRuleKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 access false false false true
+  CardStaticRule.cardStaticRuleKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 access false false false true
 @[match_pattern] abbrev none : TopOfLibraryRule := .topOfLibraryKind false false false
 @[match_pattern] abbrev grantCreaturesTapAnyColor : TopOfLibraryRule := .topOfLibraryKind true false false
 @[match_pattern] abbrev libraryAccess (playLands : Bool := false) (castCreatures : Bool := false) : TopOfLibraryRule :=
@@ -283,7 +293,7 @@ namespace CardKeywordRule
     (costOpt : Option ManaCost := Option.none) (countersOpt : Option Nat := Option.none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (numeric : Bool := false) (protection : Bool := false) (cyclingFlag : Bool := false) : CardKeywordRule :=
-  .cardStaticRuleKind nOpt subtypeOpt colorsOpt costOpt countersOpt Option.none Option.none Option.none Option.none alt1 alt2 alt3 false numeric protection cyclingFlag
+  CardStaticRule.cardStaticRuleKind nOpt subtypeOpt colorsOpt costOpt countersOpt Option.none Option.none Option.none Option.none alt1 alt2 alt3 false numeric protection cyclingFlag
 
 end CardKeywordRule
 
@@ -296,7 +306,7 @@ namespace SpellCastOption
     (countersOpt : Option Nat := Option.none) (alt : Bool := false) (flashbackFlag : Bool := false)
     (impendingFlag : Bool := false) (numeric : Bool := false)
     (costFlag : Bool := false) (isAffinity : Bool := false) : SpellCastOption :=
-  .cardKeywordRuleKind nOpt subtypeOpt Option.none costOpt countersOpt alt flashbackFlag impendingFlag numeric costFlag isAffinity
+  CardKeywordRule.cardKeywordRuleKind nOpt subtypeOpt Option.none costOpt countersOpt alt flashbackFlag impendingFlag numeric costFlag isAffinity
 @[match_pattern] abbrev flagOrNumericCastOption (nOpt : Option Nat := Option.none) (alt : Bool := false) (numeric : Bool := false) : SpellCastOption :=
   .spellCastOptionKind nOpt Option.none Option.none Option.none alt false false numeric false false
 @[match_pattern] abbrev costCastOption (cost : ManaCost) (countersOpt : Option Nat := Option.none) (alt : Bool := false)
@@ -332,7 +342,7 @@ namespace CastPermissionRule
 
 @[match_pattern] abbrev castPermissionKind (condOpt : Option ConditionSelector := Option.none) (cantBeCountered : Bool := false)
     (castOnly : Bool := false) (exiled : Bool := false) (conditional : Bool := false) : CastPermissionRule :=
-  .entersTappedKind condOpt Option.none cantBeCountered castOnly exiled conditional
+  EntersTappedRule.entersTappedKind condOpt Option.none cantBeCountered castOnly exiled conditional
 @[match_pattern] abbrev normalOrUncounterable (cantBeCountered : Bool := false) : CastPermissionRule :=
   .castPermissionKind Option.none cantBeCountered false false false
 @[match_pattern] abbrev conditionalRule (cond : ConditionSelector) (castOnly : Bool := false) (exiled : Bool := false) : CastPermissionRule :=

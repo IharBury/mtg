@@ -664,6 +664,40 @@ where
     let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
     return { e with targeting, resolution, dividedDamage, maxTargets }
 
+private def takeStaticPart2 (ab : @& StaticAbility) : ArgM StaticAbility := do
+  match ab with
+  | .extraTriggerAnotherYouControl ss b =>
+    return .extraTriggerAnotherYouControl (← takeStrs ss) b
+  | .powerPerFatGraveyard p => return .powerPerFatGraveyard (← takeInt p)
+  | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeStr s)
+  | .equippedGetsTrampleAndCombatTreasures p t =>
+    return .equippedGetsTrampleAndCombatTreasures (← takeInt p) (← takeInt t)
+  | .youAndOtherSubtypeHaveHexproofIfShield s =>
+    return .youAndOtherSubtypeHaveHexproofIfShield (← takeStr s)
+  | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeStr s) (← takeNat n)
+  | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
+  | .rule (.maximumHandSize n) =>
+    if n == 0 then return .noMaximumHandSize else return .maximumHandSize (← takeNat n)
+  | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
+  | .typeSpellsCostLess ty n =>
+    return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
+  | .supertypeSpellsCostLess s n =>
+    return .supertypeSpellsCostLess (← takeSupertype s) (← takeNat n)
+  | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
+  | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
+  | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
+  | .opponentsCreaturesGet p t => return .opponentsCreaturesGet (← takeInt p) (← takeInt t)
+  | .pt (.getsPowerPerControlled p attachedEquipment) =>
+    return .pt (.getsPowerPerControlled (← takeInt p) attachedEquipment)
+  | .getsIfGyCreatureCards n p t =>
+    return .getsIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
+  | .enchantedCreatureGetsHasAndTypes p t k ts =>
+    return .enchantedCreatureGetsHasAndTypes (← takeInt p) (← takeInt t) k (← takeStrs ts)
+  | .getsAndAllTypesIfGyCreatureCards n p t =>
+    return .getsAndAllTypesIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
+  | .sneak c => return .sneak (← takeCost c)
+  | ab => return ab
+
 def takeStatic (ab : @& StaticAbility) : ArgM StaticAbility := do
   match ab with
   | .otherCreaturesHaveTrample ss =>
@@ -717,37 +751,7 @@ def takeStatic (ab : @& StaticAbility) : ArgM StaticAbility := do
     return .otherSubtypeGetPowerPerArtifactToken (← takeStr s)
   | .extraTriggerIfEnduringStorySubtype s =>
     return .extraTriggerIfEnduringStorySubtype (← takeStr s)
-  | .extraTriggerAnotherYouControl ss b =>
-    return .extraTriggerAnotherYouControl (← takeStrs ss) b
-  | .powerPerFatGraveyard p => return .powerPerFatGraveyard (← takeInt p)
-  | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeStr s)
-  | .equippedGetsTrampleAndCombatTreasures p t =>
-    return .equippedGetsTrampleAndCombatTreasures (← takeInt p) (← takeInt t)
-  | .youAndOtherSubtypeHaveHexproofIfShield s =>
-    return .youAndOtherSubtypeHaveHexproofIfShield (← takeStr s)
-  | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeStr s) (← takeNat n)
-  | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
-  | .rule (.maximumHandSize n) =>
-    if n == 0 then return .noMaximumHandSize else return .maximumHandSize (← takeNat n)
-  | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
-  | .typeSpellsCostLess ty n =>
-    return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
-  | .supertypeSpellsCostLess s n =>
-    return .supertypeSpellsCostLess (← takeSupertype s) (← takeNat n)
-  | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
-  | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
-  | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
-  | .opponentsCreaturesGet p t => return .opponentsCreaturesGet (← takeInt p) (← takeInt t)
-  | .pt (.getsPowerPerControlled p attachedEquipment) =>
-    return .pt (.getsPowerPerControlled (← takeInt p) attachedEquipment)
-  | .getsIfGyCreatureCards n p t =>
-    return .getsIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
-  | .enchantedCreatureGetsHasAndTypes p t k ts =>
-    return .enchantedCreatureGetsHasAndTypes (← takeInt p) (← takeInt t) k (← takeStrs ts)
-  | .getsAndAllTypesIfGyCreatureCards n p t =>
-    return .getsAndAllTypesIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
-  | .sneak c => return .sneak (← takeCost c)
-  | ab => return ab
+  | ab => takeStaticPart2 ab
 
 def takeCostPick (p : CostPick) : ArgM CostPick := do
   match p with

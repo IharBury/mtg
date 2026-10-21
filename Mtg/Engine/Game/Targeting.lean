@@ -154,11 +154,11 @@ def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
   | .spellOrCreature =>
     g.legalStackSpellTargets ok ++
       g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.isCreature && ok o)
-  | .anyTarget | .targetZoneKind true true true =>
+  | .anyTarget =>
     playerTargets g.livingPlayers ++
       g.legalPermanentTargets caster (fun o =>
         o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle) && ok o)
-  | .player =>
+  | _ =>
     playerTargets (g.livingPlayers.filter (fun pl =>
       match f.controller with
       | .you => pl.id == caster
