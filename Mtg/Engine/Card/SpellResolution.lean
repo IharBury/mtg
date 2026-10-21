@@ -2333,8 +2333,10 @@ inductive Resolution where
   `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
-  | pumpOrDamage (noteOpt : Option TriggerDamageNote := none)
-      (power : NumberSelector := .greatestPower) (toughnessOpt : Option NumberSelector := none)
+  | combatOrGrant (grantOpt : Option TriggerGrantWhat := none)
+      (noteOpt : Option TriggerDamageNote := none)
+      (powerOpt : Option NumberSelector := none)
+      (toughnessOpt : Option NumberSelector := none)
       (who : ObjectSelector := .source)
   /-- Scry, surveil, mill, draw, or gain/lose life (CR 118.2 / CR 118.3a / CR 121 / CR 701.13 / CR 701.18 / CR 701.25).
   Scry, as `amount` says. `.fixed` is that many cards.
@@ -2390,10 +2392,15 @@ inductive Resolution where
   power. Zero gains nothing.
   Any other count gains that much life. A count that cannot be read
   gains nothing. -/
-  | playerNumeric (isDrawOrLife : Bool := false) (isLife : Bool := false) (lose : Bool := false)
+  | playerResource (isManaOrCast : Bool := false)
+      (isDrawOrLife : Bool := false) (isLife : Bool := false) (lose : Bool := false)
       (surveil : Option TriggerSurveilNote := none)
       (millNoteOpt : Option TriggerMillNote := none)
-      (whoOpt : Option PlayerSelector := none) (amount : NumberSelector := .greatestPower)
+      (whatCostOpt : Option CostSelector := none) (noteOpt : Option ManaSpendNote := none)
+      (originOpt : Option TriggerCastFrom := none) (maxMvOpt : Option TriggerCastMv := none)
+      (costOpt : Option TriggerCastCost := none) (castNoteOpt : Option TriggerCastNote := none)
+      (types : Array ManaType := #[])
+      (whoOpt : Option PlayerSelector := none) (amountOpt : Option NumberSelector := none)
   /-- Tap or untap permanents, discard cards, return cards to a hand, or put a card onto a library (CR 400.7 / CR 401 / CR 701.8 / CR 701.21).
   Discard cards, as `what` says.
   One card from the controller is `.discard` (`.cards`).
@@ -2452,12 +2459,8 @@ inductive Resolution where
   `.addMana #[.colored .green] .perChargeCounter`.
   A source that has left uses its last-known charge counters.
   Any other count adds the printed types that many times. Zero adds
-  nothing. A count that cannot be read adds nothing. -/
-  | manaPayOrCast (whatOpt : Option CostSelector := none) (noteOpt : Option ManaSpendNote := none)
-      (originOpt : Option TriggerCastFrom := none) (maxMvOpt : Option TriggerCastMv := none)
-      (costOpt : Option TriggerCastCost := none) (castNoteOpt : Option TriggerCastNote := none)
-      (types : Array ManaType := #[]) (amountOpt : Option NumberSelector := none)
-  /-- Put counters.
+  nothing. A count that cannot be read adds nothing.
+  Put counters, create tokens, or amass (CR 111.10 / CR 122 / CR 701.34 / CR 701.47).
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
   Each permanent of a subtype is
   `.putCounters (.ofKind .plusOnePlusOne) (.youControl (.subtype s))`.
@@ -2504,7 +2507,12 @@ inductive Resolution where
   reported and skipped. Extra announced permanents are ignored.
   Any other permanent the selector names gets `n` counters of that kind.
   A card or a hand receives none. -/
-  | putCounters (what : CounterSelector) (who : ObjectSelector)
+  | tokensOrCounters (countersOpt : Option CounterSelector := none)
+      (kindOpt : Option TokenKind := none) (noteOpt : Option TriggerTokenNote := none)
+      (subtypeOpt : Option String := none) (tappedOrAttach : Bool := false)
+      (whoPlayerOpt : Option PlayerSelector := none)
+      (whoObjOpt : Option ObjectSelector := none)
+      (amountOpt : Option NumberSelector := none)
   /-- Put later ability `thenDo` on the stack (“When you do”), or arm it
   for a later event (`howOpt = none`), or look at cards from the top of a library (`howOpt = some how`), as `how` and `whoOpt` say, then resolve `thenDo` for the cards that were found.
   Another nonattacking creature gains indestructible is
@@ -2620,11 +2628,8 @@ inductive Resolution where
   The enchanted creature is `.destroy .enchanted`.
   The target, while the source remains, is `.destroy (.target .whileSource)`.
   Any other permanent the selector names is destroyed. A card or a hand
-  is not. -/
-  | sacrificeOrDestroy (sacNoteOpt : Option TriggerSacrificeNote := none)
-      (destroyNoteOpt : Option TriggerDestroyNote := none)
-      (what : ObjectSelector)
-  /-- Apply each resolution in order (`howOpt = none`, CR 608.2b), or resolve these modes as `how` says (`howOpt = some how`, CR 700.2).
+  is not.
+  Apply each resolution in order (`howOpt = none`, CR 608.2b), or resolve these modes as `how` says (`howOpt = some how`, CR 700.2).
   Return a graveyard card, then gain life equal to its power, is `.sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]`.
   Draw, then bottom a card if you control no legendary, is
   `.sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]`.
@@ -2827,109 +2832,36 @@ inductive Resolution where
   `how` and `note` say. `.revealed` and `.randomCreature` use the cards an
   earlier reveal found. Outside that reveal, both do nothing. A permanent
   already on the battlefield is not put again. -/
-  | putOrExile (putHowOpt : Option TriggerPutHow := none) (putNoteOpt : Option TriggerPutNote := none)
-      (exileHowOpt : Option TriggerExileHow := none) (exileNoteOpt : Option TriggerExileNote := none)
+  | putExileOrDestroy (putHowOpt : Option TriggerPutHow := none)
+      (putNoteOpt : Option TriggerPutNote := none)
+      (exileHowOpt : Option TriggerExileHow := none)
+      (exileNoteOpt : Option TriggerExileNote := none)
+      (sacNoteOpt : Option TriggerSacrificeNote := none)
+      (destroyNoteOpt : Option TriggerDestroyNote := none)
       (what : ObjectSelector)
-  /-- Create tokens or amass (CR 111.10 / CR 701.47).
-  Amass `subtypeOpt` for `who`, as `amount` says. Attach the source when
-  `tappedOrAttach` is true.
-  Goblins `n` is `.amass (.fixed n)`.
-  Orcs `n` is `.amass (.fixed n) "Orc"`.
-  Equal to this creature's power is `.amass .lastKnownPower`.
-  A missing power is zero.
-  Then attach this Equipment is `.amass (.fixed n) (attachSource := true)`.
-  Equal to the excess an earlier step noted is `.amass .notedExcess`.
-  Zero excess amasses nothing.
-  The noted controller amasses that creature's power is
-  `.amass .notedPower (who := .controller .target)`.
-  No destruction amasses nothing.
-  Any other count is amassed for the players the selector names.
-  A count that cannot be read amasses nothing.
-  Create tokens. How many is `amount`. Who receives them is a
-  `PlayerSelector`. `kind` says which token, and `note` says what a later
-  step can read.
-  `n` of `kind` is `.createTokens kind (.fixed n) tapped`.
-  An Axe is `.createTokens .axe (.fixed 1) false`.
-  Attaching that Axe is
-  `.createTokens .axe (.fixed 1) false (note := .attachReflexive)`.
-  Tapped Treasures equal to opposing artifacts are
-  `.createTokens .treasure .oppArtifacts true`.
-  A Treasure for each artifact the damaged player controls is
-  `.createTokens .treasure .damagedPlayerArtifacts false`.
-  Bird Soldiers equal to the last-known count are
-  `.createTokens .birdSoldier .lastKnownPower false`.
-  Treasures equal to that count are
-  `.createTokens .treasure .lastKnownPower false`.
-  Treasures for each creature of a chosen type are
-  `.createTokens .treasure .chosenCreatureType false`.
-  Zabu is `.createTokens .zabu (.fixed 1) false`.
-  The announced opponent creates The Void with
-  `.createTokens .theVoid (.fixed 1) false (.target .opponent)`.
-  Redwing is `.createTokens .redwing (.fixed 1) false`.
-  An Alien, remembering invasion counters, is
-  `.createTokens .alien (.fixed 1) false (note := .invasion)`.
-  A Sturdy Shield, remembered for a later attach, is
-  `.createTokens .sturdyShield (.fixed 1) false (note := .remember)`.
-  The target's controller creates a Treasure with
-  `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
-  One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
-  this is `.createTokens .merfolk .blueManaSymbols false`.
-  Any other count creates that many of the named token for the players
-  the selector names. Zero creates nothing. A count that cannot be read
-  creates nothing. -/
-  | createOrAmass (kindOpt : Option TokenKind := none) (noteOpt : Option TriggerTokenNote := none)
-      (subtypeOpt : Option String := none) (tappedOrAttach : Bool := false)
-      (who : PlayerSelector := .you) (amount : NumberSelector)
-  /-- Grant an ability or continuous effect. `what` says which, and `who` says to whom.
-  Each equipped attacking creature gains double strike until end of turn
-  with `.grant .doubleStrike .equippedAttackers`.
-  If the source was cast, the controller gains protection from everything
-  until their next turn with `.grant .protectionEverything .youIfCast`.
-  A source that was not cast does nothing.
-  The announced permanent gains these keywords until end of turn with
-  `.grant (.keywords k) .target`.
-  The announced permanent gains hexproof while the source remains with
-  `.grant .hexproofWhileSource .target`. A missing source grants nothing.
-  Damage the announced permanent would deal is prevented while the source
-  remains with `.grant .preventDamageWhileSource .target`. Choosing none
-  prevents nothing.
-  Until end of turn, creatures you control with toughness greater than their
-  power assign combat damage equal to their toughness with
-  `.grant .assignCombatDamageEqualToughness .creaturesYouControl`.
-  You may pay 2 life to do so with
-  `.may (.loseLife (.fixed 2)) (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo`.
-  Unable to pay is reported. Declining pays nothing. Power is unchanged.
-  Until end of turn, the source's base power equals the cards in hand with
-  `.grant .basePowerEqualHand .source`. Drawing first is
-  `.sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source]`.
-  A missing source still draws and does not change a power.
-  Iron Fist's tap ability until end of turn is `.grant .ironFistTap .source`.
-  Each resolution adds one. A missing source gains nothing.
-  Flying on each creature the causing spell targets is
-  `.grant (.keywords Keyword.flying) .spellTargets`. A noncreature target
-  is skipped. No recorded spell grants nothing.
-  Any other permanent the selector names receives that ability. A card, a
-  hand, or an unmade choice receives nothing. -/
-  | grant (what : TriggerGrantWhat) (who : ObjectSelector := .target)
 deriving Repr, BEq
 
 instance : Inhabited Resolution where
-  default := .pumpOrDamage none .greatestPower (some .greatestPower) .source
+  default := .combatOrGrant none none (some .greatestPower) (some .greatestPower) .source
 
 namespace Resolution
 
   @[match_pattern] abbrev pump (power toughness : NumberSelector)
       (who : ObjectSelector := .target) : Resolution :=
-    .pumpOrDamage none power (some toughness) who
+    .combatOrGrant none none (some power) (some toughness) who
   @[match_pattern] abbrev dealDamage (amount : NumberSelector) (who : ObjectSelector)
       (note : TriggerDamageNote := .none) : Resolution :=
-    .pumpOrDamage (some note) amount none who
+    .combatOrGrant none (some note) (some amount) none who
+  @[match_pattern] abbrev grant (what : TriggerGrantWhat) (who : ObjectSelector := .target) : Resolution :=
+    .combatOrGrant (some what) none none none who
+  @[match_pattern] abbrev putCounters (what : CounterSelector) (who : ObjectSelector) : Resolution :=
+    .tokensOrCounters (some what) none none none false none (some who) none
   @[match_pattern] abbrev exile (what : ObjectSelector) (how : TriggerExileHow)
       (note : TriggerExileNote := .none) : Resolution :=
-    .putOrExile none none (some how) (some note) what
+    .putExileOrDestroy none none (some how) (some note) none none what
   @[match_pattern] abbrev put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none) : Resolution :=
-    .putOrExile (some how) (some note) none none what
+    .putExileOrDestroy (some how) (some note) none none none none what
   @[match_pattern] abbrev queueReflexive (followup : Resolution) : Resolution :=
     .revealOrReflexive none none followup
   @[match_pattern] abbrev revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
@@ -2943,22 +2875,22 @@ namespace Resolution
 /-- Scry, as `n` says (CR 701.18). -/
 @[match_pattern] abbrev scry (n : NumberSelector)
     (surveil : Option TriggerSurveilNote := none) : Resolution :=
-  .playerNumeric false false false surveil none none n
+  .playerResource false false false false surveil none none none none none none none #[] none (some n)
 
 /-- Mill cards (CR 701.13), as `amount` and `who` say. -/
 @[match_pattern] abbrev mill (amount : NumberSelector) (who : PlayerSelector := .you)
     (note : TriggerMillNote := .none) : Resolution :=
-  .playerNumeric false false false none (some note) (some who) amount
+  .playerResource false false false false none (some note) none none none none none none #[] (some who) (some amount)
 
 /-- `who` draws cards (CR 121), as `amount` says. -/
 @[match_pattern] abbrev draw (amount : NumberSelector)
     (who : PlayerSelector := .you) : Resolution :=
-  .playerNumeric true false false none none (some who) amount
+  .playerResource false true false false none none none none none none none none #[] (some who) (some amount)
 
 /-- `who` gains or loses life (CR 118.2 / CR 118.3a), as `amount` says. -/
 @[match_pattern] abbrev gainLife (amount : NumberSelector)
     (who : PlayerSelector := .you) (lose : Bool := false) : Resolution :=
-  .playerNumeric true true lose none none (some who) amount
+  .playerResource false true true lose none none none none none none none none #[] (some who) (some amount)
 
 /-- Tap or untap permanents (CR 701.21), as `who` and `tapped` say. -/
 @[match_pattern] abbrev tap (who : ObjectSelector)
@@ -2971,13 +2903,13 @@ namespace Resolution
 
 /-- Pay `what` (CR 118). -/
 @[match_pattern] abbrev pay (what : CostSelector) : Resolution :=
-  .manaPayOrCast (some what) none none none none none #[] none
+  .playerResource true false false false none none (some what) none none none none none #[] none none
 
 /-- Add mana (CR 106), as `amount` says. -/
 @[match_pattern] abbrev addMana (types : Array ManaType)
     (amount : NumberSelector := .fixed 1)
     (note : ManaSpendNote := .none) : Resolution :=
-  .manaPayOrCast none (some note) none none none none types (some amount)
+  .playerResource true false false false none none none (some note) none none none none types none (some amount)
 
 /-- Return cards to a hand (CR 400.7). -/
 @[match_pattern] abbrev returnToHand (what : ObjectSelector := .graveyardCard)
@@ -2992,33 +2924,33 @@ namespace Resolution
 /-- Sacrifice a permanent (CR 701.17). -/
 @[match_pattern] abbrev sacrifice (what : ObjectSelector)
     (note : TriggerSacrificeNote := .none) : Resolution :=
-  .sacrificeOrDestroy (some note) none what
+  .putExileOrDestroy none none none none (some note) none what
 
 /-- Destroy permanents (CR 701.7). -/
 @[match_pattern] abbrev destroy (what : ObjectSelector)
     (note : TriggerDestroyNote := .none) : Resolution :=
-  .sacrificeOrDestroy none (some note) what
+  .putExileOrDestroy none none none none none (some note) what
 
 /-- Amass `subtype` for `who` (CR 701.47), as `amount` says. -/
 @[match_pattern] abbrev amass (amount : NumberSelector)
     (subtype : String := "Goblin") (attachSource : Bool := false)
     (who : PlayerSelector := .you) : Resolution :=
-  .createOrAmass none none (some subtype) attachSource who amount
+  .tokensOrCounters none none none (some subtype) attachSource (some who) none (some amount)
 
 /-- Create tokens (CR 111.10). -/
 @[match_pattern] abbrev createTokens (kind : TokenKind) (amount : NumberSelector)
     (tapped : Bool := false) (who : PlayerSelector := .you)
     (note : TriggerTokenNote := .none) : Resolution :=
-  .createOrAmass (some kind) (some note) none tapped who amount
+  .tokensOrCounters none (some kind) (some note) none tapped (some who) none (some amount)
 
 /-- You may cast a spell (CR 601). -/
 @[match_pattern] abbrev mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
     (cost : TriggerCastCost) (note : TriggerCastNote := .none) : Resolution :=
-  .manaPayOrCast none none (some origin) (some maxMv) (some cost) (some note) #[] none
+  .playerResource true false false false none none none none (some origin) (some maxMv) (some cost) (some note) #[] none none
 
 /-- A resolution that is not a spell shape. It does not play an extra land. -/
 @[match_pattern] abbrev unrecognized : Resolution :=
-  .manaPayOrCast none none none none none none #[] none
+  .playerResource true false false false none none none none none none none none #[] none none
 
 /-- Search a library (CR 701.23), then resolve `thenDo` for the card that was found. -/
 @[match_pattern] abbrev searchLibrary (thenDo : Resolution) : Resolution :=
@@ -3696,69 +3628,21 @@ private def ifClause (cond : TriggeredAbility.ConditionSelector) (noun : String)
 private def trimPeriod (s : String) : String :=
   if s.endsWith "." then (s.dropEnd 1).toString else s
 
-private def phraseOnePart3 (r : SpellResolution) (noun : String) : String :=
+private def phraseOneFallback (r : SpellResolution) (noun : String) : String :=
+  match r.onPermanent? with
+  | some action => PermanentAction.toNotation action noun
+  | none => ""
+
+private def phraseOneCombat (r : SpellResolution) (noun : String) : String :=
   match r with
-  | .createTokens kind .chosenX _ _ _ =>
-    s!"create X {kind.pluralNoun}"
-  | .createTokens kind (.perSubtype subtype) _ _ _ =>
-    s!"Create a {kind.oracleNoun} for each {subtype} you control"
-  | .createTokens .galactus (.fixed 1) false .you .none =>
-    "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-  | .createTokens kind (.fixed n) _ .you _ =>
-    TokenKind.createPhrase kind n.toNat
-  | .createTokens kind (.fixed n) _ .player _ =>
-    s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
-  | .returnToHand .eachPermanent _ =>
-    "return one or two target nonland permanents to their owners' hands"
-  | .investigate (.target .player) =>
-    "target player investigates"
-  | .grant (.keywords k) .creatureTargets =>
-    PermanentAction.toNotation (.grantKeywords k) "target creature"
-  | .untap .creatureTargets =>
-    PermanentAction.toNotation .untap "target creature"
+  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .pump (.fixed p) (.fixed t) .allCreatures =>
+    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
+  | .pump (.fixed p) (.fixed t) .creaturesOfTargetPlayer =>
+    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
   | .pump (.fixed p) (.fixed t) .creatureTargets =>
     PermanentAction.toNotation (.pump p t) "target creature"
-  | .returnToHand (.graveyardSubtype subtype) _ =>
-    s!"return target {subtype} card from your graveyard to your hand"
-  | .grant (.artifactCreature p t kw) .target =>
-    s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
-  | .discard (.cardsUnlessType n ty) =>
-    s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.youControl .eachCreature) =>
-    s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
-  | .putCounters (.ofKind .plusOnePlusOne n) .eachOther =>
-    s!"put {plusOnePlusOneCountersPhrase n} on each other creature you control"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.permanent _) =>
-    s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-  | .exile (.topN _) .playUntilNextTurn _ =>
-    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .exile .allCreatures .forLater .worldsWithinWorlds =>
-    "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
-  | .exile .hand .playUntilNextTurn .thenDrawThree =>
-    "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
-  | .becomeCopy .nontokenCreaturesYouControl =>
-    "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
-  | .gainControl .untilEotOrNextIfVillain =>
-    "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
-  | .mill (.fixed n) _ (.permanentAndGainLife life) =>
-    s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
-  | .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying _ =>
-    "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .putOnLibrary .secondOrBottomThenConnive .target =>
-    "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
-  | .returnToHand .upToTwoGyModal _ =>
-    "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
-  | .spellsCostLess (.cardType ty) (.fixed n) =>
-    s!"{ty} spells you cast this turn cost \{{n}} less to cast"
-  | .spellsCostLess (.supertype s) (.fixed n) =>
-    s!"{s} spells you cast this turn cost \{{n}} less to cast"
-  | r =>
-    match r.onPermanent? with
-    | some action => PermanentAction.toNotation action noun
-    | none => ""
-
-private def phraseOnePart2 (r : SpellResolution) (noun : String) : String :=
-  match r with
   | .dealDamage .otherSpellsManaValue .opponentsCreatures _ =>
     "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
   | .dealDamage (.fixed n) .allCreatures _ =>
@@ -3771,57 +3655,11 @@ private def phraseOnePart2 (r : SpellResolution) (noun : String) : String :=
     "deals damage to each creature equal to the total mana value of other spells you've cast this turn"
   | .dealDamage .otherSpellsManaValue (.nonSubtypeCreatures subtype) _ =>
     s!"deals damage to each non-{subtype} creature equal to the total mana value of other spells you've cast this turn"
-  | .replace =>
-    s!"if {noun} would die this turn, exile it instead"
-  | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
-    s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
-  | .returnToHand .creaturesNotChosenType _ =>
-    "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
-  | .draw .greatestToughnessThenPutCreatures _ =>
-    "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
-  | .mill (.fixed n) _ (.toHand (.oneOf a b)) =>
-    s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
-  | .mill (.fixed n) _ (.toHand (.upTo max ty)) =>
-    s!"mill {n} cards, then put up to {englishNumber max} {ty.oracleWord} cards from among them into your hand"
-  | .mill (.fixed n) _ (.toHand (.allOf a b)) =>
-    s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
-  | .exile .eachPermanent .returnImmediately _ =>
-    "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
-  | .addMana #[] (.fixed n) (.subtypeSpells subtype) =>
-    s!"add {englishNumber n.toNat} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
-  | .exile .attackingCreatures .forLater .controllerMaySearchBasic =>
-    s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
-  | .exile (.topN n) (.playIfYouControlSubtype subtype) _ =>
-    s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
-  | .cant (.castSpellsThisTurn .any) =>
-    "players can't cast spells this turn"
-  | .exile .opponentTopX .playForLifeThisTurn _ =>
-    "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
-  | .revealLibrary (.top n) (.returnToHand .twoPiles _) _ =>
-    s!"look at the top {englishNumber n} cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
-  | .put .creaturesDiedThisTurn .tapped .asFood =>
-    "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
-  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
-    "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
-  | .revealLibrary (.top n) (.sequence [.put .landsYouControl .tapped _, .gainLife (.fixed life) _]) _ =>
-    s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
-  | .gainControl .oppArtifacts =>
-    "for each opponent, gain control of up to one target artifact that player controls"
-  | .grant .phaseOutKicker .target =>
-    "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
   | .dealDamage (.fixed n) (.player (.controller .target)) _ =>
     s!"it also deals {n} damage to that creature's controller"
-  | .exile (.creatureMvAtMostOrTeamwork n) .forLater (.gainLifeIfTeamwork life) =>
-    s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
-  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted _ =>
-    s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
-  | .revealLibrary (.top n) (.put .creaturesYouControl _ _) _ =>
-    s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | r => phraseOnePart3 r noun
+  | r => phraseOneFallback r noun
 
-/-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
-outside this match so the constructor splitter is not recursive. -/
-private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
+private def phraseOneGrant (r : SpellResolution) (noun : String) : String :=
   match r with
   | .fight _ (.timesPower 1) =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
@@ -3832,9 +3670,41 @@ private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .fight .announced .upToOneOther =>
     "target creature you control fights up to one other target creature"
   | .grant .extraLand .youIfCast => "you may play an additional land this turn"
+  | .grant (.keywords k) .creaturesYouControl =>
+    s!"creatures you control gain {k.joinedAnd} until end of turn"
+  | .counter => s!"counter {noun}"
+  | .attach .equipmentYouControl .target =>
+    "attach an Equipment you control to it"
+  | .recruit => "recruit"
+  | .gainControl .exchangeTargets =>
+    "exchange control of two target nonland permanents that share a card type"
+  | .replace =>
+    s!"if {noun} would die this turn, exile it instead"
+  | .cant (.castSpellsThisTurn .any) =>
+    "players can't cast spells this turn"
+  | .gainControl .oppArtifacts =>
+    "for each opponent, gain control of up to one target artifact that player controls"
+  | .grant .phaseOutKicker .target =>
+    "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
+  | .investigate (.target .player) =>
+    "target player investigates"
+  | .grant (.keywords k) .creatureTargets =>
+    PermanentAction.toNotation (.grantKeywords k) "target creature"
+  | .grant (.artifactCreature p t kw) .target =>
+    s!"until end of turn, {noun} becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}"
+  | .becomeCopy .nontokenCreaturesYouControl =>
+    "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
+  | .gainControl .untilEotOrNextIfVillain =>
+    "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
+  | .spellsCostLess (.cardType ty) (.fixed n) =>
+    s!"{ty} spells you cast this turn cost \{{n}} less to cast"
+  | .spellsCostLess (.supertype s) (.fixed n) =>
+    s!"{s} spells you cast this turn cost \{{n}} less to cast"
+  | r => phraseOneFallback r noun
+
+private def phraseOnePlayerResource (r : SpellResolution) (noun : String) : String :=
+  match r with
   | .unrecognized => "this effect does nothing"
-  | .sequence _ => ""
-  | .discard (.cards n) => s!"discard {cardPhrase n}"
   | .loseLife (.fixed n) .you => s!"lose {n} life"
   | .loseLife (.fixed n) .player => s!"{noun} loses {n} life"
   | .loseLife (.fixed n) (.controller .target) => s!"its controller loses {n} life"
@@ -3842,44 +3712,138 @@ private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .gainLife (.fixed n) .you => s!"you gain {n} life"
   | .gainLife (.fixed n) .player => s!"Target player gains {n} life"
   | .surveil (.fixed n) .none => s!"surveil {n}"
-  | .grant (.keywords k) .creaturesYouControl => s!"creatures you control gain {k.joinedAnd} until end of turn"
-  | .returnToHand .targetSpell _ => s!"return {noun} to its owner's hand"
-  | .returnToHand (.target .graveyardCard) _ => s!"return up to one {noun} to your hand"
-  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
-    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
-  | .pump (.fixed p) (.fixed t) .allCreatures =>
-    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-  | .pump (.fixed p) (.fixed t) .creaturesOfTargetPlayer =>
-    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
-  | .exile (.graveyardCardsOfType ty (.target .player)) .anyManaWhileExiled _ =>
-    s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
   | .draw (.fixed n) .you => s!"draw {cardPhrase n.toNat}"
   | .draw (.fixed n) .player => s!"{noun} draws {cardPhrase n.toNat}"
   | .scry (.fixed n) => s!"scry {n}"
+  | .addMana #[.colored .red] (.count (.oppPermanents ty)) _ =>
+    s!"add {"{R}"} for each {ty.oracleWord} your opponents control"
+  | .draw .greatestToughnessThenPutCreatures _ =>
+    "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
+  | .mill (.fixed n) _ (.toHand (.oneOf a b)) =>
+    s!"mill {n} cards, then put {indefinite a.oracleWord} {a.oracleWord} or {b.oracleWord} card from among them into your hand"
+  | .mill (.fixed n) _ (.toHand (.upTo max ty)) =>
+    s!"mill {n} cards, then put up to {englishNumber max} {ty.oracleWord} cards from among them into your hand"
+  | .mill (.fixed n) _ (.toHand (.allOf a b)) =>
+    s!"mill {n} cards, then put all {a.oracleWord} and {b.oracleWord} cards from among them into your hand"
+  | .addMana #[] (.fixed n) (.subtypeSpells subtype) =>
+    s!"add {englishNumber n.toNat} mana in any combination of colors. Spend this mana only to cast {subtype} spells"
+  | .mill (.fixed n) _ (.permanentAndGainLife life) =>
+    s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
+  | .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying _ =>
+    "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | r => phraseOneFallback r noun
+
+private def phraseOneTapDiscardOrReturn (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .discard (.cards n) => s!"discard {cardPhrase n}"
+  | .returnToHand .targetSpell _ => s!"return {noun} to its owner's hand"
+  | .returnToHand (.target .graveyardCard) _ => s!"return up to one {noun} to your hand"
   | .tap (.target .eachPermanent) => "tap one or two target creatures"
-  | .counter => s!"counter {noun}"
+  | .returnToHand .creaturesNotChosenType _ =>
+    "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
+  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
+    "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+  | .returnToHand .eachPermanent _ =>
+    "return one or two target nonland permanents to their owners' hands"
+  | .untap .creatureTargets =>
+    PermanentAction.toNotation .untap "target creature"
+  | .returnToHand (.graveyardSubtype subtype) _ =>
+    s!"return target {subtype} card from your graveyard to your hand"
+  | .discard (.cardsUnlessType n ty) =>
+    s!"discard {englishNumber n} cards unless you discard {indefinite ty.oracleWord} {ty.oracleWord} card"
+  | .putOnLibrary .secondOrBottomThenConnive .target =>
+    "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
+  | .returnToHand .upToTwoGyModal _ =>
+    "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
+  | r => phraseOneFallback r noun
+
+private def phraseOneTokensOrCounters (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .putCounters (.ofKind kind n) .creatureTargets =>
+    s!"put {kind.countersPhrase n} on up to one target creature"
+  | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
+    s!"put {kind.countersPhrase n} on target creature you control"
+  | .amass (.fixed n) subtype =>
+    s!"amass {pluralizeName subtype} {n}"
+  | .createTokens kind .chosenX _ _ _ =>
+    s!"create X {kind.pluralNoun}"
+  | .createTokens kind (.perSubtype subtype) _ _ _ =>
+    s!"Create a {kind.oracleNoun} for each {subtype} you control"
+  | .createTokens .galactus (.fixed 1) false .you .none =>
+    "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+  | .createTokens kind (.fixed n) _ .you _ =>
+    TokenKind.createPhrase kind n.toNat
+  | .createTokens kind (.fixed n) _ .player _ =>
+    s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.youControl .eachCreature) =>
+    s!"put {plusOnePlusOneCountersPhrase n} on each creature you control"
+  | .putCounters (.ofKind .plusOnePlusOne n) .eachOther =>
+    s!"put {plusOnePlusOneCountersPhrase n} on each other creature you control"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.permanent _) =>
+    s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+  | r => phraseOneFallback r noun
+
+private def phraseOnePutExileOrDestroy (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .exile (.graveyardCardsOfType ty (.target .player)) .anyManaWhileExiled _ =>
+    s!"exile all {ty.oracleWord} cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
+  | .exile .targetSpell .forLater .counteredPermanentMayCast =>
+    s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
+  | .exile .eachPermanent .returnImmediately _ =>
+    "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
+  | .exile .attackingCreatures .forLater .controllerMaySearchBasic =>
+    s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
+  | .exile (.topN n) (.playIfYouControlSubtype subtype) _ =>
+    s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
+  | .exile .opponentTopX .playForLifeThisTurn _ =>
+    "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
+  | .put .creaturesDiedThisTurn .tapped .asFood =>
+    "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
+  | .exile (.creatureMvAtMostOrTeamwork n) .forLater (.gainLifeIfTeamwork life) =>
+    s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
+  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted _ =>
+    s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
+  | .exile (.topN _) .playUntilNextTurn _ =>
+    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+  | .exile .allCreatures .forLater .worldsWithinWorlds =>
+    "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
+  | .exile .hand .playUntilNextTurn .thenDrawThree =>
+    "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+  | r => phraseOneFallback r noun
+
+private def phraseOneRevealOrReflexive (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .searchLibrary (.returnToHand (.supertypeCard s ty) _) =>
+    searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
+  | .searchLibrary (.put (.supertypeCard s ty) .tapped _) =>
+    s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
+  | .searchLibrary (.put .artifactCreatureX _ _) =>
+    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
+  | .revealLibrary (.top n) (.returnToHand .twoPiles _) _ =>
+    s!"look at the top {englishNumber n} cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
+  | .revealLibrary (.top n) (.sequence [.put .landsYouControl .tapped _, .gainLife (.fixed life) _]) _ =>
+    s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
+  | .revealLibrary (.top n) (.put .creaturesYouControl _ _) _ =>
+    s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
+  | r => phraseOneFallback r noun
+
+/-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
+outside this match so the constructor splitter is not recursive. -/
+private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .combatOrGrant none .. => phraseOneCombat r noun
+  | .combatOrGrant (some _) .. => phraseOneGrant r noun
+  | .playerResource .. => phraseOnePlayerResource r noun
+  | .tapDiscardOrReturn .. => phraseOneTapDiscardOrReturn r noun
+  | .tokensOrCounters .. => phraseOneTokensOrCounters r noun
+  | .putExileOrDestroy .. => phraseOnePutExileOrDestroy r noun
+  | .revealOrReflexive .. => phraseOneRevealOrReflexive r noun
+  | .sequence _ | .or _ => ""
   | .unlessPays r n =>
     let base := phraseOne r noun
     let base := if base.endsWith "." then (base.dropEnd 1).toString else base
     if base.isEmpty then s!"unless its controller pays \{{n}}"
     else s!"{base} unless its controller pays \{{n}}"
-  | .exile .targetSpell .forLater .counteredPermanentMayCast =>
-    s!"counter {noun}. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled"
-  | .or _ => ""
-  | .attach .equipmentYouControl .target =>
-    "attach an Equipment you control to it"
-  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
-    s!"You may draw a card for each {ty.oracleWord} you control. If you do, each opponent draws a card"
-  | .may (.put (.creatureFromHand subtype n) _ _) (.draw (.fixed 1) _) .ifYouDont =>
-    s!"You may put {indefinite subtype} {subtype} creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed cards) _) .ifYouDo =>
-    s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards.toNat}."
-  | .may r _ _ =>
-    let base := phraseOne r noun
-    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
-    let base := if base.startsWith "you " then (base.drop 4).toString else base
-    if base.isEmpty then "you may" else s!"you may {base}"
-  | .recruit => "recruit"
   | .«if» cond r =>
     let base := trimPeriod (phraseOne r noun)
     let cond := ifClause cond noun
@@ -3896,21 +3860,18 @@ private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
       if yes.isEmpty then cond else s!"{cond}, {yes}"
     else if yes.isEmpty then no
     else s!"{no}. {capitalizeAscii cond}, {yes} instead"
-  | .gainControl .exchangeTargets =>
-    "exchange control of two target nonland permanents that share a card type"
-  | .putCounters (.ofKind kind n) .creatureTargets =>
-    s!"put {kind.countersPhrase n} on up to one target creature"
-  | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
-    s!"put {kind.countersPhrase n} on target creature you control"
-  | .amass (.fixed n) subtype =>
-    s!"amass {pluralizeName subtype} {n}"
-  | .searchLibrary (.returnToHand (.supertypeCard s ty) _) =>
-    searchLibraryToHandPhrase s!"a {s.oracleWord} {ty.oracleWord} card"
-  | .searchLibrary (.put (.supertypeCard s ty) .tapped _) =>
-    s!"its controller may search their library for a {s.oracleWord} {ty.oracleWord} card, put it onto the battlefield tapped, then shuffle"
-  | .searchLibrary (.put .artifactCreatureX _ _) =>
-    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
-  | r => phraseOnePart2 r noun
+  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+    s!"You may draw a card for each {ty.oracleWord} you control. If you do, each opponent draws a card"
+  | .may (.put (.creatureFromHand subtype n) _ _) (.draw (.fixed 1) _) .ifYouDont =>
+    s!"You may put {indefinite subtype} {subtype} creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed cards) _) .ifYouDo =>
+    s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards.toNat}."
+  | .may r _ _ =>
+    let base := phraseOne r noun
+    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
+    let base := if base.startsWith "you " then (base.drop 4).toString else base
+    if base.isEmpty then "you may" else s!"you may {base}"
+  | r => phraseOneFallback r noun
 
 export Resolution (flatten)
 

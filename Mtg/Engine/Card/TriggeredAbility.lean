@@ -1940,18 +1940,19 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
   let opt :=
     match t.resolution with
-    | .pumpOrDamage .. => resolutionPhrasePumpOrDamage t noun
-    | .playerNumeric .. => resolutionPhrasePlayerNumeric t noun
+    | .combatOrGrant none .. => resolutionPhrasePumpOrDamage t noun
+    | r@(.combatOrGrant (some _) ..) => some (grantResolutionPhrase r noun)
+    | .playerResource false .. => resolutionPhrasePlayerNumeric t noun
+    | .playerResource true .. => resolutionPhraseManaPayOrCast t noun
     | .tapDiscardOrReturn .. => resolutionPhraseTapDiscardOrReturn t noun
-    | .manaPayOrCast .. => resolutionPhraseManaPayOrCast t noun
-    | .putOrExile .. => resolutionPhrasePutOrExile t noun
-    | .sacrificeOrDestroy .. => resolutionPhraseSacrificeOrDestroy t noun
-    | .createOrAmass .. => resolutionPhraseCreateOrAmass t noun
+    | .putExileOrDestroy (some _) .. | .putExileOrDestroy none _ (some _) .. =>
+      resolutionPhrasePutOrExile t noun
+    | .putExileOrDestroy none _ none .. => resolutionPhraseSacrificeOrDestroy t noun
+    | .tokensOrCounters none .. => resolutionPhraseCreateOrAmass t noun
+    | .tokensOrCounters (some _) .. => resolutionPhraseCounters t noun
     | .revealOrReflexive .. => resolutionPhraseRevealOrReflexive t noun
-    | .putCounters .. => resolutionPhraseCounters t noun
     | .sequenceOrModes .. => resolutionPhraseControlFlow t noun
     | r@(.may ..) => some (mayResolutionPhrase r)
-    | r@(.grant ..) => some (grantResolutionPhrase r noun)
   opt.getD (SpellResolution.toPhrase t.resolution noun)
 
 /-- True when this trigger fires only once each turn. -/
