@@ -57,6 +57,170 @@ private def unionPermanentSets (parts : List (Option (Array GameObject))) :
     if named.isEmpty then none
     else some (named.foldl (fun acc xs => unionObjects acc xs) #[])
 
+/-- Permanents named by a `BattlefieldObject` selector. -/
+private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
+    (b : TriggeredAbility.BattlefieldObject) : Option (Array GameObject) :=
+  let controller := ctx.controller
+  let sourceId := ctx.sourceId
+  let onBf (id : ObjectId) : Option GameObject :=
+    match g.findObject? id with
+    | some o => if o.isOnBattlefield then some o else none
+    | none => none
+  let permanentTargets :=
+    ctx.targets.filterMap fun
+      | Target.permanent id => onBf id
+      | _ => none
+  let someEmpty : Option (Array GameObject) := some #[]
+  match b with
+  | .sourceOrTappedState false false =>
+    match sourceId.bind onBf with
+    | some o => some #[o]
+    | none => someEmpty
+  | .groupOrTargetPlayerCreatures false false =>
+    some permanentTargets
+  | .enchantedOrOppCreatures false _ =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        match src.attachedTo.bind onBf with
+        | some host => some #[host]
+        | none => someEmpty
+      else someEmpty
+    | none => someEmpty
+  | .cause subtype =>
+    match g.recordedCauseId.bind onBf with
+    | some o =>
+      match subtype with
+      | some s => if g.hasSubtype o s then some #[o] else someEmpty
+      | none => some #[o]
+    | none => someEmpty
+  | .permanentsOfTypeYouControl ty =>
+    some ((g.permanentsOf controller).filter fun o =>
+      match ty with
+      | .creature => o.isCreature
+      | .land => o.printed.isLand
+      | .planeswalker => o.printed.isPlaneswalker
+      | .artifact => o.printed.isArtifact
+      | _ => o.types.contains ty)
+  | .subtypeFilter subtype false false =>
+    some (g.battlefield.filter fun o =>
+      o.controlledBy controller && some o.id != sourceId && g.hasSubtype o subtype)
+  | .enchantedOrOppCreatures true false =>
+    some (g.battlefield.filter fun o => o.isCreature && !o.controlledBy controller)
+  | .combatOrHasteCreature false false =>
+    match sourceId with
+    | some sid => some (g.blockersOf sid)
+    | none => someEmpty
+  | .subtypeFilter subtype true _ =>
+    some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
+  | .youControl which =>
+    match which with
+    | .eachCreature | .citysBlessing => some (g.creaturesControlledBy controller)
+    | .subtype s =>
+      some ((g.permanentsOf controller).filter (g.hasSubtype · s))
+  | .otherOrEquipmentYouControl false false =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && o.controlledBy controller && some o.id != sourceId)
+  | .stepNotedPermanent false false =>
+    match g.createdTokenThisWay.bind onBf with
+    | some o => some #[o]
+    | none => someEmpty
+  | .groupOrTargetPlayerCreatures true false =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
+  | .attackersFilter false false =>
+    some (g.battlefield.filter (·.status.attacking))
+  | .groupOrTargetPlayerCreatures false true =>
+    match g.attachedHost? sourceId with
+    | some host => if host.isOnBattlefield then some #[host] else someEmpty
+    | none => someEmpty
+  | .sourceOrTappedState true true =>
+    let id := g.recordedCauseId.orElse (fun _ => g.lastBecameTapped)
+    match id.bind onBf with
+    | some o => if o.status.tapped then some #[o] else someEmpty
+    | none => someEmpty
+  | .oppPairOrPutArtifact false true =>
+    some (g.battlefield.filter fun o =>
+      !o.controlledBy controller && (o.isCreature || o.printed.isPlaneswalker))
+  | .oppPairOrPutArtifact false false =>
+    some (g.battlefield.filter fun o =>
+      !o.controlledBy controller && (o.types.contains .artifact || o.types.contains .enchantment))
+  | .stepNotedPermanent true false =>
+    match g.permanentDealtDamageThisWay.bind onBf with
+    | some o => some #[o]
+    | none => someEmpty
+  | .attackersFilter false true =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && o.status.attacking &&
+        g.battlefield.any (fun eq => eq.attachedTo == some o.id))
+  | .combatOrHasteCreature true false =>
+    match g.attackingAlone? controller with
+    | some o => some #[o]
+    | none => someEmpty
+  | .stepNotedPermanent false true =>
+    match g.equipmentAttachedHost.bind onBf with
+    | some o => some #[o]
+    | none => someEmpty
+  | .stepNotedPermanent true true =>
+    match g.notedHostId.bind onBf with
+    | some o => some #[o]
+    | none => someEmpty
+  | .filteredCreaturesYouControl true false =>
+    some ((g.permanentsOf controller).filter fun o => o.isCreature && o.isLegendary)
+  | .excludedOrGreatestPermanents false false =>
+    -- The causing Forest's id is this trigger's last-known power.
+    let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
+    some ((g.permanentsOf controller).filter fun o =>
+      g.hasSubtype o "Forest" && some o.id != cause)
+  | .oppPairOrPutArtifact true false =>
+    match g.putArtifactThisWay with
+    | some (oid, _) =>
+      match onBf oid with
+      | some o => some #[o]
+      | none => someEmpty
+    | none => someEmpty
+  | .oppPairOrPutArtifact true true =>
+    match g.putArtifactThisWay with
+    | some (oid, _) =>
+      match onBf oid with
+      | some o =>
+        if !o.printed.isEquipment then someEmpty else some #[o]
+      | none => someEmpty
+    | none => someEmpty
+  | .sourceOrTappedState false true =>
+    match sourceId.bind onBf with
+    | some o => if o.status.harnessed then some #[o] else someEmpty
+    | none => someEmpty
+  | .otherOrEquipmentYouControl true false =>
+    match sourceId with
+    | some sid =>
+      some ((g.permanentsOf controller).filter fun o =>
+        o.id != sid && (o.isCreature || o.printed.isArtifact))
+    | none => someEmpty
+  | .allCreaturesOrTokens false false =>
+    some (g.battlefield.filter (·.isCreature))
+  | .groupOrTargetPlayerCreatures true true =>
+    match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
+    | some pid => some (g.creaturesControlledBy pid)
+    | none => someEmpty
+  | .excludedOrGreatestPermanents true false =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && !(o.printed.isToken && o.controlledBy controller))
+  | .filteredCreaturesYouControl false true =>
+    some (g.battlefield.filter fun o =>
+      o.isCreature && o.controlledBy controller && o.status.plusOnePlusOne > 0)
+  | .allCreaturesOrTokens true true =>
+    some (g.battlefield.filter fun o =>
+      o.controlledBy controller && o.printed.isToken && g.hasSubtype o "Wizard" &&
+        !g.recentTokenIds.contains o.id)
+  | .allCreaturesOrTokens true false =>
+    some ((g.permanentsOf controller).filter (·.printed.isToken))
+  | .excludedOrGreatestPermanents false true =>
+    some (g.battlefield.filter fun o => o.isCreature && !g.hasKeyword o (·.flying))
+  | .oppPermanents ty =>
+    some (g.battlefield.filter fun o => !o.controlledBy controller && o.types.contains ty)
+  | _ => none
+
 /-- Permanents `who` names. Selectors that name a card, a hand, or a
 choice that has not been offered are `none`. An empty array means the
 selector named permanents and none of them are on the battlefield.
@@ -81,7 +245,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
       | _ => none
   let someEmpty : Option (Array GameObject) := some #[]
   match who with
-  | .source | .sourceIfPresent | .sacrificedSource _ | .plan =>
+  | .source | .sacrificedSource _ | .plan =>
     match sourceId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
@@ -89,91 +253,14 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .target .any | .target .ifPresent | .target .eachPermanent | .target .eachEquipment
     | .target .laterCreature
     | .permanent _ | .announced | .announcedEquipment | .announcedCreature
-    | .optionalCreature | .eachUpToLastKnown | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
+    | .optionalCreature | .artifactEnchantmentOrLand | .creatureOrGraveyardCard =>
     some permanentTargets
-  | .enchanted | .enchantedWhileSource =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        match src.attachedTo.bind onBf with
-        | some host => some #[host]
-        | none => someEmpty
-      else someEmpty
-    | none => someEmpty
   | .whileSource | .target .whileSource =>
     match sourceId.bind onBf with
     | some _ => some permanentTargets
     | none => someEmpty
-  | .cause subtype =>
-    match g.recordedCauseId.bind onBf with
-    | some o =>
-      match subtype with
-      | some s => if g.hasSubtype o s then some #[o] else someEmpty
-      | none => some #[o]
-    | none => someEmpty
-  | .battlefield (.permanentsOfTypeYouControl ty) =>
-    some ((g.permanentsOf controller).filter fun o =>
-      match ty with
-      | .creature => o.isCreature
-      | .land => o.printed.isLand
-      | .planeswalker => o.printed.isPlaneswalker
-      | .artifact => o.printed.isArtifact
-      | _ => o.types.contains ty)
-  | .othersOfSubtype subtype =>
-    some (g.battlefield.filter fun o =>
-      o.controlledBy controller && some o.id != sourceId && g.hasSubtype o subtype)
-  | .opponentsCreatures =>
-    some (g.battlefield.filter fun o => o.isCreature && !o.controlledBy controller)
-  | .blockers =>
-    match sourceId with
-    | some sid => some (g.blockersOf sid)
-    | none => someEmpty
-  | .eachNonSubtypeAndOpponents subtype =>
-    some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
-  | .youControl which =>
-    match which with
-    | .eachCreature | .citysBlessing => some (g.creaturesControlledBy controller)
-    | .subtype s =>
-      some ((g.permanentsOf controller).filter (g.hasSubtype · s))
-  | .eachOther =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && some o.id != sourceId)
-  | .createdToken =>
-    match g.createdTokenThisWay.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
-  | .humans =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
-  | .attackingCreatures =>
-    some (g.battlefield.filter (·.status.attacking))
-  | .equipped =>
-    match g.attachedHost? sourceId with
-    | some host => if host.isOnBattlefield then some #[host] else someEmpty
-    | none => someEmpty
-  | .firstThisTurn =>
-    let id := g.recordedCauseId.orElse (fun _ => g.lastBecameTapped)
-    match id.bind onBf with
-    | some o => if o.status.tapped then some #[o] else someEmpty
-    | none => someEmpty
-  | .oppCreaturesAndPlaneswalkers =>
-    some (g.battlefield.filter fun o =>
-      !o.controlledBy controller && (o.isCreature || o.printed.isPlaneswalker))
-  | .oppArtifactsEnchantments =>
-    some (g.battlefield.filter fun o =>
-      !o.controlledBy controller && (o.types.contains .artifact || o.types.contains .enchantment))
-  | .permanentDealtDamage =>
-    match g.permanentDealtDamageThisWay.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
-  | .equippedAttackers =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && o.status.attacking &&
-        g.battlefield.any (fun eq => eq.attachedTo == some o.id))
-  | .attackingAlone =>
-    match g.attackingAlone? controller with
-    | some o => some #[o]
-    | none => someEmpty
+  | .battlefield b =>
+    g.permanentsNamedBattlefield ctx b
   | .spellTargets =>
     let ids :=
       match g.castTriggerSpell? with
@@ -189,21 +276,10 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
       match onBf id with
       | some o => if o.isCreature then some o else none
       | none => none)
-  | .equipmentHost =>
-    match g.equipmentAttachedHost.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
-  | .noted | .notedHost =>
+  | .noted =>
     match g.notedHostId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .legendaryCreaturesYouControl =>
-    some ((g.permanentsOf controller).filter fun o => o.isCreature && o.isLegendary)
-  | .forestsExceptCause =>
-    -- The causing Forest's id is this trigger's last-known power.
-    let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
-    some ((g.permanentsOf controller).filter fun o =>
-      g.hasSubtype o "Forest" && some o.id != cause)
   | .targetObj (.ofCardType ty) | .target (.targetObj (.ofCardType ty)) =>
     some (permanentTargets.filter fun o =>
       match ty with
@@ -214,51 +290,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     some (permanentTargets.filter fun o =>
       g.hasSubtype o subtype && some o.id != sourceId)
   | .target _ => none
-  | .putArtifact =>
-    match g.putArtifactThisWay with
-    | some (oid, _) =>
-      match onBf oid with
-      | some o => some #[o]
-      | none => someEmpty
-    | none => someEmpty
-  | .putEquipment =>
-    match g.putArtifactThisWay with
-    | some (oid, _) =>
-      match onBf oid with
-      | some o =>
-        if !o.printed.isEquipment then someEmpty else some #[o]
-      | none => someEmpty
-    | none => someEmpty
-  | .harnessedSource =>
-    match sourceId.bind onBf with
-    | some o => if o.status.harnessed then some #[o] else someEmpty
-    | none => someEmpty
-  | .anotherCreatureOrArtifact =>
-    match sourceId with
-    | some sid =>
-      some ((g.permanentsOf controller).filter fun o =>
-        o.id != sid && (o.isCreature || o.printed.isArtifact))
-    | none => someEmpty
-  | .allCreatures =>
-    some (g.battlefield.filter (·.isCreature))
-  | .creaturesOfTargetPlayer =>
-    match ctx.targets.findSome? (fun | Target.player pid => some pid | _ => none) with
-    | some pid => some (g.creaturesControlledBy pid)
-    | none => someEmpty
-  | .nonSubtypeCreatures subtype =>
-    some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
-  | .creaturesExceptYourTokens =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && !(o.printed.isToken && o.controlledBy controller))
-  | .creaturesWithPlusOne =>
-    some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && o.status.plusOnePlusOne > 0)
-  | .wizardTokensExceptRecent =>
-    some (g.battlefield.filter fun o =>
-      o.controlledBy controller && o.printed.isToken && g.hasSubtype o "Wizard" &&
-        !g.recentTokenIds.contains o.id)
-  | .tokensYouControl =>
-    some ((g.permanentsOf controller).filter (·.printed.isToken))
   | .targetAt idx =>
     match ctx.targets[idx]? with
     | some (Target.permanent id) =>
@@ -277,10 +308,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     match permanentTargets.find? (fun o => o.isCreature && o.controlledBy controller) with
     | some o => some #[o]
     | none => someEmpty
-  | .creaturesWithoutFlying =>
-    some (g.battlefield.filter fun o => o.isCreature && !g.hasKeyword o (·.flying))
-  | .oppPermanents ty =>
-    some (g.battlefield.filter fun o => !o.controlledBy controller && o.types.contains ty)
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
   | .union sels =>
@@ -587,8 +614,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .totalFlyingPower | .greatestToughness | .targetPlusOneCounters =>
     let tgt := ctx.targets.findSome? (fun | Target.permanent id => g.findObject? id | _ => none)
     g.boardNumber controller amount tgt
-  | .otherSpellsManaValue | .removedPlusOnes
-  | .chosenX | .stat (.greatestStatSpecial _) => none
+  | _ => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

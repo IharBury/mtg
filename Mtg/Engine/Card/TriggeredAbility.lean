@@ -892,50 +892,100 @@ private def sequenceResolutionPhrase (rs : List TriggerResolution) (noun : Strin
   | _ =>
     "resolve each step"
 
+/-- Effect clause for `Resolution.«if» (.atLeast left right) thenDo` in `resolutionPhrase`. -/
+private def ifAtLeastResolutionPhrase (left right : NumberSelector) (thenDo : TriggerResolution) (noun : String) : String :=
+  match left, right, thenDo with
+  | .creaturesDiedThisTurn, .fixed 3, .becomePrepared .source _ =>
+    "if three or more creatures died this turn, this creature becomes prepared"
+  | .lastKnownPower, .fixed 2, .draw (.fixed 1) _ =>
+    "if you removed two or more loyalty counters to activate it, draw a card"
+  | .count .landsYouControl, .fixed 6, .sequence [.destroy .target _,
+      .createTokens .treasure (.fixed 1) false (.controller .target) _] =>
+    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
+  | .count .forestsExceptCause, .fixed 5, .pump (.fixed 3) (.fixed 3) .target =>
+    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
+  | .cardsDrawnThisTurn, .fixed 2, .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
+    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+  | .count .putEquipment, .fixed 1, .attach .putArtifact .notedHost =>
+    "if it's an Equipment, attach it to this creature"
+  | .count (.intersection [.equipped, .legendaryCreaturesYouControl]), .fixed 1, .grant .attacking .createdToken =>
+    "those tokens are tapped and attacking if that creature is legendary"
+  | .count (.youControl (.subtype "Bear")), .fixed 3, .draw (.fixed 2) _ =>
+    "if you control three or more Bears, draw two cards"
+  | .count .questCounters, .fixed 6, .sequence [.sacrifice (.sacrificedSource .movedAsSacrificed) _, .searchLibrary (.put .dragon .asPrinted .none)] =>
+    "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
+  | .count (.othersOfSubtype "Hero"), .fixed 1, .gainLife (.fixed n) _ _ =>
+    s!"if you control another Hero, you gain {n} life"
+  | .count (.target .creature), .fixed 1, .putCounters (.ofKind .plusOnePlusOne 1) .permanent =>
+    "put a +1/+1 counter on it if it's a creature"
+  | .count (.target .planeswalker), .fixed 1, .putCounters (.ofKind .loyalty 1) .permanent =>
+    "put a loyalty counter on it if it's a planeswalker"
+  | .libraryCards, .fixed 1, .putOnLibrary .shuffled .source =>
+    "Fblthp's owner shuffles him into their library"
+  | .count .harnessedSource, .fixed 1, .exile .target .returnImmediately _ =>
+    "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
+  | _, _, _ =>
+    "if that is true"
+
+/-- Effect clause for `Resolution.«if» cond thenDo` in `resolutionPhrase`. -/
+private def ifResolutionPhrase (cond : ConditionSelector) (thenDo : TriggerResolution) (noun : String) : String :=
+  match cond, thenDo with
+  | .atLeast left right, _ =>
+    ifAtLeastResolutionPhrase left right thenDo noun
+  | .not .preparedSource, .becomePrepared .source _ =>
+    "if this creature isn't prepared, it becomes prepared"
+  | .not (.atLeast (.count .planeswalkersYouControl) (.fixed 1)), .sacrifice (.sacrificedSource .controllerSacrifices) _ =>
+    "if you don't control a planeswalker, sacrifice this creature"
+  | .not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)), .putOnLibrary .bottom .cardFromHand =>
+    "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
+  | .removedHope, .draw (.fixed 1) _ =>
+    "if a hope counter was removed this way, draw a card"
+  | .not .hopeOnSource, .sequence [.sacrifice .source _, .gainLife (.fixed 4) _ _] =>
+    "if this has no hope counters on it, sacrifice it and you gain 4 life"
+  | .dealtDamageToSubtype subtype, .destroy .permanentDealtDamage .none =>
+    s!"if a {subtype} is dealt damage this way, destroy it"
+  | .returnedPermanent, .putCounters (.ofKind .plusOnePlusOne 1) .source =>
+    "if you do, put a +1/+1 counter on this creature"
+  | .nthResolve n, _ =>
+    s!"if this is time {n} this ability has resolved this turn"
+  | .or [.attackedWithSubtype attacked, .subtypeEntered entered], .draw (.fixed 1) _ =>
+    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
+    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
+    s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
+  | .youControlledDestroyed, .draw (.fixed 1) _ =>
+    "if you controlled that creature, draw a card"
+  | .enduringStoryNoted, .dealDamage .discardedHand (.player .eachOpponent) _ =>
+    "if you have an enduring story, this deals X damage to each opponent"
+  | .equipmentAttached, .fight .equipmentHost .reflexive =>
+    "that creature deals damage equal to its power to up to one target creature"
+  | .opponentsMilled, .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying _) =>
+    "when one or more cards are milled this way, exile and copy a card"
+  | .planWasSacrificed, .queueReflexive (.dealDamage (.fixed n) .target .divided) =>
+    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+  | .planWasSacrificed, .queueReflexive _ =>
+    "when you do, the reflexive ability triggers"
+  | .not (.atLeast .libraryCards (.fixed 1)), .winTheGame =>
+    "if your library has no cards in it, you win the game"
+  | .manaSpent, .discard (.cards n _) =>
+    s!"discard {cardPhrase n}"
+  | _, _ =>
+    "if that is true"
+
 /-- Effect clause for `Resolution.chooseModes` (including `.«if»`, `.ifElse`, `.or`) in `resolutionPhrase`. -/
 private def chooseModesResolutionPhrase (t : TriggerTiming) (r : TriggerResolution) (noun : String) : String :=
   match r with
-  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
-    "if this creature isn't prepared, it becomes prepared"
-  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
-    "if three or more creatures died this turn, this creature becomes prepared"
-  | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) =>
-    "if you removed two or more loyalty counters to activate it, draw a card"
-  | .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false (.controller .target)]) =>
-    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
+  | .«if» cond thenDo =>
+    ifResolutionPhrase cond thenDo noun
   | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
     s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
-  | .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) =>
-    "if you don't control a planeswalker, sacrifice this creature"
-  | .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) =>
-    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
-  | .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand) =>
-    "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | .«if» .removedHope (.draw (.fixed 1)) =>
-    "if a hope counter was removed this way, draw a card"
-  | .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)]) =>
-    "if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none) =>
-    s!"if a {subtype} is dealt damage this way, destroy it"
   | .or [.tap .target, .untap .target] =>
     if t.targeting.kind == .nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
       "choose one — tap target creature an opponent controls; untap target creature you control"
-  | .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source) =>
-    "if you do, put a +1/+1 counter on this creature"
-  | .«if» (.nthResolve n) _ =>
-    s!"if this is time {n} this ability has resolved this turn"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
-  | .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
-    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .«if» (.or [.attackedWithSubtype attacked, .subtypeEntered entered]) (.draw (.fixed 1)) =>
-    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
-    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
-    s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
   | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
@@ -945,44 +995,8 @@ private def chooseModesResolutionPhrase (t : TriggerTiming) (r : TriggerResoluti
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost) =>
-    "if it's an Equipment, attach it to this creature"
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
-  | .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken) =>
-    "those tokens are tapped and attacking if that creature is legendary"
-  | .«if» .youControlledDestroyed (.draw (.fixed 1)) =>
-    "if you controlled that creature, draw a card"
-  | .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent)) =>
-    "if you have an enduring story, this deals X damage to each opponent"
-  | .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2)) =>
-    "if you control three or more Bears, draw two cards"
-  | .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)]) =>
-    "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
-  | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
-    "that creature deals damage equal to its power to up to one target creature"
-  | .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) =>
-    "when one or more cards are milled this way, exile and copy a card"
-  | .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided)) =>
-    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .«if» .planWasSacrificed (.queueReflexive _) =>
-    "when you do, the reflexive ability triggers"
-  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed n)) =>
-    s!"if you control another Hero, you gain {n} life"
-  | .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
-    "put a +1/+1 counter on it if it's a creature"
-  | .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent) =>
-    "put a loyalty counter on it if it's a planeswalker"
-  | .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame =>
-    "if your library has no cards in it, you win the game"
-  | .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source) =>
-    "Fblthp's owner shuffles him into their library"
-  | .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) =>
-    "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | .«if» .manaSpent (.discard (.cards n)) =>
-    s!"discard {cardPhrase n}"
-  | .«if» _ _ =>
-    "if that is true"
   | .ifElse _ _ _ =>
     "if that is true"
   | .or _ =>

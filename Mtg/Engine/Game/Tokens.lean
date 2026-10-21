@@ -556,7 +556,7 @@ def tokenPrinted (k : TokenKind) (size : Nat := 0) : CardDef :=
         { effect := { resolution := .grant .explored .source, phrase := "You explore." }
           cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
   | .rogue => creatureToken "Rogue" #["Rogue"] 2 2 (some .black)
-  | .incubator => {
+  | _ => {
       name := "Incubator"
       types := #[.artifact]
       isToken := true

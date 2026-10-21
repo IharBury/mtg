@@ -254,9 +254,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match how with
       | .oneUnusedThisTurn => src.status.allianceModesChosen
       | .vision => src.status.modesChosenThisTurn
-      | .oneUnused | .one | .presetMode _ | .fromLastKnown
-        | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ =>
-        src.status.chosenModes
+      | _ => src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
     | none => g.logMsg "The ability is removed from the stack with no effect"
@@ -268,8 +266,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
         | .vision =>
           g.logMsg "The Vision's ability is removed from the stack with no effect"
-        | .oneUnused | .one | .presetMode _ | .fromLastKnown
-          | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ =>
+        | _ =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -292,8 +289,7 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               pending := .fraChoice p (.visionMode src.id available)
               chooseModesRest := some rest }.logMsg
             "Choose one that hasn't been chosen this turn"
-        | .one | .presetMode _ | .fromLastKnown
-          | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ => g
+        | _ => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -1308,9 +1304,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           objs.foldl (fun game o =>
             game.copyMissingKeywordCounters (game.object! o.id) other) g
       | _, _ => g
-    | .plusOneFromNote _ true | .copiedCounters _ | .plusOneDynamic _ _ _
-    | .minusOneGreatestGraveyardMv | .stunRemovedLoyalty
-    | .eachKindOnIt _ | .remove _ => g
+    | _ => g
 
 /-- Resolve `TriggerResolution.createTokens`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is created
@@ -1605,7 +1599,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       g.withSourceOnBattlefield sourceId (fun g src =>
         mark (g.sacrificeToGraveyard src
           s!"{(g.player controller).name} sacrifices {src.name}"))
-    | .movedAsSacrificed =>
+    | _ =>
       g.withTriggerSource sourceId fun g src =>
         let name := src.name
         let (g, _) := g.move src.id (.graveyard src.owner) none
@@ -1669,13 +1663,13 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match note with
         | .noted => { g with thisWay := { g.thisWay with sourceWasSacrificed := false } }
         | .forReflexive => { g with thisWay := { g.thisWay with planWasSacrificed := false } }
-        | .none | .ifYouDoCreateBeast | .eyeOfJaceIfSevenInGy => g
+        | _ => g
       objs.foldl (fun g o =>
         let g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
         match note with
         | .noted => { g with thisWay := { g.thisWay with sourceWasSacrificed := true } }
         | .forReflexive => { g with thisWay := { g.thisWay with planWasSacrificed := true } }
-        | .none | .ifYouDoCreateBeast | .eyeOfJaceIfSevenInGy => g) g
+        | _ => g) g
 
 /-- Resolve `TriggerResolution.attach`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -1821,7 +1815,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
         o.isLegendary && g.hasSubtype o "Wizard")).size * 2)
     | .lastKnown => some (lastKnownPower.getD 0).toNat
     | .greatestAttackingPower => some (g.greatestPowerAmongAttacking controller).toNat
-    | .causingSpell => some (g.castSpellManaValue controller lastKnownPower)
+    | _ => some (g.castSpellManaValue controller lastKnownPower)
   match origin, maxMv, cost, note with
   | .graveyard, .unlimited, .pay, .exileInstead =>
     let eligible := (g.player controller).graveyard.filter (fun id =>
@@ -2232,12 +2226,12 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let g :=
         match note with
         | .returnedPermanent => { g with thisWay := { g.thisWay with returnedPermanentThisWay := false } }
-        | .none | .delayedBirds => g
+        | _ => g
       objs.foldl (fun g o =>
         let g := g.returnToHand o.id o.owner
         match note with
         | .returnedPermanent => { g with thisWay := { g.thisWay with returnedPermanentThisWay := true } }
-        | .none | .delayedBirds => g) g
+        | _ => g) g
 
 /-- Resolve `TriggerResolution.put`. Each printed combination keeps
 the behavior of the constructor it replaced. A graveyard card, the top
@@ -2494,18 +2488,6 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
                   phrase :=
                     s!"{f.name} deals damage equal to its power to up to one target creature" }
               g.putReflexiveTrigger controller (some f.id) effect) g
-      | .mutual | .upToOneOther =>
-        match foe? with
-        | some foe =>
-          fighters.foldl (fun g f =>
-            if f.isOnBattlefield && f.isCreature && f.id != foe.id then
-              g.fightCreatures f foe
-            else g) g
-        | none =>
-          fighters.foldl (fun g f =>
-            if f.isOnBattlefield && f.isCreature then
-              g.logMsg s!"{f.name} has nothing to fight"
-            else g) g
       | .timesPower k =>
         match foe? with
         | some foe =>
@@ -2516,6 +2498,18 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
                 let pw := g.power f
                 let n := if pw > 0 then pw * (k : Int) else 0
                 g.dealDamageFrom f.name foe n (source := some f)
+            else g) g
+        | none =>
+          fighters.foldl (fun g f =>
+            if f.isOnBattlefield && f.isCreature then
+              g.logMsg s!"{f.name} has nothing to fight"
+            else g) g
+      | _ =>
+        match foe? with
+        | some foe =>
+          fighters.foldl (fun g f =>
+            if f.isOnBattlefield && f.isCreature && f.id != foe.id then
+              g.fightCreatures f foe
             else g) g
         | none =>
           fighters.foldl (fun g f =>
@@ -3110,7 +3104,7 @@ def applyGrant (g : Game) (ctx : TriggerRead) (ab : TriggeredAbility)
         let g := g.setPlayerControl controller pid
         { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
         sourceId (some "The target is no longer legal")
-    | .untilEotOrNextIfVillain | .multiControl _ => g
+    | _ => g
   | .cascade, .source =>
     let maxMv := (sourceId.bind g.findObject?).map (·.printed.manaCost.manaValue) |>.getD 0
     g.resolveCascade controller maxMv
@@ -3867,7 +3861,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
     | .attackPump =>
       g.attackPumpPerPlains controller
-    | .none => g.queueFollowupReflexive controller sourceId followup
+    | _ => g.queueFollowupReflexive controller sourceId followup
   | .may action follow .ifYouDont =>
     let restCtx : TriggerSequenceRest := {
       controller
@@ -3919,8 +3913,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some r =>
         g.applyTriggeredAbility controller ab sourceId targets dividedDamage
           lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-    | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
-      | .«if» _ | .unlessPays _ => g
+    | _ => g
   | .grant what who =>
     g.applyGrant ctx ab sourceName what who
   | .revealLibrary how thenDo who =>
@@ -3988,9 +3981,8 @@ def resumeTriggerSequence (g : Game) : Game :=
 def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
-  | .presetMode _, _ | .fromLastKnown, _ | .hawkeyeIndices _, _
-  | .numericMode _ _, _ | .one, _ | .conditionalMode _ _, _ => g
-  | _, none => g.logMsg "The ability is removed from the stack with no effect"
+  | .oneUnusedThisTurn, none | .vision, none | .oneUnused, none =>
+    g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=
       { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
@@ -4002,6 +3994,7 @@ def rememberChosenMode (g : Game) (sourceId : ObjectId)
   | .oneUnused, some src =>
     g.setObject { src with status :=
       { src.status with chosenModes := src.status.chosenModes.push mode } }
+  | _, _ => g
 
 /-- Apply one stored `chooseModes` resolution with the ability context from
 the offer. -/

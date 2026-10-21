@@ -385,7 +385,7 @@ def counter (s : Status) : CounterKind → Nat
   | .reach => s.keywordCounters.reach
   | .deathtouch => s.keywordCounters.deathtouch
   | .firstStrike => s.keywordCounters.firstStrike
-  | .doubleStrike => s.keywordCounters.doubleStrike
+  | _ => s.keywordCounters.doubleStrike
 
 /-- Set the count of `kind` counters on this permanent (CR 122.1). -/
 def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
@@ -418,7 +418,7 @@ def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
   | .reach => { s with keywordCounters := { s.keywordCounters with reach := n } }
   | .deathtouch => { s with keywordCounters := { s.keywordCounters with deathtouch := n } }
   | .firstStrike => { s with keywordCounters := { s.keywordCounters with firstStrike := n } }
-  | .doubleStrike => { s with keywordCounters := { s.keywordCounters with doubleStrike := n } }
+  | _ => { s with keywordCounters := { s.keywordCounters with doubleStrike := n } }
 
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=

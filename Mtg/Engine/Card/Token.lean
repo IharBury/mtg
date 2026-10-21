@@ -10,11 +10,20 @@ namespace Mtg.Engine
 
 /-- Non-creature artifact tokens (CR 111.10). -/
 inductive ArtifactToken where
-  /-- Predefined or set-specific artifact token: Treasure (`!alt1 && !alt2 && !setArtifact`), Food (`alt1 && !alt2 && !setArtifact`), Clue (`!alt1 && alt2 && !setArtifact`), Map (`alt1 && alt2 && !setArtifact`), Vibranium (`!alt1 && !alt2 && setArtifact`), Heartwood (`alt1 && !alt2 && setArtifact`), Lotus (`!alt1 && alt2 && setArtifact`), or Incubator (`alt1 && alt2 && setArtifact`). -/
-  | predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false) (setArtifact : Bool := false)
-  /-- Colorless Equipment artifact token: Axe (`!sturdyShield`) or Sturdy Shield (`sturdyShield`). -/
-  | equipment (sturdyShield : Bool := false)
+  /-- Parameterized non-creature artifact token: predefined/set artifact (`!equipment`: Treasure, Food, Clue, Map, Vibranium, Heartwood, Lotus, Incubator) or colorless Equipment (`equipment`: Axe when `!alt1`, Sturdy Shield when `alt1`). -/
+  | artifactTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (setArtifact : Bool := false) (equipment : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace ArtifactToken
+
+@[match_pattern] abbrev predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false)
+    (setArtifact : Bool := false) : ArtifactToken :=
+  .artifactTokenKind alt1 alt2 setArtifact false
+@[match_pattern] abbrev equipment (sturdyShield : Bool := false) : ArtifactToken :=
+  .artifactTokenKind sturdyShield false false true
+
+end ArtifactToken
 
 /-- Artifact creature tokens (CR 111). -/
 inductive ArtifactCreatureToken where
@@ -24,29 +33,49 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Legendary creature tokens (CR 111 / CR 205.4a). -/
 inductive LegendaryToken where
-  /-- 3/3 green Dog named Mowu (`!zabu`) or 2/2 green Cat named Zabu (`zabu`). -/
-  | mowuOrZabu (zabu : Bool := false)
-  /-- 5/5 black Horror Villain named The Void (`!redwing && !galactusOrTigerGod`), 1/1 blue Bird Scout named Redwing (`redwing && !galactusOrTigerGod`), 16/16 black Elder Alien named Galactus (`!redwing && galactusOrTigerGod`), or 4/4 green Cat God named The Tiger God (`redwing && galactusOrTigerGod`). -/
-  | mshLegend (redwing : Bool := false) (galactusOrTigerGod : Bool := false)
+  /-- Parameterized legendary creature token: 3/3 Mowu or 2/2 Zabu (`!msh`) or MSH legendary token (`msh`: The Void, Redwing, Galactus, or The Tiger God). -/
+  | legendaryTokenKind (alt1 : Bool := false) (alt2 : Bool := false) (msh : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace LegendaryToken
+
+@[match_pattern] abbrev mowuOrZabu (zabu : Bool := false) : LegendaryToken :=
+  .legendaryTokenKind zabu false false
+@[match_pattern] abbrev mshLegend (redwing : Bool := false) (galactusOrTigerGod : Bool := false) : LegendaryToken :=
+  .legendaryTokenKind redwing galactusOrTigerGod true
+
+end LegendaryToken
 
 /-- Non-artifact, non-legendary creature tokens (CR 111). -/
 inductive CreatureToken where
-  /-- White 1/1 or green creature token: Human Soldier (`!alt1 && !alt2 && !green`), Soldier (`alt1 && !alt2 && !green`), Human (`!alt1 && alt2 && !green`), Warrior (`alt1 && alt2 && !green`), 2/2 Wolf (`!alt1 && !alt2 && green`), 2/2 Bear (`alt1 && !alt2 && green`), 1/1 Elf (`!alt1 && alt2 && green`), or 1/1 Squirrel (`alt1 && alt2 && green`). -/
-  | whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false) (green : Bool := false)
-  /-- White flying or blue creature token: 1/1 Spirit (`!alt1 && !alt2 && !blue`), 4/4 Bird Soldier (`alt1 && !alt2 && !blue`), 4/4 Angel (`!alt1 && alt2 && !blue`), 2/1 Insect (`alt1 && alt2 && !blue`), 3/3 blue Angel (`!alt1 && !alt2 && blue`), 1/1 Illusion (`alt1 && !alt2 && blue`), 1/1 Merfolk (`!alt1 && alt2 && blue`), or X/X Shark (`alt1 && alt2 && blue`). -/
-  | whiteFlyingOrBlue (alt1 : Bool := false) (alt2 : Bool := false) (blue : Bool := false)
-  /-- Red flying Dragon (`!leviathan`: 6/6 when `!alt`, 5/5 when `alt`) or blue hexproof Leviathan (`leviathan`: 6/5 when `!alt`, 8/8 when `alt`). -/
-  | dragonOrLeviathan (alt : Bool := false) (leviathan : Bool := false)
-  /-- Red or alignment/keyword creature token: 2/2 Dwarf (`!alt1 && !alt2 && !alignment`), 1/1 Goblin (`alt1 && !alt2 && !alignment`), 0/1 Kobold (`!alt1 && alt2 && !alignment`), 1/1 Alien (`alt1 && alt2 && !alignment`), 3/2 Hero (`!alt1 && !alt2 && alignment`), 2/1 Villain (`alt1 && !alt2 && alignment`), 0/4 Wall (`!alt1 && alt2 && alignment`), or 4/4 Beast (`alt1 && alt2 && alignment`). -/
-  | redOrAlignment (alt1 : Bool := false) (alt2 : Bool := false) (alignment : Bool := false)
-  /-- 1/1 green Insect (`!moloid && !cadetOrCitizen`), 1/1 green Minion named Moloid (`moloid && !cadetOrCitizen`), 2/2 colorless Wizard Soldier named Cadet (`!moloid && cadetOrCitizen`), or 1/1 green and white Citizen (`moloid && cadetOrCitizen`). -/
-  | otherCreature (moloid : Bool := false) (cadetOrCitizen : Bool := false)
-  /-- 2/2 white Cat Soldier named Ajani's Pridemate (`!forestTentacle`) or 3/3 green Forest Tentacle land creature (`forestTentacle`). -/
-  | fraCreature (forestTentacle : Bool := false)
-  /-- A 2/2 black Rogue creature token. -/
-  | rogue
+  /-- Parameterized non-artifact, non-legendary creature token (CR 111). -/
+  | creatureTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (alt3 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace CreatureToken
+
+@[match_pattern] abbrev whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false)
+    (green : Bool := false) : CreatureToken :=
+  .creatureTokenKind alt1 alt2 green false false false
+@[match_pattern] abbrev whiteFlyingOrBlue (alt1 : Bool := false) (alt2 : Bool := false)
+    (blue : Bool := false) : CreatureToken :=
+  .creatureTokenKind alt1 alt2 blue true false false
+@[match_pattern] abbrev dragonOrLeviathan (alt : Bool := false)
+    (leviathan : Bool := false) : CreatureToken :=
+  .creatureTokenKind alt leviathan false false true false
+@[match_pattern] abbrev redOrAlignment (alt1 : Bool := false) (alt2 : Bool := false)
+    (alignment : Bool := false) : CreatureToken :=
+  .creatureTokenKind alt1 alt2 alignment true true false
+@[match_pattern] abbrev otherCreature (moloid : Bool := false)
+    (cadetOrCitizen : Bool := false) : CreatureToken :=
+  .creatureTokenKind moloid cadetOrCitizen false false false true
+@[match_pattern] abbrev fraCreature (forestTentacle : Bool := false) : CreatureToken :=
+  .creatureTokenKind forestTentacle false false true false true
+@[match_pattern] abbrev rogue : CreatureToken :=
+  .creatureTokenKind false false false false true true
+
+end CreatureToken
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
 cards reconstruct printed “create a …” lines. -/
@@ -200,7 +229,7 @@ def oracleNoun : TokenKind → String
   | .goblin => "1/1 red Goblin creature token"
   | .map => "Map token"
   | .rogue => "2/2 black Rogue creature token"
-  | .incubator => "Incubator token"
+  | _ => "Incubator token"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

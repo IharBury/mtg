@@ -11,42 +11,65 @@ namespace Mtg.Engine
 
 /-- A keyword counter a permanent can have (CR 122.1b). -/
 inductive KeywordCounter where
-  | trample
-  | indestructible
-  | lifelink
-  | shadow
-  | haste
-  | vigilance
-  | flying
-  | menace
-  | reach
-  | deathtouch
-  | firstStrike
-  | doubleStrike
+  /-- Parameterized keyword counter: trample (`(false, false, false, false)`), indestructible (`(true, false, false, false)`), lifelink (`(false, true, false, false)`), shadow (`(true, true, false, false)`), haste (`(false, false, true, false)`), vigilance (`(true, false, true, false)`), flying (`(false, true, true, false)`), menace (`(true, true, true, false)`), reach (`(false, false, false, true)`), deathtouch (`(true, false, false, true)`), firstStrike (`(false, true, false, true)`), or doubleStrike (`(true, true, false, true)`). -/
+  | keywordCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (alt3 : Bool := false) (alt4 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace KeywordCounter
+
+@[match_pattern] abbrev trample : KeywordCounter := .keywordCounterKind false false false false
+@[match_pattern] abbrev indestructible : KeywordCounter := .keywordCounterKind true false false false
+@[match_pattern] abbrev lifelink : KeywordCounter := .keywordCounterKind false true false false
+@[match_pattern] abbrev shadow : KeywordCounter := .keywordCounterKind true true false false
+@[match_pattern] abbrev haste : KeywordCounter := .keywordCounterKind false false true false
+@[match_pattern] abbrev vigilance : KeywordCounter := .keywordCounterKind true false true false
+@[match_pattern] abbrev flying : KeywordCounter := .keywordCounterKind false true true false
+@[match_pattern] abbrev menace : KeywordCounter := .keywordCounterKind true true true false
+@[match_pattern] abbrev reach : KeywordCounter := .keywordCounterKind false false false true
+@[match_pattern] abbrev deathtouch : KeywordCounter := .keywordCounterKind true false false true
+@[match_pattern] abbrev firstStrike : KeywordCounter := .keywordCounterKind false true false true
+@[match_pattern] abbrev doubleStrike : KeywordCounter := .keywordCounterKind true true false true
+
+end KeywordCounter
 
 /-- A rule-defined non-keyword counter a permanent can have (CR 122.1c–d / CR 306.5 / CR 714). -/
 inductive RuleCounter where
-  | loyalty
-  | stun
-  | shield
-  | finality
-  | lore
-  | time
+  /-- Parameterized rule counter: loyalty (`(false, false, false)`), stun (`(true, false, false)`), shield (`(false, true, false)`), finality (`(true, true, false)`), lore (`(false, false, true)`), or time (`(true, false, true)`). -/
+  | ruleCounterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace RuleCounter
+
+@[match_pattern] abbrev loyalty : RuleCounter := .ruleCounterKind false false false
+@[match_pattern] abbrev stun : RuleCounter := .ruleCounterKind true false false
+@[match_pattern] abbrev shield : RuleCounter := .ruleCounterKind false true false
+@[match_pattern] abbrev finality : RuleCounter := .ruleCounterKind true true false
+@[match_pattern] abbrev lore : RuleCounter := .ruleCounterKind false false true
+@[match_pattern] abbrev time : RuleCounter := .ruleCounterKind true false true
+
+end RuleCounter
 
 /-- A named ability or card counter a permanent can have (CR 122.1). -/
 inductive NamedCounter where
-  | hope
-  | charge
-  | plan
-  | burden
-  | quest
-  | invasion
-  | influence
-  | hone
-  | story
+  /-- Parameterized named counter: hope (`(false, false, false, false)`), charge (`(true, false, false, false)`), plan (`(false, true, false, false)`), burden (`(true, true, false, false)`), quest (`(false, false, true, false)`), invasion (`(true, false, true, false)`), influence (`(false, true, true, false)`), hone (`(true, true, true, false)`), or story (`(false, false, false, true)`). -/
+  | namedCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (alt3 : Bool := false) (alt4 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace NamedCounter
+
+@[match_pattern] abbrev hope : NamedCounter := .namedCounterKind false false false false
+@[match_pattern] abbrev charge : NamedCounter := .namedCounterKind true false false false
+@[match_pattern] abbrev plan : NamedCounter := .namedCounterKind false true false false
+@[match_pattern] abbrev burden : NamedCounter := .namedCounterKind true true false false
+@[match_pattern] abbrev quest : NamedCounter := .namedCounterKind false false true false
+@[match_pattern] abbrev invasion : NamedCounter := .namedCounterKind true false true false
+@[match_pattern] abbrev influence : NamedCounter := .namedCounterKind false true true false
+@[match_pattern] abbrev hone : NamedCounter := .namedCounterKind true true true false
+@[match_pattern] abbrev story : NamedCounter := .namedCounterKind false false false true
+
+end NamedCounter
 
 /-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
 inductive CounterKind where
@@ -123,7 +146,7 @@ def oracleName : CounterKind → String
   | .reach => "reach"
   | .deathtouch => "deathtouch"
   | .firstStrike => "first strike"
-  | .doubleStrike => "double strike"
+  | _ => "double strike"
 
 /-- Every counter kind, in constructor order. -/
 def all : List CounterKind := [

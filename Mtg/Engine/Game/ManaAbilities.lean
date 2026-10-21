@@ -179,6 +179,7 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
         else
           (g.permanentsOf p).filter (fun land => land.printed.isLand && land.id != o.id)
       #[{ output := .colorAmong (g.landsCouldProduce lands) }]
+    | _ => #[]
   simple ++ fromAbility
 
 /-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
