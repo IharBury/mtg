@@ -1149,22 +1149,16 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       if acc.size < 2 && !acc.any (·.name == o.name) then acc.push o else acc) #[]
     .choosePermanents (picks.map (·.id))
   | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
-  | .mayThen .. => .accept
+  | .mayThen .. | .mayMoveAllCounters .. | .mayDrawThenDiscard ..
+  | .mayCreateTokens .. | .mayBecomeBasePT .. | .mayTapSourceThen ..
+  | .mayCastCascade .. | .visionQuestZones .. | .riddlesChoosePile .. => .accept
   | .mayPayThen n .. =>
     if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
-  | .mayDiscardThen .. => .decline
-  | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .discardThen .. | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
   | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
-  | .maySacrificeThen .. => .decline
-  | .mayMovePlusOne _ => .decline
   | .exileFromRevealedHand victim _ =>
     .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
-  | .castCopiesFree .. => .decline
-  | .allianceMode _ available =>
-    match available[0]? with
-    | some m => .chooseMode m
-    | none => .decline
-  | .gollumMode _ available =>
+  | .allianceMode _ available | .gollumMode _ available | .visionMode _ available =>
     match available[0]? with
     | some m => .chooseMode m
     | none => .decline
@@ -1177,12 +1171,12 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
       | some i => .chooseMode i
       | none => .decline
-  | .chooseKeyword .. => .chooseMode 0
-  | .chooseColor _ => .chooseMode 0
+  | .chooseKeyword .. | .chooseColor _ | .chooseCreatureType _
+  | .addManaColors .. | .blackGatePlayer .. | .hydeMode _
+  | .oddOrEvenDestroy _ | .palisadeCreatureType _ | .entersOddEven _ => .chooseMode 0
   | .sacrificeCreatureEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
   | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
-  | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
       (fun a b => g.power a > g.power b)
@@ -1194,28 +1188,16 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | some pick =>
       .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
     | none => .decline
-  | .mayPayPickThen .. => .decline
-  | .chooseCreatureType _ => .chooseMode 0
-  | .maySacrificeAnotherCreatureForPower _ => .decline
-  | .maySacrificeAnotherForDrawTreasure _ => .decline
-  | .maySacrificeThese _ _ => .decline
-  | .mayDiscardThese _ _ => .decline
-  | .mayPaySymbolsThen symbols .. =>
+  | .mayPaySymbolsThen symbols .. | .mayPayManaForReflexive symbols _ _ _ =>
     if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
   | .attachAnyEquipment _ eligible => .choosePermanents eligible
-  | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
-  | .addManaColors .. => .chooseMode 0
+  | .chooseCreatureFrom ids _ | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
   | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
   | .mayPayExtort _ =>
     if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
-  | .mayDrawThenDiscard .. => .accept
-  | .mayCreateTokens .. => .accept
-  | .mayBecomeBasePT .. => .accept
   | .mayRevealToHand _ eligible _ =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
-  | .nickFuryPut _ _ => .decline
-  | .nickFuryMayTransform _ _ => .decline
-  | .orderLibraryBottom ids => .choosePermanents ids
+  | .arrangeCards ids _ => .choosePermanents ids
   | .chooseCards ids max purpose =>
     match purpose with
     | .amassArmy .. =>
@@ -1239,50 +1221,18 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       let yours := ids.filter (fun id => (g.findObject? id).any (·.controlledBy p))
       let pick := if yours.isEmpty then ids else yours
       .choosePermanents (pick.extract 0 max)
-  | .blackGatePlayer _ _ => .chooseMode 0
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
-  | .mayPayManaForReflexive cost _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
-  | .mayTapSourceThen .. => .accept
   | .hawkeyeModes _ chosen _ =>
     match [1, 0, 2].find? (!chosen.contains ·) with
     | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then .decline
       else .chooseMode m
     | none => .decline
-  | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
-  | .mayCastCascade .. => .accept
-  | .mayCastGrima .. => .decline
-  | .palantirMayDraw .. => .decline
-  | .mayCastCopy _ => .decline
-  | .mayDiscardHandBalin _ => .decline
-  | .mayDiscardHandDrawFixed _ => .decline
-  | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
-  | .mayCastInstantSorceryFromHand _ => .decline
-  | .mayCastUpToFromExile _ _ => .decline
-  | .hydeMode _ => .chooseMode 0
-  | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
-  | .sheHulkMayDamage .. => .decline
-  | .widowMayCounter .. => .decline
-  | .ultronMayPay _ => .decline
-  | .visionMode _ available =>
-    match available[0]? with
-    | some m => .chooseMode m
-    | none => .decline
-  | .moonstoneMayExile _ => .decline
   | .tricksterLibrary .. => .chooseTop
-  | .mayTakeMilled _ _ => .decline
-  | .mayDrawThenEachOpponentDraws _ => .decline
-  | .mayPutHeroFromHandOrDraw _ => .decline
-  | .oddOrEvenDestroy _ => .chooseMode 0
-  | .visionQuestZones _ _ _ => .accept
   | .visionQuestPick ids _ _ =>
     match ids[0]? with
     | some id => .choosePermanents #[id]
     | none => .decline
-  | .kingpinMayPay2Life => .decline
-  | .daredevilMayExile _ => .decline
-  | .mayChangeSpellTarget .. => .decline
   | .mayCastCards eligible withoutPaying _ =>
     if withoutPaying then
       match eligible[0]? with
@@ -1304,12 +1254,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     if eligible.isEmpty then .decline else .accept
   | .searchLibrary eligible count .. =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
-  | .newTargetsForCopies _ => .decline
-  | .riddlesSplit looked => .choosePermanents looked
-  | .riddlesChoosePile .. => .accept
-  | .palisadeCreatureType _ => .chooseMode 0
-  | .worldsPutCreatures .. => .decline
-  | .revealPutCreatures .. => .decline
   | .zemoBoastExile .. =>
     .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))
@@ -1324,8 +1268,16 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         o.subtypes.foldl (fun acc s =>
           if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD "Human")
-  | .entersOddEven _ => .chooseMode 0
-  | .mayBeginOnBattlefield _ => .decline
+  | .mayDiscardThen .. | .maySacrificeThen .. | .mayObjectAction ..
+  | .castCopiesFree .. | .maySacrificeAnother .. | .maySacrificeThese ..
+  | .mayDiscardOrCastUpTo .. | .mayPayPickThen .. | .nickFuryPut ..
+  | .nickFuryMayTransform .. | .mayCastGrima .. | .palantirMayDraw ..
+  | .mayCastCopy _ | .mayDiscardHandBalin _ | .mayDiscardHandDrawFixed _
+  | .mayCastInstantSorceryFromHand _ | .sheHulkMayDamage .. | .widowMayCounter ..
+  | .moonstoneMayExile _ | .mayTakeMilled .. | .mayDrawThenEachOpponentDraws _
+  | .mayPutHeroFromHandOrDraw _ | .kingpinMayPay2Life | .daredevilMayExile _
+  | .mayChangeSpellTarget .. | .newTargetsForCopies _ | .worldsPutCreatures ..
+  | .revealPutCreatures .. | .mayBeginOnBattlefield _ => .decline
 
 end Game
 end Mtg.Engine

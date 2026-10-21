@@ -233,23 +233,24 @@ structure StartConfig where
   norandom : Bool := false
 
 inductive Action where
-  | pass
-  | playLand (id : ObjectId)
+  /-- Pass priority (`!pay && !keep`), pay locked-in cost (`pay && !keep`), keep opening hand (`!pay && keep`), or declare a London mulligan (`pay && keep`). -/
+  | stepAction (pay : Bool := false) (keep : Bool := false)
+  /-- Play a land (`!keepLegend`) or choose which legendary permanent to keep under the legend rule (`keepLegend`, CR 704.5j). -/
+  | playLandOrKeepLegend (id : ObjectId) (keepLegend : Bool := false)
   | tapForMana (id : ObjectId) (mana : ManaType)
   /-- Activate mana ability `idx` of `id` (CR 605.3), adding exactly `mana`
   and paying costs that need chosen objects with `costIds`, in order. -/
   | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
       (costIds : Array ObjectId := #[])
-  | cast (id : ObjectId)
-  /-- Cast this adventurer card as its Adventure (CR 715.3). -/
-  | castAdventure (id : ObjectId)
+  /-- Cast `id` (as its Adventure if `adventure`, CR 715.3). -/
+  | castCard (id : ObjectId) (adventure : Bool := false)
   /-- Cast this card for its sneak cost, returning the unblocked attacker
   `attackerId` you control to hand as part of the cost (MSH sneak). -/
   | castWithSneak (id attackerId : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
-  /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/
-  | chooseX (n : Nat)
+  /-- Announce a value for `{X}` (`!supplyRandom`, CR 107.3a / 601.2b) or supply an index for a pending `chooseIndex` random event (`supplyRandom`). -/
+  | chooseNumber (n : Nat) (supplyRandom : Bool := false)
   /-- Announce a target for the current instance of the word “target”
   (CR 601.2c). For a divided-damage ability, assigns all remaining damage
   to this one target (CR 601.2d). For “one or two target creatures”, this
@@ -264,12 +265,8 @@ inductive Action where
   | divideDamage (assignments : Array (Target × Nat))
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
-  /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
-  | pay
-  /-- After `pay`, sacrifice an artifact or creature to finish paying
-  (CR 601.2h / 602.2b), a creature a resolved trigger requires, or a creature
-  as a resolving effect. -/
-  | sacrifice (id : ObjectId)
+  /-- Sacrifice an object (`!discard`, CR 701.17) or discard a card from hand (`discard`, CR 701.9). -/
+  | sacrificeOrDiscard (id : ObjectId) (discard : Bool := false)
   /-- Choose to pay extra generic mana rather than the non-mana option
   (sacrifice or discard) as an additional cost (CR 601.2b). `true` pays
   the generic alternative; `false` sacrifices or discards. -/
@@ -286,58 +283,56 @@ inductive Action where
   legal default; listed sources must divide their power among legal creature
   recipients (and leftover to the defending player only with trample). -/
   | assignCombatDamage (assignments : Array CreatureCombatAssignment)
-  /-- Keep this hand as the opening hand (CR 103.5). -/
-  | keep
-  /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
-  | keepLegend (id : ObjectId)
-  /-- Put waiting triggered abilities on the stack in this source order
-  (first listed is put first, so it is farthest from the top) (CR 603.3b). -/
-  | stackTriggers (ids : Array ObjectId)
-  /-- Declare a London mulligan; it is taken after every remaining player has
-  declared (CR 103.5). -/
-  | takeMulligan
-  /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
-  | putOnBottom (ids : Array ObjectId)
-  /-- Finish scrying: `top` (last = new top) go on top of the library in that
-  order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
-  | scry (top : Array ObjectId) (bottom : Array ObjectId)
-  /-- Finish surveilling: `top` (last = new top) go on top of the library in
-  that order; `graveyard` go to the graveyard in that order (CR 701.25). -/
-  | surveil (top : Array ObjectId) (graveyard : Array ObjectId)
-  /-- Discard this card from hand; if a pending “may discard, then draw” is
-  waiting, draw afterward (CR 701.9). -/
-  | discard (id : ObjectId)
-  /-- Decline an optional “you may discard a card”, or choose no target for an
-  “up to one” trigger (CR 608.2d / 601.2c). -/
-  | decline
-  /-- Agree to an optional action offered while an effect resolves. -/
-  | accept
-  /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
-  | haveVillainConnive
-  /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
-  | payGeneric
-  /-- Put the pending card on top of its owner's library. -/
-  | chooseTop
-  /-- Put the pending card on the bottom of its owner's library. -/
-  | chooseBottom
-  /-- Attach this Equipment, or tap these Humans. -/
-  | choosePermanents (ids : Array ObjectId)
-  /-- Pay (`true`) or decline (`false`) the optional kicker cost. -/
-  | announceKicker (kick : Bool)
+  /-- Attach Equipment / tap Humans / select objects (`!stackTriggers`), or put waiting triggered abilities on the stack in this source order (`stackTriggers`, CR 603.3b). -/
+  | chooseObjects (ids : Array ObjectId) (stackTriggers : Bool := false)
+  /-- Put cards on the bottom after a mulligan (`!supplyRandom`), or supply the order/chosen object for a pending random event (`supplyRandom`). -/
+  | orderCards (ids : Array ObjectId) (supplyRandom : Bool := false)
+  /-- Finish scrying (`!surveil`, CR 701.20) or surveilling (`surveil`, CR 701.25). -/
+  | lookLibrary (top rest : Array ObjectId) (surveil : Bool := false)
+  /-- Decline (`!accept && !villainConnive`), accept (`accept && !villainConnive`), have the entering Villain connive (`!accept && villainConnive`), or pay a pending generic cost (`accept && villainConnive`). -/
+  | choiceResponse (accept : Bool := false) (villainConnive : Bool := false)
+  /-- Put the pending card on top (`top = true`) or on the bottom (`top = false`) of its owner's library. -/
+  | chooseLibrarySide (top : Bool := true)
+  /-- Pay (`true`) or decline (`false`) the optional kicker (`!teamwork`, CR 702.32) or teamwork (`teamwork`, CR 702.194) cost. -/
+  | announceOptionalCost (pay : Bool) (teamwork : Bool := false)
   /-- Promise a gift to this opponent, or `none` to decline. -/
   | announceGift (to : Option PlayerId)
-  /-- Pay (`true`) or decline (`false`) the optional teamwork cost. -/
-  | announceTeamwork (pay : Bool)
   /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
   | chooseRingBearer (id : Option ObjectId)
   | concede
-  /-- Supply the order or chosen object for a pending random event
-  (`--norandom`). An empty list keeps the current order of a shuffle. -/
-  | supplyOrder (ids : Array ObjectId)
-  /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
-  | supplyIndex (i : Nat)
   /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
   | chooseName (name : String)
 deriving Repr
+
+namespace Action
+
+@[match_pattern] abbrev pass : Action := .stepAction false false
+@[match_pattern] abbrev pay : Action := .stepAction true false
+@[match_pattern] abbrev keep : Action := .stepAction false true
+@[match_pattern] abbrev takeMulligan : Action := .stepAction true true
+@[match_pattern] abbrev playLand (id : ObjectId) : Action := .playLandOrKeepLegend id false
+@[match_pattern] abbrev keepLegend (id : ObjectId) : Action := .playLandOrKeepLegend id true
+@[match_pattern] abbrev cast (id : ObjectId) : Action := .castCard id false
+@[match_pattern] abbrev castAdventure (id : ObjectId) : Action := .castCard id true
+@[match_pattern] abbrev chooseX (n : Nat) : Action := .chooseNumber n false
+@[match_pattern] abbrev supplyIndex (i : Nat) : Action := .chooseNumber i true
+@[match_pattern] abbrev sacrifice (id : ObjectId) : Action := .sacrificeOrDiscard id false
+@[match_pattern] abbrev discard (id : ObjectId) : Action := .sacrificeOrDiscard id true
+@[match_pattern] abbrev choosePermanents (ids : Array ObjectId) : Action := .chooseObjects ids false
+@[match_pattern] abbrev stackTriggers (ids : Array ObjectId) : Action := .chooseObjects ids true
+@[match_pattern] abbrev putOnBottom (ids : Array ObjectId) : Action := .orderCards ids false
+@[match_pattern] abbrev supplyOrder (ids : Array ObjectId) : Action := .orderCards ids true
+@[match_pattern] abbrev scry (top bottom : Array ObjectId) : Action := .lookLibrary top bottom false
+@[match_pattern] abbrev surveil (top graveyard : Array ObjectId) : Action := .lookLibrary top graveyard true
+@[match_pattern] abbrev decline : Action := .choiceResponse false false
+@[match_pattern] abbrev accept : Action := .choiceResponse true false
+@[match_pattern] abbrev haveVillainConnive : Action := .choiceResponse false true
+@[match_pattern] abbrev payGeneric : Action := .choiceResponse true true
+@[match_pattern] abbrev chooseTop : Action := .chooseLibrarySide true
+@[match_pattern] abbrev chooseBottom : Action := .chooseLibrarySide false
+@[match_pattern] abbrev announceKicker (kick : Bool) : Action := .announceOptionalCost kick false
+@[match_pattern] abbrev announceTeamwork (pay : Bool) : Action := .announceOptionalCost pay true
+
+end Action
 
 end Mtg.Engine

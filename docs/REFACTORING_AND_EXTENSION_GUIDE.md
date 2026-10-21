@@ -102,13 +102,15 @@ The sections below document the remaining duplication left over from earlier per
 
 ---
 
-### Priority 5: Further Parameterize `Pending` (6 Constructors) and `FraChoice` (4 Constructors) Sub-Inductives
+### Priority 5: Further Parameterize `Pending` (6 Constructors), `FraChoice` (4 Constructors), and `Action` (25 Constructors) Sub-Inductives
 - **Files**:
-  - `Mtg/Engine/Game/Pending.lean`
+  - `Mtg/Engine/Game/Player.lean` (`Action`)
+  - `Mtg/Engine/Game/Pending.lean` (`AfterRandom`, `WardCost`, `SearchDest`, `CardChoice`, `LibraryChoice`, `HandGraveyardChoice`, `BattlefieldChoice`, `CostModeChoice`, `TurnCombatPending`, `CastPending`, `ResolvePending`, `FraChoice`, `Pending`)
   - `Mtg/Engine/Game/Decisions.lean`, `Mtg/Engine/Game/FraChoices.lean`, `Mtg/Engine/Game/Actions.lean`, `Mtg/Engine/Game/Leaving.lean`, `Mtg/Engine/Game.lean`
 - **Completed**:
   - Grouped `Pending` from **45 constructors (42 field-bearing)** into **6 constructors (5 field-bearing + 1 nullary)**: `.none`, `.turnCombat (step : TurnCombatPending)`, `.cast (player : PlayerId) (step : CastPending)`, `.resolve (player : PlayerId) (choice : ResolvePending)`, `.fraChoice (player : PlayerId) (choice : FraChoice)`, and `.resolveRandom (req : RandomRequest)`, factoring `player : PlayerId` onto `.cast` and `.resolve` with `@[match_pattern] abbrev` aliases, and simplified `Actions.actor` (`Actions.lean`) and `Leaving.redirectPendingAfterLeave` (`Leaving.lean`) to match `.cast p _`, `.resolve p _`, and `.fraChoice p _` directly.
   - Grouped `FraChoice` from **93 constructors (89 field-bearing)** into **4 field-bearing constructors** aligned with CR zones and choice kinds: `.handGraveyard (c : HandGraveyardChoice)`, `.library (c : LibraryChoice)`, `.battlefield (c : BattlefieldChoice)`, and `.costMode (c : CostModeChoice)` with `@[match_pattern] abbrev` aliases.
+  - Consolidated **64 overlapping constructors** across `Action` (42 → 25 via `stepAction`, `playLandOrKeepLegend`, `castCard`, `chooseNumber`, `sacrificeOrDiscard`, `chooseObjects`, `orderCards`, `lookLibrary`, `choiceResponse`, `chooseLibrarySide`, `announceOptionalCost`), `AfterRandom` (10 → 7 via `playerAmount`, `openingStep`, `playerCards`), `WardCost` (7 → 4 via `manaOrDiscard`, `nonManaWard`), `SearchDest` (8 → 5 via `zoneDest`), `CardChoice` (5 → 4 via `creaturesChoice`), `LibraryChoice` (22 → 19 via `revealSelect`, `arrangeCards`, `searchChoice`), `HandGraveyardChoice` (22 → 18 via `mayExileOrCastCopy`, `discardWithSource`, `mayDiscardOrCastUpTo`, `mayCastZoneCards`), `BattlefieldChoice` (25 → 22 via `mayObjectAction`, `maySacrificeAnother`, `chooseCreatureFrom`), `CostModeChoice` (24 → 17 via `chooseAvailableOption`, `asEntersChoice`, `objectNatChoice`), `TurnCombatPending` (7 → 5 via `declareCombatStep`, `playerStepChoice`), `CastPending` (11 → 5 via `announceStep`, `additionalStep`), and `ResolvePending` (24 → 14 via `resolvePrompt`, `lookLibrary`, `mayCostDraw`, `payOrProliferate`, `objectChoice`, `mayEquipmentOrArtifact`, `payOrExileChoice`, `ringOrLandPrompt`), and collapsed duplicate dispatch arms in `Actions.applyAction`, `Actions.actor`, `FraChoices.defaultFraAction`, and `Game.applyIdle`.
 - **Remaining**:
   1. Replace card-specific sacrifice/discard/pay/cast choice constructors inside `HandGraveyardChoice`, `LibraryChoice`, `BattlefieldChoice`, `CostModeChoice`, and `ResolvePending` with parameterized choice primitives (`selectObjects`, `mayPayCost`, `mayConfirm`, `mayCast`) composed with the pause-aware `.sequence` runner (Priority 4).
 

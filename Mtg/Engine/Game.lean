@@ -199,12 +199,8 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .keep
   | .putOnBottom _ n, some p =>
     mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
-  | .scry _ n, some p =>
-    mustApply g p (.scry (g.scryLookedIds p n) #[])
-  | .surveil _ n, some p =>
-    mustApply g p (.surveil (g.scryLookedIds p n) #[])
-  | .mayDiscardDraw _ _, some p =>
-    mustApply g p .decline
+  | .lookLibrary _ n surveil, some p =>
+    mustApply g p (.lookLibrary (g.scryLookedIds p n) #[] surveil)
   | .chooseTeamwork _, some p =>
     mustApply g p (.announceTeamwork false)
   | .chooseTeamworkCreatures _ need, some p =>
@@ -255,42 +251,24 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
   | .chooseTriggerToStack p, some _ =>
     mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
-  | .mayPayGeneric _ _, some p =>
-    mustApply g p .decline
   | .chooseLibraryPlacement _ _, some p =>
     mustApply g p .chooseBottom
-  | .mayAttachEquipment _ _, some p =>
-    mustApply g p .decline
-  | .mayResolve _, some p =>
-    mustApply g p .decline
-  | .tapHumans _, some p =>
-    mustApply g p .decline
-  | .payOrLetCounter _ _ _, some p =>
-    mustApply g p .decline
-  | .payWard _ _ _, some p =>
-    mustApply g p .decline
   | .recruitDiscard _, some p =>
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"
     | some id => mustApply g p (.discard id)
-  | .maySacrificeAnotherBolg _ _, some p =>
-    mustApply g p .decline
-  | .mayCastFromLooked _ _ _, some p =>
-    mustApply g p .decline
-  | .mayPutLandFromHand _, some p =>
-    mustApply g p .decline
   | .chooseTriggerOr _, some p =>
     mustApply g p (.chooseMode 0)
-  | .maySacArtifactOrDiscard _ _, some p =>
-    mustApply g p .decline
-  | .mayPutArtifactFromHand _ _, some p =>
-    mustApply g p .decline
-  | .mayHaveVillainConnive _ _ _, some p =>
-    mustApply g p .decline
-  | .mayCastExiledElseDamage _ _ _, some p =>
-    mustApply g p .decline
   | .chooseProliferate _ _, some p =>
     mustApply g p (.targets #[])
+  | .mayCostDraw .., some p | .mayPayGeneric .., some p
+  | .mayAttachEquipment .., some p | .mayPutArtifactFromHand .., some p
+  | .mayResolve _, some p | .tapHumans _, some p
+  | .payOrLetCounter .., some p | .mayCastExiledElseDamage .., some p
+  | .payWard .., some p | .maySacrificeAnotherBolg .., some p
+  | .mayCastFromLooked .., some p | .mayPutLandFromHand _, some p
+  | .mayHaveVillainConnive .., some p =>
+    mustApply g p .decline
   | .fraChoice _ choice, some p =>
     mustApply g p (g.defaultFraAction p choice)
   | .chooseTargets _, some p =>

@@ -30,48 +30,55 @@ deriving DecidableEq, Repr, Inhabited, BEq
 applied. The RNG path runs the same work immediately. -/
 inductive AfterRandom where
   | none
-  /-- Draw `n` cards for `p`. -/
-  | draw (p : PlayerId) (n : Nat)
-  /-- `p` gains `n` life. -/
-  | gainLife (p : PlayerId) (n : Nat)
-  /-- Continue CR 103.3 opening shuffles from this seat index. -/
-  | openingShuffles (next : Nat)
+  /-- Draw `n` cards for `p` (`!gainLife`) or have `p` gain `n` life (`gainLife`). -/
+  | playerAmount (p : PlayerId) (n : Nat) (gainLife : Bool := false)
+  /-- Continue CR 103.3 opening shuffles (`!setStarting`) or set starting player to seat `idx` then run opening shuffles (`setStarting`). -/
+  | openingStep (idx : Nat) (setStarting : Bool := false)
   /-- After this player's library is ordered, draw a new opening hand and
   continue simultaneous mulligans for `rest`. -/
   | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
-  /-- Seat `i` takes the first turn; then opening shuffles. -/
-  | setStartingPlayer (i : Nat)
-  /-- Put the chosen creature from `revealed` onto the battlefield, then the
-  other revealed cards on the bottom of `controller`'s library in a random
-  order (Getaway Barrel). -/
-  | revealRandomCreatureThenBottom (controller : PlayerId) (revealed : Array ObjectId)
-  /-- Put these cards on top of `p`'s library after shuffling. -/
-  | putOnTop (p : PlayerId) (ids : Array ObjectId)
+  /-- Put the chosen creature from `ids` onto the battlefield then bottom the rest (`!putOnTop`, Getaway Barrel), or put `ids` on top of `p`'s library after shuffling (`putOnTop`). -/
+  | playerCards (p : PlayerId) (ids : Array ObjectId) (putOnTop : Bool := false)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
   | plusOne (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+namespace AfterRandom
+
+@[match_pattern] abbrev draw (p : PlayerId) (n : Nat) : AfterRandom := .playerAmount p n false
+@[match_pattern] abbrev gainLife (p : PlayerId) (n : Nat) : AfterRandom := .playerAmount p n true
+@[match_pattern] abbrev openingShuffles (next : Nat) : AfterRandom := .openingStep next false
+@[match_pattern] abbrev setStartingPlayer (i : Nat) : AfterRandom := .openingStep i true
+@[match_pattern] abbrev revealRandomCreatureThenBottom (controller : PlayerId) (revealed : Array ObjectId) : AfterRandom :=
+  .playerCards controller revealed false
+@[match_pattern] abbrev putOnTop (p : PlayerId) (ids : Array ObjectId) : AfterRandom := .playerCards p ids true
+
+end AfterRandom
+
 /-- Payment a player may make to stop ward from countering their spell
 (CR 702.21). -/
 inductive WardCost where
-  /-- Ward `{n}`. -/
-  | genericMana (n : Nat)
-  /-- Ward — discard an enchantment, instant, or sorcery card. -/
-  | discardEnchantmentInstantOrSorcery
-  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
-  | sacrificeLegendary
-  /-- Ward — discard a card or pay `{n}`. -/
-  | discardOrPay (n : Nat)
-  /-- Ward — get five poison counters. -/
-  | fivePoison
-  /-- Ward — discard a card. -/
-  | discardCard
+  /-- Ward `{n}` (`!orDiscard`) or Ward — discard a card or pay `{n}` (`orDiscard`). -/
+  | manaOrDiscard (n : Nat) (orDiscard : Bool := false)
+  /-- Non-mana ward cost: discard an enchantment/instant/sorcery (`!sacrificeLegendary && !fivePoison`), sacrifice a legendary artifact/creature (`sacrificeLegendary && !fivePoison`), get five poison counters (`!sacrificeLegendary && fivePoison`), or discard a card (`sacrificeLegendary && fivePoison`). -/
+  | nonManaWard (sacrificeLegendary : Bool := false) (fivePoison : Bool := false)
   /-- Ward — sacrifice `left` more permanents; `paid` were already
   sacrificed, so the cost can no longer be declined. -/
   | sacrificePermanents (left paid : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace WardCost
+
+@[match_pattern] abbrev genericMana (n : Nat) : WardCost := .manaOrDiscard n false
+@[match_pattern] abbrev discardOrPay (n : Nat) : WardCost := .manaOrDiscard n true
+@[match_pattern] abbrev discardEnchantmentInstantOrSorcery : WardCost := .nonManaWard false false
+@[match_pattern] abbrev sacrificeLegendary : WardCost := .nonManaWard true false
+@[match_pattern] abbrev fivePoison : WardCost := .nonManaWard false true
+@[match_pattern] abbrev discardCard : WardCost := .nonManaWard true true
+
+end WardCost
 
 /-- A queued ward obligation waiting to be announced. -/
 structure WardObligation where
@@ -83,15 +90,10 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- Where cards found by a library search go (CR 701.19). -/
 inductive SearchDest where
   | battlefield (tapped : Bool)
-  | hand
-  | graveyard
-  /-- On top of the library after shuffling. -/
-  | topAfterShuffle
+  /-- Put into hand (`!graveyard && !topAfterShuffle`), graveyard (`graveyard && !topAfterShuffle`), on top of library after shuffling (`!graveyard && topAfterShuffle`), or first onto battlefield tapped and second into hand (`graveyard && topAfterShuffle`, Troop of Ponies). -/
+  | zoneDest (graveyard : Bool := false) (topAfterShuffle : Bool := false)
   /-- Exiled, linked to the source. -/
   | exileLinked (sourceId : Option ObjectId)
-  /-- The first chosen card onto the battlefield tapped, the second into the
-  hand (Troop of Ponies). -/
-  | battlefieldTappedThenHand
   /-- Onto the battlefield tapped; you may behold a `subtype`, and if you do,
   untap it (Elven Passage). -/
   | battlefieldTappedBeholdUntap (subtype : String)
@@ -100,22 +102,36 @@ inductive SearchDest where
   | battlefieldFromHandOrLibrary
 deriving DecidableEq, Repr, Inhabited, BEq
 
+namespace SearchDest
+
+@[match_pattern] abbrev hand : SearchDest := .zoneDest false false
+@[match_pattern] abbrev graveyard : SearchDest := .zoneDest true false
+@[match_pattern] abbrev topAfterShuffle : SearchDest := .zoneDest false true
+@[match_pattern] abbrev battlefieldTappedThenHand : SearchDest := .zoneDest true true
+
+end SearchDest
+
 /-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
 inductive CardChoice where
   /-- Put the chosen cards into your hand. `mustOne` requires exactly one
   when any card can be chosen. -/
   | toHand (mustOne : Bool)
-  /-- Put the chosen creature cards onto the battlefield. -/
-  | creaturesToBattlefield
+  /-- Put the chosen creature cards onto the battlefield (`!keepDestroyRest`), or keep the chosen creatures and destroy every other creature (`keepDestroyRest`). -/
+  | creaturesChoice (keepDestroyRest : Bool := false)
   /-- Put the chosen lands onto the battlefield tapped, then shuffle and
   gain `life` life. -/
   | landsTappedGainLife (life : Nat)
-  /-- The chosen creatures are kept. Every other creature is destroyed. -/
-  | keepDestroyRest
   /-- Amass `subtype` `n` onto the chosen Army. `attach` is an Equipment to
   attach afterward (Goblin Plate Mail). -/
   | amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace CardChoice
+
+@[match_pattern] abbrev creaturesToBattlefield : CardChoice := .creaturesChoice false
+@[match_pattern] abbrev keepDestroyRest : CardChoice := .creaturesChoice true
+
+end CardChoice
 
 /-- Library, search, reveal, and draw choices made while an effect resolves (CR 401 / CR 701.19). -/
 inductive LibraryChoice where
@@ -130,27 +146,19 @@ inductive LibraryChoice where
   | extrapolatePick (revealer : PlayerId) (ids : Array ObjectId)
   /-- You may draw `draw` cards; if you do, discard `discard` cards. -/
   | mayDrawThenDiscard (draw discard : Nat)
-  /-- You may reveal one of `eligible` from among the looked-at `looked` and
-  put it into your hand. The rest go on the bottom at random, or in an order
-  you choose when `anyOrder` is true (Avengers Tower). -/
-  | mayRevealToHand (looked eligible : Array ObjectId) (anyOrder : Bool)
+  /-- Reveal one of `eligible` from `looked` to hand (`!putCreatures`, `flag = anyOrder`), or put creature cards from `eligible` onto the battlefield (`putCreatures`, `flag = anyNumber`). -/
+  | revealSelect (looked eligible : Array ObjectId) (flag : Bool) (putCreatures : Bool := false)
   /-- You may put one of `eligible` onto the battlefield (Nick Fury). The rest
   of `looked` go on the bottom in a random order. -/
   | nickFuryPut (looked eligible : Array ObjectId)
   /-- You may transform the double-faced card just put onto the battlefield,
   then the other looked-at cards go on the bottom in a random order. -/
   | nickFuryMayTransform (permanentId : ObjectId) (rest : Array ObjectId)
-  /-- Put these cards on the bottom of your library. The first card is the
-  bottom. Every card must be included. -/
-  | orderLibraryBottom (ids : Array ObjectId)
-  /-- Search: choose up to `count` of `eligible` (or none, CR 701.19b), send
-  them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
-  | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option Resolution) (kind : String)
-  /-- You may search (Old Thrush). Declining does not shuffle. Accepting
-  continues as `searchLibrary`. -/
-  | maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option Resolution) (kind : String)
+  /-- Put `ids` on the bottom of your library (`!splitPiles`), or separate `ids` into face-up and face-down piles (`splitPiles`, Riddles in the Dark). -/
+  | arrangeCards (ids : Array ObjectId) (splitPiles : Bool := false)
+  /-- Search (`!optional`) or optional "you may search" (`optional`, Old Thrush): choose up to `count` of `eligible` (or none, CR 701.19b), send them to `dest`, shuffle, then do `after`. -/
+  | searchChoice (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option Resolution) (kind : String) (optional : Bool := false)
   /-- Palantír of Orthanc: this opponent may have `controller` draw a card.
   Declining mills X cards and this player loses life equal to their mana values. -/
   | palantirMayDraw (controller : PlayerId) (sourceId : ObjectId)
@@ -169,16 +177,9 @@ inductive LibraryChoice where
   | visionQuestPick (ids : Array ObjectId) (x : Nat) (shuffle : Bool)
   /-- You may exile the top card of your library (Daredevil). -/
   | daredevilMayExile (sourceId : Option ObjectId)
-  /-- Separate `looked` into a face-up pile (the chosen cards) and a face-down
-  pile (Riddles in the Dark). An empty pile is legal. -/
-  | riddlesSplit (looked : Array ObjectId)
   /-- An opponent chooses the face-up pile (accept) or the face-down pile
   (decline) for `controller`'s hand. -/
   | riddlesChoosePile (controller : PlayerId) (faceUp faceDown : Array ObjectId)
-  /-- Put creature cards from `creatures` onto the battlefield. At most one
-  when `anyNumber` is false (Earth's Mightiest Heroes). The rest of `looked`
-  go to the graveyard. -/
-  | revealPutCreatures (looked creatures : Array ObjectId) (anyNumber : Bool)
   /-- Choose up to `max` of `ids`. `purpose` says what the chosen cards do. -/
   | chooseCards (ids : Array ObjectId) (max : Nat) (purpose : CardChoice)
   /-- You may begin the game with the first of these cards on the battlefield
@@ -186,18 +187,34 @@ inductive LibraryChoice where
   | mayBeginOnBattlefield (ids : Array ObjectId)
 deriving Repr, Inhabited, BEq
 
+namespace LibraryChoice
+
+@[match_pattern] abbrev mayRevealToHand (looked eligible : Array ObjectId) (anyOrder : Bool) : LibraryChoice :=
+  .revealSelect looked eligible anyOrder false
+@[match_pattern] abbrev revealPutCreatures (looked creatures : Array ObjectId) (anyNumber : Bool) : LibraryChoice :=
+  .revealSelect looked creatures anyNumber true
+@[match_pattern] abbrev orderLibraryBottom (ids : Array ObjectId) : LibraryChoice := .arrangeCards ids false
+@[match_pattern] abbrev riddlesSplit (looked : Array ObjectId) : LibraryChoice := .arrangeCards looked true
+@[match_pattern] abbrev searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option Resolution) (kind : String) : LibraryChoice :=
+  .searchChoice eligible count dest after kind false
+@[match_pattern] abbrev maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
+    (after : Option Resolution) (kind : String) : LibraryChoice :=
+  .searchChoice eligible count dest after kind true
+
+end LibraryChoice
+
 /-- Hand, discard, graveyard, and exile cast choices made while an effect resolves (CR 402 / CR 404 / CR 406). -/
 inductive HandGraveyardChoice where
   /-- Choose a card from `target`'s revealed hand for them to discard: a
   nonland permanent card if `permanentOnly`, else a nonland card. -/
   | discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool)
-  /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
-  | sphinxsApproach (spellId : ObjectId)
+  /-- You may exile `id` and four other cards named Sphinx's Approach (`!castCopy`), or cast this copy of an exiled card without paying its mana cost (`castCopy`, Saruman of Many Colors). -/
+  | mayExileOrCastCopy (id : ObjectId) (castCopy : Bool := false)
   /-- You may discard a card; if you do, do `next`. -/
   | mayDiscardThen (next : Resolution) (sourceId : Option ObjectId)
-  /-- Discard a card (required while you have one), then draw a card and put
-  +1/+1 counters on `causeId` per card discarded this turn. -/
-  | discardThen (causeId : Option ObjectId)
+  /-- Discard a card then draw and put +1/+1 counters on `id` (`!entireHand`), or optionally discard your hand to draw that many cards (`entireHand`, Balin). -/
+  | discardWithSource (id : Option ObjectId) (entireHand : Bool := false)
   /-- Discard `n` cards, then tap and stun up to as many target creatures as
   nonland cards were discarded (Seasoned Cryomancer). -/
   | discardThenStun (n : Nat) (sourceId : Option ObjectId)
@@ -211,12 +228,10 @@ inductive HandGraveyardChoice where
   /-- The choosing opponent discards two cards; `controller` draws a card for
   each opponent who didn't discard two nonland cards. -/
   | discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
-  /-- You may discard `n` of `ids`. Declining pays nothing. -/
-  | mayDiscardThese (n : Nat) (ids : Array ObjectId)
-  /-- You may cast one of these artifact, instant, or sorcery cards from your
-  graveyard, paying its cost (Bilbo, Thief in the Night). An instant or
-  sorcery cast this way is exiled instead of going to the graveyard. -/
-  | mayCastFromGraveyard (eligible : Array ObjectId)
+  /-- You may discard `n` of `ids` (`!castFromExile`), or cast up to `n` more of these exiled cards without paying their mana costs (`castFromExile`, Doom Reigns Supreme). -/
+  | mayDiscardOrCastUpTo (ids : Array ObjectId) (n : Nat) (castFromExile : Bool := false)
+  /-- You may cast one of `eligible` from your graveyard paying its cost (`!fromHand`, Bilbo), or cast an instant/sorcery from `eligible` in hand without paying its mana cost (`fromHand`, Gandalf / Glamdring). -/
+  | mayCastZoneCards (eligible : Array ObjectId) (fromHand : Bool := false)
   /-- You may cast one of these cards. `withoutPaying` skips the mana cost.
   An instant or sorcery is exiled instead of going to the graveyard when
   `exileInstead` is set. -/
@@ -233,20 +248,8 @@ inductive HandGraveyardChoice where
   and `cardId` if it isn't cast, go on the bottom of `victim`'s library
   in a random order. -/
   | mayCastGrima (cardId : ObjectId) (others : Array ObjectId) (victim : PlayerId)
-  /-- You may cast this copy of an exiled card without paying its mana cost.
-  Declining makes the copy cease to exist (Saruman of Many Colors). -/
-  | mayCastCopy (copyId : ObjectId)
-  /-- You may discard your hand. If you do, draw that many cards. With an
-  enduring story, `sourceId` deals that much damage to each opponent (Balin). -/
-  | mayDiscardHandBalin (sourceId : Option ObjectId)
   /-- You may discard your hand. If you do, draw `n` cards (Sauron). -/
   | mayDiscardHandDrawFixed (n : Nat)
-  /-- You may cast one of these instant or sorcery cards from your hand
-  without paying its mana cost (Gandalf, Party Guest; Glamdring). -/
-  | mayCastInstantSorceryFromHand (eligible : Array ObjectId)
-  /-- You may cast up to `left` more of these exiled cards without paying
-  their mana costs (Doom Reigns Supreme). -/
-  | mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat)
   /-- You may exile the discarded card and play it until the end of your next
   turn (Moonstone). -/
   | moonstoneMayExile (cardId : ObjectId)
@@ -254,6 +257,20 @@ inductive HandGraveyardChoice where
   life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
   | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
 deriving Repr, Inhabited, BEq
+
+namespace HandGraveyardChoice
+
+@[match_pattern] abbrev sphinxsApproach (spellId : ObjectId) : HandGraveyardChoice := .mayExileOrCastCopy spellId false
+@[match_pattern] abbrev mayCastCopy (copyId : ObjectId) : HandGraveyardChoice := .mayExileOrCastCopy copyId true
+@[match_pattern] abbrev discardThen (causeId : Option ObjectId) : HandGraveyardChoice := .discardWithSource causeId false
+@[match_pattern] abbrev mayDiscardHandBalin (sourceId : Option ObjectId) : HandGraveyardChoice := .discardWithSource sourceId true
+@[match_pattern] abbrev mayDiscardThese (n : Nat) (ids : Array ObjectId) : HandGraveyardChoice := .mayDiscardOrCastUpTo ids n false
+@[match_pattern] abbrev mayCastUpToFromExile (eligible : Array ObjectId) (left : Nat) : HandGraveyardChoice :=
+  .mayDiscardOrCastUpTo eligible left true
+@[match_pattern] abbrev mayCastFromGraveyard (eligible : Array ObjectId) : HandGraveyardChoice := .mayCastZoneCards eligible false
+@[match_pattern] abbrev mayCastInstantSorceryFromHand (eligible : Array ObjectId) : HandGraveyardChoice := .mayCastZoneCards eligible true
+
+end HandGraveyardChoice
 
 /-- Battlefield, sacrifice, counter, and permanent choices made while an effect resolves (CR 403 / CR 701.17). -/
 inductive BattlefieldChoice where
@@ -263,8 +280,8 @@ inductive BattlefieldChoice where
   if you do, do `next`. -/
   | maySacrificeThen (kind : ObjectSelector) (next : Resolution)
     (sourceId : Option ObjectId)
-  /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
-  | mayMovePlusOne (sourceId : ObjectId)
+  /-- You may remove a +1/+1 counter from `id` (`!ultronPay`, Guiding Hydra), or pay {2} to copy the nontoken artifact `id` that entered (`ultronPay`, Ultron). -/
+  | mayObjectAction (id : ObjectId) (ultronPay : Bool := false)
   /-- Each player sacrifices a creature of their choice; `controller` creates
   a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
   sacrificed together once everyone has chosen. -/
@@ -276,19 +293,15 @@ inductive BattlefieldChoice where
   cost of `vehicleId`'s ability `abilityId` (CR 702.122). Declining cancels
   the activation. -/
   | crew (abilityId vehicleId : ObjectId) (power : Nat)
-  /-- You may sacrifice another creature. If you do, the source gets +1/+1
-  counters equal to that creature's power (Rhovanion Rampager). -/
-  | maySacrificeAnotherCreatureForPower (sourceId : ObjectId)
-  /-- You may sacrifice another creature or artifact. If you do, draw a card
-  and create a Treasure (The Sackville-Bagginses). -/
-  | maySacrificeAnotherForDrawTreasure (sourceId : ObjectId)
+  /-- You may sacrifice another creature for +1/+1 counters equal to its power (`!forDrawTreasure`, Rhovanion Rampager), or sacrifice another creature/artifact to draw a card and create a Treasure (`forDrawTreasure`, The Sackville-Bagginses). -/
+  | maySacrificeAnother (sourceId : ObjectId) (forDrawTreasure : Bool := false)
   /-- You may sacrifice `n` of `ids`. Declining pays nothing. -/
   | maySacrificeThese (n : Nat) (ids : Array ObjectId)
   /-- Choose any number of Equipment to attach to `hostId`. Declining
   attaches none (Thorin, Mountain-king). -/
   | attachAnyEquipment (hostId : ObjectId) (eligible : Array ObjectId)
-  /-- Choose one of the tied least-power creatures to sacrifice. -/
-  | sacrificeLeastPower (ids : Array ObjectId)
+  /-- Choose one of the tied least-power creatures to sacrifice (`!removeCounter`), or remove one counter from one of these creatures then draw (`removeCounter`, Mister Hyde). -/
+  | chooseCreatureFrom (ids : Array ObjectId) (removeCounter : Bool := false)
   /-- Each player in turn sacrifices a nontoken creature of their choice;
   `chosen` are sacrificed together at the end (The Serpent Society). -/
   | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
@@ -304,16 +317,12 @@ inductive BattlefieldChoice where
   (Witch-king of Angmar). -/
   | sacrificeDamager (ids : Array ObjectId) (rest : Array PlayerId)
     (controller : PlayerId)
-  /-- Remove one counter from one of these creatures, then draw (Mister Hyde). -/
-  | hydeRemoveCounter (ids : Array ObjectId)
   /-- You may have The Sensational She-Hulk deal `amount` damage to `target`.
   Accepting is the once-each-turn action (MSH 448). -/
   | sheHulkMayDamage (amount : Int) (target : Target) (sourceId : Option ObjectId)
   /-- You may put a +1/+1 counter on Black Widow. If you don't, you may cast
   `exiled` until end of turn. -/
   | widowMayCounter (sourceId : Option ObjectId) (exiled : Option ObjectId)
-  /-- You may pay {2} to copy the nontoken artifact that entered (Ultron). -/
-  | ultronMayPay (artifactId : ObjectId)
   /-- You may put one of these Hero cards from your hand onto the battlefield.
   If you don't, draw a card (Origin of the Avengers). -/
   | mayPutHeroFromHandOrDraw (ids : Array ObjectId)
@@ -333,33 +342,33 @@ inductive BattlefieldChoice where
   | blackGatePlayer (creatureId : ObjectId) (players : Array PlayerId)
 deriving Repr, Inhabited, BEq
 
+namespace BattlefieldChoice
+
+@[match_pattern] abbrev mayMovePlusOne (sourceId : ObjectId) : BattlefieldChoice := .mayObjectAction sourceId false
+@[match_pattern] abbrev ultronMayPay (artifactId : ObjectId) : BattlefieldChoice := .mayObjectAction artifactId true
+@[match_pattern] abbrev maySacrificeAnotherCreatureForPower (sourceId : ObjectId) : BattlefieldChoice :=
+  .maySacrificeAnother sourceId false
+@[match_pattern] abbrev maySacrificeAnotherForDrawTreasure (sourceId : ObjectId) : BattlefieldChoice :=
+  .maySacrificeAnother sourceId true
+@[match_pattern] abbrev sacrificeLeastPower (ids : Array ObjectId) : BattlefieldChoice := .chooseCreatureFrom ids false
+@[match_pattern] abbrev hydeRemoveCounter (ids : Array ObjectId) : BattlefieldChoice := .chooseCreatureFrom ids true
+
+end BattlefieldChoice
+
 /-- Cost, mode, enters, and target choices made while an effect resolves (CR 118 / CR 601.2 / CR 614.12 / CR 700.2). -/
 inductive CostModeChoice where
   /-- You may do `next` (accept or decline). -/
   | mayThen (next : Resolution) (sourceId : Option ObjectId)
   /-- You may pay `{n}`; if you do, do `next`. -/
   | mayPayThen (n : Nat) (next : Resolution) (sourceId : Option ObjectId)
-  /-- Choose an Alliance mode of `sourceId` that hasn't been chosen this turn.
-  Answered with `Action.chooseMode` (0 add {G}{G}{G}, 1 +1/+1 counters,
-  2 scry 2 then draw). -/
-  | allianceMode (sourceId : ObjectId) (available : Array Nat)
-  /-- Choose a Gollum mode that hasn't been chosen. Answered with
-  `Action.chooseMode` (0 +1/+1, 1 each opponent loses 2 and you gain 2,
-  2 draw). -/
-  | gollumMode (sourceId : ObjectId) (available : Array Nat)
+  /-- Choose an available mode or keyword option for `objectId`: Alliance mode (`!gollum && !keywordOrVision`), Gollum mode (`gollum && !keywordOrVision`), keyword option (`!gollum && keywordOrVision`), or Vision mode (`gollum && keywordOrVision`). -/
+  | chooseAvailableOption (objectId : ObjectId) (available : Array Nat)
+      (gollum : Bool := false) (keywordOrVision : Bool := false)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
   from `CardDef.fraTriggerModes` of its source. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
-  /-- `objectId` gains your choice of the keywords coded in `options`
-  (0 trample, 1 hexproof, 2 haste, 3 deathtouch) until end of turn. Answered
-  with the index of an option. -/
-  | chooseKeyword (objectId : ObjectId) (options : Array Nat)
-  /-- Choose a color for `objectId` as it enters (white, blue, black, red,
-  green by index). -/
-  | chooseColor (objectId : ObjectId)
-  /-- Choose a nonland card name for `objectId` as it enters (Meddling
-  Mage). Answered with `Action.chooseName`. -/
-  | chooseCardName (objectId : ObjectId)
+  /-- As `objectId` enters (CR 614.12), choose a color (`!cardName && !creatureTypeOrOddEven`), card name (`cardName && !creatureTypeOrOddEven`), creature type (`!cardName && creatureTypeOrOddEven`), or odd/even (`cardName && creatureTypeOrOddEven`). -/
+  | asEntersChoice (objectId : ObjectId) (cardName : Bool := false) (creatureTypeOrOddEven : Bool := false)
   /-- Choose what to pay `picks[0]` of the proposed activation's cost with,
   then the rest (CR 601.2h). `paid` is true once one has been paid, after
   which the activation can no longer be cancelled. -/
@@ -376,9 +385,8 @@ inductive CostModeChoice where
   `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
   green by index). -/
   | addManaColors (left : Nat) (use : FraManaUse)
-  /-- As `objectId` enters, pay `life` life (accept), or it enters tapped
-  (decline). -/
-  | payLifeOrEnterTapped (objectId : ObjectId) (life : Nat)
+  /-- Pay `n` life or `id` enters tapped (`!changeTarget`), or optionally change target slot `n` of spell `id` (`changeTarget`, Speedball). -/
+  | objectNatChoice (id : ObjectId) (n : Nat) (changeTarget : Bool := false)
   /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
   | mayPayExtort (sourceId : Option ObjectId)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
@@ -392,23 +400,34 @@ inductive CostModeChoice where
   /-- Mister Hyde: choose mode 0 (+1/+1 counter) or 1 (remove a counter
   and draw). -/
   | hydeMode (sourceId : ObjectId)
-  /-- Choose a Vision mode that hasn't been chosen this turn.
-  0 double strike, 1 indestructible, 2 draw. -/
-  | visionMode (sourceId : ObjectId) (available : Array Nat)
   /-- You may pay 2 life so creatures you control assign combat damage equal
   to their toughness (The Kingpin of Crime). -/
   | kingpinMayPay2Life
-  /-- You may choose a new target for one slot of `spellId`, or decline to
-  keep it. `index` walks the spell's targets (Speedball). -/
-  | mayChangeSpellTarget (spellId : ObjectId) (index : Nat)
   /-- Choose a new target for the first of `copies`, or decline to keep its
   target; then the rest. -/
   | newTargetsForCopies (copies : Array ObjectId)
-  /-- As this permanent enters, choose a creature type (An Unexpected Party). -/
-  | entersCreatureType (objectId : ObjectId)
-  /-- As this permanent enters, choose even (0) or odd (1) (Gollum, Riddle Master). -/
-  | entersOddEven (objectId : ObjectId)
 deriving Repr, Inhabited, BEq
+
+namespace CostModeChoice
+
+@[match_pattern] abbrev allianceMode (sourceId : ObjectId) (available : Array Nat) : CostModeChoice :=
+  .chooseAvailableOption sourceId available false false
+@[match_pattern] abbrev gollumMode (sourceId : ObjectId) (available : Array Nat) : CostModeChoice :=
+  .chooseAvailableOption sourceId available true false
+@[match_pattern] abbrev chooseKeyword (objectId : ObjectId) (options : Array Nat) : CostModeChoice :=
+  .chooseAvailableOption objectId options false true
+@[match_pattern] abbrev visionMode (sourceId : ObjectId) (available : Array Nat) : CostModeChoice :=
+  .chooseAvailableOption sourceId available true true
+@[match_pattern] abbrev chooseColor (objectId : ObjectId) : CostModeChoice := .asEntersChoice objectId false false
+@[match_pattern] abbrev chooseCardName (objectId : ObjectId) : CostModeChoice := .asEntersChoice objectId true false
+@[match_pattern] abbrev entersCreatureType (objectId : ObjectId) : CostModeChoice := .asEntersChoice objectId false true
+@[match_pattern] abbrev entersOddEven (objectId : ObjectId) : CostModeChoice := .asEntersChoice objectId true true
+@[match_pattern] abbrev payLifeOrEnterTapped (objectId : ObjectId) (life : Nat) : CostModeChoice :=
+  .objectNatChoice objectId life false
+@[match_pattern] abbrev mayChangeSpellTarget (spellId : ObjectId) (index : Nat) : CostModeChoice :=
+  .objectNatChoice spellId index true
+
+end CostModeChoice
 
 /-- A choice made while an effect resolves (CR 608 / CR 701). The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
@@ -432,10 +451,15 @@ namespace FraChoice
 @[match_pattern] abbrev extrapolateReveal : FraChoice := .library .extrapolateReveal
 @[match_pattern] abbrev extrapolatePick (revealer : PlayerId) (ids : Array ObjectId) : FraChoice := .library (.extrapolatePick revealer ids)
 @[match_pattern] abbrev mayDrawThenDiscard (draw discard : Nat) : FraChoice := .library (.mayDrawThenDiscard draw discard)
+@[match_pattern] abbrev revealSelect (looked eligible : Array ObjectId) (flag : Bool) (putCreatures : Bool := false) : FraChoice :=
+  .library (.revealSelect looked eligible flag putCreatures)
 @[match_pattern] abbrev mayRevealToHand (looked eligible : Array ObjectId) (anyOrder : Bool) : FraChoice := .library (.mayRevealToHand looked eligible anyOrder)
 @[match_pattern] abbrev nickFuryPut (looked eligible : Array ObjectId) : FraChoice := .library (.nickFuryPut looked eligible)
 @[match_pattern] abbrev nickFuryMayTransform (permanentId : ObjectId) (rest : Array ObjectId) : FraChoice := .library (.nickFuryMayTransform permanentId rest)
+@[match_pattern] abbrev arrangeCards (ids : Array ObjectId) (splitPiles : Bool := false) : FraChoice := .library (.arrangeCards ids splitPiles)
 @[match_pattern] abbrev orderLibraryBottom (ids : Array ObjectId) : FraChoice := .library (.orderLibraryBottom ids)
+@[match_pattern] abbrev searchChoice (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option Resolution) (kind : String) (optional : Bool := false) : FraChoice :=
+  .library (.searchChoice eligible count dest after kind optional)
 @[match_pattern] abbrev searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option Resolution) (kind : String) : FraChoice :=
   .library (.searchLibrary eligible count dest after kind)
 @[match_pattern] abbrev maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest) (after : Option Resolution) (kind : String) : FraChoice :=
@@ -459,8 +483,12 @@ namespace FraChoice
 -- HandGraveyardChoice aliases
 @[match_pattern] abbrev discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool) : FraChoice :=
   .handGraveyard (.discardFromRevealedHand target permanentOnly)
+@[match_pattern] abbrev mayExileOrCastCopy (id : ObjectId) (castCopy : Bool := false) : FraChoice :=
+  .handGraveyard (.mayExileOrCastCopy id castCopy)
 @[match_pattern] abbrev sphinxsApproach (spellId : ObjectId) : FraChoice := .handGraveyard (.sphinxsApproach spellId)
 @[match_pattern] abbrev mayDiscardThen (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .handGraveyard (.mayDiscardThen next sourceId)
+@[match_pattern] abbrev discardWithSource (id : Option ObjectId) (entireHand : Bool := false) : FraChoice :=
+  .handGraveyard (.discardWithSource id entireHand)
 @[match_pattern] abbrev discardThen (causeId : Option ObjectId) : FraChoice :=
   .handGraveyard (.discardThen causeId)
 @[match_pattern] abbrev discardThenStun (n : Nat) (sourceId : Option ObjectId) : FraChoice := .handGraveyard (.discardThenStun n sourceId)
@@ -470,7 +498,11 @@ namespace FraChoice
   .handGraveyard (.castCopiesFree ids budget castsLeft)
 @[match_pattern] abbrev discardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat) : FraChoice :=
   .handGraveyard (.discardTwo controller rest draws)
+@[match_pattern] abbrev mayDiscardOrCastUpTo (ids : Array ObjectId) (n : Nat) (castFromExile : Bool := false) : FraChoice :=
+  .handGraveyard (.mayDiscardOrCastUpTo ids n castFromExile)
 @[match_pattern] abbrev mayDiscardThese (n : Nat) (ids : Array ObjectId) : FraChoice := .handGraveyard (.mayDiscardThese n ids)
+@[match_pattern] abbrev mayCastZoneCards (eligible : Array ObjectId) (fromHand : Bool := false) : FraChoice :=
+  .handGraveyard (.mayCastZoneCards eligible fromHand)
 @[match_pattern] abbrev mayCastFromGraveyard (eligible : Array ObjectId) : FraChoice := .handGraveyard (.mayCastFromGraveyard eligible)
 @[match_pattern] abbrev mayCastCards (eligible : Array ObjectId) (withoutPaying exileInstead : Bool) : FraChoice :=
   .handGraveyard (.mayCastCards eligible withoutPaying exileInstead)
@@ -493,11 +525,15 @@ namespace FraChoice
 @[match_pattern] abbrev maySacrificePlaneswalker : FraChoice := .battlefield .maySacrificePlaneswalker
 @[match_pattern] abbrev maySacrificeThen (kind : ObjectSelector) (next : Resolution) (sourceId : Option ObjectId) : FraChoice :=
   .battlefield (.maySacrificeThen kind next sourceId)
+@[match_pattern] abbrev mayObjectAction (id : ObjectId) (ultronPay : Bool := false) : FraChoice :=
+  .battlefield (.mayObjectAction id ultronPay)
 @[match_pattern] abbrev mayMovePlusOne (sourceId : ObjectId) : FraChoice := .battlefield (.mayMovePlusOne sourceId)
 @[match_pattern] abbrev sacrificeCreatureEach (controller : PlayerId) (rest : Array PlayerId) (chosen : Array ObjectId) : FraChoice :=
   .battlefield (.sacrificeCreatureEach controller rest chosen)
 @[match_pattern] abbrev mayMoveAllCounters (fromId toId : ObjectId) : FraChoice := .battlefield (.mayMoveAllCounters fromId toId)
 @[match_pattern] abbrev crew (abilityId vehicleId : ObjectId) (power : Nat) : FraChoice := .battlefield (.crew abilityId vehicleId power)
+@[match_pattern] abbrev maySacrificeAnother (sourceId : ObjectId) (forDrawTreasure : Bool := false) : FraChoice :=
+  .battlefield (.maySacrificeAnother sourceId forDrawTreasure)
 @[match_pattern] abbrev maySacrificeAnotherCreatureForPower (sourceId : ObjectId) : FraChoice :=
   .battlefield (.maySacrificeAnotherCreatureForPower sourceId)
 @[match_pattern] abbrev maySacrificeAnotherForDrawTreasure (sourceId : ObjectId) : FraChoice :=
@@ -505,6 +541,8 @@ namespace FraChoice
 @[match_pattern] abbrev maySacrificeThese (n : Nat) (ids : Array ObjectId) : FraChoice := .battlefield (.maySacrificeThese n ids)
 @[match_pattern] abbrev attachAnyEquipment (hostId : ObjectId) (eligible : Array ObjectId) : FraChoice :=
   .battlefield (.attachAnyEquipment hostId eligible)
+@[match_pattern] abbrev chooseCreatureFrom (ids : Array ObjectId) (removeCounter : Bool := false) : FraChoice :=
+  .battlefield (.chooseCreatureFrom ids removeCounter)
 @[match_pattern] abbrev sacrificeLeastPower (ids : Array ObjectId) : FraChoice := .battlefield (.sacrificeLeastPower ids)
 @[match_pattern] abbrev sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId) : FraChoice :=
   .battlefield (.sacrificeNontokenEach rest chosen)
@@ -530,11 +568,15 @@ namespace FraChoice
 -- CostModeChoice aliases
 @[match_pattern] abbrev mayThen (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayThen next sourceId)
 @[match_pattern] abbrev mayPayThen (n : Nat) (next : Resolution) (sourceId : Option ObjectId) : FraChoice := .costMode (.mayPayThen n next sourceId)
+@[match_pattern] abbrev chooseAvailableOption (objectId : ObjectId) (available : Array Nat) (gollum : Bool := false) (keywordOrVision : Bool := false) : FraChoice :=
+  .costMode (.chooseAvailableOption objectId available gollum keywordOrVision)
 @[match_pattern] abbrev allianceMode (sourceId : ObjectId) (available : Array Nat) : FraChoice := .costMode (.allianceMode sourceId available)
 @[match_pattern] abbrev gollumMode (sourceId : ObjectId) (available : Array Nat) : FraChoice := .costMode (.gollumMode sourceId available)
 @[match_pattern] abbrev triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat) : FraChoice :=
   .costMode (.triggerModes objectId remaining chosen)
 @[match_pattern] abbrev chooseKeyword (objectId : ObjectId) (options : Array Nat) : FraChoice := .costMode (.chooseKeyword objectId options)
+@[match_pattern] abbrev asEntersChoice (objectId : ObjectId) (cardName : Bool := false) (creatureTypeOrOddEven : Bool := false) : FraChoice :=
+  .costMode (.asEntersChoice objectId cardName creatureTypeOrOddEven)
 @[match_pattern] abbrev chooseColor (objectId : ObjectId) : FraChoice := .costMode (.chooseColor objectId)
 @[match_pattern] abbrev chooseCardName (objectId : ObjectId) : FraChoice := .costMode (.chooseCardName objectId)
 @[match_pattern] abbrev costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool) : FraChoice :=
@@ -545,6 +587,8 @@ namespace FraChoice
 @[match_pattern] abbrev mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Resolution) (sourceId : ObjectId) : FraChoice :=
   .costMode (.mayPaySymbolsThen symbols next sourceId)
 @[match_pattern] abbrev addManaColors (left : Nat) (use : FraManaUse) : FraChoice := .costMode (.addManaColors left use)
+@[match_pattern] abbrev objectNatChoice (id : ObjectId) (n : Nat) (changeTarget : Bool := false) : FraChoice :=
+  .costMode (.objectNatChoice id n changeTarget)
 @[match_pattern] abbrev payLifeOrEnterTapped (objectId : ObjectId) (life : Nat) : FraChoice := .costMode (.payLifeOrEnterTapped objectId life)
 @[match_pattern] abbrev mayPayExtort (sourceId : Option ObjectId) : FraChoice := .costMode (.mayPayExtort sourceId)
 @[match_pattern] abbrev mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat) (kind : Nat) (sourceId : Option ObjectId) : FraChoice :=
@@ -563,10 +607,10 @@ end FraChoice
 
 /-- Turn-based, combat, mulligan, state-based action, and trigger-stacking choices (CR 103 / CR 508–510 / CR 603.3b / CR 704.5j). -/
 inductive TurnCombatPending where
-  | declareAttackers
-  | declareBlockers
-  /-- This player declares whether they will take a mulligan (CR 103.5). -/
-  | declareMulligan (player : PlayerId)
+  /-- Declare attackers (`!blockers`, CR 508.1) or blockers (`blockers`, CR 509.1). -/
+  | declareCombatStep (blockers : Bool := false)
+  /-- This player declares whether they will take a mulligan (`!triggerOrder`, CR 103.5) or chooses the order of their waiting triggered abilities (`triggerOrder`, CR 603.3b). -/
+  | playerStepChoice (player : PlayerId) (triggerOrder : Bool := false)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
   | putOnBottom (player : PlayerId) (count : Nat)
   /-- The player announces how attacking (`forAttackers`) or blocking creatures
@@ -575,105 +619,104 @@ inductive TurnCombatPending where
   /-- This player chooses which of these legendary permanents with the same
   name to keep; the rest are put into their owners' graveyards (CR 704.5j). -/
   | chooseLegend (player : PlayerId) (name : String) (ids : Array ObjectId)
-  /-- This player chooses the order of their waiting triggered abilities
-  for the current CR 603.3b part. -/
-  | chooseTriggerToStack (player : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace TurnCombatPending
+
+@[match_pattern] abbrev declareAttackers : TurnCombatPending := .declareCombatStep false
+@[match_pattern] abbrev declareBlockers : TurnCombatPending := .declareCombatStep true
+@[match_pattern] abbrev declareMulligan (player : PlayerId) : TurnCombatPending := .playerStepChoice player false
+@[match_pattern] abbrev chooseTriggerToStack (player : PlayerId) : TurnCombatPending := .playerStepChoice player true
+
+end TurnCombatPending
 
 /-- Spell casting and ability activation announcement steps (CR 601.2 / CR 602.2 / CR 702). -/
 inductive CastPending where
-  /-- The player may activate mana abilities before paying (CR 601.2g). -/
-  | activateManaAbilities
-  /-- The player must choose a mode of a modal spell or ability (CR 601.2b). -/
-  | chooseMode
-  /-- The player must announce a value for `{X}` (CR 107.3a / 601.2b). -/
-  | chooseX
-  /-- The player must announce targets for the proposed spell (CR 601.2c). -/
-  | chooseTargets
+  /-- Core spell/ability announcement step: activate mana abilities (`!mode && !chooseX`, CR 601.2g), choose a mode (`mode && !chooseX`, CR 601.2b), announce `{X}` (`!mode && chooseX`, CR 107.3a / 601.2b), or announce targets (`mode && chooseX`, CR 601.2c). -/
+  | announceStep (mode : Bool := false) (chooseX : Bool := false)
   /-- After `pay`, choose an artifact or creature to sacrifice
   (another, when paying an activated ability). -/
   | sacrificePermanent (sourceId : ObjectId)
-  /-- After `pay`, discard a card to finish paying an additional cost
-  (CR 601.2h / 601.2b), e.g. Titania. -/
-  | discardForAdditionalCost
-  /-- The player must announce an additional or alternative additional cost
-  (CR 601.2b), before targets (CR 601.2c). -/
-  | chooseAdditionalCost
-  /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
-  | chooseKicker
-  /-- Announce whether to promise a gift to an opponent (CR 702.185 / 601.2b). -/
-  | chooseGift
+  /-- Additional or optional cost step: discard for additional cost (`!chooseCost && !kicker`), choose additional cost (`chooseCost && !kicker`), choose kicker (`!chooseCost && kicker`, CR 702.32), or choose gift (`chooseCost && kicker`, CR 702.185). -/
+  | additionalStep (chooseCost : Bool := false) (kicker : Bool := false)
   /-- Announce whether to pay the optional teamwork cost (CR 702.194 / 601.2b). -/
   | chooseTeamwork
   /-- Choose creatures to tap for a teamwork cost (CR 702.194). -/
   | chooseTeamworkCreatures (need : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+namespace CastPending
+
+@[match_pattern] abbrev activateManaAbilities : CastPending := .announceStep false false
+@[match_pattern] abbrev chooseMode : CastPending := .announceStep true false
+@[match_pattern] abbrev chooseX : CastPending := .announceStep false true
+@[match_pattern] abbrev chooseTargets : CastPending := .announceStep true true
+@[match_pattern] abbrev discardForAdditionalCost : CastPending := .additionalStep false false
+@[match_pattern] abbrev chooseAdditionalCost : CastPending := .additionalStep true false
+@[match_pattern] abbrev chooseKicker : CastPending := .additionalStep false true
+@[match_pattern] abbrev chooseGift : CastPending := .additionalStep true true
+
+end CastPending
+
 /-- Resolution, keyword action, and trigger choices (CR 608 / CR 701). -/
 inductive ResolvePending where
-  /-- A resolved trigger requires this player to sacrifice a creature
-  of their choice (e.g. Crude Bent Blade). -/
-  | sacrificeCreature
-  /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
-  | scry (count : Nat)
-  /-- This player is looking at the top `count` cards of their library to
-  surveil (CR 701.25). -/
-  | surveil (count : Nat)
-  /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
-  | mayDiscardDraw (drawCount : Nat)
+  /-- Resolution prompt: sacrifice a creature (`!mayResolve && !tapHumans`), resolve `mayEffect` (`mayResolve && !tapHumans`), tap any number of untapped Humans (`!mayResolve && tapHumans`), or discard a card for recruit (`mayResolve && tapHumans`). -/
+  | resolvePrompt (mayResolve : Bool := false) (tapHumans : Bool := false)
+  /-- This player is looking at the top `count` cards of their library to scry (`!surveil`, CR 701.20) or surveil (`surveil`, CR 701.25). -/
+  | lookLibrary (count : Nat) (surveil : Bool := false)
+  /-- This player may discard a card (`!sacArtifact`) or sacrifice an artifact / discard a card (`sacArtifact`); if they do, they draw `drawCount` (CR 701.9). -/
+  | mayCostDraw (drawCount : Nat) (sacArtifact : Bool := false)
   /-- This player must sacrifice a creature they control. `chosen` are
   already-selected sacrifices; `remaining` are later players in APNAP order. -/
   | chooseSacrificeCreature (chosen : Array ObjectId) (remaining : Array PlayerId)
   /-- This player must discard a card. `remaining` are later opponents. -/
   | chooseDiscardCard (remaining : Array PlayerId)
-  /-- You may pay `{n}` generic mana; if you do, draw a card. -/
-  | mayPayGeneric (n : Nat)
-  /-- Choose one alternative of a `SpellResolution.or`. For a library
-  top-or-bottom choice, `id` is the permanent and top/bottom name the side.
-  Otherwise `chooseTop` is the first alternative and `chooseBottom` the second. -/
-  | chooseLibraryPlacement (id : ObjectId)
-  /-- You may attach an Equipment you control to this creature. -/
-  | mayAttachEquipment (hostId : ObjectId)
-  /-- You may resolve the effect stashed in `mayEffect`. -/
-  | mayResolve
-  /-- Tap any number of untapped Humans you control. A later sequence step
-  draws a card for each Human tapped. -/
-  | tapHumans
-  /-- Pay `{n}` or let the targeted spell be countered. When the game's
-  `unlessPaysInstead` is set, declining resolves that effect instead. -/
-  | payOrLetCounter (n : Nat) (spellId : ObjectId)
+  /-- You may pay `{n}` generic mana to draw (`!proliferate`), or choose permanents/players to proliferate `n` more times (`proliferate`, CR 701.34). -/
+  | payOrProliferate (n : Nat) (proliferate : Bool := false)
+  /-- Choose library top/bottom or `SpellResolution.or` side for `id` (`!bolgSacrifice`), or optionally sacrifice another creature to Bolg (`bolgId = id`, `bolgSacrifice`). -/
+  | objectChoice (id : ObjectId) (bolgSacrifice : Bool := false)
+  /-- You may attach an Equipment you control (`!fromHand`) or put an artifact card from your hand onto the battlefield (`fromHand`) for `hostId`. -/
+  | mayEquipmentOrArtifact (hostId : ObjectId) (fromHand : Bool := false)
+  /-- Pay `{n}` or let `id` be countered (`!castExiled`), or cast exiled `id` else deal `n` damage to each opponent (`castExiled`, Chandra). -/
+  | payOrExileChoice (n : Nat) (id : ObjectId) (castExiled : Bool := false)
   /-- Pay this ward cost or let the targeting spell or ability be countered
   (CR 702.21). -/
   | payWard (spellId : ObjectId) (cost : WardCost)
-  /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
-  | recruitDiscard
-  /-- Choose a creature you control as your Ring-bearer. -/
-  | chooseRingBearer
-  /-- You may sacrifice another creature to Bolg's enters instruction. -/
-  | maySacrificeAnotherBolg (bolgId : ObjectId)
+  /-- Choose a creature you control as your Ring-bearer (`!putLand`), or optionally put a land from hand onto the battlefield tapped (`putLand`). -/
+  | ringOrLandPrompt (putLand : Bool := false)
   /-- You may cast one of these looked-at library cards without paying its
   mana cost as the ability resolves (Cosmic Cube; MSH 356). `maxMv` is the
   greatest power among attacking creatures you control. -/
   | mayCastFromLooked (ids : Array ObjectId) (maxMv : Int)
-  /-- You may put a land from hand onto the battlefield tapped. -/
-  | mayPutLandFromHand
   /-- The controller chooses one alternative of a `TriggerResolution.or`. -/
   | chooseTriggerOr
-  /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
-  | maySacArtifactOrDiscard (draw : Nat)
-  /-- You may put an artifact card from your hand onto the battlefield.
-  `hostId` is the creature the following step attaches it to if it is Equipment. -/
-  | mayPutArtifactFromHand (hostId : ObjectId)
   /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
   | mayHaveVillainConnive (sourceId : ObjectId) (villainId : ObjectId)
-  /-- You may cast exiled `cardId` as an ability resolves, paying its costs.
-  If you don't, the ability deals `damage` to each opponent (Chandra, Torch
-  of Defiance). -/
-  | mayCastExiledElseDamage (cardId : ObjectId) (damage : Nat)
-  /-- Choose any number of permanents and players with counters to
-  proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
-  | chooseProliferate (remaining : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace ResolvePending
+
+@[match_pattern] abbrev sacrificeCreature : ResolvePending := .resolvePrompt false false
+@[match_pattern] abbrev mayResolve : ResolvePending := .resolvePrompt true false
+@[match_pattern] abbrev tapHumans : ResolvePending := .resolvePrompt false true
+@[match_pattern] abbrev recruitDiscard : ResolvePending := .resolvePrompt true true
+@[match_pattern] abbrev scry (count : Nat) : ResolvePending := .lookLibrary count false
+@[match_pattern] abbrev surveil (count : Nat) : ResolvePending := .lookLibrary count true
+@[match_pattern] abbrev mayDiscardDraw (drawCount : Nat) : ResolvePending := .mayCostDraw drawCount false
+@[match_pattern] abbrev maySacArtifactOrDiscard (draw : Nat) : ResolvePending := .mayCostDraw draw true
+@[match_pattern] abbrev mayPayGeneric (n : Nat) : ResolvePending := .payOrProliferate n false
+@[match_pattern] abbrev chooseProliferate (remaining : Nat) : ResolvePending := .payOrProliferate remaining true
+@[match_pattern] abbrev chooseLibraryPlacement (id : ObjectId) : ResolvePending := .objectChoice id false
+@[match_pattern] abbrev maySacrificeAnotherBolg (bolgId : ObjectId) : ResolvePending := .objectChoice bolgId true
+@[match_pattern] abbrev mayAttachEquipment (hostId : ObjectId) : ResolvePending := .mayEquipmentOrArtifact hostId false
+@[match_pattern] abbrev mayPutArtifactFromHand (hostId : ObjectId) : ResolvePending := .mayEquipmentOrArtifact hostId true
+@[match_pattern] abbrev payOrLetCounter (n : Nat) (spellId : ObjectId) : ResolvePending := .payOrExileChoice n spellId false
+@[match_pattern] abbrev mayCastExiledElseDamage (cardId : ObjectId) (damage : Nat) : ResolvePending :=
+  .payOrExileChoice damage cardId true
+@[match_pattern] abbrev chooseRingBearer : ResolvePending := .ringOrLandPrompt false
+@[match_pattern] abbrev mayPutLandFromHand : ResolvePending := .ringOrLandPrompt true
+
+end ResolvePending
 
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
@@ -716,8 +759,12 @@ namespace Pending
 
 -- ResolvePending aliases
 @[match_pattern] abbrev sacrificeCreature (player : PlayerId) : Pending := .resolve player .sacrificeCreature
+@[match_pattern] abbrev lookLibrary (player : PlayerId) (count : Nat) (surveil : Bool := false) : Pending :=
+  .resolve player (.lookLibrary count surveil)
 @[match_pattern] abbrev scry (player : PlayerId) (count : Nat) : Pending := .resolve player (.scry count)
 @[match_pattern] abbrev surveil (player : PlayerId) (count : Nat) : Pending := .resolve player (.surveil count)
+@[match_pattern] abbrev mayCostDraw (player : PlayerId) (drawCount : Nat) (sacArtifact : Bool := false) : Pending :=
+  .resolve player (.mayCostDraw drawCount sacArtifact)
 @[match_pattern] abbrev mayDiscardDraw (player : PlayerId) (drawCount : Nat) : Pending := .resolve player (.mayDiscardDraw drawCount)
 @[match_pattern] abbrev chooseSacrificeCreature (player : PlayerId) (chosen : Array ObjectId) (remaining : Array PlayerId) : Pending :=
   .resolve player (.chooseSacrificeCreature chosen remaining)
@@ -747,4 +794,3 @@ namespace Pending
 end Pending
 
 end Mtg.Engine
-

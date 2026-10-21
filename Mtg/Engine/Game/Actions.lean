@@ -12,7 +12,8 @@ namespace Game
 
 def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
-  | .playLand id => g.playLand p id
+  | .playLandOrKeepLegend id keepLegend =>
+    if keepLegend then g.keepLegend p id else g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
   | .cast id =>
@@ -36,7 +37,8 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | .chooseLibraryPlacement _ _ =>
       if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
     | _ => g.announceMode p idx
-  | .chooseX n => g.announceX p n
+  | .chooseNumber n supplyRandom =>
+    if supplyRandom then g.supplyIndex n else g.announceX p n
   | .target t => g.announceTarget p t
   | .targets ts =>
     match g.pending with
@@ -45,23 +47,19 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
-  | .sacrifice id => do
-    let g ← g.sacrificeForActivation p id
+  | .sacrificeOrDiscard id discard => do
+    let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
     return if g.mayThenResume then g.acceptMayThen else g
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
-  | .keepLegend id => g.keepLegend p id
-  | .stackTriggers ids => g.stackTriggers p ids
   | .takeMulligan => g.takeMulligan p
-  | .putOnBottom ids => g.putCardsOnBottom p ids
-  | .scry top bottom => g.finishScry p top bottom
-  | .surveil top graveyard => g.finishSurveil p top graveyard
-  | .discard id => do
-    let g ← g.discardForDraw p id
-    return if g.mayThenResume then g.acceptMayThen else g
+  | .orderCards ids supplyRandom =>
+    if supplyRandom then g.supplyOrder ids else g.putCardsOnBottom p ids
+  | .lookLibrary top rest surveil =>
+    if surveil then g.finishSurveil p top rest else g.finishScry p top rest
   | .decline =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline
@@ -76,26 +74,22 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     match g.pending with
     | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
     | _ => g.payGeneric p
-  | .chooseTop =>
+  | .chooseLibrarySide top =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .accept
-    | _ => g.chooseLibrarySide p true
-  | .chooseBottom =>
-    match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .decline
-    | _ => g.chooseLibrarySide p false
-  | .choosePermanents ids =>
-    match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (.objects ids)
-    | .activateManaAbilities _ => g.convoke p ids
-    | _ => g.choosePermanents p ids
-  | .announceKicker kick => g.announceKicker p kick
+    | .fraChoice .. => g.answerFraChoice p (if top then .accept else .decline)
+    | _ => g.chooseLibrarySide p top
+  | .chooseObjects ids stackTriggers =>
+    if stackTriggers then g.stackTriggers p ids
+    else
+      match g.pending with
+      | .fraChoice .. => g.answerFraChoice p (.objects ids)
+      | .activateManaAbilities _ => g.convoke p ids
+      | _ => g.choosePermanents p ids
+  | .announceOptionalCost pay teamwork =>
+    if teamwork then g.announceTeamwork p pay else g.announceKicker p pay
   | .announceGift to => g.announceGift p to
-  | .announceTeamwork pay => g.announceTeamwork p pay
   | .chooseRingBearer id => g.announceRingBearer p id
   | .concede => return g.concede p
-  | .supplyOrder ids => g.supplyOrder ids
-  | .supplyIndex i => g.supplyIndex i
   | .chooseName name => g.answerFraChoice p (.name name)
 
 
@@ -124,9 +118,8 @@ def actor (g : Game) : Option PlayerId :=
     match g.pending with
     | .declareAttackers => who g.activePlayer
     | .declareBlockers => who g.currentBlockersPlayer
-    | .declareMulligan p | .putOnBottom p _ | .assignCombatDamage p _
-    | .chooseLegend p _ _ | .chooseTriggerToStack p => who p
-    | .cast p _ | .resolve p _ | .fraChoice p _ => who p
+    | .turnCombat (.playerStepChoice p _) | .putOnBottom p _ | .assignCombatDamage p _
+    | .chooseLegend p _ _ | .cast p _ | .resolve p _ | .fraChoice p _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
