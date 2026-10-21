@@ -15,63 +15,52 @@ inductive GameResult where
   | draw
 deriving DecidableEq, Repr, BEq
 
-/-- Per-turn player tracking state, reset as the turn ends (CR 514.3 / CR 603.2). -/
-structure PlayerTurnState where
-  /-- Cards drawn this turn (for “second card each turn” triggers). -/
-  cardsDrawnThisTurn : Nat := 0
-  /-- A Hero you control entered this turn (Avengers Assemble). -/
-  heroEnteredThisTurn : Bool := false
-  /-- You attacked with a Hero this turn (Avengers Assemble). -/
-  attackedWithHeroThisTurn : Bool := false
-  /-- Creatures this player attacked with this turn (Minas Tirith). -/
-  creaturesAttackedWithThisTurn : Nat := 0
-  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
-  equipActivationsThisTurn : Nat := 0
-  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
-  cardsDrawnThisDrawStep : Nat := 0
+/-- Per-turn spell casting and cost modification state on a player (CR 601.2f / CR 603.2). -/
+structure PlayerSpellTurnState where
   /-- Spells cast this turn (for “second spell each turn” triggers). -/
   spellsCastThisTurn : Nat := 0
   /-- Noncreature spells cast this turn. -/
   noncreatureSpellsCastThisTurn : Nat := 0
   /-- Mana value of each spell this player has cast this turn. -/
   castManaValuesThisTurn : Array Nat := #[]
-  /-- Times `noteResolveThisTurn` has counted for this player this turn
-  (Belladonna Took). -/
-  belladonnaResolvesThisTurn : Nat := 0
-  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
-  lifeGainedThisTurn : Nat := 0
   /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
   creatureSpellsCastThisTurn : Nat := 0
   /-- Players can't cast spells this turn (Bilbo's Gambit). -/
   cantCastSpellsThisTurn : Bool := false
-  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
-  still waiting to fire (Roads Go Ever, Ever On). -/
-  attackPumpPerPlainsThisTurn : Nat := 0
-  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
-  cardsDiscardedThisTurn : Nat := 0
   /-- Generic mana less to cast spells of each of these types or supertypes this turn
   (CR 601.2f, Armor Wars II). -/
   spellsCostLessThisTurn : Array (SpellCostLess × Nat) := #[]
-  /-- An artifact entered under this player's control this turn (Iron Man;
-  MSH 242 / 323). Still true if that artifact later left or changed types. -/
-  artifactEnteredThisTurn : Bool := false
+  /-- Instant or sorcery spells this player casts this turn that are copied
+  (Way of the Cryomancer). -/
+  copyNextInstantSorceryThisTurn : Nat := 0
+  /-- The next spell this player casts this turn can't be countered
+  (Theorist's Proxy). -/
+  nextSpellCantBeCountered : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Per-turn draw, discard, mill, scry/surveil, and activation state on a player (CR 504 / CR 603.2 / CR 701). -/
+structure PlayerActionAndEventTurnState where
+  /-- Cards drawn this turn (for “second card each turn” triggers). -/
+  cardsDrawnThisTurn : Nat := 0
+  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
+  cardsDrawnThisDrawStep : Nat := 0
+  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
+  equipActivationsThisTurn : Nat := 0
+  /-- Times `noteResolveThisTurn` has counted for this player this turn
+  (Belladonna Took). -/
+  belladonnaResolvesThisTurn : Nat := 0
+  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
+  cardsDiscardedThisTurn : Nat := 0
   /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
   controls may be activated any time they could cast an instant (Jace's
   Machinations). Each permanent is still limited to one per turn (ruling 766). -/
   jaceLoyaltyAtInstantSpeed : Bool := false
-  /-- Instant or sorcery spells this player casts this turn that are copied
-  (Way of the Cryomancer). -/
-  copyNextInstantSorceryThisTurn : Nat := 0
-  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
-  dealtNoncombatDamageThisTurn : Bool := false
   /-- This player scried this turn (Desperate Futurescribe).
   Scry 0 does not count. -/
   scriedThisTurn : Bool := false
   /-- This player surveilled this turn (Desperate Futurescribe).
   Surveil 0 does not count. -/
   surveilledThisTurn : Bool := false
-  /-- This player was dealt noncombat damage during the previous turn. -/
-  dealtNoncombatDamageLastTurn : Bool := false
   /-- This player activated a loyalty ability this turn. -/
   activatedLoyaltyThisTurn : Bool := false
   /-- Cards put into this player's graveyard from their library this turn
@@ -80,17 +69,59 @@ structure PlayerTurnState where
   /-- Until end of turn, each Mountain this player taps for mana adds this
   many additional {R} (Molten Tide). -/
   mountainExtraRedThisTurn : Nat := 0
-  /-- The next spell this player casts this turn can't be countered
-  (Theorist's Proxy). -/
-  nextSpellCantBeCountered : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Per-turn life, damage, combat, and permanent-entering state on a player (CR 119 / CR 508). -/
+structure PlayerCombatAndLifeTurnState where
+  /-- A Hero you control entered this turn (Avengers Assemble). -/
+  heroEnteredThisTurn : Bool := false
+  /-- You attacked with a Hero this turn (Avengers Assemble). -/
+  attackedWithHeroThisTurn : Bool := false
+  /-- Creatures this player attacked with this turn (Minas Tirith). -/
+  creaturesAttackedWithThisTurn : Nat := 0
+  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
+  lifeGainedThisTurn : Nat := 0
+  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
+  still waiting to fire (Roads Go Ever, Ever On). -/
+  attackPumpPerPlainsThisTurn : Nat := 0
+  /-- An artifact entered under this player's control this turn (Iron Man;
+  MSH 242 / 323). Still true if that artifact later left or changed types. -/
+  artifactEnteredThisTurn : Bool := false
+  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
+  dealtNoncombatDamageThisTurn : Bool := false
+  /-- This player was dealt noncombat damage during the previous turn. -/
+  dealtNoncombatDamageLastTurn : Bool := false
   /-- Life lost this turn, including from damage (CR 119.3). -/
   lifeLostThisTurn : Nat := 0
   /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
   cantAttackJaces : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Player designations, emblems, commander identity, and multi-turn permissions/locks (CR 701.54 / CR 702.131 / CR 722 / CR 903). -/
-structure PlayerDesignations where
+/-- Per-turn player tracking state, reset as the turn ends (CR 514.3 / CR 603.2). -/
+structure PlayerTurnState extends
+    PlayerSpellTurnState,
+    PlayerActionAndEventTurnState,
+    PlayerCombatAndLifeTurnState where
+deriving Repr, Inhabited, BEq
+
+/-- Commander identity, multiplayer teammate, and beheld qualities on a player (CR 810 / CR 903). -/
+structure PlayerCommanderAndTeamState where
+  /-- True when this player has a commander (Commander / Oathbreaker). -/
+  hasCommander : Bool := false
+  /-- Combined color identity of this player's commander(s). Empty when they
+  have no commander or the commander is colorless (CR 903.4). -/
+  commanderColorIdentity : ColorSet := {}
+  /-- Qualities beheld this game (Elven Passage and similar). A later zone
+  change of the revealed card or chosen permanent does not un-behold. -/
+  beheldQualities : Array String := #[]
+  /-- Two-Headed Giant teammate (MSH 57 / 236). -/
+  teammate : Option PlayerId := none
+  /-- Creature types of this player's commander, for Path of Ancestry. -/
+  commanderCreatureTypes : Array String := #[]
+deriving Repr, Inhabited, BEq
+
+/-- Game-long designations, emblems, and multi-turn player locks (CR 701.54 / CR 702.131 / CR 722). -/
+structure PlayerEmblemsAndLocks where
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
   /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
@@ -99,48 +130,43 @@ structure PlayerDesignations where
   ringBearerId : Option ObjectId := none
   /-- Ascend: the city's blessing for the rest of the game. -/
   citysBlessing : Bool := false
-  /-- True when this player has a commander (Commander / Oathbreaker). -/
-  hasCommander : Bool := false
-  /-- Combined color identity of this player's commander(s). Empty when they
-  have no commander or the commander is colorless (CR 903.4). -/
-  commanderColorIdentity : ColorSet := {}
   /-- Protection from everything until this player's next turn
   (e.g. The One Ring). -/
   protectionFromEverything : Bool := false
   /-- Bird Soldier tokens to create at the beginning of the next upkeep
   (The Eagles Are Coming!). -/
   eaglesBirdsNextUpkeep : Nat := 0
-  /-- Qualities beheld this game (Elven Passage and similar). A later zone
-  change of the revealed card or chosen permanent does not un-behold. -/
-  beheldQualities : Array String := #[]
   /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
   lifeLocked : Bool := false
   /-- The legend rule doesn't apply to permanents this player controls this
   turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
   legendRuleOffThisTurn : Bool := false
-  /-- Two-Headed Giant teammate (MSH 57 / 236). -/
-  teammate : Option PlayerId := none
   /-- This player is the monarch (CR 722). -/
   isMonarch : Bool := false
   /-- This player's life total can't change until their next turn. -/
   lifeCantChange : Bool := false
-  /-- Creature types of this player's commander, for Path of Ancestry. -/
-  commanderCreatureTypes : Array String := #[]
 deriving Repr, Inhabited, BEq
 
-structure Player extends PlayerTurnState, PlayerDesignations where
-  id : PlayerId
-  name : String
-  life : Int := 20
+/-- Player designations, emblems, commander identity, and multi-turn permissions/locks (CR 701.54 / CR 702.131 / CR 722 / CR 903). -/
+structure PlayerDesignations extends PlayerCommanderAndTeamState, PlayerEmblemsAndLocks where
+deriving Repr, Inhabited, BEq
+
+/-- Player-owned zones and sideboard (CR 400). -/
+structure PlayerZones where
+  library : Array ObjectId := #[]
+  hand : Array ObjectId := #[]
+  graveyard : Array ObjectId := #[]
+  /-- Sideboard cards not yet brought into play as objects outside the game
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+deriving Repr, Inhabited
+
+/-- Opening hand/mulligan setup and game-loss tracking on a player (CR 103.5 / CR 104.3 / CR 800.4a). -/
+structure PlayerSetupAndLossState where
   startingLife : Int := 20
   maxHandSize : Nat := 7
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
-  manaPool : ManaPool := {}
-  landsPlayedThisTurn : Nat := 0
-  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
-  additionalLandsThisTurn : Nat := 0
-  poison : Nat := 0
   lost : Bool := false
   /-- CR 800.4a has already been performed for this player. -/
   leftTheGame : Bool := false
@@ -150,12 +176,21 @@ structure Player extends PlayerTurnState, PlayerDesignations where
   mulligansTaken : Nat := 0
   /-- Set once this player declines further mulligans (CR 103.5). -/
   keptOpeningHand : Bool := false
-  library : Array ObjectId := #[]
-  hand : Array ObjectId := #[]
-  graveyard : Array ObjectId := #[]
-  /-- Sideboard cards not yet brought into play as objects outside the game
-  (CR 400.11b). -/
-  sideboard : Array CardDef := #[]
+deriving Repr, Inhabited, BEq
+
+structure Player extends
+    PlayerTurnState,
+    PlayerDesignations,
+    PlayerZones,
+    PlayerSetupAndLossState where
+  id : PlayerId
+  name : String
+  life : Int := 20
+  manaPool : ManaPool := {}
+  landsPlayedThisTurn : Nat := 0
+  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
+  additionalLandsThisTurn : Nat := 0
+  poison : Nat := 0
 deriving Repr, Inhabited
 
 namespace Player

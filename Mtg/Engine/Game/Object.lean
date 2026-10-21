@@ -67,8 +67,27 @@ structure CopyEffect where
   duration : CopyDuration := .permanent
 deriving Repr, Inhabited
 
+/-- Additional and alternative costs paid when casting a spell (CR 601.2b / CR 702.32 / CR 702.194). -/
+structure AdditionalCostPaidState where
+  /-- This spell's kicker cost was paid (CR 702.32). -/
+  kicked : Bool := false
+  /-- This spell's teamwork cost was paid (CR 702.194). -/
+  teamworkPaid : Bool := false
+  /-- This creature spell's sneak cost was paid (MSH sneak). -/
+  sneakPaid : Bool := false
+  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
+  sneakAttackWhom : Option PlayerId := none
+  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
+  giftPromisedTo : Option PlayerId := none
+  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
+  legendary spell, so it can't be countered. Copies do not inherit this. -/
+  uncounterableThisCast : Bool := false
+  /-- Mana from a Treasure was spent to cast this spell. -/
+  treasureManaSpent : Bool := false
+deriving Repr, Inhabited, BEq
+
 /-- Spell cast-origin and additional-cost-paid metadata (CR 601.2 / CR 702 / CR 706). -/
-structure CastOriginState where
+structure CastOriginState extends AdditionalCostPaidState where
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
   /-- An instant or sorcery cast this way is exiled instead of being put into
@@ -82,23 +101,8 @@ structure CastOriginState where
   /-- This spell is a copy of a prepare spell cast from exile (a “prepared
   spell”). -/
   isPreparedSpell : Bool := false
-  /-- This spell's kicker cost was paid (CR 702.32). -/
-  kicked : Bool := false
-  /-- This spell's teamwork cost was paid (CR 702.194). -/
-  teamworkPaid : Bool := false
-  /-- This creature spell's sneak cost was paid (MSH sneak). -/
-  sneakPaid : Bool := false
-  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
-  sneakAttackWhom : Option PlayerId := none
-  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
-  giftPromisedTo : Option PlayerId := none
   /-- This object is a copy (CR 706). Copies of spells are not cast. -/
   isCopy : Bool := false
-  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
-  legendary spell, so it can't be countered. Copies do not inherit this. -/
-  uncounterableThisCast : Bool := false
-  /-- Mana from a Treasure was spent to cast this spell. -/
-  treasureManaSpent : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
@@ -148,18 +152,10 @@ structure StackAbilityState where
   lastKnownToughness : Option Int := none
 deriving Repr, Inhabited
 
-/-- An object currently in the game (CR 109). -/
-structure GameObject extends ControlState, StackAbilityState where
-  id : ObjectId
-  printed : CardDef
-  owner : PlayerId
-  zone : Zone
-  status : Status := {}
-  timestamp : Nat := 0
+/-- Exile permissions, temporary copy effects, and stack/adventure metadata on a game object (CR 406 / CR 707 / CR 715). -/
+structure ObjectCastAndExileMeta where
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
-  /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
-  attachedTo : Option ObjectId := none
   /-- Normal characteristics of an adventurer card, set while the spell is on
   the stack as an Adventure (CR 715.3b). -/
   adventurerCard : Option CardDef := none
@@ -186,6 +182,18 @@ structure GameObject extends ControlState, StackAbilityState where
   chosenX : Option Nat := none
   /-- Active temporary copy effect on this permanent (CR 707 / CR 613.2). -/
   copyEffect : Option CopyEffect := none
+deriving Repr, Inhabited
+
+/-- An object currently in the game (CR 109). -/
+structure GameObject extends ControlState, StackAbilityState, ObjectCastAndExileMeta where
+  id : ObjectId
+  printed : CardDef
+  owner : PlayerId
+  zone : Zone
+  status : Status := {}
+  timestamp : Nat := 0
+  /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
+  attachedTo : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/

@@ -78,6 +78,7 @@ def cdaValues (g : Game) (o : GameObject) : Option Int × Option Int :=
         (some n, accT)
       | .powerEqualsBasicLandTypes =>
         (some (Int.ofNat (g.basicLandTypesAmong o.you)), accT)
+      | _ => (accP, accT)
     | _ => (accP, accT)) (none, none)
 
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=

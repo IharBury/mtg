@@ -24,30 +24,53 @@ namespace Mtg.Engine
 
 /-- Layer 4 type-changing static effects (CR 613.1d). -/
 inductive TypeStatic where
-  | enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String)
-  | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords) (types : Array String)
-  | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
-  | enchantedIsConstruct55
+  | enchantedOrConstructType (subtype : String := "") (construct55 : Bool := false)
+  | ptAndTypesStatic (power toughness : Int) (k : Keywords := Keywords.none) (types : Array String := #[])
+      (minGy : Nat := 0) (ifGyCards : Bool := false)
 deriving Repr, Inhabited, BEq
+
+namespace TypeStatic
+@[match_pattern] abbrev enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String) : TypeStatic := .enchantedOrConstructType subtype false
+@[match_pattern] abbrev enchantedIsConstruct55 : TypeStatic := .enchantedOrConstructType "" true
+@[match_pattern] abbrev enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords) (types : Array String) : TypeStatic :=
+  .ptAndTypesStatic power toughness k types 0 false
+@[match_pattern] abbrev getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int) : TypeStatic :=
+  .ptAndTypesStatic power toughness Keywords.none #[] min true
+end TypeStatic
 
 /-- Layer 6 ability-adding and ability-removing static effects (CR 613.1f). -/
 inductive AbilityStatic where
-  | creaturesYouControlHave (k : Keywords) (subtypes : Array String := #[]) (otherOnly : Bool := false)
-  | keywordIfYouControlOtherSubtype (k : Keywords) (subtype : String)
-  | creaturesWithPlusOneHave (k : Keywords) (each : Bool := false) (otherOnly : Bool := false)
-  | equippedOrAttackingTokensHave (k : Keywords) (attackingTokens : Bool := false)
+  | creaturesOrConditionalKeyword (k : Keywords) (subtypes : Array String := #[]) (subtype : String := "")
+      (otherOnly : Bool := false) (ifControlOther : Bool := false)
+  | stateOrCounterKeyword (k : Keywords) (alt1 : Bool := false) (alt2 : Bool := false)
+      (equippedOrTokens : Bool := false) (plusOneThisTurn : Bool := false)
   | artifactsAndCreaturesHaveWardIfEnduringStory (ward : Nat)
   | otherSubtypeHaveTapAddOneOf (subtypes : Array String) (mana : Array ManaType)
-  | enchantedLosesAbilitiesNoUntap (cantUntap : Bool := false)
   | subtypeAbilityRule (subtype : String) (hexproofShield : Bool := false)
-  | keywordIfPlusOneThisTurn (k : Keywords) (team : Bool := false)
   | permanentsYouControlHave (ty : CardType) (creature : Bool := false) (k : Keywords)
-  | equippedSpecialGrant (medicsKitesail : Bool := false)
-  | selfConditionalKeyword (vigilanceOrHexproof : Bool := false) (noncombatOrHexproof : Bool := false)
-  | globalAbilityRule (splitOrPlan : Bool := false) (indestructibleOrPw : Bool := false)
+  | attachedOrGlobalAbilityRule (alt1 : Bool := false) (alt2 : Bool := false)
+      (equippedOrSelf : Bool := false) (global : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace AbilityStatic
+@[match_pattern] abbrev creaturesYouControlHave (k : Keywords) (subtypes : Array String := #[]) (otherOnly : Bool := false) : AbilityStatic :=
+  .creaturesOrConditionalKeyword k subtypes "" otherOnly false
+@[match_pattern] abbrev keywordIfYouControlOtherSubtype (k : Keywords) (subtype : String) : AbilityStatic :=
+  .creaturesOrConditionalKeyword k #[] subtype false true
+@[match_pattern] abbrev creaturesWithPlusOneHave (k : Keywords) (each : Bool := false) (otherOnly : Bool := false) : AbilityStatic :=
+  .stateOrCounterKeyword k each otherOnly false false
+@[match_pattern] abbrev equippedOrAttackingTokensHave (k : Keywords) (attackingTokens : Bool := false) : AbilityStatic :=
+  .stateOrCounterKeyword k attackingTokens false true false
+@[match_pattern] abbrev keywordIfPlusOneThisTurn (k : Keywords) (team : Bool := false) : AbilityStatic :=
+  .stateOrCounterKeyword k team false false true
+@[match_pattern] abbrev enchantedLosesAbilitiesNoUntap (cantUntap : Bool := false) : AbilityStatic :=
+  .attachedOrGlobalAbilityRule cantUntap false false false
+@[match_pattern] abbrev equippedSpecialGrant (medicsKitesail : Bool := false) : AbilityStatic :=
+  .attachedOrGlobalAbilityRule medicsKitesail false true false
+@[match_pattern] abbrev selfConditionalKeyword (vigilanceOrHexproof : Bool := false) (noncombatOrHexproof : Bool := false) : AbilityStatic :=
+  .attachedOrGlobalAbilityRule vigilanceOrHexproof noncombatOrHexproof true true
+@[match_pattern] abbrev globalAbilityRule (splitOrPlan : Bool := false) (indestructibleOrPw : Bool := false) : AbilityStatic :=
+  .attachedOrGlobalAbilityRule splitOrPlan indestructibleOrPw false true
 @[match_pattern] abbrev equippedCreaturesHaveKeywordsDuringYourTurn (k : Keywords) : AbilityStatic := .equippedOrAttackingTokensHave k false
 @[match_pattern] abbrev attackingTokensHave (k : Keywords) : AbilityStatic := .equippedOrAttackingTokensHave k true
 @[match_pattern] abbrev copyActivatedFromGySubtype (subtype : String) : AbilityStatic := .subtypeAbilityRule subtype false
@@ -66,12 +89,14 @@ end AbilityStatic
 
 /-- Layer 7a characteristic-defining P/T static abilities (CR 604.3 / CR 613.4a). -/
 inductive CdaStatic where
-  | bothPtCda (graveyardCardTypes : Bool := false)
-  | powerCountCda (creaturesOrLegendaries : Bool := false) (legendariesOrBasicTypes : Bool := false)
+  | countPtCda (alt1 : Bool := false) (alt2 : Bool := false) (bothPt : Bool := false)
   | powerEqualSubtypeYouControl (subtype : String)
 deriving Repr, Inhabited, BEq
 
 namespace CdaStatic
+@[match_pattern] abbrev bothPtCda (graveyardCardTypes : Bool := false) : CdaStatic := .countPtCda graveyardCardTypes false true
+@[match_pattern] abbrev powerCountCda (creaturesOrLegendaries : Bool := false) (legendariesOrBasicTypes : Bool := false) : CdaStatic :=
+  .countPtCda creaturesOrLegendaries legendariesOrBasicTypes false
 @[match_pattern] abbrev powerToughnessEqualLandsYouControl : CdaStatic := .bothPtCda false
 @[match_pattern] abbrev ptEqualGraveyardCardTypes : CdaStatic := .bothPtCda true
 @[match_pattern] abbrev powerEqualCardsInHand : CdaStatic := .powerCountCda false false
@@ -83,20 +108,34 @@ end CdaStatic
 /-- Layer 7c power/toughness-modifying static effects (CR 613.4c). -/
 inductive PtStatic where
   | creaturesYouControlGet (power toughness : Int) (subtypes : Array String := #[]) (otherOnly : Bool := false)
-  | hostGets (host : String) (power toughness : Int)
   | attachedCreatureGetsAndHas (equipped : Bool) (power toughness : Int) (k : Keywords := Keywords.none) (ward : Nat := 0)
-  | legendaryOrNonlegendaryCreaturesGet (power toughness : Int) (legendary : Bool) (ward : Nat := 0)
-  | thresholdGets (power toughness : Int) (k : Keywords := Keywords.none)
-  | getsIfEnduringStory (power toughness : Int) (k : Keywords := Keywords.none) (team : Bool := false)
-  | otherSubtypeGetPowerPerArtifactToken (subtype : String)
-  | powerPerFatGraveyard (power : Int)
-  | getsPowerPerControlled (power : Int) (attachedEquipment : Bool := false)
-  | getsIfGyCreatureCards (min : Nat) (power toughness : Int)
-  | groupOrEquippedPt (power toughness : Int) (opponents : Bool := false) (equippedTreasures : Bool := false)
-  | specialPtStatic (sevenInGyOrPw : Bool := false) (tokensOrPw : Bool := false)
+  | conditionalGetsAndHas (power toughness : Int) (k : Keywords := Keywords.none) (team : Bool := false) (enduringStory : Bool := false)
+  | supertypeOrGyCountGets (power toughness : Int) (natParam : Nat := 0) (legendary : Bool := false) (gyCards : Bool := false)
+  | stringOrCountPowerPt (s : String := "") (power toughness : Int := 0) (alt1 : Bool := false) (alt2 : Bool := false) (controlled : Bool := false)
+  | groupOrSpecialPt (power toughness : Int := 0) (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace PtStatic
+@[match_pattern] abbrev thresholdGets (power toughness : Int) (k : Keywords := Keywords.none) : PtStatic :=
+  .conditionalGetsAndHas power toughness k false false
+@[match_pattern] abbrev getsIfEnduringStory (power toughness : Int) (k : Keywords := Keywords.none) (team : Bool := false) : PtStatic :=
+  .conditionalGetsAndHas power toughness k team true
+@[match_pattern] abbrev legendaryOrNonlegendaryCreaturesGet (power toughness : Int) (legendary : Bool) (ward : Nat := 0) : PtStatic :=
+  .supertypeOrGyCountGets power toughness ward legendary false
+@[match_pattern] abbrev getsIfGyCreatureCards (min : Nat) (power toughness : Int) : PtStatic :=
+  .supertypeOrGyCountGets power toughness min false true
+@[match_pattern] abbrev hostGets (host : String) (power toughness : Int) : PtStatic :=
+  .stringOrCountPowerPt host power toughness false false false
+@[match_pattern] abbrev otherSubtypeGetPowerPerArtifactToken (subtype : String) : PtStatic :=
+  .stringOrCountPowerPt subtype 0 0 true false false
+@[match_pattern] abbrev powerPerFatGraveyard (power : Int) : PtStatic :=
+  .stringOrCountPowerPt "" power 0 false true false
+@[match_pattern] abbrev getsPowerPerControlled (power : Int) (attachedEquipment : Bool := false) : PtStatic :=
+  .stringOrCountPowerPt "" power 0 attachedEquipment false true
+@[match_pattern] abbrev groupOrEquippedPt (power toughness : Int) (opponents : Bool := false) (equippedTreasures : Bool := false) : PtStatic :=
+  .groupOrSpecialPt power toughness opponents equippedTreasures false
+@[match_pattern] abbrev specialPtStatic (sevenInGyOrPw : Bool := false) (tokensOrPw : Bool := false) : PtStatic :=
+  .groupOrSpecialPt 0 0 sevenInGyOrPw tokensOrPw true
 @[match_pattern] abbrev chosenTypeCreaturesGet (power toughness : Int) : PtStatic := .groupOrEquippedPt power toughness false false
 @[match_pattern] abbrev opponentsCreaturesGet (power toughness : Int) : PtStatic := .groupOrEquippedPt power toughness true false
 @[match_pattern] abbrev equippedGetsTrampleAndCombatTreasures (power toughness : Int) : PtStatic := .groupOrEquippedPt power toughness false true
@@ -109,18 +148,31 @@ end PtStatic
 /-- Combat requirements, restrictions, and damage-assignment static abilities (CR 508 / CR 509 / CR 510). -/
 inductive CombatStatic where
   | cantBlockUnlessYouControl (subtypes : Array String)
-  | cantBeBlockedCount (n : Nat) (maxBlockers : Bool := false)
-  | cantAttackUnlessYouControlNOther (n : Nat) (subtype : String)
-  | cantBeBlockedByPower (n : Int) (atLeast : Bool := false)
-  | creaturesCantAttackYouUnlessPayIfEnduringStory (n : Nat)
+  | natCombatRule (n : Nat) (subtype : String := "") (maxBlockers : Bool := false)
+      (attackUnlessOther : Bool := false) (attackTax : Bool := false)
+  | cantBeBlockedPowerRule (n : Int) (atLeast : Bool := false) (selfPower : Bool := false)
   | equippedCreatureHasKeywordsAndCantBeBlocked (k : Keywords)
-  | cantBeBlockedIfPowerAtMost (n : Int)
-  | attackDespiteDefender (team : Bool := false)
-  | unblockableOrEvasionRule (equippedYourTurn : Bool := false) (smallOrFlying : Bool := false)
-  | combatAssignOrRequirement (toughnessAssigns : Bool := false) (negativePositive : Bool := false)
+  | booleanCombatRule (alt1 : Bool := false) (alt2 : Bool := false)
+      (assignOrReq : Bool := false) (despiteDefender : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CombatStatic
+@[match_pattern] abbrev cantBeBlockedCount (n : Nat) (maxBlockers : Bool := false) : CombatStatic :=
+  .natCombatRule n "" maxBlockers false false
+@[match_pattern] abbrev cantAttackUnlessYouControlNOther (n : Nat) (subtype : String) : CombatStatic :=
+  .natCombatRule n subtype false true false
+@[match_pattern] abbrev creaturesCantAttackYouUnlessPayIfEnduringStory (n : Nat) : CombatStatic :=
+  .natCombatRule n "" false false true
+@[match_pattern] abbrev cantBeBlockedByPower (n : Int) (atLeast : Bool := false) : CombatStatic :=
+  .cantBeBlockedPowerRule n atLeast false
+@[match_pattern] abbrev cantBeBlockedIfPowerAtMost (n : Int) : CombatStatic :=
+  .cantBeBlockedPowerRule n false true
+@[match_pattern] abbrev unblockableOrEvasionRule (equippedYourTurn : Bool := false) (smallOrFlying : Bool := false) : CombatStatic :=
+  .booleanCombatRule equippedYourTurn smallOrFlying false false
+@[match_pattern] abbrev combatAssignOrRequirement (toughnessAssigns : Bool := false) (negativePositive : Bool := false) : CombatStatic :=
+  .booleanCombatRule toughnessAssigns negativePositive true false
+@[match_pattern] abbrev attackDespiteDefender (team : Bool := false) : CombatStatic :=
+  .booleanCombatRule team false false true
 @[match_pattern] abbrev cantBeBlockedByTokens : CombatStatic := .unblockableOrEvasionRule false false
 @[match_pattern] abbrev equippedHexproofUnblockableDuringYourTurn : CombatStatic := .unblockableOrEvasionRule true false
 @[match_pattern] abbrev smallCreaturesYouControlUnblockable : CombatStatic := .unblockableOrEvasionRule false true
@@ -133,17 +185,25 @@ end CombatStatic
 /-- Cost modifiers, casting permissions, and casting restrictions (CR 601.2f / CR 601.3 / CR 305.1). -/
 inductive CostCastStatic where
   | abilityCostLess (n : Nat) (powerUp : Bool := false)
-  | instantSorceryCostLessEqualPower (equipped : Bool := false)
   | subtypeSpellsCostLess (subtype : String) (n : Nat)
   | typeSpellsCostLess (ty : CardType) (n : Nat)
   | supertypeSpellsCostLess (s : Supertype) (n : Nat)
-  | activationOrPermissionStatic (extraPowerUp : Bool := false) (asThoughHaste : Bool := false)
-  | zoneOrFlashCastStatic (flashOppCast : Bool := false) (freeFromHand : Bool := false)
-  | castRestrictionStatic (duringCombat : Bool := false) (chosenName : Bool := false)
-  | noncreatureCostStatic (lessYourSpells : Bool := false) (selfDiscount : Bool := false)
+  | costCastRuleKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (actOrPerm : Bool := false) (zoneOrFlash : Bool := false)
+      (castRestr : Bool := false) (noncreatureCost : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CostCastStatic
+@[match_pattern] abbrev instantSorceryCostLessEqualPower (equipped : Bool := false) : CostCastStatic :=
+  .costCastRuleKind equipped false false false false false
+@[match_pattern] abbrev activationOrPermissionStatic (extraPowerUp : Bool := false) (asThoughHaste : Bool := false) : CostCastStatic :=
+  .costCastRuleKind extraPowerUp asThoughHaste true false false false
+@[match_pattern] abbrev zoneOrFlashCastStatic (flashOppCast : Bool := false) (freeFromHand : Bool := false) : CostCastStatic :=
+  .costCastRuleKind flashOppCast freeFromHand false true false false
+@[match_pattern] abbrev castRestrictionStatic (duringCombat : Bool := false) (chosenName : Bool := false) : CostCastStatic :=
+  .costCastRuleKind duringCombat chosenName false false true false
+@[match_pattern] abbrev noncreatureCostStatic (lessYourSpells : Bool := false) (selfDiscount : Bool := false) : CostCastStatic :=
+  .costCastRuleKind lessYourSpells selfDiscount false false false true
 @[match_pattern] abbrev equipAbilitiesTargetingThisCostLess (n : Nat) : CostCastStatic := .abilityCostLess n false
 @[match_pattern] abbrev otherPowerUpCostsLess (n : Nat) : CostCastStatic := .abilityCostLess n true
 @[match_pattern] abbrev firstEquipFreeIfEnduringStory : CostCastStatic := .activationOrPermissionStatic false false
@@ -162,19 +222,29 @@ end CostCastStatic
 
 /-- Replacement, prevention, trigger-modification, and rule-modifying static effects (CR 614 / CR 615 / CR 603.2d / CR 704). -/
 inductive RuleStatic where
-  | doesntUntap (unlessEnduringStory : Bool := false)
   | extraTriggerIfEnduringStorySubtype (subtype : String)
   | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
-  | exileOpponentsDyingCreatures (createWolf : Bool := false)
   | maximumHandSize (n : Nat := 0)
-  | extraCounter (plusOneOnly : Bool := false)
-  | noncombatDamageBonus (sourcePower : Bool := false)
-  | entersOrOpeningRule (chooseColor : Bool := false) (chooseNameOrOpening : Bool := false)
-  | damageOrStateRule (pwOrDragons : Bool := false) (suppressEntersOrDragons : Bool := false)
-  | equippedOrActionBonus (extraDrawConnive : Bool := false) (doubleDamageOrHeal : Bool := false) (healOther : Bool := false)
+  | ruleStaticKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (exileDying : Bool := false) (extraCounterFlag : Bool := false) (noncombatBonus : Bool := false)
+      (entersOrOpening : Bool := false) (damageOrState : Bool := false) (equippedOrAction : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace RuleStatic
+@[match_pattern] abbrev doesntUntap (unlessEnduringStory : Bool := false) : RuleStatic :=
+  .ruleStaticKind unlessEnduringStory false false false false false false false false
+@[match_pattern] abbrev exileOpponentsDyingCreatures (createWolf : Bool := false) : RuleStatic :=
+  .ruleStaticKind createWolf false false true false false false false false
+@[match_pattern] abbrev extraCounter (plusOneOnly : Bool := false) : RuleStatic :=
+  .ruleStaticKind plusOneOnly false false false true false false false false
+@[match_pattern] abbrev noncombatDamageBonus (sourcePower : Bool := false) : RuleStatic :=
+  .ruleStaticKind sourcePower false false false false true false false false
+@[match_pattern] abbrev entersOrOpeningRule (chooseColor : Bool := false) (chooseNameOrOpening : Bool := false) : RuleStatic :=
+  .ruleStaticKind chooseColor chooseNameOrOpening false false false false true false false
+@[match_pattern] abbrev damageOrStateRule (pwOrDragons : Bool := false) (suppressEntersOrDragons : Bool := false) : RuleStatic :=
+  .ruleStaticKind pwOrDragons suppressEntersOrDragons false false false false false true false
+@[match_pattern] abbrev equippedOrActionBonus (extraDrawConnive : Bool := false) (doubleDamageOrHeal : Bool := false) (healOther : Bool := false) : RuleStatic :=
+  .ruleStaticKind extraDrawConnive doubleDamageOrHeal healOther false false false false false true
 @[match_pattern] abbrev entersWithXPlusOne : RuleStatic := .entersOrOpeningRule false false
 @[match_pattern] abbrev entersTappedChooseColor : RuleStatic := .entersOrOpeningRule true false
 @[match_pattern] abbrev entersChooseNonlandCardName : RuleStatic := .entersOrOpeningRule false true
@@ -191,14 +261,19 @@ end RuleStatic
 
 /-- Keyword, enchant, and intrinsic mana static abilities (CR 702 / CR 303.4 / CR 605). -/
 inductive KeywordStatic where
-  | nonManaWardStatic (sacrificeLegendary : Bool := false) (discardCardOrSacThree : Bool := false)
+  | wardOrKeywordStatic (alt1 : Bool := false) (alt2 : Bool := false)
+      (keywordFlag : Bool := false) (intrinsicMana : Bool := false)
   | numericWardStatic (n : Nat) (poison : Bool := false)
   | sneak (cost : ManaCost)
-  | keywordOrEnchantFlag (extortOrEnchant : Bool := false) (boastOrEnchant : Bool := false)
-  | intrinsicManaStatic (notFromHandOrSacThree : Bool := false) (planeswalkerOrSacThree : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace KeywordStatic
+@[match_pattern] abbrev nonManaWardStatic (sacrificeLegendary : Bool := false) (discardCardOrSacThree : Bool := false) : KeywordStatic :=
+  .wardOrKeywordStatic sacrificeLegendary discardCardOrSacThree false false
+@[match_pattern] abbrev keywordOrEnchantFlag (extortOrEnchant : Bool := false) (boastOrEnchant : Bool := false) : KeywordStatic :=
+  .wardOrKeywordStatic extortOrEnchant boastOrEnchant true false
+@[match_pattern] abbrev intrinsicManaStatic (notFromHandOrSacThree : Bool := false) (planeswalkerOrSacThree : Bool := false) : KeywordStatic :=
+  .wardOrKeywordStatic notFromHandOrSacThree planeswalkerOrSacThree false true
 @[match_pattern] abbrev wardDiscardEnchantmentInstantOrSorcery : KeywordStatic := .nonManaWardStatic false false
 @[match_pattern] abbrev wardSacrificeLegendary : KeywordStatic := .nonManaWardStatic true false
 @[match_pattern] abbrev wardDiscardCard : KeywordStatic := .nonManaWardStatic false true
@@ -440,20 +515,15 @@ def hostGetsPhrase (host : String) (p t : Int) : String :=
 def joinedSubtypes (subtypes : Array String) (each : String → String := fun s => s) : String :=
   String.intercalate " and " (subtypes.toList.map each)
 
-/-- Projections Game reads from a static ability. -/
-structure StaticMeta where
+/-- Layer 4, Layer 6, Layer 7a, and Layer 7c continuous-effect projections (CR 613.1d / 613.1f / 613.4). -/
+structure StaticPtAndTypeMeta where
   lordPump : Option (Array String × Int × Int) := none
   trampleSubtypes : Option (Array String) := none
   hostBonus : Int × Int := (0, 0)
   landsYouControlPT : Bool := false
-  cantBlockUnless : Option (Array String) := none
-  cantBeBlockedExcept : Option Nat := none
-  /-- Maximum number of creatures that may block this creature. -/
-  cantBeBlockedByMoreThan : Option Nat := none
   enchantedOnlySubtype : Option String := none
   cardsInHandPower : Bool := false
   hostKeywords : Keywords := Keywords.none
-  cantBeBlockedByTokens : Bool := false
   /-- Lord pump includes the source (not only other creatures). -/
   lordIncludesSelf : Bool := false
   /-- Lord pump applies only to legendary creatures. -/
@@ -462,16 +532,33 @@ structure StaticMeta where
   lordNonlegendaryOnly : Bool := false
   /-- Ward cost this ability grants matching creatures. -/
   grantedWard : Option Nat := none
-  /-- Can't attack unless you control this many other permanents of the subtype. -/
-  cantAttackUnlessNOther : Option (Nat × String) := none
   /-- Threshold +P/+T if seven or more cards in graveyard. -/
   thresholdGets : Option (Int × Int) := none
+  /-- During your turn, equipped creatures you control have these keywords. -/
+  equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
+deriving Repr, Inhabited, BEq
+
+/-- Combat requirements and restrictions projections (CR 508 / CR 509). -/
+structure StaticCombatMeta where
+  cantBlockUnless : Option (Array String) := none
+  cantBeBlockedExcept : Option Nat := none
+  /-- Maximum number of creatures that may block this creature. -/
+  cantBeBlockedByMoreThan : Option Nat := none
+  cantBeBlockedByTokens : Bool := false
+  /-- Can't attack unless you control this many other permanents of the subtype. -/
+  cantAttackUnlessNOther : Option (Nat × String) := none
   /-- Can't be blocked by creatures with power at most this. -/
   cantBeBlockedByPowerAtMost : Option Int := none
   /-- This creature can't be blocked if its own power is at most this. -/
   cantBeBlockedIfPowerAtMost : Option Int := none
-  /-- During your turn, equipped creatures you control have these keywords. -/
-  equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
+  /-- Can't be blocked by creatures with power at least this. -/
+  cantBeBlockedByPowerAtLeast : Option Int := none
+  /-- Equipped creature also can't be blocked. -/
+  equippedCantBeBlocked : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Conditional static modifiers gated on having an enduring story. -/
+structure StaticEnduringStoryMeta where
   /-- Enduring-story self pump. -/
   selfIfEnduringStory : Option (Int × Int × Keywords) := none
   /-- Enduring-story team pump. -/
@@ -482,10 +569,10 @@ structure StaticMeta where
   teamWardIfEnduringStory : Option Nat := none
   /-- Attack tax `{n}` if enduring story. -/
   attackTaxIfEnduringStory : Option Nat := none
-  /-- Can't be blocked by creatures with power at least this. -/
-  cantBeBlockedByPowerAtLeast : Option Int := none
-  /-- Equipped creature also can't be blocked. -/
-  equippedCantBeBlocked : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Projections Game reads from a static ability. -/
+structure StaticMeta extends StaticPtAndTypeMeta, StaticCombatMeta, StaticEnduringStoryMeta where
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static ability for Game accessors. -/

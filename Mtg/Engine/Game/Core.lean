@@ -232,50 +232,58 @@ structure TurnControlState where
   controlOnNextTakenTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
-structure ResolutionNotes where
-  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
-  may put that land onto the battlefield tapped (Silvan Reveler). The
-  player who discarded it, and the card. -/
-  discardedCardThisWay : Option (PlayerId × ObjectId) := none
+/-- Numeric counts recorded across sequential resolution steps (CR 608.2c). -/
+structure ResolutionCountNotes where
   /-- Humans chosen for the current “tap any number of Humans” step.
   `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
   /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
   `.gainLife .forEachDestroyedThisWay` gains this much life. -/
   permanentsDestroyedThisWay : Nat := 0
+  /-- Ordinal recorded by the current `noteResolveThisTurn` step.
+  `«if» (.nthResolve _)` reads it and a finished sequence clears it. -/
+  nthResolveThisWay : Option Nat := none
+  /-- Excess damage noted by `dealDamage` with `.excess` for the following
+  amass step. -/
+  excessDamageThisWay : Nat := 0
+  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
+  handDiscardedThisWay : Option Nat := none
+  /-- A count captured before a later step could change it (invasion counters,
+  cards discarded). -/
+  notedCountThisWay : Nat := 0
+  /-- Power of the creature sacrificed for
+  `putCounters .plusOneSacrificedPower`. -/
+  sacrificedPowerThisWay : Option Nat := none
+deriving Repr, Inhabited, BEq
+
+/-- Boolean step-outcome flags recorded across sequential resolution steps (CR 608.2c). -/
+structure ResolutionFlagNotes where
   /-- A hope counter was removed by the current `removeCounters .hope .source` step.
   `«if» .removedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
-  /-- The permanent marked by the current `dealDamage` step when it notes
-  `.markedPermanent`. `«if» (.dealtDamageToSubtype _)` destroys it when it
-  has the subtype. -/
-  permanentDealtDamageThisWay : Option ObjectId := none
   /-- A permanent was returned to its owner's hand by the current
   `returnToHand` step when it notes `.returnedPermanent`.
   `«if» .returnedPermanent` puts a +1/+1 counter on the source when this is set. -/
   returnedPermanentThisWay : Bool := false
-  /-- Ordinal recorded by the current `noteResolveThisTurn` step.
-  `«if» (.nthResolve _)` reads it and a finished sequence clears it. -/
-  nthResolveThisWay : Option Nat := none
   /-- The current sequence step asked the rest of the sequence not to run
   (the source had already left, or no mana was spent). -/
   skipTriggerSequenceRest : Bool := false
-  /-- Excess damage noted by `dealDamage` with `.excess` for the following
-  amass step. -/
-  excessDamageThisWay : Nat := 0
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
+  opponentsMilledThisWay : Bool := false
+  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
+  planWasSacrificed : Bool := false
+  /-- `sacrifice .you .source .noted` sacrificed the source. -/
+  sourceWasSacrificed : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Amass, Palantír, and impulse-cast cross-step resolution notes (CR 608.2c / CR 701.47). -/
+structure ResolutionAmassAndImpulseNotes where
   /-- `.destroy .target (note := .forAmass)` chose a legal target. The controller,
   amount, and whether you controlled it feed the following amass and draw steps. -/
   destroyedForAmassThisWay : Bool := false
   amassControllerThisWay : Option PlayerId := none
   amassAmountThisWay : Nat := 0
   amassYouControlledThisWay : Bool := false
-  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
-  milledIdsThisWay : Array ObjectId := #[]
-  /-- Cards `revealLibrary` just showed. A following step reads them. -/
-  revealedIdsThisWay : Array ObjectId := #[]
-  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
-  opponentsMilledThisWay : Bool := false
   /-- Palantír finished putting an influence counter; the following step offers
   the opponent's draw choice. Controller, opponent, and the Palantír. -/
   palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
@@ -285,10 +293,22 @@ structure ResolutionNotes where
   grimaImpulseVictim : Option PlayerId := none
   grimaImpulseFound : Option ObjectId := none
   grimaImpulseOthers : Array ObjectId := #[]
-  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
-  planWasSacrificed : Bool := false
-  /-- `sacrifice .you .source .noted` sacrificed the source. -/
-  sourceWasSacrificed : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Objects and card lists noted across sequential resolution steps ("that card", "those cards", CR 608.2c / CR 608.2h). -/
+structure ResolutionObjectNotes where
+  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
+  may put that land onto the battlefield tapped (Silvan Reveler). The
+  player who discarded it, and the card. -/
+  discardedCardThisWay : Option (PlayerId × ObjectId) := none
+  /-- The permanent marked by the current `dealDamage` step when it notes
+  `.markedPermanent`. `«if» (.dealtDamageToSubtype _)` destroys it when it
+  has the subtype. -/
+  permanentDealtDamageThisWay : Option ObjectId := none
+  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
+  milledIdsThisWay : Array ObjectId := #[]
+  /-- Cards `revealLibrary` just showed. A following step reads them. -/
+  revealedIdsThisWay : Array ObjectId := #[]
   /-- Lands exiled by `exile .landsYouControl .forLater .lands`.
   `.put .notedLands (how := .tapped)` returns them. -/
   exiledIdsThisWay : Array ObjectId := #[]
@@ -296,15 +316,10 @@ structure ResolutionNotes where
   The object is the one from before it moved. -/
   notedCopyObject : Option GameObject := none
   notedHostId : Option ObjectId := none
-  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
-  handDiscardedThisWay : Option Nat := none
   /-- Source of the Balin ability, for the damage step after the discard. -/
   notedSourceThisWay : Option ObjectId := none
   /-- Creature that received Equipment from `attach .anyYouControl .target`. -/
   equipmentAttachedHost : Option ObjectId := none
-  /-- A count captured before a later step could change it (invasion counters,
-  cards discarded). -/
-  notedCountThisWay : Nat := 0
   /-- Token created for the following attach or counter step. -/
   createdTokenThisWay : Option ObjectId := none
   /-- Artifact put from hand by `.put .artifactFromHand (note := .forAttach)`,
@@ -313,9 +328,14 @@ structure ResolutionNotes where
   putArtifactThisWay : Option (ObjectId × ObjectId) := none
   /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
   playExiledThisWay : Option ObjectId := none
-  /-- Power of the creature sacrificed for
-  `putCounters .plusOneSacrificedPower`. -/
-  sacrificedPowerThisWay : Option Nat := none
+deriving Repr, Inhabited
+
+/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
+structure ResolutionNotes extends
+    ResolutionCountNotes,
+    ResolutionFlagNotes,
+    ResolutionAmassAndImpulseNotes,
+    ResolutionObjectNotes where
 deriving Repr, Inhabited
 
 /-- Game-wide per-turn and until-end-of-turn state cleared during cleanup or

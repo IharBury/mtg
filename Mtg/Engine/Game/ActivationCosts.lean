@@ -71,6 +71,7 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
     other && o.owner == p && o.zone == .graveyard p && o.printed.isCreature
   | .tapChoice twoArtifacts =>
     perm && !o.status.tapped && (if twoArtifacts then artifact else o.isCreature)
+  | _ => false
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
 permanents first). -/

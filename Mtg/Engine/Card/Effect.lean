@@ -15,15 +15,19 @@ namespace Mtg.Engine
 
 
 
-/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
-and triggered abilities. Targeting, printed wording, and resolution live
-here so Game has one apply path. -/
-structure Effect where
-  events : Array TriggerEvent := #[]
+/-- Target announcement metadata for a one-shot effect (CR 115.1 / 601.2c / 601.2d). -/
+structure EffectTargetingMeta where
   targeting : EffectTargeting := .of .none
   allowsZeroTargets : Bool := false
   maxTargets : Nat := 0
   dividedDamage : Option (Nat × Nat) := none
+deriving Repr, Inhabited, BEq
+
+/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
+and triggered abilities. Targeting, printed wording, and resolution live
+here so Game has one apply path. -/
+structure Effect extends EffectTargetingMeta where
+  events : Array TriggerEvent := #[]
   onceEachTurn : Bool := false
   optionalOnceEachTurn : Bool := false
   spellCastKind : SpellCastKind := .extraLand

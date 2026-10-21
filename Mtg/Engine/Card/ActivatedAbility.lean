@@ -14,13 +14,14 @@ namespace Mtg.Engine
 `[+N]` puts N loyalty counters on the source, `[-N]` removes N, and `[0]`
 puts zero. `[+X]` and `[-X]` use X in place of a fixed number (CR 107.3a). -/
 inductive LoyaltySymbol where
-  | fixed (n : Nat) (minus : Bool := false)
-  | zero
-  | variableX (minus : Bool := false)
+  | loyaltySymbolKind (n : Nat := 0) (minus : Bool := false) (variableXFlag : Bool := false) (zeroFlag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace LoyaltySymbol
 
+@[match_pattern] abbrev fixed (n : Nat) (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind n minus false false
+@[match_pattern] abbrev zero : LoyaltySymbol := .loyaltySymbolKind 0 false false true
+@[match_pattern] abbrev variableX (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind 0 minus true false
 @[match_pattern] abbrev plus (n : Nat) : LoyaltySymbol := .fixed n false
 @[match_pattern] abbrev minus (n : Nat) : LoyaltySymbol := .fixed n true
 @[match_pattern] abbrev plusX : LoyaltySymbol := .variableX false
@@ -33,6 +34,7 @@ def toNotation : LoyaltySymbol → String
   | .zero => "[0]"
   | .variableX false => "[+X]"
   | .variableX true => "[-X]"
+  | _ => "[0]"
 
 /-- Counters this symbol adds, or removes when negative.
 `[+X]` and `[-X]` are not a fixed number. -/
@@ -40,7 +42,7 @@ def counters : LoyaltySymbol → Option Int
   | .fixed n false => some (Int.ofNat n)
   | .fixed n true => some (-Int.ofNat n)
   | .zero => some 0
-  | .variableX _ => none
+  | _ => none
 
 end LoyaltySymbol
 
@@ -50,19 +52,24 @@ inductive CostPick where
   /-- Sacrifice another permanent of this subtype, or another creature when
   the subtype is `Creature`. -/
   | sacrificeAnotherSubtype (subtype : String)
-  /-- Sacrifice an artifact (`!legendary && !anotherOrEquip`), a legendary artifact (`legendary && !anotherOrEquip`), another artifact (`!legendary && anotherOrEquip`), or an Equipment attached to the source (`legendary && anotherOrEquip`). -/
-  | sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false)
-  /-- Sacrifice an artifact or creature (`!anotherCreatureOrPw && !landOrDiscard`), another creature or planeswalker (`anotherCreatureOrPw && !landOrDiscard`), an artifact or land (`!anotherCreatureOrPw && landOrDiscard`), or an artifact or discard a nonland card (`anotherCreatureOrPw && landOrDiscard`). -/
-  | sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false)
-  /-- Discard a card (`!nonland && !legendary`), a nonland card (`nonland && !legendary`), a legendary card (`!nonland && legendary`), or a legendary card with the same name as a legendary permanent you control (`nonland && legendary`). -/
-  | discardChoice (nonland : Bool := false) (legendary : Bool := false)
-  | exileAnotherCreatureCardFromGraveyard
-  /-- Tap an untapped creature you control (`!twoArtifacts`) or tap two untapped artifacts you control (`twoArtifacts`). -/
-  | tapChoice (twoArtifacts : Bool := false)
+  /-- Chosen-object activation cost kind (sacrifice, discard, exile from graveyard, or tap). -/
+  | costPickKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (twoKind : Bool := false) (discardFlag : Bool := false)
+      (exileOrTap : Bool := false) (tapFlag : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CostPick
 
+@[match_pattern] abbrev sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false) : CostPick :=
+  .costPickKind legendary anotherOrEquip false false false false
+@[match_pattern] abbrev sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false) : CostPick :=
+  .costPickKind anotherCreatureOrPw landOrDiscard true false false false
+@[match_pattern] abbrev discardChoice (nonland : Bool := false) (legendary : Bool := false) : CostPick :=
+  .costPickKind nonland legendary false true false false
+@[match_pattern] abbrev exileAnotherCreatureCardFromGraveyard : CostPick :=
+  .costPickKind false false false false true false
+@[match_pattern] abbrev tapChoice (twoArtifacts : Bool := false) : CostPick :=
+  .costPickKind twoArtifacts false false false false true
 @[match_pattern] abbrev sacrificeArtifact : CostPick := .sacrificeArtifactChoice false false
 @[match_pattern] abbrev sacrificeLegendaryArtifact : CostPick := .sacrificeArtifactChoice true false
 @[match_pattern] abbrev sacrificeAnotherArtifact : CostPick := .sacrificeArtifactChoice false true
@@ -104,27 +111,27 @@ def CostPick.phrase : CostPick → String
   | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
   | .tapUntappedCreature => "tap an untapped creature you control"
   | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
+  | _ => ""
 
 /-- Additional non-mana activation costs (CR 602.1 / 118). -/
 inductive ExtraActivationCost where
-  | none
-  /-- Exile this card from your graveyard (`!fromHand && !battlefield`), exile this card from your hand (`fromHand && !battlefield`), exile this permanent (`!fromHand && battlefield`), or sacrifice another creature or artifact you control (`fromHand && battlefield`, CR 701.17). -/
-  | exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false)
+  | extraCostKind (alt1 : Bool := false) (alt2 : Bool := false)
+      (exileOrSac : Bool := false) (counterMod : Bool := false) (zemo : Bool := false)
   /-- Remove a counter of `kind` from the source. -/
   | removeCounter (kind : CounterKind)
-  /-- Remove any number of +1/+1 counters from the source (`!putStun`) or put a stun counter on the source (`putStun`). -/
-  | counterModCost (putStun : Bool := false)
   /-- Crew N: tap any number of untapped creatures you control with total
   power N or more (CR 702.122). -/
   | crew (power : Nat)
-  /-- Boast cost of Baron Helmut Zemo: exile any number of black cards from
-  your graveyard with fifteen or more black mana symbols among their mana
-  costs. -/
-  | zemoBoast
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace ExtraActivationCost
 
+@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind false false false false false
+@[match_pattern] abbrev exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false) : ExtraActivationCost :=
+  .extraCostKind fromHand battlefield true false false
+@[match_pattern] abbrev counterModCost (putStun : Bool := false) : ExtraActivationCost :=
+  .extraCostKind putStun false false true false
+@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind false false false false true
 @[match_pattern] abbrev exileSourceFromGraveyard : ExtraActivationCost := .exileOrSacrificeCost false false
 @[match_pattern] abbrev exileSourceFromHand : ExtraActivationCost := .exileOrSacrificeCost true false
 @[match_pattern] abbrev exileSource : ExtraActivationCost := .exileOrSacrificeCost false true
@@ -148,12 +155,14 @@ abbrev ActivationCostReduction := CostReduction
 
 /-- Target quality restriction on an equip ability (CR 702.6). -/
 inductive EquipRestriction where
-  | none
-  /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
-  | subtype (s : String)
-  /-- Equip worthy: attach only to a legendary non-Villain red or white creature (MSH 118 / 119). -/
-  | worthy
+  | equipRestrictionKind (s : String := "") (subtypeFlag : Bool := false) (worthyFlag : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace EquipRestriction
+@[match_pattern] abbrev none : EquipRestriction := .equipRestrictionKind "" false false
+@[match_pattern] abbrev subtype (s : String) : EquipRestriction := .equipRestrictionKind s true false
+@[match_pattern] abbrev worthy : EquipRestriction := .equipRestrictionKind "" false true
+end EquipRestriction
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
@@ -279,25 +288,14 @@ instance : ToString ActivationCost where
 
 end ActivationCost
 
-/-- An activated ability printed on a card (CR 602.1). Mana abilities that
-are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
-`CardDef.tapAddManaForEach` / basic land types. -/
-structure ActivatedAbility where
-  cost : ActivationCost
-  /-- The ability's printed line, when its wording isn't built from the cost
-  and effect (Reality Fracture). -/
-  printed : String := ""
+/-- Timing, zone, condition, and frequency restrictions on an activated ability (CR 602.5 / 117.1a / 112.6 / 702.6 / 702.177 / 702.193). -/
+structure ActivationRestrictions where
   /-- Exhaust: activate this ability only once (CR 702.177). -/
   exhaust : Bool := false
   /-- An “Activate only if …” restriction (CR 602.5b). -/
   condition : ActivationCondition := .none
   /-- Cost reduction on this activated ability (CR 602.2b / 601.2f). -/
   costReduction : ActivationCostReduction := .none
-  /-- First (or only) mode of this ability. -/
-  effect : Effect
-  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
-  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
-  otherModes : Array Effect := #[]
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
   /-- Timing restriction “Activate only during your turn”. -/
@@ -315,6 +313,21 @@ structure ActivatedAbility where
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- An activated ability printed on a card (CR 602.1). Mana abilities that
+are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
+`CardDef.tapAddManaForEach` / basic land types. -/
+structure ActivatedAbility extends ActivationRestrictions where
+  cost : ActivationCost
+  /-- The ability's printed line, when its wording isn't built from the cost
+  and effect (Reality Fracture). -/
+  printed : String := ""
+  /-- First (or only) mode of this ability. -/
+  effect : Effect
+  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
+  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
+  otherModes : Array Effect := #[]
 deriving Repr, Inhabited, BEq
 
 /-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/

@@ -390,12 +390,12 @@ def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
   match targeting.prefer with
   | .own => own
   | .opponent => opp
-  | .opponentPlayer =>
+  | .opponentPlayer | .preferenceKind false true true =>
     let player := Target.player (g.opponent p)
     if legal.contains player then some player else legal[0]?
   | .last => legal.back?
   | .ownThenOpponent => own <|> opp
-  | .selfPlayer =>
+  | .selfPlayer | .preferenceKind true true true =>
     let player := Target.player p
     if legal.contains player then some player else legal[0]?
 

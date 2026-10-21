@@ -7,19 +7,25 @@ single-keyword `Keyword.*` values.
 
 namespace Mtg.Engine
 
-/-- Keyword abilities that the engine currently understands. -/
-structure Keywords where
-  flash : Bool := false
-  haste : Bool := false
-  vigilance : Bool := false
+/-- Evasion and blocking-restriction keyword abilities (CR 509.1b / 702.9 / 702.14 / 702.17 / 702.27 / 702.111). -/
+structure EvasionKeywords where
   flying : Bool := false
   /-- This creature can't be blocked (printed or granted until end of turn). -/
   cantBeBlocked : Bool := false
   /-- This creature can't be blocked except by two or more creatures (CR 702.111). -/
   menace : Bool := false
-  hexproof : Bool := false
-  indestructible : Bool := false
   reach : Bool := false
+  /-- This creature can't be blocked as long as the defending player controls
+  an Island (CR 702.14). -/
+  islandwalk : Bool := false
+  /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
+  shadow : Bool := false
+deriving BEq, Repr, Inhabited
+
+/-- Combat-damage and attacking/blocking keyword abilities (CR 702.2 / 702.3 / 702.4 / 702.7 / 702.10 / 702.15 / 702.19 / 702.20). -/
+structure CombatKeywords where
+  haste : Bool := false
+  vigilance : Bool := false
   trample : Bool := false
   deathtouch : Bool := false
   defender : Bool := false
@@ -28,24 +34,30 @@ structure Keywords where
   /-- This creature deals combat damage before creatures without first strike
   (CR 702.7). -/
   firstStrike : Bool := false
-  /-- This creature can't be blocked as long as the defending player controls
-  an Island (CR 702.14). -/
-  islandwalk : Bool := false
+  /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
+  doubleStrike : Bool := false
+deriving BEq, Repr, Inhabited
+
+/-- Spell, protection, triggered, and characteristic-defining keyword abilities (CR 702.8 / 702.11 / 702.12 / 702.51 / 702.72 / 702.108 / 702.131). -/
+structure SpellAndStaticKeywords where
+  flash : Bool := false
+  hexproof : Bool := false
+  indestructible : Bool := false
   /-- Storied (HOB): if you control three or more artifacts, legendaries,
   and/or Sagas, you have an enduring story for the rest of the game. -/
   storied : Bool := false
-  /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
-  doubleStrike : Bool := false
   /-- Prowess (CR 702.108). -/
   prowess : Bool := false
   /-- Ascend (CR 702.131). -/
   ascend : Bool := false
-  /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
-  shadow : Bool := false
   /-- Changeling (CR 702.72): this object has all creature types. -/
   changeling : Bool := false
   /-- Convoke (CR 702.51): tap creatures to help pay this spell. -/
   convoke : Bool := false
+deriving BEq, Repr, Inhabited
+
+/-- Keyword abilities that the engine currently understands. -/
+structure Keywords extends EvasionKeywords, CombatKeywords, SpellAndStaticKeywords where
 deriving BEq, Repr, Inhabited
 
 namespace Keywords

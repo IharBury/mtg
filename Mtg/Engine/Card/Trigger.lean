@@ -637,9 +637,9 @@ def mayTo (can thenDo : SharedTrigger) : SharedTrigger :=
     maxTargets :=
       if can.targeting.kind == .none then thenDo.maxTargets else can.maxTargets
     dividedDamage :=
-      match Effect.dividedDamage can with
+      match can.toEffectTargetingMeta.dividedDamage with
       | some d => some d
-      | none => Effect.dividedDamage thenDo
+      | none => thenDo.toEffectTargetingMeta.dividedDamage
     resolution := .may can.resolution thenDo.resolution .ifYouDo }
 
 def may (action : SharedTrigger) : SharedTrigger :=
