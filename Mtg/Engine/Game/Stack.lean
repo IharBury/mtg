@@ -53,16 +53,20 @@ structure StackEntry where
 deriving Repr, Inhabited
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
-inductive ProposalKind where
-  | proposalKind (isActivatedAbility : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev ProposalKind := Target
 
 namespace ProposalKind
 
+@[match_pattern] abbrev proposalKind (isActivatedAbility : Bool := false) : ProposalKind :=
+  .targetKind (.inr (⟨0⟩, isActivatedAbility))
 @[match_pattern] abbrev spell : ProposalKind := .proposalKind false
 @[match_pattern] abbrev activatedAbility : ProposalKind := .proposalKind true
 
 end ProposalKind
+
+namespace Target
+export ProposalKind (proposalKind spell activatedAbility)
+end Target
 
 /-- Rollback snapshot of the game state before a spell or activated ability
 was proposed (CR 733.1). -/

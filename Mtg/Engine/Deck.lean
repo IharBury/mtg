@@ -11,12 +11,12 @@ name.
 namespace Mtg.Engine
 
 /-- How a deck is validated before a game begins. -/
-inductive Format where
-  | formatKind (isConstructed : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev Format := EntersTappedRule
 
 namespace Format
 
+@[match_pattern] abbrev formatKind (isConstructed : Bool := false) : Format :=
+  .entersTappedKind .teamwork 0 isConstructed false false false
 /-- CR 100.2a: minimum 60, four-of except basic lands. -/
 @[match_pattern] abbrev constructed : Format := .formatKind true
 /-- CR 100.2b: minimum 40, duplicates unrestricted. -/
@@ -24,38 +24,45 @@ namespace Format
 
 def minDeckSize : Format → Nat
   | .constructed => 60
-  | .limited => 40
+  | _ => 40
 
 def englishName : Format → String
   | .constructed => "constructed"
-  | .limited => "limited"
+  | _ => "limited"
 
 instance : ToString Format where
   toString := englishName
 
 end Format
 
-inductive DeckError where
-  | deckErrorKind (k : (Nat × Nat) ⊕ (String × Nat))
-deriving Repr, BEq
+namespace EntersTappedRule
+export Format (formatKind constructed limited)
+end EntersTappedRule
+
+abbrev DeckError := CardKeywordRule
 
 namespace DeckError
 
 @[match_pattern] abbrev tooSmall (got required : Nat) : DeckError :=
-  .deckErrorKind (.inl (got, required))
+  .cardKeywordRuleKind got "" #[] ManaCost.empty required false false false false false false
 @[match_pattern] abbrev tooManyCopies (cardName : String) (got : Nat) : DeckError :=
-  .deckErrorKind (.inr (cardName, got))
+  .cardKeywordRuleKind got cardName #[] ManaCost.empty 0 true false false false false false
 
 def message : DeckError → String
   | .tooSmall got required =>
     s!"Deck has {got} cards; minimum is {required}"
   | .tooManyCopies cardName got =>
     s!"Deck has {got} copies of {cardName}; constructed maximum is 4"
+  | _ => ""
 
 instance : ToString DeckError where
   toString := message
 
 end DeckError
+
+namespace CardKeywordRule
+export DeckError (tooSmall tooManyCopies)
+end CardKeywordRule
 
 /-- Count copies of each English name. -/
 def countNames (cards : Array CardDef) : List (String × Nat) :=

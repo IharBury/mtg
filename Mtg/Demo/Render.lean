@@ -977,7 +977,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     match g.result with
     | none => ""
     | some (.won p) => s!"  RESULT: {g.player p |>.name} wins"
-    | some .draw => "  RESULT: draw"
+    | some _ => "  RESULT: draw"
   if g.openingHandsPending then
     s!"Opening hands{viewTag}{pending}{result}"
   else

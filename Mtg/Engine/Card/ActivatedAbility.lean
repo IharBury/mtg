@@ -9,16 +9,27 @@ effects.
 
 namespace Mtg.Engine
 
+/-- Part of an activation cost that needs the player to choose what to pay
+with, additional activation cost, or equip target restriction (CR 601.2h / 602.1 / 602.2b / 702.6). -/
+inductive CostPick where
+  /-- Chosen-object activation cost, additional activation cost, or equip restriction kind. -/
+  | costPickKind (subtype : String := "") (power : Nat := 0) (kind : CounterKind := .plusOnePlusOne)
+      (alt1 : Bool := false) (alt2 : Bool := false)
+      (twoKind : Bool := false) (discardFlag : Bool := false)
+      (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- A loyalty symbol in an activation cost (CR 107.7 / 209.2).
 
 `[+N]` puts N loyalty counters on the source, `[-N]` removes N, and `[0]`
 puts zero. `[+X]` and `[-X]` use X in place of a fixed number (CR 107.3a). -/
-inductive LoyaltySymbol where
-  | loyaltySymbolKind (n : Nat := 0) (minus : Bool := false) (variableXFlag : Bool := false) (zeroFlag : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev LoyaltySymbol := CostPick
 
 namespace LoyaltySymbol
 
+@[match_pattern] abbrev loyaltySymbolKind (n : Nat := 0) (minus : Bool := false)
+    (variableXFlag : Bool := false) (zeroFlag : Bool := false) : LoyaltySymbol :=
+  .costPickKind "" n .plusOnePlusOne minus variableXFlag zeroFlag false false false false
 @[match_pattern] abbrev fixed (n : Nat) (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind n minus false false
 @[match_pattern] abbrev zero : LoyaltySymbol := .loyaltySymbolKind 0 false false true
 @[match_pattern] abbrev variableX (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind 0 minus true false
@@ -46,17 +57,8 @@ def counters : LoyaltySymbol → Option Int
 
 end LoyaltySymbol
 
-/-- Part of an activation cost that needs the player to choose what to pay
-with, additional activation cost, or equip target restriction (CR 601.2h / 602.1 / 602.2b / 702.6). -/
-inductive CostPick where
-  /-- Chosen-object activation cost, additional activation cost, or equip restriction kind. -/
-  | costPickKind (subtype : String := "") (power : Nat := 0) (kind : CounterKind := .plusOnePlusOne)
-      (alt1 : Bool := false) (alt2 : Bool := false)
-      (twoKind : Bool := false) (discardFlag : Bool := false)
-      (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
-
 namespace CostPick
+export LoyaltySymbol (loyaltySymbolKind fixed zero variableX plus minus plusX minusX)
 
 /-- Sacrifice another permanent of this subtype, or another creature when
 the subtype is `Creature`. -/

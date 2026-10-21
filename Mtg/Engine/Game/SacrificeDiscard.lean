@@ -203,7 +203,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
       match prop.kind with
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
-      | .activatedAbility =>
+      | _ =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
     | none =>
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }

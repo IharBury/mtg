@@ -235,7 +235,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
         match g.defaultAbilityMode p prop.abilityModes with
         | none => panic! "no legal mode (CR 601.2b)"
         | some idx => mustApply g p (.chooseMode idx)
-      | .spell =>
+      | _ =>
         match g.findObject? prop.spellId with
         | none => panic! "expected a proposed spell while choosing a mode"
         | some spell =>

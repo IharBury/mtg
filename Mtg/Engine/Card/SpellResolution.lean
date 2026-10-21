@@ -20,21 +20,22 @@ namespace Mtg.Engine
 Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
-  /-- Spell classification for agent heuristics: damage/fight (`false, false`), destroy/counter (`true, false`), pump (`false, true`), or utility (`true, true`). -/
-  | spellCastKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false)
+  /-- Spell classification for agent heuristics or reflexive trigger classification. -/
+  | spellCastKind (n : Nat := 0) (times : Nat := 0)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace SpellCastKind
 
 @[match_pattern] abbrev damageOrFight (creatureOnly : Bool := false) (fight : Bool := false) : SpellCastKind :=
-  .spellCastKind creatureOnly fight false false false
+  .spellCastKind 0 0 creatureOnly fight false false false false
 @[match_pattern] abbrev destroyOrCounter (flying : Bool := false) (artifactOrLand : Bool := false) (counterSpell : Bool := false) : SpellCastKind :=
-  .spellCastKind flying artifactOrLand counterSpell true false
+  .spellCastKind 0 0 flying artifactOrLand counterSpell true false false
 @[match_pattern] abbrev pumpSpell (mass : Bool := false) : SpellCastKind :=
-  .spellCastKind mass false false false true
+  .spellCastKind 0 0 mass false false false true false
 @[match_pattern] abbrev utilitySpell (draw : Bool := false) : SpellCastKind :=
-  .spellCastKind draw false false true true
+  .spellCastKind 0 0 draw false false true true false
 @[match_pattern] abbrev burn : SpellCastKind := .damageOrFight false false
 @[match_pattern] abbrev creatureDamage : SpellCastKind := .damageOrFight true false
 @[match_pattern] abbrev fight : SpellCastKind := .damageOrFight false true
@@ -78,49 +79,49 @@ namespace AbilityCastKind
 
 end AbilityCastKind
 
-/-- Which milled cards `SpellResolution.millThenPut` puts into hand. -/
+/-- Which milled cards `SpellResolution.millThenPut` puts into hand, or which spells cost less. -/
 inductive MilledToHand where
-  /-- Up to one (`all = false`), every (`all = true`), or up to `max` (`max = some max`) milled card(s) of type `a` or `b`. -/
+  /-- Up to one (`all = false`), every (`all = true`), or up to `max` (`max = some max`) milled card(s) of type `a` or `b`, or spells of type `a` / supertype `s`. -/
   | milledPickKind (a : CardType := .creature) (b : CardType := .land) (all : Bool := false)
-      (max : Option Nat := none)
+      (max : Option Nat := none) (s : Option Supertype := none)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace MilledToHand
 
 @[match_pattern] abbrev twoTypes (a b : CardType) (all : Bool := false) : MilledToHand :=
-  .milledPickKind a b all none
+  .milledPickKind a b all none none
 @[match_pattern] abbrev upTo (max : Nat) (ty : CardType) : MilledToHand :=
-  .milledPickKind ty .creature false (some max)
+  .milledPickKind ty .creature false (some max) none
 @[match_pattern] abbrev oneOf (a b : CardType) : MilledToHand := .twoTypes a b false
 @[match_pattern] abbrev allOf (a b : CardType) : MilledToHand := .twoTypes a b true
 
 end MilledToHand
 
 /-- Which spells `SpellResolution.spellsCostLessThisTurn` makes cheaper. -/
-inductive SpellCostLess where
-  /-- Spells of card type `ty` (`s = none`, CR 205.2a) or supertype `s` (`s = some s`, CR 205.4a). -/
-  | spellCostLessKind (ty : CardType := .creature) (s : Option Supertype := none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev SpellCostLess := MilledToHand
 
 namespace SpellCostLess
 
+@[match_pattern] abbrev spellCostLessKind (ty : CardType := .creature) (s : Option Supertype := none) : SpellCostLess :=
+  .milledPickKind ty .creature false none s
 @[match_pattern] abbrev cardType (ty : CardType) : SpellCostLess := .spellCostLessKind ty none
 @[match_pattern] abbrev supertype (s : Supertype) : SpellCostLess := .spellCostLessKind .creature (some s)
 
 end SpellCostLess
 
-/-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on. -/
+/-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on, or counter-removal / fight mode. -/
 inductive YouControlPlusOne where
-  /-- Each creature you control (`subtype = none`, or two counters with the city's blessing when `citysBlessing = true`) or each permanent of `subtype` you control (`subtype = some subtype`). -/
-  | plusOneGroupKind (citysBlessing : Bool := false) (subtype : Option String := none)
+  /-- Each creature you control (`subtype = none`, or two counters with the city's blessing when `citysBlessing = true`), each permanent of `subtype` you control (`subtype = some subtype`), or counter-removal / fight mode. -/
+  | plusOneGroupKind (citysBlessing : Bool := false) (b2 : Bool := false)
+      (subtype : Option String := none) (upTo : Option Nat := none)
 deriving Repr, Inhabited, BEq
 
 namespace YouControlPlusOne
 
 @[match_pattern] abbrev creaturesYouControl (citysBlessing : Bool := false) : YouControlPlusOne :=
-  .plusOneGroupKind citysBlessing none
+  .plusOneGroupKind citysBlessing false none none
 @[match_pattern] abbrev subtype (subtype : String) : YouControlPlusOne :=
-  .plusOneGroupKind false (some subtype)
+  .plusOneGroupKind false false (some subtype) none
 @[match_pattern] abbrev eachCreature : YouControlPlusOne := .creaturesYouControl false
 @[match_pattern] abbrev citysBlessing : YouControlPlusOne := .creaturesYouControl true
 
@@ -176,14 +177,13 @@ end SacrificeSourceHow
 
 /-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
 `toNat` is the index `Resolution.mshReflexive` matches. -/
-inductive TriggerReflexiveKind where
-  /-- Combat/control (`false, false`), zone/damage (`true, false`), or target/return (`false, true`) reflexive. -/
-  | reflexiveKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (zoneOrDamage : Bool := false) (targetOrReturn : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerReflexiveKind := SpellCastKind
 
 namespace TriggerReflexiveKind
 
+@[match_pattern] abbrev reflexiveKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (zoneOrDamage : Bool := false) (targetOrReturn : Bool := false) : TriggerReflexiveKind :=
+  .spellCastKind 0 0 alt1 alt2 false zoneOrDamage targetOrReturn false
 @[match_pattern] abbrev combatOrControlReflexive (trickArrows : Bool := false) (counterOrControl : Bool := false) : TriggerReflexiveKind :=
   .reflexiveKind trickArrows counterOrControl false false
 @[match_pattern] abbrev zoneOrDamageReflexive (returnAttacking : Bool := false) (destroyOrDamage : Bool := false) : TriggerReflexiveKind :=
@@ -1440,13 +1440,12 @@ namespace AbilitySelector
 end AbilitySelector
 
 /-- What `TriggerResolution.removeCounters` removes. -/
-inductive TriggerRemoveWhat where
-  /-- One hope counter (`all = false, upTo = none`), every counter (`all = true, upTo = none`), or up to `n` counters of the controller's choice (`upTo = some n`). -/
-  | removeWhatKind (all : Bool := false) (upTo : Option Nat := none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerRemoveWhat := YouControlPlusOne
 
 namespace TriggerRemoveWhat
 
+@[match_pattern] abbrev removeWhatKind (all : Bool := false) (upTo : Option Nat := none) : TriggerRemoveWhat :=
+  .plusOneGroupKind all false none upTo
 @[match_pattern] abbrev hopeOrAll (all : Bool := false) : TriggerRemoveWhat := .removeWhatKind all none
 @[match_pattern] abbrev upTo (n : Nat) : TriggerRemoveWhat := .removeWhatKind false (some n)
 @[match_pattern] abbrev hope : TriggerRemoveWhat := .hopeOrAll false
@@ -1819,14 +1818,13 @@ namespace TriggerDestroyNote
 end TriggerDestroyNote
 
 /-- How `TriggerResolution.fight` uses that creature. -/
-inductive TriggerFightHow where
-  /-- Mutual fight (`false, false, none`), reflexive power damage (`true, false, none`), fight up to one other (`false, true, none`), or deal `k` times its power (`timesPower = some k`). -/
-  | fightHowKind (reflexive : Bool := false) (upToOneOther : Bool := false)
-      (timesPower : Option Nat := none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerFightHow := YouControlPlusOne
 
 namespace TriggerFightHow
 
+@[match_pattern] abbrev fightHowKind (reflexive : Bool := false) (upToOneOther : Bool := false)
+    (timesPower : Option Nat := none) : TriggerFightHow :=
+  .plusOneGroupKind reflexive upToOneOther none timesPower
 @[match_pattern] abbrev «mutual» : TriggerFightHow := .fightHowKind false false none
 @[match_pattern] abbrev reflexive : TriggerFightHow := .fightHowKind true false none
 @[match_pattern] abbrev upToOneOther : TriggerFightHow := .fightHowKind false true none
@@ -3480,15 +3478,14 @@ paid count. `.damage` deals that much to any target. `.copy` exiles and
 copies a milled spell. `.divided` deals that total among one or two
 targets. `.attackPump` arms this turn's attack pump. `.none` queues
 nothing. -/
-inductive QueuedReflexive where
-  /-- Queued reflexive action kind (`modeled`, `counters`, `damage`, `copy`, `divided`, `attackPump`, or `none`). -/
-  | queuedReflexiveKind (n : Nat := 0) (times : Nat := 0)
-      (countersFlag : Bool := false) (damageFlag : Bool := false) (dividedFlag : Bool := false)
-      (copyFlag : Bool := false) (attackPumpFlag : Bool := false) (noneFlag : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev QueuedReflexive := SpellCastKind
 
 namespace QueuedReflexive
 
+@[match_pattern] abbrev queuedReflexiveKind (n : Nat := 0) (times : Nat := 0)
+    (countersFlag : Bool := false) (damageFlag : Bool := false) (dividedFlag : Bool := false)
+    (copyFlag : Bool := false) (attackPumpFlag : Bool := false) (noneFlag : Bool := false) : QueuedReflexive :=
+  .spellCastKind n times countersFlag damageFlag dividedFlag copyFlag attackPumpFlag noneFlag
 @[match_pattern] abbrev modeled (kind times : Nat) : QueuedReflexive :=
   .queuedReflexiveKind kind times false false false false false false
 @[match_pattern] abbrev counters (kind : Nat) : QueuedReflexive :=

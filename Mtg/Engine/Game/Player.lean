@@ -10,16 +10,18 @@ the `Action` interface players use to act.
 
 namespace Mtg.Engine
 
-inductive GameResult where
-  | gameResultKind (winner : Option PlayerId := none)
-deriving DecidableEq, Repr, BEq
+abbrev GameResult := Target
 
 namespace GameResult
 
-@[match_pattern] abbrev won (player : PlayerId) : GameResult := .gameResultKind (some player)
-@[match_pattern] abbrev draw : GameResult := .gameResultKind none
+@[match_pattern] abbrev won (player : PlayerId) : GameResult := .targetKind (.inl player)
+@[match_pattern] abbrev draw : GameResult := .targetKind (.inr (⟨0⟩, false))
 
 end GameResult
+
+namespace Target
+export GameResult (won draw)
+end Target
 
 /-- Per-turn spell casting and cost modification state on a player (CR 601.2f / CR 603.2). -/
 structure PlayerSpellTurnState where

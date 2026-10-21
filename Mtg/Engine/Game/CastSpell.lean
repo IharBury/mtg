@@ -229,7 +229,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         let g := { g with pending := .chooseTargets p }
         return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
       return g.afterTargetsChosen
-    | .spell =>
+    | _ =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
       if !spell.printed.isModal then
         throw "That spell is not modal (CR 700.2)"
@@ -345,7 +345,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         | some ab => ab.effect.requiresTarget
         | none => false
       return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
-    | .spell =>
+    | _ =>
       let spell := g.object! prop.spellId
       let face := spell.printed
       return g.enterProposalWindow p pl prop face.isModal

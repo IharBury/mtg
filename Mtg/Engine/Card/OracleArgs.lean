@@ -35,52 +35,66 @@ namespace SlotVal
 
 end SlotVal
 
-inductive NatFmt where
-  | natFmtKind (k0 : Option Bool := none) (k1 : Bool := false)
-deriving BEq, Repr, Inhabited
-
-namespace NatFmt
-
-@[match_pattern] abbrev digits : NatFmt := .natFmtKind none false
-@[match_pattern] abbrev cards : NatFmt := .natFmtKind none true
-@[match_pattern] abbrev counters : NatFmt := .natFmtKind (some false) false
-@[match_pattern] abbrev brace : NatFmt := .natFmtKind (some false) true
-@[match_pattern] abbrev english : NatFmt := .natFmtKind (some true) false
-/-- `twice`, or `N times`. -/
-@[match_pattern] abbrev times : NatFmt := .natFmtKind (some true) true
-
-end NatFmt
-
-inductive IntFmt where
-  | intFmtKind (isDigits : Bool := false)
-deriving BEq, Repr, Inhabited
-
-namespace IntFmt
-
-@[match_pattern] abbrev signed : IntFmt := .intFmtKind false
-@[match_pattern] abbrev digits : IntFmt := .intFmtKind true
-@[match_pattern] abbrev modeKind (isFill : Bool := false) : IntFmt := .intFmtKind isFill
-@[match_pattern] abbrev collect : IntFmt := .modeKind false
-@[match_pattern] abbrev fill : IntFmt := .modeKind true
-
-end IntFmt
-
 inductive StrFmt where
-  | strFmtKind (k : (Nat × Bool) ⊕ (Bool × Bool) := .inl (0, false))
+  | strFmtKind (n : Nat := 0) (k0 : Option Bool := none) (b1 : Bool := false) (b2 : Bool := false)
 deriving BEq, Repr, Inhabited
 
 namespace StrFmt
 
-@[match_pattern] abbrev word (n : Nat) : StrFmt := .strFmtKind (.inl (n, false))
-@[match_pattern] abbrev cycling (n : Nat) : StrFmt := .strFmtKind (.inl (n, true))
-@[match_pattern] abbrev plural : StrFmt := .strFmtKind (.inr (false, false))
-@[match_pattern] abbrev non : StrFmt := .strFmtKind (.inr (false, true))
+@[match_pattern] abbrev word (n : Nat) : StrFmt := .strFmtKind n (some false) false false
+@[match_pattern] abbrev cycling (n : Nat) : StrFmt := .strFmtKind n (some false) true false
+@[match_pattern] abbrev plural : StrFmt := .strFmtKind 0 (some true) false false
+@[match_pattern] abbrev non : StrFmt := .strFmtKind 0 (some true) true false
 /-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
-@[match_pattern] abbrev sub : StrFmt := .strFmtKind (.inr (true, false))
+@[match_pattern] abbrev sub : StrFmt := .strFmtKind 0 none true false
 /-- Any CR 205.3 subtype, plural spelling. -/
-@[match_pattern] abbrev subPlural : StrFmt := .strFmtKind (.inr (true, true))
+@[match_pattern] abbrev subPlural : StrFmt := .strFmtKind 0 (some true) false true
+@[match_pattern] abbrev natFmtKind (k0 : Option Bool := none) (k1 : Bool := false) : StrFmt :=
+  .strFmtKind 0 k0 k1 true
+@[match_pattern] abbrev intFmtKind (isDigits : Bool := false) : StrFmt :=
+  .strFmtKind 0 none false isDigits
+@[match_pattern] abbrev digits : StrFmt := .strFmtKind 0 none false true
+@[match_pattern] abbrev cards : StrFmt := .natFmtKind none true
+@[match_pattern] abbrev counters : StrFmt := .natFmtKind (some false) false
+@[match_pattern] abbrev brace : StrFmt := .natFmtKind (some false) true
+@[match_pattern] abbrev english : StrFmt := .natFmtKind (some true) false
+/-- `twice`, or `N times`. -/
+@[match_pattern] abbrev times : StrFmt := .natFmtKind (some true) true
+@[match_pattern] abbrev signed : StrFmt := .intFmtKind false
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : StrFmt := .intFmtKind isFill
+@[match_pattern] abbrev collect : StrFmt := .modeKind false
+@[match_pattern] abbrev fill : StrFmt := .modeKind true
 
 end StrFmt
+
+abbrev NatFmt := StrFmt
+
+namespace NatFmt
+
+@[match_pattern] abbrev natFmtKind (k0 : Option Bool := none) (k1 : Bool := false) : NatFmt :=
+  StrFmt.natFmtKind k0 k1
+@[match_pattern] abbrev digits : NatFmt := StrFmt.digits
+@[match_pattern] abbrev cards : NatFmt := StrFmt.cards
+@[match_pattern] abbrev counters : NatFmt := StrFmt.counters
+@[match_pattern] abbrev brace : NatFmt := StrFmt.brace
+@[match_pattern] abbrev english : NatFmt := StrFmt.english
+/-- `twice`, or `N times`. -/
+@[match_pattern] abbrev times : NatFmt := StrFmt.times
+
+end NatFmt
+
+abbrev IntFmt := StrFmt
+
+namespace IntFmt
+
+@[match_pattern] abbrev intFmtKind (isDigits : Bool := false) : IntFmt := StrFmt.intFmtKind isDigits
+@[match_pattern] abbrev signed : IntFmt := StrFmt.signed
+@[match_pattern] abbrev digits : IntFmt := StrFmt.digits
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : IntFmt := StrFmt.modeKind isFill
+@[match_pattern] abbrev collect : IntFmt := StrFmt.collect
+@[match_pattern] abbrev fill : IntFmt := StrFmt.fill
+
+end IntFmt
 
 /-- One token of a normalized Oracle line. A hole remembers which argument it is. -/
 inductive Pat where
@@ -136,7 +150,7 @@ def takeNat (n : Nat) : ArgM Nat := do
   | .collect =>
     set { s with vals := .nat n :: s.vals }
     return n
-  | .fill =>
+  | _ =>
     match s.vals with
     | .nat v :: rest =>
       set { s with vals := rest }
@@ -149,7 +163,7 @@ def takeInt (i : Int) : ArgM Int := do
   | .collect =>
     set { s with vals := .int i :: s.vals }
     return i
-  | .fill =>
+  | _ =>
     match s.vals with
     | .int v :: rest =>
       set { s with vals := rest }
@@ -162,7 +176,7 @@ def takeCardType (t : CardType) : ArgM CardType := do
   | .collect =>
     set { s with vals := .ty t :: s.vals }
     return t
-  | .fill =>
+  | _ =>
     match s.vals with
     | .ty v :: rest =>
       set { s with vals := rest }
@@ -175,7 +189,7 @@ def takeCounter (k : CounterKind) : ArgM CounterKind := do
   | .collect =>
     set { s with vals := .ctr k :: s.vals }
     return k
-  | .fill =>
+  | _ =>
     match s.vals with
     | .ctr v :: rest =>
       set { s with vals := rest }
@@ -188,7 +202,7 @@ def takeSupertype (sup : Supertype) : ArgM Supertype := do
   | .collect =>
     set { s with vals := .sup sup :: s.vals }
     return sup
-  | .fill =>
+  | _ =>
     match s.vals with
     | .sup v :: rest =>
       set { s with vals := rest }
@@ -201,7 +215,7 @@ def takeStr (str : String) : ArgM String := do
   | .collect =>
     set { s with vals := .str str :: s.vals }
     return str
-  | .fill =>
+  | _ =>
     match s.vals with
     | .str v :: rest =>
       set { s with vals := rest }
@@ -242,7 +256,7 @@ def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   | .collect =>
     set { s with vals := .kind k :: s.vals }
     return k
-  | .fill =>
+  | _ =>
     match s.vals with
     | .kind v :: rest =>
       set { s with vals := rest }
@@ -323,7 +337,7 @@ def takeResolutionGrant (r : Resolution) : ArgM Resolution := do
     match which with
     | .supertype s =>
       return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
-    | .spellCostLessKind ty _ =>
+    | .milledPickKind ty _ _ _ _ =>
       return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
   | r => return r
 
@@ -339,7 +353,7 @@ def takeResolutionPlayerResource (r : Resolution) : ArgM Resolution := do
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
     | .upTo max ty =>
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
-    | .milledPickKind a b _ _ =>
+    | .milledPickKind a b _ _ _ =>
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
   | .mill (.fixed a) who (.permanentAndGainLife b) =>
     return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
@@ -911,19 +925,19 @@ def renderNat (fmt : NatFmt) (n : Nat) : String :=
   | .counters => plusOnePlusOneCountersPhrase n
   | .brace => s!"\{{n}}"
   | .english => englishNumber n
-  | .times => timesPhrase n
+  | _ => timesPhrase n
 
 def renderInt (fmt : IntFmt) (i : Int) : String :=
   match fmt with
   | .signed => signedStat i
-  | .digits => toString i
+  | _ => toString i
 
 def renderStr (fmt : StrFmt) (s : String) : String :=
   match fmt with
   | .word _ | .sub => s
   | .plural | .subPlural => StaticAbility.pluralSubtype s
   | .cycling _ => s ++ "cycling"
-  | .non => "non-" ++ s
+  | _ => "non-" ++ s
 
 def renderPt (signed : Bool) (p t : Int) : String :=
   if signed then s!"{signedStat p}/{signedStat t}" else s!"{p}/{t}"
@@ -1017,7 +1031,7 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
       match strWords s with
       | [] => ["non-" ++ lowerAscii s]
       | w :: ws => ("non-" ++ w) :: ws
-    | .sub | .subPlural => []
+    | _ => []
   if s.length < 2 || needle.isEmpty || !prefixTokens needle toks then none
   else some {
     width := needle.length
@@ -1265,7 +1279,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
             | none => none
           | none => none
         | _ => none
-      | .digits | .english =>
+      | _ =>
         match toks with
         | t :: ts =>
           match parseNatTok t with
@@ -1283,7 +1297,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           let ok :=
             match fmt with
             | .signed => t.startsWith "+" || t.startsWith "-"
-            | .digits => true
+            | _ => true
           if ok then
             match setSlot vals i (.int k) seen with
             | some (vals, seen) => go ps ts vals seen
@@ -1336,7 +1350,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           with
           | some (vals, ts, seen) => go ps ts vals seen
           | none => none
-      | .non =>
+      | _ =>
         match matchNonSubtype toks with
         | some (name, n) =>
           match setSlot vals i (.str name) seen with
@@ -1443,11 +1457,11 @@ def patKey (pats : List (List Pat)) : String :=
       | .counters => "#k"
       | .brace => "#b"
       | .english => "#e"
-      | .times => "#x"
+      | _ => "#x"
     | .int _ fmt =>
       match fmt with
       | .signed => "#+"
-      | .digits => "#i"
+      | _ => "#i"
     | .str _ fmt =>
       match fmt with
       | .word n => s!"$w{n}"
@@ -1455,7 +1469,7 @@ def patKey (pats : List (List Pat)) : String :=
       | .cycling n => s!"$c{n}"
       | .non => "$n"
       | .sub => "$s"
-      | .subPlural => "$sp"
+      | _ => "$sp"
     | .ty _ => "$t"
     | .sup _ => "$sup"
     | .kind _ => "$k"

@@ -132,13 +132,14 @@ deciding player (heuristic) chooses to go first.
 
 /-- A Welcome Deck color or a path to a text deck list. -/
 inductive DemoDeck where
-  | demoDeckKind (k : Color ⊕ String)
+  | demoDeckKind (k : Color ⊕ String := .inl .white) (turnScoped : Bool := false)
+      (combatOrAttackers : Bool := false) (isIgnore : Bool := false)
 deriving Repr, Inhabited, DecidableEq
 
 namespace DemoDeck
 
-@[match_pattern] abbrev welcome (color : Color) : DemoDeck := .demoDeckKind (.inl color)
-@[match_pattern] abbrev file (path : String) : DemoDeck := .demoDeckKind (.inr path)
+@[match_pattern] abbrev welcome (color : Color) : DemoDeck := .demoDeckKind (.inl color) false false false
+@[match_pattern] abbrev file (path : String) : DemoDeck := .demoDeckKind (.inr path) false false false
 
 end DemoDeck
 
@@ -158,7 +159,7 @@ def defaultDemoPlayers : Array DemoPlayer := #[
 def cardsFor (d : DemoDeck) : Array CardDef :=
   match d with
   | .welcome c => hobbitDeck c
-  | .file _ => #[]
+  | _ => #[]
 
 /-- Seat list from named players. File decks resolve later via `loadSeats`. -/
 def seatsFromPlayers (players : Array DemoPlayer) : Array Seat :=
@@ -395,6 +396,7 @@ def deckAssignmentLine (p : DemoPlayer) : String :=
   match p.deck with
   | .welcome c => s!"{p.name} uses the {c.englishName} Hobbit Welcome Deck."
   | .file path => s!"{p.name} uses the deck list {path}."
+  | _ => ""
 
 def printDeckAssignments (players : Array DemoPlayer) : IO Unit := do
   for p in players do
@@ -413,6 +415,7 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
       | .error e => return .error e
       | .ok (cards, sideboard) =>
         seats := seats.push { name := p.name, deck := cards, sideboard }
+    | _ => pure ()
   return .ok seats
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
@@ -1388,18 +1391,22 @@ def hasLegalBlock (g : Game) : Bool :=
       eligible >= max 1 (g.minBlockersRequired attacker))
 
 /-- Target a pass-until shortcut stops at. -/
-inductive PassUntilTarget where
-  | passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false)
-deriving DecidableEq, Repr
+abbrev PassUntilTarget := DemoDeck
 
 namespace PassUntilTarget
 
+@[match_pattern] abbrev passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false) : PassUntilTarget :=
+  .demoDeckKind (.inl .white) turnScoped combatOrAttackers false
 @[match_pattern] abbrev nextTurnCombat : PassUntilTarget := .passUntilTargetKind true true
 @[match_pattern] abbrev nextTurnMain : PassUntilTarget := .passUntilTargetKind true false
 @[match_pattern] abbrev nextMain : PassUntilTarget := .passUntilTargetKind false false
 @[match_pattern] abbrev nextDeclareAttackers : PassUntilTarget := .passUntilTargetKind false true
 
 end PassUntilTarget
+
+namespace DemoDeck
+export PassUntilTarget (passUntilTargetKind nextTurnCombat nextTurnMain nextMain nextDeclareAttackers)
+end DemoDeck
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
 structure PassUntilResult where
@@ -1427,6 +1434,7 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
   | .nextDeclareAttackers =>
     g.step == .declareAttackers &&
       !(g.turnNumber == startTurn && g.step == startStep)
+  | _ => false
 
 /-- `your turn`, `my turn`, and `main phase` declare no attackers even when
 creatures can attack. `attack step` still stops so attackers can be chosen. -/
@@ -1465,16 +1473,18 @@ def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
 def passUntilFuel : Nat := 200
 
 /-- Kind of pending pass-until goal stored by the console and `--check` replay. -/
-inductive PassUntilKind where
-  | passUntilKind (target : Option PassUntilTarget := none)
-deriving DecidableEq, Repr
+abbrev PassUntilKind := DemoDeck
 
 namespace PassUntilKind
 
-@[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := .passUntilKind (some target)
-@[match_pattern] abbrev ignore : PassUntilKind := .passUntilKind none
+@[match_pattern] abbrev ignore : PassUntilKind := .demoDeckKind (.inl .white) false false true
+@[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := target
 
 end PassUntilKind
+
+namespace DemoDeck
+export PassUntilKind (ignore named)
+end DemoDeck
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/
@@ -1502,8 +1512,8 @@ def reachedIgnore (g : Game) (goal : PassUntilGoal) : Bool :=
 
 def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
   match goal.kind with
-  | .named t => reachedPassUntil g goal.startTurn goal.startStep t
   | .ignore => reachedIgnore g goal
+  | .named t => reachedPassUntil g goal.startTurn goal.startStep t
 
 /-- Only issue pass-until commands as `issuer`; other players may still act. -/
 def issuerPassUntilCommand? (g : Game) (issuer : PlayerId)
@@ -1522,15 +1532,15 @@ def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal)
     (forceEmptyCombat := false) : Option String :=
   match goal.kind with
+  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
   | .named t =>
     issuerPassUntilCommand? g goal.issuer forceEmptyCombat
       (alwaysNoAttack := passUntilSkipsAttackers t)
-  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
 
 /-- Error when `passUntilFuel` runs out before this goal is reached. -/
 def PassUntilKind.fuelError : PassUntilKind → String
-  | .named _ => "Could not finish passing to that step"
   | .ignore => "Could not finish passing to your next main phase"
+  | .named _ => "Could not finish passing to that step"
 
 /-- Keep issuing the goal's commands (`pass`, and empty combat declarations
 where the goal allows them) until the goal is reached, the game ends, or no
@@ -1549,12 +1559,12 @@ def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
       match passUntilGoalCommand? g goal forceEmptyCombat with
       | none =>
         match goal.kind with
+        | .ignore => .ok { game := g, commands := cmds }
         | .named _ =>
           if cmds.isEmpty then
             .error "A player must take an action other than pass"
           else
             .ok { game := g, commands := cmds }
-        | .ignore => .ok { game := g, commands := cmds }
       | some line =>
         match applyPassUntilLine g line with
         | .error e =>
@@ -1939,14 +1949,14 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
 def describeCheckResult (g : Game) : String :=
   match g.result with
   | some (.won p) => s!"Winner: {g.player p |>.name}"
-  | some .draw => "The game is a draw."
+  | some _ => "The game is a draw."
   | none => "Game is not complete"
 
 /-- Print the finished game's result: the winner or a draw. -/
 def printResult (g : Game) : IO Unit :=
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
-  | some .draw => IO.println "The game is a draw."
+  | some _ => IO.println "The game is a draw."
   | none => pure ()
 
 /-- Write a command to `--output` only when it was accepted as a game action

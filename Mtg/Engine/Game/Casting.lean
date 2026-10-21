@@ -139,7 +139,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
   match prop.kind with
   | .spell => g.findObject? prop.spellId
-  | .activatedAbility =>
+  | _ =>
     match prop.sourceId.bind g.findObject? with
     | some src => some src
     | none => some prop.original
@@ -164,7 +164,7 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? prop.spellId with
     | some o => o.printed.isInstantOrSorcery
     | none => false
-  | .activatedAbility => false
+  | _ => false
 
 /-- Whether paying this proposed spell or ability may spend Hero-restricted
 mana (MSH 72): Hero spells, and activated abilities of Hero sources
@@ -182,7 +182,7 @@ abbrev proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool 
 def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .spell => false
-  | .activatedAbility =>
+  | _ =>
     match g.proposedRestrictionSource prop with
     | some o => o.printed.isCreature || o.isCreature
     | none => false
@@ -193,7 +193,7 @@ activated ability. -/
 def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .activatedAbility => true
-  | .spell =>
+  | _ =>
     match g.findObject? prop.spellId with
     | some o => o.printed.isArtifact
     | none => false
@@ -207,7 +207,7 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
   match prop.kind with
   | .activatedAbility =>
     { equip := prop.activation.any (·.isEquip), sourceSubtypes }
-  | .spell =>
+  | _ =>
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
@@ -376,7 +376,7 @@ def reverseProposedSpell (g : Game) : Game :=
       let objects :=
         match prop.kind with
         | .spell => objects.push prop.original
-        | .activatedAbility => objects
+        | _ => objects
       g := { g with
         objects := objects
         stack := prop.stackBefore
@@ -408,7 +408,7 @@ def reverseProposedSpell (g : Game) : Game :=
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
-        | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
+        | _ => "the activation is reversed (CR 602.2 / 733.1)"
       g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
@@ -647,7 +647,7 @@ def lockInTargetCostReduction (g : Game) : Game :=
           let nBase :=
             match prop.kind with
             | .spell => g.costReductionAmount prop.caster face.spellCostReduction (some o)
-            | .activatedAbility =>
+            | _ =>
               match prop.activation with
               | some ab => g.costReductionAmount prop.caster ab.costReduction (some o)
               | none => 0
@@ -779,7 +779,7 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
       match g.currentSpellEffect o with
       | some e => e.requiresTarget
       | none => o.printed.requiresTarget || o.printed.isAura
-    | .activatedAbility =>
+    | _ =>
       match o.abilityEffect with
       | some e => e.requiresTarget
       | none => false
