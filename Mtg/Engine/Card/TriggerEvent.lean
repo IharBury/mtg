@@ -291,28 +291,24 @@ inductive TriggerEvent where
   | enters (what : TriggerEvent.EntersEvent := .source)
   /-- A permanent dies, leaves the battlefield, or changes zone (CR 603.6c / 700.4). -/
   | leaves (what : TriggerEvent.LeavesEvent := .source)
-  /-- At the beginning of a phase or step (CR 603.2b). -/
-  | step (which : TriggerEvent.StepEvent)
+  /-- At the beginning of a phase or step (`isTap = false`; CR 603.2b), or one or more permanents become tapped (`isTap = true`; CR 701.26). -/
+  | stepOrTaps (which : TriggerEvent.StepEvent := .upkeep false)
+      (tapWhat : TriggerEvent.TapEvent := .source) (isTap : Bool := false)
   /-- A player casts a spell (CR 601.2i). -/
   | casts (what : TriggerEvent.CastEvent := .spell)
   /-- Attackers or blockers are declared (CR 508.2 / 509.5c). -/
   | combat (what : TriggerEvent.CombatEvent := .sourceAttacks)
   /-- Damage is dealt (CR 510.2 / 120). -/
   | damage (what : TriggerEvent.DamageEvent := .sourceCombatToPlayer)
-  /-- A player draws a card (CR 121). -/
-  | draws (what : TriggerEvent.DrawEvent := .youCard)
-  /-- A player discards or cycles a card (CR 701.8 / 702.29). -/
-  | discards (what : TriggerEvent.DiscardEvent := .youCard)
-  /-- One or more permanents become tapped (CR 701.26). -/
-  | taps (what : TriggerEvent.TapEvent := .source)
-  /-- Counters are put on a permanent, a player proliferates, or a Saga chapter triggers (CR 122 / 701.34 / 714). -/
-  | counters (what : TriggerEvent.CounterEvent)
-  /-- A player or object performs a game action (CR 603.2). -/
-  | action (what : TriggerEvent.ActionEvent)
+  /-- A player draws a card (`isDiscard = false`; CR 121), or discards or cycles a card (`isDiscard = true`; CR 701.8 / 702.29). -/
+  | drawsOrDiscards (drawWhat : TriggerEvent.DrawEvent := .youCard)
+      (discardWhat : TriggerEvent.DiscardEvent := .youCard) (isDiscard : Bool := false)
+  /-- Counters are put on a permanent, a player proliferates, or a Saga chapter triggers (`false, false`; CR 122 / 701.34 / 714); a player or object performs a game action (`true, false`; CR 603.2); or cascade / effect-stored trigger (`false, true`). -/
+  | countersOrAction (counterWhat : TriggerEvent.CounterEvent := .youPutPlusOne)
+      (actionWhat : TriggerEvent.ActionEvent := .youActivateCreatureAbility)
+      (fromEffect : Bool := false) (isAction : Bool := false) (isSpecial : Bool := false)
   /-- Triggers when at least one of the two given conditions triggers. -/
   | or (a b : TriggerEvent)
-  /-- Cascade on the spell being cast (`fromEffect = false`) or use the events stored on the shared effect (`fromEffect = true`). -/
-  | specialTrigger (fromEffect : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Unified alias for `TriggerEvent`. -/
@@ -326,6 +322,20 @@ namespace TriggerEvent
 /-- Identity wrapper kept for `TriggerEvent.fra` call sites. -/
 abbrev fra (e : TriggerEvent) : TriggerEvent := e
 
+@[match_pattern] abbrev step (which : TriggerEvent.StepEvent) : TriggerEvent :=
+  .stepOrTaps which .source false
+@[match_pattern] abbrev taps (what : TriggerEvent.TapEvent := .source) : TriggerEvent :=
+  .stepOrTaps (.upkeep false) what true
+@[match_pattern] abbrev draws (what : TriggerEvent.DrawEvent := .youCard) : TriggerEvent :=
+  .drawsOrDiscards what .youCard false
+@[match_pattern] abbrev discards (what : TriggerEvent.DiscardEvent := .youCard) : TriggerEvent :=
+  .drawsOrDiscards .youCard what true
+@[match_pattern] abbrev counters (what : TriggerEvent.CounterEvent) : TriggerEvent :=
+  .countersOrAction what .youActivateCreatureAbility false false false
+@[match_pattern] abbrev action (what : TriggerEvent.ActionEvent) : TriggerEvent :=
+  .countersOrAction .youPutPlusOne what false true false
+@[match_pattern] abbrev specialTrigger (fromEffect : Bool := false) : TriggerEvent :=
+  .countersOrAction .youPutPlusOne .youActivateCreatureAbility fromEffect false true
 @[match_pattern] abbrev cascade : TriggerEvent := .specialTrigger false
 @[match_pattern] abbrev fromEffect : TriggerEvent := .specialTrigger true
 

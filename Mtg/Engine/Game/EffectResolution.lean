@@ -948,12 +948,12 @@ def finishPlusOneAfterDiscards (g : Game) : Game :=
       if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
     | none => g
 
-/-- Resolve a unified `Effect` as a spell or ability (CR 608). -/
-partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
+/-- Resolve a unified `Effect` as a spell or ability (CR 608), part 1. -/
+def applyUnifiedPart1 (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
     (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
-    (isAbility : Bool := false) : Game :=
+    (isAbility : Bool := false) (fallback : Game → Game) : Game :=
   let pl := g.player controller
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
@@ -966,6 +966,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some o => if o.isOnBattlefield then f g o else g
     | none => g
   let chosenX := if chosenX != 0 then chosenX else g.spellX
+  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower, isAbility)
   match effect.resolution with
   | .empowerJace amount =>
     match g.triggerCount { controller, sourceId, targets } amount with
@@ -1752,6 +1753,28 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         let g := g.logMsg s!"{(g.player controller).name} creates a token copy of {card.name}"
         g.afterPermanentEnters (g.object! tok.id)
       | none => g.logMsg "The card can't be found"
+  | _ => fallback g
+
+/-- Resolve a unified `Effect` as a spell or ability (CR 608), part 2. -/
+def applyUnifiedPart2 (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
+    (isAbility : Bool := false) (fallback : Game → Game) : Game :=
+  let pl := g.player controller
+  let kind := effect.targetKind
+  let illegal := some "The target is no longer legal"
+  let srcName := g.fraSourceName sourceId
+  let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+  let source? : Option GameObject :=
+    (sourceId.map g.followMoved).bind g.findObject?
+  let onSource (f : Game → GameObject → Game) : Game :=
+    match source? with
+    | some o => if o.isOnBattlefield then f g o else g
+    | none => g
+  let chosenX := if chosenX != 0 then chosenX else g.spellX
+  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower, isAbility)
+  match effect.resolution with
   | .put .source how@.asPrinted note@.none
   | .put .source how note@(.entering [.counter .plusOnePlusOne _ _]) =>
     let tapped := how == .tapped
@@ -1925,7 +1948,16 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.beginSurveil controller 1
     match g.pending with
     | .surveil .. => { g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := some (controller, sourceId, .sacrifice .source .eyeOfJaceIfSevenInGy) } }
-    | _ => g.applyUnified controller { effect with resolution := .sacrifice .source .eyeOfJaceIfSevenInGy } targets (sourceId := sourceId) (isAbility := true)
+    | _ =>
+      if (g.player controller).graveyard.size < 7 then g
+      else
+        match sourceId.bind g.findObject? with
+        | some o =>
+          if !o.isOnBattlefield then g
+          else
+            let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
+            g.drainOpponents controller 2 (some o)
+        | none => g
   | .sacrifice .source .eyeOfJaceIfSevenInGy =>
     if (g.player controller).graveyard.size < 7 then g
     else
@@ -2520,6 +2552,18 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .grant .jaceLoyaltyAtInstantSpeed .youIfCast =>
     let g := g.modifyPlayer controller (fun pl => { pl with jaceLoyaltyAtInstantSpeed := true })
     g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant"
+  | _ => fallback g
+
+/-- Resolve a unified `Effect` as a spell or ability (CR 608), part 3. -/
+def applyUnifiedPart3 (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
+    (isAbility : Bool := false)
+    (recurse : Game → Effect → Array Target → Bool → Bool → Bool → Nat → Option ObjectId → Option Int → Bool → Game)
+    (fallback : Game → Game) : Game :=
+  let chosenX := if chosenX != 0 then chosenX else g.spellX
+  match effect.resolution with
   | .sequence rs =>
     match effect.resolution.onPermanent? with
     | some a => g.applyOnPermanent controller effect.targetKind targets a sourceId
@@ -2559,11 +2603,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
               g.returnFromGyFinalityAttach controller sourceId
             | steps =>
               steps.foldl (fun g r =>
-                g.applyUnified controller { effect with resolution := r } targets
-                  (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-                  (giftPromised := giftPromised) (chosenX := chosenX)
-                  (sourceId := sourceId) (lastKnownPower := lastKnownPower)
-                  (isAbility := isAbility)) g
+                recurse g { effect with resolution := r } targets
+                  castFromGraveyard kicked giftPromised chosenX
+                  sourceId lastKnownPower isAbility) g
   | .putOnLibrary .shuffled .source =>
     g.shuffleSourceIntoLibrary sourceId
   | .gainLife (.fixed n) .you => g.gainLife controller n.toNat
@@ -2581,7 +2623,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     else if effect.targetKind == .creature && effect.phrase.startsWith "This creature deals" then
       g.applyOnPermanent controller effect.targetKind targets (.dealDamage n.toNat) sourceId
     else if effect.targetKind == .playerOrCreature && sourceId.isSome then
-      g.applyUnified controller (Effect.dealDamage n.toNat) targets
+      recurse g (Effect.dealDamage n.toNat) targets false false false 0 none none false
     else
       let srcName := g.fraSourceName sourceId
       let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
@@ -2693,9 +2735,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     match rs with
     | [] => g.logMsg "The effect does nothing"
     | [r] =>
-      g.applyUnified controller { effect with resolution := r } targets
-        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+      recurse g { effect with resolution := r } targets
+        castFromGraveyard kicked giftPromised chosenX none none false
     | rs =>
       g.beginSpellOr controller effect targets rs
   | .attach .equipmentYouControl .target =>
@@ -2711,17 +2752,37 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.beginMay controller effect targets r
   | .«if» cond r =>
     let run (g : Game) : Game :=
-      g.applyUnified controller { effect with resolution := r } targets
-        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+      recurse g { effect with resolution := r } targets
+        castFromGraveyard kicked giftPromised chosenX none none false
     g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised
   | .ifElse cond whenTrue whenFalse =>
     let run (r : SpellResolution) (g : Game) : Game :=
-      g.applyUnified controller { effect with resolution := r } targets
-        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+      recurse g { effect with resolution := r } targets
+        castFromGraveyard kicked giftPromised chosenX none none false
     g.branchOnSpellIf controller effect targets cond castFromGraveyard
       (run whenTrue) (run whenFalse) giftPromised
+  | _ => fallback g
+
+/-- Resolve a unified `Effect` as a spell or ability (CR 608), part 4. -/
+def applyUnifiedTail (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
+    (isAbility : Bool := false) : Game :=
+  let pl := g.player controller
+  let kind := effect.targetKind
+  let illegal := some "The target is no longer legal"
+  let srcName := g.fraSourceName sourceId
+  let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
+  let source? : Option GameObject :=
+    (sourceId.map g.followMoved).bind g.findObject?
+  let onSource (f : Game → GameObject → Game) : Game :=
+    match source? with
+    | some o => if o.isOnBattlefield then f g o else g
+    | none => g
+  let chosenX := if chosenX != 0 then chosenX else g.spellX
+  let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower)
+  match effect.resolution with
   | .gainControl .exchangeTargets =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -3444,6 +3505,21 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       | none =>
         if isAbility then g
         else g.logMsg "The effect does nothing"
+
+/-- Resolve a unified `Effect` as a spell or ability (CR 608). -/
+partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) (lastKnownPower : Option Int := none)
+    (isAbility : Bool := false) : Game :=
+  let recurse (g : Game) (effect : Effect) (targets : Array Target)
+      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
+      (sourceId : Option ObjectId) (lastKnownPower : Option Int) (isAbility : Bool) : Game :=
+    g.applyUnified controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility
+  g.applyUnifiedPart1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
+    g.applyUnifiedPart2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
+      g.applyUnifiedPart3 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse (fun g =>
+        g.applyUnifiedTail controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility)))
 
 /-- Resolve a single `Resolution` step in ability context. -/
 def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
