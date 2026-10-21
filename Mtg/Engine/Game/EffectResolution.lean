@@ -2212,7 +2212,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         "Whenever you cast a spell, draw a card." (.draw 1)] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
-  | .pump _ _ (.battlefield (.attackersUntilYourTurn againstOpponents)) =>
+  | .pump _ _ (.battlefield (.attackersFilter true againstOpponents)) =>
     let effectCard : CardDef :=
       if againstOpponents then {
         name := s!"{srcName} effect", types := #[]

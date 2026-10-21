@@ -1558,11 +1558,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             else g
           | .anyManaThisTurn => g.grantWidowCast controller (some newId)
           | .empowerJace => g.empowerJace controller 1
-          | .none | .gainLifeIfTeamwork _ | .controllerMaySearchBasic
-            | .thenDrawThree | .counteredPermanentMayCast
-            | .worldsWithinWorlds | .revealUntilCreatureOrPlaneswalker
-            | .despark | .controllerGainsLifePower
-            | .countExiledCreatures _ | .revealCreaturesToBattlefield _ => g.logMsg s!"{name} is exiled"
+          | _ => g.logMsg s!"{name} is exiled"
         | .returnImmediately tapped =>
           if tapped && (o.printed.isToken || !(o.printed.isArtifact || o.isCreature)) then g
           else
@@ -1585,9 +1581,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             | _ => #[]
           { g with pending :=
               .fraChoice controller (.mayCastUpToFromExile (prev.push newId) casts) }
-        | .playIfYouControlSubtype _ | .playUntil _ true
-          | .mayCastElseDamageOpponents _ | .anyManaWhileExiled
-          | .returnBrieflyIfMvAtMost _ =>
+        | _ =>
           (g.move o.id .exile none).1
       objs.foldl exileOne g
 
@@ -2765,8 +2759,7 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           match hit with
           | some id => found := found.push id
           | none => pure ()
-        | .topNumber _ | .untilSpecial _
-        | .firstResolveUntilCreature | .fromHand _ | .search => pure ()
+        | _ => pure ()
       return { g with thisWay := { g.thisWay with revealedIdsThisWay := found } }
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination

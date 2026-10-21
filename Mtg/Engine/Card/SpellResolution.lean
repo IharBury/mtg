@@ -20,29 +20,31 @@ namespace Mtg.Engine
 Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
-  /-- Damage to any target (player or creature). -/
-  | burn
-  /-- Damage to a creature only (including Smite-style follow-ups). -/
-  | creatureDamage
-  /-- A creature you control deals its power to an opposing creature. -/
-  | fight
-  /-- Destroy target creature with flying. -/
-  | destroyFlying
-  /-- Destroy target creature. -/
-  | destroyCreature
-  /-- Destroy target artifact or land. -/
-  | destroyArtifactOrLand
-  /-- Until-end-of-turn pump or +1/+1 with keyword grants. -/
-  | pump
-  /-- You may play an additional land this turn. -/
-  | extraLand
-  /-- Mass until-end-of-turn P/T change. -/
-  | massPump
-  /-- Draw cards, optionally losing life (e.g. Night's Whisper). -/
-  | draw
-  /-- Counter a spell. -/
-  | counter
+  /-- Damage to any target (`false, false`), creature only (`true, false`), or fight (`false, true`). -/
+  | damageOrFight (creatureOnly : Bool := false) (fight : Bool := false)
+  /-- Destroy creature (`false, false, false`), creature with flying (`true, false, false`), artifact/land (`false, true, false`), or counter spell (`false, false, true`). -/
+  | destroyOrCounter (flying : Bool := false) (artifactOrLand : Bool := false) (counterSpell : Bool := false)
+  /-- Until-end-of-turn pump (`mass = false`) or mass P/T change (`mass = true`). -/
+  | pumpSpell (mass : Bool := false)
+  /-- Play an additional land (`draw = false`) or draw cards (`draw = true`). -/
+  | utilitySpell (draw : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace SpellCastKind
+
+@[match_pattern] abbrev burn : SpellCastKind := .damageOrFight false false
+@[match_pattern] abbrev creatureDamage : SpellCastKind := .damageOrFight true false
+@[match_pattern] abbrev fight : SpellCastKind := .damageOrFight false true
+@[match_pattern] abbrev destroyCreature : SpellCastKind := .destroyOrCounter false false false
+@[match_pattern] abbrev destroyFlying : SpellCastKind := .destroyOrCounter true false false
+@[match_pattern] abbrev destroyArtifactOrLand : SpellCastKind := .destroyOrCounter false true false
+@[match_pattern] abbrev counter : SpellCastKind := .destroyOrCounter false false true
+@[match_pattern] abbrev pump : SpellCastKind := .pumpSpell false
+@[match_pattern] abbrev massPump : SpellCastKind := .pumpSpell true
+@[match_pattern] abbrev extraLand : SpellCastKind := .utilitySpell false
+@[match_pattern] abbrev draw : SpellCastKind := .utilitySpell true
+
+end SpellCastKind
 
 /-- How the demonstration agent classifies an activated-ability mode. -/
 inductive AbilityCastKind where
@@ -86,22 +88,21 @@ namespace TriggeredAbility
 
 /-- Spending restriction or color choice for `Resolution.addMana` (CR 106.4). -/
 inductive ManaSpendNote where
-  /-- No spending restriction; `types` are added directly. -/
-  | none
+  /-- Spend scope: unrestricted (`false, false`), creature-source abilities (`true, false`), or Equipment spells/equip (`false, true`). -/
+  | spendScope (creatureSources : Bool := false) (equipment : Bool := false)
   /-- Mana of any one color (`combination = false`) or in any combination of colors (`combination = true`; `types` is `#[]`). -/
   | chosenColor (combination : Bool := false)
   /-- Spend this mana only to cast spells of `subtype` (or also activate abilities of `subtype` sources if `orAbilities`). -/
   | subtypeSpend (subtype : String) (orAbilities : Bool := false)
   /-- Spend this mana only to cast an artifact spell, a noncreature spell (`noncreature = true`), or not a nonartifact spell (`cantNonartifact = true`). -/
   | spellTypeRestriction (noncreature : Bool := false) (cantNonartifact : Bool := false)
-  /-- Spend this mana only to activate abilities of creature sources. -/
-  | creatureSources
-  /-- Spend this mana only to cast Equipment spells or activate equip abilities. -/
-  | equipment
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace ManaSpendNote
 
+@[match_pattern] abbrev none : ManaSpendNote := .spendScope false false
+@[match_pattern] abbrev creatureSources : ManaSpendNote := .spendScope true false
+@[match_pattern] abbrev equipment : ManaSpendNote := .spendScope false true
 @[match_pattern] abbrev anyColor : ManaSpendNote := .chosenColor false
 @[match_pattern] abbrev anyCombination : ManaSpendNote := .chosenColor true
 @[match_pattern] abbrev subtypeSpells (subtype : String) : ManaSpendNote := .subtypeSpend subtype false
@@ -127,49 +128,27 @@ deriving Repr, Inhabited, BEq
 /-- Which MSH reflexive `TriggerResolution.queueReflexive` queues.
 `toNat` is the index `Resolution.mshReflexive` matches. -/
 inductive TriggerReflexiveKind where
-  /-- Another target nonattacking creature you control gains indestructible
-  until end of turn.
-  `.grant (.keywords Keyword.indestructible) .target`. -/
-  | grantIndestructible
-  /-- Choose up to three Trick Arrows modes.
-  `.chooseModes TriggerResolution.trickArrowModes .alreadyChosen`. -/
-  | trickArrows
-  /-- Put an indestructible counter on target creature you control.
-  `.putCounters (.ofKind .indestructible) .permanent`. -/
-  | indestructibleCounter
-  /-- You control target opponent during their next turn.
-  `.gainControl .duringNextTurn`. -/
-  | controlOpponent
-  /-- Target opponent exiles the top five cards of their library. You may
-  cast up to two spells from among the exiled cards without paying their
-  mana costs.
-  `.exile (.opponentTop 5) (.mayCastUpTo 2)`. -/
-  | exileTopFive
-  /-- Return target creature card from your graveyard to the battlefield
-  tapped and attacking with a finality counter on it.
-  `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`. -/
-  | returnAttacking
-  /-- Destroy target nonland permanent an opponent controls.
-  `.destroy .target`. -/
-  | destroyOppNonland
-  /-- Deal damage equal to the +1/+1 counters on the source to any other
-  target.
-  `.dealDamage .plusOneCounters .target`. -/
-  | countersDamage
-  /-- Target creature with haste can't be blocked this turn except by
-  creatures with haste.
-  `.cant (.beBlockedExceptByHaste .target)`. -/
-  | hasteUnblockable
-  /-- Return up to two target instant and/or sorcery cards from your
-  graveyard to your hand.
-  `.returnToHand (.graveyardInstants 2)`. -/
-  | returnInstants
-  /-- Put a +1/+1 counter on target creature.
-  `.putCounters (.ofKind .plusOnePlusOne) .permanent`. -/
-  | plusOne
+  /-- Combat, mode, counter, or control reflexive: grant indestructible (`false, false`), Trick Arrows (`true, false`), indestructible counter (`false, true`), or control opponent (`true, true`). -/
+  | combatOrControlReflexive (trickArrows : Bool := false) (counterOrControl : Bool := false)
+  /-- Zone, destruction, or damage reflexive: exile top five (`false, false`), return attacking (`true, false`), destroy opposing nonland (`false, true`), or counters damage (`true, true`). -/
+  | zoneOrDamageReflexive (returnAttacking : Bool := false) (destroyOrDamage : Bool := false)
+  /-- Unblockable, return-instants, or +1/+1 reflexive (`false, false` / `true, false` / `false, true`). -/
+  | targetOrReturnReflexive (returnInstants : Bool := false) (plusOne : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerReflexiveKind
+
+@[match_pattern] abbrev grantIndestructible : TriggerReflexiveKind := .combatOrControlReflexive false false
+@[match_pattern] abbrev trickArrows : TriggerReflexiveKind := .combatOrControlReflexive true false
+@[match_pattern] abbrev indestructibleCounter : TriggerReflexiveKind := .combatOrControlReflexive false true
+@[match_pattern] abbrev controlOpponent : TriggerReflexiveKind := .combatOrControlReflexive true true
+@[match_pattern] abbrev exileTopFive : TriggerReflexiveKind := .zoneOrDamageReflexive false false
+@[match_pattern] abbrev returnAttacking : TriggerReflexiveKind := .zoneOrDamageReflexive true false
+@[match_pattern] abbrev destroyOppNonland : TriggerReflexiveKind := .zoneOrDamageReflexive false true
+@[match_pattern] abbrev countersDamage : TriggerReflexiveKind := .zoneOrDamageReflexive true true
+@[match_pattern] abbrev hasteUnblockable : TriggerReflexiveKind := .targetOrReturnReflexive false false
+@[match_pattern] abbrev returnInstants : TriggerReflexiveKind := .targetOrReturnReflexive true false
+@[match_pattern] abbrev plusOne : TriggerReflexiveKind := .targetOrReturnReflexive false true
 
 /-- The index `Resolution.mshReflexive` matches. -/
 def toNat : TriggerReflexiveKind → Nat
@@ -183,401 +162,130 @@ def toNat : TriggerReflexiveKind → Nat
   | .countersDamage => 8
   | .hasteUnblockable => 9
   | .returnInstants => 11
-  | .plusOne => 12
+  | .targetOrReturnReflexive _ true => 12
 
 end TriggerReflexiveKind
+
 /-- Target-restriction and announced-target object selectors (CR 115). -/
 inductive TargetObject where
-  /-- The announced permanent, while the source is still on the battlefield.
-  This is the restriction `.target` uses for that permanent.
-  A source that already left is silent.
-  A counter on it is
-  `.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource)`.
-  It loses indestructible until end of turn is
-  `.lose .indestructible (.target .whileSource)`.
-  It becomes an artifact until end of turn is
-  `.becomeArtifact (.target .whileSource)`.
-  It becomes prepared is `.becomePrepared (.target .whileSource)`.
-  Its base power and toughness become `p`/`t` is
-  `.setBasePT (.fixed p) (.fixed t) (.target .whileSource)`.
-  Its owner puts it on top of their library is
-  `.putOnLibrary .top (.target .whileSource)`.
-  On the bottom is `.putOnLibrary .bottom (.target .whileSource)`.
-  Exiling it is `.exile (.target .whileSource) .forLater`.
-  Read on its own, this is that same permanent. -/
-  | whileSource
-  /-- The announced permanent, while it is still on the battlefield.
-  This is the restriction `.target` uses when a missing target is silent.
-  A missing target loses nothing.
-  It loses all abilities while the source remains is
-  `.lose .allAbilities (.target .ifPresent)`.
-  A source that has left leaves that permanent able.
-  Tapping it is `.tap (.target .ifPresent)`. A missing target taps nothing.
-  Read on its own, this is that same permanent. -/
-  | ifPresent
+  /-- Target presence or duration restriction: while source (`false, false`), if present (`true, false`), later creature (`false, true`), or until your next turn (`true, true`). -/
+  | targetPresence (ifPresent : Bool := false) (laterOrNextTurn : Bool := false)
   /-- The announced permanent, when it is of card type `ty` (e.g. creature or planeswalker). -/
   | ofCardType (ty : CardType := .creature)
-  /-- The announced creature. When two targets were announced, the later one.
-  This is the restriction `.target` uses for that creature.
-  `.attach .source (.target .laterCreature)`.
-  Read on its own, this is that same creature. -/
-  | laterCreature
-  /-- Another permanent of this subtype. Not the source.
-  This is the restriction `.target` uses for that permanent.
-  Another Hero is `.target (.anotherSubtype "Hero")`.
-  `.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)`.
-  Read on its own, this is that same permanent. A missing target names
-  nothing. -/
+  /-- Another permanent of this subtype (not the source). -/
   | anotherSubtype (subtype : String)
-  /-- Each announced permanent (or each announced Equipment if `equipmentOnly`). -/
-  | eachPermanent (equipmentOnly : Bool := false)
-  /-- The announced permanent. `byYou` means the controller puts the counters,
-  and an illegal target logs that you won't put counters.
-  Returned to its owner's hand, noting the return, is
-  `.returnToHand .permanent .returnedPermanent`.
-  A +1/+1 counter you put on the target is
-  `.putCounters (.ofKind .plusOnePlusOne) (.permanent true)`. -/
+  /-- Each announced permanent (`pair = false`) or the announced attach-pair member (`pair = true`; Equipment if `equipmentOnly`). -/
+  | eachOrPairTarget (pair : Bool := false) (equipmentOnly : Bool := false)
+  /-- The announced permanent (`byYou` means the controller puts the counters). -/
   | permanent (byYou : Bool := false)
-  /-- The announced creature.
-  It fights up to one other announced creature with
-  `.fight .announced .upToOneOther`.
-  It fights another announced creature with `.fight .announced .mutual`. -/
-  | announced
-  /-- The announced Equipment (`equipment = true`) or creature (`equipment = false`) in an attach pair. -/
-  | announcedPair (equipment : Bool := false)
-  /-- Up to one announced creature. A missing creature is reported.
-  `.attach .target .optionalCreature`. -/
-  | optionalCreature
+  /-- Announced creature target: single announced (`false, false`), optional creature (`true, false`), all creature targets (`false, true`), or first target creature you control (`true, true`). -/
+  | announcedTarget (optional : Bool := false) (allOrFirstYours : Bool := false)
   /-- The target at `index`. -/
   | targetAt (index : Nat)
-  /-- Each legal creature target among the announced targets. -/
-  | creatureTargets
-  /-- The first targeted creature the controller controls. -/
-  | firstTargetCreatureYouControl
-  /-- A second targeted artifact the controller controls, copied as nonlegendary until end of turn. -/
-  | secondArtifactTargetNotLegendary
-  /-- The targeted creature, copied until end of turn with the legend rule turned off this turn. -/
-  | targetLegendRuleOff
-  /-- The announced permanent, until the controller's next turn. -/
-  | untilYourNextTurn
-  /-- Target creature you own, or any number of target creatures you own if kicked. -/
-  | ownedCreaturesKicker
-  /-- Target permanent an opponent controls, copied as two tokens with haste sacrificed at the next end step. -/
-  | targetPermanentTwoTokensHasteSacrifice
+  /-- Copy or kicker target: second artifact not legendary (`false, false`), legend rule off (`true, false`), owned creatures kicker (`false, true`), or two tokens with haste sacrificed at end step (`true, true`). -/
+  | specialCopyOrKickerTarget (legendOff : Bool := false) (kickerOrTwoTokens : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Permanent selectors on the battlefield (CR 110 / CR 403). -/
 inductive BattlefieldObject where
-  /-- The creature this Aura enchants (requiring the Aura on the battlefield; reporting a missing Aura on tap if `whileSource`). -/
-  | enchanted (whileSource : Bool := false)
-  /-- The creature that caused the trigger.
-  Returned to its owner's hand is `.returnToHand .cause`.
-  A token ceases to exist.
-  `subtype`, when set, requires that subtype.
-  The Villain that caused this, under its owner's control, as a Hero with
-  a finality counter, is
-  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
-  An announced card or permanent is used when one was chosen; otherwise the
-  recorded cause. A missing cause, or the wrong subtype, puts nothing.
-  A token copy of that artifact, with no subtype, is `.becomeCopy .cause`.
-  A subtype copies nothing that way. -/
+  /-- The creature this Aura enchants (`oppCreatures = false`, while source if `flag`) or each creature an opponent controls (`oppCreatures = true`, tapped only if `flag`). -/
+  | enchantedOrOppCreatures (oppCreatures : Bool := false) (flag : Bool := false)
+  /-- The creature that caused the trigger (requiring `subtype` when set). -/
   | cause (subtype : Option String := none)
   /-- Each permanent of type `ty` the controller controls (e.g. creatures, lands, planeswalkers, or artifacts). -/
   | permanentsOfTypeYouControl (ty : CardType := .creature)
-  /-- Each other permanent the controller controls of this subtype.
-  The source is not included.
-  Each other creature of these subtypes is
-  `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`. -/
-  | othersOfSubtype (subtype : String)
-  /-- Each creature an opponent controls (only tapped creatures if `tappedOnly`). -/
-  | opponentsCreatures (tappedOnly : Bool := false)
-  /-- Each creature blocking the source. -/
-  | blockers
-  /-- Each creature that is not this subtype, and each opponent. -/
-  | eachNonSubtypeAndOpponents (subtype : String)
-  /-- Permanents you control.
-  Each creature is `.youControl`.
-  Each permanent of a subtype is `.youControl (.subtype s)`.
-  One counter, or two with the city's blessing, is `.youControl .citysBlessing`.
-  `.putCounters (.ofKind .plusOnePlusOne) .youControl`. -/
+  /-- Subtype-filtered permanents: other permanents you control of `subtype` (`false, false`), non-`subtype` creatures (`true, false`), or non-`subtype` creatures and opponents (`true, true`). -/
+  | subtypeFilter (subtype : String) (nonSubtype : Bool := false) (withOpponents : Bool := false)
+  /-- Combat or haste creature selector: blockers (`false, false`), attacking alone (`true, false`), combat damager if monarch (`false, true`), or any creature on battlefield with haste (`true, true`). -/
+  | combatOrHasteCreature (attackingAlone : Bool := false) (monarchOrHaste : Bool := false)
+  /-- Permanents you control (`eachCreature`, `subtype`, or `citysBlessing`). -/
   | youControl (which : YouControlPlusOne := .eachCreature)
-  /-- Each other creature you control.
-  `.putCounters (.ofKind .plusOnePlusOne) .eachOther`. -/
-  | eachOther
-  /-- The token an earlier step created.
-  The noted number of +1/+1 counters is
-  `.putCounters .plusOneNoted .createdToken`.
-  Attaching the source to the token the previous step created is
-  `.attach .source .createdToken`.
-  Attaching the token an earlier step remembered to the source is
-  `.attach .createdToken .source`. -/
-  | createdToken
-  /-- The ability's source, if it is still on the battlefield.
-  A source that has left logs that no counter is put. Later steps still run.
-  `.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent`. -/
-  | sourceIfPresent
-  /-- Each announced permanent, up to the trigger's last-known count.
-  None, or zero, puts counters on nothing. An illegal permanent is
-  reported and skipped. Announced permanents past that count are ignored.
-  `.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown`. -/
-  | eachUpToLastKnown
-  /-- Any number of untapped Humans the controller controls.
-  Choosing none taps nothing.
-  `.tap .humans`. -/
-  | humans
-  /-- Each attacking creature (only equipped attacking creatures if `equippedOnly`). -/
-  | attackingCreatures (equippedOnly : Bool := false)
-  /-- The creature this Equipment is attached to, while it is on the battlefield.
-  A missing creature is reported, and later steps of the sequence do not happen.
-  `.untap .equipped`. -/
-  | equipped
-  /-- The creature that became tapped, while it is still tapped.
-  The recorded cause is used when one was chosen. Otherwise the creature
-  that became tapped most recently. An untapped creature is left alone.
-  `.untap .firstThisTurn`. -/
-  | firstThisTurn
-  /-- All artifacts and enchantments (`creaturesAndPlaneswalkers = false`) or creatures and planeswalkers (`creaturesAndPlaneswalkers = true`) opponents control. -/
-  | oppTwoTypes (creaturesAndPlaneswalkers : Bool := false)
-  /-- The permanent an earlier step dealt damage to.
-  `.destroy .permanentDealtDamage`. -/
-  | permanentDealtDamage
-  /-- The one creature the controller has attacking alone.
-  None is reported. -/
-  | attackingAlone
-  /-- The creature an earlier step attached Equipment to.
-  It deals damage equal to its power with `.fight .equipmentHost .reflexive`.
-  Nothing is queued when no creature received Equipment. -/
-  | equipmentHost
-  /-- Any number of Equipment the controller chooses.
-  `.attach .anyYouControl .target`. -/
-  | anyYouControl
-  /-- The artifact an earlier step put from hand (or only when it is Equipment).
-  `.attach .putArtifact .notedHost`. -/
-  | putArtifact (equipmentOnly : Bool := false)
-  /-- The creature remembered with the artifact put from hand.
-  `.attach .putArtifact .notedHost`. -/
-  | notedHost
+  /-- Other or Equipment permanents you control: each other creature (`false, false`), another creature or artifact (`true, false`), Equipment you control (`false, true`), or any number of Equipment you control (`true, true`). -/
+  | otherOrEquipmentYouControl (withArtifacts : Bool := false) (equipmentOrAny : Bool := false)
+  /-- Earlier-step noted permanent: created token (`false, false`), permanent dealt damage (`true, false`), Equipment host (`false, true`), or noted host (`true, true`). -/
+  | stepNotedPermanent (dealtDamage : Bool := false) (equipmentOrNotedHost : Bool := false)
+  /-- Source or tapped permanent state: source if present (`false, false`), quest counters on source (`true, false`), harnessed source (`false, true`), or first tapped creature this turn (`true, true`). -/
+  | sourceOrTappedState (questCounters : Bool := false) (harnessedOrFirst : Bool := false)
+  /-- Group or target-player permanents: each up to last-known (`false, false`), untapped Humans (`true, false`), equipped creature (`false, true`), or creatures of target player (`true, true`). -/
+  | groupOrTargetPlayerCreatures (humans : Bool := false) (equippedOrTargetPlayer : Bool := false)
+  /-- Attacking creatures (`untilYourTurn = false`, equipped only if `flag`) or creatures attacking until your next turn (`untilYourTurn = true`, against opponents if `flag`). -/
+  | attackersFilter (untilYourTurn : Bool := false) (flag : Bool := false)
+  /-- Opposing two-type permanents (`putArtifact = false`, creatures/planeswalkers if `flag`) or artifact put from hand (`putArtifact = true`, Equipment only if `flag`). -/
+  | oppPairOrPutArtifact (putArtifact : Bool := false) (flag : Bool := false)
   /-- Filtered creatures the controller controls (legendary if `legendary`, with a +1/+1 counter if `withPlusOne`, nontoken otherwise). -/
   | filteredCreaturesYouControl (legendary : Bool := true) (withPlusOne : Bool := false)
-  /-- Each Forest the controller controls other than the one that caused this.
-  That Forest's id is this trigger's last-known power.
-  At least `n` other Forests is
-  `.atLeast (.count .forestsExceptCause) (.fixed n)`. -/
-  | forestsExceptCause
-  /-- The quest counters on the source, while it is on the battlefield.
-  At least `n` is `.atLeast (.count .questCounters) (.fixed n)`.
-  A missing source is reported. A source that has left is reported. -/
-  | questCounters
-  /-- The source, when it is harnessed.
-  Harnessed is `.atLeast (.count .harnessedSource) (.fixed 1)`.
-  An unharnessed source is reported. A missing source does nothing. -/
-  | harnessedSource
-  /-- Each other creature or artifact the controller controls.
-  The source is not included. A missing source names nothing.
-  Sacrificing one as a cost is
-  `.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)`.
-  Sacrificing each of them is `.sacrifice .anotherCreatureOrArtifact`. -/
-  | anotherCreatureOrArtifact
-  /-- Every creature on the battlefield (only power 4 or greater if `powerAtLeast4`). -/
-  | allCreatures (powerAtLeast4 : Bool := false)
-  /-- Creatures the targeted player controls. -/
-  | creaturesOfTargetPlayer
-  /-- Each creature that does not have this subtype. -/
-  | nonSubtypeCreatures (subtype : String)
-  /-- Each creature except tokens you control. -/
-  | creaturesExceptYourTokens
-  /-- Each token you control (only Wizard tokens except recently created ones if `wizardsExceptRecent`). -/
-  | tokensYouControl (wizardsExceptRecent : Bool := false)
-  /-- Creatures without flying. -/
-  | creaturesWithoutFlying
-  /-- A land (`creatureOrPw = false`) or a creature or planeswalker (`creatureOrPw = true`) the controller controls. -/
-  | sacrificePermanentChoice (creatureOrPw : Bool := false)
+  /-- Excluded or greatest permanents: Forests except cause (`false, false`), creatures except your tokens (`true, false`), creatures without flying (`false, true`), or opposing greatest-MV creature/planeswalker (`true, true`). -/
+  | excludedOrGreatestPermanents (exceptYourTokens : Bool := false) (noFlyingOrGreatest : Bool := false)
+  /-- All creatures on the battlefield (`tokensOnly = false`, power 4+ if `flag`) or tokens you control (`tokensOnly = true`, Wizard tokens except recent if `flag`). -/
+  | allCreaturesOrTokens (tokensOnly : Bool := false) (flag : Bool := false)
+  /-- Sacrifice permanent choice (`sourceCopy = false`, creature/planeswalker if `flag`) or token copy of the source (`sourceCopy = true`, two nonlegendary if `flag`). -/
+  | sacrificeChoiceOrSourceCopy (sourceCopy : Bool := false) (flag : Bool := false)
   /-- Permanents of type `ty` opponents control. -/
   | oppPermanents (ty : CardType := .artifact)
-  /-- A token copy of the source if the source wasn't a token, or two nonlegendary token copies of the source. -/
-  | sourceTokenCopy (twoNonlegendary : Bool := false)
-  /-- All creatures except up to two chosen by the controller. -/
-  | allCreaturesExceptTwoChosen
-  /-- Each other creature with mana value of the chosen odd or even quality. -/
-  | otherCreaturesOddOrEvenMv
-  /-- All creatures that aren't of the chosen creature type. -/
-  | creaturesNotChosenType
-  /-- A creature or planeswalker with the greatest mana value among those the targeted opponent controls. -/
-  | oppGreatestMvCreatureOrPlaneswalker
-  /-- Creatures attacking the player recorded as the cause's controller, also gaining trample. -/
-  | attackersOfCauseControllerWithTrample
-  /-- Creatures attacking the controller (or one of their opponents if `againstOpponents`) until the controller's next turn. -/
-  | attackersUntilYourTurn (againstOpponents : Bool := false)
-  /-- An Equipment the controller controls. -/
-  | equipmentYouControl
-  /-- Creatures that dealt combat damage to the controller, while the controller is the monarch. -/
-  | combatDamagerIfMonarch
-  /-- A creature on the battlefield, copied until end of turn with haste. -/
-  | anyCreatureOnBattlefieldWithHaste
+  /-- Chosen-filter or trample-attacker creatures: all except two chosen (`false, false`), other odd/even MV (`true, false`), not chosen type (`false, true`), or attackers of cause's controller with trample (`true, true`). -/
+  | chosenFilterOrTrampleAttackers (oddOrEven : Bool := false) (notChosenOrTrample : Bool := false)
 deriving Repr, Inhabited, BEq
 
 /-- Card selectors in graveyards, exile, or noted across zones (CR 404 / CR 406). -/
 inductive GraveyardExileObject where
-  /-- The announced graveyard card (or permanent target if `orPermanent`), returned to the controller's hand. -/
-  | graveyardCard (orPermanent : Bool := false)
-  /-- Cards an earlier step milled that have this subtype, put into the
-  controller's hand.
-  `.returnToHand (.milledSubtype subtype)`. -/
-  | milledSubtype (subtype : String)
-  /-- A card the source exiled, returned to its owner's hand.
-  A missing source, or nothing exiled, returns nothing.
-  `.returnToHand .linkedExile`.
-  Put onto the battlefield is `.put .linkedExile`. -/
-  | linkedExile
-  /-- Up to `n` target instant and/or sorcery cards from the controller's
-  graveyard.
-  `.returnToHand (.graveyardInstants 2)`.
-  Inside `queueReflexive`, those targets are chosen when the reflexive
-  ability is put on the stack. Outside it, this returns nothing. -/
+  /-- Announced graveyard card (`discarded = false`, or permanent if `flag`) or card discarded by an earlier step (`discarded = true`, land only if `flag`). -/
+  | graveyardOrDiscardedCard (discarded : Bool := false) (flag : Bool := false)
+  /-- Cards of `subtype` in graveyard (`milledOnly = false`) or milled by an earlier step (`milledOnly = true`). -/
+  | subtypeInGraveyard (subtype : String) (milledOnly : Bool := false)
+  /-- Linked exile, creatures that died this turn, outside-the-game opponent choice, or Sphinx's Approach (`false/true, false/true`). -/
+  | linkedOrDiedOrSpecial (diedThisTurn : Bool := false) (outsideOrSphinx : Bool := false)
+  /-- Up to `n` target instant and/or sorcery cards from the controller's graveyard. -/
   | graveyardInstants (n : Nat)
-  /-- The card an earlier step or trigger discarded (only when it is a land if `landOnly`). -/
-  | discarded (landOnly : Bool := false)
   /-- The announced card or permanent with mana value at most `mv` (creature-only if `creatureOnly`, or any with teamwork if `orTeamwork`). -/
   | mvAtMost (mv : Nat) (creatureOnly : Bool := true) (orTeamwork : Bool := false)
-  /-- The creature (`lands = false`) or lands (`lands = true`) an earlier step exiled and noted. -/
-  | noted (lands : Bool := false)
+  /-- Noted exiled card/lands (`copyTarget = false`, lands if `flag`) or copy target (`copyTarget = true`, creature/graveyard if `flag`). -/
+  | notedOrCopyTarget (copyTarget : Bool := false) (flag : Bool := false)
   /-- The announced card of type `ty` (e.g. creature or land) in the controller's graveyard. -/
   | cardOfType (ty : CardType := .creature)
-  /-- Up to one target artifact/non-Aura enchantment/land (`creatureOrGy = false`) or creature/creature card in a graveyard (`creatureOrGy = true`). -/
-  | copyTarget (creatureOrGy : Bool := false)
-  /-- Creature cards (`creaturesOnly = true`) or all nonland permanent cards (`creaturesOnly = false`) in the controller's graveyard. -/
-  | cardsInYourGraveyard (creaturesOnly : Bool := true)
-  /-- The targeted card of this subtype in the controller's graveyard. -/
-  | graveyardSubtype (subtype : String)
-  /-- Up to two modal graveyard cards (artifact, creature, enchantment, land). -/
-  | upToTwoGyModal
-  /-- Creature cards in opponents' graveyards that were put there from the battlefield this turn. -/
-  | creaturesDiedThisTurn
-  /-- Two cards you own from outside the game, one chosen by an opponent. -/
-  | outsideGameOpponentChoice
-  /-- This spell and four cards named Sphinx's Approach in your graveyard. -/
-  | sphinxsApproach
+  /-- Creature/nonland cards in your graveyard (`modalTwo = false`, creatures only if `creaturesOnly`) or up to two modal graveyard cards (`modalTwo = true`). -/
+  | graveyardCardGroup (modalTwo : Bool := false) (creaturesOnly : Bool := true)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Card selectors in libraries and hands (CR 401 / CR 402). -/
 inductive LibraryHandObject where
-  /-- The controller's hand. The number discarded is noted for a later step.
-  Declining leaves the note empty.
-  `.discard .hand`. -/
-  | hand
-  /-- A nonland card (or nonland permanent card if `permanentOnly`) chosen from the announced player's revealed hand. -/
-  | chosenNonland (permanentOnly : Bool := false)
-  /-- The card `revealLibrary .untilCreature` revealed, put into the
-  controller's hand on the hand branch.
-  Outside that resolution, `.returnToHand .revealed` does nothing.
-  Put onto the battlefield is `.put .revealed`. Outside `.untilSaga` and
-  the battlefield branch of `.untilCreature`, that put does nothing. -/
-  | revealed
-  /-- A basic land card `searchLibrary` found (put on top of library if `onTop`, or into hand/battlefield otherwise). -/
-  | basicLand (onTop : Bool := false)
-  /-- A card from the controller's hand.
-  An empty hand skips the choice.
-  Putting it on the bottom of that player's library is
-  `.putOnLibrary .bottom .cardFromHand`.
-  Putting it on top puts nothing. -/
-  | cardFromHand
-  /-- The top card (`count = none, byPower = false`), top `n` cards (`count = some n`), or top X cards by source power (`byPower = true`) of the controller's library. -/
-  | top (count : Option Nat := none) (byPower : Bool := false)
-  /-- Up to `max` basic cards of this subtype from the controller's library.
-  Linked to the source is
-  `.exile (.basicUpTo subtype max) .forLater .linked`. -/
-  | basicUpTo (subtype : String) (max : Nat)
-  /-- The top `n` cards (`count = some n`) or top X cards (`count = none`) of the announced opponent's library. -/
-  | opponentTop (count : Option Nat := none)
+  /-- Hand or revealed object: whole hand (`false, false`), revealed card (`true, false`), card from hand (`false, true`), or random revealed creature (`true, true`). -/
+  | handOrRevealedObject (revealed : Bool := false) (cardFromHandOrRandom : Bool := false)
+  /-- Chosen nonland from revealed hand (`basicLand = false`, permanent only if `flag`) or basic land found by search (`basicLand = true`, on top if `flag`). -/
+  | chosenNonlandOrBasic (basicLand : Bool := false) (flag : Bool := false)
+  /-- Top cards of library (`opponentTop = false`, by source power if `byPowerOrLands`), opponent's top cards (`opponentTop = true, byPowerOrLands = false`), or lands up to count/damage (`opponentTop = true, byPowerOrLands = true`). -/
+  | topOrLandsCount (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false)
+  /-- Up to `bound` basic cards of `subtype` from library (`creatureFromHand = false`) or a `subtype` creature card with MV at most `bound` from hand (`creatureFromHand = true`). -/
+  | subtypeWithBound (subtype : String) (bound : Nat) (creatureFromHand : Bool := false)
   /-- A card of type `ty` (e.g. land or artifact) from the controller's hand. -/
   | cardOfTypeFromHand (ty : CardType := .land)
-  /-- A random creature from the cards `revealLibrary (.top n)` revealed.
-  `.put .randomCreature`.
-  Outside that resolution, this puts nothing. -/
-  | randomCreature
-  /-- A card of `subtype` found by `searchLibrary` (land subtype if `landOnly`, or Forest/Dragon otherwise). -/
-  | landSubtype (subtype : String) (landOnly : Bool := true)
-  /-- A creature card of `subtype` with mana value at most `maxMv` from hand.
-  `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`. -/
-  | creatureFromHand (subtype : String) (maxMv : Nat)
+  /-- A card of `subtype` found by `searchLibrary` (land subtype if `landOnly`, behold untap if `beholdUntap`). -/
+  | searchSubtype (subtype : String) (landOnly : Bool := true) (beholdUntap : Bool := false)
   /-- Cards in the controller's hand (nonland only if `nonlandOnly`, a random card if `random`). -/
   | card (nonlandOnly : Bool := false) (random : Bool := false)
-  /-- Up to `n` land cards (`count = some n`), or up to the damage dealt (`count = none`). -/
-  | landsUpTo (count : Option Nat := none)
   /-- A card with optional supertype `s` and card type `ty`. -/
   | supertypeCard (s : Option Supertype := some .legendary) (ty : CardType := .creature)
-  /-- A basic land card; you may behold `subtype` to untap it. -/
-  | basicBeholdUntap (subtype : String)
-  /-- Up to X basic land cards with different names. -/
-  | basicLandsDifferentNamesX
-  /-- An artifact creature card with mana value X or less from library and/or graveyard. -/
-  | artifactCreatureX
-  /-- A card of one of `types` among the cards just looked at. -/
-  | lookedTypes (types : Array String)
-  /-- Two piles separated from the looked-at cards (Fact or Fiction if `factOrFiction`). -/
-  | twoPiles (factOrFiction : Bool := false)
+  /-- Special library or hand query: basic lands with different names X (`false, false`), artifact creature X (`true, false`), opponent libraries but bottom (`false, true`), or each opponent two / draw shortfall (`true, true`). -/
+  | libraryOrHandSpecial (artifactCreatureX : Bool := false) (oppLibOrShortfall : Bool := false)
+  /-- Cards of `types` among looked-at cards (`untapAt = none`) or basic land of `types` untapped at `untapAt` lands (`untapAt = some n`). -/
+  | typesOrSubtypesArray (types : Array String) (untapAt : Option Nat := none)
+  /-- Two piles (`drawDiscard = false, lootX = false`, Fact or Fiction if `flag`), draw and discard (`drawDiscard = true, lootX = false`, two and stun if `flag`), or loot/discard X (`lootX = true`, Spirit per type if `flag`). -/
+  | pilesOrDrawDiscard (drawDiscard : Bool := false) (lootX : Bool := false) (flag : Bool := false)
   /-- `n` cards unless a card of type `ty` is discarded. -/
   | cardsUnlessType (n : Nat := 2) (ty : CardType := .artifact)
-  /-- All but the bottom card of each opponent's library. -/
-  | opponentLibrariesButBottom
-  /-- Draw and discard 1 (`twoAndStun = false`) or draw 2, discard 2, and tap/stun for nonlands (`twoAndStun = true`). -/
-  | drawAndDiscard (twoAndStun : Bool := false)
-  /-- Two cards from each opponent, drawing a card for each opponent who didn't discard two nonland cards. -/
-  | eachOpponentTwoDrawPerNonlandShortfall
-  /-- Discard 1, draw 1, and put +1/+1 counters per discard (`spiritPerType = false`), or draw X, discard X, and create Spirits per card type (`spiritPerType = true`). -/
-  | lootOrDiscardX (spiritPerType : Bool := false)
-  /-- A basic land card of one of `kinds`, untapped if the controller controls at least `untapAt` lands. -/
-  | basicSubtypesUntapAt (kinds : Array String) (untapAt : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Sacrifice-choice and stack object selectors (CR 405 / CR 701.17). -/
 inductive SacrificeStackObject where
   /-- A creature (nontoken if `nontoken`) chosen and sacrificed by each player (`opponentsOnly = false`), each opponent (`opponentsOnly = true, targetOpponent = false`), or the announced opponent (`targetOpponent = true`). -/
   | chosenCreature (opponentsOnly : Bool := false) (nontoken : Bool := false) (targetOpponent : Bool := false)
-  /-- A creature with the least power among creatures the defending player
-  controls.
-  `.sacrifice .leastPower`. -/
-  | leastPower
-  /-- A creature that dealt combat damage to you this turn. Each opponent
-  sacrifices one of their choice.
-  `.sacrifice .combatDamager`. -/
-  | combatDamager
-  /-- The ability's source, sacrificed as `how` says.
-  “{name} is sacrificed” is `.sacrifice .source`, and also
-  `.sacrifice (.sacrificedSource .isSacrificed)`.
-  The controller sacrifices it with
-  `.sacrifice (.sacrificedSource .controllerSacrifices)`.
-  It moves as sacrificed, without a token-sacrifice trigger, with
-  `.sacrifice (.sacrificedSource .movedAsSacrificed)`. -/
+  /-- Sacrifice target: least-power creature (`false, false`), combat damager (`true, false`), the Plan (`false, true`), or another creature you control (`true, true`). -/
+  | sacrificeTarget (combatDamager : Bool := false) (planOrAnother : Bool := false)
+  /-- The ability's source, sacrificed as `how` says. -/
   | sacrificedSource (how : SacrificeSourceHow := .isSacrificed)
-  /-- The Plan, if it is still on the battlefield.
-  `.sacrifice .plan`.
-  Noting whether the sacrifice happened is `.sacrifice .plan .forReflexive`. -/
-  | plan
-  /-- Another creature the controller controls.
-  `.sacrifice .another`.
-  Sacrificing one as a cost is `.pay (.sacrifice (.fixed 1) .another)`.
-  Its power is noted. -/
-  | another
-  /-- The controller, when the source was cast.
-  A source that was not cast does nothing.
-  `.grant .protectionEverything .youIfCast`. -/
-  | youIfCast
-  /-- Each creature the spell that caused this trigger targets.
-  A permanent that is not a creature is skipped. No recorded spell grants
-  nothing.
-  `.grant (.keywords Keyword.flying) .spellTargets`. -/
-  | spellTargets
-  /-- The targeted spell on the stack (or copied twice if `twice`). -/
-  | targetSpell (twice : Bool := false)
-  /-- The targeted activated or triggered ability on the stack from a creature or artifact source. -/
-  | stackAbility (fromCreature : Bool := true)
-  /-- The source spell copied X times (`nextThisTurn = false`), or the next spell the controller casts this turn (`nextThisTurn = true`). -/
-  | copiedSpell (nextThisTurn : Bool := false)
-  /-- The spell that caused this trigger. -/
-  | causingSpell
-  /-- Target opponent sacrifices a creature or planeswalker, discards a card, and loses 3 life; you draw a card and gain 3 life. -/
-  | archonCruelty
+  /-- Cast or stack reference: controller if source was cast (`false, false`), causing spell's creature targets (`true, false`), causing spell (`false, true`), or Archon of Cruelty (`true, true`). -/
+  | castOrStackRef (spellTargets : Bool := false) (causingOrArchon : Bool := false)
+  /-- Stack spell or ability: target spell (`ability = false, copied = false`, twice if `flag`), stack ability (`ability = true, copied = false`, from creature if `flag`), or copied spell (`copied = true`, next this turn if `flag`). -/
+  | stackSpellOrAbility (ability : Bool := false) (copied : Bool := false) (flag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 mutual
@@ -592,83 +300,20 @@ An announced target is `.target`, and `which` is the `PlayerSelector`
 restricting it. A player is `.target .player`.
 The controllers of the objects an `ObjectSelector` names are `.controller`. -/
 inductive PlayerSelector where
-  /-- Each opponent, or the announced opponent when the ability targets.
-  `n` damage to each opponent is `.dealDamage (.fixed n) (.player .eachOpponent)`.
-  Each opponent draws `n` is `.draw (.fixed n) .eachOpponent`.
-  Each opponent loses `n` life is `.loseLife (.fixed n) .eachOpponent`.
-  Each opponent mills `n` is `.mill (.fixed n) .eachOpponent`. -/
-  | eachOpponent
-  /-- The controller of the ability.
-  That player draws `n` is `.draw (.fixed n)` (`.you`).
-  That player loses `n` life is `.loseLife (.fixed n)`.
-  That player mills `n` is `.mill (.fixed n)`.
-  That player's library is `.revealLibrary (.top n) (.put .randomCreature)`.
-  That player amasses Goblins `n` is `.amass (.fixed n)`. -/
+  /-- The controller of the ability. -/
   | you
-  /-- The targeted opponent may have the controller draw a card.
-  Declining mills X cards, where X is the influence counters on the source,
-  and that player loses life equal to the total mana value of those cards.
-  An earlier step must have recorded the offer.
-  `.draw (.fixed 1) .opponentHasYou`. -/
-  | opponentHasYou
-  /-- The announced player. This is the restriction `.target` uses for a player.
-  An illegal target mills nothing.
-  `.mill (.fixed n) (.target .player)`.
-  Read on its own, this is that same player. A missing target names nothing. -/
-  | player
-  /-- The announced opponent. This is the restriction `.target` uses for an opponent.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
-  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
-  Read on its own, this is that same player. A missing target names nothing. -/
-  | opponent
-  /-- The controllers of the objects `what` names.
-  Each object names the player who controls it. A permanent that has
-  left names the controller it had. The same player is named once.
-  The enchanted creature's controller is `.controller .enchanted`.
-  Nothing enchanted names no player.
-  `.draw (.fixed 1) (.controller .enchanted)`.
-  The targeted permanent's controller is `.controller .target`.
-  Destroy may already have moved it.
-  `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
-  The creature an earlier step destroyed is that target, so its
-  controller amasses with
-  `.amass .notedPower (who := .controller .target)`.
-  No destruction amasses nothing.
-  Each creature the controller controls names that player with
-  `.controller .creaturesYouControl`.
-  A selector that does not name objects names no player. -/
+  /-- Opponent or all-player seat selector: each opponent (`false, false`), each player (`true, false`), or targeted opponent may have you draw (`false, true`). -/
+  | eachOrHasYou (eachPlayer : Bool := false) (opponentHasYou : Bool := false)
+  /-- Announced/targeted player selector: player (`false, false`), opponent (`true, false`), announced (`false, true`), or all targeted players (`true, true`). -/
+  | targetPlayerKind (opponent : Bool := false) (announcedOrAll : Bool := false)
+  /-- Event or life-drain player selector: player who lost life (`false, false, false`), combat-damaged player (`true, false, false`), you lose 1 life (`false, false, true`), drain each opponent (`false, true, false`), or extort (`false, true, true`). -/
+  | eventOrDrainPlayer (damaged : Bool := false) (drain : Bool := false) (extortOrLose1 : Bool := false)
+  /-- The controllers of the objects `what` names. -/
   | controller (what : ObjectSelector)
-  /-- The announced target `which` names. `which` is a `PlayerSelector`.
-  The announced player is `.target .player`.
-  An illegal target mills nothing.
-  `.mill (.fixed n) (.target .player)`.
-  The announced opponent is `.target .opponent`.
-  `n` damage to that player is `.dealDamage (.fixed n) (.player (.target .opponent))`.
-  That player loses `n` life is `.loseLife (.fixed n) (.target .opponent)`.
-  Any other restriction names nothing. -/
+  /-- The announced target `which` names. -/
   | target (which : PlayerSelector)
-  /-- The player who lost life. That player's seat is the trigger's
-  last-known toughness. A missing seat mills nothing.
-  `.mill .thatManyLost .thatPlayer`. -/
-  | thatPlayer
-  /-- The player who was dealt combat damage. That seat is
-  `lastCombatDamagePlayer`. A missing seat is the controller's opponent.
-  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`. -/
-  | damagedPlayer
-  /-- The announced player. When none was announced, the resolving ability's
-  last-known toughness is that player's index.
-  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
-  | announced
-  /-- Each player. -/
-  | eachPlayer
   /-- The player target at `index`. -/
   | targetAt (index : Nat)
-  /-- Each targeted player. -/
-  | targetPlayers
-  /-- Each opponent loses 1 life and you gain that much life (if {W/B} is paid when `extort`, CR 702.101). -/
-  | drainEachOpponent (extort : Bool := false)
-  /-- You lose 1 life and amass. -/
-  | youLose1Life
 deriving Repr, Inhabited, BEq
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
@@ -687,26 +332,7 @@ which permanents `TriggerResolution.destroy` destroys, who
 `TriggerResolution.setBasePT` gives a new base power and toughness,
 which card `TriggerResolution.putOnLibrary` puts on a library,
 which cards `TriggerResolution.exile` exiles, and
-which cards `TriggerResolution.put` puts onto the battlefield.
-`.source` is first so a default resolution pumps the source.
-A player is `.player`. `n` cards from a hand are `.cards n`.
-A returned card names both the card and whose hand.
-A sacrifice names both who sacrifices and which permanent.
-Counters name who receives them.
-Losing an ability names who loses it.
-Becoming an artifact names who becomes one.
-Becoming prepared names who becomes prepared.
-A new base power and toughness names who receives it.
-Putting a card on a library names which card.
-Exiling names which cards.
-Putting cards onto the battlefield names which cards.
-Which objects `NumberSelector.count` counts are these selectors.
-Which permanents `CostSelector.sacrifice` sacrifices are these selectors.
-Which cards `CostSelector.discard` discards are these selectors.
-An announced target is `.target`, and `which` is the `ObjectSelector`
-restricting it. The announced permanent is `.target` (`.any`).
-Objects every selector names are `.intersection`. Objects any selector
-names are `.union`. -/
+which cards `TriggerResolution.put` puts onto the battlefield. -/
 inductive ObjectSelector where
   /-- The ability's source, if it is still on the battlefield. -/
   | source
@@ -737,15 +363,26 @@ inductive ObjectSelector where
   /-- All cards of `ty` in `who`'s graveyard. -/
   | graveyardCardsOfType (ty : CardType) (who : PlayerSelector)
   /-- Each player's hand, optionally discarded to draw `n` cards. -/
-  | mayWheel (n : Nat) (who : PlayerSelector := by exact .eachPlayer)
+  | mayWheel (n : Nat) (who : PlayerSelector := by exact .eachOrHasYou true false)
 deriving Repr, Inhabited, BEq
 
 end
 
 namespace PlayerSelector
 
+@[match_pattern] abbrev eachOpponent : PlayerSelector := .eachOrHasYou false false
 @[match_pattern] abbrev each : PlayerSelector := .eachOpponent
+@[match_pattern] abbrev eachPlayer : PlayerSelector := .eachOrHasYou true false
+@[match_pattern] abbrev opponentHasYou : PlayerSelector := .eachOrHasYou false true
+@[match_pattern] abbrev player : PlayerSelector := .targetPlayerKind false false
 @[match_pattern] abbrev recruit : PlayerSelector := .player
+@[match_pattern] abbrev opponent : PlayerSelector := .targetPlayerKind true false
+@[match_pattern] abbrev announced : PlayerSelector := .targetPlayerKind false true
+@[match_pattern] abbrev targetPlayers : PlayerSelector := .targetPlayerKind true true
+@[match_pattern] abbrev thatPlayer : PlayerSelector := .eventOrDrainPlayer false false false
+@[match_pattern] abbrev damagedPlayer : PlayerSelector := .eventOrDrainPlayer true false false
+@[match_pattern] abbrev youLose1Life : PlayerSelector := .eventOrDrainPlayer false false true
+@[match_pattern] abbrev drainEachOpponent (extort : Bool := false) : PlayerSelector := .eventOrDrainPlayer false true extort
 @[match_pattern] abbrev eachOpponentAndYouGain1 : PlayerSelector := .drainEachOpponent false
 @[match_pattern] abbrev extort : PlayerSelector := .drainEachOpponent true
 
@@ -754,181 +391,181 @@ end PlayerSelector
 namespace ObjectSelector
 
 -- TargetObject aliases
-@[match_pattern] abbrev whileSource : ObjectSelector := .targetObj .whileSource
-@[match_pattern] abbrev ifPresent : ObjectSelector := .targetObj .ifPresent
+@[match_pattern] abbrev whileSource : ObjectSelector := .targetObj (.targetPresence false false)
+@[match_pattern] abbrev ifPresent : ObjectSelector := .targetObj (.targetPresence true false)
 @[match_pattern] abbrev creature : ObjectSelector := .targetObj (.ofCardType .creature)
-@[match_pattern] abbrev laterCreature : ObjectSelector := .targetObj .laterCreature
+@[match_pattern] abbrev laterCreature : ObjectSelector := .targetObj (.targetPresence false true)
 @[match_pattern] abbrev planeswalker : ObjectSelector := .targetObj (.ofCardType .planeswalker)
 @[match_pattern] abbrev anotherSubtype (subtype : String) : ObjectSelector := .targetObj (.anotherSubtype subtype)
-@[match_pattern] abbrev eachPermanent : ObjectSelector := .targetObj (.eachPermanent false)
-@[match_pattern] abbrev eachEquipment : ObjectSelector := .targetObj (.eachPermanent true)
+@[match_pattern] abbrev eachPermanent : ObjectSelector := .targetObj (.eachOrPairTarget false false)
+@[match_pattern] abbrev eachEquipment : ObjectSelector := .targetObj (.eachOrPairTarget false true)
 @[match_pattern] abbrev permanent (byYou : Bool := false) : ObjectSelector := .targetObj (.permanent byYou)
-@[match_pattern] abbrev announced : ObjectSelector := .targetObj .announced
-@[match_pattern] abbrev announcedEquipment : ObjectSelector := .targetObj (.announcedPair true)
-@[match_pattern] abbrev optionalCreature : ObjectSelector := .targetObj .optionalCreature
-@[match_pattern] abbrev announcedCreature : ObjectSelector := .targetObj (.announcedPair false)
+@[match_pattern] abbrev announced : ObjectSelector := .targetObj (.announcedTarget false false)
+@[match_pattern] abbrev announcedEquipment : ObjectSelector := .targetObj (.eachOrPairTarget true true)
+@[match_pattern] abbrev optionalCreature : ObjectSelector := .targetObj (.announcedTarget true false)
+@[match_pattern] abbrev announcedCreature : ObjectSelector := .targetObj (.eachOrPairTarget true false)
 @[match_pattern] abbrev targetAt (index : Nat) : ObjectSelector := .targetObj (.targetAt index)
-@[match_pattern] abbrev creatureTargets : ObjectSelector := .targetObj .creatureTargets
-@[match_pattern] abbrev firstTargetCreatureYouControl : ObjectSelector := .targetObj .firstTargetCreatureYouControl
-@[match_pattern] abbrev secondArtifactTargetNotLegendary : ObjectSelector := .targetObj .secondArtifactTargetNotLegendary
-@[match_pattern] abbrev targetLegendRuleOff : ObjectSelector := .targetObj .targetLegendRuleOff
-@[match_pattern] abbrev untilYourNextTurn : ObjectSelector := .targetObj .untilYourNextTurn
-@[match_pattern] abbrev ownedCreaturesKicker : ObjectSelector := .targetObj .ownedCreaturesKicker
-@[match_pattern] abbrev targetPermanentTwoTokensHasteSacrifice : ObjectSelector := .targetObj .targetPermanentTwoTokensHasteSacrifice
+@[match_pattern] abbrev creatureTargets : ObjectSelector := .targetObj (.announcedTarget false true)
+@[match_pattern] abbrev firstTargetCreatureYouControl : ObjectSelector := .targetObj (.announcedTarget true true)
+@[match_pattern] abbrev secondArtifactTargetNotLegendary : ObjectSelector := .targetObj (.specialCopyOrKickerTarget false false)
+@[match_pattern] abbrev targetLegendRuleOff : ObjectSelector := .targetObj (.specialCopyOrKickerTarget true false)
+@[match_pattern] abbrev untilYourNextTurn : ObjectSelector := .targetObj (.targetPresence true true)
+@[match_pattern] abbrev ownedCreaturesKicker : ObjectSelector := .targetObj (.specialCopyOrKickerTarget false true)
+@[match_pattern] abbrev targetPermanentTwoTokensHasteSacrifice : ObjectSelector := .targetObj (.specialCopyOrKickerTarget true true)
 
 -- BattlefieldObject aliases
-@[match_pattern] abbrev enchanted : ObjectSelector := .battlefield (.enchanted false)
+@[match_pattern] abbrev enchanted : ObjectSelector := .battlefield (.enchantedOrOppCreatures false false)
 @[match_pattern] abbrev cause (subtype : Option String := none) : ObjectSelector := .battlefield (.cause subtype)
 @[match_pattern] abbrev creaturesYouControl : ObjectSelector := .battlefield (.permanentsOfTypeYouControl .creature)
-@[match_pattern] abbrev othersOfSubtype (subtype : String) : ObjectSelector := .battlefield (.othersOfSubtype subtype)
-@[match_pattern] abbrev opponentsCreatures : ObjectSelector := .battlefield (.opponentsCreatures false)
-@[match_pattern] abbrev blockers : ObjectSelector := .battlefield .blockers
-@[match_pattern] abbrev eachNonSubtypeAndOpponents (subtype : String) : ObjectSelector := .battlefield (.eachNonSubtypeAndOpponents subtype)
+@[match_pattern] abbrev othersOfSubtype (subtype : String) : ObjectSelector := .battlefield (.subtypeFilter subtype false false)
+@[match_pattern] abbrev opponentsCreatures : ObjectSelector := .battlefield (.enchantedOrOppCreatures true false)
+@[match_pattern] abbrev blockers : ObjectSelector := .battlefield (.combatOrHasteCreature false false)
+@[match_pattern] abbrev eachNonSubtypeAndOpponents (subtype : String) : ObjectSelector := .battlefield (.subtypeFilter subtype true true)
 @[match_pattern] abbrev youControl (which : YouControlPlusOne := .eachCreature) : ObjectSelector := .battlefield (.youControl which)
-@[match_pattern] abbrev eachOther : ObjectSelector := .battlefield .eachOther
-@[match_pattern] abbrev createdToken : ObjectSelector := .battlefield .createdToken
-@[match_pattern] abbrev sourceIfPresent : ObjectSelector := .battlefield .sourceIfPresent
-@[match_pattern] abbrev eachUpToLastKnown : ObjectSelector := .battlefield .eachUpToLastKnown
+@[match_pattern] abbrev eachOther : ObjectSelector := .battlefield (.otherOrEquipmentYouControl false false)
+@[match_pattern] abbrev createdToken : ObjectSelector := .battlefield (.stepNotedPermanent false false)
+@[match_pattern] abbrev sourceIfPresent : ObjectSelector := .battlefield (.sourceOrTappedState false false)
+@[match_pattern] abbrev eachUpToLastKnown : ObjectSelector := .battlefield (.groupOrTargetPlayerCreatures false false)
 @[match_pattern] abbrev landsYouControl : ObjectSelector := .battlefield (.permanentsOfTypeYouControl .land)
-@[match_pattern] abbrev humans : ObjectSelector := .battlefield .humans
-@[match_pattern] abbrev enchantedWhileSource : ObjectSelector := .battlefield (.enchanted true)
-@[match_pattern] abbrev attackingCreatures : ObjectSelector := .battlefield (.attackingCreatures false)
-@[match_pattern] abbrev equipped : ObjectSelector := .battlefield .equipped
-@[match_pattern] abbrev firstThisTurn : ObjectSelector := .battlefield .firstThisTurn
-@[match_pattern] abbrev oppArtifactsEnchantments : ObjectSelector := .battlefield (.oppTwoTypes false)
-@[match_pattern] abbrev permanentDealtDamage : ObjectSelector := .battlefield .permanentDealtDamage
-@[match_pattern] abbrev equippedAttackers : ObjectSelector := .battlefield (.attackingCreatures true)
-@[match_pattern] abbrev attackingAlone : ObjectSelector := .battlefield .attackingAlone
-@[match_pattern] abbrev equipmentHost : ObjectSelector := .battlefield .equipmentHost
+@[match_pattern] abbrev humans : ObjectSelector := .battlefield (.groupOrTargetPlayerCreatures true false)
+@[match_pattern] abbrev enchantedWhileSource : ObjectSelector := .battlefield (.enchantedOrOppCreatures false true)
+@[match_pattern] abbrev attackingCreatures : ObjectSelector := .battlefield (.attackersFilter false false)
+@[match_pattern] abbrev equipped : ObjectSelector := .battlefield (.groupOrTargetPlayerCreatures false true)
+@[match_pattern] abbrev firstThisTurn : ObjectSelector := .battlefield (.sourceOrTappedState true true)
+@[match_pattern] abbrev oppArtifactsEnchantments : ObjectSelector := .battlefield (.oppPairOrPutArtifact false false)
+@[match_pattern] abbrev permanentDealtDamage : ObjectSelector := .battlefield (.stepNotedPermanent true false)
+@[match_pattern] abbrev equippedAttackers : ObjectSelector := .battlefield (.attackersFilter false true)
+@[match_pattern] abbrev attackingAlone : ObjectSelector := .battlefield (.combatOrHasteCreature true false)
+@[match_pattern] abbrev equipmentHost : ObjectSelector := .battlefield (.stepNotedPermanent false true)
 @[match_pattern] abbrev enteringVillain : ObjectSelector := .cause (some "Villain")
-@[match_pattern] abbrev anyYouControl : ObjectSelector := .battlefield .anyYouControl
-@[match_pattern] abbrev putArtifact : ObjectSelector := .battlefield (.putArtifact false)
-@[match_pattern] abbrev notedHost : ObjectSelector := .battlefield .notedHost
+@[match_pattern] abbrev anyYouControl : ObjectSelector := .battlefield (.otherOrEquipmentYouControl true true)
+@[match_pattern] abbrev putArtifact : ObjectSelector := .battlefield (.oppPairOrPutArtifact true false)
+@[match_pattern] abbrev notedHost : ObjectSelector := .battlefield (.stepNotedPermanent true true)
 @[match_pattern] abbrev enchantedCreature : ObjectSelector := .enchanted
 @[match_pattern] abbrev legendaryCreaturesYouControl : ObjectSelector := .battlefield (.filteredCreaturesYouControl true false)
 @[match_pattern] abbrev planeswalkersYouControl : ObjectSelector := .battlefield (.permanentsOfTypeYouControl .planeswalker)
-@[match_pattern] abbrev forestsExceptCause : ObjectSelector := .battlefield .forestsExceptCause
-@[match_pattern] abbrev questCounters : ObjectSelector := .battlefield .questCounters
-@[match_pattern] abbrev putEquipment : ObjectSelector := .battlefield (.putArtifact true)
-@[match_pattern] abbrev harnessedSource : ObjectSelector := .battlefield .harnessedSource
+@[match_pattern] abbrev forestsExceptCause : ObjectSelector := .battlefield (.excludedOrGreatestPermanents false false)
+@[match_pattern] abbrev questCounters : ObjectSelector := .battlefield (.sourceOrTappedState true false)
+@[match_pattern] abbrev putEquipment : ObjectSelector := .battlefield (.oppPairOrPutArtifact true true)
+@[match_pattern] abbrev harnessedSource : ObjectSelector := .battlefield (.sourceOrTappedState false true)
 @[match_pattern] abbrev artifact : ObjectSelector := .battlefield (.permanentsOfTypeYouControl .artifact)
-@[match_pattern] abbrev anotherCreatureOrArtifact : ObjectSelector := .battlefield .anotherCreatureOrArtifact
-@[match_pattern] abbrev allCreatures : ObjectSelector := .battlefield (.allCreatures false)
-@[match_pattern] abbrev creaturesOfTargetPlayer : ObjectSelector := .battlefield .creaturesOfTargetPlayer
-@[match_pattern] abbrev nonSubtypeCreatures (subtype : String) : ObjectSelector := .battlefield (.nonSubtypeCreatures subtype)
-@[match_pattern] abbrev oppCreaturesAndPlaneswalkers : ObjectSelector := .battlefield (.oppTwoTypes true)
-@[match_pattern] abbrev creaturesExceptYourTokens : ObjectSelector := .battlefield .creaturesExceptYourTokens
+@[match_pattern] abbrev anotherCreatureOrArtifact : ObjectSelector := .battlefield (.otherOrEquipmentYouControl true false)
+@[match_pattern] abbrev allCreatures : ObjectSelector := .battlefield (.allCreaturesOrTokens false false)
+@[match_pattern] abbrev creaturesOfTargetPlayer : ObjectSelector := .battlefield (.groupOrTargetPlayerCreatures true true)
+@[match_pattern] abbrev nonSubtypeCreatures (subtype : String) : ObjectSelector := .battlefield (.subtypeFilter subtype true false)
+@[match_pattern] abbrev oppCreaturesAndPlaneswalkers : ObjectSelector := .battlefield (.oppPairOrPutArtifact false true)
+@[match_pattern] abbrev creaturesExceptYourTokens : ObjectSelector := .battlefield (.excludedOrGreatestPermanents true false)
 @[match_pattern] abbrev creaturesWithPlusOne : ObjectSelector := .battlefield (.filteredCreaturesYouControl false true)
-@[match_pattern] abbrev wizardTokensExceptRecent : ObjectSelector := .battlefield (.tokensYouControl true)
-@[match_pattern] abbrev tokensYouControl : ObjectSelector := .battlefield (.tokensYouControl false)
-@[match_pattern] abbrev creaturesWithoutFlying : ObjectSelector := .battlefield .creaturesWithoutFlying
-@[match_pattern] abbrev land : ObjectSelector := .battlefield (.sacrificePermanentChoice false)
-@[match_pattern] abbrev creatureOrPlaneswalker : ObjectSelector := .battlefield (.sacrificePermanentChoice true)
+@[match_pattern] abbrev wizardTokensExceptRecent : ObjectSelector := .battlefield (.allCreaturesOrTokens true true)
+@[match_pattern] abbrev tokensYouControl : ObjectSelector := .battlefield (.allCreaturesOrTokens true false)
+@[match_pattern] abbrev creaturesWithoutFlying : ObjectSelector := .battlefield (.excludedOrGreatestPermanents false true)
+@[match_pattern] abbrev land : ObjectSelector := .battlefield (.sacrificeChoiceOrSourceCopy false false)
+@[match_pattern] abbrev creatureOrPlaneswalker : ObjectSelector := .battlefield (.sacrificeChoiceOrSourceCopy false true)
 @[match_pattern] abbrev oppPermanents (ty : CardType := .artifact) : ObjectSelector := .battlefield (.oppPermanents ty)
-@[match_pattern] abbrev sourceTwoNonlegendaryTokens : ObjectSelector := .battlefield (.sourceTokenCopy true)
+@[match_pattern] abbrev sourceTwoNonlegendaryTokens : ObjectSelector := .battlefield (.sacrificeChoiceOrSourceCopy true true)
 @[match_pattern] abbrev nontokenCreaturesYouControl : ObjectSelector := .battlefield (.filteredCreaturesYouControl false false)
-@[match_pattern] abbrev sourceIfNotToken : ObjectSelector := .battlefield (.sourceTokenCopy false)
-@[match_pattern] abbrev allCreaturesExceptTwoChosen : ObjectSelector := .battlefield .allCreaturesExceptTwoChosen
-@[match_pattern] abbrev otherCreaturesOddOrEvenMv : ObjectSelector := .battlefield .otherCreaturesOddOrEvenMv
-@[match_pattern] abbrev creaturesNotChosenType : ObjectSelector := .battlefield .creaturesNotChosenType
-@[match_pattern] abbrev oppGreatestMvCreatureOrPlaneswalker : ObjectSelector := .battlefield .oppGreatestMvCreatureOrPlaneswalker
-@[match_pattern] abbrev attackersOfCauseControllerWithTrample : ObjectSelector := .battlefield .attackersOfCauseControllerWithTrample
-@[match_pattern] abbrev attackersAgainstYouUntilYourTurn : ObjectSelector := .battlefield (.attackersUntilYourTurn false)
-@[match_pattern] abbrev attackersAgainstOpponentsUntilYourTurn : ObjectSelector := .battlefield (.attackersUntilYourTurn true)
-@[match_pattern] abbrev equipmentYouControl : ObjectSelector := .battlefield .equipmentYouControl
-@[match_pattern] abbrev oppTappedCreatures : ObjectSelector := .battlefield (.opponentsCreatures true)
-@[match_pattern] abbrev creaturesPowerAtLeast4 : ObjectSelector := .battlefield (.allCreatures true)
-@[match_pattern] abbrev combatDamagerIfMonarch : ObjectSelector := .battlefield .combatDamagerIfMonarch
-@[match_pattern] abbrev anyCreatureOnBattlefieldWithHaste : ObjectSelector := .battlefield .anyCreatureOnBattlefieldWithHaste
+@[match_pattern] abbrev sourceIfNotToken : ObjectSelector := .battlefield (.sacrificeChoiceOrSourceCopy true false)
+@[match_pattern] abbrev allCreaturesExceptTwoChosen : ObjectSelector := .battlefield (.chosenFilterOrTrampleAttackers false false)
+@[match_pattern] abbrev otherCreaturesOddOrEvenMv : ObjectSelector := .battlefield (.chosenFilterOrTrampleAttackers true false)
+@[match_pattern] abbrev creaturesNotChosenType : ObjectSelector := .battlefield (.chosenFilterOrTrampleAttackers false true)
+@[match_pattern] abbrev oppGreatestMvCreatureOrPlaneswalker : ObjectSelector := .battlefield (.excludedOrGreatestPermanents true true)
+@[match_pattern] abbrev attackersOfCauseControllerWithTrample : ObjectSelector := .battlefield (.chosenFilterOrTrampleAttackers true true)
+@[match_pattern] abbrev attackersAgainstYouUntilYourTurn : ObjectSelector := .battlefield (.attackersFilter true false)
+@[match_pattern] abbrev attackersAgainstOpponentsUntilYourTurn : ObjectSelector := .battlefield (.attackersFilter true true)
+@[match_pattern] abbrev equipmentYouControl : ObjectSelector := .battlefield (.otherOrEquipmentYouControl false true)
+@[match_pattern] abbrev oppTappedCreatures : ObjectSelector := .battlefield (.enchantedOrOppCreatures true true)
+@[match_pattern] abbrev creaturesPowerAtLeast4 : ObjectSelector := .battlefield (.allCreaturesOrTokens false true)
+@[match_pattern] abbrev combatDamagerIfMonarch : ObjectSelector := .battlefield (.combatOrHasteCreature false true)
+@[match_pattern] abbrev anyCreatureOnBattlefieldWithHaste : ObjectSelector := .battlefield (.combatOrHasteCreature true true)
 
 -- GraveyardExileObject aliases
-@[match_pattern] abbrev graveyardCard : ObjectSelector := .graveyardExile (.graveyardCard false)
-@[match_pattern] abbrev graveyardPermanent : ObjectSelector := .graveyardExile (.graveyardCard true)
-@[match_pattern] abbrev milledSubtype (subtype : String) : ObjectSelector := .graveyardExile (.milledSubtype subtype)
-@[match_pattern] abbrev linkedExile : ObjectSelector := .graveyardExile .linkedExile
+@[match_pattern] abbrev graveyardCard : ObjectSelector := .graveyardExile (.graveyardOrDiscardedCard false false)
+@[match_pattern] abbrev graveyardPermanent : ObjectSelector := .graveyardExile (.graveyardOrDiscardedCard false true)
+@[match_pattern] abbrev milledSubtype (subtype : String) : ObjectSelector := .graveyardExile (.subtypeInGraveyard subtype true)
+@[match_pattern] abbrev linkedExile : ObjectSelector := .graveyardExile (.linkedOrDiedOrSpecial false false)
 @[match_pattern] abbrev graveyardInstants (n : Nat) : ObjectSelector := .graveyardExile (.graveyardInstants n)
-@[match_pattern] abbrev discarded : ObjectSelector := .graveyardExile (.discarded false)
+@[match_pattern] abbrev discarded : ObjectSelector := .graveyardExile (.graveyardOrDiscardedCard true false)
 @[match_pattern] abbrev nonlandMvAtMost (mv : Nat) : ObjectSelector := .graveyardExile (.mvAtMost mv false false)
-@[match_pattern] abbrev notedLands : ObjectSelector := .graveyardExile (.noted true)
-@[match_pattern] abbrev discardedLand : ObjectSelector := .graveyardExile (.discarded true)
+@[match_pattern] abbrev notedLands : ObjectSelector := .graveyardExile (.notedOrCopyTarget false true)
+@[match_pattern] abbrev discardedLand : ObjectSelector := .graveyardExile (.graveyardOrDiscardedCard true true)
 @[match_pattern] abbrev creatureMvAtMost (mv : Nat) : ObjectSelector := .graveyardExile (.mvAtMost mv true false)
 @[match_pattern] abbrev creatureCard : ObjectSelector := .graveyardExile (.cardOfType .creature)
-@[match_pattern] abbrev artifactEnchantmentOrLand : ObjectSelector := .graveyardExile (.copyTarget false)
-@[match_pattern] abbrev creatureOrGraveyardCard : ObjectSelector := .graveyardExile (.copyTarget true)
-@[match_pattern] abbrev noted : ObjectSelector := .graveyardExile (.noted false)
-@[match_pattern] abbrev creatureCardsInGraveyard : ObjectSelector := .graveyardExile (.cardsInYourGraveyard true)
-@[match_pattern] abbrev graveyardSubtype (subtype : String) : ObjectSelector := .graveyardExile (.graveyardSubtype subtype)
-@[match_pattern] abbrev allNonlandPermanentsInGraveyard : ObjectSelector := .graveyardExile (.cardsInYourGraveyard false)
+@[match_pattern] abbrev artifactEnchantmentOrLand : ObjectSelector := .graveyardExile (.notedOrCopyTarget true false)
+@[match_pattern] abbrev creatureOrGraveyardCard : ObjectSelector := .graveyardExile (.notedOrCopyTarget true true)
+@[match_pattern] abbrev noted : ObjectSelector := .graveyardExile (.notedOrCopyTarget false false)
+@[match_pattern] abbrev creatureCardsInGraveyard : ObjectSelector := .graveyardExile (.graveyardCardGroup false true)
+@[match_pattern] abbrev graveyardSubtype (subtype : String) : ObjectSelector := .graveyardExile (.subtypeInGraveyard subtype false)
+@[match_pattern] abbrev allNonlandPermanentsInGraveyard : ObjectSelector := .graveyardExile (.graveyardCardGroup false false)
 @[match_pattern] abbrev landCard : ObjectSelector := .graveyardExile (.cardOfType .land)
 @[match_pattern] abbrev creatureMvAtMostOrTeamwork (n : Nat) : ObjectSelector := .graveyardExile (.mvAtMost n true true)
-@[match_pattern] abbrev upToTwoGyModal : ObjectSelector := .graveyardExile .upToTwoGyModal
-@[match_pattern] abbrev creaturesDiedThisTurn : ObjectSelector := .graveyardExile .creaturesDiedThisTurn
-@[match_pattern] abbrev outsideGameOpponentChoice : ObjectSelector := .graveyardExile .outsideGameOpponentChoice
-@[match_pattern] abbrev sphinxsApproach : ObjectSelector := .graveyardExile .sphinxsApproach
+@[match_pattern] abbrev upToTwoGyModal : ObjectSelector := .graveyardExile (.graveyardCardGroup true false)
+@[match_pattern] abbrev creaturesDiedThisTurn : ObjectSelector := .graveyardExile (.linkedOrDiedOrSpecial true false)
+@[match_pattern] abbrev outsideGameOpponentChoice : ObjectSelector := .graveyardExile (.linkedOrDiedOrSpecial false true)
+@[match_pattern] abbrev sphinxsApproach : ObjectSelector := .graveyardExile (.linkedOrDiedOrSpecial true true)
 
 -- LibraryHandObject aliases
-@[match_pattern] abbrev hand : ObjectSelector := .libraryHand .hand
-@[match_pattern] abbrev chosenNonland : ObjectSelector := .libraryHand (.chosenNonland false)
-@[match_pattern] abbrev revealed : ObjectSelector := .libraryHand .revealed
-@[match_pattern] abbrev basicLand : ObjectSelector := .libraryHand (.basicLand false)
-@[match_pattern] abbrev cardFromHand : ObjectSelector := .libraryHand .cardFromHand
-@[match_pattern] abbrev top : ObjectSelector := .libraryHand (.top none false)
-@[match_pattern] abbrev basicUpTo (subtype : String) (max : Nat) : ObjectSelector := .libraryHand (.basicUpTo subtype max)
-@[match_pattern] abbrev opponentTop (n : Nat) : ObjectSelector := .libraryHand (.opponentTop (some n))
+@[match_pattern] abbrev hand : ObjectSelector := .libraryHand (.handOrRevealedObject false false)
+@[match_pattern] abbrev chosenNonland : ObjectSelector := .libraryHand (.chosenNonlandOrBasic false false)
+@[match_pattern] abbrev revealed : ObjectSelector := .libraryHand (.handOrRevealedObject true false)
+@[match_pattern] abbrev basicLand : ObjectSelector := .libraryHand (.chosenNonlandOrBasic true false)
+@[match_pattern] abbrev cardFromHand : ObjectSelector := .libraryHand (.handOrRevealedObject false true)
+@[match_pattern] abbrev top : ObjectSelector := .libraryHand (.topOrLandsCount none false false)
+@[match_pattern] abbrev basicUpTo (subtype : String) (max : Nat) : ObjectSelector := .libraryHand (.subtypeWithBound subtype max false)
+@[match_pattern] abbrev opponentTop (n : Nat) : ObjectSelector := .libraryHand (.topOrLandsCount (some n) true false)
 @[match_pattern] abbrev landFromHand : ObjectSelector := .libraryHand (.cardOfTypeFromHand .land)
 @[match_pattern] abbrev artifactFromHand : ObjectSelector := .libraryHand (.cardOfTypeFromHand .artifact)
-@[match_pattern] abbrev randomCreature : ObjectSelector := .libraryHand .randomCreature
-@[match_pattern] abbrev forest : ObjectSelector := .libraryHand (.landSubtype "Forest" false)
-@[match_pattern] abbrev basicLandOnTop : ObjectSelector := .libraryHand (.basicLand true)
-@[match_pattern] abbrev dragon : ObjectSelector := .libraryHand (.landSubtype "Dragon" false)
-@[match_pattern] abbrev creatureFromHand (subtype : String) (maxMv : Nat) : ObjectSelector := .libraryHand (.creatureFromHand subtype maxMv)
+@[match_pattern] abbrev randomCreature : ObjectSelector := .libraryHand (.handOrRevealedObject true true)
+@[match_pattern] abbrev forest : ObjectSelector := .libraryHand (.searchSubtype "Forest" false false)
+@[match_pattern] abbrev basicLandOnTop : ObjectSelector := .libraryHand (.chosenNonlandOrBasic true true)
+@[match_pattern] abbrev dragon : ObjectSelector := .libraryHand (.searchSubtype "Dragon" false false)
+@[match_pattern] abbrev creatureFromHand (subtype : String) (maxMv : Nat) : ObjectSelector := .libraryHand (.subtypeWithBound subtype maxMv true)
 @[match_pattern] abbrev card : ObjectSelector := .libraryHand (.card false false)
 @[match_pattern] abbrev nonland : ObjectSelector := .libraryHand (.card true false)
-@[match_pattern] abbrev chosenNonlandPermanent : ObjectSelector := .libraryHand (.chosenNonland true)
-@[match_pattern] abbrev topPower : ObjectSelector := .libraryHand (.top none true)
-@[match_pattern] abbrev landsUpTo (n : Nat) : ObjectSelector := .libraryHand (.landsUpTo (some n))
-@[match_pattern] abbrev landsEqualDamage : ObjectSelector := .libraryHand (.landsUpTo none)
+@[match_pattern] abbrev chosenNonlandPermanent : ObjectSelector := .libraryHand (.chosenNonlandOrBasic false true)
+@[match_pattern] abbrev topPower : ObjectSelector := .libraryHand (.topOrLandsCount none false true)
+@[match_pattern] abbrev landsUpTo (n : Nat) : ObjectSelector := .libraryHand (.topOrLandsCount (some n) true true)
+@[match_pattern] abbrev landsEqualDamage : ObjectSelector := .libraryHand (.topOrLandsCount none true true)
 @[match_pattern] abbrev planeswalkerCard : ObjectSelector := .libraryHand (.supertypeCard none .planeswalker)
 @[match_pattern] abbrev enchantmentCard : ObjectSelector := .libraryHand (.supertypeCard none .enchantment)
 @[match_pattern] abbrev supertypeCard (s : Supertype := .legendary) (ty : CardType := .creature) : ObjectSelector := .libraryHand (.supertypeCard (some s) ty)
-@[match_pattern] abbrev landSubtype (subtype : String) : ObjectSelector := .libraryHand (.landSubtype subtype true)
-@[match_pattern] abbrev basicBeholdUntap (subtype : String) : ObjectSelector := .libraryHand (.basicBeholdUntap subtype)
-@[match_pattern] abbrev basicLandsDifferentNamesX : ObjectSelector := .libraryHand .basicLandsDifferentNamesX
-@[match_pattern] abbrev artifactCreatureX : ObjectSelector := .libraryHand .artifactCreatureX
+@[match_pattern] abbrev landSubtype (subtype : String) : ObjectSelector := .libraryHand (.searchSubtype subtype true false)
+@[match_pattern] abbrev basicBeholdUntap (subtype : String) : ObjectSelector := .libraryHand (.searchSubtype subtype true true)
+@[match_pattern] abbrev basicLandsDifferentNamesX : ObjectSelector := .libraryHand (.libraryOrHandSpecial false false)
+@[match_pattern] abbrev artifactCreatureX : ObjectSelector := .libraryHand (.libraryOrHandSpecial true false)
 @[match_pattern] abbrev random : ObjectSelector := .libraryHand (.card false true)
-@[match_pattern] abbrev topN (n : Nat) : ObjectSelector := .libraryHand (.top (some n) false)
-@[match_pattern] abbrev opponentTopX : ObjectSelector := .libraryHand (.opponentTop none)
-@[match_pattern] abbrev lookedTypes (types : Array String) : ObjectSelector := .libraryHand (.lookedTypes types)
-@[match_pattern] abbrev twoPiles : ObjectSelector := .libraryHand (.twoPiles false)
+@[match_pattern] abbrev topN (n : Nat) : ObjectSelector := .libraryHand (.topOrLandsCount (some n) false false)
+@[match_pattern] abbrev opponentTopX : ObjectSelector := .libraryHand (.topOrLandsCount none true false)
+@[match_pattern] abbrev lookedTypes (types : Array String) : ObjectSelector := .libraryHand (.typesOrSubtypesArray types none)
+@[match_pattern] abbrev twoPiles : ObjectSelector := .libraryHand (.pilesOrDrawDiscard false false false)
 @[match_pattern] abbrev cardsUnlessType (n : Nat := 2) (ty : CardType := .artifact) : ObjectSelector := .libraryHand (.cardsUnlessType n ty)
-@[match_pattern] abbrev opponentLibrariesButBottom : ObjectSelector := .libraryHand .opponentLibrariesButBottom
-@[match_pattern] abbrev drawTwoDiscardTwoStun : ObjectSelector := .libraryHand (.drawAndDiscard true)
-@[match_pattern] abbrev eachOpponentTwoDrawPerNonlandShortfall : ObjectSelector := .libraryHand .eachOpponentTwoDrawPerNonlandShortfall
-@[match_pattern] abbrev lootThenCountersPerDiscard : ObjectSelector := .libraryHand (.lootOrDiscardX false)
-@[match_pattern] abbrev drawAndDiscardXCreateSpiritPerType : ObjectSelector := .libraryHand (.lootOrDiscardX true)
-@[match_pattern] abbrev basicSubtypesUntapAt (kinds : Array String) (untapAt : Nat) : ObjectSelector := .libraryHand (.basicSubtypesUntapAt kinds untapAt)
-@[match_pattern] abbrev drawOneDiscardOne : ObjectSelector := .libraryHand (.drawAndDiscard false)
-@[match_pattern] abbrev factOrFiction : ObjectSelector := .libraryHand (.twoPiles true)
+@[match_pattern] abbrev opponentLibrariesButBottom : ObjectSelector := .libraryHand (.libraryOrHandSpecial false true)
+@[match_pattern] abbrev drawTwoDiscardTwoStun : ObjectSelector := .libraryHand (.pilesOrDrawDiscard true false true)
+@[match_pattern] abbrev eachOpponentTwoDrawPerNonlandShortfall : ObjectSelector := .libraryHand (.libraryOrHandSpecial true true)
+@[match_pattern] abbrev lootThenCountersPerDiscard : ObjectSelector := .libraryHand (.pilesOrDrawDiscard false true false)
+@[match_pattern] abbrev drawAndDiscardXCreateSpiritPerType : ObjectSelector := .libraryHand (.pilesOrDrawDiscard false true true)
+@[match_pattern] abbrev basicSubtypesUntapAt (kinds : Array String) (untapAt : Nat) : ObjectSelector := .libraryHand (.typesOrSubtypesArray kinds (some untapAt))
+@[match_pattern] abbrev drawOneDiscardOne : ObjectSelector := .libraryHand (.pilesOrDrawDiscard true false false)
+@[match_pattern] abbrev factOrFiction : ObjectSelector := .libraryHand (.pilesOrDrawDiscard false false true)
 
 -- SacrificeStackObject aliases
 @[match_pattern] abbrev opponentChosenCreature : ObjectSelector := .sacrificeStack (.chosenCreature true false true)
 @[match_pattern] abbrev eachPlayersCreature : ObjectSelector := .sacrificeStack (.chosenCreature false false false)
-@[match_pattern] abbrev leastPower : ObjectSelector := .sacrificeStack .leastPower
-@[match_pattern] abbrev combatDamager : ObjectSelector := .sacrificeStack .combatDamager
+@[match_pattern] abbrev leastPower : ObjectSelector := .sacrificeStack (.sacrificeTarget false false)
+@[match_pattern] abbrev combatDamager : ObjectSelector := .sacrificeStack (.sacrificeTarget true false)
 @[match_pattern] abbrev sacrificedSource (how : SacrificeSourceHow := .isSacrificed) : ObjectSelector := .sacrificeStack (.sacrificedSource how)
-@[match_pattern] abbrev plan : ObjectSelector := .sacrificeStack .plan
-@[match_pattern] abbrev another : ObjectSelector := .sacrificeStack .another
+@[match_pattern] abbrev plan : ObjectSelector := .sacrificeStack (.sacrificeTarget false true)
+@[match_pattern] abbrev another : ObjectSelector := .sacrificeStack (.sacrificeTarget true true)
 @[match_pattern] abbrev chosenNontokenCreature : ObjectSelector := .sacrificeStack (.chosenCreature true true false)
-@[match_pattern] abbrev youIfCast : ObjectSelector := .sacrificeStack .youIfCast
-@[match_pattern] abbrev spellTargets : ObjectSelector := .sacrificeStack .spellTargets
+@[match_pattern] abbrev youIfCast : ObjectSelector := .sacrificeStack (.castOrStackRef false false)
+@[match_pattern] abbrev spellTargets : ObjectSelector := .sacrificeStack (.castOrStackRef true false)
 @[match_pattern] abbrev eachOpponentsCreature : ObjectSelector := .sacrificeStack (.chosenCreature true false false)
-@[match_pattern] abbrev targetSpell : ObjectSelector := .sacrificeStack (.targetSpell false)
-@[match_pattern] abbrev stackAbility (fromCreature : Bool := true) : ObjectSelector := .sacrificeStack (.stackAbility fromCreature)
-@[match_pattern] abbrev sourceSpellXTimes : ObjectSelector := .sacrificeStack (.copiedSpell false)
-@[match_pattern] abbrev nextSpellThisTurn : ObjectSelector := .sacrificeStack (.copiedSpell true)
-@[match_pattern] abbrev causingSpell : ObjectSelector := .sacrificeStack .causingSpell
-@[match_pattern] abbrev archonCruelty : ObjectSelector := .sacrificeStack .archonCruelty
-@[match_pattern] abbrev targetSpellTwice : ObjectSelector := .sacrificeStack (.targetSpell true)
+@[match_pattern] abbrev targetSpell : ObjectSelector := .sacrificeStack (.stackSpellOrAbility false false false)
+@[match_pattern] abbrev stackAbility (fromCreature : Bool := true) : ObjectSelector := .sacrificeStack (.stackSpellOrAbility true false fromCreature)
+@[match_pattern] abbrev sourceSpellXTimes : ObjectSelector := .sacrificeStack (.stackSpellOrAbility false true false)
+@[match_pattern] abbrev nextSpellThisTurn : ObjectSelector := .sacrificeStack (.stackSpellOrAbility false true true)
+@[match_pattern] abbrev causingSpell : ObjectSelector := .sacrificeStack (.castOrStackRef false true)
+@[match_pattern] abbrev archonCruelty : ObjectSelector := .sacrificeStack (.castOrStackRef true true)
+@[match_pattern] abbrev targetSpellTwice : ObjectSelector := .sacrificeStack (.stackSpellOrAbility false false true)
 
 end ObjectSelector
 
@@ -1482,21 +1119,12 @@ inductive CounterSelector where
   | ofKind (kind : CounterKind) (n : Nat := 1)
   /-- +1/+1 counters equal to the source's last-known mana value (`false, false`), sacrificed creature's power (`true, false`), or noted count (`false, true`). -/
   | plusOneFromNote (sacrificedPower : Bool := false) (notedCount : Bool := false)
-  /-- Hone counters, one for each creature the targeted opponent controls. -/
-  | honePerOpponent
   /-- Each kind of counter the source (`fromCause = false`) or causing object (`fromCause = true`) last had, in the same numbers. -/
   | copiedCounters (fromCause : Bool := false)
-  /-- One counter on the source for each of haste, flying, first strike,
-  double strike, deathtouch, indestructible, lifelink, menace, reach,
-  trample, and vigilance that the announced creature has and the source
-  does not. An illegal target or a missing source puts nothing. -/
-  | missingKeywordsFromTarget
   /-- Dynamic +1/+1 counters: per land (`false, false, false`), equal to hand (`true, false, false`), chosen X (`false, true, false`), or per three graveyard cards if cast from graveyard (`false, false, true`). -/
   | plusOneDynamic (byHand : Bool := false) (byChosenX : Bool := false) (byGyThree : Bool := false)
-  /-- Minus-one counters equal to the greatest mana value among cards in the controller's graveyard. -/
-  | minusOneGreatestGraveyardMv
-  /-- Tap and put X stun counters, where X is the loyalty removed to activate this ability. -/
-  | stunRemovedLoyalty
+  /-- Special counter action: hone per opponent creature (`false, false`), missing keyword counters from target (`true, false`), minus-one counters per greatest graveyard MV (`false, true`), or stun per removed loyalty (`true, true`). -/
+  | specialCounterAction (missingKeywords : Bool := false) (minusOneGyOrStunLoyalty : Bool := false)
   /-- Give each recipient another counter of each kind already on it `times` times (proliferate, CR 701.34). -/
   | eachKindOnIt (times : NumberSelector := .fixed 1)
   /-- Remove counters as `what` says (CR 122). -/
@@ -1514,37 +1142,39 @@ namespace CounterSelector
 @[match_pattern] abbrev plusOneEqualToHand : CounterSelector := .plusOneDynamic true false false
 @[match_pattern] abbrev plusOneChosenX : CounterSelector := .plusOneDynamic false true false
 @[match_pattern] abbrev plusOnePerThreeGraveyardIfFromGy : CounterSelector := .plusOneDynamic false false true
+@[match_pattern] abbrev honePerOpponent : CounterSelector := .specialCounterAction false false
+@[match_pattern] abbrev missingKeywordsFromTarget : CounterSelector := .specialCounterAction true false
+@[match_pattern] abbrev minusOneGreatestGraveyardMv : CounterSelector := .specialCounterAction false true
+@[match_pattern] abbrev stunRemovedLoyalty : CounterSelector := .specialCounterAction true true
 
 end CounterSelector
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
 inductive TriggerTokenNote where
-  /-- The tokens only. -/
-  | none
-  /-- Queue “attach it to target creature you control.” -/
-  | attachReflexive
+  /-- Token follow-up: tokens only (`false, false`), attach reflexive (`true, false`), team indestructible (`false, true`), or lifelink/haste if not Mardu (`true, true`). -/
+  | tokenFollowup (attachReflexive : Bool := false) (indestructibleOrMardu : Bool := false)
   /-- Remember the token so a later step can attach it (`invasion = false`) or also how many invasion counters the source had (`invasion = true`). -/
   | remember (invasion : Bool := false)
-  /-- Creatures you control gain indestructible until end of turn. -/
-  | teamIndestructible
   /-- (Optionally gain X life first if `gainXLife`, and) if X is 5 or more, destroy all other creatures. -/
   | destroyOthersIfXAtLeast5 (gainXLife : Bool := false)
   /-- Only if you gained life this turn (`monarch = false`) or are the monarch (`monarch = true`). -/
   | ifCondition (monarch : Bool := false)
-  /-- If the source is not Mardu, create the Goblin and grant lifelink and haste until end of turn. -/
-  | ifNotMarduLifelinkHaste
-  /-- Put a card exiled with the source into its owner's graveyard, then create a Treasure if it was a land or a Rogue otherwise. -/
-  | currencyReturn
-  /-- Lose 1 life first. -/
-  | lose1Life
+  /-- Currency return exiled card (`lose1Life = false`) or lose 1 life first (`lose1Life = true`). -/
+  | currencyOrLose1Life (lose1Life : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerTokenNote
 
+@[match_pattern] abbrev none : TriggerTokenNote := .tokenFollowup false false
+@[match_pattern] abbrev attachReflexive : TriggerTokenNote := .tokenFollowup true false
+@[match_pattern] abbrev teamIndestructible : TriggerTokenNote := .tokenFollowup false true
+@[match_pattern] abbrev ifNotMarduLifelinkHaste : TriggerTokenNote := .tokenFollowup true true
 @[match_pattern] abbrev invasion : TriggerTokenNote := .remember true
 @[match_pattern] abbrev gainXLifeAndDestroyOthersIf5 : TriggerTokenNote := .destroyOthersIfXAtLeast5 true
 @[match_pattern] abbrev ifGainedLife : TriggerTokenNote := .ifCondition false
 @[match_pattern] abbrev ifMonarch : TriggerTokenNote := .ifCondition true
+@[match_pattern] abbrev currencyReturn : TriggerTokenNote := .currencyOrLose1Life false
+@[match_pattern] abbrev lose1Life : TriggerTokenNote := .currencyOrLose1Life true
 
 end TriggerTokenNote
 
@@ -1552,86 +1182,72 @@ end TriggerTokenNote
 inductive TriggerExileHow where
   /-- Link the card to the source (for a leave-the-battlefield trigger if `returnWhenLeaves = false`, or until the source leaves if `returnWhenLeaves = true`). -/
   | linkedToSource (returnWhenLeaves : Bool := false)
-  /-- Return it at the beginning of the next end step. -/
-  | nextEndStep
+  /-- Exile duration or permission: return at next end step (`false, false`), for later step (`true, false`), or cast with any mana while exiled (`false, true`). -/
+  | exileDuration (forLater : Bool := false) (anyManaWhileExiled : Bool := false)
   /-- You may play it until the end of your next turn (`thisTurn = false`), this turn (`thisTurn = true, forLife = false`), or this turn paying life equal to mana value (`thisTurn = true, forLife = true`). -/
   | playUntil (thisTurn : Bool := false) (forLife : Bool := false)
-  /-- Move it to exile. `note` tells the next step which cards moved. -/
-  | forLater
   /-- Exile it, then return it under its owner's control (tapped if `tapped`). -/
   | returnImmediately (tapped : Bool := false)
-  /-- You may cast up to `casts` spells from among the exiled cards
-  without paying their mana costs.
-  `.exile (.opponentTop 5) (.mayCastUpTo 2)`.
-  Outside `queueReflexive`, this exiles nothing. -/
-  | mayCastUpTo (casts : Nat)
+  /-- Numeric exile follow-up: cast up to `n` spells (`false, false`), cast or deal `n` damage to opponents (`true, false`), or return briefly if MV at most `n` (`false, true`). -/
+  | exileNumericFollowup (n : Nat) (damageOpponents : Bool := false) (returnBriefly : Bool := false)
   /-- For as long as they remain exiled, you may play them if you control `subtype`. -/
   | playIfYouControlSubtype (subtype : String)
-  /-- You may cast that card. If you don't, this deals `damage` damage to each opponent. -/
-  | mayCastElseDamageOpponents (damage : Nat)
-  /-- You may cast spells from among those cards for as long as they remain exiled, spending mana as though it were mana of any type. -/
-  | anyManaWhileExiled
-  /-- If its mana value was `maxMv` or less, return it tapped under your control and exile it at the next end step. -/
-  | returnBrieflyIfMvAtMost (maxMv : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerExileHow
 
 @[match_pattern] abbrev leaveTrigger : TriggerExileHow := .linkedToSource false
 @[match_pattern] abbrev untilSourceLeaves : TriggerExileHow := .linkedToSource true
+@[match_pattern] abbrev nextEndStep : TriggerExileHow := .exileDuration false false
+@[match_pattern] abbrev forLater : TriggerExileHow := .exileDuration true false
+@[match_pattern] abbrev anyManaWhileExiled : TriggerExileHow := .exileDuration false true
 @[match_pattern] abbrev playUntilNextTurn : TriggerExileHow := .playUntil false false
 @[match_pattern] abbrev playThisTurn : TriggerExileHow := .playUntil true false
 @[match_pattern] abbrev playForLifeThisTurn : TriggerExileHow := .playUntil true true
 @[match_pattern] abbrev returnTapped : TriggerExileHow := .returnImmediately true
+@[match_pattern] abbrev mayCastUpTo (casts : Nat) : TriggerExileHow := .exileNumericFollowup casts false false
+@[match_pattern] abbrev mayCastElseDamageOpponents (damage : Nat) : TriggerExileHow := .exileNumericFollowup damage true false
+@[match_pattern] abbrev returnBrieflyIfMvAtMost (maxMv : Nat) : TriggerExileHow := .exileNumericFollowup maxMv false true
 
 end TriggerExileHow
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
 inductive TriggerExileNote where
-  /-- Nothing beyond the exile itself. -/
-  | none
-  /-- The lands, to return tapped. -/
-  | lands
-  /-- The creature, and the permanent the source enchants, for a copy. -/
-  | copyAndHost
-  /-- The graveyard card, so it can be played. -/
-  | playCard
+  /-- Exile object note: none (`false, false`), lands (`true, false`), copy and host (`false, true`), or play card (`true, true`). -/
+  | exileObjectNote (lands : Bool := false) (copyOrPlayCard : Bool := false)
   /-- The revealed card exiled for `.mayCast .impulse` (`anyManaThisTurn = false`) or castable until end of turn with mana of any type (`anyManaThisTurn = true`). -/
   | revealedCast (anyManaThisTurn : Bool := false)
-  /-- Link the exiled cards to the source. Used by a library search. -/
-  | linked
-  /-- The top card, when it is a Hero, gives the source +2/+1 until end of
-  turn. Used with `.exile .top .playThisTurn`. A missing source still exiles
-  the card and does not pump. An empty library exiles nothing. -/
-  | ifHero
+  /-- Exile link or search note: linked to source (`false, false`), if Hero +2/+1 (`true, false`), controller may search basic (`false, true`), or then draw three (`true, true`). -/
+  | exileLinkOrSearchNote (ifHero : Bool := false) (searchBasicOrDraw3 : Bool := false)
   /-- Empower Jace X (`incubate = false`) or Incubate X (`incubate = true`), where X is the number of creatures exiled this way. -/
   | countExiledCreatures (incubate : Bool := false)
   /-- You gain `life` life if teamwork was paid. -/
   | gainLifeIfTeamwork (life : Nat)
-  /-- Its controller may search their library for that many basic land cards and put them onto the battlefield tapped. -/
-  | controllerMaySearchBasic
-  /-- Draw that many cards after exiling your hand. -/
-  | thenDrawThree
-  /-- Counter the spell; if a permanent spell is countered this way, exile it and you may cast it without paying its mana cost. -/
-  | counteredPermanentMayCast
-  /-- Each player may put any number of creature cards from their hand onto the battlefield, then return all cards exiled this way to their owners' hands and exile the resolving spell. -/
-  | worldsWithinWorlds
-  /-- Reveal from the top of your library until a creature or planeswalker card, put it onto the battlefield, and put the rest on the bottom in a random order. -/
-  | revealUntilCreatureOrPlaneswalker
-  /-- Exile target permanent or card; log when Despark has no legal target. -/
-  | despark
-  /-- Its controller gains life equal to its power (Swords to Plowshares). -/
-  | controllerGainsLifePower
+  /-- Spell exile note: countered permanent may cast (`false, false, false`), Worlds Within Worlds (`true, false, false`), reveal until creature/planeswalker (`false, true, false`), Despark (`true, true, false`), or controller gains life equal to power (`false, false, true`). -/
+  | exileSpellNote (worldsWithinWorlds : Bool := false) (revealOrDespark : Bool := false) (swordsLife : Bool := false)
   /-- Reveal creature cards from the top of your library until that many are revealed and put them onto the battlefield (immediately or at the next end step if `atEndStep`). -/
   | revealCreaturesToBattlefield (atEndStep : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerExileNote
 
+@[match_pattern] abbrev none : TriggerExileNote := .exileObjectNote false false
+@[match_pattern] abbrev lands : TriggerExileNote := .exileObjectNote true false
+@[match_pattern] abbrev copyAndHost : TriggerExileNote := .exileObjectNote false true
+@[match_pattern] abbrev playCard : TriggerExileNote := .exileObjectNote true true
 @[match_pattern] abbrev impulse : TriggerExileNote := .revealedCast false
 @[match_pattern] abbrev anyManaThisTurn : TriggerExileNote := .revealedCast true
+@[match_pattern] abbrev linked : TriggerExileNote := .exileLinkOrSearchNote false false
+@[match_pattern] abbrev ifHero : TriggerExileNote := .exileLinkOrSearchNote true false
+@[match_pattern] abbrev controllerMaySearchBasic : TriggerExileNote := .exileLinkOrSearchNote false true
+@[match_pattern] abbrev thenDrawThree : TriggerExileNote := .exileLinkOrSearchNote true true
 @[match_pattern] abbrev empowerJace : TriggerExileNote := .countExiledCreatures false
 @[match_pattern] abbrev incubateCount : TriggerExileNote := .countExiledCreatures true
+@[match_pattern] abbrev counteredPermanentMayCast : TriggerExileNote := .exileSpellNote false false false
+@[match_pattern] abbrev worldsWithinWorlds : TriggerExileNote := .exileSpellNote true false false
+@[match_pattern] abbrev revealUntilCreatureOrPlaneswalker : TriggerExileNote := .exileSpellNote false true false
+@[match_pattern] abbrev despark : TriggerExileNote := .exileSpellNote true true false
+@[match_pattern] abbrev controllerGainsLifePower : TriggerExileNote := .exileSpellNote false false true
 @[match_pattern] abbrev revealCreaturesAtEndStep : TriggerExileNote := .revealCreaturesToBattlefield true
 
 end TriggerExileNote
@@ -1809,29 +1425,24 @@ end TriggerModeHow
 
 /-- What a later step of `TriggerResolution.destroy` can read. -/
 inductive TriggerDestroyNote where
-  /-- Nothing beyond the destruction. -/
-  | none
-  /-- How many permanents were actually destroyed. Indestructible
-  permanents and shield counters do not count. -/
-  | countDestroyed
-  /-- The announced creature's controller and power. No legal target
-  leaves the note empty, so no player amasses. -/
-  | forAmass
-  /-- The announced token. A permanent that is not a token stays.
-  The ability's own target may be a player; the token is `targets[0]`. -/
-  | chosenToken
+  /-- Destruction record: none (`false, false`), count destroyed (`true, false`), for amass (`false, true`), or chosen token (`true, true`). -/
+  | destroyRecord (countDestroyed : Bool := false) (forAmassOrToken : Bool := false)
   /-- If it wasn't attacking (or if `legendaryEnchantment`, if it was a legendary enchantment), draw a card. -/
   | drawIf (legendaryEnchantment : Bool := false)
-  /-- Its controller creates a 1/1 white Human creature token. -/
-  | controllerCreatesHuman
-  /-- You gain 1 life for each creature destroyed this way. -/
-  | gainLifeEach
+  /-- Its controller creates a 1/1 white Human (`gainLifeEach = false`) or you gain 1 life per creature destroyed (`gainLifeEach = true`). -/
+  | destroyRider (gainLifeEach : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerDestroyNote
 
+@[match_pattern] abbrev none : TriggerDestroyNote := .destroyRecord false false
+@[match_pattern] abbrev countDestroyed : TriggerDestroyNote := .destroyRecord true false
+@[match_pattern] abbrev forAmass : TriggerDestroyNote := .destroyRecord false true
+@[match_pattern] abbrev chosenToken : TriggerDestroyNote := .destroyRecord true true
 @[match_pattern] abbrev drawIfNotAttacking : TriggerDestroyNote := .drawIf false
 @[match_pattern] abbrev drawIfLegendaryEnchantment : TriggerDestroyNote := .drawIf true
+@[match_pattern] abbrev controllerCreatesHuman : TriggerDestroyNote := .destroyRider false
+@[match_pattern] abbrev gainLifeEach : TriggerDestroyNote := .destroyRider true
 
 end TriggerDestroyNote
 
@@ -1901,10 +1512,8 @@ end ActionSelector
 
 /-- Layer 4 type-changing and animation grants (CR 613.1d). -/
 inductive Layer4TypeGrant where
-  /-- Become an artifact (or Bear if `bear`) in addition to its other types (CR 613.1d Layer 4). -/
-  | additionalType (bear : Bool := false)
-  /-- Become an artifact creature (a 0/0 Construct Hero with flying if `!vehicle`, or crew the source Vehicle until end of turn if `vehicle`, CR 702.122). -/
-  | becomeArtifactCreature (vehicle : Bool := false)
+  /-- Additional type (`artifactCreature = false`, Bear if `flag`) or become artifact creature (`artifactCreature = true`, Vehicle crew if `flag`). -/
+  | typeOrArtifactCreature (artifactCreature : Bool := false) (flag : Bool := false)
   /-- Become a `p`/`t` artifact creature and gain `kw` until end of turn. -/
   | artifactCreature (p : Int := 4) (t : Int := 4) (kw : String := "flying")
   /-- Become a creature of `subtype` with power and toughness equal to lands you control. -/
@@ -1917,10 +1526,10 @@ deriving Repr, Inhabited, BEq
 
 namespace Layer4TypeGrant
 
-@[match_pattern] abbrev artifact : Layer4TypeGrant := .additionalType false
-@[match_pattern] abbrev bearType : Layer4TypeGrant := .additionalType true
-@[match_pattern] abbrev constructHero : Layer4TypeGrant := .becomeArtifactCreature false
-@[match_pattern] abbrev artifactCreatureVehicle : Layer4TypeGrant := .becomeArtifactCreature true
+@[match_pattern] abbrev artifact : Layer4TypeGrant := .typeOrArtifactCreature false false
+@[match_pattern] abbrev bearType : Layer4TypeGrant := .typeOrArtifactCreature false true
+@[match_pattern] abbrev constructHero : Layer4TypeGrant := .typeOrArtifactCreature true false
+@[match_pattern] abbrev artifactCreatureVehicle : Layer4TypeGrant := .typeOrArtifactCreature true true
 
 end Layer4TypeGrant
 
@@ -2186,14 +1795,10 @@ inductive TriggerLibraryHow where
   | topNumber (n : NumberSelector)
   /-- Cards until a creature, Saga (`saga`), instant/sorcery (`instantOrSorcery`), or nonland (`nonland`) card. An empty library finds nothing. -/
   | untilCard (saga : Bool := false) (instantOrSorcery : Bool := false) (nonland : Bool := false)
-  /-- Cards until one creature card per opponent put under each opponent's control and goaded (`!historic`), or until a historic permanent card put onto the battlefield with life loss equal to MV (`historic`). -/
-  | untilSpecial (historic : Bool := false)
-  /-- Draw a card, then on the first resolution this turn reveal until a creature card and put it onto the battlefield. -/
-  | firstResolveUntilCreature
+  /-- Search library (`firstResolve = false, untilSpecial = false`), draw then first-resolve reveal until creature (`firstResolve = true`), or reveal until creatures per opponent / historic (`untilSpecial = true`, historic if `historic`). -/
+  | searchOrSpecial (firstResolve : Bool := false) (untilSpecial : Bool := false) (historic : Bool := false)
   /-- Reveal cards from hand (CR 701.16). -/
   | fromHand (count : TriggerRevealCount)
-  /-- Search a library (CR 701.23). -/
-  | search
 deriving Repr, Inhabited, BEq
 
 namespace TriggerLibraryHow
@@ -2202,34 +1807,33 @@ namespace TriggerLibraryHow
 @[match_pattern] abbrev untilSaga : TriggerLibraryHow := .untilCard true false false
 @[match_pattern] abbrev untilInstantOrSorcery : TriggerLibraryHow := .untilCard false true false
 @[match_pattern] abbrev untilNonland : TriggerLibraryHow := .untilCard false false true
-@[match_pattern] abbrev untilCreaturesPerOpponent : TriggerLibraryHow := .untilSpecial false
-@[match_pattern] abbrev untilHistoric : TriggerLibraryHow := .untilSpecial true
+@[match_pattern] abbrev search : TriggerLibraryHow := .searchOrSpecial false false false
+@[match_pattern] abbrev firstResolveUntilCreature : TriggerLibraryHow := .searchOrSpecial true false false
+@[match_pattern] abbrev untilCreaturesPerOpponent : TriggerLibraryHow := .searchOrSpecial false true false
+@[match_pattern] abbrev untilHistoric : TriggerLibraryHow := .searchOrSpecial false true true
 
 end TriggerLibraryHow
 
 /-- Where `TriggerResolution.putOnLibrary` puts the card. -/
 inductive TriggerLibraryPlace where
-  /-- On top (`!bottom`) or bottom (`bottom`) of the owner's library. -/
-  | endOfLibrary (bottom : Bool := false)
-  /-- On the owner's choice of the top or bottom of their library (dealing 2 damage if put on top when `damage2`). -/
-  | topOrBottom (damage2 : Bool := false)
-  /-- Shuffled into the owner's library (CR 701.24). -/
-  | shuffled
-  /-- Second from the top or on the bottom of its owner's library, then up to one target creature you control connives. -/
-  | secondOrBottomThenConnive
+  /-- On top/bottom (`ownerChoice = false`, bottom if `flag`) or owner's choice of top/bottom (`ownerChoice = true`, deal 2 damage if `flag`). -/
+  | topOrBottomPlace (ownerChoice : Bool := false) (flag : Bool := false)
+  /-- Shuffled (`false, false`), second/bottom then connive (`true, false`), bottom then reveal creature (`false, true`), or bottom after draw two (`true, true`). -/
+  | specialLibraryPlace (secondConnive : Bool := false) (revealCreatureOrAfterDraw2 : Bool := false)
   /-- Draw `drawN` cards, then put `putN` cards from your hand on top of your library. -/
   | topAfterDraw (drawN putN : Nat)
-  /-- On the bottom of its owner's library, then its controller reveals until a creature card and puts it onto the battlefield. -/
-  | bottomRevealCreature
-  /-- Draw two cards, then put a card from your hand on the bottom of your library. -/
-  | bottomAfterDrawTwo
 deriving Repr, Inhabited, BEq
 
 namespace TriggerLibraryPlace
 
-@[match_pattern] abbrev top : TriggerLibraryPlace := .endOfLibrary false
-@[match_pattern] abbrev bottom : TriggerLibraryPlace := .endOfLibrary true
-@[match_pattern] abbrev topOrBottomDamage2 : TriggerLibraryPlace := .topOrBottom true
+@[match_pattern] abbrev top : TriggerLibraryPlace := .topOrBottomPlace false false
+@[match_pattern] abbrev bottom : TriggerLibraryPlace := .topOrBottomPlace false true
+@[match_pattern] abbrev topOrBottom (damage2 : Bool := false) : TriggerLibraryPlace := .topOrBottomPlace true damage2
+@[match_pattern] abbrev topOrBottomDamage2 : TriggerLibraryPlace := .topOrBottomPlace true true
+@[match_pattern] abbrev shuffled : TriggerLibraryPlace := .specialLibraryPlace false false
+@[match_pattern] abbrev secondOrBottomThenConnive : TriggerLibraryPlace := .specialLibraryPlace true false
+@[match_pattern] abbrev bottomRevealCreature : TriggerLibraryPlace := .specialLibraryPlace false true
+@[match_pattern] abbrev bottomAfterDrawTwo : TriggerLibraryPlace := .specialLibraryPlace true true
 
 end TriggerLibraryPlace
 
