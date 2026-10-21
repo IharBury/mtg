@@ -115,11 +115,8 @@ structure LinkedExileState where
   boastExiled : Array ObjectId := #[]
 deriving Repr, Inhabited, BEq
 
-/-- An object currently in the game (CR 109). -/
-structure GameObject where
-  id : ObjectId
-  printed : CardDef
-  owner : PlayerId
+/-- Object control and control-changing effect tracking (CR 110.2 / CR 608.2c / CR 800.4a). -/
+structure ControlState where
   controller : Option PlayerId := none
   /-- Controller as this object last existed on the battlefield (CR 608.2c).
   Zone changes clear `controller`; this keeps “its controller” readable. -/
@@ -129,9 +126,13 @@ structure GameObject where
   defaultController : Option PlayerId := none
   /-- True while a control-changing effect is applying (CR 800.4a). -/
   controlChanged : Bool := false
-  zone : Zone
-  status : Status := {}
-  timestamp : Nat := 0
+  /-- A control-changing effect lasts until this source leaves (Super Hero
+  Civil War; MSH 143). -/
+  controlUntilSourceLeaves : Option ObjectId := none
+deriving Repr, Inhabited, BEq
+
+/-- Stack ability and last-known source characteristics (CR 113.7 / CR 602.2a / CR 603.3). -/
+structure StackAbilityState where
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
   abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
@@ -145,6 +146,16 @@ structure GameObject where
   lastKnownPower : Option Int := none
   /-- Last known toughness of a trigger source (CR 113.7a / 608.2g). -/
   lastKnownToughness : Option Int := none
+deriving Repr, Inhabited
+
+/-- An object currently in the game (CR 109). -/
+structure GameObject extends ControlState, StackAbilityState where
+  id : ObjectId
+  printed : CardDef
+  owner : PlayerId
+  zone : Zone
+  status : Status := {}
+  timestamp : Nat := 0
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
@@ -175,9 +186,6 @@ structure GameObject where
   chosenX : Option Nat := none
   /-- Active temporary copy effect on this permanent (CR 707 / CR 613.2). -/
   copyEffect : Option CopyEffect := none
-  /-- A control-changing effect lasts until this source leaves (Super Hero
-  Civil War; MSH 143). -/
-  controlUntilSourceLeaves : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/

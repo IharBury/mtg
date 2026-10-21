@@ -186,15 +186,16 @@ def legalBattlefieldTargets (g : Game) (caster : PlayerId) (t : BattlefieldTarge
   | .creatureYouControl another legendary =>
     g.legalCreatureTargets caster (fun o =>
       o.controlledBy caster && (!another || some o.id != sourceId) && (!legendary || o.isLegendary))
-  | .creature another =>
-    g.legalCreatureTargets caster (fun o => !another || some o.id != sourceId)
+  | .creature another withFlying =>
+    if withFlying then
+      g.legalCreatureTargets caster (fun o => g.hasFlying o)
+    else
+      g.legalCreatureTargets caster (fun o => !another || some o.id != sourceId)
   | .oppCreature tapped dealtDamageThisTurn =>
     g.legalCreatureTargets caster (fun o =>
       (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id) &&
         (!tapped || o.status.tapped) &&
         (!dealtDamageThisTurn || o.status.dealtDamageThisTurn))
-  | .creatureWithFlying =>
-    g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .twoTypes includeCreature includeArtifact youControl =>
     if !includeCreature then
       g.legalPermanentTargets caster (·.isArtifactOrLand)
@@ -339,13 +340,13 @@ def legalPlayerTargetKind (g : Game) (caster : PlayerId) (t : PlayerTarget) : Ar
     g.legalCreatureTargets caster (fun _ => true) ++
       g.livingPlayers.foldl (fun acc pl =>
         acc ++ g.legalGraveyardCardTargets pl.id (fun o => o.printed.isCreature)) #[]
+  | _ => #[]
 
 /-- Legal targets for a multi-target shape when evaluated as a single slot (CR 115.1 / 601.2c). -/
 def legalMultiTargetKind (g : Game) (caster : PlayerId) : MultiTarget → Array Target
   | .upToTwoCreaturesTotalMvAtMost n =>
     g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
-  | .playerAndCreature _ | .ownAndOppPermanent .. | .twoNonlandsSharingType
-  | .twoSameKind .. | .equipmentThenCreatureYouControl _ => #[]
+  | _ => #[]
 
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)

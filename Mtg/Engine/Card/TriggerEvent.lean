@@ -16,94 +16,122 @@ namespace TriggerEvent
 
 /-- Which permanent entering the battlefield causes `TriggerEvent.enters` to fire (CR 603.6a). -/
 inductive EntersEvent where
-  | source
-  | landYouControl
+  | simpleEnters (landOrEquipment : Bool := false) (tokenOrEquipment : Bool := false)
   | landSubtypeYouControl (subtype : String)
   | artifactYouControl (another : Bool := false) (nontoken : Bool := false)
-  | equipmentYouControl
-  | tokenYouControl
   | creatureYouControl (another : Bool := false) (nontoken : Bool := false) (thisOrAnother : Bool := false)
-  | anotherCreatureOrPlaneswalkerYouControl
-  | creatureOpponentControls
   | creatureYouControlPowerAtLeast (n : Int)
-  | anotherVillainOrArtifact
   | subtypeYouControl (subtype : String) (another : Bool := false) (nontoken : Bool := false)
   | thisOrAnotherSubtypeYouControl (nontoken : Bool := false)
-  | anotherSubtypeOrEquipmentYouControl
+  | otherPermanentEnters (oppCreatureOrVillain : Bool := false) (villainOrDwarfEquip : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace EntersEvent
+@[match_pattern] abbrev source : EntersEvent := .simpleEnters false false
+@[match_pattern] abbrev landYouControl : EntersEvent := .simpleEnters true false
+@[match_pattern] abbrev tokenYouControl : EntersEvent := .simpleEnters false true
+@[match_pattern] abbrev equipmentYouControl : EntersEvent := .simpleEnters true true
+@[match_pattern] abbrev anotherCreatureOrPlaneswalkerYouControl : EntersEvent := .otherPermanentEnters false false
+@[match_pattern] abbrev creatureOpponentControls : EntersEvent := .otherPermanentEnters true false
+@[match_pattern] abbrev anotherVillainOrArtifact : EntersEvent := .otherPermanentEnters true true
+@[match_pattern] abbrev anotherSubtypeOrEquipmentYouControl : EntersEvent := .otherPermanentEnters false true
+end EntersEvent
 
 /-- Which zone-leaving or graveyard-entering event causes `TriggerEvent.leaves` to fire (CR 603.6c / 700.4). -/
 inductive LeavesEvent where
   | source (diesOnly : Bool := true)
-  | enchantedDies
   | creatureYouControlDies (nontoken : Bool := false) (attacking : Bool := false) (includeSelf : Bool := false)
   | subtypeYouControlDies (subtypes : Array String)
-  | anotherCreatureOrPlaneswalkerYouControlDies
-  | oneOrMoreOtherCreaturesDie
-  | creatureYouControlLeaves
   | anotherNonlandReturned
   | creatureCardYourGy (leaves : Bool := true)
+  | permanentDiesOrLeaves (otherDiesOrBatch : Bool := false) (batchOrLeaves : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace LeavesEvent
+@[match_pattern] abbrev enchantedDies : LeavesEvent := .permanentDiesOrLeaves false false
+@[match_pattern] abbrev anotherCreatureOrPlaneswalkerYouControlDies : LeavesEvent := .permanentDiesOrLeaves true false
+@[match_pattern] abbrev oneOrMoreOtherCreaturesDie : LeavesEvent := .permanentDiesOrLeaves true true
+@[match_pattern] abbrev creatureYouControlLeaves : LeavesEvent := .permanentDiesOrLeaves false true
+end LeavesEvent
 
 /-- Which phase or step beginning causes `TriggerEvent.step` to fire (CR 603.2b). -/
 inductive StepEvent where
   | upkeep (enchantedController : Bool := false)
   | eachUpkeep (fromGraveyard : Bool := false)
-  | eaglesCreateBirds
-  | eachOpponentDrawStep
-  | yourFirstMain
+  | fixedStep (oppDrawStep : Bool := false) (firstMain : Bool := false)
   | yourBeginCombat (fromGraveyard : Bool := false)
   | otherBeginCombat (each : Bool := false)
   | endStep (each : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace StepEvent
+@[match_pattern] abbrev eaglesCreateBirds : StepEvent := .fixedStep false false
+@[match_pattern] abbrev eachOpponentDrawStep : StepEvent := .fixedStep true false
+@[match_pattern] abbrev yourFirstMain : StepEvent := .fixedStep false true
+end StepEvent
+
 /-- Which spell being cast causes `TriggerEvent.casts` to fire (CR 601.2i). -/
 inductive CastEvent where
-  | castThis
   | spell (opponent : Bool := false)
-  | youInstantOrSorcery
   | noncreature (firstOnly : Bool := false) (opponent : Bool := false)
   | secondSpell (anyPlayer : Bool := false)
   | youCreature (orArtifact : Bool := false)
-  | youGreen
   | youColor (color : Color) (fromHand : Bool := false)
-  | youVillain
-  | youWithTreasure
-  | youPreparedSpell
-  | youTargetingCreatureYouControl (orEquipment : Bool := false)
-  | youTargetingCreature
-  | youInstantSorceryTargetingArtifactOrLand
-  | youTargetingOpponentOrTheirCreature
   | opponentSpellMvAtMost (n : Nat)
-  | opponentMatchingParity
-  | spellTargetsSource
+  | youSpecialCast (greenOrPrepared : Bool := false) (treasureOrPrepared : Bool := false)
+  | castThisOrVillainOrParity (villainOrTargetsSource : Bool := false) (parityOrTargetsSource : Bool := false)
+  | youTargetingCast (orEquipment : Bool := false) (anyCreatureOrArtifactLand : Bool := false) (artifactLandOrOpponent : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace CastEvent
+@[match_pattern] abbrev youInstantOrSorcery : CastEvent := .youSpecialCast false false
+@[match_pattern] abbrev youGreen : CastEvent := .youSpecialCast true false
+@[match_pattern] abbrev youWithTreasure : CastEvent := .youSpecialCast false true
+@[match_pattern] abbrev youPreparedSpell : CastEvent := .youSpecialCast true true
+@[match_pattern] abbrev castThis : CastEvent := .castThisOrVillainOrParity false false
+@[match_pattern] abbrev youVillain : CastEvent := .castThisOrVillainOrParity true false
+@[match_pattern] abbrev opponentMatchingParity : CastEvent := .castThisOrVillainOrParity false true
+@[match_pattern] abbrev spellTargetsSource : CastEvent := .castThisOrVillainOrParity true true
+@[match_pattern] abbrev youTargetingCreatureYouControl (orEquipment : Bool := false) : CastEvent :=
+  .youTargetingCast orEquipment false false
+@[match_pattern] abbrev youTargetingCreature : CastEvent := .youTargetingCast false true false
+@[match_pattern] abbrev youInstantSorceryTargetingArtifactOrLand : CastEvent := .youTargetingCast false true true
+@[match_pattern] abbrev youTargetingOpponentOrTheirCreature : CastEvent := .youTargetingCast false false true
+end CastEvent
 
 /-- Which attacker or blocker declaration causes `TriggerEvent.combat` to fire (CR 508.2 / 509.5c). -/
 inductive CombatEvent where
-  | sourceAttacks
   | youAttack (twoOrMore : Bool := false)
   | youAttackWithTotalPower (n : Int := 12)
   | equippedAttacks (alone : Bool := false) (anyEquippedYouControl : Bool := false)
   | creatureYouControlAttacks (alone : Bool := false) (playerOnly : Bool := false)
   | creaturesAttackPlayer (opponent : Bool := false)
   | subtypeAttacks (subtype : String) (tokenPowerAtLeast6 : Bool := false)
-  | enchantedAttacksOrBlocks
-  | becomesBlocked
-  | opponentSmallCreatureBlocks
+  | selfOrBlockCombat (enchantedOrSmallBlock : Bool := false) (blockedOrSmallBlock : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace CombatEvent
+@[match_pattern] abbrev sourceAttacks : CombatEvent := .selfOrBlockCombat false false
+@[match_pattern] abbrev enchantedAttacksOrBlocks : CombatEvent := .selfOrBlockCombat true false
+@[match_pattern] abbrev becomesBlocked : CombatEvent := .selfOrBlockCombat false true
+@[match_pattern] abbrev opponentSmallCreatureBlocks : CombatEvent := .selfOrBlockCombat true true
+end CombatEvent
 
 /-- Which damage event causes `TriggerEvent.damage` to fire (CR 510.2 / 120). -/
 inductive DamageEvent where
   | sourceCombatToPlayer (orBattle : Bool := false)
-  | equippedCombatToPlayer
   | subtypeToPlayer (subtype : String) (combatOnly : Bool := false)
-  | combatToYou
-  | opponentsDealtCombatYourTurn
   | sourceDealt (noncombatOnly : Bool := false)
-  | creatureYouControlDealt
   | opponentDealtNoncombat (batch : Bool := false)
+  | fixedDamageEvent (combatToYouOrCreature : Bool := false) (oppCombatOrCreature : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace DamageEvent
+@[match_pattern] abbrev equippedCombatToPlayer : DamageEvent := .fixedDamageEvent false false
+@[match_pattern] abbrev combatToYou : DamageEvent := .fixedDamageEvent true false
+@[match_pattern] abbrev opponentsDealtCombatYourTurn : DamageEvent := .fixedDamageEvent false true
+@[match_pattern] abbrev creatureYouControlDealt : DamageEvent := .fixedDamageEvent true true
+end DamageEvent
 
 /-- Which card draw causes `TriggerEvent.draws` to fire (CR 121). -/
 inductive DrawEvent where
@@ -115,43 +143,60 @@ deriving Repr, Inhabited, BEq, DecidableEq
 /-- Which discard or cycling action causes `TriggerEvent.discards` to fire (CR 701.8 / 702.29). -/
 inductive DiscardEvent where
   | youCard (trackCause : Bool := false)
-  | youThis
-  | playerCards
-  | youCycle
+  | specialDiscard (playerCards : Bool := false) (cycle : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace DiscardEvent
+@[match_pattern] abbrev youThis : DiscardEvent := .specialDiscard false false
+@[match_pattern] abbrev playerCards : DiscardEvent := .specialDiscard true false
+@[match_pattern] abbrev youCycle : DiscardEvent := .specialDiscard false true
+end DiscardEvent
 
 /-- Which permanent becoming tapped causes `TriggerEvent.taps` to fire (CR 701.26). -/
 inductive TapEvent where
-  | source
-  | equipped
-  | forTeamwork
+  | singleTap (equipped : Bool := false) (teamwork : Bool := false)
   | creatureYouControl (batch : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace TapEvent
+@[match_pattern] abbrev source : TapEvent := .singleTap false false
+@[match_pattern] abbrev equipped : TapEvent := .singleTap true false
+@[match_pattern] abbrev forTeamwork : TapEvent := .singleTap false true
+end TapEvent
+
 /-- Which counter placement, proliferation, or Saga chapter causes `TriggerEvent.counters` to fire (CR 122 / 701.34 / 714). -/
 inductive CounterEvent where
-  | youPutPlusOne
-  | youPutOnGoblinOrcArmy
-  | youPutLoyalty
+  | counterOrProliferateEvent (armyOrLoyalty : Bool := false) (loyaltyOrProliferate : Bool := false)
   | nthPlan (n : Nat)
   | sagaChapter (n : Nat := 0) (finalResolves : Bool := false)
-  | youProliferate
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace CounterEvent
+@[match_pattern] abbrev youPutPlusOne : CounterEvent := .counterOrProliferateEvent false false
+@[match_pattern] abbrev youPutOnGoblinOrcArmy : CounterEvent := .counterOrProliferateEvent true false
+@[match_pattern] abbrev youPutLoyalty : CounterEvent := .counterOrProliferateEvent true true
+@[match_pattern] abbrev youProliferate : CounterEvent := .counterOrProliferateEvent false true
+end CounterEvent
 
 /-- Which player or object game action causes `TriggerEvent.action` to fire (CR 603.2). -/
 inductive ActionEvent where
-  | youActivateCreatureAbility
   | activateLoyaltyAbility (opponent : Bool := false)
-  | becomesTarget
-  | youTargetSomething
-  | youSacrificeToken
-  | bolgSacrificedForReflexive
-  | youCreateCreatureTokens
-  | youGainLife
-  | playerLosesLife
   | youScry (orSurveil : Bool := false)
   | ringTempts (chooseBearerOnly : Bool := false)
+  | abilityOrTargetOrSacAction (becomesTargetOrSac : Bool := false) (youTargetOrSac : Bool := false)
+  | tokenOrLifeAction (createTokensOrGainLife : Bool := false) (gainOrLoseLife : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace ActionEvent
+@[match_pattern] abbrev youActivateCreatureAbility : ActionEvent := .abilityOrTargetOrSacAction false false
+@[match_pattern] abbrev becomesTarget : ActionEvent := .abilityOrTargetOrSacAction true false
+@[match_pattern] abbrev youTargetSomething : ActionEvent := .abilityOrTargetOrSacAction false true
+@[match_pattern] abbrev youSacrificeToken : ActionEvent := .abilityOrTargetOrSacAction true true
+@[match_pattern] abbrev bolgSacrificedForReflexive : ActionEvent := .tokenOrLifeAction false false
+@[match_pattern] abbrev youCreateCreatureTokens : ActionEvent := .tokenOrLifeAction true false
+@[match_pattern] abbrev youGainLife : ActionEvent := .tokenOrLifeAction true true
+@[match_pattern] abbrev playerLosesLife : ActionEvent := .tokenOrLifeAction false true
+end ActionEvent
 
 end TriggerEvent
 

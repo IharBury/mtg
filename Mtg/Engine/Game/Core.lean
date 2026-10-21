@@ -11,10 +11,9 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
-/-- Later steps of a trigger `sequence`, waiting until the pending choice
-opened by an earlier step finishes. They run before any player receives
-priority, so they stay part of that resolution. -/
-structure TriggerSequenceRest where
+/-- Shared ability context for a triggered ability whose resolution is paused on
+a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
+structure TriggerResolutionContext where
   controller : PlayerId
   ability : TriggeredAbility
   sourceId : Option ObjectId := none
@@ -24,36 +23,24 @@ structure TriggerSequenceRest where
   lastKnownToughness : Option Int := none
   sourceName : String := "This creature"
   cardPower : Option Nat := none
+deriving Repr, Inhabited
+
+/-- Later steps of a trigger `sequence`, waiting until the pending choice
+opened by an earlier step finishes. They run before any player receives
+priority, so they stay part of that resolution. -/
+structure TriggerSequenceRest extends TriggerResolutionContext where
   steps : List TriggeredAbility.TriggerResolution := []
 deriving Repr, Inhabited
 
 /-- A pending `TriggerResolution.or`. The controller chooses one alternative,
 then that step resolves with this ability context. -/
-structure TriggerOrRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
+structure TriggerOrRest extends TriggerResolutionContext where
   alternatives : Array TriggeredAbility.TriggerResolution := #[]
 deriving Repr, Inhabited
 
 /-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
 The chosen index resolves with this ability context. -/
-structure ChooseModesRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
+structure ChooseModesRest extends TriggerResolutionContext where
   modes : List TriggeredAbility.TriggerResolution := []
   how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited
@@ -82,27 +69,28 @@ structure MulliganState where
   toBottom : Array PlayerId := #[]
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
-structure UnlessPaysRest where
-  effect : Option Effect := none
+/-- Shared spell-resolution context (controller and announced targets) for a
+pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
+structure SpellResolutionContext where
   controller : PlayerId := ⟨0⟩
   targets : Array Target := #[]
+deriving Repr, Inhabited
+
+/-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
+structure UnlessPaysRest extends SpellResolutionContext where
+  effect : Option Effect := none
   /-- The payer left without paying (CR 800.4f). -/
   due : Bool := false
 deriving Repr, Inhabited
 
 /-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-structure MayEffectRest where
+structure MayEffectRest extends SpellResolutionContext where
   effect : Option Effect := none
-  controller : PlayerId := ⟨0⟩
-  targets : Array Target := #[]
 deriving Repr, Inhabited
 
 /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-structure SpellOrRest where
+structure SpellOrRest extends SpellResolutionContext where
   effects : Array Effect := #[]
-  controller : PlayerId := ⟨0⟩
-  targets : Array Target := #[]
   isLibrary : Bool := false
 deriving Repr, Inhabited
 
@@ -330,7 +318,31 @@ structure ResolutionNotes where
   sacrificedPowerThisWay : Option Nat := none
 deriving Repr, Inhabited
 
-structure Game where
+/-- Game-wide per-turn and until-end-of-turn state cleared during cleanup or
+as the turn ends (CR 514.2 / CR 514.3). -/
+structure GameTurnState where
+  /-- Until-end-of-turn continuous effect: creatures without flying can't
+  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
+  creaturesWithoutFlyingCantBlock : Bool := false
+  /-- Until EOT, this player's creatures with toughness greater than power
+  assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
+  assignCombatDamageEqualToughness : Option PlayerId := none
+  /-- A creature went to a graveyard from the battlefield this turn
+  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
+  creatureDiedThisTurn : Bool := false
+  /-- Creatures that died this turn, tokens included. -/
+  creatureDeathsThisTurn : Nat := 0
+  /-- Creature cards that went from the battlefield to a graveyard this turn
+  (Supper for Spiders). Cleared as the turn ends. -/
+  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
+  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
+  sheHulkDamageUsedThisTurn : Bool := false
+  /-- World War Hulk chapter I: the next red or green creature spell this
+  player casts this turn may be cast without paying its mana cost (MSH 343). -/
+  pendingFreeRGCreature : Option PlayerId := none
+deriving Repr, Inhabited, BEq, DecidableEq
+
+structure Game extends GameTurnState where
   players : Array Player
   objects : Array GameObject
   stack : Array StackEntry := #[]
@@ -357,12 +369,6 @@ structure Game where
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
-  /-- Until-end-of-turn continuous effect: creatures without flying can't
-  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
-  creaturesWithoutFlyingCantBlock : Bool := false
-  /-- A creature went to a graveyard from the battlefield this turn
-  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
-  creatureDiedThisTurn : Bool := false
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
@@ -392,8 +398,6 @@ structure Game where
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
-  /-- Creatures that died this turn, tokens included. -/
-  creatureDeathsThisTurn : Nat := 0
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
   pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
@@ -429,9 +433,6 @@ structure Game where
   /-- True while a spell is being cast from the top of a library
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
-  /-- Creature cards that went from the battlefield to a graveyard this turn
-  (Supper for Spiders). Cleared as the turn ends. -/
-  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
   /-- Delayed triggered abilities waiting to fire at the beginning of the next
   end step (CR 603.7). -/
   delayedEndStep : Array DelayedEndStepTrigger := #[]
@@ -441,8 +442,6 @@ structure Game where
   conniveSource : Option ObjectId := none
   /-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
   discardReq : DiscardRequirement := {}
-  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
-  sheHulkDamageUsedThisTurn : Bool := false
   /-- Damage assigned to each target of the resolving divided-damage ability
 (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
@@ -451,12 +450,6 @@ structure Game where
   /-- Loki delayed copy: (controller, Loki's id if still known, last-known
   power). Compared at cast time (MSH 109). -/
   pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
-  /-- Until EOT, this player's creatures with toughness greater than power
-  assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
-  assignCombatDamageEqualToughness : Option PlayerId := none
-  /-- World War Hulk chapter I: the next red or green creature spell this
-  player casts this turn may be cast without paying its mana cost (MSH 343). -/
-  pendingFreeRGCreature : Option PlayerId := none
   /-- Follow-up action after a library search completes (CR 701.23). -/
   afterLibrarySearch : AfterLibrarySearch := .none
   /-- Ward payments still to announce after the current one (CR 702.21). -/

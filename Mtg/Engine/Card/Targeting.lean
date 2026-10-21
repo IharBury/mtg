@@ -86,12 +86,10 @@ deriving Repr, Inhabited, BEq, DecidableEq
 inductive BattlefieldTarget where
   /-- Target creature you control (optionally `another` or `legendary`). -/
   | creatureYouControl (another : Bool := false) (legendary : Bool := false)
-  /-- Target creature (any controller; optionally `another`). -/
-  | creature (another : Bool := false)
+  /-- Target creature (any controller; optionally `another` or `withFlying`). -/
+  | creature (another : Bool := false) (withFlying : Bool := false)
   /-- Target creature an opponent controls (optionally `tapped` or `dealtDamageThisTurn`). -/
   | oppCreature (tapped : Bool := false) (dealtDamageThisTurn : Bool := false)
-  /-- Target creature with flying. -/
-  | creatureWithFlying
   /-- Target two-type permanent (`artifactOrLand`, `artifactOrCreatureYouControl`, `creatureOrLandYouControl`). -/
   | twoTypes (includeCreature : Bool := false) (includeArtifact : Bool := true) (youControl : Bool := false)
   /-- Target artifact or enchantment (optionally `noncreature`). -/
@@ -102,8 +100,8 @@ inductive BattlefieldTarget where
   | attackingCreature (withoutFlying : Bool := false) (orBlocking : Bool := false) (aloneYouControl : Bool := false)
   /-- Target creature you control with this subtype (e.g. Equip Human). -/
   | creatureYouControlSubtype (subtype : String)
-  /-- Target creature defending player controls. -/
-  | defendingPlayerCreature
+  /-- Target creature defending player controls (`!equipment`) or Equipment you control (`equipment`). -/
+  | defendingOrEquipment (equipment : Bool := false)
   /-- Target creature with power (or toughness) `n` or greater. -/
   | creatureStatAtLeast (n : Int) (toughness : Bool := false)
   /-- Target creature with power `n` or less (filtered by `controller` and `another`). -/
@@ -114,22 +112,24 @@ inductive BattlefieldTarget where
   | permanent (controller : TargetController := .any)
   /-- Target artifact (filtered by `controller`, `tokenOnly`, and `noncreature`). -/
   | artifact (controller : TargetController := .any) (tokenOnly : Bool := false) (noncreature : Bool := false)
-  /-- Target Equipment you control. -/
-  | equipmentYouControl
-  /-- Target creature with mana value `n` or less. -/
-  | creatureMvAtMost (n : Nat)
-  /-- Target enchantment with mana value `n` or greater. -/
-  | enchantmentMvAtLeast (n : Nat)
+  /-- Target creature with mana value `n` or less (`!enchantmentAtLeast`) or enchantment with mana value `n` or greater (`enchantmentAtLeast`). -/
+  | permanentMvBound (n : Nat) (enchantmentAtLeast : Bool := false)
   /-- Target creature or planeswalker (filtered by `controller` and `planeswalkerOnly`). -/
   | creatureOrPlaneswalker (controller : TargetController := .any) (planeswalkerOnly : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace BattlefieldTarget
+@[match_pattern] abbrev creatureWithFlying : BattlefieldTarget := .creature false true
+@[match_pattern] abbrev defendingPlayerCreature : BattlefieldTarget := .defendingOrEquipment false
+@[match_pattern] abbrev equipmentYouControl : BattlefieldTarget := .defendingOrEquipment true
+@[match_pattern] abbrev creatureMvAtMost (n : Nat) : BattlefieldTarget := .permanentMvBound n false
+@[match_pattern] abbrev enchantmentMvAtLeast (n : Nat) : BattlefieldTarget := .permanentMvBound n true
+end BattlefieldTarget
+
 /-- A card target in a graveyard (CR 115.1 / 404.1). -/
 inductive GraveyardTarget where
-  /-- Target Elf card in your graveyard. -/
-  | elfInYourGraveyard
-  /-- Target card in an opponent's graveyard. -/
-  | oppGraveyardCard
+  /-- Target Elf card in your graveyard (`!opp`) or target card in an opponent's graveyard (`opp`). -/
+  | elfOrOppGraveyardCard (opp : Bool := false)
   /-- Target creature or permanent card in your graveyard. -/
   | cardInYourGraveyard (permanentAny : Bool := false)
   /-- Target creature card with mana value `n` or less in your graveyard. -/
@@ -137,6 +137,11 @@ inductive GraveyardTarget where
   /-- Target artifact/enchantment or Equipment/instant/sorcery card in your graveyard. -/
   | multiTypeInYourGraveyard (equipInstSorc : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace GraveyardTarget
+@[match_pattern] abbrev elfInYourGraveyard : GraveyardTarget := .elfOrOppGraveyardCard false
+@[match_pattern] abbrev oppGraveyardCard : GraveyardTarget := .elfOrOppGraveyardCard true
+end GraveyardTarget
 
 /-- A spell or ability target on the stack (CR 115.1 / 405.1). -/
 inductive StackTarget where
@@ -153,11 +158,14 @@ deriving Repr, Inhabited, BEq, DecidableEq
 inductive PlayerTarget where
   /-- Target player or target opponent. -/
   | player (opponentOnly : Bool := false)
-  /-- “Any target” (CR 115.4) or target permanent or player. -/
-  | playerOrPermanent (anyPermanent : Bool := false)
-  /-- A creature on the battlefield, or a creature card in a graveyard. -/
-  | creatureOrGyCreatureCard
+  /-- “Any target” (CR 115.4), target permanent or player (`anyPermanent`), or a creature on the battlefield / creature card in a graveyard (`creatureOrGy`). -/
+  | crossZoneTarget (anyPermanent : Bool := false) (creatureOrGy : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace PlayerTarget
+@[match_pattern] abbrev playerOrPermanent (anyPermanent : Bool := false) : PlayerTarget := .crossZoneTarget anyPermanent false
+@[match_pattern] abbrev creatureOrGyCreatureCard : PlayerTarget := .crossZoneTarget false true
+end PlayerTarget
 
 /-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
 inductive MultiTarget where
@@ -165,15 +173,19 @@ inductive MultiTarget where
   | playerAndCreature (creatureFirstUpToOne : Bool := false)
   /-- Sequential own and opponent creature/planeswalker targets. -/
   | ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false)
-  /-- Two target nonland permanents that share a card type. -/
-  | twoNonlandsSharingType
-  /-- Two targets of the same kind (`twoCreaturesOrLandsYouControl`, `twoArtifactsYouControl`, `twoPlayers`). -/
-  | twoSameKind (artifacts : Bool := false) (players : Bool := false)
+  /-- Two targets of the same kind or sharing a card type (`twoCreaturesOrLandsYouControl`, `twoArtifactsYouControl`, `twoPlayers`, `twoNonlandsSharingType`). -/
+  | twoTargets (artifacts : Bool := false) (players : Bool := false) (sharingType : Bool := false)
   /-- Target Equipment you control and target creature you control. -/
   | equipmentThenCreatureYouControl (optionalEquipment : Bool := false)
   /-- Up to two target creatures whose total mana value is `n` or less. -/
   | upToTwoCreaturesTotalMvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace MultiTarget
+@[match_pattern] abbrev twoSameKind (artifacts : Bool := false) (players : Bool := false) : MultiTarget :=
+  .twoTargets artifacts players false
+@[match_pattern] abbrev twoNonlandsSharingType : MultiTarget := .twoTargets false false true
+end MultiTarget
 
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
@@ -354,16 +366,17 @@ def specBattlefield : BattlefieldTarget → Spec
       else if legendary then "target legendary creature you control"
       else "target creature you control"
     { noun, prefer := .own }
-  | .creature another =>
-    { noun := if another then "another target creature" else "target creature" }
+  | .creature another withFlying =>
+    if withFlying then
+      { noun := "target creature with flying" }
+    else
+      { noun := if another then "another target creature" else "target creature" }
   | .oppCreature tapped dealtDamageThisTurn =>
     let noun :=
       if tapped then "target tapped creature an opponent controls"
       else if dealtDamageThisTurn then "target creature an opponent controls that dealt damage this turn"
       else "target creature an opponent controls"
     { noun }
-  | .creatureWithFlying =>
-    { noun := "target creature with flying" }
   | .twoTypes includeCreature includeArtifact youControl =>
     let noun :=
       if !includeCreature then "target artifact or land"
@@ -485,6 +498,7 @@ def specPlayer : PlayerTarget → Spec
   | .creatureOrGyCreatureCard =>
     { noun := "up to one target creature or creature card in a graveyard",
       prefer := .last }
+  | _ => {}
 
 /-- Classification of a multi-target or sequential-slot targeting shape (CR 115.1 / 601.2c). -/
 def specMulti : MultiTarget → Spec
@@ -554,6 +568,7 @@ def specMulti : MultiTarget → Spec
   | .upToTwoCreaturesTotalMvAtMost n =>
     { count := 2
       noun := s!"up to two target creatures with total mana value {n} or less" }
+  | _ => {}
 
 /-- Classification of this targeting shape. `targetCount`, `noun`, and
 `defaultPreference` read this table. -/
