@@ -16,12 +16,24 @@ namespace Game
 
 /-- An answer to a `FraChoice`. -/
 inductive FraAnswer where
-  | accept
-  | decline
-  | objects (ids : Array ObjectId)
-  | mode (idx : Nat)
-  | name (name : String)
+  | fraAnswerKind (ids : Array ObjectId := #[]) (idx : Nat := 0) (nameStr : String := "")
+      (accepted : Bool := false) (objectsFlag : Bool := false) (modeFlag : Bool := false) (nameFlag : Bool := false)
 deriving Repr, BEq
+
+namespace FraAnswer
+
+@[match_pattern] abbrev accept : FraAnswer :=
+  .fraAnswerKind #[] 0 "" true false false false
+@[match_pattern] abbrev decline : FraAnswer :=
+  .fraAnswerKind #[] 0 "" false false false false
+@[match_pattern] abbrev objects (ids : Array ObjectId) : FraAnswer :=
+  .fraAnswerKind ids 0 "" false true false false
+@[match_pattern] abbrev mode (idx : Nat) : FraAnswer :=
+  .fraAnswerKind #[] idx "" false false true false
+@[match_pattern] abbrev name (nameStr : String) : FraAnswer :=
+  .fraAnswerKind #[] 0 nameStr false false false true
+
+end FraAnswer
 
 /-- Clear the choice and let the game continue. A trigger sequence that paused
 on this choice runs its remaining steps first. -/
@@ -116,11 +128,8 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false
 
-def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
-  let .fraChoice q choice := g.pending | throw "Nothing to choose now"
-  if p != q then
-    throw s!"Only {(g.player q).name} may choose"
-  let g := { g with pending := .none }
+def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+    Except String Game := do
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -444,6 +453,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
+  | _, _ => throw "Nothing to choose now"
+
+def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .maySacrificeThese n ids, .objects chosen =>
     if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
         !chosen.all (ids.contains ·) then
@@ -783,6 +797,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     return (g.beginSacDamagers controller rest).finishFraChoice
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
+  | _, _ => answerFraChoicePart1 g p choice answer
+
+def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -1133,7 +1152,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
   | _, _ =>
-    throw "Nothing to choose now"
+    answerFraChoicePart2 g p choice answer
+
+def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
+  let .fraChoice q choice := g.pending | throw "Nothing to choose now"
+  if p != q then
+    throw s!"Only {(g.player q).name} may choose"
+  let g := { g with pending := .none }
+  answerFraChoicePart3 g p choice answer
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,

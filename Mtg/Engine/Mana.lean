@@ -315,18 +315,21 @@ end ManaCost
 
 /-- What a restricted mana ability's mana may be spent on (CR 106.6 / 106.10). -/
 inductive ManaUse where
-  /-- Only casting spells of this subtype (`!orAbility`) or casting spells of this subtype / activating abilities of sources of this subtype (`orAbility`, CR 106.6). -/
-  | subtypeUse (subtype : String) (orAbility : Bool := false)
-  /-- Instant/sorcery spells (`!cantNonartifact && !creatureOrEquip`), not a nonartifact spell (`cantNonartifact && !creatureOrEquip`), abilities of creature sources (`!cantNonartifact && creatureOrEquip`), or Equipment spells and equip abilities (`cantNonartifact && creatureOrEquip`). -/
-  | sourceOrAbilityRestriction (cantNonartifact : Bool := false) (creatureOrEquip : Bool := false)
-  /-- Planeswalker spell (`!noncreature && !legendaryOrArtifact`), noncreature spell (`noncreature && !legendaryOrArtifact`), legendary spell (`!noncreature && legendaryOrArtifact`), or artifact spell (`noncreature && legendaryOrArtifact`). -/
-  | cardTypeOrSupertypeSpell (noncreature : Bool := false) (legendaryOrArtifact : Bool := false)
-  /-- Not spells from hand (`!fromTreasure && !dwarfEquipmentSaga`), from Treasure (`fromTreasure && !dwarfEquipmentSaga`), or Dwarf, Equipment, and Saga spells (`dwarfEquipmentSaga`). -/
-  | handOrTreasureSpend (fromTreasure : Bool := false) (dwarfEquipmentSaga : Bool := false)
+  /-- Parameterized mana spending restriction (CR 106.6 / 106.10): source/ability (`!cardTypeGroup && !handOrTreasureGroup && !bySubtype`), card-type/supertype spell (`cardTypeGroup && !handOrTreasureGroup && !bySubtype`), hand/Treasure/Dwarf-Equipment-Saga (`handOrTreasureGroup && !bySubtype`), or subtype spell/ability (`bySubtype`). -/
+  | manaUseKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
+      (cardTypeGroup : Bool := false) (handOrTreasureGroup : Bool := false) (bySubtype : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaUse
 
+@[match_pattern] abbrev subtypeUse (subtype : String) (orAbility : Bool := false) : ManaUse :=
+  .manaUseKind subtype orAbility false false false true
+@[match_pattern] abbrev sourceOrAbilityRestriction (cantNonartifact : Bool := false) (creatureOrEquip : Bool := false) : ManaUse :=
+  .manaUseKind "" cantNonartifact creatureOrEquip false false false
+@[match_pattern] abbrev cardTypeOrSupertypeSpell (noncreature : Bool := false) (legendaryOrArtifact : Bool := false) : ManaUse :=
+  .manaUseKind "" noncreature legendaryOrArtifact true false false
+@[match_pattern] abbrev handOrTreasureSpend (fromTreasure : Bool := false) (dwarfEquipmentSaga : Bool := false) : ManaUse :=
+  .manaUseKind "" fromTreasure dwarfEquipmentSaga false true false
 @[match_pattern] abbrev subtypeSpell (subtype : String) : ManaUse := .subtypeUse subtype false
 @[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaUse := .subtypeUse subtype true
 /-- Only casting Elf spells or activating abilities of Elf sources (Woodland Weavemaster). -/
@@ -367,12 +370,13 @@ abbrev FraManaUse := ManaUse
 
 /-- How mana from a mana ability may be spent (CR 106.6 / 106.10). -/
 inductive ManaRestriction where
-  | none
-  | only (u : ManaUse)
+  | manaRestrictionKind (u : ManaUse := .instantOrSorcery) (restricted : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaRestriction
 
+@[match_pattern] abbrev none : ManaRestriction := .manaRestrictionKind .instantOrSorcery false
+@[match_pattern] abbrev only (u : ManaUse) : ManaRestriction := .manaRestrictionKind u true
 @[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaRestriction := .only (.subtypeSpellOrAbility subtype)
 @[match_pattern] abbrev elf : ManaRestriction := .only .elf
 @[match_pattern] abbrev instantOrSorcery : ManaRestriction := .only .instantOrSorcery
@@ -422,6 +426,7 @@ def ManaUse.allows : ManaUse → ManaSpend → Bool
   | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
   | .artifactSpell, s => s.spell && s.artifact
   | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
+  | _, _ => false
 
 /-- Short label for a restriction in pool notation. -/
 def ManaUse.label : ManaUse → String
@@ -438,6 +443,7 @@ def ManaUse.label : ManaUse → String
   | .equipmentOrEquip => "Equipment spells and equip abilities"
   | .artifactSpell => "artifact spells"
   | .subtypeSpell sub => s!"{sub} spells"
+  | _ => ""
 
 /-- A short note for the log describing `r`. -/
 def ManaRestriction.note : ManaRestriction → String
@@ -447,6 +453,7 @@ def ManaRestriction.note : ManaRestriction → String
   | .cantNonartifact => " (not a nonartifact spell)"
   | .creatureSource => " (abilities of creature sources)"
   | .only u => s!" ({u.label})"
+  | _ => ""
 
 /-- Spend restriction for spells of `subtype`. -/
 def ManaUse.forSubtype (subtype : String) : ManaUse :=

@@ -1228,15 +1228,20 @@ end ConditionSelector
 
 /-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b). -/
 inductive CostReduction where
-  | none
-  /-- Costs `n` generic mana less if `cond` holds. -/
-  | when (n : Nat) (cond : ConditionSelector)
-  /-- Costs `perUnit` generic mana less per unit of `amount`. -/
-  | byAmount (amount : NumberSelector) (perUnit : Nat := 1)
+  | costReductionKind (n : Nat := 0) (cond : ConditionSelector := .teamwork)
+      (amount : NumberSelector := .fixed 0) (whenFlag : Bool := false) (byAmountFlag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CostReduction
 
+@[match_pattern] abbrev none : CostReduction :=
+  .costReductionKind 0 .teamwork (.fixed 0) false false
+/-- Costs `n` generic mana less if `cond` holds. -/
+@[match_pattern] abbrev when (n : Nat) (cond : ConditionSelector) : CostReduction :=
+  .costReductionKind n cond (.fixed 0) true false
+/-- Costs `perUnit` generic mana less per unit of `amount`. -/
+@[match_pattern] abbrev byAmount (amount : NumberSelector) (perUnit : Nat := 1) : CostReduction :=
+  .costReductionKind perUnit .teamwork amount false true
 @[match_pattern] abbrev ifCreatureDied (n : Nat) : CostReduction :=
   .when n (.atLeast .creaturesDiedThisTurn (.fixed 1))
 @[match_pattern] abbrev ifTargetDamaged (n : Nat) : CostReduction :=

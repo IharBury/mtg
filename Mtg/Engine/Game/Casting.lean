@@ -225,6 +225,7 @@ def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedS
   | .cantNonartifact => g.proposedAllowsCantNonartifact prop
   | .creatureSource => g.proposedAllowsCreatureRestricted prop
   | .fra u => u.allows (g.proposedManaSpend prop)
+  | _ => true
 
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
@@ -843,6 +844,7 @@ def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
   | .chooseOne => 1
   | .chooseOneOrBoth => 2
   | .chooseTwoIf cond => if g.boardConditionHolds p cond then 2 else 1
+  | _ => 1
 
 /-- Add `mode` to the proposed spell's chosen modes. -/
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=

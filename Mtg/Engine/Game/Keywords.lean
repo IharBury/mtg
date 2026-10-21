@@ -399,6 +399,7 @@ def costReductionAmount (g : Game) (p : PlayerId) (r : CostReduction)
       match g.boardNumber p amount (target := target) with
       | some k => k.toNat * perUnit
       | none => 0
+  | _ => 0
 
 /-- Whether this face should enter tapped given the controller's board. It is
 checked before the permanent enters, so lands or planeswalkers entering at
@@ -409,6 +410,7 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
     | .untapped | .unlessPayLife _ => false
     | .always => true
     | .unless cond => !g.boardConditionHolds p cond
+    | _ => false
 
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
 def hasFirstStrike (g : Game) (o : GameObject) : Bool :=

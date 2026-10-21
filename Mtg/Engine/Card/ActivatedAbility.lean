@@ -49,27 +49,28 @@ end LoyaltySymbol
 /-- Part of an activation cost that needs the player to choose what to pay
 with (CR 601.2h / 602.2b). -/
 inductive CostPick where
-  /-- Sacrifice another permanent of this subtype, or another creature when
-  the subtype is `Creature`. -/
-  | sacrificeAnotherSubtype (subtype : String)
   /-- Chosen-object activation cost kind (sacrifice, discard, exile from graveyard, or tap). -/
-  | costPickKind (alt1 : Bool := false) (alt2 : Bool := false)
+  | costPickKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
       (twoKind : Bool := false) (discardFlag : Bool := false)
-      (exileOrTap : Bool := false) (tapFlag : Bool := false)
+      (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CostPick
 
+/-- Sacrifice another permanent of this subtype, or another creature when
+the subtype is `Creature`. -/
+@[match_pattern] abbrev sacrificeAnotherSubtype (subtype : String) : CostPick :=
+  .costPickKind subtype false false false false false false true
 @[match_pattern] abbrev sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false) : CostPick :=
-  .costPickKind legendary anotherOrEquip false false false false
+  .costPickKind "" legendary anotherOrEquip false false false false false
 @[match_pattern] abbrev sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false) : CostPick :=
-  .costPickKind anotherCreatureOrPw landOrDiscard true false false false
+  .costPickKind "" anotherCreatureOrPw landOrDiscard true false false false false
 @[match_pattern] abbrev discardChoice (nonland : Bool := false) (legendary : Bool := false) : CostPick :=
-  .costPickKind nonland legendary false true false false
+  .costPickKind "" nonland legendary false true false false false
 @[match_pattern] abbrev exileAnotherCreatureCardFromGraveyard : CostPick :=
-  .costPickKind false false false false true false
+  .costPickKind "" false false false false true false false
 @[match_pattern] abbrev tapChoice (twoArtifacts : Bool := false) : CostPick :=
-  .costPickKind twoArtifacts false false false false true
+  .costPickKind "" twoArtifacts false false false false true false
 @[match_pattern] abbrev sacrificeArtifact : CostPick := .sacrificeArtifactChoice false false
 @[match_pattern] abbrev sacrificeLegendaryArtifact : CostPick := .sacrificeArtifactChoice true false
 @[match_pattern] abbrev sacrificeAnotherArtifact : CostPick := .sacrificeArtifactChoice false true
@@ -115,23 +116,27 @@ def CostPick.phrase : CostPick → String
 
 /-- Additional non-mana activation costs (CR 602.1 / 118). -/
 inductive ExtraActivationCost where
-  | extraCostKind (alt1 : Bool := false) (alt2 : Bool := false)
+  | extraCostKind (power : Nat := 0) (kind : CounterKind := .plusOnePlusOne)
+      (alt1 : Bool := false) (alt2 : Bool := false)
       (exileOrSac : Bool := false) (counterMod : Bool := false) (zemo : Bool := false)
-  /-- Remove a counter of `kind` from the source. -/
-  | removeCounter (kind : CounterKind)
-  /-- Crew N: tap any number of untapped creatures you control with total
-  power N or more (CR 702.122). -/
-  | crew (power : Nat)
+      (removeKind : Bool := false) (crewFlag : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace ExtraActivationCost
 
-@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind false false false false false
+/-- Remove a counter of `kind` from the source. -/
+@[match_pattern] abbrev removeCounter (kind : CounterKind) : ExtraActivationCost :=
+  .extraCostKind 0 kind false false false false false true false
+/-- Crew N: tap any number of untapped creatures you control with total
+power N or more (CR 702.122). -/
+@[match_pattern] abbrev crew (power : Nat) : ExtraActivationCost :=
+  .extraCostKind power .plusOnePlusOne false false false false false false true
+@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind 0 .plusOnePlusOne false false false false false false false
 @[match_pattern] abbrev exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false) : ExtraActivationCost :=
-  .extraCostKind fromHand battlefield true false false
+  .extraCostKind 0 .plusOnePlusOne fromHand battlefield true false false false false
 @[match_pattern] abbrev counterModCost (putStun : Bool := false) : ExtraActivationCost :=
-  .extraCostKind putStun false false true false
-@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind false false false false true
+  .extraCostKind 0 .plusOnePlusOne putStun false false true false false false
+@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind 0 .plusOnePlusOne false false false false true false false
 @[match_pattern] abbrev exileSourceFromGraveyard : ExtraActivationCost := .exileOrSacrificeCost false false
 @[match_pattern] abbrev exileSourceFromHand : ExtraActivationCost := .exileOrSacrificeCost true false
 @[match_pattern] abbrev exileSource : ExtraActivationCost := .exileOrSacrificeCost false true

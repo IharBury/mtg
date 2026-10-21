@@ -61,29 +61,34 @@ end AdventureFace
 
 /-- Replacement rule for whether a permanent enters the battlefield tapped (CR 614.1c). -/
 inductive EntersTappedRule where
-  | unconditional (tapped : Bool := false)
-  | unless (cond : ConditionSelector)
-  | unlessPayLife (life : Nat)
+  | entersTappedKind (cond : ConditionSelector := .teamwork) (life : Nat := 0)
+      (tapped : Bool := false) (unlessFlag : Bool := false) (payLifeFlag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace EntersTappedRule
 
+@[match_pattern] abbrev unconditional (tapped : Bool := false) : EntersTappedRule :=
+  .entersTappedKind .teamwork 0 tapped false false
+@[match_pattern] abbrev «unless» (cond : ConditionSelector) : EntersTappedRule :=
+  .entersTappedKind cond 0 false true false
+@[match_pattern] abbrev unlessPayLife (life : Nat) : EntersTappedRule :=
+  .entersTappedKind .teamwork life false false true
 @[match_pattern] abbrev untapped : EntersTappedRule := .unconditional false
 @[match_pattern] abbrev always : EntersTappedRule := .unconditional true
 @[match_pattern] abbrev unlessLegendary : EntersTappedRule :=
-  .unless .youControlLegendary
+  .«unless» .youControlLegendary
 @[match_pattern] abbrev unlessEquipment : EntersTappedRule :=
-  .unless (.atLeast (.count .equipmentYouControl) (.fixed 1))
+  .«unless» (.atLeast (.count .equipmentYouControl) (.fixed 1))
 @[match_pattern] abbrev unlessPlaneswalker : EntersTappedRule :=
-  .unless (.atLeast (.count .planeswalkersYouControl) (.fixed 1))
+  .«unless» (.atLeast (.count .planeswalkersYouControl) (.fixed 1))
 @[match_pattern] abbrev unlessTwoOtherLands : EntersTappedRule :=
-  .unless (.atLeast (.count .landsYouControl) (.fixed 2))
+  .«unless» (.atLeast (.count .landsYouControl) (.fixed 2))
 @[match_pattern] abbrev unlessAnySubtype (subtypes : Array String) : EntersTappedRule :=
-  .unless (.youControlAnySubtype subtypes)
+  .«unless» (.youControlAnySubtype subtypes)
 @[match_pattern] abbrev unlessNBasics (n : Nat) : EntersTappedRule :=
-  .unless (.atLeast .basicLandsYouControl (.fixed (Int.ofNat n)))
+  .«unless» (.atLeast .basicLandsYouControl (.fixed (Int.ofNat n)))
 @[match_pattern] abbrev unlessOppLands (n : Nat) : EntersTappedRule :=
-  .unless (.atLeast .opponentLands (.fixed (Int.ofNat n)))
+  .«unless» (.atLeast .opponentLands (.fixed (Int.ofNat n)))
 
 end EntersTappedRule
 
@@ -109,17 +114,27 @@ end AsEntersChoice
 /-- Printed `{T}: Add …` mana ability beyond simple single-symbol `tapAddMana`
 (CR 605.1a). -/
 inductive TapManaAbility where
-  /-- Dynamic or special-source `{T}: Add` ability: none (`!alt1 && !alt2 && !specialSource`), any color equal to power (`alt1 && !alt2 && !specialSource`), any color among legendaries you control (`!alt1 && alt2 && !specialSource`), chosen color per different power (`alt1 && alt2 && !specialSource`), commander color identity (`!alt2 && specialSource`, `alt1 = scryCreature`), or any type a land you (`!alt1`) / an opponent (`alt1`) controls could produce (`alt2 && specialSource`). -/
-  | dynamicOrSpecialMana (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false)
-  | oneOf (types : Array ManaType) (ifEnteredOrBasic : Bool := false) (damage : Nat := 0) (payLife : Nat := 0)
-  | multiTypes (types : Array ManaType) (restriction : String := "") (twoAmong : Bool := false)
-  | filter (cost : ManaCost) (types : Array ManaType)
-  | forEach (entries : Array TapAddForEach)
-  | anyColor (restriction : ManaRestriction := .none) (sacrificeSelf : Bool := false)
+  | tapManaAbilityKind (types : Array ManaType := #[]) (restrictionStr : String := "")
+      (cost : ManaCost := ManaCost.empty) (entries : Array TapAddForEach := #[])
+      (restriction : ManaRestriction := .none) (damage : Nat := 0) (payLife : Nat := 0)
+      (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false)
+      (typesFlag : Bool := false) (filterOrEach : Bool := false) (anyColorFlag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TapManaAbility
 
+@[match_pattern] abbrev dynamicOrSpecialMana (alt1 : Bool := false) (alt2 : Bool := false) (specialSource : Bool := false) : TapManaAbility :=
+  .tapManaAbilityKind #[] "" ManaCost.empty #[] .none 0 0 alt1 alt2 specialSource false false false
+@[match_pattern] abbrev oneOf (types : Array ManaType) (ifEnteredOrBasic : Bool := false) (damage : Nat := 0) (payLife : Nat := 0) : TapManaAbility :=
+  .tapManaAbilityKind types "" ManaCost.empty #[] .none damage payLife ifEnteredOrBasic false false true false false
+@[match_pattern] abbrev multiTypes (types : Array ManaType) (restriction : String := "") (twoAmong : Bool := false) : TapManaAbility :=
+  .tapManaAbilityKind types restriction ManaCost.empty #[] .none 0 0 twoAmong true false true false false
+@[match_pattern] abbrev filter (cost : ManaCost) (types : Array ManaType) : TapManaAbility :=
+  .tapManaAbilityKind types "" cost #[] .none 0 0 false false false false true false
+@[match_pattern] abbrev forEach (entries : Array TapAddForEach) : TapManaAbility :=
+  .tapManaAbilityKind #[] "" ManaCost.empty entries .none 0 0 true false false false true false
+@[match_pattern] abbrev anyColor (restriction : ManaRestriction := .none) (sacrificeSelf : Bool := false) : TapManaAbility :=
+  .tapManaAbilityKind #[] "" ManaCost.empty #[] restriction 0 0 sacrificeSelf false false false false true
 @[match_pattern] abbrev none : TapManaAbility := .dynamicOrSpecialMana false false false
 @[match_pattern] abbrev anyColorEqualToPower : TapManaAbility := .dynamicOrSpecialMana true false false
 @[match_pattern] abbrev anyColorAmongLegendaries : TapManaAbility := .dynamicOrSpecialMana false true false
@@ -155,12 +170,15 @@ end TapManaAbility
 
 /-- Mode-selection rule for a modal spell (CR 700.2). -/
 inductive ModalRule where
-  | unconditionalModal (oneOrBoth : Bool := false)
-  | chooseTwoIf (cond : ConditionSelector)
+  | modalRuleKind (cond : ConditionSelector := .teamwork) (oneOrBoth : Bool := false) (twoIf : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace ModalRule
 
+@[match_pattern] abbrev unconditionalModal (oneOrBoth : Bool := false) : ModalRule :=
+  .modalRuleKind .teamwork oneOrBoth false
+@[match_pattern] abbrev chooseTwoIf (cond : ConditionSelector) : ModalRule :=
+  .modalRuleKind cond false true
 @[match_pattern] abbrev chooseOne : ModalRule := .unconditionalModal false
 @[match_pattern] abbrev chooseOneOrBoth : ModalRule := .unconditionalModal true
 @[match_pattern] abbrev chooseTwoIfYouControl (subtype : String) : ModalRule :=
@@ -192,17 +210,22 @@ end TopOfLibraryRule
 
 /-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
 inductive CardStaticRule where
-  /-- Boolean-parameterized static rule: none/unspent-mana (`unspentGroup`), replacement/draw/doubling/can't-lose (`!alt4 && !unspentGroup`), or mana/prohibition/combat (`alt4 && !unspentGroup`). -/
-  | staticRuleKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (alt4 : Bool := false) (unspentGroup : Bool := false)
-  | topOfLibrary (rule : TopOfLibraryRule)
-  /-- Numeric static rule: power per Mountain (`!alt1 && !alt2 && !firstCreature`), hexproof and indestructible if lore ≥ `n` (`alt1 && !alt2 && !firstCreature`), spells not from hand cost `{n}` less (`!alt1 && alt2 && !firstCreature`), eminence Sphinx spells cost `{n}` less (`alt1 && alt2 && !firstCreature`), or first creature discount (`firstCreature`, `alt1 = hasFlash`). -/
-  | numericStaticRule (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (firstCreature : Bool := false)
-  | extraLandIfOtherSubtype (subtype : String)
+  | cardStaticRuleKind (n : Nat := 0) (subtype : String := "") (rule : TopOfLibraryRule := .none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+      (unspentGroup : Bool := false) (numeric : Bool := false) (topOfLib : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CardStaticRule
 
+@[match_pattern] abbrev staticRuleKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (alt4 : Bool := false) (unspentGroup : Bool := false) : CardStaticRule :=
+  .cardStaticRuleKind 0 "" .none alt1 alt2 alt3 alt4 unspentGroup false false
+@[match_pattern] abbrev topOfLibrary (rule : TopOfLibraryRule) : CardStaticRule :=
+  .cardStaticRuleKind 0 "" rule false false false false false false true
+@[match_pattern] abbrev numericStaticRule (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (firstCreature : Bool := false) : CardStaticRule :=
+  .cardStaticRuleKind n "" .none alt1 alt2 firstCreature false false true false
+@[match_pattern] abbrev extraLandIfOtherSubtype (subtype : String) : CardStaticRule :=
+  .cardStaticRuleKind 0 subtype .none false false false true false true false
 @[match_pattern] abbrev noneOrUnspentMana (unspentMana : Bool := false) (andColorless : Bool := false) : CardStaticRule :=
   .staticRuleKind unspentMana andColorless false false true
 @[match_pattern] abbrev replacementOrBooleanRule (alt1 : Bool := false) (alt2 : Bool := false)
@@ -246,16 +269,21 @@ end CardStaticRule
 
 /-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
 inductive SpellCastOption where
-  /-- Flag or numeric casting option: none/Gift (`!numeric`, `alt = giftTreasure`) or teamwork/cascade (`numeric`, `alt = cascade`). -/
-  | flagOrNumericCastOption (n : Nat := 0) (alt : Bool := false) (numeric : Bool := false)
-  /-- Mana-cost casting option: kicker (`!alt && !flashback && !impending`), morph (`alt && !flashback && !impending`), flashback (`flashback && !impending`, `alt = discard`), or impending (`impending`). -/
-  | costCastOption (cost : ManaCost) (counters : Nat := 0) (alt : Bool := false)
-      (flashback : Bool := false) (impending : Bool := false)
-  | affinity (subtype : String)
+  | spellCastOptionKind (n : Nat := 0) (subtype : String := "") (cost : ManaCost := ManaCost.empty)
+      (counters : Nat := 0) (alt : Bool := false) (flashbackFlag : Bool := false)
+      (impendingFlag : Bool := false) (numeric : Bool := false)
+      (costFlag : Bool := false) (isAffinity : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace SpellCastOption
 
+@[match_pattern] abbrev flagOrNumericCastOption (n : Nat := 0) (alt : Bool := false) (numeric : Bool := false) : SpellCastOption :=
+  .spellCastOptionKind n "" ManaCost.empty 0 alt false false numeric false false
+@[match_pattern] abbrev costCastOption (cost : ManaCost) (counters : Nat := 0) (alt : Bool := false)
+    (flashback : Bool := false) (impending : Bool := false) : SpellCastOption :=
+  .spellCastOptionKind 0 "" cost counters alt flashback impending false true false
+@[match_pattern] abbrev affinity (subtype : String) : SpellCastOption :=
+  .spellCastOptionKind 0 subtype ManaCost.empty 0 false false false false false true
 @[match_pattern] abbrev noneOrGift (giftTreasure : Bool := false) : SpellCastOption :=
   .flagOrNumericCastOption 0 giftTreasure false
 @[match_pattern] abbrev numericCastOption (n : Nat) (cascade : Bool := false) : SpellCastOption :=
@@ -279,12 +307,16 @@ end SpellCastOption
 /-- Casting permission, restriction, or counterability rule on a card
 (CR 601.2 / 601.3 / 608.2a). -/
 inductive CastPermissionRule where
-  | normalOrUncounterable (cantBeCountered : Bool := false)
-  | conditionalRule (cond : ConditionSelector) (castOnly : Bool := false) (exiled : Bool := false)
+  | castPermissionKind (cond : ConditionSelector := .teamwork) (cantBeCountered : Bool := false)
+      (castOnly : Bool := false) (exiled : Bool := false) (conditional : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CastPermissionRule
 
+@[match_pattern] abbrev normalOrUncounterable (cantBeCountered : Bool := false) : CastPermissionRule :=
+  .castPermissionKind .teamwork cantBeCountered false false false
+@[match_pattern] abbrev conditionalRule (cond : ConditionSelector) (castOnly : Bool := false) (exiled : Bool := false) : CastPermissionRule :=
+  .castPermissionKind cond false castOnly exiled true
 @[match_pattern] abbrev conditionalPermission (cond : ConditionSelector) (castOnly : Bool := false) : CastPermissionRule :=
   .conditionalRule cond castOnly false
 @[match_pattern] abbrev castExiledIf (cond : ConditionSelector) : CastPermissionRule :=
@@ -305,15 +337,20 @@ end CastPermissionRule
 /-- Parameterized keyword or deck-building / blocking rule on a card
 (CR 702 / 100.2a / 903.3a). -/
 inductive CardKeywordRule where
-  /-- Static flag or numeric keyword rule: none/daybound/can't-block/deck-rule (`!numeric`) or ward/crew/prowess/toxic (`numeric`). -/
-  | numericKeywordRule (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (numeric : Bool := false)
-  | protectionFromColors (colors : Array Color)
-  | cycling (cost : ManaCost)
+  | cardKeywordRuleKind (n : Nat := 0) (colors : Array Color := #[]) (cost : ManaCost := ManaCost.empty)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (numeric : Bool := false) (protection : Bool := false) (cyclingFlag : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CardKeywordRule
 
+@[match_pattern] abbrev numericKeywordRule (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (numeric : Bool := false) : CardKeywordRule :=
+  .cardKeywordRuleKind n #[] ManaCost.empty alt1 alt2 alt3 numeric false false
+@[match_pattern] abbrev protectionFromColors (colors : Array Color) : CardKeywordRule :=
+  .cardKeywordRuleKind 0 colors ManaCost.empty false false false false true false
+@[match_pattern] abbrev cycling (cost : ManaCost) : CardKeywordRule :=
+  .cardKeywordRuleKind 0 #[] cost false false false false false true
 @[match_pattern] abbrev noneOrStaticFlag (cantBlock : Bool := false) (deckRule : Bool := false)
     (active : Bool := false) : CardKeywordRule :=
   .numericKeywordRule 0 cantBlock deckRule active false

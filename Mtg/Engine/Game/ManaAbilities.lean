@@ -15,15 +15,9 @@ abbrev ManaRestriction := Mtg.Engine.ManaRestriction
 
 /-- The mana a mana ability adds (CR 106.1). -/
 inductive ManaOutput where
-  /-- Exactly these mana. -/
-  | fixed (mana : Array ManaType)
-  /-- `amount` mana of one type chosen from `types`. -/
-  | oneOf (types : Array ManaType) (amount : Nat)
-  /-- `amount` mana in any combination of `types`. -/
-  | combination (types : Array ManaType) (amount : Nat)
-  /-- One mana of a color among `allowed`; naming another color adds no mana
-  (Mox Amber, Arcane Signet). -/
-  | colorAmong (allowed : Array ManaType)
+  /-- Parameterized mana output: `fixed` (`!chooseType && !colorAmongFlag`), `oneOf` (`chooseType && !combinationFlag && !colorAmongFlag`), `combination` (`chooseType && combinationFlag && !colorAmongFlag`), or `colorAmong` (`colorAmongFlag`). -/
+  | manaOutputKind (types : Array ManaType) (amount : Nat := 1)
+      (chooseType : Bool := false) (combinationFlag : Bool := false) (colorAmongFlag : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- One mana of each color. -/
@@ -31,11 +25,26 @@ def anyColorMana : Array ManaType := (Color.all.map ManaType.colored).toArray
 
 namespace ManaOutput
 
+/-- Exactly these mana. -/
+@[match_pattern] abbrev fixed (mana : Array ManaType) : ManaOutput :=
+  .manaOutputKind mana 1 false false false
+/-- `amount` mana of one type chosen from `types`. -/
+@[match_pattern] abbrev oneOf (types : Array ManaType) (amount : Nat) : ManaOutput :=
+  .manaOutputKind types amount true false false
+/-- `amount` mana in any combination of `types`. -/
+@[match_pattern] abbrev combination (types : Array ManaType) (amount : Nat) : ManaOutput :=
+  .manaOutputKind types amount true true false
+/-- One mana of a color among `allowed`; naming another color adds no mana
+(Mox Amber, Arcane Signet). -/
+@[match_pattern] abbrev colorAmong (allowed : Array ManaType) : ManaOutput :=
+  .manaOutputKind allowed 1 false false true
+
 /-- Mana types this output can include. -/
 def types : ManaOutput → Array ManaType
   | .fixed m => m.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
   | .oneOf ts n | .combination ts n => if n == 0 then #[] else ts
   | .colorAmong _ => anyColorMana
+  | _ => #[]
 
 /-- The mana added when the player names `t`: all of it `t` where the
 ability allows a choice. -/
@@ -48,6 +57,7 @@ def withType (out : ManaOutput) (t : ManaType) : Option (Array ManaType) :=
     match t with
     | .colored _ => some (if allowed.contains t then #[t] else #[])
     | .colorless => none
+  | _ => none
 
 /-- Whether the ability can add exactly `mana`. -/
 def allows (out : ManaOutput) (mana : Array ManaType) : Bool :=
@@ -61,12 +71,14 @@ def allows (out : ManaOutput) (mana : Array ManaType) : Bool :=
        | none => true)
   | .combination ts n => mana.size == n && mana.all ts.contains
   | .colorAmong allowed => mana.isEmpty || (mana.size == 1 && mana.all allowed.contains)
+  | _ => false
 
 /-- How much mana this output adds. -/
 def amount : ManaOutput → Nat
   | .fixed m => m.size
   | .oneOf _ n | .combination _ n => n
   | .colorAmong allowed => if allowed.isEmpty then 0 else 1
+  | _ => 0
 
 end ManaOutput
 
@@ -278,7 +290,8 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestric
   mana.foldl (fun pool t =>
     match r with
     | .none => pool.add t
-    | .only u => pool.addWithUse t u) pool
+    | .only u => pool.addWithUse t u
+    | _ => pool.add t) pool
 
 
 /-- `p` may activate abilities of creatures they control as though those

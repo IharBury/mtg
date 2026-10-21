@@ -16,13 +16,19 @@ namespace TriggerEvent
 
 /-- Which permanent entering the battlefield causes `TriggerEvent.enters` to fire (CR 603.6a). -/
 inductive EntersEvent where
-  | entersFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+  | entersEventKind (subtype : String := "") (n : Int := 0)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (artifactOrSubtype : Bool := false) (creatureGroup : Bool := false)
-  | paramEntersKind (subtype : String := "") (n : Int := 0) (another : Bool := false)
-      (nontoken : Bool := false) (landSubtype : Bool := false) (powerAtLeast : Bool := false)
+      (powerAtLeast : Bool := false) (paramKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace EntersEvent
+@[match_pattern] abbrev entersFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (artifactOrSubtype : Bool := false) (creatureGroup : Bool := false) : EntersEvent :=
+  .entersEventKind "" 0 alt1 alt2 alt3 artifactOrSubtype creatureGroup false false
+@[match_pattern] abbrev paramEntersKind (subtype : String := "") (n : Int := 0) (another : Bool := false)
+    (nontoken : Bool := false) (landSubtype : Bool := false) (powerAtLeast : Bool := false) : EntersEvent :=
+  .entersEventKind subtype n another nontoken landSubtype false false powerAtLeast true
 @[match_pattern] abbrev permanentEntersKind (alt1 : Bool := false) (alt2 : Bool := false) (other : Bool := false) : EntersEvent :=
   .entersFilterKind alt1 alt2 other false false
 @[match_pattern] abbrev artifactOrThisSubtypeYouControl (another : Bool := false) (nontoken : Bool := false) (thisOrAnotherSubtype : Bool := false) : EntersEvent :=
@@ -57,12 +63,16 @@ end EntersEvent
 
 /-- Which zone-leaving or graveyard-entering event causes `TriggerEvent.leaves` to fire (CR 603.6c / 700.4). -/
 inductive LeavesEvent where
-  | leavesFilterKind (alt1 : Bool := true) (alt2 : Bool := false) (alt3 : Bool := false)
-      (alt4 : Bool := false) (diesGroup : Bool := false)
-  | subtypeYouControlDies (subtypes : Array String)
+  | leavesEventKind (subtypes : Array String := #[]) (alt1 : Bool := true) (alt2 : Bool := false)
+      (alt3 : Bool := false) (alt4 : Bool := false) (diesGroup : Bool := false) (bySubtypes : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace LeavesEvent
+@[match_pattern] abbrev leavesFilterKind (alt1 : Bool := true) (alt2 : Bool := false) (alt3 : Bool := false)
+    (alt4 : Bool := false) (diesGroup : Bool := false) : LeavesEvent :=
+  .leavesEventKind #[] alt1 alt2 alt3 alt4 diesGroup false
+@[match_pattern] abbrev subtypeYouControlDies (subtypes : Array String) : LeavesEvent :=
+  .leavesEventKind subtypes false false false false false true
 @[match_pattern] abbrev sourceOrZoneLeave (diesOrLeaves : Bool := true) (gyOrReturned : Bool := false) (returned : Bool := false) : LeavesEvent :=
   .leavesFilterKind diesOrLeaves gyOrReturned returned false false
 @[match_pattern] abbrev creatureOrPermanentDies (nontoken : Bool := false) (attacking : Bool := false) (includeSelf : Bool := false) (permanentDiesOrLeaves : Bool := false) : LeavesEvent :=
@@ -103,12 +113,18 @@ end StepEvent
 
 /-- Which spell being cast causes `TriggerEvent.casts` to fire (CR 601.2i). -/
 inductive CastEvent where
-  | castFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (alt4 : Bool := false) (specialGroup : Bool := false) (targetingGroup : Bool := false)
-  | paramCastKind (color : Color := .white) (n : Nat := 0) (fromHand : Bool := false) (mvAtMost : Bool := false)
+  | castEventKind (color : Color := .white) (n : Nat := 0)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (alt4 : Bool := false) (specialGroup : Bool := false)
+      (targetingGroup : Bool := false) (paramKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CastEvent
+@[match_pattern] abbrev castFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (alt4 : Bool := false) (specialGroup : Bool := false) (targetingGroup : Bool := false) : CastEvent :=
+  .castEventKind .white 0 alt1 alt2 alt3 alt4 specialGroup targetingGroup false
+@[match_pattern] abbrev paramCastKind (color : Color := .white) (n : Nat := 0) (fromHand : Bool := false) (mvAtMost : Bool := false) : CastEvent :=
+  .castEventKind color n fromHand mvAtMost false false false false true
 @[match_pattern] abbrev spellOrCreatureCast (alt1 : Bool := false) (alt2 : Bool := false) (secondOrCreature : Bool := false) (youCreature : Bool := false) : CastEvent :=
   .castFilterKind alt1 alt2 secondOrCreature youCreature false false
 @[match_pattern] abbrev specialOrParityCast (alt1 : Bool := false) (alt2 : Bool := false) (villainOrParity : Bool := false) : CastEvent :=
@@ -145,19 +161,25 @@ end CastEvent
 
 /-- Which attacker or blocker declaration causes `TriggerEvent.combat` to fire (CR 508.2 / 509.5c). -/
 inductive CombatEvent where
-  | combatFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (creatureOrEquipped : Bool := false)
-  | paramCombatKind (n : Int := 12) (subtype : String := "") (tokenPowerAtLeast6 : Bool := false) (bySubtype : Bool := false)
+  | combatEventKind (n : Int := 12) (subtype : String := "")
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (creatureOrEquipped : Bool := false) (paramKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CombatEvent
+@[match_pattern] abbrev combatFilterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (creatureOrEquipped : Bool := false) : CombatEvent :=
+  .combatEventKind 12 "" alt1 alt2 alt3 creatureOrEquipped false
+@[match_pattern] abbrev paramCombatKind (n : Int := 12) (subtype : String := "") (tokenPowerAtLeast6 : Bool := false) (bySubtype : Bool := false) : CombatEvent :=
+  .combatEventKind n subtype tokenPowerAtLeast6 bySubtype false false true
 @[match_pattern] abbrev youOrPlayerAttack (alt1 : Bool := false) (alt2 : Bool := false) (selfOrBlock : Bool := false) : CombatEvent :=
   .combatFilterKind alt1 alt2 selfOrBlock false
 @[match_pattern] abbrev creatureOrEquippedAttacks (alone : Bool := false) (alt : Bool := false) (equipped : Bool := false) : CombatEvent :=
   .combatFilterKind alone alt equipped true
-@[match_pattern] abbrev youAttackWithTotalPower (n : Int := 12) : CombatEvent :=
-  .paramCombatKind n "" false false
+@[match_pattern] abbrev tokenOrTotalPowerAttack (n : Int := 12) (tokenPowerAtLeast6 : Bool := false) : CombatEvent :=
+  .paramCombatKind n "" tokenPowerAtLeast6 false
 @[match_pattern] abbrev subtypeAttacks (subtype : String) (tokenPowerAtLeast6 : Bool := false) : CombatEvent :=
-  .paramCombatKind 0 subtype tokenPowerAtLeast6 true
+  .paramCombatKind 12 subtype tokenPowerAtLeast6 true
+@[match_pattern] abbrev youAttackWithTotalPower (n : Int := 12) : CombatEvent := .tokenOrTotalPowerAttack n false
 @[match_pattern] abbrev youAttack (twoOrMore : Bool := false) : CombatEvent := .youOrPlayerAttack twoOrMore false false
 @[match_pattern] abbrev creaturesAttackPlayer (opponent : Bool := false) : CombatEvent := .youOrPlayerAttack opponent true false
 @[match_pattern] abbrev selfOrBlockCombat (enchantedOrSmallBlock : Bool := false) (blockedOrSmallBlock : Bool := false) : CombatEvent :=

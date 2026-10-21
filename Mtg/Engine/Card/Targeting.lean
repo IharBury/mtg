@@ -99,17 +99,26 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
 inductive BattlefieldTarget where
-  | booleanBattlefieldTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+  | battlefieldTargetKind (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
+      (subtype : String := "") (subtypes : Array String := #[])
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false)
-  | controlledPermanentTarget (controller : TargetController := .any) (alt1 : Bool := false)
-      (alt2 : Bool := false) (artifactTarget : Bool := false)
-  | boundPermanentTarget (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
-      (alt1 : Bool := false) (alt2 : Bool := false) (mvBound : Bool := false)
-  /-- Target creature you control with `subtype` (`multi = false`) or any of `subtypes` (`multi = true`). -/
-  | creatureYouControlSubtypes (subtype : String := "") (subtypes : Array String := #[]) (multi : Bool := false)
+      (controlledKind : Bool := false) (boundKind : Bool := false) (subtypeKind : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace BattlefieldTarget
+@[match_pattern] abbrev booleanBattlefieldTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) : BattlefieldTarget :=
+  .battlefieldTargetKind 0 0 .any "" #[] alt1 alt2 alt3 alt4 g1 g2 false false false
+@[match_pattern] abbrev controlledPermanentTarget (controller : TargetController := .any) (alt1 : Bool := false)
+    (alt2 : Bool := false) (artifactTarget : Bool := false) : BattlefieldTarget :=
+  .battlefieldTargetKind 0 0 controller "" #[] alt1 alt2 artifactTarget false false false true false false
+@[match_pattern] abbrev boundPermanentTarget (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
+    (alt1 : Bool := false) (alt2 : Bool := false) (mvBound : Bool := false) : BattlefieldTarget :=
+  .battlefieldTargetKind n mv controller "" #[] alt1 alt2 mvBound false false false false true false
+/-- Target creature you control with `subtype` (`multi = false`) or any of `subtypes` (`multi = true`). -/
+@[match_pattern] abbrev creatureYouControlSubtypes (subtype : String := "") (subtypes : Array String := #[]) (multi : Bool := false) : BattlefieldTarget :=
+  .battlefieldTargetKind 0 0 .any subtype subtypes multi false false false false false false false true
 @[match_pattern] abbrev creatureTarget (youControl : Bool := false) (another : Bool := false) (legendaryOrFlying : Bool := false) : BattlefieldTarget :=
   .booleanBattlefieldTarget youControl another legendaryOrFlying false false false
 @[match_pattern] abbrev oppOrEquipmentTarget (alt1 : Bool := false) (alt2 : Bool := false) (defendingOrEquip : Bool := false) : BattlefieldTarget :=

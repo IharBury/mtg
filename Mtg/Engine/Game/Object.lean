@@ -54,11 +54,22 @@ deriving Repr, Inhabited, BEq
 
 /-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
 inductive CopyDuration where
-  | permanent
-  | untilEot
-  | untilNextTurn
-  | untilSourceLeaves (source : ObjectId)
+  | copyDurationKind (source : ObjectId := ⟨0⟩) (untilEotFlag : Bool := false)
+      (untilNextTurnFlag : Bool := false) (untilSourceFlag : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace CopyDuration
+
+@[match_pattern] abbrev permanent : CopyDuration :=
+  .copyDurationKind ⟨0⟩ false false false
+@[match_pattern] abbrev untilEot : CopyDuration :=
+  .copyDurationKind ⟨0⟩ true false false
+@[match_pattern] abbrev untilNextTurn : CopyDuration :=
+  .copyDurationKind ⟨0⟩ false true false
+@[match_pattern] abbrev untilSourceLeaves (source : ObjectId) : CopyDuration :=
+  .copyDurationKind source false false true
+
+end CopyDuration
 
 /-- Active temporary copy effect on a permanent, storing the original printed
 characteristics to restore when `duration` expires (CR 707 / CR 613.2). -/
