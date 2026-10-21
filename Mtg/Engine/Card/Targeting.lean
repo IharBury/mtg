@@ -26,13 +26,20 @@ namespace TargetZone
 @[match_pattern] abbrev anyTarget : TargetZone := .targetZoneKind false true true
 end TargetZone
 
-/-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
-inductive TargetController where
-  | targetControllerKind (idx : Nat := 0) (you : Bool := false) (opponent : Bool := false)
-      (eachOpponent : Bool := false) (specificSeat : Bool := false)
+/-- Multiple-target, sequential-slot, controller, graveyard, stack, or player targeting shapes (CR 115.1 / 601.2c). -/
+inductive MultiTarget where
+  | multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+      (alt3 : Bool := false) (alt4 : Bool := false)
+      (ownAndOpp : Bool := false) (mvAtMost : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Who controls (or, for a card in a graveyard, owns) a filtered target, unified with `MultiTarget`. -/
+abbrev TargetController := MultiTarget
+
 namespace TargetController
+@[match_pattern] abbrev targetControllerKind (idx : Nat := 0) (you : Bool := false) (opponent : Bool := false)
+    (eachOpponent : Bool := false) (specificSeat : Bool := false) : TargetController :=
+  .multiTargetKind idx you opponent eachOpponent specificSeat false false
 @[match_pattern] abbrev controllerKind (you : Bool := false) (opponent : Bool := false) (eachOpponent : Bool := false) : TargetController :=
   .targetControllerKind 0 you opponent eachOpponent false
 @[match_pattern] abbrev specific (idx : Nat) : TargetController := .targetControllerKind idx false false false true
@@ -168,13 +175,13 @@ namespace BattlefieldTarget
 @[match_pattern] abbrev enchantmentMvAtLeast (n : Nat) : BattlefieldTarget := .permanentMvBound n true
 end BattlefieldTarget
 
-/-- A card target in a graveyard (CR 115.1 / 404.1). -/
-inductive GraveyardTarget where
-  | graveyardTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (multiType : Bool := false) (mvAtMost : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- A card target in a graveyard (CR 115.1 / 404.1), unified with `MultiTarget`. -/
+abbrev GraveyardTarget := MultiTarget
 
 namespace GraveyardTarget
+@[match_pattern] abbrev graveyardTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+    (multiType : Bool := false) (mvAtMost : Bool := false) : GraveyardTarget :=
+  .multiTargetKind n alt1 alt2 multiType mvAtMost false false
 @[match_pattern] abbrev graveyardCardKind (alt1 : Bool := false) (alt2 : Bool := false) (multiType : Bool := false) : GraveyardTarget :=
   .graveyardTargetKind 0 alt1 alt2 multiType false
 @[match_pattern] abbrev creatureCardInYourGraveyardMvAtMost (n : Nat) : GraveyardTarget :=
@@ -186,12 +193,12 @@ namespace GraveyardTarget
 @[match_pattern] abbrev multiTypeInYourGraveyard (equipInstSorc : Bool := false) : GraveyardTarget := .graveyardCardKind equipInstSorc false true
 end GraveyardTarget
 
-/-- A spell or ability target on the stack (CR 115.1 / 405.1). -/
-inductive StackTarget where
-  | stackTargetKind (n : Nat := 0) (alt : Bool := false) (ability : Bool := false) (ptAtMost : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- A spell or ability target on the stack (CR 115.1 / 405.1), unified with `MultiTarget`. -/
+abbrev StackTarget := MultiTarget
 
 namespace StackTarget
+@[match_pattern] abbrev stackTargetKind (n : Nat := 0) (alt : Bool := false) (ability : Bool := false) (ptAtMost : Bool := false) : StackTarget :=
+  .multiTargetKind n alt ability ptAtMost false false false
 @[match_pattern] abbrev spellOrAbility (alt : Bool := false) (ability : Bool := false) : StackTarget :=
   .stackTargetKind 0 alt ability false
 @[match_pattern] abbrev creatureSpellPTAtMost (n : Nat) : StackTarget :=
@@ -201,13 +208,13 @@ namespace StackTarget
 end StackTarget
 
 /-- A player target, or a cross-category target involving a player or graveyard
-(CR 115.1 / 115.4). -/
-inductive PlayerTarget where
-  /-- Target player/opponent (`crossZone = false`, `opponentOnly = alt1`) or cross-category target (`crossZone = true`: “any target”, permanent or player if `alt1`, or creature/graveyard creature card if `alt2`). -/
-  | playerOrCrossZoneTarget (alt1 : Bool := false) (alt2 : Bool := false) (crossZone : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+(CR 115.1 / 115.4), unified with `MultiTarget`. -/
+abbrev PlayerTarget := MultiTarget
 
 namespace PlayerTarget
+/-- Target player/opponent (`crossZone = false`, `opponentOnly = alt1`) or cross-category target (`crossZone = true`: “any target”, permanent or player if `alt1`, or creature/graveyard creature card if `alt2`). -/
+@[match_pattern] abbrev playerOrCrossZoneTarget (alt1 : Bool := false) (alt2 : Bool := false) (crossZone : Bool := false) : PlayerTarget :=
+  .multiTargetKind 0 alt1 alt2 crossZone false false false
 @[match_pattern] abbrev player (opponentOnly : Bool := false) : PlayerTarget := .playerOrCrossZoneTarget opponentOnly false false
 @[match_pattern] abbrev crossZoneTarget (anyPermanent : Bool := false) (creatureOrGy : Bool := false) : PlayerTarget :=
   .playerOrCrossZoneTarget anyPermanent creatureOrGy true
@@ -215,14 +222,15 @@ namespace PlayerTarget
 @[match_pattern] abbrev creatureOrGyCreatureCard : PlayerTarget := .playerOrCrossZoneTarget false true true
 end PlayerTarget
 
-/-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
-inductive MultiTarget where
-  | multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (alt4 : Bool := false)
-      (ownAndOpp : Bool := false) (mvAtMost : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
-
 namespace MultiTarget
+export TargetController (targetControllerKind controllerKind specific any you opponent eachOpponent)
+export GraveyardTarget (
+  graveyardTargetKind graveyardCardKind creatureCardInYourGraveyardMvAtMost
+  elfOrOppGraveyardCard elfInYourGraveyard oppGraveyardCard
+  cardInYourGraveyard multiTypeInYourGraveyard
+)
+export StackTarget (stackTargetKind spellOrAbility creatureSpellPTAtMost spell stackAbilityFromSource)
+export PlayerTarget (playerOrCrossZoneTarget player crossZoneTarget playerOrPermanent creatureOrGyCreatureCard)
 @[match_pattern] abbrev twoStepOrSameTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (twoTargets : Bool := false) : MultiTarget :=
   .multiTargetKind 0 alt1 alt2 alt3 twoTargets false false
 @[match_pattern] abbrev ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false) : MultiTarget :=
@@ -260,15 +268,13 @@ inductive EffectTargetKind where
   | pair (a b : EffectTargetKind)
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Default demonstration-agent choice among legal targets (CR 601.2c).
-Adding a targeting shape is a compile error here rather than silently
-picking the first legal target in `Game.preferredTarget`. -/
-inductive TargetPreference where
-  /-- Preference kind: own (`false, false, false`), opponent (`true, false, false`), last (`false, true, false`), own then opponent (`true, true, false`), opponent player (`false, false, true`), or self player (`true, false, true`). -/
-  | preferenceKind (alt1 : Bool := false) (alt2 : Bool := false) (playerPref : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- Default demonstration-agent choice among legal targets (CR 601.2c), unified with `TargetZone`. -/
+abbrev TargetPreference := TargetZone
 
 namespace TargetPreference
+/-- Preference kind: own (`false, false, false`), opponent (`true, false, false`), last (`false, true, false`), own then opponent (`true, true, false`), opponent player (`false, false, true`), or self player (`true, false, true`). -/
+@[match_pattern] abbrev preferenceKind (alt1 : Bool := false) (alt2 : Bool := false) (playerPref : Bool := false) : TargetPreference :=
+  .targetZoneKind alt1 alt2 playerPref
 @[match_pattern] abbrev own : TargetPreference := .preferenceKind false false false
 @[match_pattern] abbrev opponent : TargetPreference := .preferenceKind true false false
 @[match_pattern] abbrev last : TargetPreference := .preferenceKind false true false
@@ -276,6 +282,10 @@ namespace TargetPreference
 @[match_pattern] abbrev opponentPlayer : TargetPreference := .preferenceKind false false true
 @[match_pattern] abbrev selfPlayer : TargetPreference := .preferenceKind true false true
 end TargetPreference
+
+namespace TargetZone
+export TargetPreference (preferenceKind own opponent last ownThenOpponent opponentPlayer selfPlayer)
+end TargetZone
 
 namespace EffectTargetKind
 

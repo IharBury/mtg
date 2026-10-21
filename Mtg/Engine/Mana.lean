@@ -330,18 +330,19 @@ inductive ManaUse where
   /-- Parameterized mana spending restriction (CR 106.6 / 106.10): source/ability (`!cardTypeGroup && !handOrTreasureGroup && !bySubtype`), card-type/supertype spell (`cardTypeGroup && !handOrTreasureGroup && !bySubtype`), hand/Treasure/Dwarf-Equipment-Saga (`handOrTreasureGroup && !bySubtype`), or subtype spell/ability (`bySubtype`). -/
   | manaUseKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
       (cardTypeGroup : Bool := false) (handOrTreasureGroup : Bool := false) (bySubtype : Bool := false)
+      (restricted : Bool := true)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaUse
 
 @[match_pattern] abbrev subtypeUse (subtype : String) (orAbility : Bool := false) : ManaUse :=
-  .manaUseKind subtype orAbility false false false true
+  .manaUseKind subtype orAbility false false false true true
 @[match_pattern] abbrev sourceOrAbilityRestriction (cantNonartifact : Bool := false) (creatureOrEquip : Bool := false) : ManaUse :=
-  .manaUseKind "" cantNonartifact creatureOrEquip false false false
+  .manaUseKind "" cantNonartifact creatureOrEquip false false false true
 @[match_pattern] abbrev cardTypeOrSupertypeSpell (noncreature : Bool := false) (legendaryOrArtifact : Bool := false) : ManaUse :=
-  .manaUseKind "" noncreature legendaryOrArtifact true false false
+  .manaUseKind "" noncreature legendaryOrArtifact true false false true
 @[match_pattern] abbrev handOrTreasureSpend (fromTreasure : Bool := false) (dwarfEquipmentSaga : Bool := false) : ManaUse :=
-  .manaUseKind "" fromTreasure dwarfEquipmentSaga false true false
+  .manaUseKind "" fromTreasure dwarfEquipmentSaga false true false true
 @[match_pattern] abbrev subtypeSpell (subtype : String) : ManaUse := .subtypeUse subtype false
 @[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaUse := .subtypeUse subtype true
 /-- Only casting Elf spells or activating abilities of Elf sources (Woodland Weavemaster). -/
@@ -380,15 +381,13 @@ end ManaUse
 /-- Backward-compatible alias for `ManaUse` (CR 106.6). -/
 abbrev FraManaUse := ManaUse
 
-/-- How mana from a mana ability may be spent (CR 106.6 / 106.10). -/
-inductive ManaRestriction where
-  | manaRestrictionKind (u : ManaUse := .instantOrSorcery) (restricted : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+/-- How mana from a mana ability may be spent (CR 106.6 / 106.10), unified with `ManaUse`. -/
+abbrev ManaRestriction := ManaUse
 
 namespace ManaRestriction
 
-@[match_pattern] abbrev none : ManaRestriction := .manaRestrictionKind .instantOrSorcery false
-@[match_pattern] abbrev only (u : ManaUse) : ManaRestriction := .manaRestrictionKind u true
+@[match_pattern] abbrev none : ManaRestriction := .manaUseKind "" false false false false false false
+@[match_pattern] abbrev only (u : ManaUse) : ManaRestriction := u
 @[match_pattern] abbrev subtypeSpellOrAbility (subtype : String) : ManaRestriction := .only (.subtypeSpellOrAbility subtype)
 @[match_pattern] abbrev elf : ManaRestriction := .only .elf
 @[match_pattern] abbrev instantOrSorcery : ManaRestriction := .only .instantOrSorcery
@@ -402,7 +401,7 @@ end ManaRestriction
 
 /-- True when `u` is one of the general `ManaSpend`-checked restrictions. -/
 def ManaUse.isFra : ManaUse → Bool
-  | .elf | .instantOrSorcery | .hero | .villain | .cantNonartifact | .creatureSource => false
+  | .elf | .instantOrSorcery | .hero | .villain | .cantNonartifact | .creatureSource | .manaUseKind _ _ _ _ _ _ false => false
   | _ => true
 
 /-- What a payment is for, as far as `ManaUse` restrictions care. The
@@ -465,7 +464,6 @@ def ManaRestriction.note : ManaRestriction → String
   | .cantNonartifact => " (not a nonartifact spell)"
   | .creatureSource => " (abilities of creature sources)"
   | .only u => s!" ({u.label})"
-  | _ => ""
 
 /-- Spend restriction for spells of `subtype`. -/
 def ManaUse.forSubtype (subtype : String) : ManaUse :=

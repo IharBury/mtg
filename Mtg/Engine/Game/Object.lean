@@ -54,20 +54,22 @@ deriving Repr, Inhabited, BEq
 
 /-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
 inductive CopyDuration where
-  | copyDurationKind (source : ObjectId := ⟨0⟩) (untilEotFlag : Bool := false)
-      (untilNextTurnFlag : Bool := false) (untilSourceFlag : Bool := false)
+  | copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
+      (n : Nat := 0) (paid : Nat := 0)
+      (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
+      (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CopyDuration
 
 @[match_pattern] abbrev permanent : CopyDuration :=
-  .copyDurationKind ⟨0⟩ false false false
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 false false false false false
 @[match_pattern] abbrev untilEot : CopyDuration :=
-  .copyDurationKind ⟨0⟩ true false false
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 true false false false false
 @[match_pattern] abbrev untilNextTurn : CopyDuration :=
-  .copyDurationKind ⟨0⟩ false true false
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 false true false false false
 @[match_pattern] abbrev untilSourceLeaves (source : ObjectId) : CopyDuration :=
-  .copyDurationKind source false false true
+  .copyDurationKind source ⟨0⟩ 0 0 false false true false false
 
 end CopyDuration
 

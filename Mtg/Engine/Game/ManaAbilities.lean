@@ -290,8 +290,7 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : ManaRestric
   mana.foldl (fun pool t =>
     match r with
     | .none => pool.add t
-    | .only u => pool.addWithUse t u
-    | _ => pool.add t) pool
+    | .only u => pool.addWithUse t u) pool
 
 
 /-- `p` may activate abilities of creatures they control as though those

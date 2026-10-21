@@ -47,25 +47,30 @@ deriving Repr, Inhabited
 
 /-- Delayed triggered ability waiting to fire at the beginning of the next end
 step (CR 603.7). -/
-inductive DelayedEndStepTrigger where
-  | delayedEndStepKind (id : ObjectId := ⟨0⟩) (controller : PlayerId := ⟨0⟩) (count : Nat := 0)
-      (exileOrSac : Bool := false) (sacFlag : Bool := false) (fromGy : Bool := false) (destiny : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev DelayedEndStepTrigger := CopyDuration
 
 namespace DelayedEndStepTrigger
 
+@[match_pattern] abbrev delayedEndStepKind (id : ObjectId := ⟨0⟩) (controller : PlayerId := ⟨0⟩) (count : Nat := 0)
+    (exileOrSac : Bool := false) (sacFlag : Bool := false) (fromGy : Bool := false) (destiny : Bool := false)
+    (b5 : Bool := false) : DelayedEndStepTrigger :=
+  .copyDurationKind id controller count 0 exileOrSac sacFlag fromGy destiny b5
 @[match_pattern] abbrev returnExiled (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 false false false false
+  .delayedEndStepKind id ⟨0⟩ 0 false false false false false
 @[match_pattern] abbrev exilePermanent (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 true false false false
+  .delayedEndStepKind id ⟨0⟩ 0 true false false false false
 @[match_pattern] abbrev sacrificePermanent (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 true true false false
+  .delayedEndStepKind id ⟨0⟩ 0 false false false false true
 @[match_pattern] abbrev returnFromGraveyard (id : ObjectId) (controller : PlayerId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id controller 0 false false true false
+  .delayedEndStepKind id controller 0 false false true false false
 @[match_pattern] abbrev syntheticDestiny (controller : PlayerId) (count : Nat) : DelayedEndStepTrigger :=
-  .delayedEndStepKind ⟨0⟩ controller count false false false true
+  .delayedEndStepKind ⟨0⟩ controller count false false false true false
 
 end DelayedEndStepTrigger
+
+namespace CopyDuration
+export DelayedEndStepTrigger (delayedEndStepKind returnExiled exilePermanent sacrificePermanent returnFromGraveyard syntheticDestiny)
+end CopyDuration
 
 /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
 structure MulliganState where
@@ -114,12 +119,12 @@ structure TriggerMayBranch where
 deriving Repr, Inhabited
 
 /-- Follow-up action after a library search completes (CR 701.23). -/
-inductive AfterLibrarySearch where
-  | afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev AfterLibrarySearch := CopyDuration
 
 namespace AfterLibrarySearch
 
+@[match_pattern] abbrev afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false) : AfterLibrarySearch :=
+  .copyDurationKind id ⟨0⟩ minLands 0 plusOne untapLands false false false
 @[match_pattern] abbrev none : AfterLibrarySearch :=
   .afterSearchKind ⟨0⟩ 0 false false
 @[match_pattern] abbrev plusOneOn (id : ObjectId) : AfterLibrarySearch :=
@@ -128,6 +133,10 @@ namespace AfterLibrarySearch
   .afterSearchKind ⟨0⟩ minLands false true
 
 end AfterLibrarySearch
+
+namespace CopyDuration
+export AfterLibrarySearch (afterSearchKind none plusOneOn untapSearchedIfLands)
+end CopyDuration
 
 /-- Combat phase state: damage assignment, blockers queue, first-strike tracking,
 and additional combat phases (CR 508 / CR 509 / CR 510 / CR 702.7b). -/

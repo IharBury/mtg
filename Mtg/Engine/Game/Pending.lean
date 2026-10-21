@@ -11,33 +11,12 @@ player must answer before the game continues.
 
 namespace Mtg.Engine
 
-/-- A random event the engine would otherwise resolve with `Rng`.
-`--norandom` leaves it pending so a host (the demo) can supply the result. -/
-inductive RandomRequest where
-  | randomRequestKind (player : PlayerId := ⟨0⟩) (n : Nat := 0) (ids : Array ObjectId := #[])
-      (dest : Zone := .battlefield) (alt : Bool := false) (isObjects : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
-
-namespace RandomRequest
-@[match_pattern] abbrev playerOrIndexRandom (player : PlayerId := ⟨0⟩) (n : Nat := 0) (isIndex : Bool := false) : RandomRequest :=
-  .randomRequestKind player n #[] .battlefield isIndex false
-@[match_pattern] abbrev objectsRandom (ids : Array ObjectId) (dest : Zone := .battlefield) (chooseOne : Bool := false) : RandomRequest :=
-  .randomRequestKind ⟨0⟩ 0 ids dest chooseOne true
-@[match_pattern] abbrev shuffleLibrary (player : PlayerId) : RandomRequest :=
-  .playerOrIndexRandom player 0 false
-@[match_pattern] abbrev chooseIndex (n : Nat) : RandomRequest :=
-  .playerOrIndexRandom ⟨0⟩ n true
-@[match_pattern] abbrev orderInto (ids : Array ObjectId) (dest : Zone) : RandomRequest :=
-  .objectsRandom ids dest false
-@[match_pattern] abbrev chooseObject (ids : Array ObjectId) : RandomRequest :=
-  .objectsRandom ids .battlefield true
-end RandomRequest
-
 /-- Work that still belongs to an effect after a `--norandom` result is
 applied. The RNG path runs the same work immediately. -/
 inductive AfterRandom where
   | afterRandomKind (p : PlayerId := ⟨0⟩) (n : Nat := 0) (id : ObjectId := ⟨0⟩)
       (subtype : String := "") (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+      (dest : Zone := .battlefield)
       (alt1 : Bool := false) (alt2 : Bool := false) (beholdOrPlusOne : Bool := false)
       (stepFlag : Bool := false) (arrayFlag : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -45,14 +24,14 @@ deriving DecidableEq, Repr, Inhabited, BEq
 namespace AfterRandom
 
 @[match_pattern] abbrev none : AfterRandom :=
-  .afterRandomKind ⟨0⟩ 0 ⟨0⟩ "" #[] #[] false false false false false
+  .afterRandomKind ⟨0⟩ 0 ⟨0⟩ "" #[] #[] .battlefield false false false false false
 @[match_pattern] abbrev stepOrTargetAfter (p : PlayerId := ⟨0⟩) (n : Nat := 0) (id : ObjectId := ⟨0⟩)
     (subtype : String := "") (alt : Bool := false)
     (opening : Bool := false) (beholdOrPlusOne : Bool := false) : AfterRandom :=
-  .afterRandomKind p n id subtype #[] #[] alt opening beholdOrPlusOne true false
+  .afterRandomKind p n id subtype #[] #[] .battlefield alt opening beholdOrPlusOne true false
 @[match_pattern] abbrev arrayAfter (p : PlayerId) (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
     (putOnTop : Bool := false) (isCards : Bool := false) : AfterRandom :=
-  .afterRandomKind p 0 ⟨0⟩ "" rest ids putOnTop isCards false false true
+  .afterRandomKind p 0 ⟨0⟩ "" rest ids .battlefield putOnTop isCards false false true
 @[match_pattern] abbrev playerAmount (p : PlayerId) (n : Nat) (gainLife : Bool := false) : AfterRandom :=
   .stepOrTargetAfter p n ⟨0⟩ "" gainLife false false
 @[match_pattern] abbrev openingStep (idx : Nat) (setStarting : Bool := false) : AfterRandom :=
@@ -75,15 +54,41 @@ namespace AfterRandom
 
 end AfterRandom
 
+/-- A random event the engine would otherwise resolve with `Rng`.
+`--norandom` leaves it pending so a host (the demo) can supply the result. -/
+abbrev RandomRequest := AfterRandom
+
+namespace RandomRequest
+@[match_pattern] abbrev randomRequestKind (player : PlayerId := ⟨0⟩) (n : Nat := 0) (ids : Array ObjectId := #[])
+    (dest : Zone := .battlefield) (alt : Bool := false) (isObjects : Bool := false) : RandomRequest :=
+  .afterRandomKind player n ⟨0⟩ "" #[] ids dest alt isObjects false false false
+@[match_pattern] abbrev playerOrIndexRandom (player : PlayerId := ⟨0⟩) (n : Nat := 0) (isIndex : Bool := false) : RandomRequest :=
+  .randomRequestKind player n #[] .battlefield isIndex false
+@[match_pattern] abbrev objectsRandom (ids : Array ObjectId) (dest : Zone := .battlefield) (chooseOne : Bool := false) : RandomRequest :=
+  .randomRequestKind ⟨0⟩ 0 ids dest chooseOne true
+@[match_pattern] abbrev shuffleLibrary (player : PlayerId) : RandomRequest :=
+  .playerOrIndexRandom player 0 false
+@[match_pattern] abbrev chooseIndex (n : Nat) : RandomRequest :=
+  .playerOrIndexRandom ⟨0⟩ n true
+@[match_pattern] abbrev orderInto (ids : Array ObjectId) (dest : Zone) : RandomRequest :=
+  .objectsRandom ids dest false
+@[match_pattern] abbrev chooseObject (ids : Array ObjectId) : RandomRequest :=
+  .objectsRandom ids .battlefield true
+end RandomRequest
+
+namespace AfterRandom
+export RandomRequest (randomRequestKind playerOrIndexRandom objectsRandom shuffleLibrary chooseIndex orderInto chooseObject)
+end AfterRandom
+
 /-- Payment a player may make to stop ward from countering their spell
 (CR 702.21). -/
-inductive WardCost where
-  | wardCostKind (n : Nat := 0) (paid : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
-      (nonMana : Bool := false) (sacPerms : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev WardCost := CopyDuration
 
 namespace WardCost
 
+@[match_pattern] abbrev wardCostKind (n : Nat := 0) (paid : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
+    (nonMana : Bool := false) (sacPerms : Bool := false) : WardCost :=
+  .copyDurationKind ⟨0⟩ ⟨0⟩ n paid alt1 alt2 nonMana sacPerms false
 @[match_pattern] abbrev manaOrDiscard (n : Nat) (orDiscard : Bool := false) : WardCost :=
   .wardCostKind n 0 orDiscard false false false
 @[match_pattern] abbrev nonManaWard (sacrificeLegendary : Bool := false) (fivePoison : Bool := false) : WardCost :=
@@ -99,6 +104,10 @@ namespace WardCost
 
 end WardCost
 
+namespace CopyDuration
+export WardCost (wardCostKind manaOrDiscard nonManaWard sacrificePermanents genericMana discardOrPay discardEnchantmentInstantOrSorcery sacrificeLegendary fivePoison discardCard)
+end CopyDuration
+
 /-- A queued ward obligation waiting to be announced. -/
 structure WardObligation where
   player : PlayerId
@@ -109,7 +118,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- Where cards found by a library search go (CR 701.19). -/
 inductive SearchDest where
   | searchDestKind (sourceId : Option ObjectId := none) (subtype : String := "")
-      (alt1 : Bool := false) (alt2 : Bool := false)
+      (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
       (zoneDestFlag : Bool := false) (fromHandOrLibrary : Bool := false) (paramDest : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -117,9 +126,9 @@ namespace SearchDest
 
 @[match_pattern] abbrev simpleSearchDest (alt1 : Bool := false) (alt2 : Bool := false)
     (zoneDestFlag : Bool := false) (fromHandOrLibrary : Bool := false) : SearchDest :=
-  .searchDestKind none "" alt1 alt2 zoneDestFlag fromHandOrLibrary false
+  .searchDestKind none "" 0 alt1 alt2 zoneDestFlag fromHandOrLibrary false
 @[match_pattern] abbrev paramSearchDest (sourceId : Option ObjectId := none) (subtype : String := "") (beholdUntap : Bool := false) : SearchDest :=
-  .searchDestKind sourceId subtype beholdUntap false false false true
+  .searchDestKind sourceId subtype 0 beholdUntap false false false true
 @[match_pattern] abbrev battlefield (tapped : Bool) : SearchDest :=
   .simpleSearchDest tapped false false false
 @[match_pattern] abbrev zoneDest (graveyard : Bool := false) (topAfterShuffle : Bool := false) : SearchDest :=
@@ -138,13 +147,13 @@ namespace SearchDest
 end SearchDest
 
 /-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
-inductive CardChoice where
-  | cardChoiceKind (n : Nat := 0) (subtype : String := "") (attach : Option ObjectId := none)
-      (alt : Bool := false) (creatures : Bool := false) (paramKind : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev CardChoice := SearchDest
 
 namespace CardChoice
 
+@[match_pattern] abbrev cardChoiceKind (n : Nat := 0) (subtype : String := "") (attach : Option ObjectId := none)
+    (alt : Bool := false) (creatures : Bool := false) (paramKind : Bool := false) : CardChoice :=
+  .searchDestKind attach subtype n alt creatures paramKind false false
 @[match_pattern] abbrev booleanCardChoice (alt : Bool := false) (creatures : Bool := false) : CardChoice :=
   .cardChoiceKind 0 "" none alt creatures false
 @[match_pattern] abbrev paramCardChoice (n : Nat) (subtype : String := "") (attach : Option ObjectId := none) (amass : Bool := false) : CardChoice :=
@@ -158,6 +167,10 @@ namespace CardChoice
 @[match_pattern] abbrev keepDestroyRest : CardChoice := .creaturesChoice true
 
 end CardChoice
+
+namespace SearchDest
+export CardChoice (cardChoiceKind booleanCardChoice paramCardChoice toHand creaturesChoice landsTappedGainLife amassArmy creaturesToBattlefield keepDestroyRest)
+end SearchDest
 
 /-- Library, search, reveal, and draw choices made while an effect resolves (CR 401 / CR 701.19). -/
 inductive LibraryChoice where
@@ -792,13 +805,13 @@ namespace FraChoice
 end FraChoice
 
 /-- Turn-based, combat, mulligan, state-based action, and trigger-stacking choices (CR 103 / CR 508–510 / CR 603.3b / CR 704.5j). -/
-inductive TurnCombatPending where
-  | turnCombatPendingKind (player : PlayerId := ⟨0⟩) (count : Nat := 0) (name : String := "") (ids : Array ObjectId := #[])
-      (alt1 : Bool := false) (alt2 : Bool := false) (playerStep : Bool := false) (bottom : Bool := false) (legend : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev TurnCombatPending := AfterRandom
 
 namespace TurnCombatPending
 
+@[match_pattern] abbrev turnCombatPendingKind (player : PlayerId := ⟨0⟩) (count : Nat := 0) (name : String := "") (ids : Array ObjectId := #[])
+    (alt1 : Bool := false) (alt2 : Bool := false) (playerStep : Bool := false) (bottom : Bool := false) (legend : Bool := false) : TurnCombatPending :=
+  .afterRandomKind player count ⟨0⟩ name #[] ids .battlefield alt1 alt2 playerStep bottom legend
 @[match_pattern] abbrev stepOrBottomPending (player : PlayerId := ⟨0⟩) (count : Nat := 0)
     (alt1 : Bool := false) (alt2 : Bool := false) (playerStep : Bool := false) (bottom : Bool := false) : TurnCombatPending :=
   .turnCombatPendingKind player count "" #[] alt1 alt2 playerStep bottom false
@@ -823,14 +836,18 @@ name to keep; the rest are put into their owners' graveyards (CR 704.5j). -/
 
 end TurnCombatPending
 
+namespace AfterRandom
+export TurnCombatPending (turnCombatPendingKind stepOrBottomPending chooseLegend declareCombatStep playerBooleanStep putOnBottom declareAttackers declareBlockers playerStepChoice declareMulligan chooseTriggerToStack assignCombatDamage)
+end AfterRandom
+
 /-- Spell casting and ability activation announcement steps (CR 601.2 / CR 602.2 / CR 702). -/
-inductive CastPending where
-  | castPendingKind (sourceId : ObjectId := ⟨0⟩) (need : Nat := 0) (alt1 : Bool := false)
-      (alt2 : Bool := false) (additional : Bool := false) (teamwork : Bool := false) (costObjects : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev CastPending := CopyDuration
 
 namespace CastPending
 
+@[match_pattern] abbrev castPendingKind (sourceId : ObjectId := ⟨0⟩) (need : Nat := 0) (alt1 : Bool := false)
+    (alt2 : Bool := false) (additional : Bool := false) (teamwork : Bool := false) (costObjects : Bool := false) : CastPending :=
+  .copyDurationKind sourceId ⟨0⟩ need 0 alt1 alt2 additional teamwork costObjects
 @[match_pattern] abbrev castStep (alt1 : Bool := false) (alt2 : Bool := false) (additional : Bool := false) (teamwork : Bool := false) : CastPending :=
   .castPendingKind ⟨0⟩ 0 alt1 alt2 additional teamwork false
 @[match_pattern] abbrev costObjectsStep (sourceId : ObjectId := ⟨0⟩) (need : Nat := 0) (teamworkCreatures : Bool := false) : CastPending :=
@@ -852,6 +869,10 @@ namespace CastPending
 @[match_pattern] abbrev chooseTeamworkCreatures (need : Nat) : CastPending := .costObjectsStep ⟨0⟩ need true
 
 end CastPending
+
+namespace CopyDuration
+export CastPending (castPendingKind castStep costObjectsStep announceStep activateManaAbilities chooseMode chooseX chooseTargets additionalStep discardForAdditionalCost chooseAdditionalCost chooseKicker chooseGift chooseTeamwork chooseTeamworkCreatures)
+end CopyDuration
 
 /-- Resolution, keyword action, and trigger choices (CR 608 / CR 701). -/
 inductive ResolvePending where
