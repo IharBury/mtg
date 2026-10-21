@@ -210,7 +210,8 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     pl.spellsCostLessThisTurn.foldl (fun acc (which, n) =>
       match which with
       | .supertype s => if face.hasSupertype s then acc + n else acc
-      | .milledPickKind ty _ _ _ _ => if face.hasType ty then acc + n else acc) 0
+      | .milledPickKind ty _ _ _ _ => if face.hasType ty then acc + n else acc
+      | _ => acc) 0
   let sphinxLess :=
     if face.hasSubtype "Sphinx" then
       let zone (o : GameObject) :=

@@ -17,61 +17,69 @@ namespace Mtg.Engine.OracleArgs
 open OracleNorm
 
 /-- One printed argument. A card type is any type from CR 205.2a. -/
-inductive SlotVal where
-  | slotValKind (k : Nat ⊕ Int ⊕ String ⊕ CardType ⊕ Supertype ⊕ EffectTargetKind ⊕ CounterKind := .inl 0)
-deriving BEq, Repr, Inhabited
+abbrev SlotVal := Nat ⊕ Int ⊕ String ⊕ CardType ⊕ Supertype ⊕ EffectTargetKind ⊕ CounterKind
 
 namespace SlotVal
 
-@[match_pattern] abbrev nat (n : Nat) : SlotVal := .slotValKind (.inl n)
-@[match_pattern] abbrev int (i : Int) : SlotVal := .slotValKind (.inr (.inl i))
-@[match_pattern] abbrev str (s : String) : SlotVal := .slotValKind (.inr (.inr (.inl s)))
-@[match_pattern] abbrev ty (t : CardType) : SlotVal := .slotValKind (.inr (.inr (.inr (.inl t))))
-@[match_pattern] abbrev sup (s : Supertype) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inl s)))))
+@[match_pattern] abbrev slotValKind (k : SlotVal := .inl 0) : SlotVal := k
+
+@[match_pattern] abbrev nat (n : Nat) : SlotVal := slotValKind (.inl n)
+@[match_pattern] abbrev int (i : Int) : SlotVal := slotValKind (.inr (.inl i))
+@[match_pattern] abbrev str (s : String) : SlotVal := slotValKind (.inr (.inr (.inl s)))
+@[match_pattern] abbrev ty (t : CardType) : SlotVal := slotValKind (.inr (.inr (.inr (.inl t))))
+@[match_pattern] abbrev sup (s : Supertype) : SlotVal := slotValKind (.inr (.inr (.inr (.inr (.inl s)))))
 /-- The whole target noun (`target creature`, `target artifact token`, …). -/
-@[match_pattern] abbrev kind (k : EffectTargetKind) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inr (.inl k))))))
+@[match_pattern] abbrev kind (k : EffectTargetKind) : SlotVal := slotValKind (.inr (.inr (.inr (.inr (.inr (.inl k))))))
 /-- A counter kind (`+1/+1`, `stun`, `first strike`). -/
-@[match_pattern] abbrev ctr (k : CounterKind) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inr (.inr k))))))
+@[match_pattern] abbrev ctr (k : CounterKind) : SlotVal := slotValKind (.inr (.inr (.inr (.inr (.inr (.inr k))))))
 
 end SlotVal
 
-inductive StrFmt where
-  | strFmtKind (n : Nat := 0) (k0 : Option Bool := none) (b1 : Bool := false) (b2 : Bool := false)
-deriving BEq, Repr, Inhabited
+abbrev StrFmt := SpellCastKind
+
+namespace _root_.Mtg.Engine.SpellCastKind
+
+@[match_pattern] abbrev strFmtKind (n : Nat := 0) (k0 : Option Bool := Option.none) (b1 : Bool := false) (b2 : Bool := false) : SpellCastKind :=
+  .spellCastKind (some n) Option.none Option.none b1 b2 false false false false k0
+
+@[match_pattern] abbrev word (n : Nat) : StrFmt := strFmtKind n (some false) false false
+@[match_pattern] abbrev cycling (n : Nat) : StrFmt := strFmtKind n (some false) true false
+@[match_pattern] abbrev plural : StrFmt := strFmtKind 0 (some true) false false
+@[match_pattern] abbrev non : StrFmt := strFmtKind 0 (some true) true false
+/-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
+@[match_pattern] abbrev sub : StrFmt := strFmtKind 0 Option.none true false
+/-- Any CR 205.3 subtype, plural spelling. -/
+@[match_pattern] abbrev subPlural : StrFmt := strFmtKind 0 (some true) false true
+@[match_pattern] abbrev natFmtKind (k0 : Option Bool := Option.none) (k1 : Bool := false) : StrFmt :=
+  strFmtKind 0 k0 k1 true
+@[match_pattern] abbrev intFmtKind (isDigits : Bool := false) : StrFmt :=
+  strFmtKind 0 Option.none false isDigits
+@[match_pattern] abbrev digits : StrFmt := strFmtKind 0 Option.none false true
+@[match_pattern] abbrev cards : StrFmt := natFmtKind Option.none true
+@[match_pattern] abbrev counters : StrFmt := natFmtKind (some false) false
+@[match_pattern] abbrev brace : StrFmt := natFmtKind (some false) true
+@[match_pattern] abbrev english : StrFmt := natFmtKind (some true) false
+/-- `twice`, or `N times`. -/
+@[match_pattern] abbrev times : StrFmt := natFmtKind (some true) true
+@[match_pattern] abbrev signed : StrFmt := intFmtKind false
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : StrFmt := intFmtKind isFill
+@[match_pattern] abbrev collect : StrFmt := modeKind false
+@[match_pattern] abbrev fill : StrFmt := modeKind true
+
+end _root_.Mtg.Engine.SpellCastKind
 
 namespace StrFmt
-
-@[match_pattern] abbrev word (n : Nat) : StrFmt := .strFmtKind n (some false) false false
-@[match_pattern] abbrev cycling (n : Nat) : StrFmt := .strFmtKind n (some false) true false
-@[match_pattern] abbrev plural : StrFmt := .strFmtKind 0 (some true) false false
-@[match_pattern] abbrev non : StrFmt := .strFmtKind 0 (some true) true false
-/-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
-@[match_pattern] abbrev sub : StrFmt := .strFmtKind 0 none true false
-/-- Any CR 205.3 subtype, plural spelling. -/
-@[match_pattern] abbrev subPlural : StrFmt := .strFmtKind 0 (some true) false true
-@[match_pattern] abbrev natFmtKind (k0 : Option Bool := none) (k1 : Bool := false) : StrFmt :=
-  .strFmtKind 0 k0 k1 true
-@[match_pattern] abbrev intFmtKind (isDigits : Bool := false) : StrFmt :=
-  .strFmtKind 0 none false isDigits
-@[match_pattern] abbrev digits : StrFmt := .strFmtKind 0 none false true
-@[match_pattern] abbrev cards : StrFmt := .natFmtKind none true
-@[match_pattern] abbrev counters : StrFmt := .natFmtKind (some false) false
-@[match_pattern] abbrev brace : StrFmt := .natFmtKind (some false) true
-@[match_pattern] abbrev english : StrFmt := .natFmtKind (some true) false
-/-- `twice`, or `N times`. -/
-@[match_pattern] abbrev times : StrFmt := .natFmtKind (some true) true
-@[match_pattern] abbrev signed : StrFmt := .intFmtKind false
-@[match_pattern] abbrev modeKind (isFill : Bool := false) : StrFmt := .intFmtKind isFill
-@[match_pattern] abbrev collect : StrFmt := .modeKind false
-@[match_pattern] abbrev fill : StrFmt := .modeKind true
-
+export _root_.Mtg.Engine.SpellCastKind (
+  strFmtKind word cycling plural non sub subPlural natFmtKind intFmtKind
+  digits cards counters brace english times signed modeKind collect fill
+)
 end StrFmt
 
 abbrev NatFmt := StrFmt
 
 namespace NatFmt
 
-@[match_pattern] abbrev natFmtKind (k0 : Option Bool := none) (k1 : Bool := false) : NatFmt :=
+@[match_pattern] abbrev natFmtKind (k0 : Option Bool := Option.none) (k1 : Bool := false) : NatFmt :=
   StrFmt.natFmtKind k0 k1
 @[match_pattern] abbrev digits : NatFmt := StrFmt.digits
 @[match_pattern] abbrev cards : NatFmt := StrFmt.cards
@@ -97,33 +105,42 @@ namespace IntFmt
 end IntFmt
 
 /-- One token of a normalized Oracle line. A hole remembers which argument it is. -/
-inductive Pat where
-  | patKind (k : String ⊕ (Nat × NatFmt) ⊕ (Nat × IntFmt) ⊕ (Nat × StrFmt) ⊕ (Nat × Option Bool) ⊕ (Nat × Nat × Option Bool) := .inl "")
-deriving BEq, Repr, Inhabited
+abbrev Pat := TriggeredAbility.TargetObject
 
-namespace Pat
+namespace _root_.Mtg.Engine.TargetObject
 
-@[match_pattern] abbrev lit (s : String) : Pat := .patKind (.inl s)
-@[match_pattern] abbrev nat (i : Nat) (fmt : NatFmt) : Pat := .patKind (.inr (.inl (i, fmt)))
-@[match_pattern] abbrev int (i : Nat) (fmt : IntFmt) : Pat := .patKind (.inr (.inr (.inl (i, fmt))))
-@[match_pattern] abbrev str (i : Nat) (fmt : StrFmt) : Pat := .patKind (.inr (.inr (.inr (.inl (i, fmt)))))
-@[match_pattern] abbrev ty (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, none))))))
-@[match_pattern] abbrev sup (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, some false))))))
-@[match_pattern] abbrev kind (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, some true))))))
-@[match_pattern] abbrev pt (i j : Nat) (signed : Bool) : Pat := .patKind (.inr (.inr (.inr (.inr (.inr (i, j, some signed))))))
+@[match_pattern] abbrev patKind (subtype : Option String := Option.none) (nOpt : Option Nat := Option.none)
+    (boundOpt : Option Nat := Option.none) (fmtOpt : Option SpellCastKind := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (cat1 : Bool := false) : Pat :=
+  .targetObjectKind Option.none Option.none Option.none subtype nOpt boundOpt fmtOpt Option.none Option.none Option.none alt1 alt2 false false cat1
+
+@[match_pattern] abbrev lit (s : String) : Pat := patKind (some s)
+@[match_pattern] abbrev nat (i : Nat) (fmt : NatFmt) : Pat := patKind Option.none (some i) Option.none (some fmt) false false false
+@[match_pattern] abbrev int (i : Nat) (fmt : IntFmt) : Pat := patKind Option.none (some i) Option.none (some fmt) true false false
+@[match_pattern] abbrev str (i : Nat) (fmt : StrFmt) : Pat := patKind Option.none (some i) Option.none (some fmt) false true false
+@[match_pattern] abbrev ty (i : Nat) : Pat := patKind Option.none (some i) Option.none Option.none false false false
+@[match_pattern] abbrev sup (i : Nat) : Pat := patKind Option.none (some i) Option.none Option.none true false false
+@[match_pattern] abbrev kind (i : Nat) : Pat := patKind Option.none (some i) Option.none Option.none false true false
+@[match_pattern] abbrev pt (i j : Nat) (signed : Bool) : Pat := patKind Option.none (some i) (some j) Option.none signed false true
 /-- `a`/`an`/`N` plus a counter name plus `counter(s)`. `ni` is the count
 slot and `ki` is the `CounterKind` slot. -/
-@[match_pattern] abbrev counterPhrase (ni ki : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inr (ni, ki, none))))))
+@[match_pattern] abbrev counterPhrase (ni ki : Nat) : Pat := patKind Option.none (some ni) (some ki) Option.none false false false
 
+end _root_.Mtg.Engine.TargetObject
+
+namespace Pat
+export _root_.Mtg.Engine.TargetObject (
+  patKind lit nat int str ty sup kind pt counterPhrase
+)
 end Pat
 
 abbrev Mode := IntFmt
 
 namespace Mode
 
-@[match_pattern] abbrev modeKind (isFill : Bool := false) : Mode := .intFmtKind isFill
-@[match_pattern] abbrev collect : Mode := .modeKind false
-@[match_pattern] abbrev fill : Mode := .modeKind true
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : Mode := IntFmt.intFmtKind isFill
+@[match_pattern] abbrev collect : Mode := modeKind false
+@[match_pattern] abbrev fill : Mode := modeKind true
 
 end Mode
 
@@ -148,11 +165,11 @@ def takeNat (n : Nat) : ArgM Nat := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .nat n :: s.vals }
+    set { s with vals := SlotVal.nat n :: s.vals }
     return n
   | _ =>
     match s.vals with
-    | .nat v :: rest =>
+    | SlotVal.nat v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return n
@@ -161,11 +178,11 @@ def takeInt (i : Int) : ArgM Int := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .int i :: s.vals }
+    set { s with vals := SlotVal.int i :: s.vals }
     return i
   | _ =>
     match s.vals with
-    | .int v :: rest =>
+    | SlotVal.int v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return i
@@ -174,11 +191,11 @@ def takeCardType (t : CardType) : ArgM CardType := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .ty t :: s.vals }
+    set { s with vals := SlotVal.ty t :: s.vals }
     return t
   | _ =>
     match s.vals with
-    | .ty v :: rest =>
+    | SlotVal.ty v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return t
@@ -187,11 +204,11 @@ def takeCounter (k : CounterKind) : ArgM CounterKind := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .ctr k :: s.vals }
+    set { s with vals := SlotVal.ctr k :: s.vals }
     return k
   | _ =>
     match s.vals with
-    | .ctr v :: rest =>
+    | SlotVal.ctr v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return k
@@ -200,11 +217,11 @@ def takeSupertype (sup : Supertype) : ArgM Supertype := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .sup sup :: s.vals }
+    set { s with vals := SlotVal.sup sup :: s.vals }
     return sup
   | _ =>
     match s.vals with
-    | .sup v :: rest =>
+    | SlotVal.sup v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return sup
@@ -213,11 +230,11 @@ def takeStr (str : String) : ArgM String := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .str str :: s.vals }
+    set { s with vals := SlotVal.str str :: s.vals }
     return str
   | _ =>
     match s.vals with
-    | .str v :: rest =>
+    | SlotVal.str v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return str
@@ -254,11 +271,11 @@ def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .kind k :: s.vals }
+    set { s with vals := SlotVal.kind k :: s.vals }
     return k
   | _ =>
     match s.vals with
-    | .kind v :: rest =>
+    | SlotVal.kind v :: rest =>
       set { s with vals := rest }
       return v
     | _ => return k
@@ -345,6 +362,7 @@ def takeResolutionGrant (r : @& Resolution) (what : @& TriggeredAbility.TriggerG
       return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
     | .milledPickKind ty _ _ _ _ =>
       return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
+    | _ => return r
   | _, _ => return r
 
 def takeResolutionPlayerResource (r : @& Resolution) : ArgM Resolution := do
@@ -363,6 +381,7 @@ def takeResolutionPlayerResource (r : @& Resolution) : ArgM Resolution := do
         return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
       | .milledPickKind a b _ _ _ =>
         return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
+      | _ => return r
     | .fixed a, .permanentAndGainLife b =>
       return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
     | _, _ => return r
@@ -808,38 +827,38 @@ def singularize (s : String) : String :=
 
 def slotNat (vals : Array SlotVal) (i : Nat) : Nat :=
   match vals[i]? with
-  | some (.nat n) => n
+  | some (SlotVal.nat n) => n
   | _ => 0
 
 def slotInt (vals : Array SlotVal) (i : Nat) : Int :=
   match vals[i]? with
-  | some (.int n) => n
-  | some (.nat n) => n
+  | some (SlotVal.int n) => n
+  | some (SlotVal.nat n) => n
   | _ => 0
 
 def slotStr (vals : Array SlotVal) (i : Nat) : String :=
   match vals[i]? with
-  | some (.str s) => s
+  | some (SlotVal.str s) => s
   | _ => ""
 
 def slotTy (vals : Array SlotVal) (i : Nat) : CardType :=
   match vals[i]? with
-  | some (.ty t) => t
+  | some (SlotVal.ty t) => t
   | _ => default
 
 def slotSup (vals : Array SlotVal) (i : Nat) : Supertype :=
   match vals[i]? with
-  | some (.sup s) => s
+  | some (SlotVal.sup s) => s
   | _ => default
 
 def slotTarget (vals : Array SlotVal) (i : Nat) : EffectTargetKind :=
   match vals[i]? with
-  | some (.kind k) => k
+  | some (SlotVal.kind k) => k
   | _ => .none
 
 def slotCounter (vals : Array SlotVal) (i : Nat) : CounterKind :=
   match vals[i]? with
-  | some (.ctr k) => k
+  | some (SlotVal.ctr k) => k
   | _ => .plusOnePlusOne
 
 /-- True when slot `i` is the count immediately after a counter kind.
@@ -847,7 +866,7 @@ def slotCounter (vals : Array SlotVal) (i : Nat) : CounterKind :=
 def isCounterCount (args : Array SlotVal) (i : Nat) : Bool :=
   i > 0 &&
     match args[i - 1]? with
-    | some (.ctr _) => true
+    | some (SlotVal.ctr _) => true
     | _ => false
 
 def parseNatTok (t : String) : Option Nat :=
@@ -1252,20 +1271,20 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | .cards =>
         match toks with
         | "a" :: "card" :: ts =>
-          match setSlot vals i (.nat 1) seen with
+          match setSlot vals i (SlotVal.nat 1) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | n :: "card" :: ts =>
           match parseNatTok n with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
         | n :: "cards" :: ts =>
           match parseNatTok n with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
@@ -1273,20 +1292,20 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | .counters =>
         match toks with
         | "a" :: "+1/+1" :: "counter" :: ts =>
-          match setSlot vals i (.nat 1) seen with
+          match setSlot vals i (SlotVal.nat 1) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | n :: "+1/+1" :: "counter" :: ts =>
           match parseNatTok n with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
         | n :: "+1/+1" :: "counters" :: ts =>
           match parseNatTok n with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
@@ -1297,7 +1316,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
           if t.startsWith "{" && t.endsWith "}" then
             match parseNatTok ((t.drop 1).dropEnd 1).toString with
             | some k =>
-              match setSlot vals i (.nat k) seen with
+              match setSlot vals i (SlotVal.nat k) seen with
               | some (vals, seen) => go ps ts vals seen
               | none => none
             | none => none
@@ -1306,13 +1325,13 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | .times =>
         match toks with
         | "twice" :: ts =>
-          match setSlot vals i (.nat 2) seen with
+          match setSlot vals i (SlotVal.nat 2) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | t :: "times" :: ts =>
           match parseNatTok t with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
@@ -1322,7 +1341,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
         | t :: ts =>
           match parseNatTok t with
           | some k =>
-            match setSlot vals i (.nat k) seen with
+            match setSlot vals i (SlotVal.nat k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           | none => none
@@ -1337,7 +1356,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
             | .signed => t.startsWith "+" || t.startsWith "-"
             | _ => true
           if ok then
-            match setSlot vals i (.int k) seen with
+            match setSlot vals i (SlotVal.int k) seen with
             | some (vals, seen) => go ps ts vals seen
             | none => none
           else none
@@ -1348,13 +1367,13 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
         let got := toks.take n
         if got.length != n then none
         else
-          match setSlot vals i (.str (build got)) seen with
+          match setSlot vals i (SlotVal.str (build got)) seen with
           | some (vals, seen) => some (vals, toks.drop n, seen)
           | none => none
       let takeKnown (found : Option (String × Nat)) : Option (Array SlotVal × List Nat) :=
         match found with
         | some (name, n) =>
-          match setSlot vals i (.str name) seen with
+          match setSlot vals i (SlotVal.str name) seen with
           | some (vals, seen) => go ps (toks.drop n) vals seen
           | none => none
         | none => none
@@ -1368,14 +1387,14 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | .plural =>
         match toks with
         | t :: ts =>
-          match setSlot vals i (.str (singularize t)) seen with
+          match setSlot vals i (SlotVal.str (singularize t)) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | [] => none
       | .cycling n =>
         match matchCyclingSubtype toks with
         | some (name, w) =>
-          match setSlot vals i (.str name) seen with
+          match setSlot vals i (SlotVal.str name) seen with
           | some (vals, seen) => go ps (toks.drop w) vals seen
           | none => none
         | none =>
@@ -1391,14 +1410,14 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | _ =>
         match matchNonSubtype toks with
         | some (name, n) =>
-          match setSlot vals i (.str name) seen with
+          match setSlot vals i (SlotVal.str name) seen with
           | some (vals, seen) => go ps (toks.drop n) vals seen
           | none => none
         | none =>
           match toks with
           | t :: ts =>
             if t.startsWith "non-" then
-              match setSlot vals i (.str (capFirst (t.drop "non-".length).toString)) seen with
+              match setSlot vals i (SlotVal.str (capFirst (t.drop "non-".length).toString)) seen with
               | some (vals, seen) => go ps ts vals seen
               | none => none
             else none
@@ -1408,7 +1427,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | t :: ts =>
         match CardType.ofOracle? t with
         | some ty =>
-          match setSlot vals i (.ty ty) seen with
+          match setSlot vals i (SlotVal.ty ty) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | none => none
@@ -1418,7 +1437,7 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | t :: ts =>
         match Supertype.ofOracle? t with
         | some sup =>
-          match setSlot vals i (.sup sup) seen with
+          match setSlot vals i (SlotVal.sup sup) seen with
           | some (vals, seen) => go ps ts vals seen
           | none => none
         | none => none
@@ -1426,17 +1445,17 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
     | .kind i :: ps =>
       match fromNounPrefix toks with
       | some (k, n) =>
-        match setSlot vals i (.kind k) seen with
+        match setSlot vals i (SlotVal.kind k) seen with
         | some (vals, seen) => go ps (toks.drop n) vals seen
         | none => none
       | none => none
     | .counterPhrase ni ki :: ps =>
       match CounterKind.matchPhrase toks with
       | some (n, k, w) =>
-        match setSlot vals ni (.nat n) seen with
+        match setSlot vals ni (SlotVal.nat n) seen with
         | none => none
         | some (vals, seen) =>
-          match setSlot vals ki (.ctr k) seen with
+          match setSlot vals ki (SlotVal.ctr k) seen with
           | some (vals, seen) => go ps (toks.drop w) vals seen
           | none => none
       | none => none
@@ -1451,16 +1470,17 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
               if signed then a.startsWith "+" || a.startsWith "-" else
                 !a.startsWith "+"
             if ok then
-              match setSlot vals i (.int p) seen with
+              match setSlot vals i (SlotVal.int p) seen with
               | none => none
               | some (vals, seen) =>
-                match setSlot vals j (.int q) seen with
+                match setSlot vals j (SlotVal.int q) seen with
                 | some (vals, seen) => go ps ts vals seen
                 | none => none
             else none
           | _, _ => none
         | _ => none
       | [] => none
+    | _ => none
   go pats toks vals seen
 
 def matchPats (pats : List Pat) (toks : List String) (vals : Array SlotVal) :
@@ -1513,6 +1533,7 @@ def patKey (pats : List (List Pat)) : String :=
     | .kind _ => "$k"
     | .pt _ _ signed => if signed then "+/+" else "#/#"
     | .counterPhrase _ _ => "#ctr"
+    | _ => ""
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
 
 def renderHit (h : Hit) (vals : Array SlotVal) : String :=
@@ -1526,6 +1547,7 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
   | .counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
   | .lit s => s
+  | _ => ""
 
 /-- Every way an argument can be spelled, independent of the surrounding line. -/
 def allNeedles (args : Array SlotVal) : List Hit :=

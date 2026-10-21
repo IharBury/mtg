@@ -25,6 +25,7 @@ inductive SpellCastKind where
       (subtypeOpt : Option String := Option.none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
+      (k0Opt : Option Bool := Option.none)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace SpellCastKind
@@ -88,19 +89,32 @@ namespace AbilityCastKind
 
 end AbilityCastKind
 
+/-- Target-restriction, permanent, graveyard/exile, library/hand, sacrifice/stack, milled-card, spell-cost, and enter-with object selector (CR 109 / CR 115 / CR 400). -/
+inductive TargetObject where
+  /-- Unified object selector leaf kind across target, battlefield, graveyard/exile, library/hand, sacrifice/stack, milled-to-hand, spell-cost, and entering modifications. -/
+  | targetObjectKind (tyOpt : Option CardType := Option.none) (ty2Opt : Option CardType := Option.none)
+      (sOpt : Option Supertype := Option.none) (subtype : Option String := Option.none)
+      (nOpt : Option Nat := Option.none) (boundOpt : Option Nat := Option.none)
+      (whichOpt : Option SpellCastKind := Option.none)
+      (typesOpt : Option (Array String) := Option.none)
+      (kOpt : Option Keywords := Option.none) (kindOpt : Option CounterKind := Option.none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+      (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false) (cat4 : Bool := false)
+      (cat5 : Bool := false)
+deriving Repr, Inhabited, BEq
+
 /-- Which milled cards `SpellResolution.millThenPut` puts into hand, or which spells cost less. -/
-inductive MilledToHand where
-  /-- Up to one (`all = false`), every (`all = true`), or up to `max` (`max = some max`) milled card(s) of type `a` or `b`, or spells of type `a` / supertype `s`. -/
-  | milledPickKind (a : CardType := .creature) (b : CardType := .land) (all : Bool := false)
-      (max : Option Nat := none) (s : Option Supertype := none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev MilledToHand := TargetObject
 
 namespace MilledToHand
 
+@[match_pattern] abbrev milledPickKind (a : CardType := .creature) (b : CardType := .land) (all : Bool := false)
+    (max : Option Nat := Option.none) (s : Option Supertype := Option.none) : MilledToHand :=
+  .targetObjectKind (some a) (some b) s Option.none max Option.none Option.none Option.none Option.none Option.none all
 @[match_pattern] abbrev twoTypes (a b : CardType) (all : Bool := false) : MilledToHand :=
-  .milledPickKind a b all none none
+  .milledPickKind a b all Option.none Option.none
 @[match_pattern] abbrev upTo (max : Nat) (ty : CardType) : MilledToHand :=
-  .milledPickKind ty .creature false (some max) none
+  .milledPickKind ty .creature false (some max) Option.none
 @[match_pattern] abbrev oneOf (a b : CardType) : MilledToHand := .twoTypes a b false
 @[match_pattern] abbrev allOf (a b : CardType) : MilledToHand := .twoTypes a b true
 
@@ -111,12 +125,17 @@ abbrev SpellCostLess := MilledToHand
 
 namespace SpellCostLess
 
-@[match_pattern] abbrev spellCostLessKind (ty : CardType := .creature) (s : Option Supertype := none) : SpellCostLess :=
-  .milledPickKind ty .creature false none s
-@[match_pattern] abbrev cardType (ty : CardType) : SpellCostLess := .spellCostLessKind ty none
+@[match_pattern] abbrev spellCostLessKind (ty : CardType := .creature) (s : Option Supertype := Option.none) : SpellCostLess :=
+  .milledPickKind ty .creature false Option.none s
+@[match_pattern] abbrev cardType (ty : CardType) : SpellCostLess := .spellCostLessKind ty Option.none
 @[match_pattern] abbrev supertype (s : Supertype) : SpellCostLess := .spellCostLessKind .creature (some s)
 
 end SpellCostLess
+
+namespace TargetObject
+export MilledToHand (milledPickKind twoTypes upTo oneOf allOf)
+export SpellCostLess (spellCostLessKind cardType supertype)
+end TargetObject
 
 /-- Which permanents `SharedTrigger.plusOneEachYouControl` puts a counter on, or counter-removal / fight mode. -/
 abbrev YouControlPlusOne := SpellCastKind
@@ -219,31 +238,25 @@ def toNat : TriggerReflexiveKind → Nat
 end TriggerReflexiveKind
 
 /-- Target-restriction and announced-target object selectors (CR 115). -/
-inductive TargetObject where
-  /-- Target-restriction or announced-target object selector (CR 115). -/
-  | targetObjectKind (tyOpt : Option CardType := none) (subtype : Option String := none)
-      (index : Option Nat := none) (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (eachOrSpecial : Bool := false) (permanentFlag : Bool := false)
-      (typedOrIndexed : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TargetObject := Mtg.Engine.TargetObject
 
 namespace TargetObject
 
-@[match_pattern] abbrev typedSubtypeOrIndexedTarget (tyOpt : Option CardType := none)
-    (subtype : Option String := none) (index : Option Nat := none) : TargetObject :=
-  .targetObjectKind tyOpt subtype index false false false false false true
+@[match_pattern] abbrev typedSubtypeOrIndexedTarget (tyOpt : Option CardType := Option.none)
+    (subtype : Option String := Option.none) (index : Option Nat := Option.none) : TargetObject :=
+  .targetObjectKind tyOpt Option.none Option.none subtype index Option.none Option.none Option.none Option.none Option.none false false false false false false true
 @[match_pattern] abbrev ofCardType (ty : CardType := .creature) : TargetObject :=
-  .typedSubtypeOrIndexedTarget (some ty) none none
+  .typedSubtypeOrIndexedTarget (some ty) Option.none Option.none
 @[match_pattern] abbrev anotherSubtype (subtype : String) : TargetObject :=
-  .typedSubtypeOrIndexedTarget none (some subtype) none
+  .typedSubtypeOrIndexedTarget Option.none (some subtype) Option.none
 @[match_pattern] abbrev targetAt (index : Nat) : TargetObject :=
-  .typedSubtypeOrIndexedTarget none none (some index)
+  .typedSubtypeOrIndexedTarget Option.none Option.none (some index)
 @[match_pattern] abbrev presenceOrAnnouncedTarget (alt1 : Bool := false) (alt2 : Bool := false) (announced : Bool := false) : TargetObject :=
-  .targetObjectKind none none none alt1 alt2 announced false false false
+  .targetObjectKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 announced false false false false
 @[match_pattern] abbrev eachPairOrSpecialTarget (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) : TargetObject :=
-  .targetObjectKind none none none alt1 alt2 special true false false
+  .targetObjectKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 special false true false false
 @[match_pattern] abbrev permanent (byYou : Bool := false) : TargetObject :=
-  .targetObjectKind none none none byYou false false false true false
+  .targetObjectKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none Option.none byYou false false false false true false
 @[match_pattern] abbrev targetPresence (ifPresent : Bool := false) (laterOrNextTurn : Bool := false) : TargetObject :=
   .presenceOrAnnouncedTarget ifPresent laterOrNextTurn false
 @[match_pattern] abbrev announcedTarget (optional : Bool := false) (allOrFirstYours : Bool := false) : TargetObject :=
@@ -256,16 +269,16 @@ namespace TargetObject
 end TargetObject
 
 /-- Permanent selectors on the battlefield (CR 110 / CR 403). -/
-inductive BattlefieldObject where
-  /-- Battlefield permanent selector kind across enchanted/combat, other/noted, source/group, attackers/pair, filtered, excluded/all, sacrifice/chosen-filter, cause/subtype, and card-type/plus-one permanents. -/
-  | battlefieldObjectKind (subtype : Option String := none) (tyOpt : Option CardType := none)
-      (whichOpt : Option YouControlPlusOne := none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
-      (subtypeOrCauseFlag : Bool := false) (typeOrPlusOneFlag : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev BattlefieldObject := TargetObject
 
 namespace BattlefieldObject
+
+@[match_pattern] abbrev battlefieldObjectKind (subtype : Option String := Option.none) (tyOpt : Option CardType := Option.none)
+    (whichOpt : Option YouControlPlusOne := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
+    (subtypeOrCauseFlag : Bool := false) (typeOrPlusOneFlag : Bool := false) : BattlefieldObject :=
+  .targetObjectKind tyOpt Option.none Option.none subtype Option.none Option.none whichOpt Option.none Option.none Option.none alt1 alt2 alt3 false cat1 cat2 cat3 subtypeOrCauseFlag typeOrPlusOneFlag
 
 @[match_pattern] abbrev subtypeOrCause (subtype : Option String := none) (nonSubtype : Bool := false)
     (withOpponents : Bool := false) (isCause : Bool := true) : BattlefieldObject :=
@@ -327,14 +340,14 @@ namespace BattlefieldObject
 end BattlefieldObject
 
 /-- Card selectors in graveyards, exile, or noted across zones (CR 404 / CR 406). -/
-inductive GraveyardExileObject where
-  /-- Graveyard, discarded, linked exile, noted, copy-target, card-group, subtype, or MV/count-bounded selector. -/
-  | graveyardExileKind (subtype : Option String := none) (nOpt : Option Nat := none) (tyOpt : Option CardType := none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (notedOrCopy : Bool := false) (cardGroup : Bool := false) (paramKind : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev GraveyardExileObject := TargetObject
 
 namespace GraveyardExileObject
+
+@[match_pattern] abbrev graveyardExileKind (subtype : Option String := Option.none) (nOpt : Option Nat := Option.none) (tyOpt : Option CardType := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (notedOrCopy : Bool := false) (cardGroup : Bool := false) (paramKind : Bool := false) : GraveyardExileObject :=
+  .targetObjectKind tyOpt Option.none Option.none subtype nOpt Option.none Option.none Option.none Option.none Option.none alt1 alt2 alt3 alt4 notedOrCopy cardGroup paramKind
 
 @[match_pattern] abbrev paramGraveyardObject (subtype : Option String := none) (milledOnly : Bool := false)
     (nOpt : Option Nat := none) (creatureOnly : Bool := true) (orTeamwork : Bool := false) (instants : Bool := false)
@@ -364,27 +377,26 @@ namespace GraveyardExileObject
 end GraveyardExileObject
 
 /-- Card selectors in libraries and hands (CR 401 / CR 402). -/
-inductive LibraryHandObject where
-  /-- Hand, revealed, chosen, top/typed, or subtype/array card selector in libraries and hands (CR 401 / CR 402). -/
-  | libraryHandKind (count : Option Nat := none) (s : Option Supertype := none)
-      (tyOpt : Option CardType := none) (unlessCount : Option Nat := none)
-      (subtypeOpt : Option String := none) (boundOpt : Option Nat := none) (typesOpt : Option (Array String) := none)
-      (untapAt : Option Nat := none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (cardOrSpecial : Bool := false) (pilesOrLoot : Bool := false)
-      (topOrTypedFlag : Bool := false) (subtypeOrArrayFlag : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev LibraryHandObject := TargetObject
 
 namespace LibraryHandObject
+
+@[match_pattern] abbrev libraryHandKind (nOpt : Option Nat := Option.none) (s : Option Supertype := Option.none)
+    (tyOpt : Option CardType := Option.none) (boundOpt : Option Nat := Option.none)
+    (subtypeOpt : Option String := Option.none) (typesOpt : Option (Array String) := Option.none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (cardOrSpecial : Bool := false) (pilesOrLoot : Bool := false)
+    (topOrTypedFlag : Bool := false) (subtypeOrArrayFlag : Bool := false) : LibraryHandObject :=
+  .targetObjectKind tyOpt Option.none s subtypeOpt nOpt boundOpt Option.none typesOpt Option.none Option.none alt1 alt2 alt3 alt4 cardOrSpecial pilesOrLoot topOrTypedFlag subtypeOrArrayFlag
 
 @[match_pattern] abbrev topOrTypedCard (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false)
     (s : Option Supertype := none) (tyOpt : Option CardType := none) (fromHandOnly : Bool := false)
     (unlessCount : Option Nat := none) (isTyped : Bool := false) : LibraryHandObject :=
-  .libraryHandKind count s tyOpt unlessCount none none none none opponentTop byPowerOrLands fromHandOnly isTyped false false true false
+  .libraryHandKind count s tyOpt unlessCount none none opponentTop byPowerOrLands fromHandOnly isTyped false false true false
 @[match_pattern] abbrev subtypeOrArrayLibraryHand (subtypeOpt : Option String := none) (boundOpt : Option Nat := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (search : Bool := false)
     (typesOpt : Option (Array String) := none) (untapAt : Option Nat := none) (isArray : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none subtypeOpt boundOpt typesOpt untapAt alt1 alt2 search isArray false false false true
+  .libraryHandKind untapAt none none boundOpt subtypeOpt typesOpt alt1 alt2 search isArray false false false true
 @[match_pattern] abbrev topOrLandsCount (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false) : LibraryHandObject :=
   .topOrTypedCard count opponentTop byPowerOrLands none none false none false
 @[match_pattern] abbrev typedLibraryOrHandCard (s : Option Supertype := some .legendary) (ty : CardType := .creature) (fromHandOnly : Bool := false) : LibraryHandObject :=
@@ -396,11 +408,11 @@ namespace LibraryHandObject
 @[match_pattern] abbrev typesOrSubtypesArray (types : Array String) (untapAt : Option Nat := none) : LibraryHandObject :=
   .subtypeOrArrayLibraryHand none none false false false (some types) untapAt true
 @[match_pattern] abbrev handRevealedOrChosenObject (alt1 : Bool := false) (alt2 : Bool := false) (chosenOrBasic : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none none none none alt1 alt2 chosenOrBasic false false false false false
+  .libraryHandKind none none none none none none alt1 alt2 chosenOrBasic false false false false false
 @[match_pattern] abbrev handCardOrLibrarySpecial (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none none none none alt1 alt2 special false true false false false
+  .libraryHandKind none none none none none none alt1 alt2 special false true false false false
 @[match_pattern] abbrev pilesOrDrawDiscard (drawDiscard : Bool := false) (lootX : Bool := false) (flag : Bool := false) : LibraryHandObject :=
-  .libraryHandKind none none none none none none none none drawDiscard lootX flag false false true false false
+  .libraryHandKind none none none none none none drawDiscard lootX flag false false true false false
 @[match_pattern] abbrev handOrRevealedObject (revealed : Bool := false) (cardFromHandOrRandom : Bool := false) : LibraryHandObject :=
   .handRevealedOrChosenObject revealed cardFromHandOrRandom false
 @[match_pattern] abbrev chosenNonlandOrBasic (basicLand : Bool := false) (flag : Bool := false) : LibraryHandObject :=
@@ -421,14 +433,14 @@ namespace LibraryHandObject
 end LibraryHandObject
 
 /-- Sacrifice-choice and stack object selectors (CR 405 / CR 701.17). -/
-inductive SacrificeStackObject where
-  /-- Chosen creature (`false, false`), sacrifice target or stack reference (`true, false`), stack spell or ability (`false, true`), or sacrificed source (`sourceHow = some how`). -/
-  | sacrificeOrStackKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (targetOrRef : Bool := false) (spellOrAbility : Bool := false)
-      (sourceHow : Option SacrificeSourceHow := none)
-deriving Repr, Inhabited, BEq
+abbrev SacrificeStackObject := TargetObject
 
 namespace SacrificeStackObject
+
+@[match_pattern] abbrev sacrificeOrStackKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (targetOrRef : Bool := false) (spellOrAbility : Bool := false)
+    (sourceHow : Option SacrificeSourceHow := Option.none) : SacrificeStackObject :=
+  .targetObjectKind Option.none Option.none Option.none Option.none Option.none Option.none sourceHow Option.none Option.none Option.none alt1 alt2 alt3 false targetOrRef spellOrAbility
 
 @[match_pattern] abbrev sacrificedSource (how : SacrificeSourceHow := .isSacrificed) : SacrificeStackObject :=
   .sacrificeOrStackKind false false false false false (some how)
@@ -1301,7 +1313,7 @@ namespace AbilitySelector
 
 end AbilitySelector
 
-/-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b), or mode/library/grant modifier. -/
+/-- Printed cost reduction on a spell or activated ability (CR 601.2f / CR 602.2b), or mode/library/grant/action modifier. -/
 inductive CostReduction where
   | costReductionKind (nOpt : Option Nat := Option.none) (condOpt : Option ConditionSelector := Option.none)
       (amountOpt : Option NumberSelector := Option.none) (amount2Opt : Option NumberSelector := Option.none)
@@ -1310,6 +1322,7 @@ inductive CostReduction where
       (cat1 : Bool := false) (cat2 : Bool := false)
       (indicesOpt : Option (List Nat) := Option.none)
       (fromHandOpt : Option AbilitySelector := Option.none)
+      (whoOpt : Option ObjectSelector := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace CostReduction
@@ -1457,14 +1470,18 @@ namespace TriggerRemoveWhat
 
 end TriggerRemoveWhat
 
-/-- What `TriggerResolution.putCounters` puts. `ofKind` uses its `n`. -/
+/-- What `TriggerResolution.putCounters` puts, or resolution follow-up/note for tokens, exile, mill, library placement, or battlefield entry. -/
 inductive CounterSelector where
-  /-- `n` counters of `kind` / remove counters (`kindOpt = some kind` or `remove = some what`), or noted/special/copied/dynamic/proliferate counters (`kindOpt = none && remove = none`). -/
+  /-- Unified counter selector, exile/token/mill/library-place how/note, or put-onto-battlefield note. -/
   | counterSelectorKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (copied : Bool := false) (dynamic : Bool := false)
-      (proliferate : Option NumberSelector := none)
-      (kindOpt : Option CounterKind := none) (nOpt : Option Nat := none)
-      (remove : Option TriggerRemoveWhat := none)
+      (proliferate : Option NumberSelector := Option.none)
+      (kindOpt : Option CounterKind := Option.none) (nOpt : Option Nat := Option.none)
+      (remove : Option TriggerRemoveWhat := Option.none)
+      (subtype : Option String := Option.none)
+      (toHand : Option MilledToHand := Option.none)
+      (putNOpt : Option Nat := Option.none)
+      (modsOpt : Option (List TargetObject) := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace CounterSelector
@@ -1498,18 +1515,17 @@ namespace CounterSelector
 @[match_pattern] abbrev missingKeywordsFromTarget : CounterSelector := .notedOrSpecialCounters true false true
 @[match_pattern] abbrev minusOneGreatestGraveyardMv : CounterSelector := .notedOrSpecialCounters false true true
 @[match_pattern] abbrev stunRemovedLoyalty : CounterSelector := .notedOrSpecialCounters true true true
+@[match_pattern] abbrev exileHowKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (duration : Bool := false) (playUntilFlag : Bool := false)
+    (followupCount : Option Nat := Option.none) (subtype : Option String := Option.none)
+    (alt3 : Bool := false) (toHand : Option MilledToHand := Option.none)
+    (putNOpt : Option Nat := Option.none) : CounterSelector :=
+  .counterSelectorKind alt1 alt2 alt3 duration playUntilFlag Option.none Option.none followupCount Option.none subtype toHand putNOpt Option.none
 
 end CounterSelector
 
 /-- How long `TriggerResolution.exile` lasts, or resolution follow-up/note for tokens, exile, mill, or library placement. -/
-inductive TriggerExileHow where
-  /-- Unified trigger step follow-up, duration, or placement kind. -/
-  | exileHowKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (duration : Bool := false) (playUntilFlag : Bool := false)
-      (followupCount : Option Nat := Option.none) (subtype : Option String := Option.none)
-      (alt3 : Bool := false) (toHand : Option MilledToHand := Option.none)
-      (putNOpt : Option Nat := Option.none)
-deriving Repr, Inhabited, BEq
+abbrev TriggerExileHow := CounterSelector
 
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
 abbrev TriggerTokenNote := TriggerExileHow
@@ -1701,14 +1717,14 @@ namespace TriggerReturnNote
 end TriggerReturnNote
 
 /-- How a card `TriggerResolution.put` changes as it enters. -/
-inductive TriggerEnterWith where
-  /-- Lose all abilities / enter attacking / gain `subtype` (`kOpt = none && kindOpt = none`), or gain `k` keywords (`kOpt = some k`) / put `n` counters of `kind` (`kindOpt = some kind`). -/
-  | enterWithKind (attacking : Bool := false) (subtype : Option String := none)
-      (kOpt : Option Keywords := none) (kindOpt : Option CounterKind := none)
-      (nOpt : Option Nat := none) (asEnters : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerEnterWith := TargetObject
 
 namespace TriggerEnterWith
+
+@[match_pattern] abbrev enterWithKind (attacking : Bool := false) (subtype : Option String := Option.none)
+    (kOpt : Option Keywords := Option.none) (kindOpt : Option CounterKind := Option.none)
+    (nOpt : Option Nat := Option.none) (asEnters : Bool := false) : TriggerEnterWith :=
+  .targetObjectKind Option.none Option.none Option.none subtype nOpt Option.none Option.none Option.none kOpt kindOpt attacking asEnters
 
 @[match_pattern] abbrev enterStateOrSubtype (attacking : Bool := false) (subtype : Option String := none) : TriggerEnterWith :=
   .enterWithKind attacking subtype none none none false
@@ -1740,18 +1756,18 @@ end TriggerPutHow
 
 /-- What a later step of `TriggerResolution.put` can read, or how the
 card enters. -/
-inductive TriggerPutNote where
-  /-- Nothing (`false, false`), for attach (`true, false`), as Food (`false, true`), or entering with `mods` (`isEntering = true`). -/
-  | putNoteKind (forAttach : Bool := false) (asFood : Bool := false)
-      (mods : List TriggerEnterWith := []) (isEntering : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerPutNote := CounterSelector
 
 namespace TriggerPutNote
 
+@[match_pattern] abbrev putNoteKind (forAttach : Bool := false) (asFood : Bool := false)
+    (modsOpt : Option (List TriggerEnterWith) := Option.none) : TriggerPutNote :=
+  .counterSelectorKind forAttach asFood false false false Option.none Option.none Option.none Option.none Option.none Option.none Option.none modsOpt
+
 @[match_pattern] abbrev putRecord (forAttach : Bool := false) (asFood : Bool := false) : TriggerPutNote :=
-  .putNoteKind forAttach asFood [] false
+  .putNoteKind forAttach asFood Option.none
 @[match_pattern] abbrev entering (mods : List TriggerEnterWith) : TriggerPutNote :=
-  .putNoteKind false false mods true
+  .putNoteKind false false (some mods)
 @[match_pattern] abbrev none : TriggerPutNote := .putRecord false false
 @[match_pattern] abbrev forAttach : TriggerPutNote := .putRecord true false
 @[match_pattern] abbrev asFood : TriggerPutNote := .putRecord false true
@@ -1865,13 +1881,13 @@ Can't be blocked this turn except by creatures with haste is
 The announced permanent can't become untapped for as long as you control
 the source is `.untapWhileYouControl`. An opponent's creature is the only
 recipient. -/
-inductive ActionSelector where
-  /-- Combat blocking restriction (`!stateOrSpell`) or untap/spell-cast/counter/attack restriction (`stateOrSpell`) on `who`. -/
-  | actionRestrictionKind (who : ObjectSelector := .target)
-      (alt1 : Bool := false) (alt2 : Bool := false) (stateOrSpell : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev ActionSelector := CostReduction
 
 namespace ActionSelector
+
+@[match_pattern] abbrev actionRestrictionKind (who : ObjectSelector := .target)
+    (alt1 : Bool := false) (alt2 : Bool := false) (stateOrSpell : Bool := false) : ActionSelector :=
+  .costReductionKind Option.none Option.none Option.none Option.none Option.none alt1 alt2 stateOrSpell false false Option.none Option.none (some who)
 
 @[match_pattern] abbrev combatRestriction (who : ObjectSelector := .target) (exceptHaste : Bool := false) (canBlockOrMostLife : Bool := false) : ActionSelector :=
   .actionRestrictionKind who exceptHaste canBlockOrMostLife false
@@ -1888,15 +1904,23 @@ namespace ActionSelector
 
 end ActionSelector
 
-/-- Layer 4 type-changing and animation grants (CR 613.1d). -/
+/-- Layer 4 type-changing and animation grants (CR 613.1d), Layer 6 ability/keyword/restriction grants (CR 613.1f), and one-shot keyword actions / permanent state changes (CR 701 / CR 702 / CR 724). -/
 inductive Layer4TypeGrant where
-  /-- Additional type / subtype / animate source land (`!isPtCreature`), or become a creature with base P/T and keywords (`isPtCreature = true`). -/
+  /-- Unified Layer 4 type/animation, Layer 6 ability/keyword/restriction, or one-shot action/state grant. -/
   | layer4TypeKind (artifactCreature : Bool := false) (flag : Bool := false)
-      (subtype : Option String := none) (ptNatOpt : Option (Nat × Nat) := none)
+      (subtype : Option String := Option.none) (ptNatOpt : Option (Nat × Nat) := Option.none)
       (flying : Bool := false) (firstStrike : Bool := false) (isAnimateLand : Bool := false)
-      (ptIntOpt : Option (Int × Int) := none) (kwOpt : Option String := none)
-      (typesOpt : Option (Array String) := none) (kOpt : Option Keywords := none)
+      (ptIntOpt : Option (Int × Int) := Option.none) (kwOpt : Option String := Option.none)
+      (typesOpt : Option (Array String) := Option.none) (kOpt : Option Keywords := Option.none)
       (isPtCreature : Bool := false)
+      (lost : Option AbilitySelector := Option.none)
+      (optionsOpt : Option (List Nat) := Option.none)
+      (cantOpt : Option ActionSelector := Option.none)
+      (natN : Option Nat := Option.none) (paidOpt : Option Nat := Option.none)
+      (empowerOpt : Option NumberSelector := Option.none)
+      (fightHow : Option TriggerFightHow := Option.none)
+      (recruitOpt : Option PlayerSelector := Option.none)
+      (hostOpt : Option ObjectSelector := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace Layer4TypeGrant
@@ -1923,15 +1947,15 @@ namespace Layer4TypeGrant
 end Layer4TypeGrant
 
 /-- Layer 6 ability-adding, keyword, ability-removing, and restriction grants (CR 613.1f). -/
-inductive Layer6AbilityGrant where
-  /-- Granted/lost ability (`kOpt = none && optionsOpt = none && cantOpt = none`), keywords (`kOpt = some k`), choice (`optionsOpt = some options`), or prevent `action` (`cantOpt = some action`, CR 613.1f). -/
-  | layer6AbilityKind (alt1 : Bool := false) (alt2 : Bool := false) (combatOrCast : Bool := false)
-      (lost : Option AbilitySelector := none)
-      (kOpt : Option Keywords := none) (optionsOpt : Option (List Nat) := none)
-      (cantOpt : Option ActionSelector := none)
-deriving Repr, Inhabited, BEq
+abbrev Layer6AbilityGrant := Layer4TypeGrant
 
 namespace Layer6AbilityGrant
+
+@[match_pattern] abbrev layer6AbilityKind (alt1 : Bool := false) (alt2 : Bool := false) (combatOrCast : Bool := false)
+    (lost : Option AbilitySelector := Option.none)
+    (kOpt : Option Keywords := Option.none) (optionsOpt : Option (List Nat) := Option.none)
+    (cantOpt : Option ActionSelector := Option.none) : Layer6AbilityGrant :=
+  .layer4TypeKind alt1 alt2 Option.none Option.none combatOrCast false false Option.none Option.none Option.none kOpt false lost optionsOpt cantOpt
 
 @[match_pattern] abbrev grantedOrLostAbility (alt1 : Bool := false) (alt2 : Bool := false) (combatOrCast : Bool := false)
     (lost : Option AbilitySelector := none) : Layer6AbilityGrant :=
@@ -2023,15 +2047,15 @@ namespace RuleEffectGrant
 end RuleEffectGrant
 
 /-- One-shot keyword actions and permanent state changes (CR 701 / CR 702 / CR 724). -/
-inductive ActionStateGrant where
-  /-- Permanent/target/keyword/numeric action (`empowerOpt = none && fightHow = none && recruitOpt = none && hostOpt = none`), empower/fight (`empowerOpt = some n` or `fightHow = some how`), or recruit/attach (`recruitOpt = some who` or `hostOpt = some host`). -/
-  | actionStateKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (keywordOrSpecial : Bool := false) (natN : Option Nat := none) (paidOpt : Option Nat := none)
-      (empowerOpt : Option NumberSelector := none) (fightHow : Option TriggerFightHow := none)
-      (recruitOpt : Option PlayerSelector := none) (hostOpt : Option ObjectSelector := none)
-deriving Repr, Inhabited, BEq
+abbrev ActionStateGrant := Layer4TypeGrant
 
 namespace ActionStateGrant
+
+@[match_pattern] abbrev actionStateKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (keywordOrSpecial : Bool := false) (natN : Option Nat := Option.none) (paidOpt : Option Nat := Option.none)
+    (empowerOpt : Option NumberSelector := Option.none) (fightHow : Option TriggerFightHow := Option.none)
+    (recruitOpt : Option PlayerSelector := Option.none) (hostOpt : Option ObjectSelector := Option.none) : ActionStateGrant :=
+  .layer4TypeKind alt1 alt2 Option.none Option.none alt3 alt4 keywordOrSpecial Option.none Option.none Option.none Option.none alt4 Option.none Option.none Option.none natN paidOpt empowerOpt fightHow recruitOpt hostOpt
 
 @[match_pattern] abbrev natActionState (n : Nat) (paidOpt : Option Nat := none) (reflexive : Bool := false) : ActionStateGrant :=
   .actionStateKind reflexive false false false false (some n) paidOpt none none none none

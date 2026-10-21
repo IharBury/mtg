@@ -132,7 +132,7 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false
 
-def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
@@ -459,7 +459,7 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : FraChoice) (answer 
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
   | _, _ => throw "Nothing to choose now"
 
-def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
   match choice, answer with
   | .maySacrificeThese n ids, .objects chosen =>
@@ -629,6 +629,11 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : FraChoice) (answer 
   | .nickFuryMayTransform _ rest, .decline =>
     return (g.putRestOnBottomRandom p rest).finishFraChoice
   | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
+  | _, _ => answerFraChoicePart1 g p choice answer
+
+def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .orderLibraryBottom ids, .objects ordered =>
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
         !ordered.all (ids.contains ·) then
@@ -801,9 +806,9 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : FraChoice) (answer 
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     return (g.beginSacDamagers controller rest).finishFraChoice
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
-  | _, _ => answerFraChoicePart1 g p choice answer
+  | _, _ => answerFraChoicePart2 g p choice answer
 
-def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : FraChoice) (answer : FraAnswer) :
+def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
   match choice, answer with
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
@@ -993,6 +998,11 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : FraChoice) (answer 
         acc + (g.object! id).printed.manaValue) 0
     return (g.loseLife p mv).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
+  | _, _ => answerFraChoicePart2b g p choice answer
+
+def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -1156,19 +1166,19 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : FraChoice) (answer 
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
   | _, _ =>
-    answerFraChoicePart2 g p choice answer
+    answerFraChoicePart3 g p choice answer
 
 def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
   let .fraChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
     throw s!"Only {(g.player q).name} may choose"
   let g := { g with pending := .none }
-  answerFraChoicePart3 g p choice answer
+  answerFraChoicePart4 g p choice answer
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
-def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
+def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
     .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)

@@ -16,7 +16,7 @@ abbrev Format := EntersTappedRule
 namespace Format
 
 @[match_pattern] abbrev formatKind (isConstructed : Bool := false) : Format :=
-  .entersTappedKind .teamwork 0 isConstructed false false false
+  .entersTappedKind Option.none Option.none isConstructed false false false
 /-- CR 100.2a: minimum 60, four-of except basic lands. -/
 @[match_pattern] abbrev constructed : Format := .formatKind true
 /-- CR 100.2b: minimum 40, duplicates unrestricted. -/
@@ -39,14 +39,18 @@ namespace EntersTappedRule
 export Format (formatKind constructed limited)
 end EntersTappedRule
 
+namespace CardStaticRule
+export Format (formatKind constructed limited)
+end CardStaticRule
+
 abbrev DeckError := CardKeywordRule
 
 namespace DeckError
 
 @[match_pattern] abbrev tooSmall (got required : Nat) : DeckError :=
-  .cardKeywordRuleKind got "" #[] ManaCost.empty required false false false false false false
+  .cardKeywordRuleKind (some got) Option.none Option.none Option.none (some required) false false false false false false
 @[match_pattern] abbrev tooManyCopies (cardName : String) (got : Nat) : DeckError :=
-  .cardKeywordRuleKind got cardName #[] ManaCost.empty 0 true false false false false false
+  .cardKeywordRuleKind (some got) (some cardName) Option.none Option.none Option.none true false false false false false
 
 def message : DeckError → String
   | .tooSmall got required =>
@@ -63,6 +67,10 @@ end DeckError
 namespace CardKeywordRule
 export DeckError (tooSmall tooManyCopies)
 end CardKeywordRule
+
+namespace CardStaticRule
+export DeckError (tooSmall tooManyCopies)
+end CardStaticRule
 
 /-- Count copies of each English name. -/
 def countNames (cards : Array CardDef) : List (String × Nat) :=

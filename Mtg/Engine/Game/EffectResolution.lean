@@ -384,7 +384,7 @@ def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
 
 /-- Spells matching `which` cost `{n}` less this turn (CR 601.2f). -/
 def grantSpellsCostLessThisTurn (g : Game) (p : PlayerId) (which : SpellCostLess) (n : Nat) : Game :=
-  let kind := match which with | .supertype s => toString s | .milledPickKind ty _ _ _ _ => toString ty
+  let kind := match which with | .supertype s => toString s | .milledPickKind ty _ _ _ _ => toString ty | _ => ""
   g.modifyPlayer p (fun pl =>
     { pl with spellsCostLessThisTurn := pl.spellsCostLessThisTurn.push (which, n) })
     |>.logMsg s!"{kind} spells {(g.player p).name} casts this turn cost \{{n}} less"
@@ -1565,6 +1565,7 @@ def applyUnifiedScryOrMill (g : Game) (controller : PlayerId) (effect : Effect)
     | .milledPickKind a b _ _ _ =>
       g.millThenPutFromGy controller n.toNat
         (fun o => o.printed.hasType a || o.printed.hasType b)
+    | _ => g
   | .mill (.fixed n) _ (.permanentAndGainLife life) =>
     g.millMayPutPermanentGainLife controller n.toNat life
   | .mill (.fixed n) .player _ =>
@@ -3070,98 +3071,111 @@ def applyUnifiedSequenceOrModes (g : Game) (controller : PlayerId) (effect : Eff
   let chosenX := if chosenX != 0 then chosenX else g.spellX
   let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower, isAbility)
   match effect.resolution with
-  | .chooseModes _ (.fraTrigger _) => g
-  | .chooseModes _ (.hawkeyeIndices modes) =>
-    let src := sourceId.bind g.findObject?
-    let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
-      let (g, i) := acc
-      let slice := targets.extract i (i + 1)
-      match m with
-      | 0 =>
-        (g.withLegalKindPermanent controller .creature slice (fun g o =>
-          (g.mapObjectStatus o (fun s => { s with cantBlockUntilEot := true })).logMsg
-            s!"{o.name} can't block this turn") sourceId illegal, i + 1)
-      | 1 =>
-        (g.withLegalKindPlayer controller .player slice
-          (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal, i + 1)
-      | _ =>
-        if (g.player controller).hand.isEmpty then (g.draw controller 1, i)
-        else
-          (g.beginFraChoice controller .discardThenDraw
-            s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
-    g
-  | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
-    g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let before := o.status.damage
-      let g := g.dealDamageToPermanent o n.toNat
-      let dealt := ((g.object! o.id).status.damage - before).toNat
-      let excess := g.excessDamage o dealt
-      if excess > 0 then g.empowerJace controller excess
-      else g) sourceId (some "The target is no longer legal")
-  | .sequence rs =>
-    match effect.resolution.onPermanent? with
-    | some a => g.applyOnPermanent controller effect.targetKind targets a sourceId
-    | none =>
-      match effect.resolution.onSource? with
-      | some a =>
-        if isAbility then g.applyOnSource sourceId a
-        else g.applyOnPermanent controller effect.targetKind targets a
-      | none =>
-        match rs.flatMap Resolution.flatten with
-        | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-          if isAbility then
-            g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat sourceId
-              (fizzle := fun g => g.logIllegalSequenceTargets targets)
+  | .chooseModes modes how =>
+    match how, modes with
+    | .fraTrigger _, _ => g
+    | .hawkeyeIndices modes, _ =>
+      let src := sourceId.bind g.findObject?
+      let (g, _) := modes.foldl (fun (acc : Game × Nat) m =>
+        let (g, i) := acc
+        let slice := targets.extract i (i + 1)
+        match m with
+        | 0 =>
+          (g.withLegalKindPermanent controller .creature slice (fun g o =>
+            (g.mapObjectStatus o (fun s => { s with cantBlockUntilEot := true })).logMsg
+              s!"{o.name} can't block this turn") sourceId illegal, i + 1)
+        | 1 =>
+          (g.withLegalKindPlayer controller .player slice
+            (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal, i + 1)
+        | _ =>
+          if (g.player controller).hand.isEmpty then (g.draw controller 1, i)
           else
-            g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat
-        | [.gainLife (.fixed life) .player, .searchLibrary (.put .basicLand .asPrinted _), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
-          g.applyGainLifeSearchBasicPlusOne controller targets life.toNat
-        | [.becomeCopy .sourceSpellXTimes, .dealDamage (.fixed n) .target .none] =>
-          g.applyDamageToKindTarget controller .creature targets n.toNat
-        | [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
-          let opps := (g.livingOpponents controller).map (·.id)
-          let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := sourceId } }
-          let g := g.beginDiscardCards opps
-          if g.pending == .none then
-            (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
-          else g
-        | steps =>
-          if g.sequenceAllTargetsIllegal controller effect targets sourceId then
-            g.logIllegalSequenceTargets targets
-          else
-            match steps with
-            | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
-              g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
-            | [.put .source .asPrinted (.entering [.counter .finality 1 true]),
-               .may (.attach .equipmentYouControl .target) (.sequence []) _] =>
-              g.returnFromGyFinalityAttach controller sourceId
-            | steps =>
-              steps.foldl (fun g r =>
-                recurse g { effect with resolution := r } targets
-                  castFromGraveyard kicked giftPromised chosenX
-                  sourceId lastKnownPower isAbility) g
-  | .unlessPays r n =>
-    if effect.allowsZeroTargets && targets.isEmpty then g
-    else g.beginUnlessPays controller effect targets r n
-  | .or rs =>
-    match rs with
-    | [] => g.logMsg "The effect does nothing"
-    | [r] =>
+            (g.beginFraChoice controller .discardThenDraw
+              s!"{(g.player controller).name} discards a card, then draws a card", i)) (g, 0)
+      g
+    | .unlessPays n, [r] =>
+      if effect.allowsZeroTargets && targets.isEmpty then g
+      else g.beginUnlessPays controller effect targets r n
+    | .«if» cond, [r] =>
+      let run (g : Game) : Game :=
+        recurse g { effect with resolution := r } targets
+          castFromGraveyard kicked giftPromised chosenX none none false
+      g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised
+    | .ifElse cond, [whenTrue, whenFalse] =>
+      let run (r : SpellResolution) (g : Game) : Game :=
+        recurse g { effect with resolution := r } targets
+          castFromGraveyard kicked giftPromised chosenX none none false
+      g.branchOnSpellIf controller effect targets cond castFromGraveyard
+        (run whenTrue) (run whenFalse) giftPromised
+    | .one, [] => g.logMsg "The effect does nothing"
+    | .one, [r] =>
       recurse g { effect with resolution := r } targets
         castFromGraveyard kicked giftPromised chosenX none none false
-    | rs =>
+    | .one, rs =>
       g.beginSpellOr controller effect targets rs
-  | .«if» cond r =>
-    let run (g : Game) : Game :=
-      recurse g { effect with resolution := r } targets
-        castFromGraveyard kicked giftPromised chosenX none none false
-    g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised
-  | .ifElse cond whenTrue whenFalse =>
-    let run (r : SpellResolution) (g : Game) : Game :=
-      recurse g { effect with resolution := r } targets
-        castFromGraveyard kicked giftPromised chosenX none none false
-    g.branchOnSpellIf controller effect targets cond castFromGraveyard
-      (run whenTrue) (run whenFalse) giftPromised
+    | _, _ => fallback g
+  | .sequence rs =>
+    match rs with
+    | [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
+        let before := o.status.damage
+        let g := g.dealDamageToPermanent o n.toNat
+        let dealt := ((g.object! o.id).status.damage - before).toNat
+        let excess := g.excessDamage o dealt
+        if excess > 0 then g.empowerJace controller excess
+        else g) sourceId (some "The target is no longer legal")
+    | rs =>
+      match effect.resolution.onPermanent? with
+      | some a => g.applyOnPermanent controller effect.targetKind targets a sourceId
+      | none =>
+        match effect.resolution.onSource? with
+        | some a =>
+          if isAbility then g.applyOnSource sourceId a
+          else g.applyOnPermanent controller effect.targetKind targets a
+        | none =>
+          let runSteps (steps : List SpellResolution) : Game :=
+            if g.sequenceAllTargetsIllegal controller effect targets sourceId then
+              g.logIllegalSequenceTargets targets
+            else
+              match steps with
+              | [.putOnLibrary .shuffled .source, .draw (.fixed n) _] =>
+                g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+              | [.put .source how note,
+                 .may (.attach .equipmentYouControl .target) (.sequence []) _] =>
+                if how == .asPrinted && note == .entering [.counter .finality 1 true] then
+                  g.returnFromGyFinalityAttach controller sourceId
+                else
+                  steps.foldl (fun g r =>
+                    recurse g { effect with resolution := r } targets
+                      castFromGraveyard kicked giftPromised chosenX
+                      sourceId lastKnownPower isAbility) g
+              | steps =>
+                steps.foldl (fun g r =>
+                  recurse g { effect with resolution := r } targets
+                    castFromGraveyard kicked giftPromised chosenX
+                    sourceId lastKnownPower isAbility) g
+          let flatSteps := rs.flatMap Resolution.flatten
+          match flatSteps with
+          | [.tap .target true, .scry (.fixed scryN), .draw (.fixed drawN)] =>
+            if isAbility then
+              g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat sourceId
+                (fizzle := fun g => g.logIllegalSequenceTargets targets)
+            else
+              g.resolveTapScryDraw controller effect targets scryN.toNat drawN.toNat
+          | [.gainLife (.fixed life) .player, .searchLibrary (.put putWhat how _), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
+            if putWhat == .basicLand && how == .asPrinted then
+              g.applyGainLifeSearchBasicPlusOne controller targets life.toNat
+            else runSteps flatSteps
+          | [.becomeCopy .sourceSpellXTimes, .dealDamage (.fixed n) .target .none] =>
+            g.applyDamageToKindTarget controller .creature targets n.toNat
+          | [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
+            let opps := (g.livingOpponents controller).map (·.id)
+            let g := { g with discardReq := { g.discardReq with plusOneAfterDiscards := sourceId } }
+            let g := g.beginDiscardCards opps
+            if g.pending == .none then
+              (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
+            else g
+          | steps => runSteps steps
   | _ => fallback g
 
 /-- Resolve a `.may` `Effect` (CR 608.2c). -/
@@ -3185,80 +3199,112 @@ def applyUnifiedMay (g : Game) (controller : PlayerId) (effect : Effect)
   let chosenX := if chosenX != 0 then chosenX else g.spellX
   let _ := (pl, kind, illegal, srcName, src?, source?, onSource, chosenX, castFromGraveyard, kicked, giftPromised, lastKnownPower, isAbility)
   match effect.resolution with
-  | .may (.discard (.cards 1 .you)) (.draw (.fixed n) _) .ifYouDo =>
-    if pl.hand.isEmpty then g.logMsg s!"{pl.name} has no card to discard"
-    else
-      { g with pending := .mayDiscardDraw controller n.toNat }.logMsg
-        s!"{pl.name} may discard a card. If they do, they draw {n.toNat}"
-  | .may (.loseLife .lastKnownPower _) (.draw .lastKnownPower _) .ifYouDo =>
-    let n := g.knownN
-    if (g.player controller).life > Int.ofNat n && n > 0 then
-      (g.loseLife controller n).draw controller n
-    else g.logMsg s!"{pl.name} declines to pay {n} life"
-  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo =>
-    if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
-      g.beginFraChoice controller .maySacrificePlaneswalker
-        s!"{(g.player controller).name} may sacrifice a planeswalker"
-    else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
-  | .may (.removeCounters (.upTo 1) .source) (.putCounters (.ofKind .plusOnePlusOne 1) .eachOther) .ifYouDo =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
-        g.beginFraChoice controller (.mayMovePlusOne o.id)
-          s!"{(g.player controller).name} may remove a +1/+1 counter from {o.name}"
-      else g
-    | none => g
-  | .may (.pay (.mana #[.generic n])) thenStep .ifYouDo =>
-    g.beginFraChoice controller (.mayPayThen n thenStep sourceId)
-      s!"{(g.player controller).name} may pay \{{n}}"
-  | .may (.discard (.cards 1 .you)) thenStep .ifYouDo =>
-    if (g.player controller).hand.isEmpty then g
-    else
-      g.beginFraChoice controller (.mayDiscardThen thenStep sourceId)
-        s!"{(g.player controller).name} may discard a card"
-  | .may (.searchLibrary (.put .landsEqualDamage .tapped _)) (.sequence []) _ =>
-    let n := (g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0 |>.toNat
-    if n == 0 then g
-    else
-      g.beginFraChoice controller (.mayThen (.searchLibrary (.put (.landsUpTo n) .tapped)) sourceId)
-        s!"{(g.player controller).name} may search for up to {n} land cards"
-  | .may act@(.searchLibrary (.put .basicLand .tapped _)) (.sequence []) .ifYouDo =>
-    g.beginFraChoice controller (.mayThen act sourceId)
-      s!"{(g.player controller).name} may search for a basic land card"
-  | .may (.sacrifice .land) thenStep@(.createTokens .heartwood (.fixed 2) true _ _) .ifYouDo =>
-    if (g.permanentsOf controller).any (·.printed.isLand) then
-      g.beginFraChoice controller (.maySacrificeThen .land thenStep sourceId)
-        s!"{(g.player controller).name} may sacrifice a land"
-    else g
-  | .may (.sacrifice .creatureOrPlaneswalker) thenStep@(.sacrifice .eachOpponentsCreature _) .ifYouDo =>
-    if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
-      g.beginFraChoice controller
-        (.maySacrificeThen .creatureOrPlaneswalker thenStep sourceId)
-        s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
-    else g
-  | .may (.sacrifice .another) thenStep@(.createTokens .beast44trample (.fixed 1) false _ _) .ifYouDo =>
-    if (g.creaturesControlledBy controller).isEmpty then g
-    else
-      g.beginFraChoice controller (.maySacrificeThen .creature thenStep sourceId)
-        s!"{(g.player controller).name} may sacrifice a creature"
-  | .may (.removeCounters .all .source) (.putCounters .sourceCounters .target) .ifYouDo =>
-    match source? with
-    | some src =>
-      g.withLegalKindPermanent controller kind targets (fun g o =>
-        if src.isOnBattlefield && src.status.hasCounters then
-          g.beginFraChoice controller (.mayMoveAllCounters src.id o.id)
-            s!"{(g.player controller).name} may move all counters from {src.name} onto {o.name}"
-        else g) sourceId illegal
-    | none => g
-  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
-    g.mayDrawPerArtifact controller ty
-  | .may (.put (.creatureFromHand subtype n) _ _) (.draw (.fixed 1) _) _ =>
-    g.mayPutHeroOrDraw controller n subtype
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed cards) _) .ifYouDo =>
-    { g with pending := .maySacArtifactOrDiscard controller cards.toNat }
-      |>.logMsg s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw {cards.toNat}"
-  | .may r _ _ =>
-    g.beginMay controller effect targets r
+  | .may action follow when =>
+    let defaultMay := g.beginMay controller effect targets action
+    match action with
+    | .discard (.cards 1 .you) =>
+      if when == .ifYouDo then
+        match follow with
+        | .draw (.fixed n) _ =>
+          if pl.hand.isEmpty then g.logMsg s!"{pl.name} has no card to discard"
+          else
+            { g with pending := .mayDiscardDraw controller n.toNat }.logMsg
+              s!"{pl.name} may discard a card. If they do, they draw {n.toNat}"
+        | thenStep =>
+          if (g.player controller).hand.isEmpty then g
+          else
+            g.beginFraChoice controller (.mayDiscardThen thenStep sourceId)
+              s!"{(g.player controller).name} may discard a card"
+      else defaultMay
+    | .loseLife .lastKnownPower _ =>
+      if when == .ifYouDo then
+        match follow with
+        | .draw .lastKnownPower _ =>
+          let n := g.knownN
+          if (g.player controller).life > Int.ofNat n && n > 0 then
+            (g.loseLife controller n).draw controller n
+          else g.logMsg s!"{pl.name} declines to pay {n} life"
+        | _ => defaultMay
+      else defaultMay
+    | .sacrifice what _ =>
+      if when == .ifYouDo then
+        if what == .planeswalker && (match follow with | .searchLibrary (.put .planeswalkerCard _ _) => true | _ => false) then
+          if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
+            g.beginFraChoice controller .maySacrificePlaneswalker
+              s!"{(g.player controller).name} may sacrifice a planeswalker"
+          else g.logMsg s!"{(g.player controller).name} controls no planeswalker to sacrifice"
+        else if what == .land && (match follow with | .createTokens .heartwood (.fixed 2) true _ _ => true | _ => false) then
+          if (g.permanentsOf controller).any (·.printed.isLand) then
+            g.beginFraChoice controller (.maySacrificeThen .land follow sourceId)
+              s!"{(g.player controller).name} may sacrifice a land"
+          else g
+        else if what == .creatureOrPlaneswalker && (match follow with | .sacrifice .eachOpponentsCreature _ => true | _ => false) then
+          if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
+            g.beginFraChoice controller
+              (.maySacrificeThen .creatureOrPlaneswalker follow sourceId)
+              s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
+          else g
+        else if what == .another && (match follow with | .createTokens .beast44trample (.fixed 1) false _ _ => true | _ => false) then
+          if (g.creaturesControlledBy controller).isEmpty then g
+          else
+            g.beginFraChoice controller (.maySacrificeThen .creature follow sourceId)
+              s!"{(g.player controller).name} may sacrifice a creature"
+        else defaultMay
+      else defaultMay
+    | .removeCounters (.upTo 1) .source =>
+      if when == .ifYouDo && follow == .putCounters (.ofKind .plusOnePlusOne 1) .eachOther then
+        match sourceId.bind g.findObject? with
+        | some o =>
+          if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
+            g.beginFraChoice controller (.mayMovePlusOne o.id)
+              s!"{(g.player controller).name} may remove a +1/+1 counter from {o.name}"
+          else g
+        | none => g
+      else defaultMay
+    | .removeCounters .all .source =>
+      if when == .ifYouDo && follow == .putCounters .sourceCounters .target then
+        match source? with
+        | some src =>
+          g.withLegalKindPermanent controller kind targets (fun g o =>
+            if src.isOnBattlefield && src.status.hasCounters then
+              g.beginFraChoice controller (.mayMoveAllCounters src.id o.id)
+                s!"{(g.player controller).name} may move all counters from {src.name} onto {o.name}"
+            else g) sourceId illegal
+        | none => g
+      else defaultMay
+    | .pay (.mana #[.generic n]) =>
+      if when == .ifYouDo then
+        g.beginFraChoice controller (.mayPayThen n follow sourceId)
+          s!"{(g.player controller).name} may pay \{{n}}"
+      else defaultMay
+    | .pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]) =>
+      if when == .ifYouDo then
+        match follow with
+        | .draw (.fixed cards) _ =>
+          { g with pending := .maySacArtifactOrDiscard controller cards.toNat }
+            |>.logMsg s!"{(g.player controller).name} may sacrifice an artifact or discard a card. If they do, they draw {cards.toNat}"
+        | _ => defaultMay
+      else defaultMay
+    | .searchLibrary (.put putWhat how _) =>
+      if putWhat == .landsEqualDamage && how == .tapped && follow == .sequence [] then
+        let n := (g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0 |>.toNat
+        if n == 0 then g
+        else
+          g.beginFraChoice controller (.mayThen (.searchLibrary (.put (.landsUpTo n) .tapped)) sourceId)
+            s!"{(g.player controller).name} may search for up to {n} land cards"
+      else if putWhat == .basicLand && how == .tapped && follow == .sequence [] && when == .ifYouDo then
+        g.beginFraChoice controller (.mayThen action sourceId)
+          s!"{(g.player controller).name} may search for a basic land card"
+      else defaultMay
+    | .draw (.perControlled ty) _ =>
+      if when == .ifYouDo && follow == .draw (.fixed 1) .eachOpponent then
+        g.mayDrawPerArtifact controller ty
+      else defaultMay
+    | .put (.creatureFromHand subtype n) _ _ =>
+      match follow with
+      | .draw (.fixed 1) _ => g.mayPutHeroOrDraw controller n subtype
+      | _ => defaultMay
+    | _ => defaultMay
   | _ => fallback g
 
 /-- Resolve a `.grant` `Effect` (CR 613 / CR 614), part 1. -/
