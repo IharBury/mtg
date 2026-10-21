@@ -401,6 +401,7 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         | none => none
       g.setObject { o with status := { o.status with
         attacking := true, attackingWhom := whom } }
+    | _ => g
 
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/

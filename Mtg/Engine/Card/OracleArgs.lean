@@ -425,7 +425,7 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
     | .upTo max ty =>
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
-    | .allOf a b =>
+    | .milledPickKind a b _ _ =>
       return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
   | .exile (.topN n) .playUntilNextTurn note =>
     return .exile (.topN (← takeNat n)) .playUntilNextTurn note
@@ -454,10 +454,10 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
     return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
   | .spellsCostLess which (.fixed n) =>
     match which with
-    | .cardType ty =>
-      return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
     | .supertype s =>
       return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
+    | .spellCostLessKind ty _ =>
+      return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
   | r => return r
 

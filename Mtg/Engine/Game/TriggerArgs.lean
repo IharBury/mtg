@@ -115,9 +115,9 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
     some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
   | .youControl which =>
     match which with
-    | .eachCreature | .citysBlessing => some (g.creaturesControlledBy controller)
     | .subtype s =>
       some ((g.permanentsOf controller).filter (g.hasSubtype · s))
+    | _ => some (g.creaturesControlledBy controller)
   | .otherOrEquipmentYouControl false false =>
     some (g.battlefield.filter fun o =>
       o.isCreature && o.controlledBy controller && some o.id != sourceId)
@@ -652,9 +652,6 @@ def tokenRecipients (g : Game) (ctx : TriggerRead) (kind : TokenKind)
 def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n : Nat)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
   match note with
-  | .none | .toHand _ | .permanentAndGainLife _ | .subtypeOrEnchantmentToHand _
-  | .freeCastFromGraveyard =>
-    pids.foldl (fun g pid => g.mill pid n) g
   | .milledCards =>
     let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
     let g := pids.foldl (fun g pid => g.mill pid n) g
@@ -666,6 +663,8 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     let g := pids.foldl (fun g pid =>
       if pid == controller then g.mill pid n else g) g
     { g with thisWay := { g.thisWay with opponentsMilledThisWay := flag } }
+  | _ =>
+    pids.foldl (fun g pid => g.mill pid n) g
 
 end Game
 end Mtg.Engine

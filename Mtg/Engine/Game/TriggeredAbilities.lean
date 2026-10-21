@@ -756,7 +756,7 @@ def costPayable (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         costPayable g controller sourceId c targets lastKnownPower lastKnownToughness || go rest
     go costs
   | .none => true
-  | .behold _ => false
+  | _ => false
 
 /-- Offer `pick` as an optional payment. Nothing legal skips the follow-up
 of a `may`. Outside `may`, paying finishes the ability. Gaining no life is
@@ -2646,7 +2646,7 @@ def applyRemoveCounters (g : Game) (controller : PlayerId)
           let o := g.object! o.id
           let g := g.setObject { o with status := o.status.withoutCounters }
           g.logMsg s!"counters are removed from {o.name}") g
-      | .upTo _ => g
+      | _ => g
 
 /-- Resolve `TriggerResolution.loseLife`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other count is lost by
@@ -2992,17 +2992,15 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       else
         { g with pending := .putOnBottom controller 1 }.logMsg
           s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2
-      | .topAfterDraw _ _ | .bottomRevealCreature | .bottomAfterDrawTwo => g
+    | _ => g
   | _, what =>
     g.withAffected controller ab sourceId targets what fun g o =>
       g.applyPermanentAction o action
 where
   action : PermanentAction :=
     match place with
-    | .top | .topOrBottom | .shuffled | .secondOrBottomThenConnive | .topOrBottomDamage2
-      | .topAfterDraw _ _ => .putOnTopOfLibrary
     | .bottom | .bottomRevealCreature | .bottomAfterDrawTwo => .putOnBottomOfLibrary
+    | _ => .putOnTopOfLibrary
 
 /-- Resolve `TriggerResolution.grant` (including its `@[match_pattern] abbrev`
 specializations `.lose`, `.cant`, `.becomeArtifact`, `.becomePrepared`,
@@ -3822,7 +3820,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             lastKnownPower lastKnownToughness sourceName
             (some (.or (cs.map fun c => .pay c))) sequencedCardPower
     | .none => g
-    | .behold _ => g.failMayThen
+    | _ => g.failMayThen
   | .queueReflexive followup =>
     match TriggeredAbility.TriggerResolution.queuedReflexive followup with
     | .modeled kind _ => g.queueModeledReflexive controller sourceId kind 0
