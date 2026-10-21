@@ -450,36 +450,54 @@ def takeResolutionRevealLibrary (r : Resolution) : ArgM Resolution := do
     return .revealLibrary (.top (← takeNat n)) (.put .creaturesYouControl how pnote) rwho
   | r => return r
 
-partial def takeResolution (r : Resolution) : ArgM Resolution := do
-  match r with
-  | .combatOrGrant none .. => takeResolutionCombat r
-  | .combatOrGrant (some _) .. => takeResolutionGrant r
-  | .playerResource .. => takeResolutionPlayerResource r
-  | .tapDiscardOrReturn .. => takeResolutionTapDiscardOrReturn r
-  | .tokensOrCounters .. => takeResolutionTokensOrCounters r
-  | .putExileOrDestroy .. => takeResolutionPutExileOrDestroy r
-  | .queueReflexive r => return .queueReflexive (← takeResolution r)
-  | .revealOrReflexive (some _) .. => takeResolutionRevealLibrary r
-  | .unlessPays r n => return .unlessPays (← takeResolution r) (← takeNat n)
-  | .or rs => return .or (← rs.mapM takeResolution)
-  | .may (.draw (.perControlled ty)) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+def takeResolutionMay (action follow : Resolution) (how : TriggeredAbility.TriggerMayWhen)
+    (recurse : Resolution → ArgM Resolution) : ArgM Resolution := do
+  match action, follow, how with
+  | .draw (.perControlled ty), .draw (.fixed 1) .eachOpponent, .ifYouDo =>
     return .may (.draw (.perControlled (← takeCardType ty))) (.draw (.fixed 1) .eachOpponent) .ifYouDo
-  | .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont =>
+  | .put (.creatureFromHand s n), .draw (.fixed 1), .ifYouDont =>
     let n ← takeNat n
     let s ← takeStr s
     return .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed n)) .ifYouDo =>
+  | .pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]), .draw (.fixed n), .ifYouDo =>
     return .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed (← takeNat n.toNat))) .ifYouDo
-  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
+  | .discard (.cards 1), .draw (.fixed n), .ifYouDo =>
     return .may (.discard (.cards 1)) (.draw (← takeNat n.toNat)) .ifYouDo
-  | .may (.pay (.mana symbols)) thenDo .ifYouDo =>
+  | .pay (.mana symbols), thenDo, .ifYouDo =>
     match symbols.toList with
     | [.generic n] =>
       return .may (.pay (.mana #[.generic (← takeNat n)])) thenDo .ifYouDo
     | _ => return .may (.pay (.mana symbols)) thenDo .ifYouDo
-  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo =>
+  | .pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact), thenDo, .ifYouDo =>
     return .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo
-  | .may r thenDo how => return .may (← takeResolution r) (← takeResolution thenDo) how
+  | r, thenDo, how => return .may (← recurse r) (← recurse thenDo) how
+
+def takeResolutionSequence (rs : List Resolution)
+    (recurse : Resolution → ArgM Resolution) : ArgM Resolution := do
+  match rs with
+  | [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union what]),
+     .pump (.fixed op) (.fixed ot) .opponentsCreatures] =>
+    let ss := (what.filterMap fun | .othersOfSubtype s => some s | _ => none).toArray
+    let ss ← takeStrs ss
+    let p ← takeInt p
+    let t ← takeInt t
+    let op ← takeInt op
+    let ot ← takeInt ot
+    return .sequence
+      [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (ss.toList.map .othersOfSubtype)]),
+       .pump (.fixed op) (.fixed ot) .opponentsCreatures]
+  | [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed _) .you] =>
+    let n ← takeNat n.toNat
+    return .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n) .you]
+  | [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
+    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
+  | rs => return .sequence (← rs.mapM recurse)
+
+def takeResolutionModes (r : Resolution)
+    (recurse : Resolution → ArgM Resolution) : ArgM Resolution := do
+  match r with
+  | .unlessPays r n => return .unlessPays (← recurse r) (← takeNat n)
+  | .or rs => return .or (← rs.mapM recurse)
   | .«if» (.or [.attackedWithSubtype s, .subtypeEntered _]) (.draw (.fixed 1) who) =>
     let s ← takeStr s
     return .«if» (.or [.attackedWithSubtype s, .subtypeEntered s]) (.draw (.fixed 1) who)
@@ -488,7 +506,7 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
     let kw := (Keywords.ofName? name).getD kw
     return .«if» .teamwork (.grant (.keywords kw) .target)
   | .«if» cond r =>
-    let r ← takeResolution r
+    let r ← recurse r
     match cond with
     | .subtype s => return .«if» (.subtype (← takeStr s)) r
     | .dealtDamageToSubtype s => return .«if» (.dealtDamageToSubtype (← takeStr s)) r
@@ -498,9 +516,7 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
     | .giftPromised => return .«if» .giftPromised r
     | _ => return .«if» cond r
   | .ifElse cond whenTrue whenFalse =>
-    -- Printed order is the otherwise branch, then the condition, then the
-    -- true branch.
-    let whenFalse ← takeResolution whenFalse
+    let whenFalse ← recurse whenFalse
     let cond ← match cond with
       | .subtype s => do
         let s ← takeStr s
@@ -512,25 +528,24 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
       | .teamwork => pure .teamwork
       | .giftPromised => pure .giftPromised
       | c => pure c
-    let whenTrue ← takeResolution whenTrue
+    let whenTrue ← recurse whenTrue
     return .ifElse cond whenTrue whenFalse
-  | .sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union what]),
-               .pump (.fixed op) (.fixed ot) .opponentsCreatures] =>
-    let ss := (what.filterMap fun | .othersOfSubtype s => some s | _ => none).toArray
-    let ss ← takeStrs ss
-    let p ← takeInt p
-    let t ← takeInt t
-    let op ← takeInt op
-    let ot ← takeInt ot
-    return .sequence
-      [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (ss.toList.map .othersOfSubtype)]),
-       .pump (.fixed op) (.fixed ot) .opponentsCreatures]
-  | .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed _) .you] =>
-    let n ← takeNat n.toNat
-    return .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n) .you]
-  | .sequence [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
-    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
-  | .sequence rs => return .sequence (← rs.mapM takeResolution)
+  | r => return r
+
+partial def takeResolution (r : Resolution) : ArgM Resolution := do
+  match r with
+  | .combatCountersOrTokens (some _) .. => takeResolutionGrant r
+  | .combatCountersOrTokens none (some _) ..
+  | .combatCountersOrTokens none none none none none .. => takeResolutionCombat r
+  | .combatCountersOrTokens .. => takeResolutionTokensOrCounters r
+  | .playerResource .. => takeResolutionPlayerResource r
+  | .zoneOrTap true .. => takeResolutionTapDiscardOrReturn r
+  | .zoneOrTap false .. => takeResolutionPutExileOrDestroy r
+  | .queueReflexive r => return .queueReflexive (← takeResolution r)
+  | .flowOrReveal false none (some _) .. => takeResolutionRevealLibrary r
+  | .may action follow how => takeResolutionMay action follow how takeResolution
+  | .sequence rs => takeResolutionSequence rs takeResolution
+  | .flowOrReveal false none none _ (some _) .. => takeResolutionModes r takeResolution
   | r => return r
 
 def isCanonicalDestroy (e : Effect) : Bool :=

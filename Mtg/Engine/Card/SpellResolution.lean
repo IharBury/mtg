@@ -2333,11 +2333,17 @@ inductive Resolution where
   `.sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]`.
   The trigger's last-known power to the announced player or permanent, offered
   as a may, is `.may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo`. -/
-  | combatOrGrant (grantOpt : Option TriggerGrantWhat := none)
-      (noteOpt : Option TriggerDamageNote := none)
-      (powerOpt : Option NumberSelector := none)
+  | combatCountersOrTokens (grantOpt : Option TriggerGrantWhat := none)
+      (damageNoteOpt : Option TriggerDamageNote := none)
+      (countersOpt : Option CounterSelector := none)
+      (tokenKindOpt : Option TokenKind := none)
+      (subtypeOpt : Option String := none)
+      (tokenNoteOpt : Option TriggerTokenNote := none)
+      (tappedOrAttach : Bool := false)
+      (whoPlayerOpt : Option PlayerSelector := none)
+      (whoObjOpt : Option ObjectSelector := none)
+      (amountOpt : Option NumberSelector := none)
       (toughnessOpt : Option NumberSelector := none)
-      (who : ObjectSelector := .source)
   /-- Scry, surveil, mill, draw, or gain/lose life (CR 118.2 / CR 118.3a / CR 121 / CR 701.13 / CR 701.18 / CR 701.25).
   Scry, as `amount` says. `.fixed` is that many cards.
   Scry 2 is `.scry (.fixed 2)`. Any other count scries that many cards.
@@ -2430,12 +2436,8 @@ inductive Resolution where
   The creature this Aura enchants, while the Aura remains, is
   `.tap .enchantedWhileSource`.
   Any other permanent the selector names is tapped or untapped. A card or a hand
-  is not. -/
-  | tapDiscardOrReturn (noteOpt : Option TriggerReturnNote := none)
-      (placeOpt : Option TriggerLibraryPlace := none)
-      (isDiscard : Bool := false) (tapped : Bool := true)
-      (what : ObjectSelector := .cards)
-  /-- Pay a cost or add mana (CR 106 / CR 118).
+  is not.
+  Pay a cost or add mana (CR 106 / CR 118).
   Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
   `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
   `.pay (.mana #[.generic 1, .colored .green, .colored .blue])`.
@@ -2506,14 +2508,8 @@ inductive Resolution where
   None, or zero life, puts counters on nothing. An illegal permanent is
   reported and skipped. Extra announced permanents are ignored.
   Any other permanent the selector names gets `n` counters of that kind.
-  A card or a hand receives none. -/
-  | tokensOrCounters (countersOpt : Option CounterSelector := none)
-      (kindOpt : Option TokenKind := none) (noteOpt : Option TriggerTokenNote := none)
-      (subtypeOpt : Option String := none) (tappedOrAttach : Bool := false)
-      (whoPlayerOpt : Option PlayerSelector := none)
-      (whoObjOpt : Option ObjectSelector := none)
-      (amountOpt : Option NumberSelector := none)
-  /-- Put later ability `thenDo` on the stack (“When you do”), or arm it
+  A card or a hand receives none.
+  Put later ability `thenDo` on the stack (“When you do”), or arm it
   for a later event (`howOpt = none`), or look at cards from the top of a library (`howOpt = some how`), as `how` and `whoOpt` say, then resolve `thenDo` for the cards that were found.
   Another nonattacking creature gains indestructible is
   `.queueReflexive (.grant (.keywords Keyword.indestructible) .target)`.
@@ -2582,10 +2578,8 @@ inductive Resolution where
   An empty library is reported. No attacker limits the mana value to zero.
   Whose library is a `PlayerSelector`.
   Any other combination reveals the cards `how` and `who` name, then
-  resolves `thenDo`. A player the selector does not name reveals nothing. -/
-  | revealOrReflexive (howOpt : Option TriggerLibraryHow := none)
-      (whoOpt : Option PlayerSelector := none) (thenDo : Resolution)
-  /-- Sacrifice or destroy permanents (CR 701.7 / CR 701.17).
+  resolves `thenDo`. A player the selector does not name reveals nothing.
+  Sacrifice or destroy permanents (CR 701.7 / CR 701.17).
   Sacrifice a permanent. `what` says who sacrifices and which permanent.
   `sacNote` says what a later step can read.
   The announced opponent sacrifices a creature of their choice with
@@ -2700,9 +2694,8 @@ inductive Resolution where
   A +1/+1 counter on the source, or removing a counter to draw, is
   `.chooseModes TriggerResolution.hydeModes .plusOneOrRemoveCounter`.
   One unused Vision mode this turn is
-  `.chooseModes TriggerResolution.visionModes .vision`. -/
-  | sequenceOrModes (howOpt : Option TriggerModeHow := none) (rs : List Resolution)
-  /-- The controller may resolve `action`. `when` says which outcome resolves
+  `.chooseModes TriggerResolution.visionModes .vision`.
+  The controller may resolve `action`. `when` says which outcome resolves
   `follow`. `.ifYouDont` is the default: declining resolves `follow`, and
   performing `action` skips it. `.ifYouDo` resolves `follow` only when
   `action` is performed. Declining, or being unable to perform `action`,
@@ -2772,7 +2765,12 @@ inductive Resolution where
   You may create a 0/4 Wall creature token with defender with
   `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`.
   Declining creates nothing. -/
-  | may (action follow : Resolution) (when : TriggerMayWhen := .ifYouDont)
+  | flowOrReveal (isReflexive : Bool := false)
+      (mayWhenOpt : Option TriggerMayWhen := none)
+      (revealHowOpt : Option TriggerLibraryHow := none)
+      (revealWhoOpt : Option PlayerSelector := none)
+      (modeHowOpt : Option TriggerModeHow := none)
+      (rs : List Resolution)
   /-- Exile cards. `what` says which cards, `how` says for how long, and
   `note` says what a later step can read.
   Which cards is an `ObjectSelector`.
@@ -2832,45 +2830,52 @@ inductive Resolution where
   `how` and `note` say. `.revealed` and `.randomCreature` use the cards an
   earlier reveal found. Outside that reveal, both do nothing. A permanent
   already on the battlefield is not put again. -/
-  | putExileOrDestroy (putHowOpt : Option TriggerPutHow := none)
+  | zoneOrTap (isTapDiscardOrReturn : Bool := false)
+      (returnNoteOpt : Option TriggerReturnNote := none)
+      (placeOpt : Option TriggerLibraryPlace := none)
+      (putHowOpt : Option TriggerPutHow := none)
       (putNoteOpt : Option TriggerPutNote := none)
       (exileHowOpt : Option TriggerExileHow := none)
       (exileNoteOpt : Option TriggerExileNote := none)
       (sacNoteOpt : Option TriggerSacrificeNote := none)
       (destroyNoteOpt : Option TriggerDestroyNote := none)
-      (what : ObjectSelector)
+      (isDiscard : Bool := false) (tapped : Bool := true)
+      (what : ObjectSelector := .cards)
 deriving Repr, BEq
 
 instance : Inhabited Resolution where
-  default := .combatOrGrant none none (some .greatestPower) (some .greatestPower) .source
+  default := .combatCountersOrTokens none none none none none none false none (some .source) (some .greatestPower) (some .greatestPower)
 
 namespace Resolution
 
   @[match_pattern] abbrev pump (power toughness : NumberSelector)
       (who : ObjectSelector := .target) : Resolution :=
-    .combatOrGrant none none (some power) (some toughness) who
+    .combatCountersOrTokens none none none none none none false none (some who) (some power) (some toughness)
   @[match_pattern] abbrev dealDamage (amount : NumberSelector) (who : ObjectSelector)
       (note : TriggerDamageNote := .none) : Resolution :=
-    .combatOrGrant none (some note) (some amount) none who
+    .combatCountersOrTokens none (some note) none none none none false none (some who) (some amount) none
   @[match_pattern] abbrev grant (what : TriggerGrantWhat) (who : ObjectSelector := .target) : Resolution :=
-    .combatOrGrant (some what) none none none who
+    .combatCountersOrTokens (some what) none none none none none false none (some who) none none
   @[match_pattern] abbrev putCounters (what : CounterSelector) (who : ObjectSelector) : Resolution :=
-    .tokensOrCounters (some what) none none none false none (some who) none
+    .combatCountersOrTokens none none (some what) none none none false none (some who) none none
   @[match_pattern] abbrev exile (what : ObjectSelector) (how : TriggerExileHow)
       (note : TriggerExileNote := .none) : Resolution :=
-    .putExileOrDestroy none none (some how) (some note) none none what
+    .zoneOrTap false none none none none (some how) (some note) none none false false what
   @[match_pattern] abbrev put (what : ObjectSelector) (how : TriggerPutHow := .asPrinted)
       (note : TriggerPutNote := .none) : Resolution :=
-    .putExileOrDestroy (some how) (some note) none none none none what
+    .zoneOrTap false none none (some how) (some note) none none none none false false what
   @[match_pattern] abbrev queueReflexive (followup : Resolution) : Resolution :=
-    .revealOrReflexive none none followup
+    .flowOrReveal true none none none none [followup]
   @[match_pattern] abbrev revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
       (who : PlayerSelector := .you) : Resolution :=
-    .revealOrReflexive (some how) (some who) thenDo
+    .flowOrReveal false none (some how) (some who) none [thenDo]
   @[match_pattern] abbrev sequence (rs : List Resolution) : Resolution :=
-    .sequenceOrModes none rs
+    .flowOrReveal false none none none none rs
   @[match_pattern] abbrev chooseModes (modes : List Resolution) (how : TriggerModeHow := .one) : Resolution :=
-    .sequenceOrModes (some how) modes
+    .flowOrReveal false none none none (some how) modes
+  @[match_pattern] abbrev may (action follow : Resolution)
+      (when : TriggerMayWhen := .ifYouDont) : Resolution :=
+    .flowOrReveal false (some when) none none none [action, follow]
 
 /-- Scry, as `n` says (CR 701.18). -/
 @[match_pattern] abbrev scry (n : NumberSelector)
@@ -2895,11 +2900,11 @@ namespace Resolution
 /-- Tap or untap permanents (CR 701.21), as `who` and `tapped` say. -/
 @[match_pattern] abbrev tap (who : ObjectSelector)
     (tapped : Bool := true) : Resolution :=
-  .tapDiscardOrReturn none none false tapped who
+  .zoneOrTap true none none none none none none none none false tapped who
 
 /-- Discard cards (CR 701.8), as `what` says. -/
 @[match_pattern] abbrev discard (what : ObjectSelector := .cards) : Resolution :=
-  .tapDiscardOrReturn none none true true what
+  .zoneOrTap true none none none none none none none none true true what
 
 /-- Pay `what` (CR 118). -/
 @[match_pattern] abbrev pay (what : CostSelector) : Resolution :=
@@ -2914,34 +2919,34 @@ namespace Resolution
 /-- Return cards to a hand (CR 400.7). -/
 @[match_pattern] abbrev returnToHand (what : ObjectSelector := .graveyardCard)
     (note : TriggerReturnNote := .none) : Resolution :=
-  .tapDiscardOrReturn (some note) none false false what
+  .zoneOrTap true (some note) none none none none none none none false false what
 
 /-- Put a card onto a library (CR 401). -/
 @[match_pattern] abbrev putOnLibrary (place : TriggerLibraryPlace := .top)
     (what : ObjectSelector := .target) : Resolution :=
-  .tapDiscardOrReturn none (some place) false false what
+  .zoneOrTap true none (some place) none none none none none none false false what
 
 /-- Sacrifice a permanent (CR 701.17). -/
 @[match_pattern] abbrev sacrifice (what : ObjectSelector)
     (note : TriggerSacrificeNote := .none) : Resolution :=
-  .putExileOrDestroy none none none none (some note) none what
+  .zoneOrTap false none none none none none none (some note) none false false what
 
 /-- Destroy permanents (CR 701.7). -/
 @[match_pattern] abbrev destroy (what : ObjectSelector)
     (note : TriggerDestroyNote := .none) : Resolution :=
-  .putExileOrDestroy none none none none none (some note) what
+  .zoneOrTap false none none none none none none none (some note) false false what
 
 /-- Amass `subtype` for `who` (CR 701.47), as `amount` says. -/
 @[match_pattern] abbrev amass (amount : NumberSelector)
     (subtype : String := "Goblin") (attachSource : Bool := false)
     (who : PlayerSelector := .you) : Resolution :=
-  .tokensOrCounters none none none (some subtype) attachSource (some who) none (some amount)
+  .combatCountersOrTokens none none none none (some subtype) none attachSource (some who) none (some amount) none
 
 /-- Create tokens (CR 111.10). -/
 @[match_pattern] abbrev createTokens (kind : TokenKind) (amount : NumberSelector)
     (tapped : Bool := false) (who : PlayerSelector := .you)
     (note : TriggerTokenNote := .none) : Resolution :=
-  .tokensOrCounters none (some kind) (some note) none tapped (some who) none (some amount)
+  .combatCountersOrTokens none none none (some kind) none (some note) tapped (some who) none (some amount) none
 
 /-- You may cast a spell (CR 601). -/
 @[match_pattern] abbrev mayCast (origin : TriggerCastFrom) (maxMv : TriggerCastMv)
@@ -3827,25 +3832,32 @@ private def phraseOneRevealOrReflexive (r : SpellResolution) (noun : String) : S
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
   | r => phraseOneFallback r noun
 
-/-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
-outside this match so the constructor splitter is not recursive. -/
-private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
+private def phraseOneMay (action follow : SpellResolution) (when : TriggerMayWhen)
+    (noun : String) (recurse : SpellResolution → String → String) : String :=
+  match action, follow, when with
+  | .draw (.perControlled ty) _, .draw (.fixed 1) .eachOpponent, .ifYouDo =>
+    s!"You may draw a card for each {ty.oracleWord} you control. If you do, each opponent draws a card"
+  | .put (.creatureFromHand subtype n) _ _, .draw (.fixed 1) _, .ifYouDont =>
+    s!"You may put {indefinite subtype} {subtype} creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
+  | .pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]), .draw (.fixed cards) _, .ifYouDo =>
+    s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards.toNat}."
+  | r, _, _ =>
+    let base := recurse r noun
+    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
+    let base := if base.startsWith "you " then (base.drop 4).toString else base
+    if base.isEmpty then "you may" else s!"you may {base}"
+
+private def phraseOneModes (r : SpellResolution) (noun : String)
+    (recurse : SpellResolution → String → String) : String :=
   match r with
-  | .combatOrGrant none .. => phraseOneCombat r noun
-  | .combatOrGrant (some _) .. => phraseOneGrant r noun
-  | .playerResource .. => phraseOnePlayerResource r noun
-  | .tapDiscardOrReturn .. => phraseOneTapDiscardOrReturn r noun
-  | .tokensOrCounters .. => phraseOneTokensOrCounters r noun
-  | .putExileOrDestroy .. => phraseOnePutExileOrDestroy r noun
-  | .revealOrReflexive .. => phraseOneRevealOrReflexive r noun
   | .sequence _ | .or _ => ""
   | .unlessPays r n =>
-    let base := phraseOne r noun
+    let base := recurse r noun
     let base := if base.endsWith "." then (base.dropEnd 1).toString else base
     if base.isEmpty then s!"unless its controller pays \{{n}}"
     else s!"{base} unless its controller pays \{{n}}"
   | .«if» cond r =>
-    let base := trimPeriod (phraseOne r noun)
+    let base := trimPeriod (recurse r noun)
     let cond := ifClause cond noun
     if base.isEmpty then cond else s!"{cond}, {base}"
   | .ifElse .teamwork (.dealDamage (.fixed teamworkN) .target .none) (.dealDamage (.fixed n) .target .none) =>
@@ -3853,25 +3865,30 @@ private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .ifElse .teamwork (.unlessPays .counter teamworkN) (.unlessPays .counter n) =>
     s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
   | .ifElse cond whenTrue whenFalse =>
-    let no := trimPeriod (phraseOne whenFalse noun)
-    let yes := trimPeriod (phraseOne whenTrue noun)
+    let no := trimPeriod (recurse whenFalse noun)
+    let yes := trimPeriod (recurse whenTrue noun)
     let cond := ifClause cond noun
     if no.isEmpty then
       if yes.isEmpty then cond else s!"{cond}, {yes}"
     else if yes.isEmpty then no
     else s!"{no}. {capitalizeAscii cond}, {yes} instead"
-  | .may (.draw (.perControlled ty) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
-    s!"You may draw a card for each {ty.oracleWord} you control. If you do, each opponent draws a card"
-  | .may (.put (.creatureFromHand subtype n) _ _) (.draw (.fixed 1) _) .ifYouDont =>
-    s!"You may put {indefinite subtype} {subtype} creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed cards) _) .ifYouDo =>
-    s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards.toNat}."
-  | .may r _ _ =>
-    let base := phraseOne r noun
-    let base := if base.endsWith "." then (base.dropEnd 1).toString else base
-    let base := if base.startsWith "you " then (base.drop 4).toString else base
-    if base.isEmpty then "you may" else s!"you may {base}"
   | r => phraseOneFallback r noun
+
+/-- One step, not a sequence or a choice. Sequence and `or` phrasing stay
+outside this match so the constructor splitter is not recursive. -/
+private partial def phraseOne (r : SpellResolution) (noun : String) : String :=
+  match r with
+  | .combatCountersOrTokens (some _) .. => phraseOneGrant r noun
+  | .combatCountersOrTokens none (some _) ..
+  | .combatCountersOrTokens none none none none none .. => phraseOneCombat r noun
+  | .combatCountersOrTokens .. => phraseOneTokensOrCounters r noun
+  | .playerResource .. => phraseOnePlayerResource r noun
+  | .zoneOrTap true .. => phraseOneTapDiscardOrReturn r noun
+  | .zoneOrTap false .. => phraseOnePutExileOrDestroy r noun
+  | .flowOrReveal true .. | .flowOrReveal false none (some _) .. => phraseOneRevealOrReflexive r noun
+  | .may action follow when => phraseOneMay action follow when noun phraseOne
+  | .flowOrReveal false (some _) .. => phraseOneFallback r noun
+  | .flowOrReveal false none none .. => phraseOneModes r noun phraseOne
 
 export Resolution (flatten)
 

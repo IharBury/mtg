@@ -3415,13 +3415,12 @@ private def applyQueueReflexive (g : Game) (controller : PlayerId)
     g.attackPumpPerPlains controller
   | _ => g.queueFollowupReflexive controller sourceId followup
 
-mutual
-
-private partial def applyTriggerSequence (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+private def applyTriggerSequence (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
     (sourceName : String) (sequencedCardPower : Option Nat)
-    (rs : List TriggeredAbility.TriggerResolution) : Game :=
+    (rs : List TriggeredAbility.TriggerResolution)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
   -- One legality check for the whole sequence (CR 608.2b). Power is read
   -- before any step moves the card, then each step runs in order. A step
   -- that opens a pending choice pauses the rest until that choice finishes.
@@ -3449,9 +3448,7 @@ private partial def applyTriggerSequence (g : Game) (controller : PlayerId) (ab 
             ({ g with mayThen := { g.mayThen with skip := g.mayThenSkip - 1 } }, waiting, false, false)
           else
             let pendingBefore := g.pending
-            let g :=
-              g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-                lastKnownPower lastKnownToughness sourceName (some step) cardPower
+            let g := recurse g (some step) cardPower
             if g.skipTriggerSequenceRest then
               ({ g with thisWay := { g.thisWay with skipTriggerSequenceRest := false } }, [], true, true)
             else
@@ -3494,44 +3491,54 @@ private partial def applyTriggerSequence (g : Game) (controller : PlayerId) (ab 
           cardPower
           steps := combined } }
 
-private partial def applyTriggerMay (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+private def applyTriggerMay1 (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target) (ctx : TriggerRead)
+    (action follow : TriggeredAbility.TriggerResolution)
+    (when : TriggeredAbility.TriggerMayWhen) : Option Game :=
+  match action, follow, when with
+  | .sacrifice .another _, _, .ifYouDont =>
+    some (g.applySacrifice controller ab sourceId targets .another .none)
+  | .put (.creatureFromHand subtype maxMv) _ _, .draw (.fixed _) _, .ifYouDont =>
+    some (g.mayPutHeroOrDraw controller maxMv subtype)
+  | .put what how note, _, .ifYouDont =>
+    some (g.applyPut controller ab sourceId targets what how note)
+  | .tap who true, _, .ifYouDont =>
+    some (g.applyTap controller ab sourceId targets who)
+  | .setBasePT power toughness .source, .sequence [], _ =>
+    some <|
+      match g.triggerInt ctx power, g.triggerInt ctx toughness with
+      | some p, some t =>
+        match sourceId.bind g.findObject? with
+        | some o =>
+          if o.isOnBattlefield then
+            g.beginFraChoice controller (.mayBecomeBasePT o.id p t)
+              s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
+          else g
+        | none => g
+      | _, _ => g
+  | .discard .hand, _, .ifYouDont =>
+    some (g.applyDiscard controller sourceId targets .hand)
+  | .draw _ .opponentHasYou, _, .ifYouDont =>
+    some (g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou)
+  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))], _, .ifYouDont =>
+    some <|
+      let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      if spent == 0 then g.logMsg "No mana was spent to cast that spell"
+      else
+        let disc := if n == 2 then "two" else toString n
+        g.beginFraChoice controller (.mayDrawThenDiscard spent n)
+          s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
+  | _, _, _ => none
+
+private def applyTriggerMay (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
     (sourceName : String) (sequencedCardPower : Option Nat) (ctx : TriggerRead)
     (action follow : TriggeredAbility.TriggerResolution)
-    (when : TriggeredAbility.TriggerMayWhen) : Game :=
-  match action, follow, when with
-  | .sacrifice .another _, _, .ifYouDont =>
-    g.applySacrifice controller ab sourceId targets .another .none
-  | .put (.creatureFromHand subtype maxMv) _ _, .draw (.fixed _) _, .ifYouDont =>
-    g.mayPutHeroOrDraw controller maxMv subtype
-  | .put what how note, _, .ifYouDont =>
-    g.applyPut controller ab sourceId targets what how note
-  | .tap who true, _, .ifYouDont =>
-    g.applyTap controller ab sourceId targets who
-  | .setBasePT power toughness .source, .sequence [], _ =>
-    match g.triggerInt ctx power, g.triggerInt ctx toughness with
-    | some p, some t =>
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then
-          g.beginFraChoice controller (.mayBecomeBasePT o.id p t)
-            s!"{(g.player controller).name} may have {o.name}'s base power and toughness become {p}/{t}"
-        else g
-      | none => g
-    | _, _ => g
-  | .discard .hand, _, .ifYouDont =>
-    g.applyDiscard controller sourceId targets .hand
-  | .draw _ .opponentHasYou, _, .ifYouDont =>
-    g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
-  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))], _, .ifYouDont =>
-    -- X is the mana spent to cast the triggering spell.
-    let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
-    if spent == 0 then g.logMsg "No mana was spent to cast that spell"
-    else
-      let disc := if n == 2 then "two" else toString n
-      g.beginFraChoice controller (.mayDrawThenDiscard spent n)
-        s!"{(g.player controller).name} may draw {spent} cards, then discard {disc}"
+    (when : TriggeredAbility.TriggerMayWhen)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
+  if let some g := g.applyTriggerMay1 controller ab sourceId targets ctx action follow when then g
+  else match action, follow, when with
   | .loseLife (.fixed 2) .you,
     .grant .assignCombatDamageEqualToughness .creaturesYouControl, .ifYouDo =>
     g.offerPay2LifeToughness controller
@@ -3566,23 +3573,17 @@ private partial def applyTriggerMay (g : Game) (controller : PlayerId) (ab : Tri
       else
         let follow := Resolution.queueReflexive followup
         let g := { g with mayThen := { g.mayThen with drop := 1, conditional := some follow } }
-        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName
-          (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
+        recurse g (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
     | _ =>
       let follow := Resolution.queueReflexive followup
       let g := { g with mayThen := { g.mayThen with drop := 1, conditional := some follow } }
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName
-        (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
+      recurse g (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
   | .createTokens .wall04defender (.fixed 1) false, .sequence [], .ifYouDo =>
     g.offerMayCreateWall controller
   | optional, conditional, .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := { g with mayThen := { g.mayThen with drop := cond.length, conditional := some conditional } }
-    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName
-      (some (.sequence (optional :: cond))) sequencedCardPower
+    recurse g (some (.sequence (optional :: cond))) sequencedCardPower
   | action, follow, .ifYouDont =>
     let restCtx : TriggerSequenceRest := {
       controller
@@ -3603,11 +3604,12 @@ private partial def applyTriggerMay (g : Game) (controller : PlayerId) (ab : Tri
           context := some restCtx } }.logMsg
       s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
 
-private partial def applyTriggerPay (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+private def applyTriggerPay (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
-    (sourceName : String) (sequencedCardPower : Option Nat) (ctx : TriggerRead)
-    (what : TriggeredAbility.CostSelector) : Game :=
+    (lastKnownPower lastKnownToughness : Option Int)
+    (sequencedCardPower : Option Nat) (ctx : TriggerRead)
+    (what : TriggeredAbility.CostSelector)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
   match what with
   | .mana symbols =>
     match g.mayThenConditional, symbols.toList with
@@ -3695,9 +3697,6 @@ private partial def applyTriggerPay (g : Game) (controller : PlayerId) (ab : Tri
     g.offerMayPayPick controller sourceId .sacrificeArtifact
       s!"{(g.player controller).name} may sacrifice an artifact"
   | .sacrifice n what =>
-    -- Printed sacrifices above keep their choices and logs. Every other
-    -- count offers that many permanents `what` names. A count that is not
-    -- a positive number, or fewer permanents than that count, pays nothing.
     match g.triggerCount ctx n with
     | some k =>
       let ids := (g.sacrificeCostCandidates ctx what).map (·.id)
@@ -3716,9 +3715,6 @@ private partial def applyTriggerPay (g : Game) (controller : PlayerId) (ab : Tri
     g.offerMayPayPick controller sourceId .discardNonland
       s!"{(g.player controller).name} may discard a nonland card"
   | .discard n what =>
-    -- Printed discards above keep their choices and logs. Every other
-    -- count offers that many cards `what` names. A count that is not a
-    -- positive number, or fewer cards than that count, pays nothing.
     match g.triggerCount ctx n with
     | some k =>
       let ids := (g.discardCostCandidates controller what).map (·.id)
@@ -3731,8 +3727,6 @@ private partial def applyTriggerPay (g : Game) (controller : PlayerId) (ab : Tri
     | none =>
       (g.logMsg "Nothing to discard").failMayThen
   | .or costs =>
-    -- Sacrificing an artifact or discarding is one choice of an object.
-    -- Either order is that payment.
     if costs == [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card] ||
         costs == [.discard (.fixed 1) .card, .sacrifice (.fixed 1) .artifact] then
       { g with pending := .maySacArtifactOrDiscard controller 1 }.logMsg
@@ -3753,22 +3747,19 @@ private partial def applyTriggerPay (g : Game) (controller : PlayerId) (ab : Tri
           g.costPayable controller sourceId c targets lastKnownPower lastKnownToughness) with
       | [] => g.failMayThen
       | [c] =>
-        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName
-          (some (.pay c)) sequencedCardPower
+        recurse g (some (.pay c)) sequencedCardPower
       | cs =>
-        g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-          lastKnownPower lastKnownToughness sourceName
-          (some (.or (cs.map fun c => .pay c))) sequencedCardPower
+        recurse g (some (.or (cs.map fun c => .pay c))) sequencedCardPower
   | .none => g
   | _ => g.failMayThen
 
-private partial def applyTriggerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+private def applyTriggerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
     (sourceName : String) (sequencedCardPower : Option Nat)
     (modes : List TriggeredAbility.TriggerResolution)
-    (how : TriggeredAbility.TriggerModeHow) : Game :=
+    (how : TriggeredAbility.TriggerModeHow)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
   match how with
   | .plusOneOrRemoveCounter =>
     match lastKnownPower with
@@ -3784,9 +3775,7 @@ private partial def applyTriggerChooseModes (g : Game) (controller : PlayerId) (
       | none => g
       | some r =>
         g.applyChooseModeStep targets r (fun g r =>
-          g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-            lastKnownPower lastKnownToughness sourceName (some r)
-            sequencedCardPower)
+          recurse g (some r) sequencedCardPower)
   | .oneUnusedThisTurn | .oneUnused =>
     g.offerChooseModes controller ab sourceId targets dividedDamage
       lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
@@ -3796,27 +3785,15 @@ private partial def applyTriggerChooseModes (g : Game) (controller : PlayerId) (
     match modes[(lastKnownPower.getD 0).toNat]? with
     | none => g
     | some r =>
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
+      recurse g (some r) sequencedCardPower
   | _ => g
 
-partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none)
-    (sourceName : String := "This creature")
-    (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
-    (sequencedCardPower : Option Nat := none) : Game :=
-  let ctx : TriggerRead := {
-    controller, sourceId, targets, lastKnownPower, lastKnownToughness,
-    sequencedCardPower }
-  if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
-    g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
-  else if resolutionOverride.isSome ||
-      (ab.opts.printed.isEmpty && ab.effect.phrase.isEmpty &&
-        (TriggeredAbility.sequenceClause ab.effect).isNone) ||
-      !ab.effect.events.isEmpty || ab.sagaChapterNumber?.isSome then
-  match resolutionOverride.getD ab.resolution with
+private def applyTriggeredCombatCountersOrTokens (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) (sourceId : Option ObjectId) (targets : Array Target)
+    (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
+    (sourceName : String) (ctx : TriggerRead)
+    (r : TriggeredAbility.TriggerResolution) : Game :=
+  match r with
   | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
       power toughness who
@@ -3832,6 +3809,27 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .dealDamage amount who note =>
     g.applyTriggerDamage controller ab sourceId targets lastKnownPower sourceName
       amount who note
+  | .removeCounters what who =>
+    g.applyRemoveCounters controller sourceId targets what who
+  | .putCounters what who =>
+    g.applyPutCounters controller ab sourceId targets lastKnownPower what who
+  | .amass amount subtype attachSource who =>
+    g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
+      targets lastKnownToughness
+  | .createTokens kind amount tapped who note =>
+    g.applyCreateTokens controller sourceId targets lastKnownPower
+      kind amount tapped who note (lastKnownToughness := lastKnownToughness)
+  | .grant what who =>
+    g.applyGrant ctx ab sourceName what who
+  | _ => g
+
+private def applyTriggeredPlayerResource (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower lastKnownToughness : Option Int)
+    (sequencedCardPower : Option Nat) (ctx : TriggerRead)
+    (r : TriggeredAbility.TriggerResolution)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
+  match r with
   | .scry amount none =>
     match g.triggerCount ctx amount with
     | some n => g.beginScry controller n
@@ -3855,47 +3853,58 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .draw amount who =>
     g.applyTriggerDraw controller sourceId amount who targets lastKnownPower
       lastKnownToughness sequencedCardPower
-  | .searchLibrary thenDo =>
-    match g.applySearchLibrary controller sourceId thenDo with
-    | some g => g
-    | none =>
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
+  | .gainLife amount .you false =>
+    g.applyGainLife controller ab sourceId targets amount sequencedCardPower
+      lastKnownPower
+  | .loseLife amount who =>
+    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
+  | .addMana types amount _ =>
+    g.applyAddMana controller sourceId types amount targets lastKnownPower
+      lastKnownToughness
+  | .mayCast origin maxMv cost note =>
+    g.applyMayCast controller lastKnownPower origin maxMv cost note
+  | .mill amount who note =>
+    g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
+      amount who note
+  | .pay what =>
+    g.applyTriggerPay controller sourceId targets
+      lastKnownPower lastKnownToughness sequencedCardPower ctx what recurse
+  | _ => g
+
+private def applyTriggeredZoneOrTap (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower : Option Int) (r : TriggeredAbility.TriggerResolution) : Game :=
+  match r with
   | .discard what =>
     g.applyDiscard controller sourceId targets what
   | .sacrifice what note =>
     g.applySacrifice controller ab sourceId targets what note
   | .putOnLibrary place what =>
     g.applyPutOnLibrary controller ab sourceId targets place what
-  | .sequence rs =>
-    g.applyTriggerSequence controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName sequencedCardPower rs
-  | .gainLife amount .you false =>
-    g.applyGainLife controller ab sourceId targets amount sequencedCardPower
-      lastKnownPower
-  | .loseLife amount who =>
-    g.applyLoseLife controller ab sourceId targets amount who lastKnownPower
   | .exile what how note =>
     g.applyExile controller ab sourceId targets what how note
   | .put what how note =>
     g.applyPut controller ab sourceId targets what how note
-  | .removeCounters what who =>
-    g.applyRemoveCounters controller sourceId targets what who
   | .tap who true =>
     g.applyTap controller ab sourceId targets who
   | .untap who =>
     g.applyUntap controller ab sourceId targets who
   | .destroy what note =>
     g.applyDestroy controller ab sourceId targets lastKnownPower what note
-  | .amass amount subtype attachSource who =>
-    g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
-      targets lastKnownToughness
-  | .createTokens kind amount tapped who note =>
-    g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind amount tapped who note (lastKnownToughness := lastKnownToughness)
-  | .addMana types amount _ =>
-    g.applyAddMana controller sourceId types amount targets lastKnownPower
-      lastKnownToughness
+  | .returnToHand what note =>
+    g.applyReturnToHand controller ab sourceId targets what note
+  | _ => g
+
+private def applyTriggeredRevealOrReflexive (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (lastKnownPower : Option Int) (sequencedCardPower : Option Nat) (ctx : TriggerRead)
+    (r : TriggeredAbility.TriggerResolution)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
+  match r with
+  | .searchLibrary thenDo =>
+    match g.applySearchLibrary controller sourceId thenDo with
+    | some g => g
+    | none => recurse g (some thenDo) sequencedCardPower
   | .revealLibrary (.topNumber amount) (.returnToHand (.lookedTypes types) _) _ =>
     match g.triggerCount ctx amount with
     | none => g
@@ -3912,70 +3921,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => false)
       g.beginFraChoice controller (.mayRevealToHand ids eligible false)
         s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
-  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
-      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
-      else g.becomePrepared o
-    | none => g.logMsg "The source is no longer on the battlefield"
-  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
-    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
-      g.logMsg "Fewer than three creatures died this turn"
-    else
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.becomePrepared o
-        else g.logMsg s!"{o.name} is no longer on the battlefield"
-      | none => g.logMsg "The source is no longer on the battlefield"
-  | .«if» cond thenDo =>
-    let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-    if holds then
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
-    else g
-  | .ifElse cond whenTrue whenFalse =>
-    let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-    let branch := if holds then whenTrue else whenFalse
-    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName (some branch) sequencedCardPower
-  | .or rs =>
-    match rs with
-    | [] => g
-    | [r] =>
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-    | rs =>
-      let hasPermanent :=
-        match targets[0]? with
-        | some (Target.permanent _) => true
-        | _ => false
-      if ab.targetKind == .nonland && !hasPermanent then
-        g.logMsg "The target is no longer legal"
-      else
-        { g with
-            pending := .chooseTriggerOr controller
-            triggerOr := some {
-              controller
-              ability := ab
-              sourceId
-              targets
-              dividedDamage
-              lastKnownPower
-              lastKnownToughness
-              sourceName
-              cardPower := sequencedCardPower
-              alternatives := rs.toArray } }.logMsg
-          (triggerOrLog (g.player controller).name rs)
-  | .returnToHand what note =>
-    g.applyReturnToHand controller ab sourceId targets what note
-  | .mayCast origin maxMv cost note =>
-    g.applyMayCast controller lastKnownPower origin maxMv cost note
-  | .mill amount who note =>
-    g.applyMill controller ab sourceId targets lastKnownPower lastKnownToughness
-      amount who note
   | .revealFromHand count thenDo =>
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none
@@ -4000,32 +3945,125 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             let shown := if hand.size ≤ n then hand else hand.take n
             (g.revealHand pid).logMsg
               s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})") g
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
-  | .may action follow when =>
-    g.applyTriggerMay controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName sequencedCardPower ctx
-      action follow when
-  | .pay what =>
-    g.applyTriggerPay controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName sequencedCardPower ctx what
+      recurse g (some thenDo) sequencedCardPower
   | .queueReflexive followup =>
     g.applyQueueReflexive controller sourceId lastKnownPower followup
-  | .putCounters what who =>
-    g.applyPutCounters controller ab sourceId targets lastKnownPower what who
-  | .chooseModes modes how =>
-    g.applyTriggerChooseModes controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how
-  | .grant what who =>
-    g.applyGrant ctx ab sourceName what who
   | .revealLibrary how thenDo who =>
     match g.applyRevealLibrary controller sourceId targets how thenDo who with
     | some g => g
     | none =>
       let g := g.noteRevealedLibraries controller targets sourceId how who
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
+      recurse g (some thenDo) sequencedCardPower
   | _ => g
+
+private def applyTriggeredControlFlow (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) (sourceId : Option ObjectId) (targets : Array Target)
+    (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
+    (sourceName : String) (sequencedCardPower : Option Nat)
+    (r : TriggeredAbility.TriggerResolution)
+    (recurse : Game → Option TriggeredAbility.TriggerResolution → Option Nat → Game) : Game :=
+  match r with
+  | .sequence rs =>
+    g.applyTriggerSequence controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName sequencedCardPower rs recurse
+  | .«if» (.not .preparedSource) (.becomePrepared .source _) =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then g.logMsg s!"{o.name} is no longer on the battlefield"
+      else if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
+      else g.becomePrepared o
+    | none => g.logMsg "The source is no longer on the battlefield"
+  | .«if» (.atLeast .creaturesDiedThisTurn (.fixed 3)) (.becomePrepared .source _) =>
+    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+      g.logMsg "Fewer than three creatures died this turn"
+    else
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.becomePrepared o
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none => g.logMsg "The source is no longer on the battlefield"
+  | .«if» cond thenDo =>
+    let (g, holds) :=
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+    if holds then
+      recurse g (some thenDo) sequencedCardPower
+    else g
+  | .ifElse cond whenTrue whenFalse =>
+    let (g, holds) :=
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+    let branch := if holds then whenTrue else whenFalse
+    recurse g (some branch) sequencedCardPower
+  | .or rs =>
+    match rs with
+    | [] => g
+    | [r] => recurse g (some r) sequencedCardPower
+    | rs =>
+      let hasPermanent :=
+        match targets[0]? with
+        | some (Target.permanent _) => true
+        | _ => false
+      if ab.targetKind == .nonland && !hasPermanent then
+        g.logMsg "The target is no longer legal"
+      else
+        { g with
+            pending := .chooseTriggerOr controller
+            triggerOr := some {
+              controller
+              ability := ab
+              sourceId
+              targets
+              dividedDamage
+              lastKnownPower
+              lastKnownToughness
+              sourceName
+              cardPower := sequencedCardPower
+              alternatives := rs.toArray } }.logMsg
+          (triggerOrLog (g.player controller).name rs)
+  | .chooseModes modes how =>
+    g.applyTriggerChooseModes controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName sequencedCardPower modes how recurse
+  | _ => g
+
+partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target := #[])
+    (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none)
+    (sourceName : String := "This creature")
+    (resolutionOverride : Option TriggeredAbility.TriggerResolution := none)
+    (sequencedCardPower : Option Nat := none) : Game :=
+  let recurse (g : Game) (override : Option TriggeredAbility.TriggerResolution)
+      (cardPower : Option Nat) : Game :=
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName override cardPower
+  let ctx : TriggerRead := {
+    controller, sourceId, targets, lastKnownPower, lastKnownToughness,
+    sequencedCardPower }
+  if resolutionOverride.isNone && !g.interveningStillHolds controller ab then
+    g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+  else if resolutionOverride.isSome ||
+      (ab.opts.printed.isEmpty && ab.effect.phrase.isEmpty &&
+        (TriggeredAbility.sequenceClause ab.effect).isNone) ||
+      !ab.effect.events.isEmpty || ab.sagaChapterNumber?.isSome then
+  let r := resolutionOverride.getD ab.resolution
+  match r with
+  | .combatCountersOrTokens .. =>
+    g.applyTriggeredCombatCountersOrTokens controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName ctx r
+  | .playerResource .. =>
+    g.applyTriggeredPlayerResource controller ab sourceId targets
+      lastKnownPower lastKnownToughness sequencedCardPower ctx r recurse
+  | .zoneOrTap .. =>
+    g.applyTriggeredZoneOrTap controller ab sourceId targets lastKnownPower r
+  | .flowOrReveal true .. | .flowOrReveal false none (some _) .. =>
+    g.applyTriggeredRevealOrReflexive controller sourceId targets
+      lastKnownPower sequencedCardPower ctx r recurse
+  | .may action follow when =>
+    g.applyTriggerMay controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName sequencedCardPower ctx
+      action follow when recurse
+  | .flowOrReveal .. =>
+    g.applyTriggeredControlFlow controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName sequencedCardPower r recurse
   else
   match ab.effect.resolution with
   | .sequence rs =>
@@ -4067,8 +4105,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none =>
         g.applyUnifiedAbility controller { ab.effect with resolution := r }
           targets sourceId lastKnownPower
-
-end
 
 /-- Finish trigger-sequence steps that waited on a pending choice.
 Those steps are still part of the resolution that opened the choice. -/

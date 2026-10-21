@@ -1045,59 +1045,59 @@ private def chooseModesResolutionPhrase (t : TriggerTiming) (r : TriggerResoluti
   | _ => ""
 
 /-- Part 1 of `grantResolutionPhrase`. -/
-private def grantResolutionPhrasePart1 (r : TriggerResolution) (noun : String) : Option String :=
-  match r with
-  | .setBasePT .equalSourcePower .equalSourceToughness .target =>
+private def grantResolutionPhrasePart1 (what : TriggerGrantWhat) (who : ObjectSelector) (noun : String) : Option String :=
+  match what, who with
+  | .basePT .equalSourcePower .equalSourceToughness, .target =>
     some "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-  | .lose .indestructible who =>
+  | .lose .indestructible, who =>
     some <|
       match affectedNoun? who noun with
       | some n => s!"{n} loses indestructible until end of turn"
       | none => "lose"
-  | .lose .allAbilities (.target .ifPresent) =>
+  | .lose .allAbilities, (.target .ifPresent) =>
     some "it loses all abilities for as long as this remains on the battlefield"
-  | .lose _ _ =>
+  | .lose _, _ =>
     some "lose"
-  | .cant (.beBlocked who) =>
+  | .cant (.beBlocked cWho), .target =>
     some <|
-      match affectedNoun? who noun with
+      match affectedNoun? cWho noun with
       | some n => s!"{n} can't be blocked this turn"
       | none => "can't"
-  | .cant (.beBlockedExceptByHaste who) =>
+  | .cant (.beBlockedExceptByHaste cWho), .target =>
     some <|
-      match affectedNoun? who noun with
+      match affectedNoun? cWho noun with
       | some n => s!"{n} can't be blocked this turn except by creatures with haste"
       | none => "can't"
-  | .cant (.untapWhileYouControl .target) =>
+  | .cant (.untapWhileYouControl .target), .target =>
     some "that creature can't become untapped for as long as you control this creature"
-  | .cant _ =>
+  | .cant _, .target =>
     some "can't"
-  | .becomeArtifact who =>
+  | .artifact, who =>
     some <|
       match affectedNoun? who noun with
       | some n => s!"until end of turn, {n} becomes an artifact in addition to its other types"
       | none => "becomes an artifact"
-  | .becomePrepared who _ =>
+  | .prepared _, who =>
     some <|
       match affectedNoun? who noun with
       | some n => s!"{n} becomes prepared"
       | none => "becomes prepared"
-  | .setBasePT (.fixed p) (.fixed t) who =>
+  | .basePT (.fixed p) (.fixed t), who =>
     some <|
       match affectedNoun? who noun with
       | some n => s!"{n} has base power and toughness {p}/{t} until end of turn"
       | none => "set base power and toughness"
-  | .setBasePT _ _ _ =>
+  | .basePT _ _, _ =>
     some "set base power and toughness"
-  | .empowerJace (.fixed n) => some s!"empower Jace {n}"
-  | .empowerJace _ => some "empower Jace"
-  | .recruit .recruit =>
+  | .empowerJace (.fixed n), .youIfCast => some s!"empower Jace {n}"
+  | .empowerJace _, .youIfCast => some "empower Jace"
+  | .recruit .recruit, .youIfCast =>
     some "recruit"
-  | .recruit .you =>
+  | .recruit .you, .youIfCast =>
     some "you recruit"
-  | .attach what host =>
+  | .attachTo host, whatObj =>
     some <|
-      match what, host with
+      match whatObj, host with
       | .source, .createdToken =>
         "attach this Equipment to it"
       | .source, .target =>
@@ -1112,129 +1112,129 @@ private def grantResolutionPhrasePart1 (r : TriggerResolution) (noun : String) :
         "attach it to this creature"
       | _, _ =>
         "attach it"
-  | _ => none
+  | _, _ => none
+
+/-- Part 2 of `grantResolutionPhrase`. -/
+private def grantResolutionPhrasePart2 (what : TriggerGrantWhat) (who : ObjectSelector) (noun : String) : Option String :=
+  match what, who with
+  | .control .untilEndOfTurn, .target =>
+    some s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
+  | .control .whileSourceRemains, .target =>
+    some s!"gain control of {noun} for as long as this Saga remains on the battlefield"
+  | .control .duringNextTurn, .target =>
+    some "you control target opponent during their next turn"
+  | .cascade, .source =>
+    some "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
+  | .noteResolveThisTurn _, .source =>
+    some "count another resolution of this ability this turn"
+  | .ringTempts, .youIfCast =>
+    some "the Ring tempts you"
+  | .spellsCostLess _ (.fixed n), .youIfCast =>
+    some s!"spells you cast this turn cost \{{n}} less to cast"
+  | .spellsCostLess _ _, .youIfCast =>
+    some "spells you cast this turn cost less to cast"
+  | .investigate, .player _ => some "investigate"
+  | .connive, .source => some "it connives"
+  | .connive, .target => some s!"{noun} connives"
+  | .connive, .enteringVillain => some "you may have it connive"
+  | .connive, _ => some "connive"
+  | .fight how, fWho =>
+    some <|
+      match fWho, how with
+      | .source, .mutual =>
+        "this fights up to one other target creature"
+      | .announced, .upToOneOther =>
+        "target creature you control fights up to one other target creature"
+      | .announced, .mutual =>
+        "target creature you control fights another target creature"
+      | .equipmentHost, .reflexive =>
+        "that creature deals damage equal to its power to up to one target creature"
+      | _, _ =>
+        "fight"
+  | .additionalCombatPhase, .youIfCast =>
+    some "after this phase, there is an additional combat phase"
+  | .winTheGame, .youIfCast =>
+    some "you win the game"
+  | .copy .artifactEnchantmentOrLand, .source =>
+    some "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
+  | .copy .creatureOrGraveyardCard, .source =>
+    some "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
+  | .copy .noted, .source =>
+    some "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .copy (.cause none), .source =>
+    some "create a token that's a copy of the artifact that caused this"
+  | .copy .sourceTwoNonlegendaryTokens, .source =>
+    some "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
+  | .copy .causingSpell, .source =>
+    some "copy that spell. You may choose new targets for the copy"
+  | .copy _, .source =>
+    some "become a copy"
+  | _, _ => none
 
 /-- Effect clause for `Resolution.grant` (and its `[match_pattern]` aliases) in `resolutionPhrase`. -/
-private def grantResolutionPhrase (r : TriggerResolution) (noun : String) : String :=
-  if let some s := grantResolutionPhrasePart1 r noun then s
-  else match r with
-  | .gainControl .untilEndOfTurn =>
-    s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
-  | .gainControl .whileSourceRemains =>
-    s!"gain control of {noun} for as long as this Saga remains on the battlefield"
-  | .gainControl .duringNextTurn =>
-    "you control target opponent during their next turn"
-  | .cascade =>
-    "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
-  | .noteResolveThisTurn _ =>
-    "count another resolution of this ability this turn"
-  | .ringTempts =>
-    "the Ring tempts you"
-  | .spellsCostLess _ (.fixed n) =>
-    s!"spells you cast this turn cost \{{n}} less to cast"
-  | .spellsCostLess _ _ =>
-    "spells you cast this turn cost less to cast"
-  | .investigate _ => "investigate"
-  | .connive .source => "it connives"
-  | .connive .target => s!"{noun} connives"
-  | .connive .enteringVillain => "you may have it connive"
-  | .connive _ => "connive"
-  | .fight who how =>
-    match who, how with
-    | .source, .mutual =>
-      "this fights up to one other target creature"
-    | .announced, .upToOneOther =>
-      "target creature you control fights up to one other target creature"
-    | .announced, .mutual =>
-      "target creature you control fights another target creature"
-    | .equipmentHost, .reflexive =>
-      "that creature deals damage equal to its power to up to one target creature"
-    | _, _ =>
-      "fight"
-  | .additionalCombatPhase =>
-    "after this phase, there is an additional combat phase"
-  | .winTheGame =>
-    "you win the game"
-  | .becomeCopy .artifactEnchantmentOrLand =>
-    "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
-  | .becomeCopy .creatureOrGraveyardCard =>
-    "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
-  | .becomeCopy .noted =>
-    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | .becomeCopy (.cause none) =>
-    "create a token that's a copy of the artifact that caused this"
-  | .becomeCopy .sourceTwoNonlegendaryTokens =>
-    "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-  | .becomeCopy .causingSpell =>
-    "copy that spell. You may choose new targets for the copy"
-  | .becomeCopy _ =>
-    "become a copy"
-  | .grant what who =>
-    match what, who with
-    | .attacking, .createdToken =>
-      "those tokens enter tapped and attacking"
-    | .newTargets, .causingSpell =>
-      "choose new targets for that spell"
-    | .keywords k, .equippedAttackers =>
-      s!"each equipped attacking creature gains {k.joinedAnd} until end of turn"
-    | .protectionEverything, .youIfCast =>
-      "if you cast it, you gain protection from everything until your next turn"
-    | .keywords k, .target =>
-      s!"{noun} gains {k.joinedAnd} until end of turn"
-    | .keywords k, .source =>
-      s!"this creature gains {k.joinedAnd} until end of turn"
-    | .keywords k, .enchanted =>
-      s!"enchanted creature gains {k.joinedAnd} until end of turn"
-    | .keywords k, (.target .whileSource) =>
-      s!"that creature gains {k.joinedAnd} until end of turn"
-    | .keywords k, .creaturesYouControl =>
-      s!"creatures you control gain {k.joinedAnd} until end of turn"
-    | .keywords k, .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
-      s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
-    | .hexproofWhileSource, .target =>
-      s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
-    | .preventDamageWhileSource, _ =>
-      "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
-    | .landfallCreateElf, .source =>
-      "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
-    | .assignCombatDamageEqualToughness, .creaturesYouControl =>
-      "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
-    | .basePowerEqualHand, .source =>
-      "until end of turn, this creature's base power is equal to the number of cards in your hand"
-    | .ironFistTap, .source =>
-      "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
-    | .keywords _, .spellTargets =>
-      "those creatures gain flying until end of turn"
-    | .bearType, .target =>
-      "it becomes a Bear in addition to its other types"
-    | .playNotedUntilNextTurn, .target =>
-      playThatCardUntilNextTurnPhrase
-    | _, _ =>
-      let s := SpellResolution.toPhrase r noun
-      if s.isEmpty then "grant" else s
-  | _ => ""
+private def grantResolutionPhrase (what : TriggerGrantWhat) (who : ObjectSelector) (r : TriggerResolution) (noun : String) : String :=
+  if let some s := grantResolutionPhrasePart1 what who noun then s
+  else if let some s := grantResolutionPhrasePart2 what who noun then s
+  else match what, who with
+  | .attacking, .createdToken =>
+    "those tokens enter tapped and attacking"
+  | .newTargets, .causingSpell =>
+    "choose new targets for that spell"
+  | .keywords k, .equippedAttackers =>
+    s!"each equipped attacking creature gains {k.joinedAnd} until end of turn"
+  | .protectionEverything, .youIfCast =>
+    "if you cast it, you gain protection from everything until your next turn"
+  | .keywords k, .target =>
+    s!"{noun} gains {k.joinedAnd} until end of turn"
+  | .keywords k, .source =>
+    s!"this creature gains {k.joinedAnd} until end of turn"
+  | .keywords k, .enchanted =>
+    s!"enchanted creature gains {k.joinedAnd} until end of turn"
+  | .keywords k, (.target .whileSource) =>
+    s!"that creature gains {k.joinedAnd} until end of turn"
+  | .keywords k, .creaturesYouControl =>
+    s!"creatures you control gain {k.joinedAnd} until end of turn"
+  | .keywords k, .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
+    s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
+  | .hexproofWhileSource, .target =>
+    s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
+  | .preventDamageWhileSource, _ =>
+    "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
+  | .landfallCreateElf, .source =>
+    "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+  | .assignCombatDamageEqualToughness, .creaturesYouControl =>
+    "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
+  | .basePowerEqualHand, .source =>
+    "until end of turn, this creature's base power is equal to the number of cards in your hand"
+  | .ironFistTap, .source =>
+    "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
+  | .keywords _, .spellTargets =>
+    "those creatures gain flying until end of turn"
+  | .bearType, .target =>
+    "it becomes a Bear in addition to its other types"
+  | .playNotedUntilNextTurn, .target =>
+    playThatCardUntilNextTurnPhrase
+  | _, _ =>
+    let s := SpellResolution.toPhrase r noun
+    if s.isEmpty then "grant" else s
 
-/-- Part 1 of `mayResolutionPhrase`. -/
-private def mayResolutionPhrasePart1 (r : TriggerResolution) : Option String :=
-  match r with
-  | .may (.pay (.mana symbols)) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) .ifYouDo =>
+/-- Part 1 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
+private def mayResolutionPhrasePart1 (action follow : TriggerResolution) : Option String :=
+  match action, follow with
+  | .pay (.mana symbols), .sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)] =>
     some <|
       match symbols.toList with
       | [.generic n] =>
         s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
       | _ =>
         "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
-  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
+  | .discard (.cards 1), .draw (.fixed n) =>
     some s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
-  | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
+  | .dealDamage .lastKnownPower .target .none, .sequence [] =>
     some "you may have this deal that much damage"
-  | .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo =>
+  | .grant .newTargets .causingSpell, .sequence [] =>
     some "you may choose new targets for that spell"
-  | .may (.setBasePT (.fixed p) (.fixed t) .source) (.sequence []) _ =>
-    some s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
-  | .may (.setBasePT _ _ .source) (.sequence []) _ =>
-    some "you may have this creature's base power and toughness become those values until end of turn"
-  | .may (.pay (.mana symbols)) (.queueReflexive follow) .ifYouDo =>
+  | .pay (.mana symbols), .queueReflexive follow =>
     some <|
       let times :=
         match TriggerResolution.queuedReflexive follow with
@@ -1245,79 +1245,89 @@ private def mayResolutionPhrasePart1 (r : TriggerResolution) : Option String :=
         if times > 1 then s!"you may pay \{{n}} up to {times} times"
         else s!"you may pay \{{n}}"
       | _ => "you may pay that cost"
-  | .may (.pay (.mana symbols)) (.becomeCopy (.cause none)) .ifYouDo =>
+  | .pay (.mana symbols), .becomeCopy (.cause none) =>
     some <|
       match symbols.toList with
       | [.generic 2] => "you may pay {2} to copy it"
       | _ => "you may pay to copy it"
-  | .may (.loseLife (.fixed 2) .you)
-      (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
+  | .loseLife (.fixed 2) .you, .grant .assignCombatDamageEqualToughness .creaturesYouControl =>
     some "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
-  | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
-    some "you may exile the top card of your library. If that card is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
-  | _ => none
+  | _, _ => none
 
-/-- Effect clause for `Resolution.may` in `resolutionPhrase`. -/
-private def mayResolutionPhrase (r : TriggerResolution) : String :=
-  if let some s := mayResolutionPhrasePart1 r then s
-  else match r with
-  | .may action _ =>
-    match action with
-    | .tap .humans =>
-      "you may tap any number of untapped Humans you control"
-    | .sacrifice .another _ =>
-      "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-    | .put .artifactFromHand _ .forAttach =>
-      "you may put an artifact card from your hand onto the battlefield"
-    | .discard .hand =>
-      "you may discard your hand"
-    | .draw _ .opponentHasYou =>
-      "target opponent may have you draw a card"
-    | .put .landFromHand .tapped _ =>
-      "you may put a land card from your hand onto the battlefield tapped"
-    | .put (.creatureFromHand subtype maxMv) _ _ =>
-      s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
-    | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
-      let disc := if n == 2 then "two cards" else cardPhrase n
-      s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
-    | _ => "you may do it"
-  | .may (.pay (.mana symbols)) (.draw (.fixed 1)) .ifYouDo =>
+/-- Part 2 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
+private def mayResolutionPhrasePart2 (action follow : TriggerResolution) : String :=
+  match action, follow with
+  | .pay (.mana symbols), .draw (.fixed 1) =>
     match symbols.toList with
     | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
     | _ => "you may pay. If you do, draw a card"
-  | .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
+  | .pay (.sacrifice (.fixed 1) .another), .putCounters .plusOneSacrificedPower .source =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
+  | .pay (.mana symbols), .returnToHand .source =>
     s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
-  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
-      (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
+  | .pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact),
+      .sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false] =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
-  | .may (.discard .hand) (.draw (.fixed n)) .ifYouDo =>
+  | .discard .hand, .draw (.fixed n) =>
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
-  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+  | .draw (.perControlled _) _, .draw (.fixed 1) .eachOpponent =>
     "you may draw a card for each artifact you control. If you do, each opponent draws a card"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo =>
+  | .pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]), .draw (.fixed 1) =>
     "you may sacrifice an artifact or discard a card. If you do, draw a card"
-  | .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo =>
+  | .pay (.sacrifice (.fixed 1) .another), .queueReflexive (.destroy .target) =>
     "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
+  | .pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]), .queueReflexive (.dealDamage (.fixed 2) .target) =>
     "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
-  | .may (.tap .source) (.queueReflexive (.grant (.keywords k) .target)) .ifYouDo =>
+  | .tap .source, .queueReflexive (.grant (.keywords k) .target) =>
     if k == Keyword.indestructible then
       "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
     else
       "you may tap this creature. When you do, that ability triggers"
-  | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
+  | .exile .discarded .playUntilNextTurn, .sequence [] =>
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
-  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
+  | .createTokens .wall04defender (.fixed 1) false, .sequence [] =>
     "you may create a 0/4 colorless Wall creature token with defender"
-  | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>
+  | .pay (.sacrifice _ _), _ =>
     "you may sacrifice that. If you do, do that"
-  | .may (.pay (.discard _ _)) _ .ifYouDo =>
+  | .pay (.discard _ _), _ =>
     "you may discard that. If you do, do that"
-  | .may _ _ .ifYouDo =>
+  | _, _ =>
     "you may do it. If you do, do that"
-  | _ => ""
+
+/-- Effect clause for `Resolution.may` in `resolutionPhrase`. -/
+private def mayResolutionPhrase (action follow : TriggerResolution) (when : TriggerMayWhen) : String :=
+  match action, follow with
+  | .setBasePT (.fixed p) (.fixed t) .source, .sequence [] =>
+    s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .setBasePT _ _ .source, .sequence [] =>
+    "you may have this creature's base power and toughness become those values until end of turn"
+  | .exile .top .playThisTurn .ifHero, .sequence [] =>
+    "you may exile the top card of your library. If that card is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
+  | _, _ =>
+    match when with
+    | .ifYouDont =>
+      match action with
+      | .tap .humans =>
+        "you may tap any number of untapped Humans you control"
+      | .sacrifice .another _ =>
+        "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+      | .put .artifactFromHand _ .forAttach =>
+        "you may put an artifact card from your hand onto the battlefield"
+      | .discard .hand =>
+        "you may discard your hand"
+      | .draw _ .opponentHasYou =>
+        "target opponent may have you draw a card"
+      | .put .landFromHand .tapped _ =>
+        "you may put a land card from your hand onto the battlefield tapped"
+      | .put (.creatureFromHand subtype maxMv) _ _ =>
+        s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
+      | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
+        let disc := if n == 2 then "two cards" else cardPhrase n
+        s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
+      | _ => "you may do it"
+    | .ifYouDo =>
+      if let some s := mayResolutionPhrasePart1 action follow then s
+      else mayResolutionPhrasePart2 action follow
 
 /-- `resolutionPhrase` for `pumpOrDamage`: pump and dealDamage. -/
 private def resolutionPhrasePumpOrDamage (t : TriggerTiming) (noun : String) : Option String :=
@@ -1940,19 +1950,24 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   let noun := t.targeting.kind.noun
   let opt :=
     match t.resolution with
-    | .combatOrGrant none .. => resolutionPhrasePumpOrDamage t noun
-    | r@(.combatOrGrant (some _) ..) => some (grantResolutionPhrase r noun)
+    | r@(.grant what who) => some (grantResolutionPhrase what who r noun)
+    | .combatCountersOrTokens (some _) .. => none
+    | .combatCountersOrTokens none _ (some _) .. => resolutionPhraseCounters t noun
+    | .combatCountersOrTokens none none none (some _) ..
+    | .combatCountersOrTokens none none none none (some _) .. =>
+      resolutionPhraseCreateOrAmass t noun
+    | .combatCountersOrTokens none .. => resolutionPhrasePumpOrDamage t noun
     | .playerResource false .. => resolutionPhrasePlayerNumeric t noun
     | .playerResource true .. => resolutionPhraseManaPayOrCast t noun
-    | .tapDiscardOrReturn .. => resolutionPhraseTapDiscardOrReturn t noun
-    | .putExileOrDestroy (some _) .. | .putExileOrDestroy none _ (some _) .. =>
+    | .zoneOrTap true .. => resolutionPhraseTapDiscardOrReturn t noun
+    | .zoneOrTap false _ _ (some _) .. | .zoneOrTap false _ _ none _ (some _) .. =>
       resolutionPhrasePutOrExile t noun
-    | .putExileOrDestroy none _ none .. => resolutionPhraseSacrificeOrDestroy t noun
-    | .tokensOrCounters none .. => resolutionPhraseCreateOrAmass t noun
-    | .tokensOrCounters (some _) .. => resolutionPhraseCounters t noun
-    | .revealOrReflexive .. => resolutionPhraseRevealOrReflexive t noun
-    | .sequenceOrModes .. => resolutionPhraseControlFlow t noun
-    | r@(.may ..) => some (mayResolutionPhrase r)
+    | .zoneOrTap false _ _ none _ none .. => resolutionPhraseSacrificeOrDestroy t noun
+    | .flowOrReveal true .. | .flowOrReveal false none (some _) .. =>
+      resolutionPhraseRevealOrReflexive t noun
+    | .may action follow when => some (mayResolutionPhrase action follow when)
+    | .flowOrReveal false (some _) .. => none
+    | .flowOrReveal false none none .. => resolutionPhraseControlFlow t noun
   opt.getD (SpellResolution.toPhrase t.resolution noun)
 
 /-- True when this trigger fires only once each turn. -/

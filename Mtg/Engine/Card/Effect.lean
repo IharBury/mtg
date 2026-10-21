@@ -394,12 +394,14 @@ private def phraseWith (r : Resolution) (noun : String)
     (sequence : List Resolution → String) : String :=
   let opt :=
     match r with
-    | .combatOrGrant (some _) .. => phraseGrant r noun
-    | .playerResource .. | .tapDiscardOrReturn .. | .tokensOrCounters none .. =>
+    | .combatCountersOrTokens (some _) .. => phraseGrant r noun
+    | .playerResource .. | .zoneOrTap true ..
+    | .combatCountersOrTokens none none none (some _) ..
+    | .combatCountersOrTokens none none none none (some _) .. =>
       phrasePlayerAndCards r noun
-    | .putExileOrDestroy .. | .revealOrReflexive .. =>
+    | .zoneOrTap false .. | .flowOrReveal true .. | .flowOrReveal false none (some _) .. =>
       phraseZoneAndReveal r noun
-    | .combatOrGrant none .. | .tokensOrCounters (some _) .. | .sequenceOrModes .. | .may .. =>
+    | .combatCountersOrTokens .. | .flowOrReveal .. =>
       phraseCombatCountersAndFlow r noun sequence
   match opt with
   | some s => s

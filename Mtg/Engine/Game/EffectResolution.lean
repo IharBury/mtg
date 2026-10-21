@@ -3956,44 +3956,45 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   let fallback (g : Game) : Game :=
     g.applyUnifiedFallback controller effect targets sourceId isAbility
   match effect.resolution with
-  | .combatOrGrant none none .. =>
-    g.applyUnifiedPump controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .combatOrGrant none (some _) .. =>
-    g.applyUnifiedDamage1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
-      g.applyUnifiedDamage2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse fallback)
-  | .combatOrGrant (some _) .. =>
+  | .combatCountersOrTokens (some _) .. =>
     g.applyUnifiedGrant1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
       g.applyUnifiedGrant2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
         g.applyUnifiedGrant3 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback))
-  | .tokensOrCounters (some _) .. =>
+  | .combatCountersOrTokens none (some _) .. =>
+    g.applyUnifiedDamage1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
+      g.applyUnifiedDamage2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse fallback)
+  | .combatCountersOrTokens none none (some _) .. =>
     g.applyUnifiedCounters1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
       g.applyUnifiedCounters2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback)
-  | .tokensOrCounters none .. =>
+  | .combatCountersOrTokens none none none (some _) ..
+  | .combatCountersOrTokens none none none none (some _) .. =>
     g.applyUnifiedCreateOrAmass controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
+  | .combatCountersOrTokens none none none none none .. =>
+    g.applyUnifiedPump controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
   | .playerResource false false .. =>
     g.applyUnifiedScryOrMill controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
   | .playerResource false true .. =>
     g.applyUnifiedDrawOrLife controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
   | .playerResource true .. =>
     g.applyUnifiedManaPayOrCast controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .tapDiscardOrReturn none none .. =>
+  | .zoneOrTap true none none .. =>
     g.applyUnifiedTapOrDiscard controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .tapDiscardOrReturn .. =>
+  | .zoneOrTap true .. =>
     g.applyUnifiedReturnOrLibrary controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .putExileOrDestroy (some _) .. =>
+  | .zoneOrTap false _ _ (some _) .. =>
     g.applyUnifiedPut controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .putExileOrDestroy none _ (some _) .. =>
+  | .zoneOrTap false _ _ none _ (some _) .. =>
     g.applyUnifiedExile1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
       g.applyUnifiedExile2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback)
-  | .putExileOrDestroy none _ none .. =>
+  | .zoneOrTap false _ _ none _ none .. =>
     g.applyUnifiedSacrificeOrDestroy controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
-  | .revealOrReflexive .. =>
+  | .flowOrReveal true .. | .flowOrReveal false none (some _) .. =>
     g.applyUnifiedRevealOrReflexive1 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility (fun g =>
       g.applyUnifiedRevealOrReflexive2 controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback)
-  | .sequenceOrModes .. =>
-    g.applyUnifiedSequenceOrModes controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse fallback
-  | .may .. =>
+  | .flowOrReveal false (some _) .. =>
     g.applyUnifiedMay controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility fallback
+  | .flowOrReveal false none none .. =>
+    g.applyUnifiedSequenceOrModes controller effect targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower isAbility recurse fallback
 
 /-- Resolve a single `Resolution` step in ability context. -/
 def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
