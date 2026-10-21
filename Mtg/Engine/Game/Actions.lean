@@ -39,8 +39,8 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | _ => g.announceMode p idx
   | .chooseNumber n supplyRandom =>
     if supplyRandom then g.supplyIndex n else g.announceX p n
-  | .announceTargetAction t _ false => g.announceTarget p t
-  | .announceTargetAction _ ts true =>
+  | .target t => g.announceTarget p t
+  | .targets ts =>
     match g.pending with
     | .chooseProliferate .. => g.finishProliferate p ts
     | _ => g.announceTargets p ts

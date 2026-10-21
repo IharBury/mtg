@@ -161,20 +161,30 @@ end CardChoice
 
 /-- Library, search, reveal, and draw choices made while an effect resolves (CR 401 / CR 701.19). -/
 inductive LibraryChoice where
-  | drawOrObjectLibraryChoice (ids : Array ObjectId := #[]) (id : ObjectId := ⟨0⟩)
-      (player : PlayerId := ⟨0⟩) (n : Nat := 0) (discard : Nat := 0) (rest : Array PlayerId := #[])
-      (sourceId : Option ObjectId := none)
+  | libraryChoiceKind (ids : Array ObjectId := #[]) (ids2 : Array ObjectId := #[])
+      (id : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩) (n : Nat := 0) (discard : Nat := 0)
+      (rest : Array PlayerId := #[]) (sourceId : Option ObjectId := none)
+      (destOpt : Option SearchDest := none) (after : Option Resolution := none)
+      (kindOpt : Option String := none) (purposeOpt : Option CardChoice := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (isArray : Bool := false) (isObjOrArray : Bool := false)
-  | arrayOrSearchLibraryChoice (ids1 : Array ObjectId) (ids2 : Array ObjectId := #[]) (x : Nat := 0)
-      (controller : PlayerId := ⟨0⟩) (dest : SearchDest := .hand)
-      (after : Option Resolution := none) (kind : String := "")
-      (purpose : CardChoice := .creaturesToBattlefield)
-      (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (visionOrRiddles : Bool := false) (isSearchOrChoose : Bool := false)
+      (b4 : Bool := false) (b5 : Bool := false) (isArrayOrSearch : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace LibraryChoice
+
+@[match_pattern] abbrev drawOrObjectLibraryChoice (ids : Array ObjectId := #[]) (id : ObjectId := ⟨0⟩)
+    (player : PlayerId := ⟨0⟩) (n : Nat := 0) (discard : Nat := 0) (rest : Array PlayerId := #[])
+    (sourceId : Option ObjectId := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (isArray : Bool := false) (isObjOrArray : Bool := false) : LibraryChoice :=
+  .libraryChoiceKind ids #[] id player n discard rest sourceId none none none none alt1 alt2 alt3 isArray isObjOrArray false
+@[match_pattern] abbrev arrayOrSearchLibraryChoice (ids1 : Array ObjectId) (ids2 : Array ObjectId := #[]) (x : Nat := 0)
+    (controller : PlayerId := ⟨0⟩) (destOpt : Option SearchDest := none)
+    (after : Option Resolution := none) (kindOpt : Option String := none)
+    (purposeOpt : Option CardChoice := none)
+    (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (visionOrRiddles : Bool := false) (isSearchOrChoose : Bool := false) : LibraryChoice :=
+  .libraryChoiceKind ids1 ids2 ⟨0⟩ controller x 0 #[] none destOpt after kindOpt purposeOpt alt1 alt2 alt3 visionOrRiddles isSearchOrChoose true
 
 @[match_pattern] abbrev drawOrExileLibraryChoice (n : Nat := 0) (discard : Nat := 0) (rest : Array PlayerId := #[])
     (sourceId : Option ObjectId := none) (alt1 : Bool := false) (alt2 : Bool := false)
@@ -187,11 +197,11 @@ namespace LibraryChoice
 @[match_pattern] abbrev multiArrayLibraryChoice (ids1 : Array ObjectId) (ids2 : Array ObjectId := #[]) (x : Nat := 0)
     (controller : PlayerId := ⟨0⟩) (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (visionOrRiddles : Bool := false) : LibraryChoice :=
-  .arrayOrSearchLibraryChoice ids1 ids2 x controller .hand none "" .creaturesToBattlefield alt1 alt2 alt3 visionOrRiddles false
-@[match_pattern] abbrev searchOrChooseLibrary (ids : Array ObjectId) (count : Nat) (dest : SearchDest := .hand)
-    (after : Option Resolution := none) (kind : String := "")
-    (purpose : CardChoice := .creaturesToBattlefield) (optional : Bool := false) (isChoose : Bool := false) : LibraryChoice :=
-  .arrayOrSearchLibraryChoice ids #[] count ⟨0⟩ dest after kind purpose optional isChoose false false true
+  .arrayOrSearchLibraryChoice ids1 ids2 x controller none none none none alt1 alt2 alt3 visionOrRiddles false
+@[match_pattern] abbrev searchOrChooseLibrary (ids : Array ObjectId) (count : Nat) (destOpt : Option SearchDest := none)
+    (after : Option Resolution := none) (kindOpt : Option String := none)
+    (purposeOpt : Option CardChoice := none) (optional : Bool := false) (isChoose : Bool := false) : LibraryChoice :=
+  .arrayOrSearchLibraryChoice ids #[] count ⟨0⟩ destOpt after kindOpt purposeOpt optional isChoose false false true
 @[match_pattern] abbrev mayDrawOrWheel (n : Nat) (discard : Nat := 0) (rest : Array PlayerId := #[])
     (eachOppDraws : Bool := false) (wheel : Bool := false) : LibraryChoice :=
   .drawOrExileLibraryChoice n discard rest none eachOppDraws wheel false
@@ -212,9 +222,9 @@ namespace LibraryChoice
   .multiArrayLibraryChoice ids1 ids2 x controller shuffle visionPick riddles true
 @[match_pattern] abbrev searchChoice (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
     (after : Option Resolution) (kind : String) (optional : Bool := false) : LibraryChoice :=
-  .searchOrChooseLibrary eligible count dest after kind .creaturesToBattlefield optional false
+  .searchOrChooseLibrary eligible count (some dest) after (some kind) none optional false
 @[match_pattern] abbrev chooseCards (ids : Array ObjectId) (max : Nat) (purpose : CardChoice) : LibraryChoice :=
-  .searchOrChooseLibrary ids max .hand none "" purpose false true
+  .searchOrChooseLibrary ids max none none none (some purpose) false true
 @[match_pattern] abbrev mayWheel (n : Nat) (rest : Array PlayerId) : LibraryChoice := .mayDrawOrWheel n 0 rest false true
 @[match_pattern] abbrev mayDrawChoice (draw : Nat) (discard : Nat := 0) (eachOppDraws : Bool := false) : LibraryChoice :=
   .mayDrawOrWheel draw discard #[] eachOppDraws false
@@ -265,16 +275,25 @@ end LibraryChoice
 
 /-- Hand, discard, graveyard, and exile cast choices made while an effect resolves (CR 402 / CR 404 / CR 406). -/
 inductive HandGraveyardChoice where
-  | handOrCardListChoice (ids : Array ObjectId := #[]) (rest : Array PlayerId := #[])
+  | handGraveyardChoiceKind (ids : Array ObjectId := #[]) (rest : Array PlayerId := #[])
       (victim : PlayerId := ⟨0⟩) (id : ObjectId := ⟨0⟩) (id2 : ObjectId := ⟨0⟩)
       (n : Nat := 0) (m : Nat := 0) (sourceId : Option ObjectId := none)
-      (optVictim : Option PlayerId := none)
+      (optVictim : Option PlayerId := none) (nextOpt : Option Resolution := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (singleOrPair : Bool := false) (discardAct : Bool := false) (isCardList : Bool := false)
-  | mayDiscardThen (next : Resolution) (sourceId : Option ObjectId)
 deriving Repr, Inhabited, BEq
 
 namespace HandGraveyardChoice
+
+@[match_pattern] abbrev handOrCardListChoice (ids : Array ObjectId := #[]) (rest : Array PlayerId := #[])
+    (victim : PlayerId := ⟨0⟩) (id : ObjectId := ⟨0⟩) (id2 : ObjectId := ⟨0⟩)
+    (n : Nat := 0) (m : Nat := 0) (sourceId : Option ObjectId := none)
+    (optVictim : Option PlayerId := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (singleOrPair : Bool := false) (discardAct : Bool := false) (isCardList : Bool := false) : HandGraveyardChoice :=
+  .handGraveyardChoiceKind ids rest victim id id2 n m sourceId optVictim none alt1 alt2 alt3 singleOrPair discardAct isCardList
+@[match_pattern] abbrev mayDiscardThen (next : Resolution) (sourceId : Option ObjectId) : HandGraveyardChoice :=
+  .handGraveyardChoiceKind #[] #[] ⟨0⟩ ⟨0⟩ ⟨0⟩ 0 0 sourceId none (some next) false false false false false false
 
 @[match_pattern] abbrev handOrDiscardObjectChoice (victim : PlayerId := ⟨0⟩) (id : ObjectId := ⟨0⟩) (id2 : ObjectId := ⟨0⟩)
     (n : Nat := 0) (sourceId : Option ObjectId := none)
@@ -357,46 +376,59 @@ end HandGraveyardChoice
 
 /-- Battlefield, sacrifice, counter, and permanent choices made while an effect resolves (CR 403 / CR 701.17). -/
 inductive BattlefieldChoice where
-  | mayOrTokenBattlefieldChoice (next : Resolution := .unrecognized) (sourceId : Option ObjectId := none)
-      (kind : ObjectSelector := .source) (tokenKind : TokenKind := .treasure) (n : Nat := 0)
-      (types : Array String := #[]) (alt : Bool := false) (isTokenOrType : Bool := false)
-  | objectOrArrayBattlefieldChoice (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+  | battlefieldChoiceKind (nextOpt : Option Resolution := none) (sourceId : Option ObjectId := none)
+      (kindOpt : Option ObjectSelector := none) (tokenKindOpt : Option TokenKind := none)
+      (types : Array String := #[]) (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
       (exiled : Array ObjectId := #[]) (chosen : Array ObjectId := #[])
       (controller : PlayerId := ⟨0⟩) (id : ObjectId := ⟨0⟩) (otherId : ObjectId := ⟨0⟩)
-      (sourceId : Option ObjectId := none) (optExiled : Option ObjectId := none)
-      (power : Nat := 0) (p : Int := 0) (t : Int := 0) (target : Target := .player ⟨0⟩)
+      (optExiled : Option ObjectId := none) (power : Nat := 0) (p : Int := 0) (t : Int := 0)
+      (targetOpt : Option Target := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (objChoice : Bool := false) (intChoice : Bool := false) (isPlayerOrObjects : Bool := false)
+      (isObjOrArray : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace BattlefieldChoice
 
+@[match_pattern] abbrev mayOrTokenBattlefieldChoice (nextOpt : Option Resolution := none) (sourceId : Option ObjectId := none)
+    (kindOpt : Option ObjectSelector := none) (tokenKindOpt : Option TokenKind := none) (n : Nat := 0)
+    (types : Array String := #[]) (alt : Bool := false) (isTokenOrType : Bool := false) : BattlefieldChoice :=
+  .battlefieldChoiceKind nextOpt sourceId kindOpt tokenKindOpt types #[] #[] #[] #[] ⟨0⟩ ⟨0⟩ ⟨0⟩ none n 0 0 none alt isTokenOrType false false false false false
+@[match_pattern] abbrev objectOrArrayBattlefieldChoice (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+    (exiled : Array ObjectId := #[]) (chosen : Array ObjectId := #[])
+    (controller : PlayerId := ⟨0⟩) (id : ObjectId := ⟨0⟩) (otherId : ObjectId := ⟨0⟩)
+    (sourceId : Option ObjectId := none) (optExiled : Option ObjectId := none)
+    (power : Nat := 0) (p : Int := 0) (t : Int := 0) (targetOpt : Option Target := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+    (objChoice : Bool := false) (intChoice : Bool := false) (isPlayerOrObjects : Bool := false) : BattlefieldChoice :=
+  .battlefieldChoiceKind none sourceId none none #[] rest ids exiled chosen controller id otherId optExiled power p t targetOpt alt1 alt2 alt3 objChoice intChoice isPlayerOrObjects true
+
 @[match_pattern] abbrev mayPermanentCostThen (next : Resolution) (sourceId : Option ObjectId) (kind : ObjectSelector := .source) (tapSource : Bool := false) : BattlefieldChoice :=
-  .mayOrTokenBattlefieldChoice next sourceId kind .treasure 0 #[] tapSource false
-@[match_pattern] abbrev tokenOrTypeBattlefieldChoice (kind : TokenKind := .treasure) (n : Nat := 0)
+  .mayOrTokenBattlefieldChoice (some next) sourceId (some kind) none 0 #[] tapSource false
+@[match_pattern] abbrev tokenOrTypeBattlefieldChoice (kindOpt : Option TokenKind := none) (n : Nat := 0)
     (types : Array String := #[]) (isPalisade : Bool := false) : BattlefieldChoice :=
-  .mayOrTokenBattlefieldChoice .unrecognized none .source kind n types isPalisade true
+  .mayOrTokenBattlefieldChoice none none none kindOpt n types isPalisade true
 @[match_pattern] abbrev objectOrIntBattlefieldChoice (id : ObjectId := ⟨0⟩) (otherId : ObjectId := ⟨0⟩)
     (sourceId : Option ObjectId := none) (exiled : Option ObjectId := none)
-    (power : Nat := 0) (p : Int := 0) (t : Int := 0) (target : Target := .player ⟨0⟩)
+    (power : Nat := 0) (p : Int := 0) (t : Int := 0) (targetOpt : Option Target := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (objChoice : Bool := false) (intChoice : Bool := false) : BattlefieldChoice :=
-  .objectOrArrayBattlefieldChoice #[] #[] #[] #[] ⟨0⟩ id otherId sourceId exiled power p t target alt1 alt2 alt3 objChoice intChoice false
+  .objectOrArrayBattlefieldChoice #[] #[] #[] #[] ⟨0⟩ id otherId sourceId exiled power p t targetOpt alt1 alt2 alt3 objChoice intChoice false
 @[match_pattern] abbrev playerOrObjectsBattlefieldChoice (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
     (exiled : Array ObjectId := #[]) (chosen : Array ObjectId := #[])
     (controller : PlayerId := ⟨0⟩) (creatureId : ObjectId := ⟨0⟩) (n : Nat := 0)
     (sourceId : Option ObjectId := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (fromObjects : Bool := false) : BattlefieldChoice :=
-  .objectOrArrayBattlefieldChoice rest ids exiled chosen controller creatureId ⟨0⟩ sourceId none n 0 0 (.player ⟨0⟩) alt1 alt2 alt3 fromObjects false true
+  .objectOrArrayBattlefieldChoice rest ids exiled chosen controller creatureId ⟨0⟩ sourceId none n 0 0 none alt1 alt2 alt3 fromObjects false true
 @[match_pattern] abbrev optionalSourceChoice (sourceId : Option ObjectId := none)
     (exiled : Option ObjectId := none) (oddEven : Bool := false) (widow : Bool := false) : BattlefieldChoice :=
-  .objectOrIntBattlefieldChoice ⟨0⟩ ⟨0⟩ sourceId exiled 0 0 0 (.player ⟨0⟩) oddEven widow false false false
+  .objectOrIntBattlefieldChoice ⟨0⟩ ⟨0⟩ sourceId exiled 0 0 0 none oddEven widow false false false
 @[match_pattern] abbrev objectBattlefieldChoice (id : ObjectId) (otherId : ObjectId := ⟨0⟩)
     (power : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false) (moveOrCrew : Bool := false) : BattlefieldChoice :=
-  .objectOrIntBattlefieldChoice id otherId none none power 0 0 (.player ⟨0⟩) alt1 alt2 moveOrCrew true false
+  .objectOrIntBattlefieldChoice id otherId none none power 0 0 none alt1 alt2 moveOrCrew true false
 @[match_pattern] abbrev intBattlefieldChoice (p : Int) (t : Int := 0) (objectId : ObjectId := ⟨0⟩)
-    (target : Target := .player ⟨0⟩) (sourceId : Option ObjectId := none) (sheHulk : Bool := false) : BattlefieldChoice :=
-  .objectOrIntBattlefieldChoice objectId ⟨0⟩ sourceId none 0 p t target sheHulk false false false true
+    (targetOpt : Option Target := none) (sourceId : Option ObjectId := none) (sheHulk : Bool := false) : BattlefieldChoice :=
+  .objectOrIntBattlefieldChoice objectId ⟨0⟩ sourceId none 0 p t targetOpt sheHulk false false false true
 @[match_pattern] abbrev playerBattlefieldChoice (rest : Array PlayerId) (ids : Array ObjectId := #[])
     (exiled : Array ObjectId := #[]) (chosen : Array ObjectId := #[]) (controller : PlayerId := ⟨0⟩)
     (creatureId : ObjectId := ⟨0⟩) (sourceId : Option ObjectId := none)
@@ -406,9 +438,9 @@ namespace BattlefieldChoice
     (removeOrHero : Bool := false) (sacThese : Bool := false) (attachOrHero : Bool := false) : BattlefieldChoice :=
   .playerOrObjectsBattlefieldChoice #[] ids #[] #[] ⟨0⟩ hostId n none removeOrHero sacThese attachOrHero true
 @[match_pattern] abbrev mayCreateTokens (kind : TokenKind) (n : Nat) : BattlefieldChoice :=
-  .tokenOrTypeBattlefieldChoice kind n #[] false
+  .tokenOrTypeBattlefieldChoice (some kind) n #[] false
 @[match_pattern] abbrev palisadeCreatureType (types : Array String) : BattlefieldChoice :=
-  .tokenOrTypeBattlefieldChoice .treasure 0 types true
+  .tokenOrTypeBattlefieldChoice none 0 types true
 @[match_pattern] abbrev planeswalkerOrOddEven (sourceId : Option ObjectId := none) (oddEven : Bool := false) : BattlefieldChoice :=
   .optionalSourceChoice sourceId none oddEven false
 @[match_pattern] abbrev maySacrificePlaneswalker : BattlefieldChoice := .optionalSourceChoice none none false false
@@ -456,50 +488,61 @@ namespace BattlefieldChoice
 @[match_pattern] abbrev mayPutHeroFromHandOrDraw (ids : Array ObjectId) : BattlefieldChoice :=
   .chooseFromObjects ids 0 ⟨0⟩ true false true
 @[match_pattern] abbrev mayBecomeBasePT (objectId : ObjectId) (p t : Int) : BattlefieldChoice :=
-  .intBattlefieldChoice p t objectId (.player ⟨0⟩) none false
+  .intBattlefieldChoice p t objectId none none false
 @[match_pattern] abbrev sheHulkMayDamage (amount : Int) (target : Target) (sourceId : Option ObjectId) : BattlefieldChoice :=
-  .intBattlefieldChoice amount 0 ⟨0⟩ target sourceId true
+  .intBattlefieldChoice amount 0 ⟨0⟩ (some target) sourceId true
 
 end BattlefieldChoice
 
 /-- Cost, mode, enters, and target choices made while an effect resolves (CR 118 / CR 601.2 / CR 614.12 / CR 700.2). -/
 inductive CostModeChoice where
-  | mayPayOrPicksChoice (next : Resolution := .unrecognized) (sourceId : Option ObjectId := none)
+  | costModeChoiceKind (nextOpt : Option Resolution := none) (sourceId : Option ObjectId := none)
       (objId : ObjectId := ⟨0⟩) (mana : Option Nat := none) (symbols : Array ManaSymbol := #[])
-      (picks : Array CostPick := #[]) (pick : CostPick := default)
-      (maxTimes : Nat := 0) (kind : Nat := 0)
-      (alt1 : Bool := false) (alt2 : Bool := false) (isPicks : Bool := false)
-  | modeOrTypeChoice (objectId : ObjectId := ⟨0⟩) (nats : Array Nat := #[]) (remaining : Nat := 0)
-      (sourceId : Option ObjectId := none) (copies : Array ObjectId := #[])
-      (types : Array String := #[]) (use : FraManaUse := .notSpellsFromHand)
+      (picks : Array CostPick := #[]) (pickOpt : Option CostPick := none)
+      (maxTimes : Nat := 0) (kind : Nat := 0) (nats : Array Nat := #[])
+      (copies : Array ObjectId := #[]) (types : Array String := #[])
+      (useOpt : Option FraManaUse := none)
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (isObjOrSpecial : Bool := false) (isTypeOrMana : Bool := false)
+      (b5 : Bool := false) (b6 : Bool := false) (isModeOrType : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace CostModeChoice
 
-@[match_pattern] abbrev mayPayOrResolveChoice (next : Resolution := .unrecognized) (sourceId : Option ObjectId := none)
+@[match_pattern] abbrev mayPayOrPicksChoice (nextOpt : Option Resolution := none) (sourceId : Option ObjectId := none)
+    (objId : ObjectId := ⟨0⟩) (mana : Option Nat := none) (symbols : Array ManaSymbol := #[])
+    (picks : Array CostPick := #[]) (pickOpt : Option CostPick := none)
+    (maxTimes : Nat := 0) (kind : Nat := 0)
+    (alt1 : Bool := false) (alt2 : Bool := false) (isPicks : Bool := false) : CostModeChoice :=
+  .costModeChoiceKind nextOpt sourceId objId mana symbols picks pickOpt maxTimes kind #[] #[] #[] none alt1 alt2 isPicks false false false false
+@[match_pattern] abbrev modeOrTypeChoice (objectId : ObjectId := ⟨0⟩) (nats : Array Nat := #[]) (remaining : Nat := 0)
+    (sourceId : Option ObjectId := none) (copies : Array ObjectId := #[])
+    (types : Array String := #[]) (useOpt : Option FraManaUse := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (isObjOrSpecial : Bool := false) (isTypeOrMana : Bool := false) : CostModeChoice :=
+  .costModeChoiceKind none sourceId objectId none #[] #[] none remaining 0 nats copies types useOpt alt1 alt2 alt3 alt4 isObjOrSpecial isTypeOrMana true
+
+@[match_pattern] abbrev mayPayOrResolveChoice (nextOpt : Option Resolution := none) (sourceId : Option ObjectId := none)
     (objId : ObjectId := ⟨0⟩) (mana : Option Nat := none) (symbols : Array ManaSymbol := #[])
     (maxTimes : Nat := 0) (kind : Nat := 0) (reflexive : Bool := false) (isSymbols : Bool := false) : CostModeChoice :=
-  .mayPayOrPicksChoice next sourceId objId mana symbols #[] default maxTimes kind reflexive isSymbols false
+  .mayPayOrPicksChoice nextOpt sourceId objId mana symbols #[] none maxTimes kind reflexive isSymbols false
 @[match_pattern] abbrev picksCostChoice (sourceId : ObjectId) (picks : Array CostPick := #[])
-    (pick : CostPick := default) (next : Resolution := .unrecognized)
+    (pickOpt : Option CostPick := none) (nextOpt : Option Resolution := none)
     (paid : Bool := false) (isSinglePick : Bool := false) : CostModeChoice :=
-  .mayPayOrPicksChoice next none sourceId none #[] picks pick 0 0 paid isSinglePick true
+  .mayPayOrPicksChoice nextOpt none sourceId none #[] picks pickOpt 0 0 paid isSinglePick true
 @[match_pattern] abbrev modeOrEntersChoice (objectId : ObjectId := ⟨0⟩) (nats : Array Nat := #[]) (remaining : Nat := 0)
     (sourceId : Option ObjectId := none) (copies : Array ObjectId := #[])
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (isObjOrSpecial : Bool := false) : CostModeChoice :=
-  .modeOrTypeChoice objectId nats remaining sourceId copies #[] .notSpellsFromHand alt1 alt2 alt3 alt4 isObjOrSpecial false
+  .modeOrTypeChoice objectId nats remaining sourceId copies #[] none alt1 alt2 alt3 alt4 isObjOrSpecial false
 @[match_pattern] abbrev typeOrManaColorChoice (types : Array String := #[]) (left : Nat := 0)
-    (use : FraManaUse := .notSpellsFromHand) (isManaColors : Bool := false) : CostModeChoice :=
-  .modeOrTypeChoice ⟨0⟩ #[] left none #[] types use isManaColors false false false false true
+    (useOpt : Option FraManaUse := none) (isManaColors : Bool := false) : CostModeChoice :=
+  .modeOrTypeChoice ⟨0⟩ #[] left none #[] types useOpt isManaColors false false false false true
 @[match_pattern] abbrev mayResolveOrPayThen (next : Resolution) (sourceId : Option ObjectId) (mana : Option Nat := none) : CostModeChoice :=
-  .mayPayOrResolveChoice next sourceId ⟨0⟩ mana #[] 0 0 false false
-@[match_pattern] abbrev mayPaySymbolsChoice (symbols : Array ManaSymbol) (next : Resolution := .unrecognized)
+  .mayPayOrResolveChoice (some next) sourceId ⟨0⟩ mana #[] 0 0 false false
+@[match_pattern] abbrev mayPaySymbolsChoice (symbols : Array ManaSymbol) (nextOpt : Option Resolution := none)
     (sourceId : ObjectId := ⟨0⟩) (optSourceId : Option ObjectId := none)
     (maxTimes : Nat := 0) (kind : Nat := 0) (reflexive : Bool := false) : CostModeChoice :=
-  .mayPayOrResolveChoice next optSourceId sourceId none symbols maxTimes kind reflexive true
+  .mayPayOrResolveChoice nextOpt optSourceId sourceId none symbols maxTimes kind reflexive true
 @[match_pattern] abbrev modeOrCopyTargetsChoice (objectId : ObjectId := ⟨0⟩) (nats : Array Nat := #[])
     (remaining : Nat := 0) (sourceId : Option ObjectId := none) (copies : Array ObjectId := #[])
     (alt1 : Bool := false) (alt2 : Bool := false) (multi : Bool := false) (copyTargets : Bool := false) : CostModeChoice :=
@@ -509,13 +552,13 @@ namespace CostModeChoice
     (natChoice : Bool := false) (special : Bool := false) : CostModeChoice :=
   .modeOrEntersChoice objectId #[] n sourceId #[] alt1 alt2 natChoice special true
 @[match_pattern] abbrev costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool) : CostModeChoice :=
-  .picksCostChoice sourceId picks default .unrecognized paid false
+  .picksCostChoice sourceId picks none none paid false
 @[match_pattern] abbrev mayPayPickThen (pick : CostPick) (next : Resolution) (sourceId : ObjectId) : CostModeChoice :=
-  .picksCostChoice sourceId #[] pick next false true
+  .picksCostChoice sourceId #[] (some pick) (some next) false true
 @[match_pattern] abbrev chooseCreatureType (types : Array String) : CostModeChoice :=
-  .typeOrManaColorChoice types 0 .notSpellsFromHand false
+  .typeOrManaColorChoice types 0 none false
 @[match_pattern] abbrev addManaColors (left : Nat) (use : FraManaUse) : CostModeChoice :=
-  .typeOrManaColorChoice #[] left use true
+  .typeOrManaColorChoice #[] left (some use) true
 @[match_pattern] abbrev mayThen (next : Resolution) (sourceId : Option ObjectId) : CostModeChoice :=
   .mayResolveOrPayThen next sourceId none
 @[match_pattern] abbrev mayPayThen (n : Nat) (next : Resolution) (sourceId : Option ObjectId) : CostModeChoice :=
@@ -560,9 +603,9 @@ namespace CostModeChoice
 @[match_pattern] abbrev kingpinMayPay2Life : CostModeChoice :=
   .specialCostOrMode none ⟨0⟩ false true
 @[match_pattern] abbrev mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Resolution) (sourceId : ObjectId) : CostModeChoice :=
-  .mayPaySymbolsChoice symbols next sourceId none 0 0 false
+  .mayPaySymbolsChoice symbols (some next) sourceId none 0 0 false
 @[match_pattern] abbrev mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat) (kind : Nat) (sourceId : Option ObjectId) : CostModeChoice :=
-  .mayPaySymbolsChoice cost .unrecognized ⟨0⟩ sourceId maxTimes kind true
+  .mayPaySymbolsChoice cost none ⟨0⟩ sourceId maxTimes kind true
 
 end CostModeChoice
 
@@ -571,19 +614,22 @@ with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
 inductive FraChoice where
   /-- Unified resolution choice (CR 608 / CR 701): hand/graveyard, library, battlefield, or cost/mode. -/
-  | fraChoiceKind (val : HandGraveyardChoice ⊕ LibraryChoice ⊕ BattlefieldChoice ⊕ CostModeChoice := .inl default)
+  | fraChoiceKind (hgOpt : Option HandGraveyardChoice := none)
+      (libOpt : Option LibraryChoice := none)
+      (bfOpt : Option BattlefieldChoice := none)
+      (cmOpt : Option CostModeChoice := none)
 deriving Repr, Inhabited, BEq
 
 namespace FraChoice
 
 @[match_pattern] abbrev handGraveyard (c : HandGraveyardChoice) : FraChoice :=
-  .fraChoiceKind (.inl c)
+  .fraChoiceKind (some c) none none none
 @[match_pattern] abbrev library (c : LibraryChoice) : FraChoice :=
-  .fraChoiceKind (.inr (.inl c))
+  .fraChoiceKind none (some c) none none
 @[match_pattern] abbrev battlefield (c : BattlefieldChoice) : FraChoice :=
-  .fraChoiceKind (.inr (.inr (.inl c)))
+  .fraChoiceKind none none (some c) none
 @[match_pattern] abbrev costMode (c : CostModeChoice) : FraChoice :=
-  .fraChoiceKind (.inr (.inr (.inr c)))
+  .fraChoiceKind none none none (some c)
 
 -- LibraryChoice aliases
 @[match_pattern] abbrev mayWheel (n : Nat) (rest : Array PlayerId) : FraChoice := .library (.mayWheel n rest)
@@ -888,23 +934,28 @@ end ResolvePending
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   /-- Unified pending choice (CR 103 / 508–510 / 601 / 608): `none`, `turnCombat`, `cast`, `resolve`, `fraChoice`, or `resolveRandom`. -/
-  | pendingKind (val : Option (TurnCombatPending ⊕ (PlayerId × CastPending) ⊕ (PlayerId × ResolvePending) ⊕ (PlayerId × FraChoice) ⊕ RandomRequest) := Option.none)
+  | pendingKind (player : PlayerId := ⟨0⟩)
+      (tcOpt : Option TurnCombatPending := Option.none)
+      (castOpt : Option CastPending := Option.none)
+      (resOpt : Option ResolvePending := Option.none)
+      (fraOpt : Option FraChoice := Option.none)
+      (randOpt : Option RandomRequest := Option.none)
 deriving Repr, Inhabited, BEq
 
 namespace Pending
 
 @[match_pattern] abbrev none : Pending :=
-  .pendingKind Option.none
+  .pendingKind ⟨0⟩ Option.none Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev turnCombat (step : TurnCombatPending) : Pending :=
-  .pendingKind (some (.inl step))
+  .pendingKind ⟨0⟩ (some step) Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev cast (player : PlayerId) (step : CastPending) : Pending :=
-  .pendingKind (some (.inr (.inl (player, step))))
+  .pendingKind player Option.none (some step) Option.none Option.none Option.none
 @[match_pattern] abbrev resolve (player : PlayerId) (choice : ResolvePending) : Pending :=
-  .pendingKind (some (.inr (.inr (.inl (player, choice)))))
+  .pendingKind player Option.none Option.none (some choice) Option.none Option.none
 @[match_pattern] abbrev fraChoice (player : PlayerId) (choice : FraChoice) : Pending :=
-  .pendingKind (some (.inr (.inr (.inr (.inl (player, choice))))))
+  .pendingKind player Option.none Option.none Option.none (some choice) Option.none
 @[match_pattern] abbrev resolveRandom (req : RandomRequest) : Pending :=
-  .pendingKind (some (.inr (.inr (.inr (.inr req)))))
+  .pendingKind ⟨0⟩ Option.none Option.none Option.none Option.none (some req)
 
 -- TurnCombatPending aliases
 @[match_pattern] abbrev declareAttackers : Pending := .turnCombat .declareAttackers

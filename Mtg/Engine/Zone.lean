@@ -26,28 +26,39 @@ instance : ToString ObjectId where
 
 /-- The zones of the game (CR 400.1). -/
 inductive Zone where
-  /-- Per-player hidden zone; the player’s deck at the start of the game (CR 401). -/
-  | library (owner : PlayerId)
-  /-- Per-player hidden zone of drawn cards (CR 402). -/
-  | hand (owner : PlayerId)
-  /-- Shared public zone; objects here are permanents (CR 403). -/
-  | battlefield
-  /-- Per-player public discard pile (CR 404). -/
-  | graveyard (owner : PlayerId)
-  /-- Shared public zone of pending spells and abilities (CR 405). -/
-  | stack
-  /-- Shared public holding area (CR 406). -/
-  | exile
-  /-- Shared public zone for commanders, emblems, schemes, etc. (CR 408). -/
-  | command
-  /-- Legacy “for keeps” zone (CR 407). -/
-  | ante
-  /-- Cards a player owns outside the game, such as their sideboard
-  (CR 400.11b). Not a zone; these cards aren't in the game. -/
-  | outside (owner : PlayerId)
+  | zoneKind (k : Option (Option PlayerId × Bool × Bool) := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Zone
+
+/-- Per-player hidden zone; the player’s deck at the start of the game (CR 401). -/
+@[match_pattern] abbrev library (owner : PlayerId) : Zone :=
+  .zoneKind (some (some owner, false, false))
+/-- Per-player hidden zone of drawn cards (CR 402). -/
+@[match_pattern] abbrev hand (owner : PlayerId) : Zone :=
+  .zoneKind (some (some owner, false, true))
+/-- Per-player public discard pile (CR 404). -/
+@[match_pattern] abbrev graveyard (owner : PlayerId) : Zone :=
+  .zoneKind (some (some owner, true, false))
+/-- Cards a player owns outside the game, such as their sideboard
+(CR 400.11b). Not a zone; these cards aren't in the game. -/
+@[match_pattern] abbrev outside (owner : PlayerId) : Zone :=
+  .zoneKind (some (some owner, true, true))
+/-- Shared public zone; objects here are permanents (CR 403). -/
+@[match_pattern] abbrev battlefield : Zone :=
+  .zoneKind (some (none, false, false))
+/-- Shared public zone of pending spells and abilities (CR 405). -/
+@[match_pattern] abbrev stack : Zone :=
+  .zoneKind (some (none, false, true))
+/-- Shared public holding area (CR 406). -/
+@[match_pattern] abbrev exile : Zone :=
+  .zoneKind (some (none, true, false))
+/-- Shared public zone for commanders, emblems, schemes, etc. (CR 408). -/
+@[match_pattern] abbrev command : Zone :=
+  .zoneKind (some (none, true, true))
+/-- Legacy “for keeps” zone (CR 407). -/
+@[match_pattern] abbrev ante : Zone :=
+  .zoneKind none
 
 /-- Graveyard, battlefield, stack, exile, ante, and command are public (CR 400.2). -/
 def isPublic : Zone → Bool

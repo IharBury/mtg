@@ -132,9 +132,15 @@ deciding player (heuristic) chooses to go first.
 
 /-- A Welcome Deck color or a path to a text deck list. -/
 inductive DemoDeck where
-  | welcome (color : Color)
-  | file (path : String)
+  | demoDeckKind (k : Color ⊕ String)
 deriving Repr, Inhabited, DecidableEq
+
+namespace DemoDeck
+
+@[match_pattern] abbrev welcome (color : Color) : DemoDeck := .demoDeckKind (.inl color)
+@[match_pattern] abbrev file (path : String) : DemoDeck := .demoDeckKind (.inr path)
+
+end DemoDeck
 
 /-- A named player and the deck they sit with. -/
 structure DemoPlayer where
@@ -1383,11 +1389,17 @@ def hasLegalBlock (g : Game) : Bool :=
 
 /-- Target a pass-until shortcut stops at. -/
 inductive PassUntilTarget where
-  | nextTurnCombat
-  | nextTurnMain
-  | nextMain
-  | nextDeclareAttackers
+  | passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false)
 deriving DecidableEq, Repr
+
+namespace PassUntilTarget
+
+@[match_pattern] abbrev nextTurnCombat : PassUntilTarget := .passUntilTargetKind true true
+@[match_pattern] abbrev nextTurnMain : PassUntilTarget := .passUntilTargetKind true false
+@[match_pattern] abbrev nextMain : PassUntilTarget := .passUntilTargetKind false false
+@[match_pattern] abbrev nextDeclareAttackers : PassUntilTarget := .passUntilTargetKind false true
+
+end PassUntilTarget
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
 structure PassUntilResult where
@@ -1454,9 +1466,15 @@ def passUntilFuel : Nat := 200
 
 /-- Kind of pending pass-until goal stored by the console and `--check` replay. -/
 inductive PassUntilKind where
-  | named (target : PassUntilTarget)
-  | ignore
+  | passUntilKind (target : Option PassUntilTarget := none)
 deriving DecidableEq, Repr
+
+namespace PassUntilKind
+
+@[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := .passUntilKind (some target)
+@[match_pattern] abbrev ignore : PassUntilKind := .passUntilKind none
+
+end PassUntilKind
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/

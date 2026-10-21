@@ -12,13 +12,11 @@ ability whose total cost is being determined and paid
 
 namespace Mtg.Engine
 
-instance {α β : Type} [Inhabited α] : Inhabited (α ⊕ β) := ⟨.inl default⟩
-
 /-- A target chosen while casting a spell or putting an ability on the stack
 (CR 115). -/
 inductive Target where
   /-- Unified target (CR 115): player (`.inl id`), permanent (`.inr (id, false)`), or card/spell (`.inr (id, true)`). -/
-  | targetKind (val : PlayerId ⊕ (ObjectId × Bool) := .inl ⟨0⟩)
+  | targetKind (k : PlayerId ⊕ (ObjectId × Bool))
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Target

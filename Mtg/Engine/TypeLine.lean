@@ -12,24 +12,26 @@ namespace Mtg.Engine
 
 /-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
-  | artifact
-  | battle
-  | creature
-  | enchantment
-  | instant
-  | land
-  | planeswalker
-  | sorcery
-  | kindred
-  | dungeon
-  | plane
-  | phenomenon
-  | vanguard
-  | scheme
-  | conspiracy
+  | cardTypeKind (k0 : Option (Option (Option Bool)) := none) (k1 : Option Bool := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CardType
+
+@[match_pattern] abbrev artifact : CardType := .cardTypeKind none none
+@[match_pattern] abbrev battle : CardType := .cardTypeKind none (some false)
+@[match_pattern] abbrev creature : CardType := .cardTypeKind none (some true)
+@[match_pattern] abbrev enchantment : CardType := .cardTypeKind (some none) none
+@[match_pattern] abbrev instant : CardType := .cardTypeKind (some none) (some false)
+@[match_pattern] abbrev land : CardType := .cardTypeKind (some none) (some true)
+@[match_pattern] abbrev planeswalker : CardType := .cardTypeKind (some (some none)) none
+@[match_pattern] abbrev sorcery : CardType := .cardTypeKind (some (some none)) (some false)
+@[match_pattern] abbrev kindred : CardType := .cardTypeKind (some (some none)) (some true)
+@[match_pattern] abbrev dungeon : CardType := .cardTypeKind (some (some (some false))) none
+@[match_pattern] abbrev plane : CardType := .cardTypeKind (some (some (some false))) (some false)
+@[match_pattern] abbrev phenomenon : CardType := .cardTypeKind (some (some (some false))) (some true)
+@[match_pattern] abbrev vanguard : CardType := .cardTypeKind (some (some (some true))) none
+@[match_pattern] abbrev scheme : CardType := .cardTypeKind (some (some (some true))) (some false)
+@[match_pattern] abbrev conspiracy : CardType := .cardTypeKind (some (some (some true))) (some true)
 
 def englishName : CardType → String
   | .artifact => "Artifact"
@@ -99,14 +101,16 @@ end CardType
 
 /-- Supertypes (CR 205.4). -/
 inductive Supertype where
-  | basic
-  | legendary
-  | ongoing
-  | snow
-  | world
+  | supertypeKind (k : Option (Option (Option Bool)) := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Supertype
+
+@[match_pattern] abbrev basic : Supertype := .supertypeKind none
+@[match_pattern] abbrev legendary : Supertype := .supertypeKind (some none)
+@[match_pattern] abbrev ongoing : Supertype := .supertypeKind (some (some none))
+@[match_pattern] abbrev snow : Supertype := .supertypeKind (some (some (some false)))
+@[match_pattern] abbrev world : Supertype := .supertypeKind (some (some (some true)))
 
 def englishName : Supertype → String
   | .basic => "Basic"
@@ -144,16 +148,22 @@ def basicLandTypes : List Subtype :=
 `spell` is shared by instants and sorceries (205.3k). `creature` is shared by
 creatures and kindreds (205.3m). -/
 inductive SubtypeClass where
-  | artifact
-  | enchantment
-  | land
-  | planeswalker
-  | spell
-  | creature
-  | planar
-  | dungeon
-  | battle
-deriving DecidableEq, Repr, BEq
+  | subtypeClassKind (k0 : Option Bool := none) (k1 : Option Bool := none)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace SubtypeClass
+
+@[match_pattern] abbrev artifact : SubtypeClass := .subtypeClassKind none none
+@[match_pattern] abbrev enchantment : SubtypeClass := .subtypeClassKind none (some false)
+@[match_pattern] abbrev land : SubtypeClass := .subtypeClassKind none (some true)
+@[match_pattern] abbrev planeswalker : SubtypeClass := .subtypeClassKind (some false) none
+@[match_pattern] abbrev spell : SubtypeClass := .subtypeClassKind (some false) (some false)
+@[match_pattern] abbrev creature : SubtypeClass := .subtypeClassKind (some false) (some true)
+@[match_pattern] abbrev planar : SubtypeClass := .subtypeClassKind (some true) none
+@[match_pattern] abbrev dungeon : SubtypeClass := .subtypeClassKind (some true) (some false)
+@[match_pattern] abbrev battle : SubtypeClass := .subtypeClassKind (some true) (some true)
+
+end SubtypeClass
 
 def artifactTypes : List String := [
   "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",

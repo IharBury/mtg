@@ -11,11 +11,13 @@ namespace Mtg.Engine
 
 /-- A type of mana that can exist in a mana pool (CR 106.1b). -/
 inductive ManaType where
-  | colored (color : Color)
-  | colorless
-deriving DecidableEq, Repr, Inhabited
+  | manaTypeKind (color : Option Color := none)
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaType
+
+@[match_pattern] abbrev colored (color : Color) : ManaType := .manaTypeKind (some color)
+@[match_pattern] abbrev colorless : ManaType := .manaTypeKind none
 
 def letter : ManaType → String
   | .colored c => c.letter
@@ -28,24 +30,34 @@ instance : ToString ManaType where
 
 end ManaType
 
+instance {α β : Type} [Inhabited α] : Inhabited (α ⊕ β) := ⟨.inl default⟩
+
 /-- A symbol that can appear in a mana cost (subset of CR 107.4). -/
 inductive ManaSymbol where
-  /-- Generic mana in costs, payable with any type (CR 107.4b). -/
-  | generic (n : Nat)
-  /-- One mana of a specific color (CR 107.4a). -/
-  | colored (color : Color)
-  /-- The colorless mana symbol `{C}` (CR 107.4c). -/
-  | colorless
-  /-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
-  | hybrid (a b : Color)
-  /-- A monocolored hybrid with generic mana `{2/C}` (CR 107.4f). Payable with
-  two mana of any type, or one mana of `c`. Mana value is 2. -/
-  | twobrid (c : Color)
-  /-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
-  | x
-deriving DecidableEq, Repr, Inhabited
+  | manaSymbolKind (k : Nat ⊕ (Color × Option (Option Color)) ⊕ Bool := .inl 0)
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaSymbol
+
+/-- Generic mana in costs, payable with any type (CR 107.4b). -/
+@[match_pattern] abbrev generic (n : Nat) : ManaSymbol :=
+  .manaSymbolKind (.inl n)
+/-- One mana of a specific color (CR 107.4a). -/
+@[match_pattern] abbrev colored (color : Color) : ManaSymbol :=
+  .manaSymbolKind (.inr (.inl (color, none)))
+/-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
+@[match_pattern] abbrev hybrid (a b : Color) : ManaSymbol :=
+  .manaSymbolKind (.inr (.inl (a, some (some b))))
+/-- A monocolored hybrid with generic mana `{2/C}` (CR 107.4f). Payable with
+two mana of any type, or one mana of `c`. Mana value is 2. -/
+@[match_pattern] abbrev twobrid (c : Color) : ManaSymbol :=
+  .manaSymbolKind (.inr (.inl (c, some none)))
+/-- The colorless mana symbol `{C}` (CR 107.4c). -/
+@[match_pattern] abbrev colorless : ManaSymbol :=
+  .manaSymbolKind (.inr (.inr false))
+/-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
+@[match_pattern] abbrev x : ManaSymbol :=
+  .manaSymbolKind (.inr (.inr true))
 
 def toNotation : ManaSymbol → String
   | .generic n => s!"\{{n}}"

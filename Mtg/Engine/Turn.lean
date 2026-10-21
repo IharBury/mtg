@@ -10,21 +10,23 @@ namespace Mtg.Engine
 
 /-- A step or a main phase (main phases have no steps; CR 505.2). -/
 inductive Step where
-  | untap
-  | upkeep
-  | draw
-  | precombatMain
-  | beginningOfCombat
-  | declareAttackers
-  | declareBlockers
-  | combatDamage
-  | endOfCombat
-  | postcombatMain
-  | end
-  | cleanup
+  | stepKind (o : Option Bool := none) (b0 : Bool := false) (b1 : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Step
+
+@[match_pattern] abbrev untap : Step := .stepKind none false false
+@[match_pattern] abbrev upkeep : Step := .stepKind none false true
+@[match_pattern] abbrev draw : Step := .stepKind none true false
+@[match_pattern] abbrev precombatMain : Step := .stepKind none true true
+@[match_pattern] abbrev beginningOfCombat : Step := .stepKind (some false) false false
+@[match_pattern] abbrev declareAttackers : Step := .stepKind (some false) false true
+@[match_pattern] abbrev declareBlockers : Step := .stepKind (some false) true false
+@[match_pattern] abbrev combatDamage : Step := .stepKind (some false) true true
+@[match_pattern] abbrev endOfCombat : Step := .stepKind (some true) false false
+@[match_pattern] abbrev postcombatMain : Step := .stepKind (some true) false true
+@[match_pattern] abbrev «end» : Step := .stepKind (some true) true false
+@[match_pattern] abbrev cleanup : Step := .stepKind (some true) true true
 
 /-- Canonical order of steps/phases in a turn (CR 500.1, 501.1, 506, 512). -/
 def all : List Step :=

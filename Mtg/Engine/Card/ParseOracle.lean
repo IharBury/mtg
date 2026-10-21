@@ -559,12 +559,23 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | _ => fallback
 
 inductive ParsedAbility where
-  | static (ab : StaticAbility)
-  | triggered (ab : TriggeredAbility)
-  | activated (ab : ActivatedAbility)
-  | spell (e : Effect)
-  | modes (es : Array Effect) (rule : ModalRule)
-deriving Repr
+  | parsedAbilityKind (k : StaticAbility ⊕ TriggeredAbility ⊕ ActivatedAbility ⊕ Effect ⊕ (Array Effect × ModalRule))
+deriving Repr, Inhabited
+
+namespace ParsedAbility
+
+@[match_pattern] abbrev static (ab : StaticAbility) : ParsedAbility :=
+  .parsedAbilityKind (.inl ab)
+@[match_pattern] abbrev triggered (ab : TriggeredAbility) : ParsedAbility :=
+  .parsedAbilityKind (.inr (.inl ab))
+@[match_pattern] abbrev activated (ab : ActivatedAbility) : ParsedAbility :=
+  .parsedAbilityKind (.inr (.inr (.inl ab)))
+@[match_pattern] abbrev spell (e : Effect) : ParsedAbility :=
+  .parsedAbilityKind (.inr (.inr (.inr (.inl e))))
+@[match_pattern] abbrev modes (es : Array Effect) (rule : ModalRule) : ParsedAbility :=
+  .parsedAbilityKind (.inr (.inr (.inr (.inr (es, rule)))))
+
+end ParsedAbility
 
 def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
   match ab with

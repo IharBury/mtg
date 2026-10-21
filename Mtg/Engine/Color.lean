@@ -10,14 +10,16 @@ namespace Mtg.Engine
 
 /-- One of the five colors of Magic (CR 105.1). -/
 inductive Color where
-  | white
-  | blue
-  | black
-  | red
-  | green
-deriving DecidableEq, Repr, Hashable, Inhabited
+  | colorKind (k : Option (Option (Option Bool)) := none)
+deriving DecidableEq, Repr, Hashable, Inhabited, BEq
 
 namespace Color
+
+@[match_pattern] abbrev white : Color := .colorKind none
+@[match_pattern] abbrev blue : Color := .colorKind (some none)
+@[match_pattern] abbrev black : Color := .colorKind (some (some none))
+@[match_pattern] abbrev red : Color := .colorKind (some (some (some false)))
+@[match_pattern] abbrev green : Color := .colorKind (some (some (some true)))
 
 /-- Canonical WUBRG order (CR 105.1). -/
 def all : List Color := [.white, .blue, .black, .red, .green]
@@ -121,7 +123,7 @@ theorem empty_isColorless : ColorSet.empty.isColorless = true := rfl
 
 theorem singleton_monocolored (c : Color) :
     (ColorSet.singleton c).isMonocolored = true := by
-  cases c <;> rfl
+  rcases c with ⟨none | none | none | false | true⟩ <;> rfl
 
 theorem all_five_colors : Color.all.length = 5 := rfl
 

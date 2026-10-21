@@ -12,13 +12,15 @@ namespace Mtg.Engine
 
 /-- How a deck is validated before a game begins. -/
 inductive Format where
-  /-- CR 100.2a: minimum 60, four-of except basic lands. -/
-  | constructed
-  /-- CR 100.2b: minimum 40, duplicates unrestricted. -/
-  | limited
-deriving DecidableEq, Repr, Inhabited
+  | formatKind (isConstructed : Bool := false)
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Format
+
+/-- CR 100.2a: minimum 60, four-of except basic lands. -/
+@[match_pattern] abbrev constructed : Format := .formatKind true
+/-- CR 100.2b: minimum 40, duplicates unrestricted. -/
+@[match_pattern] abbrev limited : Format := .formatKind false
 
 def minDeckSize : Format → Nat
   | .constructed => 60
@@ -34,11 +36,15 @@ instance : ToString Format where
 end Format
 
 inductive DeckError where
-  | tooSmall (got required : Nat)
-  | tooManyCopies (cardName : String) (got : Nat)
-deriving Repr
+  | deckErrorKind (k : (Nat × Nat) ⊕ (String × Nat))
+deriving Repr, BEq
 
 namespace DeckError
+
+@[match_pattern] abbrev tooSmall (got required : Nat) : DeckError :=
+  .deckErrorKind (.inl (got, required))
+@[match_pattern] abbrev tooManyCopies (cardName : String) (got : Nat) : DeckError :=
+  .deckErrorKind (.inr (cardName, got))
 
 def message : DeckError → String
   | .tooSmall got required =>

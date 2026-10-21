@@ -1970,7 +1970,7 @@ def sequenceClause (e : Effect) : Option String :=
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
-private def isOnEnchanted : TriggerResolution → Bool
+private partial def isOnEnchanted : TriggerResolution → Bool
   | .putCounters _ .enchanted | .pump _ _ .enchanted | .destroy .enchanted _
   | .dealDamage _ .enchanted _ | .grant _ .enchanted | .tap .enchantedWhileSource
   | .untap .enchanted | .cant (.beBlocked .enchanted)

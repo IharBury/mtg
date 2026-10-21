@@ -18,62 +18,98 @@ open OracleNorm
 
 /-- One printed argument. A card type is any type from CR 205.2a. -/
 inductive SlotVal where
-  | nat (n : Nat)
-  | int (i : Int)
-  | str (s : String)
-  | ty (t : CardType)
-  | sup (s : Supertype)
-  /-- The whole target noun (`target creature`, `target artifact token`, …). -/
-  | kind (k : EffectTargetKind)
-  /-- A counter kind (`+1/+1`, `stun`, `first strike`). -/
-  | ctr (k : CounterKind)
-  deriving BEq, Repr, Inhabited
+  | slotValKind (k : Nat ⊕ Int ⊕ String ⊕ CardType ⊕ Supertype ⊕ EffectTargetKind ⊕ CounterKind := .inl 0)
+deriving BEq, Repr, Inhabited
+
+namespace SlotVal
+
+@[match_pattern] abbrev nat (n : Nat) : SlotVal := .slotValKind (.inl n)
+@[match_pattern] abbrev int (i : Int) : SlotVal := .slotValKind (.inr (.inl i))
+@[match_pattern] abbrev str (s : String) : SlotVal := .slotValKind (.inr (.inr (.inl s)))
+@[match_pattern] abbrev ty (t : CardType) : SlotVal := .slotValKind (.inr (.inr (.inr (.inl t))))
+@[match_pattern] abbrev sup (s : Supertype) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inl s)))))
+/-- The whole target noun (`target creature`, `target artifact token`, …). -/
+@[match_pattern] abbrev kind (k : EffectTargetKind) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inr (.inl k))))))
+/-- A counter kind (`+1/+1`, `stun`, `first strike`). -/
+@[match_pattern] abbrev ctr (k : CounterKind) : SlotVal := .slotValKind (.inr (.inr (.inr (.inr (.inr (.inr k))))))
+
+end SlotVal
 
 inductive NatFmt where
-  | digits
-  | cards
-  | counters
-  | brace
-  | english
-  /-- `twice`, or `N times`. -/
-  | times
-  deriving BEq, Repr
+  | natFmtKind (k0 : Option Bool := none) (k1 : Bool := false)
+deriving BEq, Repr, Inhabited
+
+namespace NatFmt
+
+@[match_pattern] abbrev digits : NatFmt := .natFmtKind none false
+@[match_pattern] abbrev cards : NatFmt := .natFmtKind none true
+@[match_pattern] abbrev counters : NatFmt := .natFmtKind (some false) false
+@[match_pattern] abbrev brace : NatFmt := .natFmtKind (some false) true
+@[match_pattern] abbrev english : NatFmt := .natFmtKind (some true) false
+/-- `twice`, or `N times`. -/
+@[match_pattern] abbrev times : NatFmt := .natFmtKind (some true) true
+
+end NatFmt
 
 inductive IntFmt where
-  | signed
-  | digits
-  deriving BEq, Repr
+  | intFmtKind (isDigits : Bool := false)
+deriving BEq, Repr, Inhabited
+
+namespace IntFmt
+
+@[match_pattern] abbrev signed : IntFmt := .intFmtKind false
+@[match_pattern] abbrev digits : IntFmt := .intFmtKind true
+
+end IntFmt
 
 inductive StrFmt where
-  | word (n : Nat)
-  | plural
-  | cycling (n : Nat)
-  | non
-  /-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
-  | sub
-  /-- Any CR 205.3 subtype, plural spelling. -/
-  | subPlural
-  deriving BEq, Repr
+  | strFmtKind (k : (Nat × Bool) ⊕ (Bool × Bool) := .inl (0, false))
+deriving BEq, Repr, Inhabited
+
+namespace StrFmt
+
+@[match_pattern] abbrev word (n : Nat) : StrFmt := .strFmtKind (.inl (n, false))
+@[match_pattern] abbrev cycling (n : Nat) : StrFmt := .strFmtKind (.inl (n, true))
+@[match_pattern] abbrev plural : StrFmt := .strFmtKind (.inr (false, false))
+@[match_pattern] abbrev non : StrFmt := .strFmtKind (.inr (false, true))
+/-- Any CR 205.3 subtype, singular spelling, however many words it is. -/
+@[match_pattern] abbrev sub : StrFmt := .strFmtKind (.inr (true, false))
+/-- Any CR 205.3 subtype, plural spelling. -/
+@[match_pattern] abbrev subPlural : StrFmt := .strFmtKind (.inr (true, true))
+
+end StrFmt
 
 /-- One token of a normalized Oracle line. A hole remembers which argument it is. -/
 inductive Pat where
-  | lit (s : String)
-  | nat (i : Nat) (fmt : NatFmt)
-  | int (i : Nat) (fmt : IntFmt)
-  | str (i : Nat) (fmt : StrFmt)
-  | ty (i : Nat)
-  | sup (i : Nat)
-  | kind (i : Nat)
-  | pt (i j : Nat) (signed : Bool)
-  /-- `a`/`an`/`N` plus a counter name plus `counter(s)`. `ni` is the count
-  slot and `ki` is the `CounterKind` slot. -/
-  | counterPhrase (ni ki : Nat)
-  deriving BEq, Repr
+  | patKind (k : String ⊕ (Nat × NatFmt) ⊕ (Nat × IntFmt) ⊕ (Nat × StrFmt) ⊕ (Nat × Option Bool) ⊕ (Nat × Nat × Option Bool) := .inl "")
+deriving BEq, Repr, Inhabited
+
+namespace Pat
+
+@[match_pattern] abbrev lit (s : String) : Pat := .patKind (.inl s)
+@[match_pattern] abbrev nat (i : Nat) (fmt : NatFmt) : Pat := .patKind (.inr (.inl (i, fmt)))
+@[match_pattern] abbrev int (i : Nat) (fmt : IntFmt) : Pat := .patKind (.inr (.inr (.inl (i, fmt))))
+@[match_pattern] abbrev str (i : Nat) (fmt : StrFmt) : Pat := .patKind (.inr (.inr (.inr (.inl (i, fmt)))))
+@[match_pattern] abbrev ty (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, none))))))
+@[match_pattern] abbrev sup (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, some false))))))
+@[match_pattern] abbrev kind (i : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inl (i, some true))))))
+@[match_pattern] abbrev pt (i j : Nat) (signed : Bool) : Pat := .patKind (.inr (.inr (.inr (.inr (.inr (i, j, some signed))))))
+/-- `a`/`an`/`N` plus a counter name plus `counter(s)`. `ni` is the count
+slot and `ki` is the `CounterKind` slot. -/
+@[match_pattern] abbrev counterPhrase (ni ki : Nat) : Pat := .patKind (.inr (.inr (.inr (.inr (.inr (ni, ki, none))))))
+
+end Pat
 
 inductive Mode where
-  | collect
-  | fill
-  deriving BEq
+  | modeKind (isFill : Bool := false)
+deriving BEq, Repr, Inhabited
+
+namespace Mode
+
+@[match_pattern] abbrev collect : Mode := .modeKind false
+@[match_pattern] abbrev fill : Mode := .modeKind true
+
+end Mode
 
 structure St where
   mode : Mode
@@ -239,129 +275,55 @@ def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
   | .or a b => return .or (← takeWhen a) (← takeWhen b)
   | w => return w
 
-partial def takeResolution (r : Resolution) : ArgM Resolution := do
+def takeResolution3 (r : Resolution) : ArgM Resolution := do
   match r with
-  | .searchLibrary (.returnToHand (.landSubtype s) note) =>
-    return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
-  | .grant (.subtypeWithLandsPT s) .source =>
-    return .grant (.subtypeWithLandsPT (← takeStr s)) .source
-  | .mill (.fixed n) who (.subtypeOrEnchantmentToHand s) =>
-    return .mill (.fixed (← takeNat n.toNat)) who (.subtypeOrEnchantmentToHand (← takeStr s))
-  | .mill (.fixed n) who .none => return .mill (← takeNat n.toNat) who .none
-  | .mill (.fixed n) who .milledCards => return .mill (← takeNat n.toNat) who .milledCards
-  | .grant (.keywords k) (.intersection [.creaturesYouControl, .union what]) =>
-    let ss := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
-    let ss ← takeStrs ss
-    return .grant (.keywords k)
-      (.intersection [.creaturesYouControl, .union (ss.toList.map (fun s => .youControl (.subtype s)))])
-  | .searchLibrary (.put (.basicBeholdUntap s) how note) =>
-    return .searchLibrary (.put (.basicBeholdUntap (← takeStr s)) how note)
-  | .revealLibrary (.topNumber (.fixed n)) (.returnToHand (.lookedTypes ts) hnote) rwho =>
-    return .revealLibrary (.topNumber (.fixed (← takeNat n.toNat))) (.returnToHand (.lookedTypes (← takeStrs ts)) hnote) rwho
-  | .revealLibrary (.top n) (.put (.lookedTypes ts) how pnote) rwho =>
-    return .revealLibrary (.top (← takeNat n)) (.put (.lookedTypes (← takeStrs ts)) how pnote) rwho
-  | .revealLibrary (.top n) (.put .randomCreature how pnote) rwho =>
-    return .revealLibrary (.top (← takeNat n)) (.put .randomCreature how pnote) rwho
-  | .revealLibrary (.top n) (.returnToHand .artifact hnote) rwho =>
-    return .revealLibrary (.top (← takeNat n)) (.returnToHand .artifact hnote) rwho
-  | .addMana types amount (.subtypeSpellsOrAbilities s) =>
-    return .addMana types amount (.subtypeSpellsOrAbilities (← takeStr s))
-  | .revealLibrary (.top n) (.returnToHand (.milledSubtype s) hnote) rwho =>
-    return .revealLibrary (.top (← takeNat n)) (.returnToHand (.milledSubtype (← takeStr s)) hnote) rwho
-  | .grant (.typesPTAndKeywords ts p t k) .source =>
-    return .grant (.typesPTAndKeywords (← takeStrs ts) (← takeInt p) (← takeInt t) k) .source
-  | .connive (.target (.youControl (.subtype s))) =>
-    return .connive (.target (.youControl (.subtype (← takeStr s))))
-  | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
-  | .exile .top (.mayCastElseDamageOpponents n) note =>
-    return .exile .top (.mayCastElseDamageOpponents (← takeNat n)) note
-  | .grant (.emblemCastSpellDamage n) .youIfCast =>
-    return .grant (.emblemCastSpellDamage (← takeNat n)) .youIfCast
-  | .«if» (.or [.attackedWithSubtype s, .subtypeEntered _]) (.draw (.fixed 1) who) =>
-    let s ← takeStr s
-    return .«if» (.or [.attackedWithSubtype s, .subtypeEntered s]) (.draw (.fixed 1) who)
-  | .sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union what]),
-               .pump (.fixed op) (.fixed ot) .opponentsCreatures] =>
-    let ss := (what.filterMap fun | .othersOfSubtype s => some s | _ => none).toArray
-    let ss ← takeStrs ss
-    let p ← takeInt p
-    let t ← takeInt t
-    let op ← takeInt op
-    let ot ← takeInt ot
-    return .sequence
-      [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (ss.toList.map .othersOfSubtype)]),
-       .pump (.fixed op) (.fixed ot) .opponentsCreatures]
-  | .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed _) .you] =>
-    let n ← takeNat n.toNat
-    return .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n) .you]
-  | .sequence [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] =>
-    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
-  | .pump (.fixed p) (.fixed t) who =>
-    return .pump (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
-  | .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype s) =>
-    return .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype (← takeStr s))
-  | .setBasePT (.fixed p) (.fixed t) who =>
-    return .setBasePT (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
-  | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
-  | .discard (.cards n) => return .discard (.cards (← takeNat n))
-  | .discard (.cards n (.target .opponent)) =>
-    return .discard (.cards (← takeNat n) (.target .opponent))
-  | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
-  | .gainLife (.fixed n) who => return .gainLife (← takeNat n.toNat) who
-  | .scry (.fixed n) => return .scry (← takeNat n.toNat)
-  | .surveil (.fixed n) note => return .surveil (← takeNat n.toNat) note
-  | .unlessPays r n => return .unlessPays (← takeResolution r) (← takeNat n)
-  | .or rs => return .or (← rs.mapM takeResolution)
-  | .may (.draw (.perControlled ty)) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
-    return .may (.draw (.perControlled (← takeCardType ty))) (.draw (.fixed 1) .eachOpponent) .ifYouDo
-  | .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont =>
-    let n ← takeNat n
-    let s ← takeStr s
-    return .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed n)) .ifYouDo =>
-    return .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed (← takeNat n.toNat))) .ifYouDo
-  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
-    return .may (.discard (.cards 1)) (.draw (← takeNat n.toNat)) .ifYouDo
-  | .may (.pay (.mana symbols)) thenDo .ifYouDo =>
-    match symbols.toList with
-    | [.generic n] =>
-      return .may (.pay (.mana #[.generic (← takeNat n)])) thenDo .ifYouDo
-    | _ => return .may (.pay (.mana symbols)) thenDo .ifYouDo
-  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo =>
-    return .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo
-  | .may r thenDo how => return .may (← takeResolution r) (← takeResolution thenDo) how
-  | .«if» .teamwork (.grant (.keywords kw) .target) =>
-    let name ← takeStr kw.joinedAnd
-    let kw := (Keywords.ofName? name).getD kw
-    return .«if» .teamwork (.grant (.keywords kw) .target)
-  | .«if» cond r =>
-    let r ← takeResolution r
-    match cond with
-    | .subtype s => return .«if» (.subtype (← takeStr s)) r
-    | .dealtDamageToSubtype s => return .«if» (.dealtDamageToSubtype (← takeStr s)) r
-    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
-    | .castFromGraveyard => return .«if» .castFromGraveyard r
-    | .teamwork => return .«if» .teamwork r
-    | .giftPromised => return .«if» .giftPromised r
-    | _ => return .«if» cond r
-  | .queueReflexive r => return .queueReflexive (← takeResolution r)
-  | .ifElse cond whenTrue whenFalse =>
-    -- Printed order is the otherwise branch, then the condition, then the
-    -- true branch.
-    let whenFalse ← takeResolution whenFalse
-    let cond ← match cond with
-      | .subtype s => do
-        let s ← takeStr s
-        pure (.subtype s)
-      | .mvAtMost n => do
-        let n ← takeNat n
-        pure (.mvAtMost n)
-      | .castFromGraveyard => pure .castFromGraveyard
-      | .teamwork => pure .teamwork
-      | .giftPromised => pure .giftPromised
-      | c => pure c
-    let whenTrue ← takeResolution whenTrue
-    return .ifElse cond whenTrue whenFalse
+  | .amass (.fixed n) subtype attach .you =>
+    return .amass (.fixed (← takeNat n.toNat)) (← takeStr subtype) attach .you
+  | .amass .lastKnownPower subtype attach .you =>
+    return .amass .lastKnownPower (← takeStr subtype) attach .you
+  | .mill (.fixed n) who (.toHand which) =>
+    match which with
+    | .oneOf a b =>
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
+    | .upTo max ty =>
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
+    | .milledPickKind a b _ _ =>
+      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
+  | .exile (.topN n) .playUntilNextTurn note =>
+    return .exile (.topN (← takeNat n)) .playUntilNextTurn note
+  | .exile (.topN n) (.playIfYouControlSubtype s) note =>
+    return .exile (.topN (← takeNat n)) (.playIfYouControlSubtype (← takeStr s)) note
+  | .revealLibrary (.top a) (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed b) lwho]) rwho =>
+    return .revealLibrary (.top (← takeNat a))
+      (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed (← takeNat b.toNat)) lwho]) rwho
+  | .exile (.creatureMvAtMostOrTeamwork a) .forLater (.gainLifeIfTeamwork b) =>
+    return .exile (.creatureMvAtMostOrTeamwork (← takeNat a)) .forLater (.gainLifeIfTeamwork (← takeNat b))
+  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted pnote =>
+    return .put (.creatureMvAtMostOrTeamwork (← takeNat n)) .asPrinted pnote
+  | .revealLibrary (.top n) (.put .creaturesYouControl how pnote) rwho =>
+    return .revealLibrary (.top (← takeNat n)) (.put .creaturesYouControl how pnote) rwho
+  | .createTokens k (.fixed n) tapped who note =>
+    return .createTokens k (← takeNat n.toNat) tapped who note
+  | .createTokens k .chosenX tapped who note =>
+    return .createTokens k .chosenX tapped who note
+  | .createTokens k (.perSubtype s) tapped who note =>
+    return .createTokens k (.perSubtype (← takeStr s)) tapped who note
+  | .returnToHand (.graveyardSubtype s) note =>
+    return .returnToHand (.graveyardSubtype (← takeStr s)) note
+  | .returnToHand (.milledSubtype s) note =>
+    return .returnToHand (.milledSubtype (← takeStr s)) note
+  | .mill (.fixed a) who (.permanentAndGainLife b) =>
+    return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
+  | .spellsCostLess which (.fixed n) =>
+    match which with
+    | .supertype s =>
+      return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
+    | .spellCostLessKind ty _ =>
+      return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
+  | r => return r
+
+def takeResolution2 (r : Resolution) : ArgM Resolution := do
+  match r with
   | .putCounters (.ofKind kind n) .creatureTargets =>
     return .putCounters (.ofKind (← takeCounter kind) (← takeNat n)) .creatureTargets
   | .putCounters (.ofKind kind n) .firstTargetCreatureYouControl =>
@@ -415,51 +377,140 @@ partial def takeResolution (r : Resolution) : ArgM Resolution := do
     return .dealDamage (.fixed (← takeNat n.toNat)) (.eachNonSubtypeAndOpponents (← takeStr subtype)) note
   | .dealDamage (.fixed n) who note =>
     return .dealDamage (.fixed (← takeNat n.toNat)) who note
-  | .amass (.fixed n) subtype attach .you =>
-    return .amass (.fixed (← takeNat n.toNat)) (← takeStr subtype) attach .you
-  | .amass .lastKnownPower subtype attach .you =>
-    return .amass .lastKnownPower (← takeStr subtype) attach .you
-  | .mill (.fixed n) who (.toHand which) =>
-    match which with
-    | .oneOf a b =>
-      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
-    | .upTo max ty =>
-      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
-    | .milledPickKind a b _ _ =>
-      return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
-  | .exile (.topN n) .playUntilNextTurn note =>
-    return .exile (.topN (← takeNat n)) .playUntilNextTurn note
-  | .exile (.topN n) (.playIfYouControlSubtype s) note =>
-    return .exile (.topN (← takeNat n)) (.playIfYouControlSubtype (← takeStr s)) note
-  | .revealLibrary (.top a) (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed b) lwho]) rwho =>
-    return .revealLibrary (.top (← takeNat a))
-      (.sequence [.put .landsYouControl .tapped pnote, .gainLife (.fixed (← takeNat b.toNat)) lwho]) rwho
-  | .exile (.creatureMvAtMostOrTeamwork a) .forLater (.gainLifeIfTeamwork b) =>
-    return .exile (.creatureMvAtMostOrTeamwork (← takeNat a)) .forLater (.gainLifeIfTeamwork (← takeNat b))
-  | .put (.creatureMvAtMostOrTeamwork n) .asPrinted pnote =>
-    return .put (.creatureMvAtMostOrTeamwork (← takeNat n)) .asPrinted pnote
-  | .revealLibrary (.top n) (.put .creaturesYouControl how pnote) rwho =>
-    return .revealLibrary (.top (← takeNat n)) (.put .creaturesYouControl how pnote) rwho
-  | .createTokens k (.fixed n) tapped who note =>
-    return .createTokens k (← takeNat n.toNat) tapped who note
-  | .createTokens k .chosenX tapped who note =>
-    return .createTokens k .chosenX tapped who note
-  | .createTokens k (.perSubtype s) tapped who note =>
-    return .createTokens k (.perSubtype (← takeStr s)) tapped who note
-  | .returnToHand (.graveyardSubtype s) note =>
-    return .returnToHand (.graveyardSubtype (← takeStr s)) note
-  | .returnToHand (.milledSubtype s) note =>
-    return .returnToHand (.milledSubtype (← takeStr s)) note
-  | .mill (.fixed a) who (.permanentAndGainLife b) =>
-    return .mill (.fixed (← takeNat a.toNat)) who (.permanentAndGainLife (← takeNat b))
-  | .spellsCostLess which (.fixed n) =>
-    match which with
-    | .supertype s =>
-      return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
-    | .spellCostLessKind ty _ =>
-      return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
+  | r => takeResolution3 r
+
+def takeResolution1 (r : Resolution) : Option (ArgM Resolution) :=
+  match r with
+  | .searchLibrary (.returnToHand (.landSubtype s) note) => some do
+    return .searchLibrary (.returnToHand (.landSubtype (← takeStr s)) note)
+  | .grant (.subtypeWithLandsPT s) .source => some do
+    return .grant (.subtypeWithLandsPT (← takeStr s)) .source
+  | .mill (.fixed n) who (.subtypeOrEnchantmentToHand s) => some do
+    return .mill (.fixed (← takeNat n.toNat)) who (.subtypeOrEnchantmentToHand (← takeStr s))
+  | .mill (.fixed n) who .none => some do return .mill (← takeNat n.toNat) who .none
+  | .mill (.fixed n) who .milledCards => some do return .mill (← takeNat n.toNat) who .milledCards
+  | .grant (.keywords k) (.intersection [.creaturesYouControl, .union what]) => some do
+    let ss := (what.filterMap fun | .youControl (.subtype s) => some s | _ => none).toArray
+    let ss ← takeStrs ss
+    return .grant (.keywords k)
+      (.intersection [.creaturesYouControl, .union (ss.toList.map (fun s => .youControl (.subtype s)))])
+  | .searchLibrary (.put (.basicBeholdUntap s) how note) => some do
+    return .searchLibrary (.put (.basicBeholdUntap (← takeStr s)) how note)
+  | .revealLibrary (.topNumber (.fixed n)) (.returnToHand (.lookedTypes ts) hnote) rwho => some do
+    return .revealLibrary (.topNumber (.fixed (← takeNat n.toNat))) (.returnToHand (.lookedTypes (← takeStrs ts)) hnote) rwho
+  | .revealLibrary (.top n) (.put (.lookedTypes ts) how pnote) rwho => some do
+    return .revealLibrary (.top (← takeNat n)) (.put (.lookedTypes (← takeStrs ts)) how pnote) rwho
+  | .revealLibrary (.top n) (.put .randomCreature how pnote) rwho => some do
+    return .revealLibrary (.top (← takeNat n)) (.put .randomCreature how pnote) rwho
+  | .revealLibrary (.top n) (.returnToHand .artifact hnote) rwho => some do
+    return .revealLibrary (.top (← takeNat n)) (.returnToHand .artifact hnote) rwho
+  | .addMana types amount (.subtypeSpellsOrAbilities s) => some do
+    return .addMana types amount (.subtypeSpellsOrAbilities (← takeStr s))
+  | .revealLibrary (.top n) (.returnToHand (.milledSubtype s) hnote) rwho => some do
+    return .revealLibrary (.top (← takeNat n)) (.returnToHand (.milledSubtype (← takeStr s)) hnote) rwho
+  | .grant (.typesPTAndKeywords ts p t k) .source => some do
+    return .grant (.typesPTAndKeywords (← takeStrs ts) (← takeInt p) (← takeInt t) k) .source
+  | .connive (.target (.youControl (.subtype s))) => some do
+    return .connive (.target (.youControl (.subtype (← takeStr s))))
+  | .empowerJace (.fixed n) => some do return .empowerJace (← takeNat n.toNat)
+  | .exile .top (.mayCastElseDamageOpponents n) note => some do
+    return .exile .top (.mayCastElseDamageOpponents (← takeNat n)) note
+  | .grant (.emblemCastSpellDamage n) .youIfCast => some do
+    return .grant (.emblemCastSpellDamage (← takeNat n)) .youIfCast
+  | .«if» (.or [.attackedWithSubtype s, .subtypeEntered _]) (.draw (.fixed 1) who) => some do
+    let s ← takeStr s
+    return .«if» (.or [.attackedWithSubtype s, .subtypeEntered s]) (.draw (.fixed 1) who)
+  | .sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union what]),
+               .pump (.fixed op) (.fixed ot) .opponentsCreatures] => some do
+    let ss := (what.filterMap fun | .othersOfSubtype s => some s | _ => none).toArray
+    let ss ← takeStrs ss
+    let p ← takeInt p
+    let t ← takeInt t
+    let op ← takeInt op
+    let ot ← takeInt ot
+    return .sequence
+      [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (ss.toList.map .othersOfSubtype)]),
+       .pump (.fixed op) (.fixed ot) .opponentsCreatures]
+  | .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed _) .you] => some do
+    let n ← takeNat n.toNat
+    return .sequence [.putCounters (.ofKind .plan 1) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed n) .you]
+  | .sequence [.gainLife (.fixed n) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target] => some do
+    return .sequence [.gainLife (.fixed (← takeNat n.toNat)) .player, .searchLibrary (.put .basicLand .asPrinted pnote), .putCounters (.ofKind .plusOnePlusOne 1) .target]
+  | .pump (.fixed p) (.fixed t) who => some do
+    return .pump (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
+  | .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype s) => some do
+    return .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype (← takeStr s))
+  | .setBasePT (.fixed p) (.fixed t) who => some do
+    return .setBasePT (.fixed (← takeInt p)) (.fixed (← takeInt t)) who
+  | .draw (.fixed n) who => some do return .draw (← takeNat n.toNat) who
+  | .discard (.cards n) => some do return .discard (.cards (← takeNat n))
+  | .discard (.cards n (.target .opponent)) => some do
+    return .discard (.cards (← takeNat n) (.target .opponent))
+  | .loseLife (.fixed n) who => some do return .loseLife (← takeNat n.toNat) who
+  | .gainLife (.fixed n) who => some do return .gainLife (← takeNat n.toNat) who
+  | .scry (.fixed n) => some do return .scry (← takeNat n.toNat)
+  | .surveil (.fixed n) note => some do return .surveil (← takeNat n.toNat) note
+  | _ => none
+
+partial def takeResolution (r : Resolution) : ArgM Resolution := do
+  if let some act := takeResolution1 r then
+    act
+  else
+  match r with
+  | .unlessPays r n => return .unlessPays (← takeResolution r) (← takeNat n)
+  | .or rs => return .or (← rs.mapM takeResolution)
+  | .may (.draw (.perControlled ty)) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+    return .may (.draw (.perControlled (← takeCardType ty))) (.draw (.fixed 1) .eachOpponent) .ifYouDo
+  | .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont =>
+    let n ← takeNat n
+    let s ← takeStr s
+    return .may (.put (.creatureFromHand s n)) (.draw (.fixed 1)) .ifYouDont
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed n)) .ifYouDo =>
+    return .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed (← takeNat n.toNat))) .ifYouDo
+  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
+    return .may (.discard (.cards 1)) (.draw (← takeNat n.toNat)) .ifYouDo
+  | .may (.pay (.mana symbols)) thenDo .ifYouDo =>
+    match symbols.toList with
+    | [.generic n] =>
+      return .may (.pay (.mana #[.generic (← takeNat n)])) thenDo .ifYouDo
+    | _ => return .may (.pay (.mana symbols)) thenDo .ifYouDo
+  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo =>
+    return .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)) thenDo .ifYouDo
+  | .may r thenDo how => return .may (← takeResolution r) (← takeResolution thenDo) how
+  | .«if» .teamwork (.grant (.keywords kw) .target) =>
+    let name ← takeStr kw.joinedAnd
+    let kw := (Keywords.ofName? name).getD kw
+    return .«if» .teamwork (.grant (.keywords kw) .target)
+  | .«if» cond r =>
+    let r ← takeResolution r
+    match cond with
+    | .subtype s => return .«if» (.subtype (← takeStr s)) r
+    | .dealtDamageToSubtype s => return .«if» (.dealtDamageToSubtype (← takeStr s)) r
+    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
+    | .castFromGraveyard => return .«if» .castFromGraveyard r
+    | .teamwork => return .«if» .teamwork r
+    | .giftPromised => return .«if» .giftPromised r
+    | _ => return .«if» cond r
+  | .queueReflexive r => return .queueReflexive (← takeResolution r)
+  | .ifElse cond whenTrue whenFalse =>
+    -- Printed order is the otherwise branch, then the condition, then the
+    -- true branch.
+    let whenFalse ← takeResolution whenFalse
+    let cond ← match cond with
+      | .subtype s => do
+        let s ← takeStr s
+        pure (.subtype s)
+      | .mvAtMost n => do
+        let n ← takeNat n
+        pure (.mvAtMost n)
+      | .castFromGraveyard => pure .castFromGraveyard
+      | .teamwork => pure .teamwork
+      | .giftPromised => pure .giftPromised
+      | c => pure c
+    let whenTrue ← takeResolution whenTrue
+    return .ifElse cond whenTrue whenFalse
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
-  | r => return r
+  | r => takeResolution2 r
 
 def isCanonicalDestroy (e : Effect) : Bool :=
   e.resolution == .destroy .target &&

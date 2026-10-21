@@ -242,49 +242,52 @@ structure StartConfig where
   norandom : Bool := false
 
 inductive Action where
-  | actionKind (val :
-      (Nat × Option String × Bool × Bool × Bool × Bool × Bool × Bool) ⊕
-      (ObjectId × Nat × ObjectId × Option PlayerId × Option ObjectId × Bool × Bool × Bool × Bool × Bool) ⊕
-      (Target × Array Target × Bool) ⊕
-      (Array ObjectId × Array ObjectId × Bool × Bool × Bool) ⊕
-      (ObjectId × ManaType) ⊕
-      (ObjectId × Nat × Array ManaType × Array ObjectId) ⊕
-      Array (Target × Nat) ⊕
-      (Array ObjectId × Option PlayerId × Array (Option PlayerId) × Array (Option ObjectId)) ⊕
-      Array (ObjectId × ObjectId) ⊕
-      Array CreatureCombatAssignment)
-deriving Repr
+  | actionKind (n : Nat := 0) (nameOpt : Option String := none)
+      (id : ObjectId := ⟨0⟩) (attackerId : ObjectId := ⟨0⟩)
+      (to : Option PlayerId := none) (optId : Option ObjectId := none)
+      (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none)
+      (ids : Array ObjectId := #[]) (rest : Array ObjectId := #[])
+      (manaOpt : Option ManaType := none) (manaArrOpt : Option (Array ManaType) := none)
+      (divOpt : Option (Array (Target × Nat)) := none)
+      (eachOpt : Option (Array (Option PlayerId)) := none)
+      (pwOpt : Option (Array (Option ObjectId)) := none)
+      (blockOpt : Option (Array (ObjectId × ObjectId)) := none)
+      (combatOpt : Option (Array CreatureCombatAssignment) := none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+      (b5 : Bool := false) (b6 : Bool := false)
+      (isSingleObj : Bool := false) (isArrayObj : Bool := false)
+deriving Repr, Inhabited
 
 namespace Action
 
 @[match_pattern] abbrev simpleOrNatAction (n : Nat := 0) (nameOpt : Option String := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (natChoice : Bool := false) (boolOrConcede : Bool := false) : Action :=
-  .actionKind (.inl (n, nameOpt, alt1, alt2, alt3, alt4, natChoice, boolOrConcede))
+  .actionKind n nameOpt ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none none none alt1 alt2 alt3 alt4 natChoice boolOrConcede false false
 @[match_pattern] abbrev singleObjectOrDesignationAction (id : ObjectId := ⟨0⟩) (abilityIdx : Nat := 0)
     (attackerId : ObjectId := ⟨0⟩) (to : Option PlayerId := none) (optId : Option ObjectId := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (actOrSneak : Bool := false) (designation : Bool := false) : Action :=
-  .actionKind (.inr (.inl (id, abilityIdx, attackerId, to, optId, alt1, alt2, alt3, actOrSneak, designation)))
-@[match_pattern] abbrev announceTargetAction (t : Target := .player ⟨0⟩) (ts : Array Target := #[]) (multi : Bool := false) : Action :=
-  .actionKind (.inr (.inr (.inl (t, ts, multi))))
+  .actionKind abilityIdx none id attackerId to optId none none #[] #[] none none none none none none none alt1 alt2 alt3 actOrSneak designation false true false
+@[match_pattern] abbrev announceTargetAction (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none) : Action :=
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none targetOpt tsOpt #[] #[] none none none none none none none false false false false false false false false
 @[match_pattern] abbrev arrayObjectAction (ids : Array ObjectId) (rest : Array ObjectId := #[]) (order : Bool := false) (flag : Bool := false) (lookLibrary : Bool := false) : Action :=
-  .actionKind (.inr (.inr (.inr (.inl (ids, rest, order, flag, lookLibrary)))))
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none ids rest none none none none none none none order flag lookLibrary false false false false true
 @[match_pattern] abbrev tapForMana (id : ObjectId) (mana : ManaType) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inl (id, mana))))))
+  .actionKind 0 none id ⟨0⟩ none none none none #[] #[] (some mana) none none none none none none false false false false false false false false
 @[match_pattern] abbrev activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
     (costIds : Array ObjectId := #[]) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inr (.inl (id, idx, mana, costIds)))))))
+  .actionKind idx none id ⟨0⟩ none none none none costIds #[] none (some mana) none none none none none false false false false false false false false
 @[match_pattern] abbrev divideDamage (assignments : Array (Target × Nat)) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inr (.inr (.inl assignments)))))))
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none (some assignments) none none none none false false false false false false false false
 @[match_pattern] abbrev declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
     (each : Array (Option PlayerId) := #[])
     (planeswalkers : Array (Option ObjectId) := #[]) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl (ids, defender, each, planeswalkers)))))))))
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ defender none none none ids #[] none none none (some each) (some planeswalkers) none none false false false false false false false false
 @[match_pattern] abbrev declareBlockers (assignments : Array (ObjectId × ObjectId)) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl assignments)))))))))
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none (some assignments) none false false false false false false false false
 @[match_pattern] abbrev assignCombatDamage (assignments : Array CreatureCombatAssignment) : Action :=
-  .actionKind (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr assignments)))))))))
+  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none none (some assignments) false false false false false false false false
 
 @[match_pattern] abbrev stepOrResponse (alt1 : Bool := false) (alt2 : Bool := false) (response : Bool := false) : Action :=
   .simpleOrNatAction 0 none alt1 alt2 response false false false
@@ -323,8 +326,8 @@ namespace Action
 @[match_pattern] abbrev castAdventure (id : ObjectId) : Action := .castCard id true
 @[match_pattern] abbrev activate (id : ObjectId) (abilityIdx : Nat) : Action := .activateOrSneak id abilityIdx ⟨0⟩ false
 @[match_pattern] abbrev castWithSneak (id attackerId : ObjectId) : Action := .activateOrSneak id 0 attackerId true
-@[match_pattern] abbrev target (t : Target) : Action := .announceTargetAction t #[] false
-@[match_pattern] abbrev targets (ts : Array Target) : Action := .announceTargetAction (.player ⟨0⟩) ts true
+@[match_pattern] abbrev target (t : Target) : Action := .announceTargetAction (some t) none
+@[match_pattern] abbrev targets (ts : Array Target) : Action := .announceTargetAction none (some ts)
 @[match_pattern] abbrev chooseMode (idx : Nat) : Action := .chooseNat idx true false
 @[match_pattern] abbrev chooseNumber (n : Nat) (supplyRandom : Bool := false) : Action :=
   .chooseNat n false supplyRandom
