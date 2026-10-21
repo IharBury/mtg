@@ -247,15 +247,14 @@ silently offering no targets. Multiple instances of the word “target” list
 each slot in `spec` and are announced sequentially. Multiple targets of one
 instance are chosen together. -/
 inductive EffectTargetKind where
-  /-- Atomic or filtered targeting shape (CR 115.1): `none` (all `none`), battlefield (`battlefieldOpt = some t`), graveyard (`graveyardOpt = some t`), stack (`stackOpt = some t`), player (`playerOpt = some t`), filtered (`filteredOpt = some f`), or multi-filtered (`multiOpt = some (fs, optional)`). -/
+  /-- Atomic, filtered, or multi-target/sequential-slot targeting shape (CR 115.1 / 601.2c): `none` (all `none`), battlefield (`battlefieldOpt = some t`), graveyard (`graveyardOpt = some t`), stack (`stackOpt = some t`), player (`playerOpt = some t`), filtered (`filteredOpt = some f`), multi-filtered (`multiOpt = some (fs, optional)`), or sequence (`seqOpt = some t`). -/
   | atomicTargetKind (battlefieldOpt : Option BattlefieldTarget := Option.none)
       (graveyardOpt : Option GraveyardTarget := Option.none)
       (stackOpt : Option StackTarget := Option.none)
       (playerOpt : Option PlayerTarget := Option.none)
       (filteredOpt : Option TargetFilter := Option.none)
       (multiOpt : Option (Array TargetFilter × Array Nat) := Option.none)
-  /-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
-  | sequence (t : MultiTarget)
+      (seqOpt : Option MultiTarget := Option.none)
   /-- The instances of “target” of `a`, then those of `b`: two modes of one
   modal spell chosen together (CR 700.2). -/
   | pair (a b : EffectTargetKind)
@@ -281,19 +280,21 @@ end TargetPreference
 namespace EffectTargetKind
 
 @[match_pattern] abbrev none : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none Option.none
+  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev battlefield (t : BattlefieldTarget) : EffectTargetKind :=
-  .atomicTargetKind (some t) Option.none Option.none Option.none Option.none Option.none
+  .atomicTargetKind (some t) Option.none Option.none Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev graveyard (t : GraveyardTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none (some t) Option.none Option.none Option.none Option.none
+  .atomicTargetKind Option.none (some t) Option.none Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev stack (t : StackTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none (some t) Option.none Option.none Option.none
+  .atomicTargetKind Option.none Option.none (some t) Option.none Option.none Option.none Option.none
 @[match_pattern] abbrev playerTarget (t : PlayerTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none (some t) Option.none Option.none
+  .atomicTargetKind Option.none Option.none Option.none (some t) Option.none Option.none Option.none
 @[match_pattern] abbrev filtered (f : TargetFilter) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none Option.none (some f) Option.none
+  .atomicTargetKind Option.none Option.none Option.none Option.none (some f) Option.none Option.none
 @[match_pattern] abbrev multi (fs : Array TargetFilter) (optional : Array Nat) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none (some (fs, optional))
+  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none (some (fs, optional)) Option.none
+@[match_pattern] abbrev sequence (t : MultiTarget) : EffectTargetKind :=
+  .atomicTargetKind Option.none Option.none Option.none Option.none Option.none Option.none (some t)
 
 -- Battlefield permanent target aliases (CR 115.1 / 110.1)
 @[match_pattern] abbrev creatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl false false)

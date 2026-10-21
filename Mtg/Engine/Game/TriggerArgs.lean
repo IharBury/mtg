@@ -311,7 +311,7 @@ restriction. Any other `.target` restriction names nothing.
 does not name permanents names nothing. `.union` names permanents any
 selector names. A selector that does not name permanents adds nothing.
 An empty list names nothing. -/
-def permanentsNamed (g : Game) (ctx : TriggerRead) :
+partial def permanentsNamed (g : Game) (ctx : TriggerRead) :
     TriggeredAbility.ObjectSelector → Option (Array GameObject)
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))

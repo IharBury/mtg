@@ -445,12 +445,10 @@ An announced target is `.target`, and `which` is the `PlayerSelector`
 restricting it. A player is `.target .player`.
 The controllers of the objects an `ObjectSelector` names are `.controller`. -/
 inductive PlayerSelector where
-  /-- Seat, target-player, event/drain, or indexed-target (`index = some idx`) player selector (`!eachOrHas && !targetKind && !eventOrDrain && index.isNone`: you). -/
+  /-- Seat, target-player, event/drain, indexed-target (`index = some idx`), or controller (`controllerOpt = some what`) player selector (`!eachOrHas && !targetKind && !eventOrDrain && index.isNone && controllerOpt.isNone`: you). -/
   | playerKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
       (eachOrHas : Bool := false) (targetKind : Bool := false) (eventOrDrain : Bool := false)
-      (index : Option Nat := none)
-  /-- The controllers of the objects `what` names. -/
-  | controller (what : ObjectSelector)
+      (index : Option Nat := none) (controllerOpt : Option ObjectSelector)
   /-- The announced target `which` names. -/
   | target (which : PlayerSelector)
 deriving Repr, Inhabited, BEq
@@ -473,35 +471,35 @@ which card `TriggerResolution.putOnLibrary` puts on a library,
 which cards `TriggerResolution.exile` exiles, and
 which cards `TriggerResolution.put` puts onto the battlefield. -/
 inductive ObjectSelector where
-  /-- Non-recursive leaf object selector across source/any, target, battlefield, graveyard/exile, library/hand, and sacrifice/stack objects. -/
+  /-- Leaf or player-relative object selector across source/any, target, battlefield, graveyard/exile, library/hand, sacrifice/stack, and player-relative objects. -/
   | leafObject (targetObjOpt : Option TargetObject := none)
       (bfObjOpt : Option BattlefieldObject := none)
       (gyObjOpt : Option GraveyardExileObject := none)
       (lhObjOpt : Option LibraryHandObject := none)
       (ssObjOpt : Option SacrificeStackObject := none)
-      (isAny : Bool := false)
-  /-- The announced target `which` names. -/
-  | targetNode (which : ObjectSelector)
-  /-- Player-relative object/card selector (`player`, `creaturesControlledBy`, `graveyardCardsOfType`, `cards`, `mayWheel`). -/
-  | playerObjects (who : PlayerSelector) (n : Nat := 0) (ty : Option CardType := none)
+      (whoOpt : Option PlayerSelector)
+      (n : Nat := 0) (ty : Option CardType := none)
       (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false)
-  /-- Objects every selector (`isUnion = false`) or any selector (`isUnion = true`) in `what` names. -/
-  | combine (what : List ObjectSelector) (isUnion : Bool := false)
+      (isAny : Bool := false)
+  /-- Objects every selector (`isUnion = false, isTarget = false`) or any selector (`isUnion = true, isTarget = false`) in `what` names, or the announced target (`isTarget = true, what = [which]`). -/
+  | combineOrTarget (what : List ObjectSelector) (isUnion : Bool := false) (isTarget : Bool := false)
 deriving Repr, Inhabited, BEq
 
 end
 
 namespace PlayerSelector
 
+@[match_pattern] abbrev controller (what : ObjectSelector) : PlayerSelector :=
+  .playerKind false false false false false false none (some what)
 @[match_pattern] abbrev targetAt (index : Nat) : PlayerSelector :=
-  .playerKind false false false false false false (some index)
-@[match_pattern] abbrev you : PlayerSelector := .playerKind false false false false false false none
+  .playerKind false false false false false false (some index) none
+@[match_pattern] abbrev you : PlayerSelector := .playerKind false false false false false false none none
 @[match_pattern] abbrev eachOrHasYou (eachPlayer : Bool := false) (opponentHasYou : Bool := false) : PlayerSelector :=
-  .playerKind eachPlayer opponentHasYou false true false false none
+  .playerKind eachPlayer opponentHasYou false true false false none none
 @[match_pattern] abbrev targetPlayerKind (opponent : Bool := false) (announcedOrAll : Bool := false) : PlayerSelector :=
-  .playerKind opponent announcedOrAll false false true false none
+  .playerKind opponent announcedOrAll false false true false none none
 @[match_pattern] abbrev eventOrDrainPlayer (damaged : Bool := false) (drain : Bool := false) (extortOrLose1 : Bool := false) : PlayerSelector :=
-  .playerKind damaged drain extortOrLose1 false false true none
+  .playerKind damaged drain extortOrLose1 false false true none none
 @[match_pattern] abbrev eachOpponent : PlayerSelector := .eachOrHasYou false false
 @[match_pattern] abbrev each : PlayerSelector := .eachOpponent
 @[match_pattern] abbrev eachPlayer : PlayerSelector := .eachOrHasYou true false
@@ -523,21 +521,24 @@ end PlayerSelector
 namespace ObjectSelector
 
 @[match_pattern] abbrev atomicObject (isAny : Bool := false) : ObjectSelector :=
-  .leafObject none none none none none isAny
-@[match_pattern] abbrev target (which : ObjectSelector := .leafObject none none none none none true) : ObjectSelector :=
-  .targetNode which
+  .leafObject none none none none none none 0 none false false false isAny
+@[match_pattern] abbrev target (which : ObjectSelector := .leafObject none none none none none none 0 none false false false true) : ObjectSelector :=
+  .combineOrTarget [which] false true
 @[match_pattern] abbrev targetObj (o : TargetObject) : ObjectSelector :=
-  .leafObject (some o) none none none none false
+  .leafObject (some o) none none none none none 0 none false false false false
 @[match_pattern] abbrev battlefield (o : BattlefieldObject) : ObjectSelector :=
-  .leafObject none (some o) none none none false
+  .leafObject none (some o) none none none none 0 none false false false false
 @[match_pattern] abbrev graveyardExile (o : GraveyardExileObject) : ObjectSelector :=
-  .leafObject none none (some o) none none false
+  .leafObject none none (some o) none none none 0 none false false false false
 @[match_pattern] abbrev libraryHand (o : LibraryHandObject) : ObjectSelector :=
-  .leafObject none none none (some o) none false
+  .leafObject none none none (some o) none none 0 none false false false false
 @[match_pattern] abbrev sacrificeStack (o : SacrificeStackObject) : ObjectSelector :=
-  .leafObject none none none none (some o) false
+  .leafObject none none none none (some o) none 0 none false false false false
 @[match_pattern] abbrev source : ObjectSelector := .atomicObject false
 @[match_pattern] abbrev any : ObjectSelector := .atomicObject true
+@[match_pattern] abbrev playerObjects (who : PlayerSelector) (n : Nat := 0) (ty : Option CardType := none)
+    (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false) : ObjectSelector :=
+  .leafObject none none none none none (some who) n ty creatures cardsFlag wheel false
 @[match_pattern] abbrev player (who : PlayerSelector) : ObjectSelector :=
   .playerObjects who 0 none false false false
 @[match_pattern] abbrev creaturesControlledBy (who : PlayerSelector) : ObjectSelector :=
@@ -548,6 +549,8 @@ namespace ObjectSelector
   .playerObjects who n none false true false
 @[match_pattern] abbrev mayWheel (n : Nat) (who : PlayerSelector := .eachPlayer) : ObjectSelector :=
   .playerObjects who n none false false true
+@[match_pattern] abbrev combine (what : List ObjectSelector) (isUnion : Bool := false) : ObjectSelector :=
+  .combineOrTarget what isUnion false
 @[match_pattern] abbrev intersection (what : List ObjectSelector) : ObjectSelector :=
   .combine what false
 @[match_pattern] abbrev union (what : List ObjectSelector) : ObjectSelector :=
@@ -1171,14 +1174,16 @@ inductive ConditionSelector where
       (stepNoteOpt : Option StepNoteCondition := Option.none)
       (leftOpt : Option NumberSelector := Option.none)
       (rightOpt : Option NumberSelector := Option.none)
-  /-- `cond` does not hold. -/
-  | not (cond : ConditionSelector)
-  /-- Any of `conds` holds. Once one holds, later conditions are not checked. -/
-  | or (conds : List ConditionSelector)
+  /-- Composite condition: `not` (`isNot = true, conds = [cond]`) or `or` (`isNot = false, conds = conds`). -/
+  | combineCondition (conds : List ConditionSelector) (isNot : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace ConditionSelector
 
+@[match_pattern] abbrev not (cond : ConditionSelector) : ConditionSelector :=
+  .combineCondition [cond] true
+@[match_pattern] abbrev or (conds : List ConditionSelector) : ConditionSelector :=
+  .combineCondition conds false
 @[match_pattern] abbrev atLeast (left right : NumberSelector) : ConditionSelector :=
   .atomicCondition Option.none Option.none Option.none (some left) (some right)
 @[match_pattern] abbrev state (s : StateCondition := .always) : ConditionSelector :=
@@ -2566,8 +2571,8 @@ inductive Resolution where
   | returnOrLibrary (what : ObjectSelector := .graveyardCard)
       (noteOpt : Option TriggerReturnNote := none)
       (placeOpt : Option TriggerLibraryPlace := none)
-  /-- Put later ability `followup` on the stack (“When you do”), or arm it
-  for a later event. `followup` is that ability.
+  /-- Put later ability `thenDo` on the stack (“When you do”), or arm it
+  for a later event (`howOpt = none`), or look at cards from the top of a library (`howOpt = some how`), as `how` and `whoOpt` say, then resolve `thenDo` for the cards that were found.
   Another nonattacking creature gains indestructible is
   `.queueReflexive (.grant (.keywords Keyword.indestructible) .target)`.
   Trick Arrows, paying up to three times, is
@@ -2604,8 +2609,40 @@ inductive Resolution where
   `.queueReflexive (.pump .perPlains .perPlains .target)`.
   That arms the attack trigger. It does not put an ability on the stack
   now. Any other follow-up is put on the stack and resolves as that
-  follow-up. It keeps the targets this ability already has. -/
-  | queueReflexive (followup : Resolution)
+  follow-up. It keeps the targets this ability already has.
+  The top `n` cards of your library, a random creature from among them
+  onto the battlefield, and the rest on the bottom in a random order, is
+  `.revealLibrary (.top n) (.put .randomCreature)`. Looking at zero cards,
+  or no creature among them, logs that no creature was revealed. With
+  `norandom` and more than one creature, that choice waits.
+  Cards from the top of your library until a creature, onto the battlefield
+  when its mana value is at most the lands you control and into your hand
+  otherwise, is
+  `.revealLibrary .untilCreature (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed))`.
+  Cards from the top of your library until a Saga, onto the battlefield, is
+  `.revealLibrary .untilSaga (.put .revealed)`.
+  An empty library for those two cases changes nothing.
+  Cards from the top of the damaged player's library until an instant or
+  sorcery, exiled face up for `.mayCast .impulse`, is
+  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
+  A missing damaged player is the controller's opponent. An empty library
+  still remembers the impulse, with nothing exiled.
+  Cards from the announced player's library until a nonland. You may put
+  a +1/+1 counter on the source. If you don't, you may cast that nonland
+  until end of turn and spend mana of any type. That is
+  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
+  A missing player is reported. An empty library exiles nothing. A source
+  that has left grants the cast without asking for the counter.
+  The top `n` cards. You may cast a spell from among them with mana value at
+  most the greatest power among attacking creatures you control, without
+  paying its mana cost. The rest go on the bottom in a random order. That is
+  `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
+  An empty library is reported. No attacker limits the mana value to zero.
+  Whose library is a `PlayerSelector`.
+  Any other combination reveals the cards `how` and `who` name, then
+  resolves `thenDo`. A player the selector does not name reveals nothing. -/
+  | revealOrReflexive (howOpt : Option TriggerLibraryHow := none) (thenDo : Resolution)
+      (whoOpt : Option PlayerSelector := none)
   /-- Sacrifice or destroy permanents (CR 701.7 / CR 701.17).
   Sacrifice a permanent. `what` says who sacrifices and which permanent.
   `sacNote` says what a later step can read.
@@ -2998,45 +3035,15 @@ inductive Resolution where
   Any other permanent the selector names receives that ability. A card, a
   hand, or an unmade choice receives nothing. -/
   | grant (what : TriggerGrantWhat) (who : ObjectSelector := .target)
-  /-- Look at cards from the top of a library, as `how` and `who` say, then
-  resolve `thenDo` for the cards that were found.
-  The top `n` cards of your library, a random creature from among them
-  onto the battlefield, and the rest on the bottom in a random order, is
-  `.revealLibrary (.top n) (.put .randomCreature)`. Looking at zero cards,
-  or no creature among them, logs that no creature was revealed. With
-  `norandom` and more than one creature, that choice waits.
-  Cards from the top of your library until a creature, onto the battlefield
-  when its mana value is at most the lands you control and into your hand
-  otherwise, is
-  `.revealLibrary .untilCreature (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed))`.
-  Cards from the top of your library until a Saga, onto the battlefield, is
-  `.revealLibrary .untilSaga (.put .revealed)`.
-  An empty library for those two cases changes nothing.
-  Cards from the top of the damaged player's library until an instant or
-  sorcery, exiled face up for `.mayCast .impulse`, is
-  `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
-  A missing damaged player is the controller's opponent. An empty library
-  still remembers the impulse, with nothing exiled.
-  Cards from the announced player's library until a nonland. You may put
-  a +1/+1 counter on the source. If you don't, you may cast that nonland
-  until end of turn and spend mana of any type. That is
-  `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`.
-  A missing player is reported. An empty library exiles nothing. A source
-  that has left grants the cast without asking for the counter.
-  The top `n` cards. You may cast a spell from among them with mana value at
-  most the greatest power among attacking creatures you control, without
-  paying its mana cost. The rest go on the bottom in a random order. That is
-  `.revealLibrary (.top n) (.mayCast .looked .greatestAttackingPower .withoutPaying)`.
-  An empty library is reported. No attacker limits the mana value to zero.
-  Whose library is a `PlayerSelector`.
-  Any other combination reveals the cards `how` and `who` name, then
-  resolves `thenDo`. A player the selector does not name reveals nothing. -/
-  | revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
-      (who : PlayerSelector := .you)
 deriving Repr, Inhabited, BEq
 
 namespace Resolution
 
+  @[match_pattern] abbrev queueReflexive (followup : Resolution) : Resolution :=
+    .revealOrReflexive none followup none
+  @[match_pattern] abbrev revealLibrary (how : TriggerLibraryHow) (thenDo : Resolution)
+      (who : PlayerSelector := .you) : Resolution :=
+    .revealOrReflexive (some how) thenDo (some who)
   @[match_pattern] abbrev sequence (rs : List Resolution) : Resolution :=
     .sequenceOrModes rs none
   @[match_pattern] abbrev chooseModes (modes : List Resolution) (how : TriggerModeHow := .one) : Resolution :=

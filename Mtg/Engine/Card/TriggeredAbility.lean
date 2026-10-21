@@ -1751,6 +1751,97 @@ private def resolutionPhrasePart2 (t : TriggerTiming) (noun : String) : Option S
         "mill"
   | _ => none
 
+private def putCountersResolutionPhrase (r : TriggerResolution) (what : CounterSelector)
+    (who : ObjectSelector) (noun : String) : String :=
+  match what, who with
+  | .ofKind .plusOnePlusOne _, .youControl .eachCreature =>
+    "put a +1/+1 counter on each creature you control"
+  | .ofKind .hone _, .youControl (.subtype "Equipment") =>
+    "put a hone counter on each Equipment you control"
+  | .ofKind .plusOnePlusOne _, .youControl (.subtype s) =>
+    s!"put a +1/+1 counter on each {s} you control"
+  | .ofKind .plusOnePlusOne _, .youControl .citysBlessing =>
+    "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
+  | .ofKind .plusOnePlusOne _, .eachOther =>
+    "put a +1/+1 counter on each other creature you control"
+  | .plusOneLastKnownMv, _ =>
+    s!"put X +1/+1 counters on {noun}, where X is that spell's mana value"
+  | .ofKind .loyalty _, .source => "put a loyalty counter on this"
+  | .sourceCounters, _ =>
+    "put its counters on up to one target creature you control"
+  | .ofKind .charge _, _ => "put a charge counter on this enchantment"
+  | .ofKind .quest _, _ => "put a quest counter on this enchantment"
+  | .honePerOpponent, _ =>
+    "put a hone counter on this for each creature target opponent controls"
+  | .ofKind .plan _, _ => "put a plan counter on this enchantment"
+  | .ofKind .plusOnePlusOne _, .permanent true =>
+    s!"put a +1/+1 counter on {noun}"
+  | .plusOneNoted, _ =>
+    "put a +1/+1 counter on it for each invasion counter on this enchantment"
+  | .ofKind .invasion _, _ => "put an invasion counter on this enchantment"
+  | .ofKind .trample _, _ =>
+    s!"put a trample counter on up to one {noun}"
+  | .ofKind .influence _, _ => "put an influence counter on this"
+  | .ofKind .loyalty _, .permanent _ => "put a loyalty counter on it"
+  | .plusOneSacrificedPower, _ =>
+    "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+  | .ofKind .plusOnePlusOne n, .permanent false =>
+    s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+  | .ofKind .indestructible n, .permanent false =>
+    s!"put {(.indestructible : CounterKind).countersPhrase n} on {noun}"
+  | .ofKind .doubleStrike n, .permanent false =>
+    s!"put {(.doubleStrike : CounterKind).countersPhrase n} on {noun}"
+  | .ofKind .burden n, .permanent false =>
+    s!"put {(.burden : CounterKind).countersPhrase n} on {noun}"
+  | .ofKind .stun n, .permanent false =>
+    s!"put {(.stun : CounterKind).countersPhrase n} on {noun}"
+  | .ofKind kind n, .source =>
+    counterOn "this creature" kind n
+  | .ofKind kind n, .enchanted =>
+    counterOn "enchanted creature" kind n
+  | .ofKind kind n, (.target .whileSource) =>
+    counterOn "that creature" kind n
+  | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
+    "put a +1/+1 counter on each of up to that many target creatures you control"
+  | .missingKeywordsFromTarget, .source =>
+    "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
+  | _, _ =>
+    let s := SpellResolution.toPhrase r noun
+    if s.isEmpty then "put counters" else s
+
+private def revealLibraryResolutionPhrase (r : TriggerResolution) (how : TriggerLibraryHow)
+    (thenDo : TriggerResolution) (who : PlayerSelector) (noun : String) : String :=
+  match how, thenDo, who with
+  | .topNumber (.fixed n), .returnToHand (.lookedTypes types) _, _ =>
+    let joined :=
+      match types.toList with
+      | [a, b] => s!"a {a} or {b} card"
+      | xs => s!"a {String.intercalate " or " xs} card"
+    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
+  | .topNumber _, .returnToHand (.lookedTypes _) _, _ =>
+    "look at the top cards of your library"
+  | .top n, .put .randomCreature .asPrinted .none, .you =>
+    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
+  | .untilCreature,
+    .ifElse .revealedManaValueAtMostLands
+      (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
+    .you =>
+    s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
+  | .untilSaga, .put .revealed .asPrinted .none, .you =>
+    "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
+  | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
+    "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+  | .untilNonland,
+    .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+      (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+    .announced =>
+    "that player exiles cards until a nonland card"
+  | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
+    s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
+  | _, _, _ =>
+    let s := SpellResolution.toPhrase r noun
+    if s.isEmpty then "reveal cards from a library" else s
+
 /-- Part 3 of `resolutionPhrase`: tap, queueReflexive, revealFromHand, loseLife, untap, pay, may, putCounters, chooseModes, grant, revealLibrary, and fallback. -/
 private def resolutionPhrasePart3 (t : TriggerTiming) (noun : String) : String :=
   match t.resolution with
@@ -1807,96 +1898,13 @@ private def resolutionPhrasePart3 (t : TriggerTiming) (noun : String) : String :
   | r@(.may _ _ _) =>
     mayResolutionPhrase r
   | r@(.putCounters what who) =>
-    match what, who with
-    | .ofKind .plusOnePlusOne _, .youControl .eachCreature =>
-      "put a +1/+1 counter on each creature you control"
-    | .ofKind .hone _, .youControl (.subtype "Equipment") =>
-      "put a hone counter on each Equipment you control"
-    | .ofKind .plusOnePlusOne _, .youControl (.subtype s) =>
-      s!"put a +1/+1 counter on each {s} you control"
-    | .ofKind .plusOnePlusOne _, .youControl .citysBlessing =>
-      "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
-    | .ofKind .plusOnePlusOne _, .eachOther =>
-      "put a +1/+1 counter on each other creature you control"
-    | .plusOneLastKnownMv, _ =>
-      s!"put X +1/+1 counters on {noun}, where X is that spell's mana value"
-    | .ofKind .loyalty _, .source => "put a loyalty counter on this"
-    | .sourceCounters, _ =>
-      "put its counters on up to one target creature you control"
-    | .ofKind .charge _, _ => "put a charge counter on this enchantment"
-    | .ofKind .quest _, _ => "put a quest counter on this enchantment"
-    | .honePerOpponent, _ =>
-      "put a hone counter on this for each creature target opponent controls"
-    | .ofKind .plan _, _ => "put a plan counter on this enchantment"
-    | .ofKind .plusOnePlusOne _, .permanent true =>
-      s!"put a +1/+1 counter on {noun}"
-    | .plusOneNoted, _ =>
-      "put a +1/+1 counter on it for each invasion counter on this enchantment"
-    | .ofKind .invasion _, _ => "put an invasion counter on this enchantment"
-    | .ofKind .trample _, _ =>
-      s!"put a trample counter on up to one {noun}"
-    | .ofKind .influence _, _ => "put an influence counter on this"
-    | .ofKind .loyalty _, .permanent _ => "put a loyalty counter on it"
-    | .plusOneSacrificedPower, _ =>
-      "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-    | .ofKind .plusOnePlusOne n, .permanent false =>
-      s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-    | .ofKind .indestructible n, .permanent false =>
-      s!"put {(.indestructible : CounterKind).countersPhrase n} on {noun}"
-    | .ofKind .doubleStrike n, .permanent false =>
-      s!"put {(.doubleStrike : CounterKind).countersPhrase n} on {noun}"
-    | .ofKind .burden n, .permanent false =>
-      s!"put {(.burden : CounterKind).countersPhrase n} on {noun}"
-    | .ofKind .stun n, .permanent false =>
-      s!"put {(.stun : CounterKind).countersPhrase n} on {noun}"
-    | .ofKind kind n, .source =>
-      counterOn "this creature" kind n
-    | .ofKind kind n, .enchanted =>
-      counterOn "enchanted creature" kind n
-    | .ofKind kind n, (.target .whileSource) =>
-      counterOn "that creature" kind n
-    | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
-      "put a +1/+1 counter on each of up to that many target creatures you control"
-    | .missingKeywordsFromTarget, .source =>
-      "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
-    | _, _ =>
-      let s := SpellResolution.toPhrase r noun
-      if s.isEmpty then "put counters" else s
+    putCountersResolutionPhrase r what who noun
   | r@(.chooseModes _ _) =>
     chooseModesResolutionPhrase t r noun
   | r@(.grant _ _) =>
     grantResolutionPhrase r noun
   | r@(.revealLibrary how thenDo who) =>
-    match how, thenDo, who with
-    | .topNumber (.fixed n), .returnToHand (.lookedTypes types) _, _ =>
-      let joined :=
-        match types.toList with
-        | [a, b] => s!"a {a} or {b} card"
-        | xs => s!"a {String.intercalate " or " xs} card"
-      s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-    | .topNumber _, .returnToHand (.lookedTypes _) _, _ =>
-      "look at the top cards of your library"
-    | .top n, .put .randomCreature .asPrinted .none, .you =>
-      s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
-    | .untilCreature,
-      .ifElse .revealedManaValueAtMostLands
-        (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
-      .you =>
-      s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
-    | .untilSaga, .put .revealed .asPrinted .none, .you =>
-      "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
-    | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
-      "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-    | .untilNonland,
-      .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
-        (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
-      .announced =>
-      "that player exiles cards until a nonland card"
-    | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
-      s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
-    | _, _, _ =>
-      let s := SpellResolution.toPhrase r noun
-      if s.isEmpty then "reveal cards from a library" else s
+    revealLibraryResolutionPhrase r how thenDo who noun
   | r =>
     SpellResolution.toPhrase r noun
 
@@ -1979,16 +1987,80 @@ private partial def isOnEnchanted : TriggerResolution → Bool
   | .sequence [r, _] => isOnEnchanted r
   | _ => false
 
+private def toNotationEnter (ab : TriggeredAbility) (r : TriggerResolution)
+    (kind : EffectTargetKind) : Option String :=
+  match r, kind with
+  | .may (.sacrifice .another .none) (.sequence []) _, _ =>
+    some (leadInSentence ab "When Bolg enters")
+  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1) _)], .anotherCreature =>
+    some "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+  | .returnToHand .graveyardCard _, .creatureCardInYourGraveyard =>
+    some "When this enchantment enters, return target creature card from your graveyard to your hand."
+  | .createTokens .axe (.fixed 1) false _ .attachReflexive, _ =>
+    some (leadInSentence ab "When Dáin enters")
+  | .sequence [.tap .enchanted, .removeCounters .all .enchanted], _ =>
+    some (leadInSentence ab "When this Aura enters")
+  | .sequence [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)], _ =>
+    some "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
+  | .becomeCopy .sourceTwoNonlegendaryTokens, _ =>
+    some (leadInSentence ab "When The Notary Hobbits enter")
+  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)], .creatureYouControl =>
+    some (leadInSentence ab "When Thorin enters")
+  | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _], _ =>
+    some (leadInSentence ab "When Gandalf enters")
+  | .grant .protectionEverything .youIfCast, _ =>
+    some (leadInSentence ab "When The One Ring enters")
+  | .connive .source, .none =>
+    some (leadInSentence ab "When this creature enters")
+  | .attach .source .target, .creatureYouControl =>
+    some (leadInSentence ab "When this Equipment enters")
+  | .surveil (.fixed n) .none, .none =>
+    some s!"When this permanent enters, surveil {n}."
+  | .sequence (.attach .source .target :: _ :: _), .creatureYouControl =>
+    some (leadInSentence ab "When this Equipment enters")
+  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted], .creature =>
+    some (leadInSentence ab "When this Aura enters")
+  | .exile .target .nextEndStep _, .creatureYouControl =>
+    some (leadInSentence ab "When this Vehicle enters")
+  | .or [.tap .target, .untap _], .nonland =>
+    some (leadInSentence ab "When this creature enters")
+  | .or [.createTokens .food (.fixed 1) false _ _, .createTokens .treasure (.fixed 1) false _ _], _ =>
+    some (leadInSentence ab "When this creature enters")
+  | .ifElse (.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)) (.createTokens .villain21menace (.fixed 1) true _ _) (.mill (.fixed 2) _ _), _ =>
+    some (leadInSentence ab "When this creature enters")
+  | .sequence [.draw (.fixed 1) _, .may (.put .landFromHand .tapped _) (.sequence []) _], _ =>
+    some (leadInSentence ab "When this creature enters")
+  | .sequence [.draw (.fixed 1) _, .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2) _)], _ =>
+    some (leadInSentence ab "When this creature enters")
+  | .ifElse (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne 1) .permanent), .creature =>
+    some (leadInSentence ab "When this creature enters")
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1) _) .ifYouDo, _ =>
+    some (leadInSentence ab "When this creature enters")
+  | .exile .target .untilSourceLeaves .none, .oppTappedCreature =>
+    some "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
+  | .discard (.cards n (.target .opponent)), .opponent =>
+    let cards := if n == 2 then "two cards" else cardPhrase n
+    some s!"When this enchantment enters, target opponent discards {cards}."
+  | _, _ => none
+
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
     if !opts.printed.isEmpty then opts.printed else
     if !e.phrase.isEmpty && (match w with | .sagaChapter _ => false | _ => true) then e.phrase else
+    if w == .enter then
+      if let some s := toNotationEnter ab e.resolution e.targetKind then s
+      else if e.targetKind == .none && isOnEnchanted e.resolution then
+        leadInSentence ab "When this Aura enters"
+      else
+        let t := ab.timing
+        let once := if t.onceEachTurn then " This ability triggers only once each turn." else ""
+        let clause := (sequenceClause ab.effect).getD (resolutionPhrase t)
+        s!"{eventPrefix t}{interveningClause t}, {clause}.{once}"
+    else
     match w, e.resolution, e.targetKind, opts with
     | .sagaChapter _, _, _, _ =>
       s!"When a lore counter is put on this Saga, {e.phrase}."
-    | .enter, .may (.sacrifice .another .none) (.sequence []) _, _, _ =>
-      leadInSentence ab "When Bolg enters"
     | .combatDamageToPlayer, .createTokens .treasure .damagedPlayerArtifacts false _ _, _, _ =>
       leadInSentence ab "Whenever this creature deals combat damage to a player"
     | .enterOrOpponentDrawsExceptFirst, .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" _ _], _, _ =>
@@ -2006,58 +2078,38 @@ def toNotation (ab : TriggeredAbility) : String :=
         s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn"
     | .anotherCreatureYouControlEnters, .chooseModes _ .oneUnusedThisTurn, _, _ =>
       leadInSentence ab "Alliance — Whenever another creature you control enters"
-    | .enter, .sequence [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1) _)], .anotherCreature, _ =>
-    "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
     | .combatDamageToPlayerOrBattle, .createTokens .treasure (.fixed 2) false _ _, _, { subtype := some "Dwarf", .. } =>
       leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
     | (.youCastColor .red), .dealDamage (.fixed 3) (.player .eachOpponent) _, .opponent, _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
-    | .enter, .returnToHand .graveyardCard _, .creatureCardInYourGraveyard, _ =>
-    "When this enchantment enters, return target creature card from your graveyard to your hand."
     | .thisOrAnotherSubtypeEnters, .sequence [.may (.discard .hand) (.sequence []) _, .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent) _)], _, { subtype := some "Dwarf", .. } =>
     "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
     | .attack, .mayCast .graveyard .unlimited .pay .exileInstead, _, _ =>
       leadInSentence ab "Whenever Bilbo attacks"
-    | .enter, .createTokens .axe (.fixed 1) false _ .attachReflexive, _, _ =>
-      leadInSentence ab "When Dáin enters"
     | .attack, .grant (.keywords _) .equippedAttackers, _, _ =>
       leadInSentence ab "Whenever Dáin attacks"
-    | .enter, .sequence [.tap .enchanted, .removeCounters .all .enchanted], _, _ =>
-      leadInSentence ab "When this Aura enters"
     | .dies, .revealLibrary (.top _) (.put .randomCreature _ _) _, _, _ =>
       leadInSentence ab "When this artifact is put into a graveyard from the battlefield"
     | .yourBeginCombat, .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords _) .target]), .anotherCreatureYouControl, _ =>
     "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
-    | .enter, .sequence [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)], _, _ =>
-    "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
-    | .enter, .becomeCopy .sourceTwoNonlegendaryTokens, _, _ =>
-      leadInSentence ab "When The Notary Hobbits enter"
-    | .enter, .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)], .creatureYouControl, _ =>
-      leadInSentence ab "When Thorin enters"
     | .anotherCreatureYouControlEnters, _, _, { subtype := some "Elf", anotherLegendary := true, .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, .put .source .asArtifact _, _, _ =>
       leadInSentence ab "When Tom, Bert, and William die"
     | .anotherCreatureYouControlEnters, .putCounters (.ofKind .plusOnePlusOne 2) .source, _, { subtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
-    | .enter, .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _], _, _ =>
-      leadInSentence ab "When Gandalf enters"
     | .combatDamageToPlayer, .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying _], _, _ =>
       leadInSentence ab "Whenever Gríma deals combat damage to a player"
     | .yourEndStep, .sequence [.putCounters (.ofKind .influence 1) .source, .scry (.fixed 2), .may (.draw (.fixed 1) .opponentHasYou) (.sequence []) _], .opponent, _ =>
     "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
     | .sourceDealtNoncombatDamage, .createTokens .treasure .lastKnownPower false _ _, _, _ =>
       leadInSentence ab "Whenever Smaug is dealt noncombat damage"
-    | .enter, .grant .protectionEverything .youIfCast, _, _ =>
-      leadInSentence ab "When The One Ring enters"
     | .yourUpkeep, .loseLife .perBurden _, _, _ =>
     "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
     | .landYouControlEnters, .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source _) .ifYouDo, _, _ =>
       leadInSentence ab "Landfall — Whenever a land you control enters"
     | .youPutCountersOnGoblinOrcArmy, .dealDamage (.fixed 2) (.player (.target .opponent)) _, .opponent, _ =>
     "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-    | .enter, .connive .source, .none, _ =>
-      leadInSentence ab "When this creature enters"
     | .eachEndStep, .«if» (.or [.attackedWithSubtype subtype, .subtypeEntered _]) (.draw (.fixed 1) _), _, _ =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
@@ -2067,40 +2119,8 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"Whenever you cast a {color} spell from your hand, this connives."
     | .sourceDealtDamage, .putCounters (.ofKind .plusOnePlusOne 1) .source, _, _ =>
     "Whenever this is dealt damage, put a +1/+1 counter on it."
-    | .enter, .attach .source .target, .creatureYouControl, _ =>
-      leadInSentence ab "When this Equipment enters"
-    | .enter, .surveil (.fixed n) .none, .none, _ =>
-    s!"When this permanent enters, surveil {n}."
-    | .enter, .sequence (.attach .source .target :: _ :: _), .creatureYouControl, _ =>
-      leadInSentence ab "When this Equipment enters"
-    | .enter, .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted], .creature, _ =>
-      leadInSentence ab "When this Aura enters"
-    | .enter, .exile .target .nextEndStep _, .creatureYouControl, _ =>
-      leadInSentence ab "When this Vehicle enters"
-    | .enter, .or [.tap .target, .untap _], .nonland, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .or [.createTokens .food (.fixed 1) false _ _, .createTokens .treasure (.fixed 1) false _ _], _, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .ifElse (.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)) (.createTokens .villain21menace (.fixed 1) true _ _) (.mill (.fixed 2) _ _), _, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .sequence [.draw (.fixed 1) _, .may (.put .landFromHand .tapped _) (.sequence []) _], _, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .sequence [.draw (.fixed 1) _, .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2) _)], _, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .ifElse (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne 1) .permanent), .creature, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1) _) .ifYouDo, _, _ =>
-      leadInSentence ab "When this creature enters"
-    | .enter, .exile .target .untilSourceLeaves .none, .oppTappedCreature, _ =>
-    "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-    | .enter, .discard (.cards n (.target .opponent)), .opponent, _ =>
-    let cards := if n == 2 then "two cards" else cardPhrase n
-    s!"When this enchantment enters, target opponent discards {cards}."
 
     | _, _, _, _ =>
-    if w == .enter && e.targetKind == .none && isOnEnchanted e.resolution then
-      leadInSentence ab "When this Aura enters"
-    else
     if !e.phrase.isEmpty then e.phrase else
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then
