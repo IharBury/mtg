@@ -201,8 +201,8 @@ structure StartConfig where
   norandom : Bool := false
 
 inductive Action where
-  /-- Pass priority (`false, false, false`), pay locked-in cost (`true, false, false`), keep opening hand (`false, true, false`), declare a London mulligan (`true, true, false`), or concede (`false, false, true`). -/
-  | stepAction (pay : Bool := false) (keep : Bool := false) (concede : Bool := false)
+  /-- Priority, cost payment, mulligan, or choice response: pass (`false, false, false`), pay (`true, false, false`), keep (`false, true, false`), mulligan (`true, true, false`), decline (`false, false, true`), accept (`true, false, true`), villain connive (`false, true, true`), or pay generic (`true, true, true`). -/
+  | stepOrResponse (alt1 : Bool := false) (alt2 : Bool := false) (response : Bool := false)
   /-- Single-object action: play land (`false, false, false`), keep legend (`false, false, true`), cast (`true, false, false`), cast Adventure (`true, false, true`), sacrifice (`false, true, false`), or discard (`false, true, true`). -/
   | objectAction (id : ObjectId) (cast : Bool := false) (sacOrDiscard : Bool := false) (flag : Bool := false)
   | tapForMana (id : ObjectId) (mana : ManaType)
@@ -210,25 +210,16 @@ inductive Action where
   and paying costs that need chosen objects with `costIds`, in order. -/
   | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
       (costIds : Array ObjectId := #[])
-  /-- Cast this card for its sneak cost, returning the unblocked attacker
-  `attackerId` you control to hand as part of the cost (MSH sneak). -/
-  | castWithSneak (id attackerId : ObjectId)
+  /-- Activate a non-mana activated ability (`sneak = false`, CR 602) or cast for sneak cost returning `attackerId` (`sneak = true`, MSH sneak). -/
+  | activateOrSneak (id : ObjectId) (abilityIdx : Nat := 0) (attackerId : ObjectId := ⟨0⟩) (sneak : Bool := false)
   /-- Choose a mode (`mode = true`, CR 601.2b), announce `{X}` (`mode = false, supplyRandom = false`, CR 107.3a), or supply a random index (`mode = false, supplyRandom = true`). -/
   | chooseNat (n : Nat) (mode : Bool := false) (supplyRandom : Bool := false)
-  /-- Announce a target for the current instance of the word “target”
-  (CR 601.2c). For a divided-damage ability, assigns all remaining damage
-  to this one target (CR 601.2d). For “one or two target creatures”, this
-  chooses exactly that one creature. -/
-  | target (t : Target)
-  /-- Announce every target of one instance of the word “target” together
-  (CR 601.2c), e.g. both creatures of “one or two target creatures”. -/
-  | targets (ts : Array Target)
+  /-- Announce a single target (`multi = false`, CR 601.2c) or all targets of one target instance together (`multi = true`). -/
+  | announceTargetAction (t : Target := .player ⟨0⟩) (ts : Array Target := #[]) (multi : Bool := false)
   /-- Announce every target of one instance of the word “target” on a
   “divided as you choose” effect, together with the damage assigned to each
   (CR 601.2c / 601.2d). -/
   | divideDamage (assignments : Array (Target × Nat))
-  /-- Activate a non-mana activated ability of a permanent (CR 602). -/
-  | activate (id : ObjectId) (abilityIdx : Nat)
   /-- `defender` is the destination when `each` is omitted or an entry is
   `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1).
   `planeswalkers[i]`, when set, is the planeswalker `ids[i]` attacks instead
@@ -241,29 +232,30 @@ inductive Action where
   legal default; listed sources must divide their power among legal creature
   recipients (and leftover to the defending player only with trample). -/
   | assignCombatDamage (assignments : Array CreatureCombatAssignment)
-  /-- Select/stack objects (`order = false`, stack triggers if `flag`) or order/bottom cards (`order = true`, supply random if `flag`). -/
-  | selectOrOrderObjects (ids : Array ObjectId) (order : Bool := false) (flag : Bool := false)
-  /-- Finish scrying (`!surveil`, CR 701.20) or surveilling (`surveil`, CR 701.25). -/
-  | lookLibrary (top rest : Array ObjectId) (surveil : Bool := false)
-  /-- Decline (`!accept && !villainConnive`), accept (`accept && !villainConnive`), have the entering Villain connive (`!accept && villainConnive`), or pay a pending generic cost (`accept && villainConnive`). -/
-  | choiceResponse (accept : Bool := false) (villainConnive : Bool := false)
-  /-- Boolean choice: library top/bottom (`false, false`), additional cost generic/non-mana (`false, true`), kicker (`true, false`), or teamwork (`true, true`). -/
-  | booleanChoice (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false)
-  /-- Promise a gift to this opponent, or `none` to decline. -/
-  | announceGift (to : Option PlayerId)
-  /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
-  | chooseRingBearer (id : Option ObjectId)
+  /-- Select/stack objects (`lookLibrary = false, order = false`), order/bottom cards (`lookLibrary = false, order = true`), or finish scrying/surveilling (`lookLibrary = true`, surveil if `flag`, CR 701.20 / 701.25). -/
+  | arrayObjectAction (ids : Array ObjectId) (rest : Array ObjectId := #[]) (order : Bool := false) (flag : Bool := false) (lookLibrary : Bool := false)
+  /-- Boolean choice or concession: library top/bottom (`false, false, false`), additional cost (`false, true, false`), kicker (`true, false, false`), teamwork (`true, true, false`), or concede (`concede = true`). -/
+  | booleanOrConcede (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) (concede : Bool := false)
+  /-- Promise a gift (`ringBearer = false`) or choose a Ring-bearer (`ringBearer = true`). -/
+  | optionalDesignation (to : Option PlayerId := none) (id : Option ObjectId := none) (ringBearer : Bool := false)
   /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
   | chooseName (name : String)
 deriving Repr
 
 namespace Action
 
-@[match_pattern] abbrev pass : Action := .stepAction false false false
-@[match_pattern] abbrev pay : Action := .stepAction true false false
-@[match_pattern] abbrev keep : Action := .stepAction false true false
-@[match_pattern] abbrev takeMulligan : Action := .stepAction true true false
-@[match_pattern] abbrev concede : Action := .stepAction false false true
+@[match_pattern] abbrev stepAction (pay : Bool := false) (keep : Bool := false) : Action := .stepOrResponse pay keep false
+@[match_pattern] abbrev pass : Action := .stepOrResponse false false false
+@[match_pattern] abbrev pay : Action := .stepOrResponse true false false
+@[match_pattern] abbrev keep : Action := .stepOrResponse false true false
+@[match_pattern] abbrev takeMulligan : Action := .stepOrResponse true true false
+@[match_pattern] abbrev choiceResponse (accept : Bool := false) (villainConnive : Bool := false) : Action :=
+  .stepOrResponse accept villainConnive true
+@[match_pattern] abbrev decline : Action := .stepOrResponse false false true
+@[match_pattern] abbrev accept : Action := .stepOrResponse true false true
+@[match_pattern] abbrev haveVillainConnive : Action := .stepOrResponse false true true
+@[match_pattern] abbrev payGeneric : Action := .stepOrResponse true true true
+@[match_pattern] abbrev concede : Action := .booleanOrConcede false false false true
 @[match_pattern] abbrev playLandOrKeepLegend (id : ObjectId) (keepLegend : Bool := false) : Action :=
   .objectAction id false false keepLegend
 @[match_pattern] abbrev playLand (id : ObjectId) : Action := .playLandOrKeepLegend id false
@@ -272,6 +264,10 @@ namespace Action
   .objectAction id true false adventure
 @[match_pattern] abbrev cast (id : ObjectId) : Action := .castCard id false
 @[match_pattern] abbrev castAdventure (id : ObjectId) : Action := .castCard id true
+@[match_pattern] abbrev activate (id : ObjectId) (abilityIdx : Nat) : Action := .activateOrSneak id abilityIdx ⟨0⟩ false
+@[match_pattern] abbrev castWithSneak (id attackerId : ObjectId) : Action := .activateOrSneak id 0 attackerId true
+@[match_pattern] abbrev target (t : Target) : Action := .announceTargetAction t #[] false
+@[match_pattern] abbrev targets (ts : Array Target) : Action := .announceTargetAction (.player ⟨0⟩) ts true
 @[match_pattern] abbrev chooseMode (idx : Nat) : Action := .chooseNat idx true false
 @[match_pattern] abbrev chooseNumber (n : Nat) (supplyRandom : Bool := false) : Action :=
   .chooseNat n false supplyRandom
@@ -281,20 +277,22 @@ namespace Action
   .objectAction id false true discard
 @[match_pattern] abbrev sacrifice (id : ObjectId) : Action := .sacrificeOrDiscard id false
 @[match_pattern] abbrev discard (id : ObjectId) : Action := .sacrificeOrDiscard id true
+@[match_pattern] abbrev selectOrOrderObjects (ids : Array ObjectId) (order : Bool := false) (flag : Bool := false) : Action :=
+  .arrayObjectAction ids #[] order flag false
 @[match_pattern] abbrev chooseObjects (ids : Array ObjectId) (stackTriggers : Bool := false) : Action :=
-  .selectOrOrderObjects ids false stackTriggers
+  .arrayObjectAction ids #[] false stackTriggers false
 @[match_pattern] abbrev choosePermanents (ids : Array ObjectId) : Action := .chooseObjects ids false
 @[match_pattern] abbrev stackTriggers (ids : Array ObjectId) : Action := .chooseObjects ids true
 @[match_pattern] abbrev orderCards (ids : Array ObjectId) (supplyRandom : Bool := false) : Action :=
-  .selectOrOrderObjects ids true supplyRandom
+  .arrayObjectAction ids #[] true supplyRandom false
 @[match_pattern] abbrev putOnBottom (ids : Array ObjectId) : Action := .orderCards ids false
 @[match_pattern] abbrev supplyOrder (ids : Array ObjectId) : Action := .orderCards ids true
+@[match_pattern] abbrev lookLibrary (top rest : Array ObjectId) (surveil : Bool := false) : Action :=
+  .arrayObjectAction top rest false surveil true
 @[match_pattern] abbrev scry (top bottom : Array ObjectId) : Action := .lookLibrary top bottom false
 @[match_pattern] abbrev surveil (top graveyard : Array ObjectId) : Action := .lookLibrary top graveyard true
-@[match_pattern] abbrev decline : Action := .choiceResponse false false
-@[match_pattern] abbrev accept : Action := .choiceResponse true false
-@[match_pattern] abbrev haveVillainConnive : Action := .choiceResponse false true
-@[match_pattern] abbrev payGeneric : Action := .choiceResponse true true
+@[match_pattern] abbrev booleanChoice (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) : Action :=
+  .booleanOrConcede flag optionalCost teamworkOrAdditional false
 @[match_pattern] abbrev chooseLibrarySide (top : Bool := true) : Action := .booleanChoice top false false
 @[match_pattern] abbrev chooseTop : Action := .chooseLibrarySide true
 @[match_pattern] abbrev chooseBottom : Action := .chooseLibrarySide false
@@ -303,6 +301,8 @@ namespace Action
   .booleanChoice pay true teamwork
 @[match_pattern] abbrev announceKicker (kick : Bool) : Action := .announceOptionalCost kick false
 @[match_pattern] abbrev announceTeamwork (pay : Bool) : Action := .announceOptionalCost pay true
+@[match_pattern] abbrev announceGift (to : Option PlayerId) : Action := .optionalDesignation to none false
+@[match_pattern] abbrev chooseRingBearer (id : Option ObjectId) : Action := .optionalDesignation none id true
 
 end Action
 

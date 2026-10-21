@@ -29,7 +29,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
-  | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
+  | .activateOrSneak id _ attackerId true => g.castSpell p id (sneakAttacker := some attackerId)
   | .chooseNat idx true _ =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
@@ -39,13 +39,13 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | _ => g.announceMode p idx
   | .chooseNumber n supplyRandom =>
     if supplyRandom then g.supplyIndex n else g.announceX p n
-  | .target t => g.announceTarget p t
-  | .targets ts =>
+  | .announceTargetAction t _ false => g.announceTarget p t
+  | .announceTargetAction _ ts true =>
     match g.pending with
     | .chooseProliferate .. => g.finishProliferate p ts
     | _ => g.announceTargets p ts
   | .divideDamage as => g.announceDividedDamage p as
-  | .activate id idx => g.activateAbility p id idx
+  | .activateOrSneak id idx _ false => g.activateAbility p id idx
   | .pay => g.pay p
   | .objectAction id _ true discard => do
     let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
@@ -56,9 +56,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
   | .takeMulligan => g.takeMulligan p
-  | .orderCards ids supplyRandom =>
+  | .arrayObjectAction ids _ true supplyRandom false =>
     if supplyRandom then g.supplyOrder ids else g.putCardsOnBottom p ids
-  | .lookLibrary top rest surveil =>
+  | .arrayObjectAction top rest _ surveil true =>
     if surveil then g.finishSurveil p top rest else g.finishScry p top rest
   | .decline =>
     match g.pending with
@@ -78,7 +78,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (if top then .accept else .decline)
     | _ => g.chooseLibrarySide p top
-  | .chooseObjects ids stackTriggers =>
+  | .arrayObjectAction ids _ false stackTriggers false =>
     if stackTriggers then g.stackTriggers p ids
     else
       match g.pending with
@@ -87,9 +87,9 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
       | _ => g.choosePermanents p ids
   | .announceOptionalCost pay teamwork =>
     if teamwork then g.announceTeamwork p pay else g.announceKicker p pay
-  | .announceGift to => g.announceGift p to
-  | .chooseRingBearer id => g.announceRingBearer p id
-  | .stepAction _ _ true => return g.concede p
+  | .optionalDesignation to _ false => g.announceGift p to
+  | .optionalDesignation _ id true => g.announceRingBearer p id
+  | .booleanOrConcede _ _ _ true => return g.concede p
   | .chooseName name => g.answerFraChoice p (.name name)
 
 
@@ -118,7 +118,7 @@ def actor (g : Game) : Option PlayerId :=
     match g.pending with
     | .declareAttackers => who g.activePlayer
     | .declareBlockers => who g.currentBlockersPlayer
-    | .turnCombat (.playerStepChoice p _) | .putOnBottom p _ | .assignCombatDamage p _
+    | .turnCombat (.playerBooleanStep p _ _) | .putOnBottom p _
     | .chooseLegend p _ _ | .cast p _ | .resolve p _ | .fraChoice p _ => who p
     | .resolveRandom req =>
       match req with

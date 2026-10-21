@@ -168,72 +168,98 @@ end TriggerReflexiveKind
 
 /-- Target-restriction and announced-target object selectors (CR 115). -/
 inductive TargetObject where
-  /-- Target presence or duration restriction: while source (`false, false`), if present (`true, false`), later creature (`false, true`), or until your next turn (`true, true`). -/
-  | targetPresence (ifPresent : Bool := false) (laterOrNextTurn : Bool := false)
+  /-- Target presence/duration restriction (`!announced`: whileSource, ifPresent, laterCreature, untilYourNextTurn) or announced creature target (`announced`: announced, optionalCreature, creatureTargets, firstTargetCreatureYouControl). -/
+  | presenceOrAnnouncedTarget (alt1 : Bool := false) (alt2 : Bool := false) (announced : Bool := false)
   /-- The announced permanent, when it is of card type `ty` (e.g. creature or planeswalker). -/
   | ofCardType (ty : CardType := .creature)
   /-- Another permanent of this subtype (not the source). -/
   | anotherSubtype (subtype : String)
-  /-- Each announced permanent (`pair = false`) or the announced attach-pair member (`pair = true`; Equipment if `equipmentOnly`). -/
-  | eachOrPairTarget (pair : Bool := false) (equipmentOnly : Bool := false)
+  /-- Each/pair announced target (`!special`) or special copy/kicker target (`special`). -/
+  | eachPairOrSpecialTarget (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
   /-- The announced permanent (`byYou` means the controller puts the counters). -/
   | permanent (byYou : Bool := false)
-  /-- Announced creature target: single announced (`false, false`), optional creature (`true, false`), all creature targets (`false, true`), or first target creature you control (`true, true`). -/
-  | announcedTarget (optional : Bool := false) (allOrFirstYours : Bool := false)
   /-- The target at `index`. -/
   | targetAt (index : Nat)
-  /-- Copy or kicker target: second artifact not legendary (`false, false`), legend rule off (`true, false`), owned creatures kicker (`false, true`), or two tokens with haste sacrificed at end step (`true, true`). -/
-  | specialCopyOrKickerTarget (legendOff : Bool := false) (kickerOrTwoTokens : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace TargetObject
+
+@[match_pattern] abbrev targetPresence (ifPresent : Bool := false) (laterOrNextTurn : Bool := false) : TargetObject :=
+  .presenceOrAnnouncedTarget ifPresent laterOrNextTurn false
+@[match_pattern] abbrev announcedTarget (optional : Bool := false) (allOrFirstYours : Bool := false) : TargetObject :=
+  .presenceOrAnnouncedTarget optional allOrFirstYours true
+@[match_pattern] abbrev eachOrPairTarget (pair : Bool := false) (equipmentOnly : Bool := false) : TargetObject :=
+  .eachPairOrSpecialTarget pair equipmentOnly false
+@[match_pattern] abbrev specialCopyOrKickerTarget (legendOff : Bool := false) (kickerOrTwoTokens : Bool := false) : TargetObject :=
+  .eachPairOrSpecialTarget legendOff kickerOrTwoTokens true
+
+end TargetObject
 
 /-- Permanent selectors on the battlefield (CR 110 / CR 403). -/
 inductive BattlefieldObject where
-  /-- The creature this Aura enchants (`oppCreatures = false`, while source if `flag`) or each creature an opponent controls (`oppCreatures = true`, tapped only if `flag`). -/
-  | enchantedOrOppCreatures (oppCreatures : Bool := false) (flag : Bool := false)
+  /-- Enchanted/opposing creatures (`!combatOrHaste`: enchanted if `!alt1`, opposing if `alt1`) or combat/haste creatures (`combatOrHaste`: blockers/attacking-alone/monarch/haste). -/
+  | enchantedOrCombatCreature (alt1 : Bool := false) (alt2 : Bool := false) (combatOrHaste : Bool := false)
   /-- The creature that caused the trigger (requiring `subtype` when set). -/
   | cause (subtype : Option String := none)
-  /-- Each permanent of type `ty` the controller controls (e.g. creatures, lands, planeswalkers, or artifacts). -/
-  | permanentsOfTypeYouControl (ty : CardType := .creature)
+  /-- Permanents of type `ty` controlled by you (`!opponents`) or by opponents (`opponents`). -/
+  | permanentsOfType (ty : CardType := .creature) (opponents : Bool := false)
   /-- Subtype-filtered permanents: other permanents you control of `subtype` (`false, false`), non-`subtype` creatures (`true, false`), or non-`subtype` creatures and opponents (`true, true`). -/
   | subtypeFilter (subtype : String) (nonSubtype : Bool := false) (withOpponents : Bool := false)
-  /-- Combat or haste creature selector: blockers (`false, false`), attacking alone (`true, false`), combat damager if monarch (`false, true`), or any creature on battlefield with haste (`true, true`). -/
-  | combatOrHasteCreature (attackingAlone : Bool := false) (monarchOrHaste : Bool := false)
   /-- Permanents you control (`eachCreature`, `subtype`, or `citysBlessing`). -/
   | youControl (which : YouControlPlusOne := .eachCreature)
-  /-- Other or Equipment permanents you control: each other creature (`false, false`), another creature or artifact (`true, false`), Equipment you control (`false, true`), or any number of Equipment you control (`true, true`). -/
-  | otherOrEquipmentYouControl (withArtifacts : Bool := false) (equipmentOrAny : Bool := false)
-  /-- Earlier-step noted permanent: created token (`false, false`), permanent dealt damage (`true, false`), Equipment host (`false, true`), or noted host (`true, true`). -/
-  | stepNotedPermanent (dealtDamage : Bool := false) (equipmentOrNotedHost : Bool := false)
-  /-- Source or tapped permanent state: source if present (`false, false`), quest counters on source (`true, false`), harnessed source (`false, true`), or first tapped creature this turn (`true, true`). -/
-  | sourceOrTappedState (questCounters : Bool := false) (harnessedOrFirst : Bool := false)
-  /-- Group or target-player permanents: each up to last-known (`false, false`), untapped Humans (`true, false`), equipped creature (`false, true`), or creatures of target player (`true, true`). -/
-  | groupOrTargetPlayerCreatures (humans : Bool := false) (equippedOrTargetPlayer : Bool := false)
-  /-- Attacking creatures (`untilYourTurn = false`, equipped only if `flag`) or creatures attacking until your next turn (`untilYourTurn = true`, against opponents if `flag`). -/
-  | attackersFilter (untilYourTurn : Bool := false) (flag : Bool := false)
-  /-- Opposing two-type permanents (`putArtifact = false`, creatures/planeswalkers if `flag`) or artifact put from hand (`putArtifact = true`, Equipment only if `flag`). -/
-  | oppPairOrPutArtifact (putArtifact : Bool := false) (flag : Bool := false)
+  /-- Other/Equipment permanents you control (`!stepNoted`) or earlier-step noted permanent (`stepNoted`: created token, dealt damage, Equipment host, or noted host). -/
+  | otherOrNotedPermanent (alt1 : Bool := false) (alt2 : Bool := false) (stepNoted : Bool := false)
+  /-- Source/tapped permanent state (`!groupOrTarget`: source, quest counters, harnessed, or first tapped) or group/target-player creatures (`groupOrTarget`: last-known, Humans, equipped, or target player's creatures). -/
+  | sourceOrGroupCreatures (alt1 : Bool := false) (alt2 : Bool := false) (groupOrTarget : Bool := false)
+  /-- Attacking creatures filter (`!oppOrPut`) or opposing pair / put-artifact selector (`oppOrPut`). -/
+  | attackersOrOppPair (alt1 : Bool := false) (alt2 : Bool := false) (oppOrPut : Bool := false)
   /-- Filtered creatures the controller controls (legendary if `legendary`, with a +1/+1 counter if `withPlusOne`, nontoken otherwise). -/
   | filteredCreaturesYouControl (legendary : Bool := true) (withPlusOne : Bool := false)
-  /-- Excluded or greatest permanents: Forests except cause (`false, false`), creatures except your tokens (`true, false`), creatures without flying (`false, true`), or opposing greatest-MV creature/planeswalker (`true, true`). -/
-  | excludedOrGreatestPermanents (exceptYourTokens : Bool := false) (noFlyingOrGreatest : Bool := false)
-  /-- All creatures on the battlefield (`tokensOnly = false`, power 4+ if `flag`) or tokens you control (`tokensOnly = true`, Wizard tokens except recent if `flag`). -/
-  | allCreaturesOrTokens (tokensOnly : Bool := false) (flag : Bool := false)
-  /-- Sacrifice permanent choice (`sourceCopy = false`, creature/planeswalker if `flag`) or token copy of the source (`sourceCopy = true`, two nonlegendary if `flag`). -/
-  | sacrificeChoiceOrSourceCopy (sourceCopy : Bool := false) (flag : Bool := false)
-  /-- Permanents of type `ty` opponents control. -/
-  | oppPermanents (ty : CardType := .artifact)
-  /-- Chosen-filter or trample-attacker creatures: all except two chosen (`false, false`), other odd/even MV (`true, false`), not chosen type (`false, true`), or attackers of cause's controller with trample (`true, true`). -/
-  | chosenFilterOrTrampleAttackers (oddOrEven : Bool := false) (notChosenOrTrample : Bool := false)
+  /-- Excluded/greatest permanents (`!allOrTokens`) or all creatures / tokens you control (`allOrTokens`). -/
+  | excludedOrAllCreatures (alt1 : Bool := false) (alt2 : Bool := false) (allOrTokens : Bool := false)
+  /-- Sacrifice permanent choice / source token copy (`!chosenOrTrample`) or chosen-filter / trample-attacker creatures (`chosenOrTrample`). -/
+  | sacrificeCopyOrChosenFilter (alt1 : Bool := false) (alt2 : Bool := false) (chosenOrTrample : Bool := false)
 deriving Repr, Inhabited, BEq
+
+namespace BattlefieldObject
+
+@[match_pattern] abbrev enchantedOrOppCreatures (oppCreatures : Bool := false) (flag : Bool := false) : BattlefieldObject :=
+  .enchantedOrCombatCreature oppCreatures flag false
+@[match_pattern] abbrev combatOrHasteCreature (attackingAlone : Bool := false) (monarchOrHaste : Bool := false) : BattlefieldObject :=
+  .enchantedOrCombatCreature attackingAlone monarchOrHaste true
+@[match_pattern] abbrev permanentsOfTypeYouControl (ty : CardType := .creature) : BattlefieldObject :=
+  .permanentsOfType ty false
+@[match_pattern] abbrev oppPermanents (ty : CardType := .artifact) : BattlefieldObject :=
+  .permanentsOfType ty true
+@[match_pattern] abbrev otherOrEquipmentYouControl (withArtifacts : Bool := false) (equipmentOrAny : Bool := false) : BattlefieldObject :=
+  .otherOrNotedPermanent withArtifacts equipmentOrAny false
+@[match_pattern] abbrev stepNotedPermanent (dealtDamage : Bool := false) (equipmentOrNotedHost : Bool := false) : BattlefieldObject :=
+  .otherOrNotedPermanent dealtDamage equipmentOrNotedHost true
+@[match_pattern] abbrev sourceOrTappedState (questCounters : Bool := false) (harnessedOrFirst : Bool := false) : BattlefieldObject :=
+  .sourceOrGroupCreatures questCounters harnessedOrFirst false
+@[match_pattern] abbrev groupOrTargetPlayerCreatures (humans : Bool := false) (equippedOrTargetPlayer : Bool := false) : BattlefieldObject :=
+  .sourceOrGroupCreatures humans equippedOrTargetPlayer true
+@[match_pattern] abbrev attackersFilter (untilYourTurn : Bool := false) (flag : Bool := false) : BattlefieldObject :=
+  .attackersOrOppPair untilYourTurn flag false
+@[match_pattern] abbrev oppPairOrPutArtifact (putArtifact : Bool := false) (flag : Bool := false) : BattlefieldObject :=
+  .attackersOrOppPair putArtifact flag true
+@[match_pattern] abbrev excludedOrGreatestPermanents (exceptYourTokens : Bool := false) (noFlyingOrGreatest : Bool := false) : BattlefieldObject :=
+  .excludedOrAllCreatures exceptYourTokens noFlyingOrGreatest false
+@[match_pattern] abbrev allCreaturesOrTokens (tokensOnly : Bool := false) (flag : Bool := false) : BattlefieldObject :=
+  .excludedOrAllCreatures tokensOnly flag true
+@[match_pattern] abbrev sacrificeChoiceOrSourceCopy (sourceCopy : Bool := false) (flag : Bool := false) : BattlefieldObject :=
+  .sacrificeCopyOrChosenFilter sourceCopy flag false
+@[match_pattern] abbrev chosenFilterOrTrampleAttackers (oddOrEven : Bool := false) (notChosenOrTrample : Bool := false) : BattlefieldObject :=
+  .sacrificeCopyOrChosenFilter oddOrEven notChosenOrTrample true
+
+end BattlefieldObject
 
 /-- Card selectors in graveyards, exile, or noted across zones (CR 404 / CR 406). -/
 inductive GraveyardExileObject where
-  /-- Announced graveyard card (`discarded = false`, or permanent if `flag`) or card discarded by an earlier step (`discarded = true`, land only if `flag`). -/
-  | graveyardOrDiscardedCard (discarded : Bool := false) (flag : Bool := false)
+  /-- Announced graveyard/discarded card (`!linkedOrSpecial`) or linked exile / died this turn / outside-game / Sphinx's Approach (`linkedOrSpecial`). -/
+  | graveyardDiscardedOrLinked (alt1 : Bool := false) (alt2 : Bool := false) (linkedOrSpecial : Bool := false)
   /-- Cards of `subtype` in graveyard (`milledOnly = false`) or milled by an earlier step (`milledOnly = true`). -/
   | subtypeInGraveyard (subtype : String) (milledOnly : Bool := false)
-  /-- Linked exile, creatures that died this turn, outside-the-game opponent choice, or Sphinx's Approach (`false/true, false/true`). -/
-  | linkedOrDiedOrSpecial (diedThisTurn : Bool := false) (outsideOrSphinx : Bool := false)
   /-- Up to `n` target instant and/or sorcery cards from the controller's graveyard. -/
   | graveyardInstants (n : Nat)
   /-- The announced card or permanent with mana value at most `mv` (creature-only if `creatureOnly`, or any with teamwork if `orTeamwork`). -/
@@ -246,26 +272,27 @@ inductive GraveyardExileObject where
   | graveyardCardGroup (modalTwo : Bool := false) (creaturesOnly : Bool := true)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace GraveyardExileObject
+
+@[match_pattern] abbrev graveyardOrDiscardedCard (discarded : Bool := false) (flag : Bool := false) : GraveyardExileObject :=
+  .graveyardDiscardedOrLinked discarded flag false
+@[match_pattern] abbrev linkedOrDiedOrSpecial (diedThisTurn : Bool := false) (outsideOrSphinx : Bool := false) : GraveyardExileObject :=
+  .graveyardDiscardedOrLinked diedThisTurn outsideOrSphinx true
+
+end GraveyardExileObject
+
 /-- Card selectors in libraries and hands (CR 401 / CR 402). -/
 inductive LibraryHandObject where
-  /-- Hand or revealed object: whole hand (`false, false`), revealed card (`true, false`), card from hand (`false, true`), or random revealed creature (`true, true`). -/
-  | handOrRevealedObject (revealed : Bool := false) (cardFromHandOrRandom : Bool := false)
-  /-- Chosen nonland from revealed hand (`basicLand = false`, permanent only if `flag`) or basic land found by search (`basicLand = true`, on top if `flag`). -/
-  | chosenNonlandOrBasic (basicLand : Bool := false) (flag : Bool := false)
+  /-- Hand/revealed object (`!chosenOrBasic`: hand, revealed, card from hand, or random revealed creature) or chosen nonland / basic land (`chosenOrBasic`). -/
+  | handRevealedOrChosenObject (alt1 : Bool := false) (alt2 : Bool := false) (chosenOrBasic : Bool := false)
   /-- Top cards of library (`opponentTop = false`, by source power if `byPowerOrLands`), opponent's top cards (`opponentTop = true, byPowerOrLands = false`), or lands up to count/damage (`opponentTop = true, byPowerOrLands = true`). -/
   | topOrLandsCount (count : Option Nat := none) (opponentTop : Bool := false) (byPowerOrLands : Bool := false)
-  /-- Up to `bound` basic cards of `subtype` from library (`creatureFromHand = false`) or a `subtype` creature card with MV at most `bound` from hand (`creatureFromHand = true`). -/
-  | subtypeWithBound (subtype : String) (bound : Nat) (creatureFromHand : Bool := false)
-  /-- A card of type `ty` (e.g. land or artifact) from the controller's hand. -/
-  | cardOfTypeFromHand (ty : CardType := .land)
-  /-- A card of `subtype` found by `searchLibrary` (land subtype if `landOnly`, behold untap if `beholdUntap`). -/
-  | searchSubtype (subtype : String) (landOnly : Bool := true) (beholdUntap : Bool := false)
-  /-- Cards in the controller's hand (nonland only if `nonlandOnly`, a random card if `random`). -/
-  | card (nonlandOnly : Bool := false) (random : Bool := false)
-  /-- A card with optional supertype `s` and card type `ty`. -/
-  | supertypeCard (s : Option Supertype := some .legendary) (ty : CardType := .creature)
-  /-- Special library or hand query: basic lands with different names X (`false, false`), artifact creature X (`true, false`), opponent libraries but bottom (`false, true`), or each opponent two / draw shortfall (`true, true`). -/
-  | libraryOrHandSpecial (artifactCreatureX : Bool := false) (oppLibOrShortfall : Bool := false)
+  /-- Subtype card in library or hand: bounded basic/creature (`!search`) or searched subtype (`search`). -/
+  | subtypeLibraryHand (subtype : String) (bound : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false) (search : Bool := false)
+  /-- A card of type `ty` from hand (`fromHandOnly = true`) or with optional supertype `s` and card type `ty` (`fromHandOnly = false`). -/
+  | typedLibraryOrHandCard (s : Option Supertype := some .legendary) (ty : CardType := .creature) (fromHandOnly : Bool := false)
+  /-- Cards in hand (`!special`: nonland if `alt1`, random if `alt2`) or special library/hand query (`special`: basic lands X, artifact creature X, opponent libraries, or shortfall draw). -/
+  | handCardOrLibrarySpecial (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
   /-- Cards of `types` among looked-at cards (`untapAt = none`) or basic land of `types` untapped at `untapAt` lands (`untapAt = some n`). -/
   | typesOrSubtypesArray (types : Array String) (untapAt : Option Nat := none)
   /-- Two piles (`drawDiscard = false, lootX = false`, Fact or Fiction if `flag`), draw and discard (`drawDiscard = true, lootX = false`, two and stun if `flag`), or loot/discard X (`lootX = true`, Spirit per type if `flag`). -/
@@ -274,19 +301,47 @@ inductive LibraryHandObject where
   | cardsUnlessType (n : Nat := 2) (ty : CardType := .artifact)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+namespace LibraryHandObject
+
+@[match_pattern] abbrev handOrRevealedObject (revealed : Bool := false) (cardFromHandOrRandom : Bool := false) : LibraryHandObject :=
+  .handRevealedOrChosenObject revealed cardFromHandOrRandom false
+@[match_pattern] abbrev chosenNonlandOrBasic (basicLand : Bool := false) (flag : Bool := false) : LibraryHandObject :=
+  .handRevealedOrChosenObject basicLand flag true
+@[match_pattern] abbrev subtypeWithBound (subtype : String) (bound : Nat) (creatureFromHand : Bool := false) : LibraryHandObject :=
+  .subtypeLibraryHand subtype bound creatureFromHand false false
+@[match_pattern] abbrev searchSubtype (subtype : String) (landOnly : Bool := true) (beholdUntap : Bool := false) : LibraryHandObject :=
+  .subtypeLibraryHand subtype 0 landOnly beholdUntap true
+@[match_pattern] abbrev cardOfTypeFromHand (ty : CardType := .land) : LibraryHandObject :=
+  .typedLibraryOrHandCard none ty true
+@[match_pattern] abbrev supertypeCard (s : Option Supertype := some .legendary) (ty : CardType := .creature) : LibraryHandObject :=
+  .typedLibraryOrHandCard s ty false
+@[match_pattern] abbrev card (nonlandOnly : Bool := false) (random : Bool := false) : LibraryHandObject :=
+  .handCardOrLibrarySpecial nonlandOnly random false
+@[match_pattern] abbrev libraryOrHandSpecial (artifactCreatureX : Bool := false) (oppLibOrShortfall : Bool := false) : LibraryHandObject :=
+  .handCardOrLibrarySpecial artifactCreatureX oppLibOrShortfall true
+
+end LibraryHandObject
+
 /-- Sacrifice-choice and stack object selectors (CR 405 / CR 701.17). -/
 inductive SacrificeStackObject where
   /-- A creature (nontoken if `nontoken`) chosen and sacrificed by each player (`opponentsOnly = false`), each opponent (`opponentsOnly = true, targetOpponent = false`), or the announced opponent (`targetOpponent = true`). -/
   | chosenCreature (opponentsOnly : Bool := false) (nontoken : Bool := false) (targetOpponent : Bool := false)
-  /-- Sacrifice target: least-power creature (`false, false`), combat damager (`true, false`), the Plan (`false, true`), or another creature you control (`true, true`). -/
-  | sacrificeTarget (combatDamager : Bool := false) (planOrAnother : Bool := false)
+  /-- Sacrifice target (`!stackRef`: least-power, combat damager, Plan, or another creature) or cast/stack reference (`stackRef`: youIfCast, spellTargets, causingSpell, or Archon). -/
+  | sacrificeTargetOrStackRef (alt1 : Bool := false) (alt2 : Bool := false) (stackRef : Bool := false)
   /-- The ability's source, sacrificed as `how` says. -/
   | sacrificedSource (how : SacrificeSourceHow := .isSacrificed)
-  /-- Cast or stack reference: controller if source was cast (`false, false`), causing spell's creature targets (`true, false`), causing spell (`false, true`), or Archon of Cruelty (`true, true`). -/
-  | castOrStackRef (spellTargets : Bool := false) (causingOrArchon : Bool := false)
   /-- Stack spell or ability: target spell (`ability = false, copied = false`, twice if `flag`), stack ability (`ability = true, copied = false`, from creature if `flag`), or copied spell (`copied = true`, next this turn if `flag`). -/
   | stackSpellOrAbility (ability : Bool := false) (copied : Bool := false) (flag : Bool := false)
 deriving Repr, Inhabited, BEq
+
+namespace SacrificeStackObject
+
+@[match_pattern] abbrev sacrificeTarget (combatDamager : Bool := false) (planOrAnother : Bool := false) : SacrificeStackObject :=
+  .sacrificeTargetOrStackRef combatDamager planOrAnother false
+@[match_pattern] abbrev castOrStackRef (spellTargets : Bool := false) (causingOrArchon : Bool := false) : SacrificeStackObject :=
+  .sacrificeTargetOrStackRef spellTargets causingOrArchon true
+
+end SacrificeStackObject
 
 mutual
 
@@ -572,14 +627,10 @@ end ObjectSelector
 
 /-- Characteristic, power/toughness, mana value, and counter numbers (CR 202.3 / CR 208). -/
 inductive StatNumber where
-  /-- The source's power (or toughness if `toughness`). -/
-  | equalSourceStat (toughness : Bool := false)
-  /-- Source, target, or cause power statistic: double (`false, false`), last-known power (`true, false`), target power (`false, true`), or cause power (`true, true`). -/
-  | sourceOrTargetPower (lastKnown : Bool := false) (targetOrCause : Bool := false)
-  /-- Spell or artifact mana-value statistic: greatest artifact MV (`false, false`), spell MV (`true, false`), mana spent (`false, true`), or chosen X (`true, true`). -/
-  | spellOrArtifactStat (spellMv : Bool := false) (manaSpentOrChosenX : Bool := false)
-  /-- The number of +1/+1 counters on the source (or on the target creature if `ofTarget`). -/
-  | plusOneCounters (ofTarget : Bool := false)
+  /-- Source power/toughness (`!plusOnes`) or +1/+1 counters on source/target (`plusOnes`). -/
+  | sourceStatOrPlusOnes (alt : Bool := false) (plusOnes : Bool := false)
+  /-- Source/target/cause power (`!spellStat`) or spell/artifact mana-value statistic (`spellStat`). -/
+  | powerOrSpellStat (alt1 : Bool := false) (alt2 : Bool := false) (spellStat : Bool := false)
   /-- Counter or symbol statistic: burden counters (`false, false`), charge counters (`true, false`), blue mana symbols (`false, true`), or total flying power (`true, true`). -/
   | counterOrSymbolStat (charge : Bool := false) (blueSymbolsOrFlying : Bool := false)
   /-- Greatest power with life loss (`false`) or greatest toughness then put creatures from hand (`true`). -/
@@ -590,14 +641,20 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StatNumber
 
-@[match_pattern] abbrev double : StatNumber := .sourceOrTargetPower false false
-@[match_pattern] abbrev lastKnownPower : StatNumber := .sourceOrTargetPower true false
-@[match_pattern] abbrev equalToTargetPower : StatNumber := .sourceOrTargetPower false true
-@[match_pattern] abbrev causePower : StatNumber := .sourceOrTargetPower true true
-@[match_pattern] abbrev greatestArtifactMv : StatNumber := .spellOrArtifactStat false false
-@[match_pattern] abbrev spellManaValue : StatNumber := .spellOrArtifactStat true false
-@[match_pattern] abbrev equalToManaSpent : StatNumber := .spellOrArtifactStat false true
-@[match_pattern] abbrev chosenX : StatNumber := .spellOrArtifactStat true true
+@[match_pattern] abbrev equalSourceStat (toughness : Bool := false) : StatNumber := .sourceStatOrPlusOnes toughness false
+@[match_pattern] abbrev plusOneCounters (ofTarget : Bool := false) : StatNumber := .sourceStatOrPlusOnes ofTarget true
+@[match_pattern] abbrev sourceOrTargetPower (lastKnown : Bool := false) (targetOrCause : Bool := false) : StatNumber :=
+  .powerOrSpellStat lastKnown targetOrCause false
+@[match_pattern] abbrev spellOrArtifactStat (spellMv : Bool := false) (manaSpentOrChosenX : Bool := false) : StatNumber :=
+  .powerOrSpellStat spellMv manaSpentOrChosenX true
+@[match_pattern] abbrev double : StatNumber := .powerOrSpellStat false false false
+@[match_pattern] abbrev lastKnownPower : StatNumber := .powerOrSpellStat true false false
+@[match_pattern] abbrev equalToTargetPower : StatNumber := .powerOrSpellStat false true false
+@[match_pattern] abbrev causePower : StatNumber := .powerOrSpellStat true true false
+@[match_pattern] abbrev greatestArtifactMv : StatNumber := .powerOrSpellStat false false true
+@[match_pattern] abbrev spellManaValue : StatNumber := .powerOrSpellStat true false true
+@[match_pattern] abbrev equalToManaSpent : StatNumber := .powerOrSpellStat false true true
+@[match_pattern] abbrev chosenX : StatNumber := .powerOrSpellStat true true true
 @[match_pattern] abbrev perBurden : StatNumber := .counterOrSymbolStat false false
 @[match_pattern] abbrev perChargeCounter : StatNumber := .counterOrSymbolStat true false
 @[match_pattern] abbrev blueManaSymbols : StatNumber := .counterOrSymbolStat false true
@@ -609,43 +666,43 @@ end StatNumber
 
 /-- Zone, permanent, subtype, and feature counts (CR 109 / CR 400). -/
 inductive CountNumber where
-  /-- Permanent, graveyard, or attachment count: other creatures (`false, false`), 7+ card graveyards (`true, false`), attached Equipment (`false, true`), or chosen creature type (`true, true`). -/
-  | zoneOrAttachedCount (fatGraveyard : Bool := false) (attachedOrChosen : Bool := false)
+  /-- Permanent/graveyard/attachment count (`!libraryOrGy`) or library/graveyard/color/planeswalker-type count (`libraryOrGy`). -/
+  | zoneLibraryOrAttachedCount (alt1 : Bool := false) (alt2 : Bool := false) (libraryOrGy : Bool := false)
   /-- How many permanents of this subtype the controller controls. -/
   | subtypeCount (subtype : String)
   /-- One card for each permanent of this type the controller controls. -/
   | perControlled (ty : CardType)
   /-- Enough cards that the controller's hand has `n` cards. -/
   | upToHandSize (n : Nat)
-  /-- One Treasure for each artifact opponents (or the damaged player if `damagedPlayerOnly`) control. -/
-  | oppArtifacts (damagedPlayerOnly : Bool := false)
-  /-- Library, graveyard, color, or planeswalker-type count: library cards (`false, false`), minus graveyard cards (`true, false`), colors among other artifacts (`false, true`), or planeswalker types (`true, true`). -/
-  | libraryOrGraveyardCount (minusGy : Bool := false) (colorsOrPwTypes : Bool := false)
-  /-- How many basic lands the controller controls (`false`) or lands opponents control (`true`). -/
-  | landCount (opponent : Bool := false)
+  /-- Opposing/damaged-player artifacts (`!lands`) or basic/opposing lands (`lands`). -/
+  | artifactsOrLandsCount (alt : Bool := false) (lands : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CountNumber
 
-@[match_pattern] abbrev perOtherCreature : CountNumber := .zoneOrAttachedCount false false
-@[match_pattern] abbrev perFatGraveyard : CountNumber := .zoneOrAttachedCount true false
-@[match_pattern] abbrev attachedEquipment : CountNumber := .zoneOrAttachedCount false true
-@[match_pattern] abbrev chosenCreatureType : CountNumber := .zoneOrAttachedCount true true
-@[match_pattern] abbrev libraryCards : CountNumber := .libraryOrGraveyardCount false false
-@[match_pattern] abbrev minusGraveyardCards : CountNumber := .libraryOrGraveyardCount true false
-@[match_pattern] abbrev colorsAmongOtherArtifacts : CountNumber := .libraryOrGraveyardCount false true
-@[match_pattern] abbrev planeswalkerTypes : CountNumber := .libraryOrGraveyardCount true true
-@[match_pattern] abbrev basicLandsYouControl : CountNumber := .landCount false
-@[match_pattern] abbrev opponentLands : CountNumber := .landCount true
+@[match_pattern] abbrev zoneOrAttachedCount (fatGraveyard : Bool := false) (attachedOrChosen : Bool := false) : CountNumber :=
+  .zoneLibraryOrAttachedCount fatGraveyard attachedOrChosen false
+@[match_pattern] abbrev libraryOrGraveyardCount (minusGy : Bool := false) (colorsOrPwTypes : Bool := false) : CountNumber :=
+  .zoneLibraryOrAttachedCount minusGy colorsOrPwTypes true
+@[match_pattern] abbrev oppArtifacts (damagedPlayerOnly : Bool := false) : CountNumber := .artifactsOrLandsCount damagedPlayerOnly false
+@[match_pattern] abbrev landCount (opponent : Bool := false) : CountNumber := .artifactsOrLandsCount opponent true
+@[match_pattern] abbrev perOtherCreature : CountNumber := .zoneLibraryOrAttachedCount false false false
+@[match_pattern] abbrev perFatGraveyard : CountNumber := .zoneLibraryOrAttachedCount true false false
+@[match_pattern] abbrev attachedEquipment : CountNumber := .zoneLibraryOrAttachedCount false true false
+@[match_pattern] abbrev chosenCreatureType : CountNumber := .zoneLibraryOrAttachedCount true true false
+@[match_pattern] abbrev libraryCards : CountNumber := .zoneLibraryOrAttachedCount false false true
+@[match_pattern] abbrev minusGraveyardCards : CountNumber := .zoneLibraryOrAttachedCount true false true
+@[match_pattern] abbrev colorsAmongOtherArtifacts : CountNumber := .zoneLibraryOrAttachedCount false true true
+@[match_pattern] abbrev planeswalkerTypes : CountNumber := .zoneLibraryOrAttachedCount true true true
+@[match_pattern] abbrev basicLandsYouControl : CountNumber := .artifactsOrLandsCount false true
+@[match_pattern] abbrev opponentLands : CountNumber := .artifactsOrLandsCount true true
 
 end CountNumber
 
 /-- Step-noted and turn-history numbers (CR 608 / CR 700). -/
 inductive TurnEventNumber where
-  /-- Earlier-step count: looked at while scrying (`false, false`), discarded hand (`true, false`), tapped Humans (`false, true`), or permanents destroyed this way (`true, true`). -/
-  | stepNotedNumber (discardedHand : Bool := false) (tappedHumanOrDestroyed : Bool := false)
-  /-- Life lost, excess damage, noted power, or removed +1/+1 counters (`false/true, false/true`). -/
-  | damageOrPowerNoted (notedExcess : Bool := false) (notedPowerOrRemoved : Bool := false)
+  /-- Earlier-step count (`!damageOrPower`: looked at, discarded hand, tapped Humans, or destroyed) or life/damage/power/removed-counter note (`damageOrPower`). -/
+  | stepOrDamageNotedNumber (alt1 : Bool := false) (alt2 : Bool := false) (damageOrPower : Bool := false)
   /-- Turn-accumulated count: cards drawn (`false, false`), other spells' MV (`true, false`), life gained (`false, true`), or cards discarded (`true, true`) this turn. -/
   | turnCountNumber (otherSpellsMv : Bool := false) (lifeGainedOrDiscarded : Bool := false)
   /-- The number of cards put into the targeted player's graveyard from their library this turn. -/
@@ -656,14 +713,18 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TurnEventNumber
 
-@[match_pattern] abbrev perLookedAt : TurnEventNumber := .stepNotedNumber false false
-@[match_pattern] abbrev discardedHand : TurnEventNumber := .stepNotedNumber true false
-@[match_pattern] abbrev forEachTappedHuman : TurnEventNumber := .stepNotedNumber false true
-@[match_pattern] abbrev forEachDestroyedThisWay : TurnEventNumber := .stepNotedNumber true true
-@[match_pattern] abbrev thatManyLost : TurnEventNumber := .damageOrPowerNoted false false
-@[match_pattern] abbrev notedExcess : TurnEventNumber := .damageOrPowerNoted true false
-@[match_pattern] abbrev notedPower : TurnEventNumber := .damageOrPowerNoted false true
-@[match_pattern] abbrev removedPlusOnes : TurnEventNumber := .damageOrPowerNoted true true
+@[match_pattern] abbrev stepNotedNumber (discardedHand : Bool := false) (tappedHumanOrDestroyed : Bool := false) : TurnEventNumber :=
+  .stepOrDamageNotedNumber discardedHand tappedHumanOrDestroyed false
+@[match_pattern] abbrev damageOrPowerNoted (notedExcess : Bool := false) (notedPowerOrRemoved : Bool := false) : TurnEventNumber :=
+  .stepOrDamageNotedNumber notedExcess notedPowerOrRemoved true
+@[match_pattern] abbrev perLookedAt : TurnEventNumber := .stepOrDamageNotedNumber false false false
+@[match_pattern] abbrev discardedHand : TurnEventNumber := .stepOrDamageNotedNumber true false false
+@[match_pattern] abbrev forEachTappedHuman : TurnEventNumber := .stepOrDamageNotedNumber false true false
+@[match_pattern] abbrev forEachDestroyedThisWay : TurnEventNumber := .stepOrDamageNotedNumber true true false
+@[match_pattern] abbrev thatManyLost : TurnEventNumber := .stepOrDamageNotedNumber false false true
+@[match_pattern] abbrev notedExcess : TurnEventNumber := .stepOrDamageNotedNumber true false true
+@[match_pattern] abbrev notedPower : TurnEventNumber := .stepOrDamageNotedNumber false true true
+@[match_pattern] abbrev removedPlusOnes : TurnEventNumber := .stepOrDamageNotedNumber true true true
 @[match_pattern] abbrev cardsDrawnThisTurn : TurnEventNumber := .turnCountNumber false false
 @[match_pattern] abbrev otherSpellsManaValue : TurnEventNumber := .turnCountNumber true false
 @[match_pattern] abbrev lifeGainedThisTurn : TurnEventNumber := .turnCountNumber false true
@@ -834,48 +895,51 @@ end CostSelector
 
 /-- Permanent, source, and target state conditions (CR 110 / CR 205 / CR 208). -/
 inductive StateCondition where
-  /-- Source state: unconditional (`false, false`), hope on source (`true, false`), attached Equipment (`false, true`), or prepared source (`true, true`). -/
-  | sourceState (hope : Bool := false) (equipmentOrPrepared : Bool := false)
-  /-- The creature that caused this has greater power (or toughness if `toughness`) than the source. -/
-  | causeGreaterStat (toughness : Bool := false)
+  /-- Source state (`!originOrCounters`: unconditional, hope, attached Equipment, or prepared) or source origin / counter state (`originOrCounters`: nontoken, wasCast, cause had counters, or source has counters). -/
+  | sourceOrCounterState (alt1 : Bool := false) (alt2 : Bool := false) (originOrCounters : Bool := false)
+  /-- Cause greater stat (`!targetOrLegendary && !alt2`), you control legendary (`!targetOrLegendary && alt2`), target damaged/tapped (`targetOrLegendary && !alt2`), or target attacking (`targetOrLegendary && alt2`). -/
+  | causeTargetOrLegendary (alt1 : Bool := false) (alt2 : Bool := false) (targetOrLegendary : Bool := false)
   /-- The targeted permanent has this subtype. -/
   | subtype (subtype : String)
-  /-- The targeted spell's mana value was this much or less (CR 202.3e). -/
-  | mvAtMost (n : Nat)
-  /-- You control a creature with power `n` or greater (`anotherAtMost = false`), or another creature you control has power `n` or less (`anotherAtMost = true`). -/
-  | creaturePowerBound (n : Int) (anotherAtMost : Bool := false)
-  /-- You control a creature with toughness `n` or greater (`jaceLoyalty = false`), or there are `n` or more loyalty counters among Jaces you control (`jaceLoyalty = true`). -/
-  | boardAtLeast (n : Nat) (jaceLoyalty : Bool := false)
-  /-- You control a legendary creature. -/
-  | youControlLegendary
-  /-- There are `n` or more cards (or creature cards if `creaturesOnly`) in your graveyard. -/
-  | graveyardAtLeast (n : Nat) (creaturesOnly : Bool := false)
-  /-- Source origin (`hadCounters = false`: nontoken if `!wasCastOrOnSource`, wasCast if `wasCastOrOnSource`) or object counter check (`hadCounters = true`: cause had counters if `!wasCastOrOnSource`, source has counters if `wasCastOrOnSource`). -/
-  | sourceOrCounterState (hadCounters : Bool := false) (wasCastOrOnSource : Bool := false)
-  /-- The target was dealt damage this turn (`tapped = false`) or is a tapped creature (`tapped = true`). -/
-  | targetState (tapped : Bool := false)
-  /-- The target is an attacking creature (nontoken if `nontokenOnly`). -/
-  | targetAttacking (nontokenOnly : Bool := false)
-  /-- The target is a creature with power `power` or less. -/
-  | targetPowerAtMost (power : Int)
+  /-- Numeric state condition: toughness/Jace loyalty at least `n` (`!graveyardOrMv && !alt2`), graveyard at least `n` (`!graveyardOrMv && alt2`), or spell MV at most `n` (`graveyardOrMv = true`, CR 202.3e). -/
+  | natBoundCondition (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (graveyardOrMv : Bool := false)
+  /-- Creature power bound (`!targetPower`: you control power `≥ n` or another `≤ n`) or target creature power `≤ n` (`targetPower = true`). -/
+  | powerBoundCondition (n : Int) (anotherAtMost : Bool := false) (targetPower : Bool := false)
   /-- You control a permanent with any of these subtypes. -/
   | youControlAnySubtype (subtypes : Array String)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StateCondition
 
-@[match_pattern] abbrev always : StateCondition := .sourceState false false
-@[match_pattern] abbrev hopeOnSource : StateCondition := .sourceState true false
-@[match_pattern] abbrev attachedEquipment : StateCondition := .sourceState false true
-@[match_pattern] abbrev preparedSource : StateCondition := .sourceState true true
-@[match_pattern] abbrev youControlCreatureWithPower (n : Int) : StateCondition := .creaturePowerBound n false
-@[match_pattern] abbrev anotherCreaturePowerAtMost (n : Int) : StateCondition := .creaturePowerBound n true
-@[match_pattern] abbrev youControlCreatureToughnessAtLeast (n : Nat) : StateCondition := .boardAtLeast n false
-@[match_pattern] abbrev jaceLoyaltyAtLeast (n : Nat) : StateCondition := .boardAtLeast n true
-@[match_pattern] abbrev sourceOrigin (wasCast : Bool := false) : StateCondition := .sourceOrCounterState false wasCast
-@[match_pattern] abbrev objectHadCounters (onSource : Bool := false) : StateCondition := .sourceOrCounterState true onSource
-@[match_pattern] abbrev targetDamaged : StateCondition := .targetState false
-@[match_pattern] abbrev targetTapped : StateCondition := .targetState true
+@[match_pattern] abbrev sourceState (hope : Bool := false) (equipmentOrPrepared : Bool := false) : StateCondition :=
+  .sourceOrCounterState hope equipmentOrPrepared false
+@[match_pattern] abbrev always : StateCondition := .sourceOrCounterState false false false
+@[match_pattern] abbrev hopeOnSource : StateCondition := .sourceOrCounterState true false false
+@[match_pattern] abbrev attachedEquipment : StateCondition := .sourceOrCounterState false true false
+@[match_pattern] abbrev preparedSource : StateCondition := .sourceOrCounterState true true false
+@[match_pattern] abbrev sourceOrigin (wasCast : Bool := false) : StateCondition := .sourceOrCounterState false wasCast true
+@[match_pattern] abbrev objectHadCounters (onSource : Bool := false) : StateCondition := .sourceOrCounterState true onSource true
+@[match_pattern] abbrev causeGreaterStat (toughness : Bool := false) : StateCondition :=
+  .causeTargetOrLegendary toughness false false
+@[match_pattern] abbrev youControlLegendary : StateCondition := .causeTargetOrLegendary false true false
+@[match_pattern] abbrev targetState (tapped : Bool := false) : StateCondition :=
+  .causeTargetOrLegendary tapped false true
+@[match_pattern] abbrev targetDamaged : StateCondition := .causeTargetOrLegendary false false true
+@[match_pattern] abbrev targetTapped : StateCondition := .causeTargetOrLegendary true false true
+@[match_pattern] abbrev targetAttacking (nontokenOnly : Bool := false) : StateCondition :=
+  .causeTargetOrLegendary nontokenOnly true true
+@[match_pattern] abbrev boardAtLeast (n : Nat) (jaceLoyalty : Bool := false) : StateCondition :=
+  .natBoundCondition n jaceLoyalty false false
+@[match_pattern] abbrev youControlCreatureToughnessAtLeast (n : Nat) : StateCondition := .natBoundCondition n false false false
+@[match_pattern] abbrev jaceLoyaltyAtLeast (n : Nat) : StateCondition := .natBoundCondition n true false false
+@[match_pattern] abbrev graveyardAtLeast (n : Nat) (creaturesOnly : Bool := false) : StateCondition :=
+  .natBoundCondition n creaturesOnly true false
+@[match_pattern] abbrev mvAtMost (n : Nat) : StateCondition := .natBoundCondition n false false true
+@[match_pattern] abbrev creaturePowerBound (n : Int) (anotherAtMost : Bool := false) : StateCondition :=
+  .powerBoundCondition n anotherAtMost false
+@[match_pattern] abbrev youControlCreatureWithPower (n : Int) : StateCondition := .powerBoundCondition n false false
+@[match_pattern] abbrev anotherCreaturePowerAtMost (n : Int) : StateCondition := .powerBoundCondition n true false
+@[match_pattern] abbrev targetPowerAtMost (power : Int) : StateCondition := .powerBoundCondition power false true
 
 end StateCondition
 
@@ -885,55 +949,59 @@ inductive TurnHistoryCondition where
   | subtypeTurnEvent (subtype : String) (entered : Bool := false)
   /-- `noteResolveThisTurn` recorded ordinal `n` (`gainedLife = false`), or you gained `n` or more life this turn (`gainedLife = true`). -/
   | resolveOrLifeAtLeast (n : Nat) (gainedLife : Bool := false)
-  /-- You have scried (`surveil = false`) or surveilled (`surveil = true`) this turn. -/
-  | scriedThisTurn (surveil : Bool := false)
-  /-- Turn action history: artifact entered (`false, false`), attacked with two or more (`true, false`), cast no spell (`false, true`), or activated loyalty (`true, true`) this turn. -/
-  | turnActionHistory (attackedTwo : Bool := false) (noSpellOrLoyalty : Bool := false)
-  /-- Spell cast history: mana spent (`false, false`), cast from graveyard (`true, false`), teamwork (`false, true`), or gift promised (`true, true`). -/
-  | spellCastHistory (fromGraveyard : Bool := false) (teamworkOrGift : Bool := false)
+  /-- Scried/surveilled this turn (`!noncombatDamage`) or opponent dealt noncombat damage (`noncombatDamage`). -/
+  | scriedOrNoncombatDamage (alt : Bool := false) (noncombatDamage : Bool := false)
+  /-- Turn action history (`!spellCast`) or spell cast history (`spellCast`). -/
+  | turnOrSpellCastHistory (alt1 : Bool := false) (alt2 : Bool := false) (spellCast : Bool := false)
   /-- The resolving spell was not cast from your hand. -/
   | notFromHand
-  /-- An opponent has been dealt noncombat damage this turn (or last turn if `lastTurn`). -/
-  | opponentDealtNoncombatDamage (lastTurn : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TurnHistoryCondition
 
+@[match_pattern] abbrev scriedThisTurn (surveil : Bool := false) : TurnHistoryCondition := .scriedOrNoncombatDamage surveil false
+@[match_pattern] abbrev opponentDealtNoncombatDamage (lastTurn : Bool := false) : TurnHistoryCondition := .scriedOrNoncombatDamage lastTurn true
+@[match_pattern] abbrev turnActionHistory (attackedTwo : Bool := false) (noSpellOrLoyalty : Bool := false) : TurnHistoryCondition :=
+  .turnOrSpellCastHistory attackedTwo noSpellOrLoyalty false
+@[match_pattern] abbrev spellCastHistory (fromGraveyard : Bool := false) (teamworkOrGift : Bool := false) : TurnHistoryCondition :=
+  .turnOrSpellCastHistory fromGraveyard teamworkOrGift true
 @[match_pattern] abbrev nthResolve (n : Nat) : TurnHistoryCondition := .resolveOrLifeAtLeast n false
 @[match_pattern] abbrev gainedLifeAtLeast (n : Nat) : TurnHistoryCondition := .resolveOrLifeAtLeast n true
-@[match_pattern] abbrev artifactEnteredThisTurn : TurnHistoryCondition := .turnActionHistory false false
-@[match_pattern] abbrev youAttackedWithTwoOrMore : TurnHistoryCondition := .turnActionHistory true false
-@[match_pattern] abbrev castNoSpellThisTurn : TurnHistoryCondition := .turnActionHistory false true
-@[match_pattern] abbrev activatedLoyaltyThisTurn : TurnHistoryCondition := .turnActionHistory true true
-@[match_pattern] abbrev manaSpent : TurnHistoryCondition := .spellCastHistory false false
-@[match_pattern] abbrev castFromGraveyard : TurnHistoryCondition := .spellCastHistory true false
-@[match_pattern] abbrev teamwork : TurnHistoryCondition := .spellCastHistory false true
-@[match_pattern] abbrev giftPromised : TurnHistoryCondition := .spellCastHistory true true
+@[match_pattern] abbrev artifactEnteredThisTurn : TurnHistoryCondition := .turnOrSpellCastHistory false false false
+@[match_pattern] abbrev youAttackedWithTwoOrMore : TurnHistoryCondition := .turnOrSpellCastHistory true false false
+@[match_pattern] abbrev castNoSpellThisTurn : TurnHistoryCondition := .turnOrSpellCastHistory false true false
+@[match_pattern] abbrev activatedLoyaltyThisTurn : TurnHistoryCondition := .turnOrSpellCastHistory true true false
+@[match_pattern] abbrev manaSpent : TurnHistoryCondition := .turnOrSpellCastHistory false false true
+@[match_pattern] abbrev castFromGraveyard : TurnHistoryCondition := .turnOrSpellCastHistory true false true
+@[match_pattern] abbrev teamwork : TurnHistoryCondition := .turnOrSpellCastHistory false true true
+@[match_pattern] abbrev giftPromised : TurnHistoryCondition := .turnOrSpellCastHistory true true true
 
 end TurnHistoryCondition
 
 /-- Earlier-step resolution note conditions (CR 608.2c). -/
 inductive StepNoteCondition where
-  /-- Permanent or counter step note: removed hope (`false, false`), returned permanent (`true, false`), controlled destroyed (`false, true`), or enduring story noted (`true, true`). -/
-  | permanentStepNote (returned : Bool := false) (controlledDestroyedOrStory : Bool := false)
+  /-- Permanent/counter step note (`!effectNote`) or effect step note (`effectNote`). -/
+  | permanentOrEffectStepNote (alt1 : Bool := false) (alt2 : Bool := false) (effectNote : Bool := false)
   /-- An earlier step dealt damage to a permanent of this subtype. -/
   | dealtDamageToSubtype (subtype : String)
   /-- An earlier step sacrificed the source (`plan = false`) or the Plan (`plan = true`). -/
   | wasSacrificed (plan : Bool := false)
-  /-- Effect step note: Equipment attached (`false, false`), opponents milled (`true, false`), revealed MV at most lands (`false, true`), or Enrage grants combat (`true, true`). -/
-  | effectStepNote (opponentsMilled : Bool := false) (revealedMvOrEnrage : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace StepNoteCondition
 
-@[match_pattern] abbrev removedHope : StepNoteCondition := .permanentStepNote false false
-@[match_pattern] abbrev returnedPermanent : StepNoteCondition := .permanentStepNote true false
-@[match_pattern] abbrev youControlledDestroyed : StepNoteCondition := .permanentStepNote false true
-@[match_pattern] abbrev enduringStoryNoted : StepNoteCondition := .permanentStepNote true true
-@[match_pattern] abbrev equipmentAttached : StepNoteCondition := .effectStepNote false false
-@[match_pattern] abbrev opponentsMilled : StepNoteCondition := .effectStepNote true false
-@[match_pattern] abbrev revealedManaValueAtMostLands : StepNoteCondition := .effectStepNote false true
-@[match_pattern] abbrev enrageGrantsCombat : StepNoteCondition := .effectStepNote true true
+@[match_pattern] abbrev permanentStepNote (returned : Bool := false) (controlledDestroyedOrStory : Bool := false) : StepNoteCondition :=
+  .permanentOrEffectStepNote returned controlledDestroyedOrStory false
+@[match_pattern] abbrev effectStepNote (opponentsMilled : Bool := false) (revealedMvOrEnrage : Bool := false) : StepNoteCondition :=
+  .permanentOrEffectStepNote opponentsMilled revealedMvOrEnrage true
+@[match_pattern] abbrev removedHope : StepNoteCondition := .permanentOrEffectStepNote false false false
+@[match_pattern] abbrev returnedPermanent : StepNoteCondition := .permanentOrEffectStepNote true false false
+@[match_pattern] abbrev youControlledDestroyed : StepNoteCondition := .permanentOrEffectStepNote false true false
+@[match_pattern] abbrev enduringStoryNoted : StepNoteCondition := .permanentOrEffectStepNote true true false
+@[match_pattern] abbrev equipmentAttached : StepNoteCondition := .permanentOrEffectStepNote false false true
+@[match_pattern] abbrev opponentsMilled : StepNoteCondition := .permanentOrEffectStepNote true false true
+@[match_pattern] abbrev revealedManaValueAtMostLands : StepNoteCondition := .permanentOrEffectStepNote false true true
+@[match_pattern] abbrev enrageGrantsCombat : StepNoteCondition := .permanentOrEffectStepNote true true true
 
 end StepNoteCondition
 
@@ -1117,14 +1185,12 @@ deriving Repr, Inhabited, BEq
 inductive CounterSelector where
   /-- `n` counters of this kind. One is `.ofKind kind`. -/
   | ofKind (kind : CounterKind) (n : Nat := 1)
-  /-- +1/+1 counters equal to the source's last-known mana value (`false, false`), sacrificed creature's power (`true, false`), or noted count (`false, true`). -/
-  | plusOneFromNote (sacrificedPower : Bool := false) (notedCount : Bool := false)
+  /-- +1/+1 counters from note (`!special`) or special counter action (`special`: hone, missing keywords, minus-one per graveyard MV, or stun per removed loyalty). -/
+  | notedOrSpecialCounters (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
   /-- Each kind of counter the source (`fromCause = false`) or causing object (`fromCause = true`) last had, in the same numbers. -/
   | copiedCounters (fromCause : Bool := false)
   /-- Dynamic +1/+1 counters: per land (`false, false, false`), equal to hand (`true, false, false`), chosen X (`false, true, false`), or per three graveyard cards if cast from graveyard (`false, false, true`). -/
   | plusOneDynamic (byHand : Bool := false) (byChosenX : Bool := false) (byGyThree : Bool := false)
-  /-- Special counter action: hone per opponent creature (`false, false`), missing keyword counters from target (`true, false`), minus-one counters per greatest graveyard MV (`false, true`), or stun per removed loyalty (`true, true`). -/
-  | specialCounterAction (missingKeywords : Bool := false) (minusOneGyOrStunLoyalty : Bool := false)
   /-- Give each recipient another counter of each kind already on it `times` times (proliferate, CR 701.34). -/
   | eachKindOnIt (times : NumberSelector := .fixed 1)
   /-- Remove counters as `what` says (CR 122). -/
@@ -1133,19 +1199,23 @@ deriving Repr, Inhabited, BEq
 
 namespace CounterSelector
 
-@[match_pattern] abbrev plusOneLastKnownMv : CounterSelector := .plusOneFromNote false false
-@[match_pattern] abbrev plusOneSacrificedPower : CounterSelector := .plusOneFromNote true false
-@[match_pattern] abbrev plusOneNoted : CounterSelector := .plusOneFromNote false true
+@[match_pattern] abbrev plusOneFromNote (sacrificedPower : Bool := false) (notedCount : Bool := false) : CounterSelector :=
+  .notedOrSpecialCounters sacrificedPower notedCount false
+@[match_pattern] abbrev specialCounterAction (missingKeywords : Bool := false) (minusOneGyOrStunLoyalty : Bool := false) : CounterSelector :=
+  .notedOrSpecialCounters missingKeywords minusOneGyOrStunLoyalty true
+@[match_pattern] abbrev plusOneLastKnownMv : CounterSelector := .notedOrSpecialCounters false false false
+@[match_pattern] abbrev plusOneSacrificedPower : CounterSelector := .notedOrSpecialCounters true false false
+@[match_pattern] abbrev plusOneNoted : CounterSelector := .notedOrSpecialCounters false true false
 @[match_pattern] abbrev sourceCounters : CounterSelector := .copiedCounters false
 @[match_pattern] abbrev causeCounters : CounterSelector := .copiedCounters true
 @[match_pattern] abbrev plusOnePerLand : CounterSelector := .plusOneDynamic false false false
 @[match_pattern] abbrev plusOneEqualToHand : CounterSelector := .plusOneDynamic true false false
 @[match_pattern] abbrev plusOneChosenX : CounterSelector := .plusOneDynamic false true false
 @[match_pattern] abbrev plusOnePerThreeGraveyardIfFromGy : CounterSelector := .plusOneDynamic false false true
-@[match_pattern] abbrev honePerOpponent : CounterSelector := .specialCounterAction false false
-@[match_pattern] abbrev missingKeywordsFromTarget : CounterSelector := .specialCounterAction true false
-@[match_pattern] abbrev minusOneGreatestGraveyardMv : CounterSelector := .specialCounterAction false true
-@[match_pattern] abbrev stunRemovedLoyalty : CounterSelector := .specialCounterAction true true
+@[match_pattern] abbrev honePerOpponent : CounterSelector := .notedOrSpecialCounters false false true
+@[match_pattern] abbrev missingKeywordsFromTarget : CounterSelector := .notedOrSpecialCounters true false true
+@[match_pattern] abbrev minusOneGreatestGraveyardMv : CounterSelector := .notedOrSpecialCounters false true true
+@[match_pattern] abbrev stunRemovedLoyalty : CounterSelector := .notedOrSpecialCounters true true true
 
 end CounterSelector
 
@@ -1153,14 +1223,10 @@ end CounterSelector
 inductive TriggerTokenNote where
   /-- Token follow-up: tokens only (`false, false`), attach reflexive (`true, false`), team indestructible (`false, true`), or lifelink/haste if not Mardu (`true, true`). -/
   | tokenFollowup (attachReflexive : Bool := false) (indestructibleOrMardu : Bool := false)
-  /-- Remember the token so a later step can attach it (`invasion = false`) or also how many invasion counters the source had (`invasion = true`). -/
-  | remember (invasion : Bool := false)
-  /-- (Optionally gain X life first if `gainXLife`, and) if X is 5 or more, destroy all other creatures. -/
-  | destroyOthersIfXAtLeast5 (gainXLife : Bool := false)
-  /-- Only if you gained life this turn (`monarch = false`) or are the monarch (`monarch = true`). -/
-  | ifCondition (monarch : Bool := false)
-  /-- Currency return exiled card (`lose1Life = false`) or lose 1 life first (`lose1Life = true`). -/
-  | currencyOrLose1Life (lose1Life : Bool := false)
+  /-- Remember the token (`!ifCond`: invasion if `alt`) or conditional creation (`ifCond`: gained life if `!alt`, monarch if `alt`). -/
+  | rememberOrIfCondition (alt : Bool := false) (ifCond : Bool := false)
+  /-- Destroy others if X ≥ 5 (`!currency`) or currency return / lose 1 life (`currency`). -/
+  | destroyOrCurrencyNote (alt : Bool := false) (currency : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerTokenNote
@@ -1169,25 +1235,27 @@ namespace TriggerTokenNote
 @[match_pattern] abbrev attachReflexive : TriggerTokenNote := .tokenFollowup true false
 @[match_pattern] abbrev teamIndestructible : TriggerTokenNote := .tokenFollowup false true
 @[match_pattern] abbrev ifNotMarduLifelinkHaste : TriggerTokenNote := .tokenFollowup true true
-@[match_pattern] abbrev invasion : TriggerTokenNote := .remember true
-@[match_pattern] abbrev gainXLifeAndDestroyOthersIf5 : TriggerTokenNote := .destroyOthersIfXAtLeast5 true
-@[match_pattern] abbrev ifGainedLife : TriggerTokenNote := .ifCondition false
-@[match_pattern] abbrev ifMonarch : TriggerTokenNote := .ifCondition true
-@[match_pattern] abbrev currencyReturn : TriggerTokenNote := .currencyOrLose1Life false
-@[match_pattern] abbrev lose1Life : TriggerTokenNote := .currencyOrLose1Life true
+@[match_pattern] abbrev remember (invasion : Bool := false) : TriggerTokenNote := .rememberOrIfCondition invasion false
+@[match_pattern] abbrev invasion : TriggerTokenNote := .rememberOrIfCondition true false
+@[match_pattern] abbrev ifCondition (monarch : Bool := false) : TriggerTokenNote := .rememberOrIfCondition monarch true
+@[match_pattern] abbrev ifGainedLife : TriggerTokenNote := .rememberOrIfCondition false true
+@[match_pattern] abbrev ifMonarch : TriggerTokenNote := .rememberOrIfCondition true true
+@[match_pattern] abbrev destroyOthersIfXAtLeast5 (gainXLife : Bool := false) : TriggerTokenNote := .destroyOrCurrencyNote gainXLife false
+@[match_pattern] abbrev gainXLifeAndDestroyOthersIf5 : TriggerTokenNote := .destroyOrCurrencyNote true false
+@[match_pattern] abbrev currencyOrLose1Life (lose1Life : Bool := false) : TriggerTokenNote := .destroyOrCurrencyNote lose1Life true
+@[match_pattern] abbrev currencyReturn : TriggerTokenNote := .destroyOrCurrencyNote false true
+@[match_pattern] abbrev lose1Life : TriggerTokenNote := .destroyOrCurrencyNote true true
 
 end TriggerTokenNote
 
 /-- How long `TriggerResolution.exile` lasts. -/
 inductive TriggerExileHow where
-  /-- Link the card to the source (for a leave-the-battlefield trigger if `returnWhenLeaves = false`, or until the source leaves if `returnWhenLeaves = true`). -/
-  | linkedToSource (returnWhenLeaves : Bool := false)
+  /-- Link the card to the source (`!returnImmediately`) or exile and return it immediately (`returnImmediately`, tapped if `flag`). -/
+  | linkedOrImmediateExile (flag : Bool := false) (returnImmediately : Bool := false)
   /-- Exile duration or permission: return at next end step (`false, false`), for later step (`true, false`), or cast with any mana while exiled (`false, true`). -/
   | exileDuration (forLater : Bool := false) (anyManaWhileExiled : Bool := false)
   /-- You may play it until the end of your next turn (`thisTurn = false`), this turn (`thisTurn = true, forLife = false`), or this turn paying life equal to mana value (`thisTurn = true, forLife = true`). -/
   | playUntil (thisTurn : Bool := false) (forLife : Bool := false)
-  /-- Exile it, then return it under its owner's control (tapped if `tapped`). -/
-  | returnImmediately (tapped : Bool := false)
   /-- Numeric exile follow-up: cast up to `n` spells (`false, false`), cast or deal `n` damage to opponents (`true, false`), or return briefly if MV at most `n` (`false, true`). -/
   | exileNumericFollowup (n : Nat) (damageOpponents : Bool := false) (returnBriefly : Bool := false)
   /-- For as long as they remain exiled, you may play them if you control `subtype`. -/
@@ -1196,15 +1264,17 @@ deriving Repr, Inhabited, BEq
 
 namespace TriggerExileHow
 
-@[match_pattern] abbrev leaveTrigger : TriggerExileHow := .linkedToSource false
-@[match_pattern] abbrev untilSourceLeaves : TriggerExileHow := .linkedToSource true
+@[match_pattern] abbrev linkedToSource (returnWhenLeaves : Bool := false) : TriggerExileHow := .linkedOrImmediateExile returnWhenLeaves false
+@[match_pattern] abbrev leaveTrigger : TriggerExileHow := .linkedOrImmediateExile false false
+@[match_pattern] abbrev untilSourceLeaves : TriggerExileHow := .linkedOrImmediateExile true false
+@[match_pattern] abbrev returnImmediately (tapped : Bool := false) : TriggerExileHow := .linkedOrImmediateExile tapped true
+@[match_pattern] abbrev returnTapped : TriggerExileHow := .linkedOrImmediateExile true true
 @[match_pattern] abbrev nextEndStep : TriggerExileHow := .exileDuration false false
 @[match_pattern] abbrev forLater : TriggerExileHow := .exileDuration true false
 @[match_pattern] abbrev anyManaWhileExiled : TriggerExileHow := .exileDuration false true
 @[match_pattern] abbrev playUntilNextTurn : TriggerExileHow := .playUntil false false
 @[match_pattern] abbrev playThisTurn : TriggerExileHow := .playUntil true false
 @[match_pattern] abbrev playForLifeThisTurn : TriggerExileHow := .playUntil true true
-@[match_pattern] abbrev returnTapped : TriggerExileHow := .returnImmediately true
 @[match_pattern] abbrev mayCastUpTo (casts : Nat) : TriggerExileHow := .exileNumericFollowup casts false false
 @[match_pattern] abbrev mayCastElseDamageOpponents (damage : Nat) : TriggerExileHow := .exileNumericFollowup damage true false
 @[match_pattern] abbrev returnBrieflyIfMvAtMost (maxMv : Nat) : TriggerExileHow := .exileNumericFollowup maxMv false true
@@ -1213,42 +1283,44 @@ end TriggerExileHow
 
 /-- What a later step of `TriggerResolution.exile` can read. -/
 inductive TriggerExileNote where
-  /-- Exile object note: none (`false, false`), lands (`true, false`), copy and host (`false, true`), or play card (`true, true`). -/
-  | exileObjectNote (lands : Bool := false) (copyOrPlayCard : Bool := false)
+  /-- Exile object note (`!linkOrSearch`: none, lands, copyAndHost, or playCard) or exile link/search note (`linkOrSearch`: linked, ifHero, controllerMaySearchBasic, or thenDrawThree). -/
+  | objectOrLinkExileNote (alt1 : Bool := false) (alt2 : Bool := false) (linkOrSearch : Bool := false)
   /-- The revealed card exiled for `.mayCast .impulse` (`anyManaThisTurn = false`) or castable until end of turn with mana of any type (`anyManaThisTurn = true`). -/
   | revealedCast (anyManaThisTurn : Bool := false)
-  /-- Exile link or search note: linked to source (`false, false`), if Hero +2/+1 (`true, false`), controller may search basic (`false, true`), or then draw three (`true, true`). -/
-  | exileLinkOrSearchNote (ifHero : Bool := false) (searchBasicOrDraw3 : Bool := false)
-  /-- Empower Jace X (`incubate = false`) or Incubate X (`incubate = true`), where X is the number of creatures exiled this way. -/
-  | countExiledCreatures (incubate : Bool := false)
+  /-- Empower Jace X (`!revealToBf && !flag`), Incubate X (`!revealToBf && flag`), or reveal creatures to battlefield (`revealToBf`, at end step if `flag`). -/
+  | countOrRevealCreaturesNote (flag : Bool := false) (revealToBf : Bool := false)
   /-- You gain `life` life if teamwork was paid. -/
   | gainLifeIfTeamwork (life : Nat)
   /-- Spell exile note: countered permanent may cast (`false, false, false`), Worlds Within Worlds (`true, false, false`), reveal until creature/planeswalker (`false, true, false`), Despark (`true, true, false`), or controller gains life equal to power (`false, false, true`). -/
   | exileSpellNote (worldsWithinWorlds : Bool := false) (revealOrDespark : Bool := false) (swordsLife : Bool := false)
-  /-- Reveal creature cards from the top of your library until that many are revealed and put them onto the battlefield (immediately or at the next end step if `atEndStep`). -/
-  | revealCreaturesToBattlefield (atEndStep : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerExileNote
 
-@[match_pattern] abbrev none : TriggerExileNote := .exileObjectNote false false
-@[match_pattern] abbrev lands : TriggerExileNote := .exileObjectNote true false
-@[match_pattern] abbrev copyAndHost : TriggerExileNote := .exileObjectNote false true
-@[match_pattern] abbrev playCard : TriggerExileNote := .exileObjectNote true true
+@[match_pattern] abbrev exileObjectNote (lands : Bool := false) (copyOrPlayCard : Bool := false) : TriggerExileNote :=
+  .objectOrLinkExileNote lands copyOrPlayCard false
+@[match_pattern] abbrev exileLinkOrSearchNote (ifHero : Bool := false) (searchBasicOrDraw3 : Bool := false) : TriggerExileNote :=
+  .objectOrLinkExileNote ifHero searchBasicOrDraw3 true
+@[match_pattern] abbrev none : TriggerExileNote := .objectOrLinkExileNote false false false
+@[match_pattern] abbrev lands : TriggerExileNote := .objectOrLinkExileNote true false false
+@[match_pattern] abbrev copyAndHost : TriggerExileNote := .objectOrLinkExileNote false true false
+@[match_pattern] abbrev playCard : TriggerExileNote := .objectOrLinkExileNote true true false
 @[match_pattern] abbrev impulse : TriggerExileNote := .revealedCast false
 @[match_pattern] abbrev anyManaThisTurn : TriggerExileNote := .revealedCast true
-@[match_pattern] abbrev linked : TriggerExileNote := .exileLinkOrSearchNote false false
-@[match_pattern] abbrev ifHero : TriggerExileNote := .exileLinkOrSearchNote true false
-@[match_pattern] abbrev controllerMaySearchBasic : TriggerExileNote := .exileLinkOrSearchNote false true
-@[match_pattern] abbrev thenDrawThree : TriggerExileNote := .exileLinkOrSearchNote true true
-@[match_pattern] abbrev empowerJace : TriggerExileNote := .countExiledCreatures false
-@[match_pattern] abbrev incubateCount : TriggerExileNote := .countExiledCreatures true
+@[match_pattern] abbrev linked : TriggerExileNote := .objectOrLinkExileNote false false true
+@[match_pattern] abbrev ifHero : TriggerExileNote := .objectOrLinkExileNote true false true
+@[match_pattern] abbrev controllerMaySearchBasic : TriggerExileNote := .objectOrLinkExileNote false true true
+@[match_pattern] abbrev thenDrawThree : TriggerExileNote := .objectOrLinkExileNote true true true
+@[match_pattern] abbrev countExiledCreatures (incubate : Bool := false) : TriggerExileNote := .countOrRevealCreaturesNote incubate false
+@[match_pattern] abbrev empowerJace : TriggerExileNote := .countOrRevealCreaturesNote false false
+@[match_pattern] abbrev incubateCount : TriggerExileNote := .countOrRevealCreaturesNote true false
+@[match_pattern] abbrev revealCreaturesToBattlefield (atEndStep : Bool := false) : TriggerExileNote := .countOrRevealCreaturesNote atEndStep true
+@[match_pattern] abbrev revealCreaturesAtEndStep : TriggerExileNote := .countOrRevealCreaturesNote true true
 @[match_pattern] abbrev counteredPermanentMayCast : TriggerExileNote := .exileSpellNote false false false
 @[match_pattern] abbrev worldsWithinWorlds : TriggerExileNote := .exileSpellNote true false false
 @[match_pattern] abbrev revealUntilCreatureOrPlaneswalker : TriggerExileNote := .exileSpellNote false true false
 @[match_pattern] abbrev despark : TriggerExileNote := .exileSpellNote true true false
 @[match_pattern] abbrev controllerGainsLifePower : TriggerExileNote := .exileSpellNote false false true
-@[match_pattern] abbrev revealCreaturesAtEndStep : TriggerExileNote := .revealCreaturesToBattlefield true
 
 end TriggerExileNote
 
@@ -1425,24 +1497,26 @@ end TriggerModeHow
 
 /-- What a later step of `TriggerResolution.destroy` can read. -/
 inductive TriggerDestroyNote where
-  /-- Destruction record: none (`false, false`), count destroyed (`true, false`), for amass (`false, true`), or chosen token (`true, true`). -/
-  | destroyRecord (countDestroyed : Bool := false) (forAmassOrToken : Bool := false)
-  /-- If it wasn't attacking (or if `legendaryEnchantment`, if it was a legendary enchantment), draw a card. -/
-  | drawIf (legendaryEnchantment : Bool := false)
-  /-- Its controller creates a 1/1 white Human (`gainLifeEach = false`) or you gain 1 life per creature destroyed (`gainLifeEach = true`). -/
-  | destroyRider (gainLifeEach : Bool := false)
+  /-- Destruction record (`!drawOrRider`: none, countDestroyed, forAmass, or chosenToken) or draw/token/life rider (`drawOrRider`: drawIfNotAttacking, drawIfLegendaryEnchantment, controllerCreatesHuman, or gainLifeEach). -/
+  | destroyNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (drawOrRider : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace TriggerDestroyNote
 
-@[match_pattern] abbrev none : TriggerDestroyNote := .destroyRecord false false
-@[match_pattern] abbrev countDestroyed : TriggerDestroyNote := .destroyRecord true false
-@[match_pattern] abbrev forAmass : TriggerDestroyNote := .destroyRecord false true
-@[match_pattern] abbrev chosenToken : TriggerDestroyNote := .destroyRecord true true
-@[match_pattern] abbrev drawIfNotAttacking : TriggerDestroyNote := .drawIf false
-@[match_pattern] abbrev drawIfLegendaryEnchantment : TriggerDestroyNote := .drawIf true
-@[match_pattern] abbrev controllerCreatesHuman : TriggerDestroyNote := .destroyRider false
-@[match_pattern] abbrev gainLifeEach : TriggerDestroyNote := .destroyRider true
+@[match_pattern] abbrev destroyRecord (countDestroyed : Bool := false) (forAmassOrToken : Bool := false) : TriggerDestroyNote :=
+  .destroyNoteKind countDestroyed forAmassOrToken false
+@[match_pattern] abbrev drawIf (legendaryEnchantment : Bool := false) : TriggerDestroyNote :=
+  .destroyNoteKind legendaryEnchantment false true
+@[match_pattern] abbrev destroyRider (gainLifeEach : Bool := false) : TriggerDestroyNote :=
+  .destroyNoteKind gainLifeEach true true
+@[match_pattern] abbrev none : TriggerDestroyNote := .destroyNoteKind false false false
+@[match_pattern] abbrev countDestroyed : TriggerDestroyNote := .destroyNoteKind true false false
+@[match_pattern] abbrev forAmass : TriggerDestroyNote := .destroyNoteKind false true false
+@[match_pattern] abbrev chosenToken : TriggerDestroyNote := .destroyNoteKind true true false
+@[match_pattern] abbrev drawIfNotAttacking : TriggerDestroyNote := .destroyNoteKind false false true
+@[match_pattern] abbrev drawIfLegendaryEnchantment : TriggerDestroyNote := .destroyNoteKind true false true
+@[match_pattern] abbrev controllerCreatesHuman : TriggerDestroyNote := .destroyNoteKind false true true
+@[match_pattern] abbrev gainLifeEach : TriggerDestroyNote := .destroyNoteKind true true true
 
 end TriggerDestroyNote
 
@@ -1535,16 +1609,12 @@ end Layer4TypeGrant
 
 /-- Layer 6 ability-adding, keyword, ability-removing, and restriction grants (CR 613.1f). -/
 inductive Layer6AbilityGrant where
-  /-- Granted protection or ability: protection from everything (`false, false`), hexproof while source (`true, false`), landfall create Elf (`false, true`), or Iron Fist tap (`true, true`). -/
-  | grantedProtectionOrAbility (hexproof : Bool := false) (landfallOrIronFist : Bool := false)
+  /-- Granted protection/ability (`!combatOrCast`) or combat-damage trigger / flashback / Emrakul grant (`combatOrCast`). -/
+  | grantedAbilityOrTrigger (alt1 : Bool := false) (alt2 : Bool := false) (combatOrCast : Bool := false)
   /-- These keywords until end of turn. -/
   | keywords (k : Keywords)
   /-- Your choice of the keywords coded in `options` until end of turn. -/
   | choiceOfKeywords (options : List Nat)
-  /-- Until end of turn, "Whenever this creature deals combat damage to a player, create a Treasure token" (or "draw two cards" if `drawTwo`). -/
-  | combatDamageTrigger (drawTwo : Bool := false)
-  /-- Flashback until end of turn (`emrakul = false`), or "{T}: Add {C}{C}" until the exiled source is cast and cast permission while exiled (`emrakul = true`). -/
-  | castOrGraveyardAbility (emrakul : Bool := false)
   /-- Lose `what` abilities (CR 613.1f Layer 6). -/
   | lose (what : AbilitySelector)
   /-- Prevent `action` (CR 613.1f / CR 508 / CR 509). -/
@@ -1553,12 +1623,18 @@ deriving Repr, Inhabited, BEq
 
 namespace Layer6AbilityGrant
 
-@[match_pattern] abbrev protectionEverything : Layer6AbilityGrant := .grantedProtectionOrAbility false false
-@[match_pattern] abbrev hexproofWhileSource : Layer6AbilityGrant := .grantedProtectionOrAbility true false
-@[match_pattern] abbrev landfallCreateElf : Layer6AbilityGrant := .grantedProtectionOrAbility false true
-@[match_pattern] abbrev ironFistTap : Layer6AbilityGrant := .grantedProtectionOrAbility true true
-@[match_pattern] abbrev flashback : Layer6AbilityGrant := .castOrGraveyardAbility false
-@[match_pattern] abbrev emrakulManaAndCast : Layer6AbilityGrant := .castOrGraveyardAbility true
+@[match_pattern] abbrev grantedProtectionOrAbility (hexproof : Bool := false) (landfallOrIronFist : Bool := false) : Layer6AbilityGrant :=
+  .grantedAbilityOrTrigger hexproof landfallOrIronFist false
+@[match_pattern] abbrev combatDamageTrigger (drawTwo : Bool := false) : Layer6AbilityGrant :=
+  .grantedAbilityOrTrigger drawTwo false true
+@[match_pattern] abbrev castOrGraveyardAbility (emrakul : Bool := false) : Layer6AbilityGrant :=
+  .grantedAbilityOrTrigger emrakul true true
+@[match_pattern] abbrev protectionEverything : Layer6AbilityGrant := .grantedAbilityOrTrigger false false false
+@[match_pattern] abbrev hexproofWhileSource : Layer6AbilityGrant := .grantedAbilityOrTrigger true false false
+@[match_pattern] abbrev landfallCreateElf : Layer6AbilityGrant := .grantedAbilityOrTrigger false true false
+@[match_pattern] abbrev ironFistTap : Layer6AbilityGrant := .grantedAbilityOrTrigger true true false
+@[match_pattern] abbrev flashback : Layer6AbilityGrant := .grantedAbilityOrTrigger false true true
+@[match_pattern] abbrev emrakulManaAndCast : Layer6AbilityGrant := .grantedAbilityOrTrigger true true true
 
 end Layer6AbilityGrant
 
@@ -1579,12 +1655,10 @@ end Layer7PtGrant
 
 /-- Replacement, prevention, permission, cost-reduction, turn, and emblem grants (CR 614 / CR 615 / CR 114). -/
 inductive RuleEffectGrant where
-  /-- Replacement, prevention, or permission rule: die-to-exile replacement (`false, false`), prevent damage while source (`true, false`), play noted until next turn (`false, true`), or Jace loyalty at instant speed (`true, true`). -/
-  | replacementOrPermissionRule (preventDamage : Bool := false) (playNotedOrJace : Bool := false)
+  /-- Replacement/prevention/permission rule (`!turnOrPhase`) or mana/land/turn/combat phase rule (`turnOrPhase`). -/
+  | replacementOrTurnRule (alt1 : Bool := false) (alt2 : Bool := false) (turnOrPhase : Bool := false)
   /-- Spells of `which` cost `n` less to cast this turn (CR 601.2f). -/
   | spellsCostLess (which : SpellCostLess) (n : NumberSelector)
-  /-- Mana, land, turn, or combat phase rule: Mountains add extra {R} (`false, false`), extra land (`true, false`), extra turn (`false, true`), or additional combat phase (`true, true`). -/
-  | turnOrPhaseRule (extraLand : Bool := false) (extraTurnOrCombat : Bool := false)
   /-- Emblem with "Whenever you cast a spell, this emblem deals `n` damage to any target." -/
   | emblemCastSpellDamage (n : Nat)
   /-- Emblem with "Whenever you cast a spell, draw a card" (`teferi = false`), or Teferi's Reproach protection/phase-out (`teferi = true`). -/
@@ -1597,14 +1671,18 @@ deriving Repr, Inhabited, BEq
 
 namespace RuleEffectGrant
 
-@[match_pattern] abbrev replace : RuleEffectGrant := .replacementOrPermissionRule false false
-@[match_pattern] abbrev preventDamageWhileSource : RuleEffectGrant := .replacementOrPermissionRule true false
-@[match_pattern] abbrev playNotedUntilNextTurn : RuleEffectGrant := .replacementOrPermissionRule false true
-@[match_pattern] abbrev jaceLoyaltyAtInstantSpeed : RuleEffectGrant := .replacementOrPermissionRule true true
-@[match_pattern] abbrev mountainsAddExtraRed : RuleEffectGrant := .turnOrPhaseRule false false
-@[match_pattern] abbrev extraLand : RuleEffectGrant := .turnOrPhaseRule true false
-@[match_pattern] abbrev extraTurn : RuleEffectGrant := .turnOrPhaseRule false true
-@[match_pattern] abbrev additionalCombatPhase : RuleEffectGrant := .turnOrPhaseRule true true
+@[match_pattern] abbrev replacementOrPermissionRule (preventDamage : Bool := false) (playNotedOrJace : Bool := false) : RuleEffectGrant :=
+  .replacementOrTurnRule preventDamage playNotedOrJace false
+@[match_pattern] abbrev turnOrPhaseRule (extraLand : Bool := false) (extraTurnOrCombat : Bool := false) : RuleEffectGrant :=
+  .replacementOrTurnRule extraLand extraTurnOrCombat true
+@[match_pattern] abbrev replace : RuleEffectGrant := .replacementOrTurnRule false false false
+@[match_pattern] abbrev preventDamageWhileSource : RuleEffectGrant := .replacementOrTurnRule true false false
+@[match_pattern] abbrev playNotedUntilNextTurn : RuleEffectGrant := .replacementOrTurnRule false true false
+@[match_pattern] abbrev jaceLoyaltyAtInstantSpeed : RuleEffectGrant := .replacementOrTurnRule true true false
+@[match_pattern] abbrev mountainsAddExtraRed : RuleEffectGrant := .replacementOrTurnRule false false true
+@[match_pattern] abbrev extraLand : RuleEffectGrant := .replacementOrTurnRule true false true
+@[match_pattern] abbrev extraTurn : RuleEffectGrant := .replacementOrTurnRule false true true
+@[match_pattern] abbrev additionalCombatPhase : RuleEffectGrant := .replacementOrTurnRule true true true
 @[match_pattern] abbrev emblemDrawOnCast : RuleEffectGrant := .emblemOrTeferiRule false
 @[match_pattern] abbrev teferisReproach : RuleEffectGrant := .emblemOrTeferiRule true
 @[match_pattern] abbrev emblemCreaturesGetTwoTwo (flying : Bool := false) : RuleEffectGrant := .emblemOrSpellCopy false flying
@@ -1614,48 +1692,51 @@ end RuleEffectGrant
 
 /-- One-shot keyword actions and permanent state changes (CR 701 / CR 702 / CR 724). -/
 inductive ActionStateGrant where
-  /-- Permanent state change: attacking (`false, false`), transformed (`true, false`), harnessed (`false, true`), or face-up (`true, true`). -/
-  | permanentStateChange (transformed : Bool := false) (harnessedOrFaceUp : Bool := false)
-  /-- Target or token action: choose new targets (`false, false`), Arwen share counters (`true, false`), phase out with kicker (`false, true`), or transform Incubator (`true, true`). -/
-  | targetOrTokenAction (arwenShare : Bool := false) (phaseOutOrIncubator : Bool := false)
-  /-- Keyword or designation action: become monarch (`false, false`), explore (`true, false`), investigate (`false, true`), or connive (`true, true`). -/
-  | keywordAction (explored : Bool := false) (investigateOrConnive : Bool := false)
-  /-- Become prepared (or unprepared if `prepared == false`). -/
-  | prepared (prepared : Bool := true)
+  /-- Permanent state change (`!targetOrToken`: attacking, transformed, harnessed, face-up) or target/token action (`targetOrToken`: newTargets, arwenShare, phaseOutKicker, transformedIncubator). -/
+  | permanentOrTargetAction (alt1 : Bool := false) (alt2 : Bool := false) (targetOrToken : Bool := false)
+  /-- Keyword, prepared, cascade/Ring, or counter-spell action (`!special && !counterSpell`: monarch/explore/investigate/connive; `special && !alt2`: prepared; `special && alt2`: cascade/Ring; `counterSpell`: counter target spell). -/
+  | keywordOrSpecialAction (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) (counterSpell : Bool := false)
   /-- Empower Jace `n` (FRA 732). -/
   | empowerJace (n : NumberSelector)
   /-- Recruit as `who` says. -/
   | recruit (who : PlayerSelector := .recruit)
-  /-- Record another resolution of this ability this turn, up to `limit`. -/
-  | noteResolveThisTurn (limit : Nat)
-  /-- Resolve the reflexive triggered ability `kind` of an MSH card. -/
-  | mshReflexive (kind paid : Nat)
+  /-- Record another resolution up to `n` (`!reflexive`) or resolve MSH reflexive ability `n` with `paid` (`reflexive = true`). -/
+  | natActionState (n : Nat) (paid : Nat := 0) (reflexive : Bool := false)
   /-- Fight or deal power damage (CR 701.12). -/
   | fight (how : TriggerFightHow := .mutual)
   /-- Attach to `host` (CR 701.3). -/
   | attachTo (host : ObjectSelector)
-  /-- Cascade (`ringTempts = false`, CR 702.85) or the Ring tempts you (`ringTempts = true`, CR 701.54). -/
-  | cascadeOrRing (ringTempts : Bool := false)
-  /-- Counter target spell (CR 701.5). -/
-  | counterSpell
 deriving Repr, Inhabited, BEq
 
 namespace ActionStateGrant
 
-@[match_pattern] abbrev attacking : ActionStateGrant := .permanentStateChange false false
-@[match_pattern] abbrev transformed : ActionStateGrant := .permanentStateChange true false
-@[match_pattern] abbrev harnessed : ActionStateGrant := .permanentStateChange false true
-@[match_pattern] abbrev faceUp : ActionStateGrant := .permanentStateChange true true
-@[match_pattern] abbrev newTargets : ActionStateGrant := .targetOrTokenAction false false
-@[match_pattern] abbrev arwenShare : ActionStateGrant := .targetOrTokenAction true false
-@[match_pattern] abbrev phaseOutKicker : ActionStateGrant := .targetOrTokenAction false true
-@[match_pattern] abbrev transformedIncubator : ActionStateGrant := .targetOrTokenAction true true
-@[match_pattern] abbrev monarch : ActionStateGrant := .keywordAction false false
-@[match_pattern] abbrev explored : ActionStateGrant := .keywordAction true false
-@[match_pattern] abbrev investigate : ActionStateGrant := .keywordAction false true
-@[match_pattern] abbrev connive : ActionStateGrant := .keywordAction true true
-@[match_pattern] abbrev cascade : ActionStateGrant := .cascadeOrRing false
-@[match_pattern] abbrev ringTempts : ActionStateGrant := .cascadeOrRing true
+@[match_pattern] abbrev permanentStateChange (transformed : Bool := false) (harnessedOrFaceUp : Bool := false) : ActionStateGrant :=
+  .permanentOrTargetAction transformed harnessedOrFaceUp false
+@[match_pattern] abbrev attacking : ActionStateGrant := .permanentOrTargetAction false false false
+@[match_pattern] abbrev transformed : ActionStateGrant := .permanentOrTargetAction true false false
+@[match_pattern] abbrev harnessed : ActionStateGrant := .permanentOrTargetAction false true false
+@[match_pattern] abbrev faceUp : ActionStateGrant := .permanentOrTargetAction true true false
+@[match_pattern] abbrev targetOrTokenAction (arwenShare : Bool := false) (phaseOutOrIncubator : Bool := false) : ActionStateGrant :=
+  .permanentOrTargetAction arwenShare phaseOutOrIncubator true
+@[match_pattern] abbrev newTargets : ActionStateGrant := .permanentOrTargetAction false false true
+@[match_pattern] abbrev arwenShare : ActionStateGrant := .permanentOrTargetAction true false true
+@[match_pattern] abbrev phaseOutKicker : ActionStateGrant := .permanentOrTargetAction false true true
+@[match_pattern] abbrev transformedIncubator : ActionStateGrant := .permanentOrTargetAction true true true
+@[match_pattern] abbrev keywordAction (explored : Bool := false) (investigateOrConnive : Bool := false) : ActionStateGrant :=
+  .keywordOrSpecialAction explored investigateOrConnive false false
+@[match_pattern] abbrev monarch : ActionStateGrant := .keywordOrSpecialAction false false false false
+@[match_pattern] abbrev explored : ActionStateGrant := .keywordOrSpecialAction true false false false
+@[match_pattern] abbrev investigate : ActionStateGrant := .keywordOrSpecialAction false true false false
+@[match_pattern] abbrev connive : ActionStateGrant := .keywordOrSpecialAction true true false false
+@[match_pattern] abbrev prepared (prepared : Bool := true) : ActionStateGrant :=
+  .keywordOrSpecialAction prepared false true false
+@[match_pattern] abbrev cascadeOrRing (ringTempts : Bool := false) : ActionStateGrant :=
+  .keywordOrSpecialAction ringTempts true true false
+@[match_pattern] abbrev cascade : ActionStateGrant := .keywordOrSpecialAction false true true false
+@[match_pattern] abbrev ringTempts : ActionStateGrant := .keywordOrSpecialAction true true true false
+@[match_pattern] abbrev counterSpell : ActionStateGrant := .keywordOrSpecialAction false false false true
+@[match_pattern] abbrev noteResolveThisTurn (limit : Nat) : ActionStateGrant := .natActionState limit 0 false
+@[match_pattern] abbrev mshReflexive (kind paid : Nat) : ActionStateGrant := .natActionState kind paid true
 
 end ActionStateGrant
 
