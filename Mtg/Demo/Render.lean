@@ -939,6 +939,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
         | .mayBeginOnBattlefield ids =>
           s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
+        | _ => ""
       s!" [{what} ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>
       let who :=
@@ -968,6 +969,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       | .chooseIndex n =>
         if n == 2 then " [coin toss (--norandom)]"
         else s!" [random index 0..{n - 1} (--norandom)]"
+    | _ => ""
   let result :=
     match g.result with
     | none => ""

@@ -253,6 +253,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
           chooseActivate g p
       else
         chooseActivate g p
+    | _ => none
 where
   /-- During CR 601.2b, announce a legal mode for the proposed modal spell. -/
   chooseSpellMode (g : Game) (p : PlayerId) : Option Action :=

@@ -9,30 +9,12 @@ puts any one of them; `Status` stores each kind in its own field.
 
 namespace Mtg.Engine
 
-/-- A kind of counter a permanent can have (CR 122.1). Keyword counters share
-`KeywordCounters` (CR 122.1b). -/
-inductive CounterKind where
-  | plusOnePlusOne
-  | minusOneMinusOne
-  | loyalty
-  | hope
-  | charge
-  | stun
-  | shield
-  | finality
-  | plan
-  | burden
-  | quest
-  | invasion
-  | influence
+/-- A keyword counter a permanent can have (CR 122.1b). -/
+inductive KeywordCounter where
   | trample
   | indestructible
   | lifelink
-  | hone
   | shadow
-  | lore
-  | story
-  | time
   | haste
   | vigilance
   | flying
@@ -43,7 +25,72 @@ inductive CounterKind where
   | doubleStrike
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- A rule-defined non-keyword counter a permanent can have (CR 122.1c–d / CR 306.5 / CR 714). -/
+inductive RuleCounter where
+  | loyalty
+  | stun
+  | shield
+  | finality
+  | lore
+  | time
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- A named ability or card counter a permanent can have (CR 122.1). -/
+inductive NamedCounter where
+  | hope
+  | charge
+  | plan
+  | burden
+  | quest
+  | invasion
+  | influence
+  | hone
+  | story
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
+inductive CounterKind where
+  /-- Power/toughness counter: +1/+1 (`plus = true`) or minus-one (`plus = false`, CR 122.1a). -/
+  | pt (plus : Bool := true)
+  /-- Keyword counter (CR 122.1b). -/
+  | keyword (k : KeywordCounter)
+  /-- Rule-defined counter (loyalty, stun, shield, finality, lore, time; CR 122.1c–d / CR 306.5 / CR 714). -/
+  | rule (k : RuleCounter)
+  /-- Named ability or card counter (CR 122.1). -/
+  | named (k : NamedCounter)
+deriving Repr, Inhabited, BEq, DecidableEq
+
 namespace CounterKind
+
+@[match_pattern] abbrev plusOnePlusOne : CounterKind := .pt true
+@[match_pattern] abbrev minusOneMinusOne : CounterKind := .pt false
+@[match_pattern] abbrev loyalty : CounterKind := .rule .loyalty
+@[match_pattern] abbrev hope : CounterKind := .named .hope
+@[match_pattern] abbrev charge : CounterKind := .named .charge
+@[match_pattern] abbrev stun : CounterKind := .rule .stun
+@[match_pattern] abbrev shield : CounterKind := .rule .shield
+@[match_pattern] abbrev finality : CounterKind := .rule .finality
+@[match_pattern] abbrev plan : CounterKind := .named .plan
+@[match_pattern] abbrev burden : CounterKind := .named .burden
+@[match_pattern] abbrev quest : CounterKind := .named .quest
+@[match_pattern] abbrev invasion : CounterKind := .named .invasion
+@[match_pattern] abbrev influence : CounterKind := .named .influence
+@[match_pattern] abbrev trample : CounterKind := .keyword .trample
+@[match_pattern] abbrev indestructible : CounterKind := .keyword .indestructible
+@[match_pattern] abbrev lifelink : CounterKind := .keyword .lifelink
+@[match_pattern] abbrev hone : CounterKind := .named .hone
+@[match_pattern] abbrev shadow : CounterKind := .keyword .shadow
+@[match_pattern] abbrev lore : CounterKind := .rule .lore
+@[match_pattern] abbrev story : CounterKind := .named .story
+@[match_pattern] abbrev time : CounterKind := .rule .time
+@[match_pattern] abbrev haste : CounterKind := .keyword .haste
+@[match_pattern] abbrev vigilance : CounterKind := .keyword .vigilance
+@[match_pattern] abbrev flying : CounterKind := .keyword .flying
+@[match_pattern] abbrev menace : CounterKind := .keyword .menace
+@[match_pattern] abbrev reach : CounterKind := .keyword .reach
+@[match_pattern] abbrev deathtouch : CounterKind := .keyword .deathtouch
+@[match_pattern] abbrev firstStrike : CounterKind := .keyword .firstStrike
+@[match_pattern] abbrev doubleStrike : CounterKind := .keyword .doubleStrike
 
 /-- Oracle name of this counter, without the word `counter` (`+1/+1`, `stun`,
 `first strike`). -/

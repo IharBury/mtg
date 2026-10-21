@@ -17,13 +17,8 @@ clear them (CR 514.3).
 
 namespace Mtg.Engine
 
-/-- Permanent status (CR 110.5). Extra fields track combat and EOT pumps. -/
-structure Status where
-  tapped : Bool := false
-  damage : Int := 0
-  summoningSick : Bool := true
-  /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
-  pump : Int × Int := (0, 0)
+/-- Combat state of a permanent on the battlefield (CR 508–510). -/
+structure PermanentCombatState where
   attacking : Bool := false
   /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
   attackingWhom : Option PlayerId := none
@@ -36,21 +31,62 @@ structure Status where
   /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
   every blocking creature leaves combat. -/
   blocked : Bool := false
-  /-- Non-mana activations this turn, for “only once each turn”. -/
-  activationsThisTurn : Nat := 0
-  /-- Indices of activated abilities of this object activated this turn
-  (“Activate only once each turn”). -/
-  abilitiesActivatedThisTurn : Array Nat := #[]
+  /-- Dealt damage by a source with deathtouch since the last time
+  state-based actions were checked (CR 704.5h). Cleared after that check. -/
+  dealtDeathtouch : Bool := false
+  /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
+  dealtCombatDamage : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Counters on a permanent (CR 122.1). -/
+structure PermanentCounters where
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
   /-- Minus-one counters (CR 122.1a). -/
   minusOneMinusOne : Nat := 0
   /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
   loyaltyCounters : Nat := 0
-  /-- A loyalty ability of this permanent was activated this turn (CR 606.3). -/
-  loyaltyActivatedThisTurn : Bool := false
-  /-- This permanent is prepared (Reality Fracture). -/
-  prepared : Bool := false
+  /-- Hope counters (e.g. Dawn of a New Age). -/
+  hope : Nat := 0
+  /-- Charge counters (Gardenize). -/
+  charge : Nat := 0
+  /-- Stun counters (CR 122.1d). -/
+  stun : Nat := 0
+  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
+  Equipment is attached (judge rulings on Dwalin / Sting). -/
+  hone : Nat := 0
+  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
+  shadow : Nat := 0
+  /-- Shield counters. A shield counter is removed instead of taking damage
+  or being destroyed (CR 122.1b / Marvel Super Heroes). -/
+  shield : Nat := 0
+  /-- Finality counters. A permanent with a finality counter that would go
+  to a graveyard from the battlefield is exiled instead (MSH release notes). -/
+  finality : Nat := 0
+  /-- Plan counters on a Plan enchantment. -/
+  plan : Nat := 0
+  /-- Lore counters on a Saga (CR 714). -/
+  lore : Nat := 0
+  /-- Influence counters (Palantír of Orthanc). -/
+  influence : Nat := 0
+  /-- Burden counters (The One Ring). -/
+  burden : Nat := 0
+  /-- Quest counters (Last Light of Durin's Day). -/
+  quest : Nat := 0
+  /-- Invasion counters (Alien Invasion). -/
+  invasion : Nat := 0
+  /-- Keyword counters on this permanent (CR 122.1b). -/
+  keywordCounters : KeywordCounters := {}
+  /-- Story counters (Staff of the Storyteller). -/
+  story : Nat := 0
+  /-- Time counters (impending, CR 702.176). -/
+  time : Nat := 0
+deriving Repr, Inhabited, BEq
+
+/-- Until-end-of-turn continuous effects on a permanent, cleared during the cleanup step (CR 514.3 / CR 611.2a). -/
+structure UntilEotStatus where
+  /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
+  pump : Int × Int := (0, 0)
   /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
   Printed keywords stay on `GameObject.printed`; this field is merged in
   `GameObject.printedOrUntilEot`. -/
@@ -62,6 +98,95 @@ structure Status where
   untilEotExileIfDies : Bool := false
   /-- Until-end-of-turn layer-7b setting of base P/T (e.g. Galion). -/
   setBasePT : Option (Int × Int) := none
+  /-- This permanent is an artifact in addition to its other types until
+  end of turn (e.g. Stone by Sunlight). -/
+  additionalArtifactUntilEot : Bool := false
+  /-- This permanent is a creature in addition to its other types until EOT
+  (I Am Iron Man). -/
+  additionalCreatureUntilEot : Bool := false
+  /-- This permanent loses all abilities until end of turn. -/
+  losesAbilitiesUntilEot : Bool := false
+  /-- Until end of turn, base power equals the number of cards in your hand
+  (Ms. Marvel). -/
+  cardsInHandPowerUntilEot : Bool := false
+  /-- Creatures this player controls cannot block this attacker this turn
+  (The Black Gate). Cleared in cleanup. -/
+  cantBeBlockedByPlayer : Option PlayerId := none
+  /-- Until end of turn, this creature can be blocked only by creatures with
+  haste (Speed, Young Avenger). -/
+  cantBeBlockedExceptByHasteUntilEot : Bool := false
+  /-- This creature can't block this turn. -/
+  cantBlockUntilEot : Bool := false
+  /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
+  dealtDamageThisTurn : Bool := false
+  /-- Until end of turn, these replace existing creature types and keep
+  noncreature subtypes (Iron Man Armor; MSH 88). -/
+  replacedCreatureTypesUntilEot : Option (Array String) := none
+  /-- Until end of turn, this creature gets +1/+1 for each artifact you
+  control (Iron Man Armor). -/
+  pumpPerArtifactUntilEot : Bool := false
+  /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
+  ironFistTapGrants : Nat := 0
+  /-- Triggered abilities granted until end of turn (Lyra, Tolarian
+  Archangel). -/
+  grantedTriggersUntilEot : Array TriggeredAbility := #[]
+  /-- First strike only during its controller's turn, until end of turn. -/
+  firstStrikeOnYourTurn : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Per-turn activation and event tracking state on a permanent, reset as a turn ends (CR 602.5b / CR 603.2 / CR 606.3). -/
+structure PermanentTurnState where
+  /-- Non-mana activations this turn, for “only once each turn”. -/
+  activationsThisTurn : Nat := 0
+  /-- Indices of activated abilities of this object activated this turn
+  (“Activate only once each turn”). -/
+  abilitiesActivatedThisTurn : Array Nat := #[]
+  /-- A loyalty ability of this permanent was activated this turn (CR 606.3). -/
+  loyaltyActivatedThisTurn : Bool := false
+  /-- A once-each-turn triggered ability of this permanent has fired. -/
+  firedOnceEachTurn : Bool := false
+  /-- The optional action of a “Do this only once each turn” trigger has
+  been chosen this turn (MSH 69). -/
+  optionalOnceUsed : Bool := false
+  /-- Alliance modes chosen this turn (0 = add GGG, 1 = +1/+1 each, 2 = scry
+  then draw). Reset as the turn ends. -/
+  allianceModesChosen : Array Nat := #[]
+  /-- This creature was declared as an attacker this turn (boast, CR 702.111). -/
+  declaredAsAttackerThisTurn : Bool := false
+  /-- A boast ability of this creature has been activated this turn. -/
+  boastUsedThisTurn : Bool := false
+  /-- This permanent became tapped this turn (Captain America, Living Legend). -/
+  becameTappedThisTurn : Bool := false
+  /-- You put a +1/+1 counter on this creature this turn (Kid Loki). -/
+  gotPlusOneThisTurn : Bool := false
+  /-- This permanent entered the battlefield this turn. -/
+  enteredThisTurn : Bool := false
+  /-- Modes of The Vision chosen this turn. Cleared as the turn ends. -/
+  modesChosenThisTurn : Array Nat := #[]
+  /-- Players this creature dealt combat damage to this turn (Witch-king of Angmar). -/
+  combatDamageToPlayers : Array PlayerId := #[]
+deriving Repr, Inhabited, BEq
+
+/-- Choices recorded as a permanent enters the battlefield (CR 614.12). -/
+structure AsEntersState where
+  /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
+  chosenModes : Array Nat := #[]
+  /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
+  chosenOdd : Option Bool := none
+  /-- Creature type chosen as this permanent entered (Unexpected Party). -/
+  chosenCreatureType : Option String := none
+  /-- Color chosen as this permanent entered (Room of Refuge). -/
+  chosenColor : Option Color := none
+  /-- Card name chosen as this permanent entered (Meddling Mage). -/
+  chosenName : Option String := none
+  /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
+  windcragMardu : Bool := true
+  /-- Card type chosen as this permanent entered (Serra's Emissary). -/
+  chosenCardType : Option String := none
+deriving Repr, Inhabited, BEq
+
+/-- Lasting continuous effects, lifetime ability activations, and phase/face state on a permanent (CR 611.2a / CR 613 / CR 702). -/
+structure LastingEffectState where
   /-- This permanent is a creature in addition to its other types (CR 205.1a).
   Lasting effects such as Beorn's Hospitality's activation do not end. -/
   additionalCreature : Bool := false
@@ -76,66 +201,20 @@ structure Status where
   hexproofGrantedBy : Array ObjectId := #[]
   /-- Objects preventing damage this permanent would deal while they remain. -/
   preventDamageGrantedBy : Array ObjectId := #[]
-  /-- Dealt damage by a source with deathtouch since the last time
-  state-based actions were checked (CR 704.5h). Cleared after that check. -/
-  dealtDeathtouch : Bool := false
-  /-- Hope counters (e.g. Dawn of a New Age). -/
-  hope : Nat := 0
-  /-- Charge counters (Gardenize). -/
-  charge : Nat := 0
-  /-- Stun counters (CR 122.1d). -/
-  stun : Nat := 0
-  /-- A once-each-turn triggered ability of this permanent has fired. -/
-  firedOnceEachTurn : Bool := false
-  /-- The optional action of a “Do this only once each turn” trigger has
-  been chosen this turn (MSH 69). -/
-  optionalOnceUsed : Bool := false
-  /-- This permanent is an artifact in addition to its other types until
-  end of turn (e.g. Stone by Sunlight). -/
-  additionalArtifactUntilEot : Bool := false
-  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
-  Equipment is attached (judge rulings on Dwalin / Sting). -/
-  hone : Nat := 0
-  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
-  shadow : Nat := 0
   /-- Phased out (CR 702.26). Treated as though it does not exist. -/
   phasedOut : Bool := false
   /-- Host this Aura or Equipment phased out with. -/
   phasedWith : Option ObjectId := none
   /-- This creature is its controller's Ring-bearer. -/
   ringBearer : Bool := false
-  /-- Alliance modes chosen this turn (0 = add GGG, 1 = +1/+1 each, 2 = scry
-  then draw). Reset as the turn ends. -/
-  allianceModesChosen : Array Nat := #[]
-  /-- Shield counters. A shield counter is removed instead of taking damage
-  or being destroyed (CR 122.1b / Marvel Super Heroes). -/
-  shield : Nat := 0
-  /-- Finality counters. A permanent with a finality counter that would go
-  to a graveyard from the battlefield is exiled instead (MSH release notes). -/
-  finality : Nat := 0
-  /-- This creature was declared as an attacker this turn (boast, CR 702.111). -/
-  declaredAsAttackerThisTurn : Bool := false
-  /-- A boast ability of this creature has been activated this turn. -/
-  boastUsedThisTurn : Bool := false
-  /-- Plan counters on a Plan enchantment. -/
-  plan : Nat := 0
   /-- A power-up ability of this permanent has been activated (CR 702.193). -/
   powerUpUsed : Bool := false
   /-- How many times a power-up ability of this permanent has been activated.
   Wonder Man raises the lifetime limit above one (MSH). -/
   powerUpActivations : Nat := 0
-  /-- This permanent became tapped this turn (Captain America, Living Legend). -/
-  becameTappedThisTurn : Bool := false
-  /-- You put a +1/+1 counter on this creature this turn (Kid Loki). -/
-  gotPlusOneThisTurn : Bool := false
   /-- Sources that stop this permanent becoming untapped while they remain
   (Spider-Woman; Frozen in Ice is attached separately). -/
   cantUntapGrantedBy : Array ObjectId := #[]
-  /-- This permanent is a creature in addition to its other types until EOT
-  (I Am Iron Man). -/
-  additionalCreatureUntilEot : Bool := false
-  /-- This permanent entered the battlefield this turn. -/
-  enteredThisTurn : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
   harnessed : Bool := false
   /-- This permanent is currently showing its back face (MSH modal DFC). -/
@@ -147,51 +226,10 @@ structure Status where
   remain (The Wondrous Wasp; MSH 145 / 190). Later granted abilities still
   apply. -/
   losesAbilitiesGrantedBy : Array ObjectId := #[]
-  /-- This permanent loses all abilities until end of turn. -/
-  losesAbilitiesUntilEot : Bool := false
-  /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
-  chosenModes : Array Nat := #[]
-  /-- Modes of The Vision chosen this turn. Cleared as the turn ends. -/
-  modesChosenThisTurn : Array Nat := #[]
-  /-- Until end of turn, base power equals the number of cards in your hand
-  (Ms. Marvel). -/
-  cardsInHandPowerUntilEot : Bool := false
-  /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
-  chosenOdd : Option Bool := none
-  /-- Lore counters on a Saga (CR 714). -/
-  lore : Nat := 0
-  /-- Creature type chosen as this permanent entered (Unexpected Party). -/
-  chosenCreatureType : Option String := none
-  /-- Creatures this player controls cannot block this attacker this turn
-  (The Black Gate). Cleared in cleanup. -/
-  cantBeBlockedByPlayer : Option PlayerId := none
-  /-- Until end of turn, this creature can be blocked only by creatures with
-  haste (Speed, Young Avenger). -/
-  cantBeBlockedExceptByHasteUntilEot : Bool := false
-  /-- This creature can't block this turn. -/
-  cantBlockUntilEot : Bool := false
   /-- Mana spent to cast this spell (CR 601.2h). -/
   manaSpentToCast : Nat := 0
-  /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
-  dealtDamageThisTurn : Bool := false
-  /-- Until end of turn, these replace existing creature types and keep
-  noncreature subtypes (Iron Man Armor; MSH 88). -/
-  replacedCreatureTypesUntilEot : Option (Array String) := none
-  /-- Until end of turn, this creature gets +1/+1 for each artifact you
-  control (Iron Man Armor). -/
-  pumpPerArtifactUntilEot : Bool := false
-  /-- Influence counters (Palantír of Orthanc). -/
-  influence : Nat := 0
   /-- This permanent is only a Food artifact (Supper for Spiders). -/
   onlyFoodArtifact : Bool := false
-  /-- Burden counters (The One Ring). -/
-  burden : Nat := 0
-  /-- Quest counters (Last Light of Durin's Day). -/
-  quest : Nat := 0
-  /-- Invasion counters (Alien Invasion). -/
-  invasion : Nat := 0
-  /-- Keyword counters on this permanent (CR 122.1b). -/
-  keywordCounters : KeywordCounters := {}
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
   combatDamageCreatesTreasure : Bool := false
   /-- This permanent is an artifact and not a creature (Tom, Bert, and William). -/
@@ -202,51 +240,43 @@ structure Status where
   /-- Endings of this object's controller's turns before control reverts
   (Evil's Thrall: 2 means until the end of your next turn). -/
   controlTurnEndsLeft : Nat := 0
-  /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
-  ironFistTapGrants : Nat := 0
   /-- +P/+T lasting until the listed player's next turn begins (Garruk,
   Veiled Butcher). -/
   untilTurnOfPump : Array (PlayerId × Int × Int) := #[]
-  /-- Triggered abilities granted until end of turn (Lyra, Tolarian
-  Archangel). -/
-  grantedTriggersUntilEot : Array TriggeredAbility := #[]
   /-- An exhaust ability of this permanent has been activated (CR 702.177). -/
   exhaustUsed : Bool := false
   /-- This land has “{T}: Add {C}{C}” until the exiled card with this id is
   cast from exile (Emrakul, the Exigent Doom; rulings 729 / 730). -/
   colorlessGrantUntilCast : Array ObjectId := #[]
-  /-- Color chosen as this permanent entered (Room of Refuge). -/
-  chosenColor : Option Color := none
-  /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
-  dealtCombatDamage : Bool := false
-  /-- Players this creature dealt combat damage to this turn (Witch-king of Angmar). -/
-  combatDamageToPlayers : Array PlayerId := #[]
   /-- An attached Aura makes this a 5/5 Construct creature in addition to its
   other types (Puppet Crafting). Refreshed with state-based actions. -/
   animatedConstruct55 : Bool := false
-  /-- Card name chosen as this permanent entered (Meddling Mage). -/
-  chosenName : Option String := none
   /-- Face down (morph, CR 702.37). A 2/2 creature with no abilities. -/
   faceDown : Bool := false
   /-- Goaded for as long as this flag remains (CR 701.38). -/
   goaded : Bool := false
-  /-- Story counters (Staff of the Storyteller). -/
-  story : Nat := 0
-  /-- Time counters (impending, CR 702.176). -/
-  time : Nat := 0
   /-- This permanent is not a creature (impending, until the last time counter). -/
   notACreature : Bool := false
-  /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
-  windcragMardu : Bool := true
-  /-- Card type chosen as this permanent entered (Serra's Emissary). -/
-  chosenCardType : Option String := none
   /-- This card may be cast from its owner's graveyard without paying its
   mana cost, ignoring timing, until end of turn. -/
   freeCastFromGraveyard : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- Permanent status (CR 110.5), composed of combat state, counters, until-EOT effects, per-turn tracking, as-enters choices, and lasting effects. -/
+structure Status extends
+    PermanentCombatState,
+    PermanentCounters,
+    UntilEotStatus,
+    PermanentTurnState,
+    AsEntersState,
+    LastingEffectState where
+  tapped : Bool := false
+  damage : Int := 0
+  summoningSick : Bool := true
+  /-- This permanent is prepared (Reality Fracture). -/
+  prepared : Bool := false
   /-- This permanent is a commander. -/
   isCommander : Bool := false
-  /-- First strike only during its controller's turn, until end of turn. -/
-  firstStrikeOnYourTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -386,87 +416,23 @@ def addCounters (s : Status) (kind : CounterKind) (n : Nat) : Status :=
 def grantUntilEot (s : Status) (k : Keywords) : Status :=
   { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
 
-/-- One until-EOT status field: how to tell it is set, and how to clear it.
-`clearsAtCleanup` / `clearedAtCleanup` fold this table so a new until-EOT
-field is one row rather than restated in both functions. -/
-structure UntilEotField where
-  isSet : Status → Bool
-  clear : Status → Status
-
-def untilEotFields : List UntilEotField := [
-  ⟨fun s => s.damage != 0, fun s => { s with damage := 0 }⟩,
-  ⟨fun s => s.pump != (0, 0), fun s => { s with pump := (0, 0) }⟩,
-  ⟨fun s => s.untilEotKeywords != Keywords.none,
-    fun s => { s with untilEotKeywords := Keywords.none }⟩,
-  ⟨fun s => s.untilEotLosesIndestructible,
-    fun s => { s with untilEotLosesIndestructible := false }⟩,
-  ⟨fun s => s.untilEotExileIfDies,
-    fun s => { s with untilEotExileIfDies := false }⟩,
-  ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,
-  ⟨fun s => s.additionalArtifactUntilEot,
-    fun s => { s with additionalArtifactUntilEot := false }⟩,
-  ⟨fun s => s.additionalCreatureUntilEot,
-    fun s => { s with additionalCreatureUntilEot := false }⟩,
-  ⟨fun s => s.cantBeBlockedByPlayer.isSome,
-    fun s => { s with cantBeBlockedByPlayer := none }⟩,
-  ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
-    fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
-  ⟨fun s => s.cantBlockUntilEot, fun s => { s with cantBlockUntilEot := false }⟩,
-  ⟨fun s => s.dealtDamageThisTurn,
-    fun s => { s with dealtDamageThisTurn := false }⟩,
-  ⟨fun s => s.replacedCreatureTypesUntilEot.isSome,
-    fun s => { s with replacedCreatureTypesUntilEot := none }⟩,
-  ⟨fun s => s.pumpPerArtifactUntilEot,
-    fun s => { s with pumpPerArtifactUntilEot := false }⟩,
-  ⟨fun s => s.ironFistTapGrants != 0,
-    fun s => { s with ironFistTapGrants := 0 }⟩,
-  ⟨fun s => s.losesAbilitiesUntilEot,
-    fun s => { s with losesAbilitiesUntilEot := false }⟩,
-  ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
-    fun s => { s with grantedTriggersUntilEot := #[] }⟩,
-  ⟨fun s => s.cardsInHandPowerUntilEot,
-    fun s => { s with cardsInHandPowerUntilEot := false }⟩,
-  ⟨fun s => s.firstStrikeOnYourTurn,
-    fun s => { s with firstStrikeOnYourTurn := false }⟩
-]
-
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
 base P/T setting (CR 514.3). -/
 def clearsAtCleanup (s : Status) : Bool :=
-  untilEotFields.any (·.isSet s)
+  s.damage != 0 || s.toUntilEotStatus != {}
 
 /-- Status after the cleanup step removes until-EOT effects (CR 514.3). -/
 def clearedAtCleanup (s : Status) : Status :=
-  untilEotFields.foldl (fun acc f => f.clear acc) s
+  { s with damage := 0, toUntilEotStatus := {} }
 
 /-- True when this permanent has per-turn activation or event tracking state to
 reset as a turn ends. -/
 def hasTurnStateToClear (s : Status) : Bool :=
-  s.activationsThisTurn != 0 || s.firedOnceEachTurn ||
-    s.optionalOnceUsed ||
-    !s.allianceModesChosen.isEmpty || s.enteredThisTurn ||
-    s.declaredAsAttackerThisTurn || s.boastUsedThisTurn ||
-    s.becameTappedThisTurn || s.gotPlusOneThisTurn ||
-    s.loyaltyActivatedThisTurn ||
-    !s.combatDamageToPlayers.isEmpty ||
-    !s.modesChosenThisTurn.isEmpty
+  s.toPermanentTurnState != {}
 
 /-- Status with per-turn activation and event tracking fields reset as a turn ends. -/
 def clearedAtEndOfTurn (s : Status) : Status :=
-  { s with
-    activationsThisTurn := 0
-    abilitiesActivatedThisTurn := #[]
-    loyaltyActivatedThisTurn := false
-    firedOnceEachTurn := false
-    optionalOnceUsed := false
-    allianceModesChosen := #[]
-    enteredThisTurn := false
-    declaredAsAttackerThisTurn := false
-    boastUsedThisTurn := false
-    becameTappedThisTurn := false
-    gotPlusOneThisTurn := false
-    combatDamageToPlayers := #[]
-    modesChosenThisTurn := #[] }
+  { s with toPermanentTurnState := {} }
 
 end Status
 

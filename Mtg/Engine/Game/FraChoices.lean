@@ -1132,6 +1132,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
+  | _, _ =>
+    throw "Nothing to choose now"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
@@ -1268,16 +1270,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         o.subtypes.foldl (fun acc s =>
           if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD "Human")
-  | .mayDiscardThen .. | .maySacrificeThen .. | .mayObjectAction ..
-  | .castCopiesFree .. | .maySacrificeAnother .. | .maySacrificeThese ..
-  | .mayDiscardOrCastUpTo .. | .mayPayPickThen .. | .nickFuryPut ..
-  | .nickFuryMayTransform .. | .mayCastGrima .. | .palantirMayDraw ..
-  | .mayCastCopy _ | .mayDiscardHandBalin _ | .mayDiscardHandDrawFixed _
-  | .mayCastInstantSorceryFromHand _ | .sheHulkMayDamage .. | .widowMayCounter ..
-  | .moonstoneMayExile _ | .mayTakeMilled .. | .mayDrawThenEachOpponentDraws _
-  | .mayPutHeroFromHandOrDraw _ | .kingpinMayPay2Life | .daredevilMayExile _
-  | .mayChangeSpellTarget .. | .newTargetsForCopies _ | .worldsPutCreatures ..
-  | .revealPutCreatures .. | .mayBeginOnBattlefield _ => .decline
+  | _ => .decline
 
 end Game
 end Mtg.Engine

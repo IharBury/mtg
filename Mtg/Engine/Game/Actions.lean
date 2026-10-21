@@ -30,7 +30,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
-  | .chooseMode idx =>
+  | .chooseNat idx true _ =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p (.mode idx)
     | .chooseTriggerOr _ => g.chooseTriggerOr p idx
@@ -47,7 +47,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
-  | .sacrificeOrDiscard id discard => do
+  | .objectAction id _ true discard => do
     let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
     return if g.mayThenResume then g.acceptMayThen else g
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
@@ -89,7 +89,7 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
     if teamwork then g.announceTeamwork p pay else g.announceKicker p pay
   | .announceGift to => g.announceGift p to
   | .chooseRingBearer id => g.announceRingBearer p id
-  | .concede => return g.concede p
+  | .stepAction _ _ true => return g.concede p
   | .chooseName name => g.answerFraChoice p (.name name)
 
 
