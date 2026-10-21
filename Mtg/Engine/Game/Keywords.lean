@@ -359,8 +359,8 @@ partial def boardConditionHolds (g : Game) (p : PlayerId) (cond : ConditionSelec
   | .state (.objectHadCounters onSource) =>
     if onSource then source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
     else causeStatus.any (·.hasCounters)
-  | .targetDamaged => target.any (fun o => o.status.damage > 0)
-  | .targetTapped => target.any (·.status.tapped)
+  | .state (.targetState tapped) =>
+    target.any (fun o => if tapped then o.status.tapped else o.status.damage > 0)
   | .state (.targetAttacking nontokenOnly) =>
     target.any (fun o => o.status.attacking && (!nontokenOnly || !o.printed.isToken))
   | .targetPowerAtMost most => target.any (fun o => o.isCreature && g.power o ≤ most)
@@ -383,8 +383,7 @@ evaluate. -/
 def costReductionAmount (g : Game) (p : PlayerId) (r : CostReduction)
     (target : Option GameObject := none) : Nat :=
   let isTargetCond : ConditionSelector → Bool
-    | .targetDamaged | .targetTapped | .targetAttackingNontoken
-    | .targetAttacking | .targetPowerAtMost _ => true
+    | .state (.targetState _) | .state (.targetAttacking _) | .targetPowerAtMost _ => true
     | _ => false
   let isTargetNumber : NumberSelector → Bool
     | .targetPlusOneCounters => true

@@ -609,13 +609,12 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some types.size
   | .lifeLostThisTurn =>
     some (g.player controller).lifeLostThisTurn
-  | .basicLandsYouControl | .opponentLands
+  | .countKind (.landCount _)
   | .totalFlyingPower | .greatestToughness | .targetPlusOneCounters =>
     let tgt := ctx.targets.findSome? (fun | Target.permanent id => g.findObject? id | _ => none)
     g.boardNumber controller amount tgt
   | .otherSpellsManaValue | .removedPlusOnes
-  | .chosenX | .greatestPowerAndLoseLife
-  | .greatestToughnessThenPutCreatures => none
+  | .chosenX | .stat (.greatestStatSpecial _) => none
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :

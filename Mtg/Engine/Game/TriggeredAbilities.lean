@@ -254,9 +254,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match how with
       | .oneUnusedThisTurn => src.status.allianceModesChosen
       | .vision => src.status.modesChosenThisTurn
-      | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-        | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
-        | .«if» _ | .unlessPays _ =>
+      | .oneUnused | .one | .presetMode _ | .fromLastKnown
+        | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ =>
         src.status.chosenModes
     let available := unusedModes memory (List.range modes.length).toArray
     match src.controller with
@@ -269,9 +268,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
         | .vision =>
           g.logMsg "The Vision's ability is removed from the stack with no effect"
-        | .oneUnused | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
-          | .«if» _ | .unlessPays _ =>
+        | .oneUnused | .one | .presetMode _ | .fromLastKnown
+          | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ =>
           g.logMsg
             "all three modes have been chosen. The ability is removed from the stack with no effect"
       else
@@ -294,9 +292,8 @@ def offerChooseModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               pending := .fraChoice p (.visionMode src.id available)
               chooseModesRest := some rest }.logMsg
             "Choose one that hasn't been chosen this turn"
-        | .alreadyChosen | .plusOneOrRemoveCounter | .fromLastKnown
-          | .hawkeyeIndices _ | .fraTrigger _ | .one | .ifElse _
-          | .«if» _ | .unlessPays _ => g
+        | .one | .presetMode _ | .fromLastKnown
+          | .hawkeyeIndices _ | .numericMode _ _ | .conditionalMode _ _ => g
 
 /-- Destroy `targets[0]` when it is a token still on the battlefield. -/
 def destroyChosenToken (g : Game) (targets : Array Target) : Game :=
@@ -1932,7 +1929,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
           (o.printed.isEnchantment || o.printed.isInstantOrSorcery) && within o
       offer g eligible
         s!"{(g.player controller).name} may cast a spell from among the milled cards"
-    | .uldarosGraveyardTypes | .boastExiled => g
+    | .specialCastOrigin _ true => g
 
 /-- Resolve `TriggerResolution.amass`. Each printed combination keeps
 the behavior of the constructor it replaced. Any other selector amasses
@@ -3080,8 +3077,8 @@ def applyGrant (g : Game) (ctx : TriggerRead) (ab : TriggeredAbility)
             let sid := sourceId.getD ⟨0⟩
             g.mapObjectStatus (g.object! o.id) (fun s =>
               { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid })) g
-    | .block _ | .castSpellsThisTurn _ | .beCountered _
-      | .beBlockedByMostLifePlayer _ | .attackJaces _ => g
+    | .combatRestriction _ _ true | .stateOrSpellRestriction _ true _
+    | .stateOrSpellRestriction _ _ true => g
   | .artifact, who =>
     g.withAffected controller ab sourceId targets who fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with additionalArtifactUntilEot := true })
@@ -3120,7 +3117,7 @@ def applyGrant (g : Game) (ctx : TriggerRead) (ab : TriggeredAbility)
         let g := g.setPlayerControl controller pid
         { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
         sourceId (some "The target is no longer legal")
-    | .oppArtifacts | .untilEotOrNextIfVillain | .exchangeTargets => g
+    | .untilEotOrNextIfVillain | .multiControl _ => g
   | .cascade, .source =>
     let maxMv := (sourceId.bind g.findObject?).map (·.printed.manaCost.manaValue) |>.getD 0
     g.resolveCascade controller maxMv
@@ -3998,9 +3995,8 @@ def resumeTriggerSequence (g : Game) : Game :=
 def rememberChosenMode (g : Game) (sourceId : ObjectId)
     (how : TriggeredAbility.TriggerModeHow) (mode : Nat) : Game :=
   match how, g.findObject? sourceId with
-  | .alreadyChosen, _ | .plusOneOrRemoveCounter, _ | .fromLastKnown, _
-  | .hawkeyeIndices _, _ | .fraTrigger _, _ | .one, _ | .ifElse _, _
-  | .«if» _, _ | .unlessPays _, _ => g
+  | .presetMode _, _ | .fromLastKnown, _ | .hawkeyeIndices _, _
+  | .numericMode _ _, _ | .one, _ | .conditionalMode _ _, _ => g
   | _, none => g.logMsg "The ability is removed from the stack with no effect"
   | .oneUnusedThisTurn, some src =>
     g.setObject { src with status :=
