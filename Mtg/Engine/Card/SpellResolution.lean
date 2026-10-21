@@ -60,6 +60,21 @@ namespace AbilityCastKind
 @[match_pattern] abbrev creatureDamage : AbilityCastKind := .abilityCastKind false false
 @[match_pattern] abbrev destroyColorless : AbilityCastKind := .abilityCastKind true false
 @[match_pattern] abbrev other : AbilityCastKind := .abilityCastKind false true
+@[match_pattern] abbrev sacrificeSourceKind (controllerSacrifices : Bool := false) (movedAsSacrificed : Bool := false) : AbilityCastKind :=
+  .abilityCastKind controllerSacrifices movedAsSacrificed
+@[match_pattern] abbrev isSacrificed : AbilityCastKind := .sacrificeSourceKind false false
+@[match_pattern] abbrev controllerSacrifices : AbilityCastKind := .sacrificeSourceKind true false
+@[match_pattern] abbrev movedAsSacrificed : AbilityCastKind := .sacrificeSourceKind false true
+@[match_pattern] abbrev returnNoteKind (returnedPermanent : Bool := false) (delayedBirds : Bool := false) : AbilityCastKind :=
+  .abilityCastKind returnedPermanent delayedBirds
+@[match_pattern] abbrev none : AbilityCastKind := .returnNoteKind false false
+@[match_pattern] abbrev returnedPermanent : AbilityCastKind := .returnNoteKind true false
+@[match_pattern] abbrev delayedBirds : AbilityCastKind := .returnNoteKind false true
+@[match_pattern] abbrev surveilRecord (armReturn : Bool := false) (returnCardOrEye : Bool := false) : AbilityCastKind :=
+  .abilityCastKind armReturn returnCardOrEye
+@[match_pattern] abbrev armReturnLifeGained : AbilityCastKind := .surveilRecord true false
+@[match_pattern] abbrev returnNoncreatureNonland : AbilityCastKind := .surveilRecord false true
+@[match_pattern] abbrev eyeOfJace : AbilityCastKind := .surveilRecord true true
 
 end AbilityCastKind
 
@@ -149,10 +164,7 @@ end ManaSpendNote
 
 /-- How `TriggerResolution.sacrifice` moves the source when `what` is
 `.source` or `.sacrificedSource`. -/
-inductive SacrificeSourceHow where
-  /-- Sacrifice it (`false, false`: "{name} is sacrificed"; `true, false`: "{player} sacrifices {name}"), or move it as sacrificed without token trigger (`false, true`). -/
-  | sacrificeSourceKind (controllerSacrifices : Bool := false) (movedAsSacrificed : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev SacrificeSourceHow := AbilityCastKind
 
 namespace SacrificeSourceHow
 
@@ -1332,6 +1344,73 @@ namespace TriggerDamageNote
 @[match_pattern] abbrev fromCause : TriggerDamageNote := .damageMode true false
 @[match_pattern] abbrev preallocated : TriggerDamageNote := .damageMode false true
 @[match_pattern] abbrev addRedIfMountain : TriggerDamageNote := .damageMode true true
+@[match_pattern] abbrev sacrificeNoteKind (forReflexive : Bool := false) (notedOrBeast : Bool := false) (eyeOfJace : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind forReflexive notedOrBeast eyeOfJace
+@[match_pattern] abbrev sacrificeRecord (forReflexive : Bool := false) (notedOrBeast : Bool := false) : TriggerDamageNote :=
+  .sacrificeNoteKind forReflexive notedOrBeast false
+@[match_pattern] abbrev eyeOfJaceIfSevenInGy : TriggerDamageNote := .sacrificeNoteKind false false true
+@[match_pattern] abbrev forReflexive : TriggerDamageNote := .sacrificeRecord true false
+@[match_pattern] abbrev noted : TriggerDamageNote := .sacrificeRecord false true
+@[match_pattern] abbrev ifYouDoCreateBeast : TriggerDamageNote := .sacrificeRecord true true
+@[match_pattern] abbrev castFromKind (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind alt1 alt2 special
+@[match_pattern] abbrev zoneCastOrigin (hand : Bool := false) (impulseOrNextRG : Bool := false) : TriggerDamageNote :=
+  .castFromKind hand impulseOrNextRG false
+@[match_pattern] abbrev specialCastOrigin (milled : Bool := false) (uldarosOrBoast : Bool := false) : TriggerDamageNote :=
+  .castFromKind milled uldarosOrBoast true
+@[match_pattern] abbrev graveyard : TriggerDamageNote := .zoneCastOrigin false false
+@[match_pattern] abbrev hand : TriggerDamageNote := .zoneCastOrigin true false
+@[match_pattern] abbrev impulse : TriggerDamageNote := .zoneCastOrigin false true
+@[match_pattern] abbrev nextRedOrGreenCreature : TriggerDamageNote := .zoneCastOrigin true true
+@[match_pattern] abbrev looked : TriggerDamageNote := .specialCastOrigin false false
+@[match_pattern] abbrev milledSpell : TriggerDamageNote := .specialCastOrigin true false
+@[match_pattern] abbrev uldarosGraveyardTypes : TriggerDamageNote := .specialCastOrigin false true
+@[match_pattern] abbrev boastExiled : TriggerDamageNote := .specialCastOrigin true true
+@[match_pattern] abbrev castMvKind (twiceWizards : Bool := false) (lastKnownOrAttacking : Bool := false) (causingSpell : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind twiceWizards lastKnownOrAttacking causingSpell
+@[match_pattern] abbrev powerOrWizardLimit (twiceWizards : Bool := false) (lastKnownOrAttacking : Bool := false) : TriggerDamageNote :=
+  .castMvKind twiceWizards lastKnownOrAttacking false
+@[match_pattern] abbrev causingSpell : TriggerDamageNote := .castMvKind false false true
+@[match_pattern] abbrev unlimited : TriggerDamageNote := .powerOrWizardLimit false false
+@[match_pattern] abbrev twiceLegendaryWizards : TriggerDamageNote := .powerOrWizardLimit true false
+@[match_pattern] abbrev lastKnown : TriggerDamageNote := .powerOrWizardLimit false true
+@[match_pattern] abbrev greatestAttackingPower : TriggerDamageNote := .powerOrWizardLimit true true
+@[match_pattern] abbrev putHowKind (tapped : Bool := false) (artifactOrOwner : Bool := false) (atNextEndStep : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind tapped artifactOrOwner atNextEndStep
+@[match_pattern] abbrev battlefieldEntryState (tapped : Bool := false) (artifactOrOwner : Bool := false) : TriggerDamageNote :=
+  .putHowKind tapped artifactOrOwner false
+@[match_pattern] abbrev atNextEndStep : TriggerDamageNote := .putHowKind false false true
+@[match_pattern] abbrev asPrinted : TriggerDamageNote := .battlefieldEntryState false false
+@[match_pattern] abbrev tapped : TriggerDamageNote := .battlefieldEntryState true false
+@[match_pattern] abbrev asArtifact : TriggerDamageNote := .battlefieldEntryState false true
+@[match_pattern] abbrev underOwner : TriggerDamageNote := .battlefieldEntryState true true
+@[match_pattern] abbrev destroyNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (drawOrRider : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind alt1 alt2 drawOrRider
+@[match_pattern] abbrev destroyRecord (countDestroyed : Bool := false) (forAmassOrToken : Bool := false) : TriggerDamageNote :=
+  .destroyNoteKind countDestroyed forAmassOrToken false
+@[match_pattern] abbrev drawIf (legendaryEnchantment : Bool := false) : TriggerDamageNote :=
+  .destroyNoteKind legendaryEnchantment false true
+@[match_pattern] abbrev destroyRider (gainLifeEach : Bool := false) : TriggerDamageNote :=
+  .destroyNoteKind gainLifeEach true true
+@[match_pattern] abbrev countDestroyed : TriggerDamageNote := .destroyNoteKind true false false
+@[match_pattern] abbrev forAmass : TriggerDamageNote := .destroyNoteKind false true false
+@[match_pattern] abbrev chosenToken : TriggerDamageNote := .destroyNoteKind true true false
+@[match_pattern] abbrev drawIfNotAttacking : TriggerDamageNote := .destroyNoteKind false false true
+@[match_pattern] abbrev drawIfLegendaryEnchantment : TriggerDamageNote := .destroyNoteKind true false true
+@[match_pattern] abbrev controllerCreatesHuman : TriggerDamageNote := .destroyNoteKind false true true
+@[match_pattern] abbrev gainLifeEach : TriggerDamageNote := .destroyNoteKind true true true
+@[match_pattern] abbrev controlHowKind (alt1 : Bool := false) (alt2 : Bool := false) (multi : Bool := false) : TriggerDamageNote :=
+  .damageNoteKind alt1 alt2 multi
+@[match_pattern] abbrev controlDuration (whileSource : Bool := false) (nextTurnOrVillain : Bool := false) : TriggerDamageNote :=
+  .controlHowKind whileSource nextTurnOrVillain false
+@[match_pattern] abbrev multiControl (exchange : Bool := false) : TriggerDamageNote :=
+  .controlHowKind exchange false true
+@[match_pattern] abbrev untilEndOfTurn : TriggerDamageNote := .controlDuration false false
+@[match_pattern] abbrev whileSourceRemains : TriggerDamageNote := .controlDuration true false
+@[match_pattern] abbrev duringNextTurn : TriggerDamageNote := .controlDuration false true
+@[match_pattern] abbrev untilEotOrNextIfVillain : TriggerDamageNote := .controlDuration true true
+@[match_pattern] abbrev oppArtifacts : TriggerDamageNote := .multiControl false
+@[match_pattern] abbrev exchangeTargets : TriggerDamageNote := .multiControl true
 
 end TriggerDamageNote
 
@@ -1345,6 +1424,18 @@ namespace AbilitySelector
 
 @[match_pattern] abbrev indestructible : AbilitySelector := .abilitySelectorKind false
 @[match_pattern] abbrev allAbilities : AbilitySelector := .abilitySelectorKind true
+@[match_pattern] abbrev castCostKind (withoutPaying : Bool := false) : AbilitySelector := .abilitySelectorKind withoutPaying
+@[match_pattern] abbrev pay : AbilitySelector := .castCostKind false
+@[match_pattern] abbrev withoutPaying : AbilitySelector := .castCostKind true
+@[match_pattern] abbrev castNoteKind (exileInstead : Bool := false) : AbilitySelector := .abilitySelectorKind exileInstead
+@[match_pattern] abbrev none : AbilitySelector := .castNoteKind false
+@[match_pattern] abbrev exileInstead : AbilitySelector := .castNoteKind true
+@[match_pattern] abbrev revealCountKind (onePlusCreatureCards : Bool := false) : AbilitySelector := .abilitySelectorKind onePlusCreatureCards
+@[match_pattern] abbrev hand : AbilitySelector := .revealCountKind false
+@[match_pattern] abbrev onePlusCreatureCards : AbilitySelector := .revealCountKind true
+@[match_pattern] abbrev mayWhenKind (ifYouDont : Bool := false) : AbilitySelector := .abilitySelectorKind ifYouDont
+@[match_pattern] abbrev ifYouDo : AbilitySelector := .mayWhenKind false
+@[match_pattern] abbrev ifYouDont : AbilitySelector := .mayWhenKind true
 
 end AbilitySelector
 
@@ -1523,10 +1614,7 @@ namespace TriggerExileNote
 end TriggerExileNote
 
 /-- What a later step of `TriggerResolution.sacrifice` can read. -/
-inductive TriggerSacrificeNote where
-  /-- Sacrifice record (`!eyeOfJace`: none, forReflexive, noted, or create 4/4 Beast) or Eye of Jace if seven in graveyard (`eyeOfJace = true`). -/
-  | sacrificeNoteKind (forReflexive : Bool := false) (notedOrBeast : Bool := false) (eyeOfJace : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerSacrificeNote := TriggerDamageNote
 
 namespace TriggerSacrificeNote
 
@@ -1542,10 +1630,7 @@ namespace TriggerSacrificeNote
 end TriggerSacrificeNote
 
 /-- Where `TriggerResolution.mayCast` finds the spell. -/
-inductive TriggerCastFrom where
-  /-- Zone/impulse cast origin (`!special`) or looked/milled/exiled cast origin (`special`). -/
-  | castFromKind (alt1 : Bool := false) (alt2 : Bool := false) (special : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerCastFrom := TriggerDamageNote
 
 namespace TriggerCastFrom
 
@@ -1566,10 +1651,7 @@ end TriggerCastFrom
 
 /-- The mana-value limit of `TriggerResolution.mayCast`.
 `.unlimited` is no limit. -/
-inductive TriggerCastMv where
-  /-- Mana-value limit (`!causingSpell`: unlimited, twice Wizards, last-known, or greatest attacking power; `causingSpell`: causing spell MV). -/
-  | castMvKind (twiceWizards : Bool := false) (lastKnownOrAttacking : Bool := false) (causingSpell : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerCastMv := TriggerDamageNote
 
 namespace TriggerCastMv
 
@@ -1584,10 +1666,7 @@ namespace TriggerCastMv
 end TriggerCastMv
 
 /-- Whether `TriggerResolution.mayCast` pays the mana cost. -/
-inductive TriggerCastCost where
-  /-- Pay its mana cost (`withoutPaying = false`) or without paying its mana cost (`withoutPaying = true`). -/
-  | castCostKind (withoutPaying : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerCastCost := AbilitySelector
 
 namespace TriggerCastCost
 
@@ -1597,10 +1676,7 @@ namespace TriggerCastCost
 end TriggerCastCost
 
 /-- What happens to an instant or sorcery `TriggerResolution.mayCast` casts. -/
-inductive TriggerCastNote where
-  /-- The cast only (`exileInstead = false`), or an instant/sorcery cast this way is exiled instead (`exileInstead = true`). -/
-  | castNoteKind (exileInstead : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerCastNote := AbilitySelector
 
 namespace TriggerCastNote
 
@@ -1610,10 +1686,7 @@ namespace TriggerCastNote
 end TriggerCastNote
 
 /-- What a later step of `TriggerResolution.returnToHand` can read. -/
-inductive TriggerReturnNote where
-  /-- Return note: nothing (`false, false`), whether a permanent was returned (`true, false`), or delayed Bird tokens (`false, true`). -/
-  | returnNoteKind (returnedPermanent : Bool := false) (delayedBirds : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerReturnNote := AbilityCastKind
 
 namespace TriggerReturnNote
 
@@ -1647,10 +1720,7 @@ namespace TriggerEnterWith
 end TriggerEnterWith
 
 /-- How `TriggerResolution.put` puts those cards onto the battlefield. -/
-inductive TriggerPutHow where
-  /-- Battlefield entry state (`!atNextEndStep`: as printed, tapped, as artifact, or under owner) or at the beginning of the next end step (`atNextEndStep = true`). -/
-  | putHowKind (tapped : Bool := false) (artifactOrOwner : Bool := false) (atNextEndStep : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerPutHow := TriggerDamageNote
 
 namespace TriggerPutHow
 
@@ -1727,10 +1797,7 @@ namespace TriggerModeHow
 end TriggerModeHow
 
 /-- What a later step of `TriggerResolution.destroy` can read. -/
-inductive TriggerDestroyNote where
-  /-- Destruction record (`!drawOrRider`: none, countDestroyed, forAmass, or chosenToken) or draw/token/life rider (`drawOrRider`: drawIfNotAttacking, drawIfLegendaryEnchantment, controllerCreatesHuman, or gainLifeEach). -/
-  | destroyNoteKind (alt1 : Bool := false) (alt2 : Bool := false) (drawOrRider : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerDestroyNote := TriggerDamageNote
 
 namespace TriggerDestroyNote
 
@@ -1768,10 +1835,7 @@ namespace TriggerFightHow
 end TriggerFightHow
 
 /-- How long `TriggerResolution.gainControl` lasts. -/
-inductive TriggerControlHow where
-  /-- Control duration (`!multi`) or multi/exchange control (`multi`). -/
-  | controlHowKind (alt1 : Bool := false) (alt2 : Bool := false) (multi : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerControlHow := TriggerDamageNote
 
 namespace TriggerControlHow
 
@@ -2140,10 +2204,7 @@ namespace TriggerMillNote
 end TriggerMillNote
 
 /-- How many cards `TriggerResolution.revealFromHand` shows (CR 701.16). -/
-inductive TriggerRevealCount where
-  /-- The whole hand (`onePlusCreatureCards = false`), or one card plus one per creature card in the controller's graveyard (`onePlusCreatureCards = true`). -/
-  | revealCountKind (onePlusCreatureCards : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerRevealCount := AbilitySelector
 
 namespace TriggerRevealCount
 
@@ -2210,10 +2271,7 @@ namespace TriggerLibraryPlace
 end TriggerLibraryPlace
 
 /-- What a later step of `TriggerResolution.surveil` can read or do. -/
-inductive TriggerSurveilNote where
-  /-- Surveil record: surveil only (`false, false`), arm return life gained (`true, false`), return noncreature/nonland (`false, true`), or Eye of Jace (`true, true`). -/
-  | surveilRecord (armReturn : Bool := false) (returnCardOrEye : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerSurveilNote := AbilityCastKind
 
 namespace TriggerSurveilNote
 
@@ -2225,10 +2283,7 @@ namespace TriggerSurveilNote
 end TriggerSurveilNote
 
 /-- Which outcome of `TriggerResolution.may` resolves `follow`. -/
-inductive TriggerMayWhen where
-  /-- The player performed `action` (`ifYouDont = false`) or declined `action` (`ifYouDont = true`). -/
-  | mayWhenKind (ifYouDont : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev TriggerMayWhen := AbilitySelector
 
 namespace TriggerMayWhen
 

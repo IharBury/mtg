@@ -9,15 +9,22 @@ puts any one of them; `Status` stores each kind in its own field.
 
 namespace Mtg.Engine
 
-/-- A keyword counter a permanent can have (CR 122.1b). -/
-inductive KeywordCounter where
-  /-- Parameterized keyword counter: trample (`(false, false, false, false)`), indestructible (`(true, false, false, false)`), lifelink (`(false, true, false, false)`), shadow (`(true, true, false, false)`), haste (`(false, false, true, false)`), vigilance (`(true, false, true, false)`), flying (`(false, true, true, false)`), menace (`(true, true, true, false)`), reach (`(false, false, false, true)`), deathtouch (`(true, false, false, true)`), firstStrike (`(false, true, false, true)`), or doubleStrike (`(true, true, false, true)`). -/
-  | keywordCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
+/-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
+inductive CounterKind where
+  /-- Unified counter kind (CR 122.1): P/T counter (`!cat1 && !cat2`, CR 122.1a), keyword counter (`cat1 && !cat2`, CR 122.1b), rule counter (`!cat1 && cat2`, CR 122.1c–d), or named counter (`cat1 && cat2`, CR 122.1). -/
+  | counterKind (cat1 : Bool := false) (cat2 : Bool := false)
+      (alt1 : Bool := false) (alt2 : Bool := false)
       (alt3 : Bool := false) (alt4 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- A keyword counter a permanent can have (CR 122.1b). -/
+abbrev KeywordCounter := CounterKind
+
 namespace KeywordCounter
 
+@[match_pattern] abbrev keywordCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (alt4 : Bool := false) : KeywordCounter :=
+  .counterKind true false alt1 alt2 alt3 alt4
 @[match_pattern] abbrev trample : KeywordCounter := .keywordCounterKind false false false false
 @[match_pattern] abbrev indestructible : KeywordCounter := .keywordCounterKind true false false false
 @[match_pattern] abbrev lifelink : KeywordCounter := .keywordCounterKind false true false false
@@ -34,13 +41,12 @@ namespace KeywordCounter
 end KeywordCounter
 
 /-- A rule-defined non-keyword counter a permanent can have (CR 122.1c–d / CR 306.5 / CR 714). -/
-inductive RuleCounter where
-  /-- Parameterized rule counter: loyalty (`(false, false, false)`), stun (`(true, false, false)`), shield (`(false, true, false)`), finality (`(true, true, false)`), lore (`(false, false, true)`), or time (`(true, false, true)`). -/
-  | ruleCounterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev RuleCounter := CounterKind
 
 namespace RuleCounter
 
+@[match_pattern] abbrev ruleCounterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) : RuleCounter :=
+  .counterKind false true alt1 alt2 alt3 false
 @[match_pattern] abbrev loyalty : RuleCounter := .ruleCounterKind false false false
 @[match_pattern] abbrev stun : RuleCounter := .ruleCounterKind true false false
 @[match_pattern] abbrev shield : RuleCounter := .ruleCounterKind false true false
@@ -51,14 +57,13 @@ namespace RuleCounter
 end RuleCounter
 
 /-- A named ability or card counter a permanent can have (CR 122.1). -/
-inductive NamedCounter where
-  /-- Parameterized named counter: hope (`(false, false, false, false)`), charge (`(true, false, false, false)`), plan (`(false, true, false, false)`), burden (`(true, true, false, false)`), quest (`(false, false, true, false)`), invasion (`(true, false, true, false)`), influence (`(false, true, true, false)`), hone (`(true, true, true, false)`), or story (`(false, false, false, true)`). -/
-  | namedCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (alt4 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev NamedCounter := CounterKind
 
 namespace NamedCounter
 
+@[match_pattern] abbrev namedCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (alt4 : Bool := false) : NamedCounter :=
+  .counterKind true true alt1 alt2 alt3 alt4
 @[match_pattern] abbrev hope : NamedCounter := .namedCounterKind false false false false
 @[match_pattern] abbrev charge : NamedCounter := .namedCounterKind true false false false
 @[match_pattern] abbrev plan : NamedCounter := .namedCounterKind false true false false
@@ -71,23 +76,13 @@ namespace NamedCounter
 
 end NamedCounter
 
-/-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
-inductive CounterKind where
-  /-- Unified counter kind (CR 122.1): P/T counter (`keywordOpt = none && ruleOpt = none && namedOpt = none`), keyword counter (`keywordOpt = some k`), rule counter (`ruleOpt = some k`), or named counter (`namedOpt = some k`). -/
-  | counterKind (plus : Bool := true) (keywordOpt : Option KeywordCounter := none)
-      (ruleOpt : Option RuleCounter := none) (namedOpt : Option NamedCounter := none)
-deriving Repr, Inhabited, BEq, DecidableEq
-
 namespace CounterKind
 
 @[match_pattern] abbrev pt (plus : Bool := true) : CounterKind :=
-  .counterKind plus none none none
-@[match_pattern] abbrev keyword (k : KeywordCounter) : CounterKind :=
-  .counterKind true (some k) none none
-@[match_pattern] abbrev rule (k : RuleCounter) : CounterKind :=
-  .counterKind true none (some k) none
-@[match_pattern] abbrev named (k : NamedCounter) : CounterKind :=
-  .counterKind true none none (some k)
+  .counterKind false false plus false false false
+@[match_pattern] abbrev keyword (k : KeywordCounter) : CounterKind := k
+@[match_pattern] abbrev rule (k : RuleCounter) : CounterKind := k
+@[match_pattern] abbrev named (k : NamedCounter) : CounterKind := k
 
 @[match_pattern] abbrev plusOnePlusOne : CounterKind := .pt true
 @[match_pattern] abbrev minusOneMinusOne : CounterKind := .pt false

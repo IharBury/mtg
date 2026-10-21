@@ -8,15 +8,23 @@ Tokens the engine can create and their printed Oracle nouns.
 
 namespace Mtg.Engine
 
-/-- Non-creature artifact tokens (CR 111.10). -/
-inductive ArtifactToken where
-  /-- Parameterized non-creature artifact token: predefined/set artifact (`!equipment`: Treasure, Food, Clue, Map, Vibranium, Heartwood, Lotus, Incubator) or colorless Equipment (`equipment`: Axe when `!alt1`, Sturdy Shield when `alt1`). -/
-  | artifactTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (setArtifact : Bool := false) (equipment : Bool := false)
+/-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
+cards reconstruct printed “create a …” lines. -/
+inductive TokenKind where
+  /-- Unified token kind (CR 111): non-creature artifact (`!cat1 && !cat2 && !isJace`), artifact creature (`cat1 && !cat2 && !isJace`), legendary (`!cat1 && cat2 && !isJace`), creature (`cat1 && cat2 && !isJace`), or Jace planeswalker (`isJace`). -/
+  | tokenKind (cat1 : Bool := false) (cat2 : Bool := false) (isJace : Bool := false)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Non-creature artifact tokens (CR 111.10). -/
+abbrev ArtifactToken := TokenKind
 
 namespace ArtifactToken
 
+@[match_pattern] abbrev artifactTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (setArtifact : Bool := false) (equipment : Bool := false) : ArtifactToken :=
+  .tokenKind false false false alt1 alt2 false setArtifact equipment false
 @[match_pattern] abbrev predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false)
     (setArtifact : Bool := false) : ArtifactToken :=
   .artifactTokenKind alt1 alt2 setArtifact false
@@ -26,19 +34,22 @@ namespace ArtifactToken
 end ArtifactToken
 
 /-- Artifact creature tokens (CR 111). -/
-inductive ArtifactCreatureToken where
-  /-- 2/2 Robot Villain (`!alt1 && !alt2 && !construct`), 3/3 Doombot (`alt1 && !alt2 && !construct`), 3/1 Stone Boulder Wall (`!alt1 && alt2 && !construct`), 1/1 Sculpture Treasure (`alt1 && alt2 && !construct`), 1/1 flying Thopter (`!alt1 && !alt2 && construct`), 1/1 Myr (`alt1 && !alt2 && construct`), 1/1 Phyrexian Mite (`!alt1 && alt2 && construct`), or 1/1 Gingerbrute (`alt1 && alt2 && construct`). -/
-  | kind (alt1 : Bool := false) (alt2 : Bool := false) (construct : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev ArtifactCreatureToken := TokenKind
+
+namespace ArtifactCreatureToken
+
+@[match_pattern] abbrev kind (alt1 : Bool := false) (alt2 : Bool := false) (construct : Bool := false) : ArtifactCreatureToken :=
+  .tokenKind true false false alt1 alt2 construct false false false
+
+end ArtifactCreatureToken
 
 /-- Legendary creature tokens (CR 111 / CR 205.4a). -/
-inductive LegendaryToken where
-  /-- Parameterized legendary creature token: 3/3 Mowu or 2/2 Zabu (`!msh`) or MSH legendary token (`msh`: The Void, Redwing, Galactus, or The Tiger God). -/
-  | legendaryTokenKind (alt1 : Bool := false) (alt2 : Bool := false) (msh : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev LegendaryToken := TokenKind
 
 namespace LegendaryToken
 
+@[match_pattern] abbrev legendaryTokenKind (alt1 : Bool := false) (alt2 : Bool := false) (msh : Bool := false) : LegendaryToken :=
+  .tokenKind false true false alt1 alt2 msh false false false
 @[match_pattern] abbrev mowuOrZabu (zabu : Bool := false) : LegendaryToken :=
   .legendaryTokenKind zabu false false
 @[match_pattern] abbrev mshLegend (redwing : Bool := false) (galactusOrTigerGod : Bool := false) : LegendaryToken :=
@@ -47,14 +58,13 @@ namespace LegendaryToken
 end LegendaryToken
 
 /-- Non-artifact, non-legendary creature tokens (CR 111). -/
-inductive CreatureToken where
-  /-- Parameterized non-artifact, non-legendary creature token (CR 111). -/
-  | creatureTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
-      (alt3 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev CreatureToken := TokenKind
 
 namespace CreatureToken
 
+@[match_pattern] abbrev creatureTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
+    (alt3 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : CreatureToken :=
+  .tokenKind true true false alt1 alt2 alt3 g1 g2 g3
 @[match_pattern] abbrev whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false)
     (green : Bool := false) : CreatureToken :=
   .creatureTokenKind alt1 alt2 green false false false
@@ -77,28 +87,14 @@ namespace CreatureToken
 
 end CreatureToken
 
-/-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
-cards reconstruct printed “create a …” lines. -/
-inductive TokenKind where
-  /-- Unified token kind (CR 111): non-creature artifact (`artifactOpt = some a`), creature (`creatureOpt = some c`), artifact creature (`artCreatureOpt = some a`), legendary (`legendaryOpt = some l`), or Jace planeswalker (all `none`). -/
-  | tokenKind (artifactOpt : Option ArtifactToken := none)
-      (creatureOpt : Option CreatureToken := none)
-      (artCreatureOpt : Option ArtifactCreatureToken := none)
-      (legendaryOpt : Option LegendaryToken := none)
-deriving Repr, Inhabited, BEq, DecidableEq
-
 namespace TokenKind
 
-@[match_pattern] abbrev artifact (a : ArtifactToken) : TokenKind :=
-  .tokenKind (some a) none none none
-@[match_pattern] abbrev creature (c : CreatureToken) : TokenKind :=
-  .tokenKind none (some c) none none
-@[match_pattern] abbrev artifactCreature (a : ArtifactCreatureToken) : TokenKind :=
-  .tokenKind none none (some a) none
-@[match_pattern] abbrev legendary (l : LegendaryToken) : TokenKind :=
-  .tokenKind none none none (some l)
+@[match_pattern] abbrev artifact (a : ArtifactToken) : TokenKind := a
+@[match_pattern] abbrev creature (c : CreatureToken) : TokenKind := c
+@[match_pattern] abbrev artifactCreature (a : ArtifactCreatureToken) : TokenKind := a
+@[match_pattern] abbrev legendary (l : LegendaryToken) : TokenKind := l
 @[match_pattern] abbrev jace : TokenKind :=
-  .tokenKind none none none none
+  .tokenKind false false true false false false false false false
 
 -- ArtifactToken aliases
 @[match_pattern] abbrev treasure : TokenKind := .artifact (.predefinedOrSet false false false)

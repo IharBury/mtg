@@ -59,6 +59,9 @@ namespace IntFmt
 
 @[match_pattern] abbrev signed : IntFmt := .intFmtKind false
 @[match_pattern] abbrev digits : IntFmt := .intFmtKind true
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : IntFmt := .intFmtKind isFill
+@[match_pattern] abbrev collect : IntFmt := .modeKind false
+@[match_pattern] abbrev fill : IntFmt := .modeKind true
 
 end IntFmt
 
@@ -100,12 +103,11 @@ slot and `ki` is the `CounterKind` slot. -/
 
 end Pat
 
-inductive Mode where
-  | modeKind (isFill : Bool := false)
-deriving BEq, Repr, Inhabited
+abbrev Mode := IntFmt
 
 namespace Mode
 
+@[match_pattern] abbrev modeKind (isFill : Bool := false) : Mode := .intFmtKind isFill
 @[match_pattern] abbrev collect : Mode := .modeKind false
 @[match_pattern] abbrev fill : Mode := .modeKind true
 

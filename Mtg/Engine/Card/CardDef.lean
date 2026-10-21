@@ -59,20 +59,21 @@ def additionalCostSacrificeCreature (a : AdventureFace) : Bool :=
 
 end AdventureFace
 
-/-- Replacement rule for whether a permanent enters the battlefield tapped (CR 614.1c). -/
+/-- Replacement, modal, or casting-permission rule on a card (CR 601.2 / 601.3 / 614.1c / 700.2). -/
 inductive EntersTappedRule where
   | entersTappedKind (cond : ConditionSelector := .teamwork) (life : Nat := 0)
       (tapped : Bool := false) (unlessFlag : Bool := false) (payLifeFlag : Bool := false)
+      (conditional : Bool := false)
 deriving Repr, Inhabited, BEq
 
 namespace EntersTappedRule
 
 @[match_pattern] abbrev unconditional (tapped : Bool := false) : EntersTappedRule :=
-  .entersTappedKind .teamwork 0 tapped false false
+  .entersTappedKind .teamwork 0 tapped false false false
 @[match_pattern] abbrev «unless» (cond : ConditionSelector) : EntersTappedRule :=
-  .entersTappedKind cond 0 false true false
+  .entersTappedKind cond 0 false true false false
 @[match_pattern] abbrev unlessPayLife (life : Nat) : EntersTappedRule :=
-  .entersTappedKind .teamwork life false false true
+  .entersTappedKind .teamwork life false false true false
 @[match_pattern] abbrev untapped : EntersTappedRule := .unconditional false
 @[match_pattern] abbrev always : EntersTappedRule := .unconditional true
 @[match_pattern] abbrev unlessLegendary : EntersTappedRule :=
@@ -92,14 +93,20 @@ namespace EntersTappedRule
 
 end EntersTappedRule
 
-/-- Choice or state replacement as a permanent enters the battlefield (CR 614.1c / 614.12). -/
-inductive AsEntersChoice where
-  /-- Parameterized enters-choice rule: none (`!alt1 && !alt2 && !choose`), prepared (`alt1 && !alt2 && !choose`), or choose option (`choose`: creature type when `!alt1 && !alt2`, odd/even when `alt1 && !alt2`, card type when `!alt1 && alt2`, Mardu/Jeskai when `alt1 && alt2`). -/
-  | asEntersKind (alt1 : Bool := false) (alt2 : Bool := false) (choose : Bool := false)
+/-- Continuous, replacement, top-of-library, or enters-choice static rule on a card (CR 604 / 613 / 614). -/
+inductive CardStaticRule where
+  | cardStaticRuleKind (n : Nat := 0) (subtype : String := "")
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+      (unspentGroup : Bool := false) (numeric : Bool := false) (topOfLib : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- Choice or state replacement as a permanent enters the battlefield (CR 614.1c / 614.12). -/
+abbrev AsEntersChoice := CardStaticRule
 
 namespace AsEntersChoice
 
+@[match_pattern] abbrev asEntersKind (alt1 : Bool := false) (alt2 : Bool := false) (choose : Bool := false) : AsEntersChoice :=
+  .cardStaticRuleKind 0 "" alt1 alt2 choose false false false false
 @[match_pattern] abbrev none : AsEntersChoice := .asEntersKind false false false
 @[match_pattern] abbrev prepared : AsEntersChoice := .asEntersKind true false false
 @[match_pattern] abbrev chooseOption (oddEven : Bool := false) (cardType : Bool := false) : AsEntersChoice :=
@@ -169,12 +176,12 @@ namespace TapManaAbility
 end TapManaAbility
 
 /-- Mode-selection rule for a modal spell (CR 700.2). -/
-inductive ModalRule where
-  | modalRuleKind (cond : ConditionSelector := .teamwork) (oneOrBoth : Bool := false) (twoIf : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev ModalRule := EntersTappedRule
 
 namespace ModalRule
 
+@[match_pattern] abbrev modalRuleKind (cond : ConditionSelector := .teamwork) (oneOrBoth : Bool := false) (twoIf : Bool := false) : ModalRule :=
+  .entersTappedKind cond 0 oneOrBoth twoIf false false
 @[match_pattern] abbrev unconditionalModal (oneOrBoth : Bool := false) : ModalRule :=
   .modalRuleKind .teamwork oneOrBoth false
 @[match_pattern] abbrev chooseTwoIf (cond : ConditionSelector) : ModalRule :=
@@ -190,13 +197,12 @@ end ModalRule
 
 /-- Permission to look at or play/cast cards from the top of your library
 (CR 401.5 / 601.3). -/
-inductive TopOfLibraryRule where
-  /-- Parameterized top-of-library rule: none (`!alt1 && !alt2 && !access`), grant creatures `{T}: Add one mana of any color` (`alt1 && !alt2 && !access`), or library access (`access`: look any time when `!alt1 && !alt2`, play lands when `alt1 && !alt2`, cast creatures when `!alt1 && alt2`, or Elven Chorus when `alt1 && alt2`). -/
-  | topOfLibraryKind (alt1 : Bool := false) (alt2 : Bool := false) (access : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TopOfLibraryRule := CardStaticRule
 
 namespace TopOfLibraryRule
 
+@[match_pattern] abbrev topOfLibraryKind (alt1 : Bool := false) (alt2 : Bool := false) (access : Bool := false) : TopOfLibraryRule :=
+  .cardStaticRuleKind 0 "" alt1 alt2 access false false false true
 @[match_pattern] abbrev none : TopOfLibraryRule := .topOfLibraryKind false false false
 @[match_pattern] abbrev grantCreaturesTapAnyColor : TopOfLibraryRule := .topOfLibraryKind true false false
 @[match_pattern] abbrev libraryAccess (playLands : Bool := false) (castCreatures : Bool := false) : TopOfLibraryRule :=
@@ -208,24 +214,18 @@ namespace TopOfLibraryRule
 
 end TopOfLibraryRule
 
-/-- Continuous or replacement static rule on a card (CR 604 / 613 / 614). -/
-inductive CardStaticRule where
-  | cardStaticRuleKind (n : Nat := 0) (subtype : String := "") (rule : TopOfLibraryRule := .none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (unspentGroup : Bool := false) (numeric : Bool := false) (topOfLib : Bool := false)
-deriving Repr, Inhabited, BEq, DecidableEq
-
 namespace CardStaticRule
 
+@[match_pattern] abbrev topOfLibraryKind (alt1 : Bool := false) (alt2 : Bool := false) (access : Bool := false) : CardStaticRule :=
+  TopOfLibraryRule.topOfLibraryKind alt1 alt2 access
 @[match_pattern] abbrev staticRuleKind (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false) (unspentGroup : Bool := false) : CardStaticRule :=
-  .cardStaticRuleKind 0 "" .none alt1 alt2 alt3 alt4 unspentGroup false false
-@[match_pattern] abbrev topOfLibrary (rule : TopOfLibraryRule) : CardStaticRule :=
-  .cardStaticRuleKind 0 "" rule false false false false false false true
+  .cardStaticRuleKind 0 "" alt1 alt2 alt3 alt4 unspentGroup false false
+@[match_pattern] abbrev topOfLibrary (rule : TopOfLibraryRule) : CardStaticRule := rule
 @[match_pattern] abbrev numericStaticRule (n : Nat) (alt1 : Bool := false) (alt2 : Bool := false) (firstCreature : Bool := false) : CardStaticRule :=
-  .cardStaticRuleKind n "" .none alt1 alt2 firstCreature false false true false
+  .cardStaticRuleKind n "" alt1 alt2 firstCreature false false true false
 @[match_pattern] abbrev extraLandIfOtherSubtype (subtype : String) : CardStaticRule :=
-  .cardStaticRuleKind 0 subtype .none false false false true false true false
+  .cardStaticRuleKind 0 subtype false false false true false true false
 @[match_pattern] abbrev noneOrUnspentMana (unspentMana : Bool := false) (andColorless : Bool := false) : CardStaticRule :=
   .staticRuleKind unspentMana andColorless false false true
 @[match_pattern] abbrev replacementOrBooleanRule (alt1 : Bool := false) (alt2 : Bool := false)
@@ -267,16 +267,25 @@ namespace CardStaticRule
 
 end CardStaticRule
 
-/-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
-inductive SpellCastOption where
-  | spellCastOptionKind (n : Nat := 0) (subtype : String := "") (cost : ManaCost := ManaCost.empty)
-      (counters : Nat := 0) (alt : Bool := false) (flashbackFlag : Bool := false)
-      (impendingFlag : Bool := false) (numeric : Bool := false)
-      (costFlag : Bool := false) (isAffinity : Bool := false)
+/-- Parameterized keyword, casting option, or deck-building / blocking rule on a card
+(CR 118.8 / 118.9 / 702 / 100.2a / 903.3a). -/
+inductive CardKeywordRule where
+  | cardKeywordRuleKind (n : Nat := 0) (subtype : String := "") (colors : Array Color := #[])
+      (cost : ManaCost := ManaCost.empty) (counters : Nat := 0)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (numeric : Bool := false) (protection : Bool := false) (cyclingFlag : Bool := false)
 deriving Repr, Inhabited, BEq
+
+/-- Optional or alternative casting option on a card (CR 118.8 / 118.9 / 702). -/
+abbrev SpellCastOption := CardKeywordRule
 
 namespace SpellCastOption
 
+@[match_pattern] abbrev spellCastOptionKind (n : Nat := 0) (subtype : String := "") (cost : ManaCost := ManaCost.empty)
+    (counters : Nat := 0) (alt : Bool := false) (flashbackFlag : Bool := false)
+    (impendingFlag : Bool := false) (numeric : Bool := false)
+    (costFlag : Bool := false) (isAffinity : Bool := false) : SpellCastOption :=
+  .cardKeywordRuleKind n subtype #[] cost counters alt flashbackFlag impendingFlag numeric costFlag isAffinity
 @[match_pattern] abbrev flagOrNumericCastOption (n : Nat := 0) (alt : Bool := false) (numeric : Bool := false) : SpellCastOption :=
   .spellCastOptionKind n "" ManaCost.empty 0 alt false false numeric false false
 @[match_pattern] abbrev costCastOption (cost : ManaCost) (counters : Nat := 0) (alt : Bool := false)
@@ -306,13 +315,13 @@ end SpellCastOption
 
 /-- Casting permission, restriction, or counterability rule on a card
 (CR 601.2 / 601.3 / 608.2a). -/
-inductive CastPermissionRule where
-  | castPermissionKind (cond : ConditionSelector := .teamwork) (cantBeCountered : Bool := false)
-      (castOnly : Bool := false) (exiled : Bool := false) (conditional : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev CastPermissionRule := EntersTappedRule
 
 namespace CastPermissionRule
 
+@[match_pattern] abbrev castPermissionKind (cond : ConditionSelector := .teamwork) (cantBeCountered : Bool := false)
+    (castOnly : Bool := false) (exiled : Bool := false) (conditional : Bool := false) : CastPermissionRule :=
+  .entersTappedKind cond 0 cantBeCountered castOnly exiled conditional
 @[match_pattern] abbrev normalOrUncounterable (cantBeCountered : Bool := false) : CastPermissionRule :=
   .castPermissionKind .teamwork cantBeCountered false false false
 @[match_pattern] abbrev conditionalRule (cond : ConditionSelector) (castOnly : Bool := false) (exiled : Bool := false) : CastPermissionRule :=
@@ -334,23 +343,15 @@ namespace CastPermissionRule
 
 end CastPermissionRule
 
-/-- Parameterized keyword or deck-building / blocking rule on a card
-(CR 702 / 100.2a / 903.3a). -/
-inductive CardKeywordRule where
-  | cardKeywordRuleKind (n : Nat := 0) (colors : Array Color := #[]) (cost : ManaCost := ManaCost.empty)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (numeric : Bool := false) (protection : Bool := false) (cyclingFlag : Bool := false)
-deriving Repr, Inhabited, BEq
-
 namespace CardKeywordRule
 
 @[match_pattern] abbrev numericKeywordRule (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (numeric : Bool := false) : CardKeywordRule :=
-  .cardKeywordRuleKind n #[] ManaCost.empty alt1 alt2 alt3 numeric false false
+  .cardKeywordRuleKind n "" #[] ManaCost.empty 0 alt1 alt2 alt3 numeric false false
 @[match_pattern] abbrev protectionFromColors (colors : Array Color) : CardKeywordRule :=
-  .cardKeywordRuleKind 0 colors ManaCost.empty false false false false true false
+  .cardKeywordRuleKind 0 "" colors ManaCost.empty 0 false false false false true false
 @[match_pattern] abbrev cycling (cost : ManaCost) : CardKeywordRule :=
-  .cardKeywordRuleKind 0 #[] cost false false false false false true
+  .cardKeywordRuleKind 0 "" #[] cost 0 false false false false false true
 @[match_pattern] abbrev noneOrStaticFlag (cantBlock : Bool := false) (deckRule : Bool := false)
     (active : Bool := false) : CardKeywordRule :=
   .numericKeywordRule 0 cantBlock deckRule active false
@@ -820,7 +821,7 @@ def chooseBothIfTeamwork (c : CardDef) : Bool :=
 
 def topOfLibraryRule (c : CardDef) : TopOfLibraryRule :=
   match c.staticRule with
-  | .topOfLibrary r => r
+  | .topOfLibraryKind alt1 alt2 access => .topOfLibraryKind alt1 alt2 access
   | _ => .none
 
 def mayLookAtTopAnytime (c : CardDef) : Bool :=
