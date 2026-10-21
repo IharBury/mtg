@@ -84,96 +84,44 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
 inductive BattlefieldTarget where
-  /-- Target creature you control. -/
-  | creatureYouControl
-  /-- Another target creature you control (not the source). -/
-  | anotherCreatureYouControl
-  /-- Another target creature (any controller, not the source). -/
-  | anotherCreature
-  /-- Target creature an opponent controls. -/
-  | oppCreature
-  /-- Target tapped creature an opponent controls. -/
-  | oppTappedCreature
-  /-- Target creature (any controller). -/
-  | creature
+  /-- Target creature you control (optionally `another` or `legendary`). -/
+  | creatureYouControl (another : Bool := false) (legendary : Bool := false)
+  /-- Target creature (any controller; optionally `another`). -/
+  | creature (another : Bool := false)
+  /-- Target creature an opponent controls (optionally `tapped` or `dealtDamageThisTurn`). -/
+  | oppCreature (tapped : Bool := false) (dealtDamageThisTurn : Bool := false)
   /-- Target creature with flying. -/
   | creatureWithFlying
-  /-- Target artifact or land. -/
-  | artifactOrLand
-  /-- Target colorless nonland permanent. -/
-  | colorlessNonland
-  /-- Target artifact or enchantment. -/
-  | artifactOrEnchantment
-  /-- Target artifact or creature you control. -/
-  | artifactOrCreatureYouControl
-  /-- Target nonland permanent. -/
-  | nonland
-  /-- Target nonland permanent an opponent controls. -/
-  | oppNonland
-  /-- Target attacking creature without flying. -/
-  | attackingCreatureWithoutFlying
+  /-- Target two-type permanent (`artifactOrLand`, `artifactOrCreatureYouControl`, `creatureOrLandYouControl`). -/
+  | twoTypes (includeCreature : Bool := false) (includeArtifact : Bool := true) (youControl : Bool := false)
+  /-- Target artifact or enchantment (optionally `noncreature`). -/
+  | artifactOrEnchantment (noncreature : Bool := false)
+  /-- Target nonland permanent (optionally `opp`, `nontoken`, or `colorless`). -/
+  | nonland (opp : Bool := false) (nontoken : Bool := false) (colorless : Bool := false)
+  /-- Target attacking creature (optionally `withoutFlying`, `orBlocking`, or `aloneYouControl`). -/
+  | attackingCreature (withoutFlying : Bool := false) (orBlocking : Bool := false) (aloneYouControl : Bool := false)
   /-- Target creature you control with this subtype (e.g. Equip Human). -/
   | creatureYouControlSubtype (subtype : String)
   /-- Target creature defending player controls. -/
   | defendingPlayerCreature
-  /-- Target creature with power `n` or greater. -/
-  | creaturePowerAtLeast (n : Int)
-  /-- Target creature with power `n` or less. -/
-  | creaturePowerAtMost (n : Int)
+  /-- Target creature with power (or toughness) `n` or greater. -/
+  | creatureStatAtLeast (n : Int) (toughness : Bool := false)
+  /-- Target creature with power `n` or less (filtered by `controller` and `another`). -/
+  | creaturePowerAtMost (n : Int) (controller : TargetController := .any) (another : Bool := false)
   /-- Target creature you control with any of these subtypes. -/
   | creatureYouControlAnySubtype (subtypes : Array String)
-  /-- Target permanent. -/
-  | permanent
-  /-- Target legendary creature you control. -/
-  | legendaryCreatureYouControl
-  /-- Target creature you control with power `n` or less. -/
-  | creatureYouControlPowerAtMost (n : Int)
-  /-- Target artifact. -/
-  | artifact
-  /-- Target artifact an opponent controls. -/
-  | oppArtifact
-  /-- Target artifact token. -/
-  | artifactToken
-  /-- Target attacking creature. -/
-  | attackingCreature
+  /-- Target permanent (filtered by `controller`). -/
+  | permanent (controller : TargetController := .any)
+  /-- Target artifact (filtered by `controller`, `tokenOnly`, and `noncreature`). -/
+  | artifact (controller : TargetController := .any) (tokenOnly : Bool := false) (noncreature : Bool := false)
   /-- Target Equipment you control. -/
   | equipmentYouControl
-  /-- Target creature or land you control. -/
-  | creatureOrLandYouControl
-  /-- Target attacking or blocking creature. -/
-  | attackingOrBlockingCreature
   /-- Target creature with mana value `n` or less. -/
   | creatureMvAtMost (n : Nat)
-  /-- Target creature with toughness `n` or greater. -/
-  | creatureToughnessAtLeast (n : Int)
   /-- Target enchantment with mana value `n` or greater. -/
   | enchantmentMvAtLeast (n : Nat)
-  /-- Target noncreature artifact. -/
-  | noncreatureArtifact
-  /-- Target creature an opponent controls with power `n` or less. -/
-  | oppCreaturePowerAtMost (n : Int)
-  /-- Target creature an opponent controls that dealt damage this turn. -/
-  | oppCreatureDealtDamageThisTurn
-  /-- Target nonland, nontoken permanent. -/
-  | nonlandNontoken
-  /-- Target artifact you control. -/
-  | artifactYouControl
-  /-- Target creature or planeswalker. -/
-  | creatureOrPlaneswalker
-  /-- Target permanent you control. -/
-  | permanentYouControl
-  /-- Target permanent an opponent controls. -/
-  | oppPermanent
-  /-- Another target creature you control with power `n` or less. -/
-  | anotherCreatureYouControlPowerAtMost (n : Int)
-  /-- Target planeswalker you control. -/
-  | planeswalkerYouControl
-  /-- Target creature or planeswalker an opponent controls. -/
-  | oppCreatureOrPlaneswalker
-  /-- Target creature you control that's attacking alone. -/
-  | attackingAloneCreatureYouControl
-  /-- Target noncreature artifact or noncreature enchantment. -/
-  | noncreatureArtifactOrEnchantment
+  /-- Target creature or planeswalker (filtered by `controller` and `planeswalkerOnly`). -/
+  | creatureOrPlaneswalker (controller : TargetController := .any) (planeswalkerOnly : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A card target in a graveyard (CR 115.1 / 404.1). -/
@@ -182,79 +130,47 @@ inductive GraveyardTarget where
   | elfInYourGraveyard
   /-- Target card in an opponent's graveyard. -/
   | oppGraveyardCard
-  /-- Target creature card in your graveyard. -/
-  | creatureCardInYourGraveyard
+  /-- Target creature or permanent card in your graveyard. -/
+  | cardInYourGraveyard (permanentAny : Bool := false)
   /-- Target creature card with mana value `n` or less in your graveyard. -/
   | creatureCardInYourGraveyardMvAtMost (n : Nat)
-  /-- Target permanent card in your graveyard. -/
-  | permanentCardInYourGraveyard
-  /-- Target Equipment, instant, or sorcery card in your graveyard. -/
-  | equipmentInstantOrSorceryInYourGraveyard
-  /-- Target artifact or enchantment card in your graveyard. -/
-  | artEnchCardInYourGraveyard
+  /-- Target artifact/enchantment or Equipment/instant/sorcery card in your graveyard. -/
+  | multiTypeInYourGraveyard (equipInstSorc : Bool := false)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A spell or ability target on the stack (CR 115.1 / 405.1). -/
 inductive StackTarget where
-  /-- A spell on the stack. -/
-  | spell
-  /-- A creature spell on the stack. -/
-  | creatureSpell
+  /-- A spell (or creature spell) on the stack. -/
+  | spell (creatureOnly : Bool := false)
   /-- A creature spell with power or toughness at most `n`. -/
   | creatureSpellPTAtMost (n : Nat)
-  /-- An activated or triggered ability you control from a creature source
-  (Echo; MSH 74). -/
-  | stackAbilityFromCreatureSource
-  /-- An activated or triggered ability you control from an artifact source
-  (Scientist Supreme of A.I.M.; MSH 87). -/
-  | stackAbilityFromArtifactSource
+  /-- An activated or triggered ability you control from a creature or artifact source. -/
+  | stackAbilityFromSource (fromCreature : Bool := true)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- A player target, or a cross-category target involving a player or graveyard
 (CR 115.1 / 115.4). -/
 inductive PlayerTarget where
-  /-- Target player (any player). -/
-  | player
-  /-- Target opponent. -/
-  | opponent
-  /-- A player or a creature/planeswalker/battle (“any target”, CR 115.4). -/
-  | playerOrCreature
-  /-- Target permanent or player. -/
-  | permanentOrPlayer
+  /-- Target player or target opponent. -/
+  | player (opponentOnly : Bool := false)
+  /-- “Any target” (CR 115.4) or target permanent or player. -/
+  | playerOrPermanent (anyPermanent : Bool := false)
   /-- A creature on the battlefield, or a creature card in a graveyard. -/
   | creatureOrGyCreatureCard
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Multiple-target or sequential-slot targeting shapes (CR 115.1 / 601.2c). -/
 inductive MultiTarget where
-  /-- Target player, then target creature (Panther Pounce). -/
-  | playerThenCreature
-  /-- Target creature an opponent controls, then up to one creature you
-  control (Trickster's Stratagem). -/
-  | oppCreatureThenUpToOneCreatureYouControl
-  /-- First a creature you control, then a creature an opponent controls. -/
-  | creatureYouControlThenOppCreature
+  /-- Target player and target creature (or up to one creature then player). -/
+  | playerAndCreature (creatureFirstUpToOne : Bool := false)
+  /-- Sequential own and opponent creature/planeswalker targets. -/
+  | ownAndOppPermanent (oppFirst : Bool := false) (orPlaneswalker : Bool := false) (planeswalkerFirst : Bool := false)
   /-- Two target nonland permanents that share a card type. -/
   | twoNonlandsSharingType
-  /-- Two target creatures and/or lands you control. -/
-  | twoCreaturesOrLandsYouControl
-  /-- Target Equipment you control, then up to one target creature you control. -/
-  | equipmentYouControlThenCreatureYouControl
-  /-- Up to one target Equipment you control, then target creature you control
-  (Swordsman). -/
-  | upToOneEquipmentThenCreatureYouControl
-  /-- Two target players (Gleaming Splendor). -/
-  | twoPlayers
-  /-- Up to one target creature, then target player (e.g. Meager Meal). -/
-  | upToOneCreatureThenPlayer
-  /-- Two target artifacts you control. -/
-  | twoArtifactsYouControl
-  /-- Target creature you control, then a creature or planeswalker an
-  opponent controls. -/
-  | creatureYouControlThenOppCreatureOrPlaneswalker
-  /-- Target planeswalker you control, then a creature or planeswalker an
-  opponent controls. -/
-  | planeswalkerYouControlThenOppCreatureOrPlaneswalker
+  /-- Two targets of the same kind (`twoCreaturesOrLandsYouControl`, `twoArtifactsYouControl`, `twoPlayers`). -/
+  | twoSameKind (artifacts : Bool := false) (players : Bool := false)
+  /-- Target Equipment you control and target creature you control. -/
+  | equipmentThenCreatureYouControl (optionalEquipment : Bool := false)
   /-- Up to two target creatures whose total mana value is `n` or less. -/
   | upToTwoCreaturesTotalMvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -310,104 +226,104 @@ deriving Repr, Inhabited, BEq, DecidableEq
 namespace EffectTargetKind
 
 -- Battlefield permanent target aliases (CR 115.1 / 110.1)
-@[match_pattern] abbrev creatureYouControl : EffectTargetKind := .battlefield .creatureYouControl
-@[match_pattern] abbrev anotherCreatureYouControl : EffectTargetKind := .battlefield .anotherCreatureYouControl
-@[match_pattern] abbrev anotherCreature : EffectTargetKind := .battlefield .anotherCreature
-@[match_pattern] abbrev oppCreature : EffectTargetKind := .battlefield .oppCreature
-@[match_pattern] abbrev oppTappedCreature : EffectTargetKind := .battlefield .oppTappedCreature
-@[match_pattern] abbrev creature : EffectTargetKind := .battlefield .creature
+@[match_pattern] abbrev creatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl false false)
+@[match_pattern] abbrev anotherCreatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl true false)
+@[match_pattern] abbrev anotherCreature : EffectTargetKind := .battlefield (.creature true)
+@[match_pattern] abbrev oppCreature : EffectTargetKind := .battlefield (.oppCreature false false)
+@[match_pattern] abbrev oppTappedCreature : EffectTargetKind := .battlefield (.oppCreature true false)
+@[match_pattern] abbrev creature : EffectTargetKind := .battlefield (.creature false)
 @[match_pattern] abbrev creatureWithFlying : EffectTargetKind := .battlefield .creatureWithFlying
-@[match_pattern] abbrev artifactOrLand : EffectTargetKind := .battlefield .artifactOrLand
-@[match_pattern] abbrev colorlessNonland : EffectTargetKind := .battlefield .colorlessNonland
-@[match_pattern] abbrev artifactOrEnchantment : EffectTargetKind := .battlefield .artifactOrEnchantment
-@[match_pattern] abbrev artifactOrCreatureYouControl : EffectTargetKind := .battlefield .artifactOrCreatureYouControl
-@[match_pattern] abbrev nonland : EffectTargetKind := .battlefield .nonland
-@[match_pattern] abbrev oppNonland : EffectTargetKind := .battlefield .oppNonland
-@[match_pattern] abbrev attackingCreatureWithoutFlying : EffectTargetKind := .battlefield .attackingCreatureWithoutFlying
+@[match_pattern] abbrev artifactOrLand : EffectTargetKind := .battlefield (.twoTypes false true false)
+@[match_pattern] abbrev colorlessNonland : EffectTargetKind := .battlefield (.nonland false false true)
+@[match_pattern] abbrev artifactOrEnchantment : EffectTargetKind := .battlefield (.artifactOrEnchantment false)
+@[match_pattern] abbrev artifactOrCreatureYouControl : EffectTargetKind := .battlefield (.twoTypes true true true)
+@[match_pattern] abbrev nonland : EffectTargetKind := .battlefield (.nonland false false false)
+@[match_pattern] abbrev oppNonland : EffectTargetKind := .battlefield (.nonland true false false)
+@[match_pattern] abbrev attackingCreatureWithoutFlying : EffectTargetKind := .battlefield (.attackingCreature true false false)
 @[match_pattern] abbrev creatureYouControlSubtype (subtype : String) : EffectTargetKind :=
   .battlefield (.creatureYouControlSubtype subtype)
 @[match_pattern] abbrev defendingPlayerCreature : EffectTargetKind := .battlefield .defendingPlayerCreature
-@[match_pattern] abbrev creaturePowerAtLeast (n : Int) : EffectTargetKind := .battlefield (.creaturePowerAtLeast n)
-@[match_pattern] abbrev creaturePowerAtMost (n : Int) : EffectTargetKind := .battlefield (.creaturePowerAtMost n)
+@[match_pattern] abbrev creaturePowerAtLeast (n : Int) : EffectTargetKind := .battlefield (.creatureStatAtLeast n false)
+@[match_pattern] abbrev creaturePowerAtMost (n : Int) : EffectTargetKind := .battlefield (.creaturePowerAtMost n .any false)
 @[match_pattern] abbrev creatureYouControlAnySubtype (subtypes : Array String) : EffectTargetKind :=
   .battlefield (.creatureYouControlAnySubtype subtypes)
-@[match_pattern] abbrev permanent : EffectTargetKind := .battlefield .permanent
-@[match_pattern] abbrev legendaryCreatureYouControl : EffectTargetKind := .battlefield .legendaryCreatureYouControl
+@[match_pattern] abbrev permanent : EffectTargetKind := .battlefield (.permanent .any)
+@[match_pattern] abbrev legendaryCreatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl false true)
 @[match_pattern] abbrev creatureYouControlPowerAtMost (n : Int) : EffectTargetKind :=
-  .battlefield (.creatureYouControlPowerAtMost n)
-@[match_pattern] abbrev artifact : EffectTargetKind := .battlefield .artifact
-@[match_pattern] abbrev oppArtifact : EffectTargetKind := .battlefield .oppArtifact
-@[match_pattern] abbrev artifactToken : EffectTargetKind := .battlefield .artifactToken
-@[match_pattern] abbrev attackingCreature : EffectTargetKind := .battlefield .attackingCreature
+  .battlefield (.creaturePowerAtMost n .you false)
+@[match_pattern] abbrev artifact : EffectTargetKind := .battlefield (.artifact .any false false)
+@[match_pattern] abbrev oppArtifact : EffectTargetKind := .battlefield (.artifact .opponent false false)
+@[match_pattern] abbrev artifactToken : EffectTargetKind := .battlefield (.artifact .any true false)
+@[match_pattern] abbrev attackingCreature : EffectTargetKind := .battlefield (.attackingCreature false false false)
 @[match_pattern] abbrev equipmentYouControl : EffectTargetKind := .battlefield .equipmentYouControl
-@[match_pattern] abbrev creatureOrLandYouControl : EffectTargetKind := .battlefield .creatureOrLandYouControl
-@[match_pattern] abbrev attackingOrBlockingCreature : EffectTargetKind := .battlefield .attackingOrBlockingCreature
+@[match_pattern] abbrev creatureOrLandYouControl : EffectTargetKind := .battlefield (.twoTypes true false true)
+@[match_pattern] abbrev attackingOrBlockingCreature : EffectTargetKind := .battlefield (.attackingCreature false true false)
 @[match_pattern] abbrev creatureMvAtMost (n : Nat) : EffectTargetKind := .battlefield (.creatureMvAtMost n)
 @[match_pattern] abbrev creatureToughnessAtLeast (n : Int) : EffectTargetKind :=
-  .battlefield (.creatureToughnessAtLeast n)
+  .battlefield (.creatureStatAtLeast n true)
 @[match_pattern] abbrev enchantmentMvAtLeast (n : Nat) : EffectTargetKind := .battlefield (.enchantmentMvAtLeast n)
-@[match_pattern] abbrev noncreatureArtifact : EffectTargetKind := .battlefield .noncreatureArtifact
+@[match_pattern] abbrev noncreatureArtifact : EffectTargetKind := .battlefield (.artifact .any false true)
 @[match_pattern] abbrev oppCreaturePowerAtMost (n : Int) : EffectTargetKind :=
-  .battlefield (.oppCreaturePowerAtMost n)
-@[match_pattern] abbrev oppCreatureDealtDamageThisTurn : EffectTargetKind := .battlefield .oppCreatureDealtDamageThisTurn
-@[match_pattern] abbrev nonlandNontoken : EffectTargetKind := .battlefield .nonlandNontoken
-@[match_pattern] abbrev artifactYouControl : EffectTargetKind := .battlefield .artifactYouControl
-@[match_pattern] abbrev creatureOrPlaneswalker : EffectTargetKind := .battlefield .creatureOrPlaneswalker
-@[match_pattern] abbrev permanentYouControl : EffectTargetKind := .battlefield .permanentYouControl
-@[match_pattern] abbrev oppPermanent : EffectTargetKind := .battlefield .oppPermanent
+  .battlefield (.creaturePowerAtMost n .opponent false)
+@[match_pattern] abbrev oppCreatureDealtDamageThisTurn : EffectTargetKind := .battlefield (.oppCreature false true)
+@[match_pattern] abbrev nonlandNontoken : EffectTargetKind := .battlefield (.nonland false true false)
+@[match_pattern] abbrev artifactYouControl : EffectTargetKind := .battlefield (.artifact .you false false)
+@[match_pattern] abbrev creatureOrPlaneswalker : EffectTargetKind := .battlefield (.creatureOrPlaneswalker .any false)
+@[match_pattern] abbrev permanentYouControl : EffectTargetKind := .battlefield (.permanent .you)
+@[match_pattern] abbrev oppPermanent : EffectTargetKind := .battlefield (.permanent .opponent)
 @[match_pattern] abbrev anotherCreatureYouControlPowerAtMost (n : Int) : EffectTargetKind :=
-  .battlefield (.anotherCreatureYouControlPowerAtMost n)
-@[match_pattern] abbrev planeswalkerYouControl : EffectTargetKind := .battlefield .planeswalkerYouControl
-@[match_pattern] abbrev oppCreatureOrPlaneswalker : EffectTargetKind := .battlefield .oppCreatureOrPlaneswalker
+  .battlefield (.creaturePowerAtMost n .you true)
+@[match_pattern] abbrev planeswalkerYouControl : EffectTargetKind := .battlefield (.creatureOrPlaneswalker .you true)
+@[match_pattern] abbrev oppCreatureOrPlaneswalker : EffectTargetKind := .battlefield (.creatureOrPlaneswalker .opponent false)
 @[match_pattern] abbrev attackingAloneCreatureYouControl : EffectTargetKind :=
-  .battlefield .attackingAloneCreatureYouControl
+  .battlefield (.attackingCreature false false true)
 @[match_pattern] abbrev noncreatureArtifactOrEnchantment : EffectTargetKind :=
-  .battlefield .noncreatureArtifactOrEnchantment
+  .battlefield (.artifactOrEnchantment true)
 
 -- Graveyard card target aliases (CR 115.1 / 404.1)
 @[match_pattern] abbrev elfInYourGraveyard : EffectTargetKind := .graveyard .elfInYourGraveyard
 @[match_pattern] abbrev oppGraveyardCard : EffectTargetKind := .graveyard .oppGraveyardCard
-@[match_pattern] abbrev creatureCardInYourGraveyard : EffectTargetKind := .graveyard .creatureCardInYourGraveyard
+@[match_pattern] abbrev creatureCardInYourGraveyard : EffectTargetKind := .graveyard (.cardInYourGraveyard false)
 @[match_pattern] abbrev creatureCardInYourGraveyardMvAtMost (n : Nat) : EffectTargetKind :=
   .graveyard (.creatureCardInYourGraveyardMvAtMost n)
-@[match_pattern] abbrev permanentCardInYourGraveyard : EffectTargetKind := .graveyard .permanentCardInYourGraveyard
+@[match_pattern] abbrev permanentCardInYourGraveyard : EffectTargetKind := .graveyard (.cardInYourGraveyard true)
 @[match_pattern] abbrev equipmentInstantOrSorceryInYourGraveyard : EffectTargetKind :=
-  .graveyard .equipmentInstantOrSorceryInYourGraveyard
-@[match_pattern] abbrev artEnchCardInYourGraveyard : EffectTargetKind := .graveyard .artEnchCardInYourGraveyard
+  .graveyard (.multiTypeInYourGraveyard true)
+@[match_pattern] abbrev artEnchCardInYourGraveyard : EffectTargetKind := .graveyard (.multiTypeInYourGraveyard false)
 
 -- Stack spell / ability target aliases (CR 115.1 / 405.1)
-@[match_pattern] abbrev spell : EffectTargetKind := .stack .spell
-@[match_pattern] abbrev creatureSpell : EffectTargetKind := .stack .creatureSpell
+@[match_pattern] abbrev spell : EffectTargetKind := .stack (.spell false)
+@[match_pattern] abbrev creatureSpell : EffectTargetKind := .stack (.spell true)
 @[match_pattern] abbrev creatureSpellPTAtMost (n : Nat) : EffectTargetKind := .stack (.creatureSpellPTAtMost n)
-@[match_pattern] abbrev stackAbilityFromCreatureSource : EffectTargetKind := .stack .stackAbilityFromCreatureSource
-@[match_pattern] abbrev stackAbilityFromArtifactSource : EffectTargetKind := .stack .stackAbilityFromArtifactSource
+@[match_pattern] abbrev stackAbilityFromCreatureSource : EffectTargetKind := .stack (.stackAbilityFromSource true)
+@[match_pattern] abbrev stackAbilityFromArtifactSource : EffectTargetKind := .stack (.stackAbilityFromSource false)
 
 -- Player and cross-category target aliases (CR 115.1 / 115.4)
-@[match_pattern] abbrev player : EffectTargetKind := .playerTarget .player
-@[match_pattern] abbrev opponent : EffectTargetKind := .playerTarget .opponent
-@[match_pattern] abbrev playerOrCreature : EffectTargetKind := .playerTarget .playerOrCreature
-@[match_pattern] abbrev permanentOrPlayer : EffectTargetKind := .playerTarget .permanentOrPlayer
+@[match_pattern] abbrev player : EffectTargetKind := .playerTarget (.player false)
+@[match_pattern] abbrev opponent : EffectTargetKind := .playerTarget (.player true)
+@[match_pattern] abbrev playerOrCreature : EffectTargetKind := .playerTarget (.playerOrPermanent false)
+@[match_pattern] abbrev permanentOrPlayer : EffectTargetKind := .playerTarget (.playerOrPermanent true)
 @[match_pattern] abbrev creatureOrGyCreatureCard : EffectTargetKind := .playerTarget .creatureOrGyCreatureCard
 
 -- Multi-target and sequential-slot target aliases (CR 115.1 / 601.2c)
-@[match_pattern] abbrev playerThenCreature : EffectTargetKind := .sequence .playerThenCreature
+@[match_pattern] abbrev playerThenCreature : EffectTargetKind := .sequence (.playerAndCreature false)
 @[match_pattern] abbrev oppCreatureThenUpToOneCreatureYouControl : EffectTargetKind :=
-  .sequence .oppCreatureThenUpToOneCreatureYouControl
+  .sequence (.ownAndOppPermanent true false false)
 @[match_pattern] abbrev creatureYouControlThenOppCreature : EffectTargetKind :=
-  .sequence .creatureYouControlThenOppCreature
+  .sequence (.ownAndOppPermanent false false false)
 @[match_pattern] abbrev twoNonlandsSharingType : EffectTargetKind := .sequence .twoNonlandsSharingType
-@[match_pattern] abbrev twoCreaturesOrLandsYouControl : EffectTargetKind := .sequence .twoCreaturesOrLandsYouControl
+@[match_pattern] abbrev twoCreaturesOrLandsYouControl : EffectTargetKind := .sequence (.twoSameKind false false)
 @[match_pattern] abbrev equipmentYouControlThenCreatureYouControl : EffectTargetKind :=
-  .sequence .equipmentYouControlThenCreatureYouControl
+  .sequence (.equipmentThenCreatureYouControl false)
 @[match_pattern] abbrev upToOneEquipmentThenCreatureYouControl : EffectTargetKind :=
-  .sequence .upToOneEquipmentThenCreatureYouControl
-@[match_pattern] abbrev twoPlayers : EffectTargetKind := .sequence .twoPlayers
-@[match_pattern] abbrev upToOneCreatureThenPlayer : EffectTargetKind := .sequence .upToOneCreatureThenPlayer
-@[match_pattern] abbrev twoArtifactsYouControl : EffectTargetKind := .sequence .twoArtifactsYouControl
+  .sequence (.equipmentThenCreatureYouControl true)
+@[match_pattern] abbrev twoPlayers : EffectTargetKind := .sequence (.twoSameKind false true)
+@[match_pattern] abbrev upToOneCreatureThenPlayer : EffectTargetKind := .sequence (.playerAndCreature true)
+@[match_pattern] abbrev twoArtifactsYouControl : EffectTargetKind := .sequence (.twoSameKind true false)
 @[match_pattern] abbrev creatureYouControlThenOppCreatureOrPlaneswalker : EffectTargetKind :=
-  .sequence .creatureYouControlThenOppCreatureOrPlaneswalker
+  .sequence (.ownAndOppPermanent false true false)
 @[match_pattern] abbrev planeswalkerYouControlThenOppCreatureOrPlaneswalker : EffectTargetKind :=
-  .sequence .planeswalkerYouControlThenOppCreatureOrPlaneswalker
+  .sequence (.ownAndOppPermanent false true true)
 @[match_pattern] abbrev upToTwoCreaturesTotalMvAtMost (n : Nat) : EffectTargetKind :=
   .sequence (.upToTwoCreaturesTotalMvAtMost n)
 
@@ -432,99 +348,101 @@ deriving Repr, Inhabited, BEq
 
 /-- Classification of a battlefield permanent targeting shape (CR 115.1 / 110.1). -/
 def specBattlefield : BattlefieldTarget → Spec
-  | .creatureYouControl =>
-    { noun := "target creature you control", prefer := .own }
-  | .anotherCreatureYouControl =>
-    { noun := "another target creature you control", prefer := .own }
-  | .anotherCreature =>
-    { noun := "another target creature" }
-  | .oppCreature =>
-    { noun := "target creature an opponent controls" }
-  | .oppTappedCreature =>
-    { noun := "target tapped creature an opponent controls" }
-  | .creature =>
-    { noun := "target creature" }
+  | .creatureYouControl another legendary =>
+    let noun :=
+      if another then "another target creature you control"
+      else if legendary then "target legendary creature you control"
+      else "target creature you control"
+    { noun, prefer := .own }
+  | .creature another =>
+    { noun := if another then "another target creature" else "target creature" }
+  | .oppCreature tapped dealtDamageThisTurn =>
+    let noun :=
+      if tapped then "target tapped creature an opponent controls"
+      else if dealtDamageThisTurn then "target creature an opponent controls that dealt damage this turn"
+      else "target creature an opponent controls"
+    { noun }
   | .creatureWithFlying =>
     { noun := "target creature with flying" }
-  | .artifactOrLand =>
-    { noun := "target artifact or land" }
-  | .colorlessNonland =>
-    { noun := "target colorless nonland permanent" }
-  | .artifactOrEnchantment =>
-    { noun := "target artifact or enchantment" }
-  | .artifactOrCreatureYouControl =>
-    { noun := "target artifact or creature you control", prefer := .own }
-  | .nonland =>
-    { noun := "target nonland permanent", prefer := .ownThenOpponent }
-  | .oppNonland =>
-    { noun := "target nonland permanent an opponent controls" }
-  | .attackingCreatureWithoutFlying =>
-    { noun := "target attacking creature without flying", prefer := .own }
+  | .twoTypes includeCreature includeArtifact youControl =>
+    let noun :=
+      if !includeCreature then "target artifact or land"
+      else if includeArtifact then "target artifact or creature you control"
+      else "target creature or land you control"
+    { noun, prefer := if youControl then .own else .opponent }
+  | .artifactOrEnchantment noncreature =>
+    { noun :=
+        if noncreature then "target noncreature artifact or noncreature enchantment"
+        else "target artifact or enchantment" }
+  | .nonland opp nontoken colorless =>
+    if colorless then
+      { noun := "target colorless nonland permanent" }
+    else if opp then
+      { noun := "target nonland permanent an opponent controls" }
+    else if nontoken then
+      { noun := "target nonland, nontoken permanent", prefer := .ownThenOpponent }
+    else
+      { noun := "target nonland permanent", prefer := .ownThenOpponent }
+  | .attackingCreature withoutFlying orBlocking aloneYouControl =>
+    if withoutFlying then
+      { noun := "target attacking creature without flying", prefer := .own }
+    else if orBlocking then
+      { noun := "target attacking or blocking creature" }
+    else if aloneYouControl then
+      { noun := "target creature you control that's attacking alone", prefer := .own }
+    else
+      { noun := "target attacking creature", prefer := .own }
   | .creatureYouControlSubtype subtype =>
     { noun := s!"target {subtype} you control", prefer := .own }
   | .defendingPlayerCreature =>
     { noun := "target creature defending player controls" }
-  | .creaturePowerAtLeast n =>
-    { noun := s!"target creature with power {n} or greater" }
-  | .creaturePowerAtMost n =>
-    { noun := s!"target creature with power {n} or less", prefer := .own }
+  | .creatureStatAtLeast n toughness =>
+    let stat := if toughness then "toughness" else "power"
+    { noun := s!"target creature with {stat} {n} or greater" }
+  | .creaturePowerAtMost n controller another =>
+    match controller with
+    | .you =>
+      let lead := if another then "another target" else "target"
+      { noun := s!"{lead} creature you control with power {n} or less", prefer := .own }
+    | .opponent =>
+      { noun := s!"target creature an opponent controls with power {n} or less" }
+    | _ =>
+      { noun := s!"target creature with power {n} or less", prefer := .own }
   | .creatureYouControlAnySubtype subtypes =>
     { noun :=
         if subtypes.isEmpty then "target creature you control"
         else s!"target {orJoin subtypes.toList} you control"
       prefer := .own }
-  | .permanent =>
-    { noun := "target permanent", prefer := .ownThenOpponent }
-  | .legendaryCreatureYouControl =>
-    { noun := "target legendary creature you control", prefer := .own }
-  | .creatureYouControlPowerAtMost n =>
-    { noun := s!"target creature you control with power {n} or less", prefer := .own }
-  | .artifact =>
-    { noun := "target artifact" }
-  | .oppArtifact =>
-    { noun := "target artifact an opponent controls" }
-  | .artifactToken =>
-    { noun := "target artifact token" }
-  | .attackingCreature =>
-    { noun := "target attacking creature", prefer := .own }
+  | .permanent controller =>
+    match controller with
+    | .you => { noun := "target permanent you control", prefer := .own }
+    | .opponent => { noun := "target permanent an opponent controls", prefer := .opponent }
+    | _ => { noun := "target permanent", prefer := .ownThenOpponent }
+  | .artifact controller tokenOnly noncreature =>
+    if tokenOnly then
+      { noun := "target artifact token" }
+    else if noncreature then
+      { noun := "target noncreature artifact" }
+    else
+      match controller with
+      | .you => { noun := "target artifact you control", prefer := .own }
+      | .opponent => { noun := "target artifact an opponent controls" }
+      | _ => { noun := "target artifact" }
   | .equipmentYouControl =>
     { noun := "target Equipment you control", prefer := .own }
-  | .creatureOrLandYouControl =>
-    { noun := "target creature or land you control", prefer := .own }
-  | .attackingOrBlockingCreature =>
-    { noun := "target attacking or blocking creature" }
   | .creatureMvAtMost n =>
     { noun := s!"target creature with mana value {n} or less" }
-  | .creatureToughnessAtLeast n =>
-    { noun := s!"target creature with toughness {n} or greater" }
   | .enchantmentMvAtLeast n =>
     { noun := s!"target enchantment with mana value {n} or greater" }
-  | .noncreatureArtifact =>
-    { noun := "target noncreature artifact" }
-  | .oppCreaturePowerAtMost n =>
-    { noun := s!"target creature an opponent controls with power {n} or less" }
-  | .oppCreatureDealtDamageThisTurn =>
-    { noun := "target creature an opponent controls that dealt damage this turn" }
-  | .nonlandNontoken =>
-    { noun := "target nonland, nontoken permanent", prefer := .ownThenOpponent }
-  | .artifactYouControl =>
-    { noun := "target artifact you control", prefer := .own }
-  | .creatureOrPlaneswalker =>
-    { noun := "target creature or planeswalker" }
-  | .permanentYouControl =>
-    { noun := "target permanent you control", prefer := .own }
-  | .oppPermanent =>
-    { noun := "target permanent an opponent controls", prefer := .opponent }
-  | .anotherCreatureYouControlPowerAtMost n =>
-    { noun := s!"another target creature you control with power {n} or less", prefer := .own }
-  | .planeswalkerYouControl =>
-    { noun := "target planeswalker you control", prefer := .own }
-  | .oppCreatureOrPlaneswalker =>
-    { noun := "target creature or planeswalker an opponent controls", prefer := .opponent }
-  | .attackingAloneCreatureYouControl =>
-    { noun := "target creature you control that's attacking alone", prefer := .own }
-  | .noncreatureArtifactOrEnchantment =>
-    { noun := "target noncreature artifact or noncreature enchantment" }
+  | .creatureOrPlaneswalker controller planeswalkerOnly =>
+    if planeswalkerOnly then
+      { noun := "target planeswalker you control", prefer := .own }
+    else
+      match controller with
+      | .opponent =>
+        { noun := "target creature or planeswalker an opponent controls", prefer := .opponent }
+      | _ =>
+        { noun := "target creature or planeswalker" }
 
 /-- Classification of a graveyard card targeting shape (CR 115.1 / 404.1). -/
 def specGraveyard (t : GraveyardTarget) : Spec :=
@@ -532,13 +450,13 @@ def specGraveyard (t : GraveyardTarget) : Spec :=
     match t with
     | .elfInYourGraveyard => "target Elf card from your graveyard"
     | .oppGraveyardCard => "target card from an opponent's graveyard"
-    | .creatureCardInYourGraveyard => "target creature card from your graveyard"
+    | .cardInYourGraveyard false => "target creature card from your graveyard"
+    | .cardInYourGraveyard true => "target permanent card in your graveyard"
     | .creatureCardInYourGraveyardMvAtMost n =>
       s!"target creature card with mana value {n} or less from your graveyard"
-    | .permanentCardInYourGraveyard => "target permanent card in your graveyard"
-    | .equipmentInstantOrSorceryInYourGraveyard =>
+    | .multiTypeInYourGraveyard true =>
       "target Equipment, instant, or sorcery card from your graveyard"
-    | .artEnchCardInYourGraveyard =>
+    | .multiTypeInYourGraveyard false =>
       "target artifact or enchantment card from your graveyard"
   { noun, prefer := .last }
 
@@ -546,25 +464,23 @@ def specGraveyard (t : GraveyardTarget) : Spec :=
 def specStack (t : StackTarget) : Spec :=
   let noun :=
     match t with
-    | .spell => "target spell"
-    | .creatureSpell => "target creature spell"
+    | .spell false => "target spell"
+    | .spell true => "target creature spell"
     | .creatureSpellPTAtMost n =>
       s!"target creature spell with power or toughness {n} or less"
-    | .stackAbilityFromCreatureSource =>
+    | .stackAbilityFromSource true =>
       "target activated or triggered ability you control from a creature source"
-    | .stackAbilityFromArtifactSource =>
+    | .stackAbilityFromSource false =>
       "target activated or triggered ability you control from an artifact source"
   { noun, stackSpell := true }
 
 /-- Classification of a player or cross-category targeting shape (CR 115.1 / 115.4). -/
 def specPlayer : PlayerTarget → Spec
-  | .player =>
-    { noun := "target player", prefer := .opponentPlayer }
-  | .opponent =>
-    { noun := "target opponent", prefer := .opponentPlayer }
-  | .playerOrCreature =>
+  | .player opponentOnly =>
+    { noun := if opponentOnly then "target opponent" else "target player", prefer := .opponentPlayer }
+  | .playerOrPermanent false =>
     { noun := "any target", prefer := .opponentPlayer }
-  | .permanentOrPlayer =>
+  | .playerOrPermanent true =>
     { noun := "target permanent or player", prefer := .ownThenOpponent }
   | .creatureOrGyCreatureCard =>
     { noun := "up to one target creature or creature card in a graveyard",
@@ -572,69 +488,69 @@ def specPlayer : PlayerTarget → Spec
 
 /-- Classification of a multi-target or sequential-slot targeting shape (CR 115.1 / 601.2c). -/
 def specMulti : MultiTarget → Spec
-  | .playerThenCreature =>
+  | .playerAndCreature false =>
     { count := 2
       noun := "target player and target creature"
       prefer := .opponentPlayer
       slots := #[.player, .creature] }
-  | .oppCreatureThenUpToOneCreatureYouControl =>
-    { count := 2
-      noun := "target creature an opponent controls and up to one target creature you control"
-      prefer := .opponent
-      slots := #[.oppCreature, .creatureYouControl]
-      optionalSlots := #[1] }
-  | .creatureYouControlThenOppCreature =>
-    { count := 2
-      noun := "target creature you control and a creature an opponent controls"
-      prefer := .ownThenOpponent
-      slots := #[.creatureYouControl, .oppCreature] }
-  | .twoNonlandsSharingType =>
-    { count := 2
-      noun := "two target nonland permanents that share a card type"
-      prefer := .ownThenOpponent
-      slots := #[.nonland, .nonland] }
-  | .twoCreaturesOrLandsYouControl =>
-    { count := 2
-      noun := "two target creatures and/or lands you control"
-      prefer := .own
-      slots := #[.creatureOrLandYouControl, .creatureOrLandYouControl] }
-  | .equipmentYouControlThenCreatureYouControl =>
-    { count := 2
-      noun := "target Equipment you control and up to one target creature you control"
-      prefer := .own
-      slots := #[.equipmentYouControl, .creatureYouControl] }
-  | .upToOneEquipmentThenCreatureYouControl =>
-    { count := 2
-      noun := "up to one target Equipment you control and target creature you control"
-      prefer := .own
-      slots := #[.equipmentYouControl, .creatureYouControl]
-      optionalSlots := #[0] }
-  | .twoPlayers =>
-    { count := 2
-      noun := "two target players"
-      prefer := .ownThenOpponent
-      slots := #[.player, .player] }
-  | .upToOneCreatureThenPlayer =>
+  | .playerAndCreature true =>
     { count := 2
       noun := "up to one target creature and target player"
       prefer := .own
       slots := #[.creature, .player]
       optionalSlots := #[0] }
-  | .twoArtifactsYouControl =>
+  | .ownAndOppPermanent true _ _ =>
     { count := 2
-      noun := "target artifact you control and a second target artifact you control"
-      prefer := .own
-      slots := #[.artifactYouControl, .artifactYouControl] }
-  | .creatureYouControlThenOppCreatureOrPlaneswalker =>
+      noun := "target creature an opponent controls and up to one target creature you control"
+      prefer := .opponent
+      slots := #[.oppCreature, .creatureYouControl]
+      optionalSlots := #[1] }
+  | .ownAndOppPermanent false false _ =>
+    { count := 2
+      noun := "target creature you control and a creature an opponent controls"
+      prefer := .ownThenOpponent
+      slots := #[.creatureYouControl, .oppCreature] }
+  | .ownAndOppPermanent false true false =>
     { count := 2
       noun := "target creature you control"
       prefer := .ownThenOpponent
       slots := #[.creatureYouControl, .oppCreatureOrPlaneswalker] }
-  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker =>
+  | .ownAndOppPermanent false true true =>
     { count := 2
       noun := "target planeswalker you control"
       prefer := .ownThenOpponent
       slots := #[.planeswalkerYouControl, .oppCreatureOrPlaneswalker] }
+  | .twoNonlandsSharingType =>
+    { count := 2
+      noun := "two target nonland permanents that share a card type"
+      prefer := .ownThenOpponent
+      slots := #[.nonland, .nonland] }
+  | .twoSameKind false false =>
+    { count := 2
+      noun := "two target creatures and/or lands you control"
+      prefer := .own
+      slots := #[.creatureOrLandYouControl, .creatureOrLandYouControl] }
+  | .twoSameKind true false =>
+    { count := 2
+      noun := "target artifact you control and a second target artifact you control"
+      prefer := .own
+      slots := #[.artifactYouControl, .artifactYouControl] }
+  | .twoSameKind _ true =>
+    { count := 2
+      noun := "two target players"
+      prefer := .ownThenOpponent
+      slots := #[.player, .player] }
+  | .equipmentThenCreatureYouControl false =>
+    { count := 2
+      noun := "target Equipment you control and up to one target creature you control"
+      prefer := .own
+      slots := #[.equipmentYouControl, .creatureYouControl] }
+  | .equipmentThenCreatureYouControl true =>
+    { count := 2
+      noun := "up to one target Equipment you control and target creature you control"
+      prefer := .own
+      slots := #[.equipmentYouControl, .creatureYouControl]
+      optionalSlots := #[0] }
   | .upToTwoCreaturesTotalMvAtMost n =>
     { count := 2
       noun := s!"up to two target creatures with total mana value {n} or less" }

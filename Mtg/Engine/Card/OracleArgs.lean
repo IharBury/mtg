@@ -215,19 +215,16 @@ def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   match k with
   | .creatureYouControlSubtype s => return .creatureYouControlSubtype (← takeStr s)
   | .creatureSpellPTAtMost n => return .creatureSpellPTAtMost (← takeNat n)
-  | .creaturePowerAtLeast n => return .creaturePowerAtLeast (← takeInt n)
-  | .creaturePowerAtMost n => return .creaturePowerAtMost (← takeInt n)
+  | .battlefield (.creatureStatAtLeast n toughness) =>
+    return .battlefield (.creatureStatAtLeast (← takeInt n) toughness)
+  | .battlefield (.creaturePowerAtMost n controller another) =>
+    return .battlefield (.creaturePowerAtMost (← takeInt n) controller another)
   | .creatureYouControlAnySubtype ss => return .creatureYouControlAnySubtype (← takeStrs ss)
   | .creatureCardInYourGraveyardMvAtMost n =>
     return .creatureCardInYourGraveyardMvAtMost (← takeNat n)
-  | .creatureYouControlPowerAtMost n => return .creatureYouControlPowerAtMost (← takeInt n)
   | .creatureMvAtMost n => return .creatureMvAtMost (← takeNat n)
-  | .creatureToughnessAtLeast n => return .creatureToughnessAtLeast (← takeInt n)
   | .enchantmentMvAtLeast n => return .enchantmentMvAtLeast (← takeNat n)
-  | .oppCreaturePowerAtMost n => return .oppCreaturePowerAtMost (← takeInt n)
   | .upToTwoCreaturesTotalMvAtMost n => return .upToTwoCreaturesTotalMvAtMost (← takeNat n)
-  | .anotherCreatureYouControlPowerAtMost n =>
-    return .anotherCreatureYouControlPowerAtMost (← takeInt n)
   | k => return k
 
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
