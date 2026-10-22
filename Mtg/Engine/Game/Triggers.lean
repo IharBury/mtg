@@ -13,34 +13,40 @@ batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
 namespace Mtg.Engine
 namespace Game
 
-/-- Modes of a modal triggered ability (“choose one —”) printed outside
-Reality Fracture (CR 700.2). -/
-def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
-  match ab.targeting.kind, ab.effect.resolution with
-  | .none, .or [.tap .target, .untap .target] =>
-    #[{ targeting := .of .oppCreature, resolution := .onPermanent .tap
-        phrase := "Tap target creature an opponent controls" },
-      { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
-        phrase := "Untap target creature you control" }]
-  | _, .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .createTokens .treasure (.fixed 1) false _ _] =>
-    #[{ targeting := .of (.creatureYouControlAnySubtype #["Wolf"])
-        resolution := .onPermanent (.plusOne 1)
-        phrase := "Put a +1/+1 counter on target Wolf you control" },
-      { resolution := .createTokens .treasure 1
-        phrase := "Create a Treasure token" }]
-  | _, .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .returnToHand .graveyardCard _] =>
+private def sharedTriggerModesPart2 (r : Resolution) : Array Effect :=
+  match r with
+  | .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .returnToHand .graveyardCard _] =>
     #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
         resolution := .putCounters (.ofKind .plusOnePlusOne 1) (.target .eachPermanent),
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
       { targeting := .of .artEnchCardInYourGraveyard,
         resolution := .returnToHand (.target .graveyardCard),
         phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
-  | _, .chooseModes [.createTokens .soldier11white (.fixed 1) false _ _, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown =>
+  | .chooseModes [.createTokens .soldier11white (.fixed 1) false _ _, .pump (.fixed 1) (.fixed 1) .creaturesYouControl] .fromLastKnown =>
     #[{ resolution := .createTokens .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },
       { resolution := .pump (.fixed 1) (.fixed 1) .creaturesYouControl
         phrase := "Creatures you control get +1/+1 until end of turn" }]
-  | _, _ => #[]
+  | _ => #[]
+
+/-- Modes of a modal triggered ability (“choose one —”) printed outside
+Reality Fracture (CR 700.2). -/
+def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
+  match ab.effect.resolution with
+  | .or [.tap .target, .untap .target] =>
+    if ab.targeting.kind == .none then
+      #[{ targeting := .of .oppCreature, resolution := .onPermanent .tap
+          phrase := "Tap target creature an opponent controls" },
+        { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
+          phrase := "Untap target creature you control" }]
+    else #[]
+  | .or [.putCounters (.ofKind .plusOnePlusOne 1) .permanent, .createTokens .treasure (.fixed 1) false _ _] =>
+    #[{ targeting := .of (.creatureYouControlAnySubtype #["Wolf"])
+        resolution := .onPermanent (.plusOne 1)
+        phrase := "Put a +1/+1 counter on target Wolf you control" },
+      { resolution := .createTokens .treasure 1
+        phrase := "Create a Treasure token" }]
+  | r => sharedTriggerModesPart2 r
 
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=

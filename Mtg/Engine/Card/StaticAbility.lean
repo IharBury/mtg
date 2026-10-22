@@ -23,25 +23,30 @@ Unified static-ability representation aligned with the Comprehensive Rules:
 namespace Mtg.Engine
 
 /-- Layer 7c power/toughness-modifying, Layer 4 type-changing, and Layer 7a CDA static effects (CR 613.1d / CR 604.3 / CR 613.4). -/
-inductive PtStatic where
-  | ptStaticFullKind (power toughness : Int := 0) (subtypes : Array String := #[])
-      (kOpt : Option Keywords := none) (ward : Nat := 0) (s : String := "") (natParam : Nat := 0)
-      (ty : CardType := .artifact) (supertype : Supertype := .legendary)
-      (manaOpt : Option (Array ManaType) := none) (costOpt : Option ManaCost := none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (attached : Bool := false) (conditional : Bool := false)
-      (stringOrCount : Bool := false) (groupOrSpecial : Bool := false) (ruleKind : Bool := false)
-      (isTypeOrCda : Bool := false) (b11 : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev PtStatic :=
+  Int × Int × Array String × Option Keywords × Nat × String × Nat ×
+    Option CardType × Option (Array ManaType) × Option ManaCost ×
+    Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool
 
 namespace PtStatic
+@[match_pattern] abbrev ptStaticFullKind (power toughness : Int := 0) (subtypes : Array String := #[])
+    (kOpt : Option Keywords := none) (ward : Nat := 0) (s : String := "") (natParam : Nat := 0)
+    (tyOpt : Option CardType := none)
+    (manaOpt : Option (Array ManaType) := none) (costOpt : Option ManaCost := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (attached : Bool := false) (conditional : Bool := false)
+    (stringOrCount : Bool := false) (groupOrSpecial : Bool := false) (ruleKind : Bool := false)
+    (isTypeOrCda : Bool := false) (b11 : Bool := false) : PtStatic :=
+  (power, toughness, subtypes, kOpt, ward, s, natParam, tyOpt, manaOpt, costOpt,
+    alt1, alt2, alt3, alt4, attached, conditional, stringOrCount, groupOrSpecial, ruleKind,
+    isTypeOrCda, b11)
 @[match_pattern] abbrev ptStaticKind (power toughness : Int := 0) (subtypes : Array String := #[])
     (kOpt : Option Keywords := none) (ward : Nat := 0) (s : String := "") (natParam : Nat := 0)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (attached : Bool := false) (conditional : Bool := false)
     (stringOrCount : Bool := false) (groupOrSpecial : Bool := false) (ruleKind : Bool := false)
     (isTypeOrCda : Bool := false) : PtStatic :=
-  .ptStaticFullKind power toughness subtypes kOpt ward s natParam .artifact .legendary none none alt1 alt2 alt3 false attached conditional stringOrCount groupOrSpecial ruleKind isTypeOrCda false
+  .ptStaticFullKind power toughness subtypes kOpt ward s natParam none none none alt1 alt2 alt3 false attached conditional stringOrCount groupOrSpecial ruleKind isTypeOrCda false
 end PtStatic
 
 /-- Layer 4 type-changing static effects (CR 613.1d), unified with `PtStatic`. -/
@@ -69,31 +74,31 @@ abbrev AbilityStatic := PtStatic
 
 namespace AbilityStatic
 @[match_pattern] abbrev abilityStaticKind (kOpt : Option Keywords := none) (subtypes : Array String := #[])
-    (subtype : String := "") (ty : CardType := .artifact) (ward : Nat := 0)
+    (subtype : String := "") (tyOpt : Option CardType := none) (ward : Nat := 0)
     (manaOpt : Option (Array ManaType) := none) (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false)
     (stateOrCounter : Bool := false) (permanentsOfType : Bool := false)
     (ruleKind : Bool := false) (manaGrant : Bool := false) : AbilityStatic :=
-  .ptStaticFullKind 0 0 subtypes kOpt ward subtype 0 ty .legendary manaOpt none alt1 alt2 alt3 alt4 stateOrCounter permanentsOfType ruleKind manaGrant false false false
+  .ptStaticFullKind 0 0 subtypes kOpt ward subtype 0 tyOpt manaOpt none alt1 alt2 alt3 alt4 stateOrCounter permanentsOfType ruleKind manaGrant false false false
 @[match_pattern] abbrev keywordGrantStatic (k : Keywords) (subtypes : Array String := #[]) (subtype : String := "")
-    (ty : CardType := .artifact) (alt1 : Bool := false) (alt2 : Bool := false)
+    (tyOpt : Option CardType := none) (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false)
     (stateOrCounter : Bool := false) (permanentsOfType : Bool := false) : AbilityStatic :=
-  .abilityStaticKind (some k) subtypes subtype ty 0 none alt1 alt2 alt3 alt4 stateOrCounter permanentsOfType false false
+  .abilityStaticKind (some k) subtypes subtype tyOpt 0 none alt1 alt2 alt3 alt4 stateOrCounter permanentsOfType false false
 @[match_pattern] abbrev abilityRuleStatic (ward : Nat := 0) (subtype : String := "") (alt1 : Bool := false)
     (alt2 : Bool := false) (equippedOrSelf : Bool := false) (global : Bool := false)
     (subtypeRule : Bool := false) (wardRule : Bool := false) : AbilityStatic :=
-  .abilityStaticKind none #[] subtype .artifact ward none alt1 alt2 equippedOrSelf global subtypeRule wardRule true false
+  .abilityStaticKind none #[] subtype none ward none alt1 alt2 equippedOrSelf global subtypeRule wardRule true false
 @[match_pattern] abbrev otherSubtypeHaveTapAddOneOf (subtypes : Array String) (mana : Array ManaType) : AbilityStatic :=
-  .abilityStaticKind none subtypes "" .artifact 0 (some mana) false false false false false false false true
+  .abilityStaticKind none subtypes "" none 0 (some mana) false false false false false false false true
 @[match_pattern] abbrev creaturesOrConditionalKeyword (k : Keywords) (subtypes : Array String := #[]) (subtype : String := "")
     (otherOnly : Bool := false) (ifControlOther : Bool := false) : AbilityStatic :=
-  .keywordGrantStatic k subtypes subtype .artifact otherOnly ifControlOther false false false false
+  .keywordGrantStatic k subtypes subtype none otherOnly ifControlOther false false false false
 @[match_pattern] abbrev stateOrCounterKeyword (k : Keywords) (alt1 : Bool := false) (alt2 : Bool := false)
     (equippedOrTokens : Bool := false) (plusOneThisTurn : Bool := false) : AbilityStatic :=
-  .keywordGrantStatic k #[] "" .artifact alt1 alt2 equippedOrTokens plusOneThisTurn true false
+  .keywordGrantStatic k #[] "" none alt1 alt2 equippedOrTokens plusOneThisTurn true false
 @[match_pattern] abbrev permanentsYouControlHave (ty : CardType) (creature : Bool := false) (k : Keywords) : AbilityStatic :=
-  .keywordGrantStatic k #[] "" ty creature false false false false true
+  .keywordGrantStatic k #[] "" (some ty) creature false false false false true
 @[match_pattern] abbrev attachedOrGlobalAbilityRule (alt1 : Bool := false) (alt2 : Bool := false)
     (equippedOrSelf : Bool := false) (global : Bool := false) : AbilityStatic :=
   .abilityRuleStatic 0 "" alt1 alt2 equippedOrSelf global false false
@@ -226,7 +231,7 @@ namespace CombatStatic
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (natRule : Bool := false) (powerRule : Bool := false) (subtypeOrKeyword : Bool := false)
     (isKeyword : Bool := false) : CombatStatic :=
-  .ptStaticFullKind intBound 0 subtypes kOpt n subtype 0 .artifact .legendary none costOpt alt1 alt2 alt3 alt4 natRule powerRule subtypeOrKeyword isKeyword false false false
+  .ptStaticFullKind intBound 0 subtypes kOpt n subtype 0 none none costOpt alt1 alt2 alt3 alt4 natRule powerRule subtypeOrKeyword isKeyword false false false
 @[match_pattern] abbrev combatRuleKind (n : Nat := 0) (intBound : Int := 0) (subtype : String := "")
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (natRule : Bool := false) (powerRule : Bool := false) : CombatStatic :=
@@ -276,40 +281,40 @@ abbrev RuleStatic := PtStatic
 
 namespace RuleStatic
 @[match_pattern] abbrev ruleStaticKind (n : Nat := 0) (subtype : String := "") (subtypes : Array String := #[])
-    (ty : CardType := .artifact) (s : Supertype := .legendary)
+    (tyOpt : Option CardType := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (exileDying : Bool := false) (extraCounterFlag : Bool := false) (noncombatBonus : Bool := false)
     (entersOrOpening : Bool := false) (damageOrState : Bool := false) (equippedOrAction : Bool := false)
     (paramRule : Bool := false) (isCostCast : Bool := false) : RuleStatic :=
-  .ptStaticFullKind 0 0 subtypes none n subtype 0 ty s none none alt1 alt2 alt3 exileDying extraCounterFlag noncombatBonus entersOrOpening damageOrState equippedOrAction paramRule isCostCast
+  .ptStaticFullKind 0 0 subtypes none n subtype 0 tyOpt none none alt1 alt2 alt3 exileDying extraCounterFlag noncombatBonus entersOrOpening damageOrState equippedOrAction paramRule isCostCast
 end RuleStatic
 
 /-- Cost modifiers, casting permissions, and casting restrictions (CR 601.2f / CR 601.3 / CR 305.1), unified with `RuleStatic`. -/
 abbrev CostCastStatic := RuleStatic
 
 namespace CostCastStatic
-@[match_pattern] abbrev costCastStaticKind (n : Nat := 0) (subtype : String := "") (ty : CardType := .artifact)
-    (s : Supertype := .legendary) (alt1 : Bool := false) (alt2 : Bool := false)
+@[match_pattern] abbrev costCastStaticKind (n : Nat := 0) (subtype : String := "") (tyOpt : Option CardType := none)
+    (alt1 : Bool := false) (alt2 : Bool := false)
     (bySubtype : Bool := false) (byType : Bool := false) (bySupertype : Bool := false)
     (actOrPerm : Bool := false) (zoneOrFlash : Bool := false)
     (castRestr : Bool := false) (noncreatureCost : Bool := false) (ruleKind : Bool := false) : CostCastStatic :=
-  .ruleStaticKind n subtype #[] ty s alt1 alt2 bySubtype byType bySupertype actOrPerm zoneOrFlash castRestr noncreatureCost ruleKind true
-@[match_pattern] abbrev numericCostLessStatic (n : Nat) (subtype : String := "") (ty : CardType := .artifact)
-    (s : Supertype := .legendary) (alt1 : Bool := false)
+  .ruleStaticKind n subtype #[] tyOpt alt1 alt2 bySubtype byType bySupertype actOrPerm zoneOrFlash castRestr noncreatureCost ruleKind true
+@[match_pattern] abbrev numericCostLessStatic (n : Nat) (subtype : String := "") (tyOpt : Option CardType := none)
+    (alt1 : Bool := false)
     (bySubtype : Bool := false) (byType : Bool := false) (bySupertype : Bool := false) : CostCastStatic :=
-  .costCastStaticKind n subtype ty s alt1 false bySubtype byType bySupertype false false false false false
+  .costCastStaticKind n subtype tyOpt alt1 false bySubtype byType bySupertype false false false false false
 @[match_pattern] abbrev costCastRuleKind (alt1 : Bool := false) (alt2 : Bool := false)
     (actOrPerm : Bool := false) (zoneOrFlash : Bool := false)
     (castRestr : Bool := false) (noncreatureCost : Bool := false) : CostCastStatic :=
-  .costCastStaticKind 0 "" .artifact .legendary alt1 alt2 false false false actOrPerm zoneOrFlash castRestr noncreatureCost true
+  .costCastStaticKind 0 "" none alt1 alt2 false false false actOrPerm zoneOrFlash castRestr noncreatureCost true
 @[match_pattern] abbrev abilityCostLess (n : Nat) (powerUp : Bool := false) : CostCastStatic :=
-  .numericCostLessStatic n "" .artifact .legendary powerUp false false false
+  .numericCostLessStatic n "" none powerUp false false false
 @[match_pattern] abbrev subtypeSpellsCostLess (subtype : String) (n : Nat) : CostCastStatic :=
-  .numericCostLessStatic n subtype .artifact .legendary false true false false
+  .numericCostLessStatic n subtype none false true false false
 @[match_pattern] abbrev typeSpellsCostLess (ty : CardType) (n : Nat) : CostCastStatic :=
-  .numericCostLessStatic n "" ty .legendary false false true false
+  .numericCostLessStatic n "" (some ty) false false true false
 @[match_pattern] abbrev supertypeSpellsCostLess (s : Supertype) (n : Nat) : CostCastStatic :=
-  .numericCostLessStatic n "" .artifact s false false false true
+  .numericCostLessStatic n "" (some s) false false false true
 @[match_pattern] abbrev instantSorceryCostLessEqualPower (equipped : Bool := false) : CostCastStatic :=
   .costCastRuleKind equipped false false false false false
 @[match_pattern] abbrev activationOrPermissionStatic (extraPowerUp : Bool := false) (asThoughHaste : Bool := false) : CostCastStatic :=
@@ -350,7 +355,7 @@ export CostCastStatic (
 )
 @[match_pattern] abbrev paramRuleStatic (n : Nat := 0) (subtype : String := "") (subtypes : Array String := #[])
     (includeBattles : Bool := false) (enduringSubtype : Bool := false) (anotherTrigger : Bool := false) : RuleStatic :=
-  .ruleStaticKind n subtype subtypes .artifact .legendary includeBattles enduringSubtype anotherTrigger false false false false false false true false
+  .ruleStaticKind n subtype subtypes none includeBattles enduringSubtype anotherTrigger false false false false false false true false
 @[match_pattern] abbrev maximumHandSize (n : Nat := 0) : RuleStatic :=
   .paramRuleStatic n "" #[] false false false
 @[match_pattern] abbrev extraTriggerIfEnduringStorySubtype (subtype : String) : RuleStatic :=
@@ -358,19 +363,19 @@ export CostCastStatic (
 @[match_pattern] abbrev extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool) : RuleStatic :=
   .paramRuleStatic 0 "" subtypes includeBattles false true
 @[match_pattern] abbrev doesntUntap (unlessEnduringStory : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary unlessEnduringStory false false false false false false false false false false
+  .ruleStaticKind 0 "" #[] none unlessEnduringStory false false false false false false false false false false
 @[match_pattern] abbrev exileOpponentsDyingCreatures (createWolf : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary createWolf false false true false false false false false false false
+  .ruleStaticKind 0 "" #[] none createWolf false false true false false false false false false false
 @[match_pattern] abbrev extraCounter (plusOneOnly : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary plusOneOnly false false false true false false false false false false
+  .ruleStaticKind 0 "" #[] none plusOneOnly false false false true false false false false false false
 @[match_pattern] abbrev noncombatDamageBonus (sourcePower : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary sourcePower false false false false true false false false false false
+  .ruleStaticKind 0 "" #[] none sourcePower false false false false true false false false false false
 @[match_pattern] abbrev entersOrOpeningRule (chooseColor : Bool := false) (chooseNameOrOpening : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary chooseColor chooseNameOrOpening false false false false true false false false false
+  .ruleStaticKind 0 "" #[] none chooseColor chooseNameOrOpening false false false false true false false false false
 @[match_pattern] abbrev damageOrStateRule (pwOrDragons : Bool := false) (suppressEntersOrDragons : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary pwOrDragons suppressEntersOrDragons false false false false false true false false false
+  .ruleStaticKind 0 "" #[] none pwOrDragons suppressEntersOrDragons false false false false false true false false false
 @[match_pattern] abbrev equippedOrActionBonus (extraDrawConnive : Bool := false) (doubleDamageOrHeal : Bool := false) (healOther : Bool := false) : RuleStatic :=
-  .ruleStaticKind 0 "" #[] .artifact .legendary extraDrawConnive doubleDamageOrHeal healOther false false false false false true false false
+  .ruleStaticKind 0 "" #[] none extraDrawConnive doubleDamageOrHeal healOther false false false false false true false false
 @[match_pattern] abbrev entersWithXPlusOne : RuleStatic := .entersOrOpeningRule false false
 @[match_pattern] abbrev entersTappedChooseColor : RuleStatic := .entersOrOpeningRule true false
 @[match_pattern] abbrev entersChooseNonlandCardName : RuleStatic := .entersOrOpeningRule false true
@@ -436,7 +441,7 @@ export KeywordStatic (
 end CombatStatic
 
 /-- A static ability the engine understands (CR 604), aligned with CR 604 / CR 613 / CR 614 categories. -/
-abbrev StaticAbility := Option AbilityStatic × Option PtStatic × Option CombatStatic × Option RuleStatic × Option String
+abbrev StaticAbility := Option PtStatic × Option String × Bool × Bool
 
 /-- Type alias unifying `FraStatic` with `StaticAbility`. -/
 abbrev FraStatic := StaticAbility
@@ -444,34 +449,32 @@ abbrev FraStatic := StaticAbility
 namespace StaticAbility
 
 /-- Unified static ability (CR 604 / CR 613 / CR 614). -/
-@[match_pattern] abbrev staticAbilityKind (abilityOpt : Option AbilityStatic := none)
-    (ptOpt : Option PtStatic := none)
-    (combatOpt : Option CombatStatic := none)
-    (ruleOpt : Option RuleStatic := none)
-    (printedOpt : Option String := none) : StaticAbility :=
-  (abilityOpt, ptOpt, combatOpt, ruleOpt, printedOpt)
+@[match_pattern] abbrev staticAbilityKind (ptOpt : Option PtStatic := none)
+    (printedOpt : Option String := none)
+    (cat0 : Bool := false) (cat1 : Bool := false) : StaticAbility :=
+  (ptOpt, printedOpt, cat0, cat1)
 
 /-- Identity wrapper for backward-compatible `.fra s` construction. -/
 abbrev fra (s : StaticAbility) : StaticAbility := s
 
 @[match_pattern] abbrev ability (which : AbilityStatic := .creaturesYouControlHave Keyword.trample) : StaticAbility :=
-  .staticAbilityKind (some which) none none none none
+  .staticAbilityKind (some which) none false false
 @[match_pattern] abbrev pt (which : PtStatic := .creaturesYouControlGet 2 2) : StaticAbility :=
-  .staticAbilityKind none (some which) none none none
+  .staticAbilityKind (some which) none true false
 @[match_pattern] abbrev typeChange (which : TypeStatic := .enchantedIsConstruct55) : StaticAbility :=
   .pt which
 @[match_pattern] abbrev cda (which : CdaStatic := .powerToughnessEqualLandsYouControl) : StaticAbility :=
   .pt which
 @[match_pattern] abbrev combat (which : CombatStatic := .attacksEachCombatIfAble) : StaticAbility :=
-  .staticAbilityKind none none (some which) none none
+  .staticAbilityKind (some which) none false true
 @[match_pattern] abbrev keyword (which : KeywordStatic := .improvise) : StaticAbility :=
   .combat which
 @[match_pattern] abbrev rule (which : RuleStatic := .maximumHandSize 0) : StaticAbility :=
-  .staticAbilityKind none none none (some which) none
+  .staticAbilityKind (some which) none true true
 @[match_pattern] abbrev costCast (which : CostCastStatic := .noncreatureSpellsCostLess) : StaticAbility :=
   .rule which
 @[match_pattern] abbrev printed (text : String) : StaticAbility :=
-  .staticAbilityKind none none none none (some text)
+  .staticAbilityKind none (some text) false false
 
 -- TypeStatic aliases
 @[match_pattern] abbrev enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String) : StaticAbility := .typeChange (.enchantedIsOnlySubtypeCantAttackOrBlock subtype)
@@ -791,10 +794,10 @@ def specRule : RuleStatic → StaticMeta
 
 /-- Classification of a static ability for Game accessors. -/
 def spec : StaticAbility → StaticMeta
-  | .staticAbilityKind (some which) _ _ _ _ => specAbility which
-  | .staticAbilityKind _ (some which) _ _ _ => specPt which
-  | .staticAbilityKind _ _ (some which) _ _ => specCombat which
-  | .staticAbilityKind _ _ _ (some which) _ => specRule which
+  | .ability which => specAbility which
+  | .pt which => specPt which
+  | .combat which => specCombat which
+  | .rule which => specRule which
   | _ => {}
 @[match_pattern] abbrev lordPump (subtypes : Array String) (power toughness : Int) : StaticAbility := StaticAbility.otherCreaturesGet subtypes power toughness
 @[match_pattern] abbrev lordTrample (subtypes : Array String) : StaticAbility := StaticAbility.otherCreaturesHaveTrample subtypes
@@ -1154,11 +1157,11 @@ def toNotationRule : RuleStatic → String
 
 /-- Oracle-style text for a static ability. -/
 def toNotation : StaticAbility → String
-  | .staticAbilityKind (some which) _ _ _ _ => toNotationAbility which
-  | .staticAbilityKind _ (some which) _ _ _ => toNotationPt which
-  | .staticAbilityKind _ _ (some which) _ _ => toNotationCombat which
-  | .staticAbilityKind _ _ _ (some which) _ => toNotationRule which
-  | .staticAbilityKind _ _ _ _ (some text) => text
+  | .ability which => toNotationAbility which
+  | .pt which => toNotationPt which
+  | .combat which => toNotationCombat which
+  | .rule which => toNotationRule which
+  | .printed text => text
   | _ => ""
 instance : ToString StaticAbility where
   toString := toNotation

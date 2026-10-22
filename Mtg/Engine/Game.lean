@@ -188,45 +188,96 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .ok g' => g'
   | .error e => panic! e
 
+private def applyIdlePart2 (g : Game) (p : PlayerId) (pend : @& Pending) : Game :=
+  match pend with
+  | .chooseX _ =>
+    mustApply g p (.chooseX 0)
+  | .assignCombatDamage _ _ =>
+    mustApply g p (.assignCombatDamage #[])
+  | .chooseLegend _ _ ids =>
+    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
+  | .chooseTriggerToStack q =>
+    mustApply g q (.stackTriggers (g.defaultTriggerSourceIds q))
+  | .chooseLibraryPlacement _ _ =>
+    mustApply g p .chooseBottom
+  | .recruitDiscard _ =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard for recruit"
+    | some id => mustApply g p (.discard id)
+  | .chooseTriggerOr _ =>
+    mustApply g p (.chooseMode 0)
+  | .chooseProliferate _ _ =>
+    mustApply g p (.targets #[])
+  | .mayCostDraw .. | .mayPayGeneric ..
+  | .mayAttachEquipment .. | .mayPutArtifactFromHand ..
+  | .mayResolve _ | .tapHumans _
+  | .payOrLetCounter .. | .mayCastExiledElseDamage ..
+  | .payWard .. | .maySacrificeAnotherBolg ..
+  | .mayCastFromLooked .. | .mayPutLandFromHand _
+  | .mayHaveVillainConnive .. =>
+    mustApply g p .decline
+  | .fraChoice _ choice =>
+    mustApply g p (g.defaultFraAction p choice)
+  | .chooseTargets _ =>
+    match g.objectAwaitingTargets with
+    | none => panic! "expected a proposed spell or trigger while choosing targets"
+    | some spell =>
+      match g.defaultTarget p spell with
+      | some t => mustApply g p (.target t)
+      | none =>
+        if g.canSkipCurrentOptionalSlot spell then mustApply g p .decline
+        else if g.canFinishOptionalTargets spell then mustApply g p .decline
+        else
+          match spell.triggeredAbility with
+          | some ab =>
+            if ab.allowsZeroTargets then mustApply g p .decline
+            else panic! "no legal target (CR 601.2c)"
+          | none => panic! "no legal target (CR 601.2c)"
+  | _ =>
+    mustApply g p .pass
+
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 @[noinline] def applyIdle (g : Game) : Game :=
-  match g.pending, g.actor with
-  | .declareAttackers, some p =>
+  match g.actor with
+  | none => panic! s!"no actor at {g.step}"
+  | some p =>
+  match g.pending with
+  | .declareAttackers =>
     mustApply g p (.declareAttackers #[])
-  | .declareBlockers, some p =>
+  | .declareBlockers =>
     mustApply g p (.declareBlockers #[])
-  | .declareMulligan _, some p =>
+  | .declareMulligan _ =>
     mustApply g p .keep
-  | .putOnBottom _ n, some p =>
+  | .putOnBottom _ n =>
     mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
-  | .lookLibrary _ n surveil, some p =>
+  | .lookLibrary _ n surveil =>
     mustApply g p (.lookLibrary (g.scryLookedIds p n) #[] surveil)
-  | .chooseTeamwork _, some p =>
+  | .chooseTeamwork _ =>
     mustApply g p (.announceTeamwork false)
-  | .chooseTeamworkCreatures _ need, some p =>
+  | .chooseTeamworkCreatures _ need =>
     mustApply g p (.choosePermanents (g.pickTeamworkCreatures p need))
-  | .chooseAdditionalCost _, some p =>
+  | .chooseAdditionalCost _ =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
     | some prop =>
       mustApply g p (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
-  | .discardForAdditionalCost p, some _ =>
-    match (g.player p).hand.back? with
+  | .discardForAdditionalCost q =>
+    match (g.player q).hand.back? with
     | none => panic! "no card to discard as an additional cost"
-    | some id => mustApply g p (.discard id)
-  | .chooseSacrificeCreature p _ _, some _ =>
-    match (g.creaturesControlledBy p)[0]? with
+    | some id => mustApply g q (.discard id)
+  | .chooseSacrificeCreature q _ _ =>
+    match (g.creaturesControlledBy q)[0]? with
     | none => panic! "no creature to sacrifice"
-    | some o => mustApply g p (.sacrifice o.id)
-  | .chooseDiscardCard p _, some _ =>
-    match (g.player p).hand.back? with
+    | some o => mustApply g q (.sacrifice o.id)
+  | .chooseDiscardCard q _ =>
+    match (g.player q).hand.back? with
     | none => panic! "no card to discard"
-    | some id => mustApply g p (.discard id)
-  | .sacrificeCreature _, some p =>
+    | some id => mustApply g q (.discard id)
+  | .sacrificeCreature _ =>
     match (g.sacrificeCreatureChoices p)[0]? with
     | some sac => mustApply g p (.sacrifice sac.id)
     | none => panic! "expected a creature to sacrifice"
-  | .chooseMode _, some p =>
+  | .chooseMode _ =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell or ability while choosing a mode"
     | some prop =>
@@ -243,52 +294,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g p (.chooseMode i)
-  | .chooseX _, some p =>
-    mustApply g p (.chooseX 0)
-  | .assignCombatDamage _ _, some p =>
-    mustApply g p (.assignCombatDamage #[])
-  | .chooseLegend _ _ ids, some p =>
-    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
-  | .chooseTriggerToStack p, some _ =>
-    mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
-  | .chooseLibraryPlacement _ _, some p =>
-    mustApply g p .chooseBottom
-  | .recruitDiscard _, some p =>
-    match (g.player p).hand.back? with
-    | none => panic! "no card to discard for recruit"
-    | some id => mustApply g p (.discard id)
-  | .chooseTriggerOr _, some p =>
-    mustApply g p (.chooseMode 0)
-  | .chooseProliferate _ _, some p =>
-    mustApply g p (.targets #[])
-  | .mayCostDraw .., some p | .mayPayGeneric .., some p
-  | .mayAttachEquipment .., some p | .mayPutArtifactFromHand .., some p
-  | .mayResolve _, some p | .tapHumans _, some p
-  | .payOrLetCounter .., some p | .mayCastExiledElseDamage .., some p
-  | .payWard .., some p | .maySacrificeAnotherBolg .., some p
-  | .mayCastFromLooked .., some p | .mayPutLandFromHand _, some p
-  | .mayHaveVillainConnive .., some p =>
-    mustApply g p .decline
-  | .fraChoice _ choice, some p =>
-    mustApply g p (g.defaultFraAction p choice)
-  | .chooseTargets _, some p =>
-    match g.objectAwaitingTargets with
-    | none => panic! "expected a proposed spell or trigger while choosing targets"
-    | some spell =>
-      match g.defaultTarget p spell with
-      | some t => mustApply g p (.target t)
-      | none =>
-        if g.canSkipCurrentOptionalSlot spell then mustApply g p .decline
-        else if g.canFinishOptionalTargets spell then mustApply g p .decline
-        else
-          match spell.triggeredAbility with
-          | some ab =>
-            if ab.allowsZeroTargets then mustApply g p .decline
-            else panic! "no legal target (CR 601.2c)"
-          | none => panic! "no legal target (CR 601.2c)"
-  | _, some p =>
-    mustApply g p .pass
-  | _, none => panic! s!"no actor at {g.step}"
+  | pend => applyIdlePart2 g p pend
 
 /-- Advance by idle actions until `g` is in `st` with no pending choice. -/
 @[noinline] def skipTo (g : Game) (st : Step) : Nat → Game

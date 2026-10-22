@@ -148,7 +148,55 @@ private def phraseGrant (r : Resolution) (noun : String) : Option String :=
     some s!"Counter {noun}"
   | _ => none
 
-private def phrasePlayerAndCards (r : Resolution) (noun : String) : Option String :=
+private def phrasePlayerAndCardsPart2 (r : @& Resolution) (noun : @& String) : Option String :=
+  match r with
+  | .draw (.fixed 1) .targetPlayers =>
+    some "Two target players each draw a card"
+  | .draw .lastKnownPower _ =>
+    some "Draw cards equal to the sacrificed creature's power"
+  | .draw .perBurden _ =>
+    some "Draw a card for each burden counter on this"
+  | .draw .chosenX _ =>
+    some "Draw X cards"
+  | .draw .cardsDiscardedThisTurn _ =>
+    some "Draw a card for each card you've discarded this turn"
+  | .draw (.fixed n) .player =>
+    some s!"{noun} draws {cardPhrase n.toNat}"
+  | .surveil (.fixed n) .none =>
+    some s!"Surveil {n}"
+  | .loseLife (.fixed n) .player =>
+    some s!"{noun} loses {n} life"
+  | .loseLife (.fixed n) (.controller .target) =>
+    some s!"Its controller loses {n} life"
+  | .returnToHand .targetSpell _ =>
+    some s!"Return {noun} to its owner's hand"
+  | .returnToHand (.target .graveyardCard) _ =>
+    some s!"Return {noun} to your hand"
+  | .returnToHand .target .none =>
+    some s!"Return {noun} to its owner's hand"
+  | .draw .milledByTargetPlayerThisTurn _ =>
+    some "Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn"
+  | .draw .greatestPowerAndLoseLife _ =>
+    some "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
+  | .discard .chosenNonlandPermanent =>
+    some s!"{capitalizeAscii noun} reveals their hand. You choose a nonland permanent card from it. That player discards that card"
+  | .discard .chosenNonland =>
+    some s!"{capitalizeAscii noun} reveals their hand. You choose a nonland card from it. That player discards that card"
+  | .discard .hand =>
+    some "Discard your hand"
+  | .draw (.perControlled .creature) _ =>
+    some "Draw a card for each creature you control"
+  | .returnToHand .outsideGameOpponentChoice _ =>
+    some "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
+  | .putOnLibrary .topOrBottomDamage2 .target =>
+    some "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
+  | .discard (.mayWheel n _) =>
+    some s!"Each player may discard their hand and draw {englishNumber n} cards"
+  | .mill (.fixed n) .you (.permanentAndGainLife l) =>
+    some s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life"
+  | _ => none
+
+private def phrasePlayerAndCards (r : @& Resolution) (noun : @& String) : Option String :=
   match r with
   | .draw (.fixed n) .you =>
     some s!"Draw {cardPhrase n.toNat}"
@@ -200,51 +248,7 @@ private def phrasePlayerAndCards (r : Resolution) (noun : String) : Option Strin
     some s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
   | .mill (.fixed n) .player .none =>
     some s!"{noun} mills {n} cards"
-  | .draw (.fixed 1) .targetPlayers =>
-    some "Two target players each draw a card"
-  | .draw .lastKnownPower _ =>
-    some "Draw cards equal to the sacrificed creature's power"
-  | .draw .perBurden _ =>
-    some "Draw a card for each burden counter on this"
-  | .draw .chosenX _ =>
-    some "Draw X cards"
-  | .draw .cardsDiscardedThisTurn _ =>
-    some "Draw a card for each card you've discarded this turn"
-  | .draw (.fixed n) .player =>
-    some s!"{noun} draws {cardPhrase n.toNat}"
-  | .surveil (.fixed n) .none =>
-    some s!"Surveil {n}"
-  | .loseLife (.fixed n) .player =>
-    some s!"{noun} loses {n} life"
-  | .loseLife (.fixed n) (.controller .target) =>
-    some s!"Its controller loses {n} life"
-  | .returnToHand .targetSpell _ =>
-    some s!"Return {noun} to its owner's hand"
-  | .returnToHand (.target .graveyardCard) _ =>
-    some s!"Return {noun} to your hand"
-  | .returnToHand .target .none =>
-    some s!"Return {noun} to its owner's hand"
-  | .draw .milledByTargetPlayerThisTurn _ =>
-    some "Draw X cards, where X is the number of cards that were put into target player's graveyard from their library this turn"
-  | .draw .greatestPowerAndLoseLife _ =>
-    some "Draw cards equal to the greatest power among creatures you control. You lose life equal to the number of cards drawn this way"
-  | .discard .chosenNonlandPermanent =>
-    some s!"{capitalizeAscii noun} reveals their hand. You choose a nonland permanent card from it. That player discards that card"
-  | .discard .chosenNonland =>
-    some s!"{capitalizeAscii noun} reveals their hand. You choose a nonland card from it. That player discards that card"
-  | .discard .hand =>
-    some "Discard your hand"
-  | .draw (.perControlled .creature) _ =>
-    some "Draw a card for each creature you control"
-  | .returnToHand .outsideGameOpponentChoice _ =>
-    some "You may reveal exactly two cards you own with different names from outside the game. An opponent chooses one of them. You put that card into your hand"
-  | .putOnLibrary .topOrBottomDamage2 .target =>
-    some "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
-  | .discard (.mayWheel n _) =>
-    some s!"Each player may discard their hand and draw {englishNumber n} cards"
-  | .mill (.fixed n) .you (.permanentAndGainLife l) =>
-    some s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life"
-  | _ => none
+  | r => phrasePlayerAndCardsPart2 r noun
 
 private def phraseZoneAndReveal (r : Resolution) (noun : String) : Option String :=
   match r with
@@ -314,55 +318,9 @@ private def phraseZoneAndReveal (r : Resolution) (noun : String) : Option String
     some "Search your library for a land card, put it into your graveyard, then shuffle"
   | _ => none
 
-private def phraseCombatCountersAndFlow (r : Resolution) (noun : String)
+private def phraseCombatCountersAndFlowPart3 (r : @& Resolution) (noun : @& String)
     (sequence : List Resolution → String) : Option String :=
   match r with
-  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
-    some s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
-  | .dealDamage (.fixed n) .target .none =>
-    some s!"This creature deals {n} damage to {noun}"
-  | .putCounters (.ofKind .shadow 1) .target =>
-    some "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
-  | .dealDamage (.fixed n) (.player .eachOpponent) _ =>
-    some s!"This deals {n} damage to each opponent"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype) =>
-    some s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
-  | .putCounters .plusOneChosenX .source =>
-    some "Put X +1/+1 counters on this"
-  | .sequence [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
-    some "Each opponent discards a card. Put a +1/+1 counter on this"
-  | .dealDamage (.fixed n) .allCreatures _ =>
-    some s!"This deals {n} damage to each creature"
-  | .proliferate (.fixed 1) .target =>
-    some "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
-  | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
-    some s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
-  | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
-    some s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
-  | .sequence [.replace, .dealDamage (.fixed n) .target .none] =>
-    some s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
-  | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _ =>
-    some "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
-  | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ =>
-    some "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
-  | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none =>
-    some "Target creature you control deals damage equal to its power to that permanent"
-  | .proliferate .planeswalkerTypes .youControl =>
-    some "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
-  | .dealDamage (.fixed n) (.player .eachPlayer) _ =>
-    some s!"This deals {n} damage to each player"
-  | .dealDamage (.fixed n) (.targetAt _) .none =>
-    some s!"This deals {n} damage to {noun}"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.targetAt _) =>
-    some s!"Put {plusOnePlusOneCountersPhrase n} on {noun}"
-  | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) =>
-    some s!"Put {plusOnePlusOneCountersPhrase n} on each of {noun}"
-  | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent =>
-    some "Put a +1/+1 counter on each other Wizard token you control"
-  | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ =>
-    some s!"This deals {n} damage to each creature and planeswalker your opponents control"
-  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo =>
-    some "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
   | .putCounters .plusOnePerThreeGraveyardIfFromGy .createdToken =>
     some "If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
   | .ifElse .notFromHand (.draw (.fixed 2) _) (.draw (.fixed 1) _) =>
@@ -383,6 +341,67 @@ private def phraseCombatCountersAndFlow (r : Resolution) (noun : String)
       | some action => PermanentAction.toNotation action "this creature" (sentence := true)
       | none => sequence rs)
   | _ => none
+
+private def phraseCombatCountersAndFlowPart2 (r : @& Resolution) (noun : @& String)
+    (sequence : List Resolution → String) : Option String :=
+  match r with
+  | .dealDamage (.fixed n) (.player .eachPlayer) _ =>
+    some s!"This deals {n} damage to each player"
+  | .dealDamage (.fixed n) (.targetAt _) .none =>
+    some s!"This deals {n} damage to {noun}"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.targetAt _) =>
+    some s!"Put {plusOnePlusOneCountersPhrase n} on {noun}"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.target .eachPermanent) =>
+    some s!"Put {plusOnePlusOneCountersPhrase n} on each of {noun}"
+  | .putCounters (.ofKind .plusOnePlusOne _) .wizardTokensExceptRecent =>
+    some "Put a +1/+1 counter on each other Wizard token you control"
+  | .dealDamage (.fixed n) .oppCreaturesAndPlaneswalkers _ =>
+    some s!"This deals {n} damage to each creature and planeswalker your opponents control"
+  | .may (.sacrifice .planeswalker _) (.searchLibrary (.put .planeswalkerCard _ _)) .ifYouDo =>
+    some "You may sacrifice a planeswalker. If you do, search your library for a planeswalker card, put it onto the battlefield, then shuffle"
+  | r => phraseCombatCountersAndFlowPart3 r noun sequence
+
+private def phraseCombatCountersAndFlowPart1 (r : @& Resolution) (noun : @& String)
+    (sequence : List Resolution → String) : Option String :=
+  match r with
+  | .may (.discard (.cards 1 .you)) (.draw (.fixed n) .you) .ifYouDo =>
+    some s!"You may discard a card. If you do, draw {cardPhrase n.toNat}"
+  | .sequence [.dealDamage (.fixed n) .target .excess, .empowerJace .notedExcess] =>
+    some s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
+  | .sequence [.replace, .dealDamage (.fixed n) .target .none] =>
+    some s!"This deals {n} damage to {noun}. If that permanent would die this turn, exile it instead"
+  | .dealDamage (.loyalty (.targetAt 0)) (.targetAt 1) _ =>
+    some "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
+  | .dealDamage (.power (.targetAt 0)) (.targetAt 1) _ =>
+    some "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
+  | .dealDamage (.power (.targetAt 1)) (.targetAt 0) .none =>
+    some "Target creature you control deals damage equal to its power to that permanent"
+  | .proliferate .planeswalkerTypes .youControl =>
+    some "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
+  | r => phraseCombatCountersAndFlowPart2 r noun sequence
+
+private def phraseCombatCountersAndFlow (r : @& Resolution) (noun : @& String)
+    (sequence : List Resolution → String) : Option String :=
+  match r with
+  | .pump (.fixed p) (.fixed t) .creaturesYouControl =>
+    some s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .dealDamage (.fixed n) .target .none =>
+    some s!"This creature deals {n} damage to {noun}"
+  | .putCounters (.ofKind .shadow 1) .target =>
+    some "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
+  | .dealDamage (.fixed n) (.player .eachOpponent) _ =>
+    some s!"This deals {n} damage to each opponent"
+  | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype) =>
+    some s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
+  | .putCounters .plusOneChosenX .source =>
+    some "Put X +1/+1 counters on this"
+  | .sequence [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
+    some "Each opponent discards a card. Put a +1/+1 counter on this"
+  | .dealDamage (.fixed n) .allCreatures _ =>
+    some s!"This deals {n} damage to each creature"
+  | .proliferate (.fixed 1) .target =>
+    some "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
+  | r => phraseCombatCountersAndFlowPart1 r noun sequence
 
 /-- `toPhrase` of one activated-ability resolution. Spell and trigger steps
 phrase through `SpellResolution.toPhrase`.

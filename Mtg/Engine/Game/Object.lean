@@ -53,17 +53,22 @@ structure TriggerCause where
 deriving Repr, Inhabited, BEq
 
 /-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
-inductive CopyDuration where
-  | copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
-      (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
-      (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
-      (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
-      (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
-      (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
-      (destOpt : Option Zone := Option.none)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev CopyDuration :=
+  ObjectId × PlayerId × Nat × Nat × Array ManaType ×
+    Bool × Bool × Bool × Bool × Bool ×
+    Option ObjectId × String × Array PlayerId × Array ObjectId × Option Zone
 
 namespace CopyDuration
+
+@[match_pattern] abbrev copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
+    (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
+    (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
+    (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
+    (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
+    (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+    (destOpt : Option Zone := Option.none) : CopyDuration :=
+  (source, player, n, paid, types, untilEotFlag, untilNextTurnFlag, untilSourceFlag, b4, b5,
+    sourceIdOpt, subtype, rest, ids, destOpt)
 
 @[match_pattern] abbrev permanent : CopyDuration :=
   .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false false false false false

@@ -243,24 +243,25 @@ structure StartConfig where
   /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
   norandom : Bool := false
 
-inductive Action where
-  | actionKind (n : Nat := 0) (nameOpt : Option String := none)
-      (id : ObjectId := ⟨0⟩) (attackerId : ObjectId := ⟨0⟩)
-      (to : Option PlayerId := none) (optId : Option ObjectId := none)
-      (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none)
-      (ids : Array ObjectId := #[]) (rest : Array ObjectId := #[])
-      (manaOpt : Option ManaType := none) (manaArrOpt : Option (Array ManaType) := none)
-      (divOpt : Option (Array (Target × Nat)) := none)
-      (eachOpt : Option (Array (Option PlayerId)) := none)
-      (pwOpt : Option (Array (Option ObjectId)) := none)
-      (blockOpt : Option (Array (ObjectId × ObjectId)) := none)
-      (combatOpt : Option (Array CreatureCombatAssignment) := none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-      (b5 : Bool := false) (b6 : Bool := false)
-      (isSingleObj : Bool := false) (isArrayObj : Bool := false)
-deriving Repr, Inhabited
+abbrev Action := LibraryChoice
 
 namespace Action
+
+@[match_pattern] abbrev actionKind (n : Nat := 0) (nameOpt : Option String := none)
+    (id : ObjectId := ⟨0⟩) (attackerId : ObjectId := ⟨0⟩)
+    (to : Option PlayerId := none) (optId : Option ObjectId := none)
+    (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none)
+    (ids : Array ObjectId := #[]) (rest : Array ObjectId := #[])
+    (manaOpt : Option ManaType := none) (manaArrOpt : Option (Array ManaType) := none)
+    (divOpt : Option (Array (Target × Nat)) := none)
+    (eachOpt : Option (Array (Option PlayerId)) := none)
+    (pwOpt : Option (Array (Option ObjectId)) := none)
+    (blockOpt : Option (Array (ObjectId × ObjectId)) := none)
+    (combatOpt : Option (Array CreatureCombatAssignment) := none)
+    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
+    (b5 : Bool := false) (b6 : Bool := false)
+    (isSingleObj : Bool := false) (isArrayObj : Bool := false) : Action :=
+  .libraryChoiceKind ids rest #[] id attackerId ⟨0⟩ n 0 0 0 #[] optId none to none none nameOpt none none none #[] targetOpt none #[] #[] none #[] none none alt1 alt2 alt3 alt4 b5 b6 isSingleObj isArrayObj false false tsOpt manaOpt manaArrOpt divOpt eachOpt pwOpt blockOpt combatOpt
 
 @[match_pattern] abbrev simpleOrNatAction (n : Nat := 0) (nameOpt : Option String := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)

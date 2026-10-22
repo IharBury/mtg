@@ -9,11 +9,11 @@ or none.
 namespace Mtg.Engine
 
 /-- One of the five colors of Magic (CR 105.1). -/
-inductive Color where
-  | colorKind (k : Option (Option (Option Bool)) := none)
-deriving DecidableEq, Repr, Hashable, Inhabited, BEq
+abbrev Color := Option (Option (Option Bool))
 
 namespace Color
+
+@[match_pattern] abbrev colorKind (k : Option (Option (Option Bool)) := none) : Color := k
 
 @[match_pattern] abbrev white : Color := .colorKind none
 @[match_pattern] abbrev blue : Color := .colorKind (some none)
@@ -123,7 +123,7 @@ theorem empty_isColorless : ColorSet.empty.isColorless = true := rfl
 
 theorem singleton_monocolored (c : Color) :
     (ColorSet.singleton c).isMonocolored = true := by
-  rcases c with ⟨none | none | none | false | true⟩ <;> rfl
+  rcases c with none | none | none | false | true <;> rfl
 
 theorem all_five_colors : Color.all.length = 5 := rfl
 

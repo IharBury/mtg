@@ -80,14 +80,15 @@ end SharedTriggerOpts
 /-- A triggered ability the engine currently understands (CR 603).
 One constructor keeps the C runtime tag under the limit; leftover printed
 names are aliases of `triggered`. -/
-inductive TriggeredAbility where
-  /-- Reusable trigger: when it fires, a unified `Effect`, and optional
-  intervening conditions / wording filters. -/
-  | triggered (when : TriggerEvent) (effect : Effect)
-      (opts : SharedTriggerOpts := {})
-deriving Repr, Inhabited, BEq
+abbrev TriggeredAbility := TriggerEvent × Effect × SharedTriggerOpts
 
 namespace TriggeredAbility
+
+/-- Reusable trigger: when it fires, a unified `Effect`, and optional
+intervening conditions / wording filters. -/
+@[match_pattern] abbrev triggered (when : TriggerEvent) (effect : Effect)
+    (opts : SharedTriggerOpts := {}) : TriggeredAbility :=
+  (when, effect, opts)
 
 /-- English for “divided as you choose among …” (CR 601.2d). -/
 def dividedAmong (maxTargets : Nat) : String :=

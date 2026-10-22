@@ -360,7 +360,7 @@ def takeResolutionGrant (r : @& Resolution) (what : @& TriggeredAbility.TriggerG
     match which with
     | .supertype s =>
       return .spellsCostLess (.supertype (← takeSupertype s)) (.fixed (← takeNat n.toNat))
-    | .milledPickKind ty _ _ _ _ =>
+    | .milledPickKind (some ty) _ _ _ _ =>
       return .spellsCostLess (.cardType (← takeCardType ty)) (.fixed (← takeNat n.toNat))
     | _ => return r
   | _, _ => return r
@@ -379,7 +379,7 @@ def takeResolutionPlayerResource (r : @& Resolution) : ArgM Resolution := do
         return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.oneOf (← takeCardType a) (← takeCardType b)))
       | .upTo max ty =>
         return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.upTo (← takeNat max) (← takeCardType ty)))
-      | .milledPickKind a b _ _ _ =>
+      | .milledPickKind (some a) (some b) _ _ _ =>
         return .mill (.fixed (← takeNat n.toNat)) who (.toHand (.allOf (← takeCardType a) (← takeCardType b)))
       | _ => return r
     | .fixed a, .permanentAndGainLife b =>
@@ -698,6 +698,35 @@ private def takeStaticPart2 (ab : @& StaticAbility) : ArgM StaticAbility := do
   | .sneak c => return .sneak (← takeCost c)
   | ab => return ab
 
+private def takeStaticPart1 (ab : @& StaticAbility) : ArgM StaticAbility := do
+  match ab with
+  | .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w) =>
+    let p ← takeInt p
+    let t ← takeInt t
+    let w ← if legendary then takeNat w else pure 0
+    return .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w)
+  | .pt (.thresholdGets p t k) =>
+    if k == Keywords.none then return .thresholdGets (← takeInt p) (← takeInt t)
+    else return ab
+  | .combat (.cantBeBlockedByPower n atLeast) =>
+    return .combat (.cantBeBlockedByPower (← takeInt n) atLeast)
+  | .pt (.getsIfEnduringStory p t k team) =>
+    return .pt (.getsIfEnduringStory (← takeInt p) (← takeInt t) k team)
+  | .artifactsAndCreaturesHaveWardIfEnduringStory n =>
+    return .artifactsAndCreaturesHaveWardIfEnduringStory (← takeNat n)
+  | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
+    return .creaturesCantAttackYouUnlessPayIfEnduringStory (← takeNat n)
+  | .otherSubtypeHaveTapAddOneOf ss m =>
+    return .otherSubtypeHaveTapAddOneOf (← takeStrs ss) m
+  | .equipAbilitiesTargetingThisCostLess n =>
+    return .equipAbilitiesTargetingThisCostLess (← takeNat n)
+  | .chosenTypeCreaturesGet p t => return .chosenTypeCreaturesGet (← takeInt p) (← takeInt t)
+  | .otherSubtypeGetPowerPerArtifactToken s =>
+    return .otherSubtypeGetPowerPerArtifactToken (← takeStr s)
+  | .extraTriggerIfEnduringStorySubtype s =>
+    return .extraTriggerIfEnduringStorySubtype (← takeStr s)
+  | ab => takeStaticPart2 ab
+
 def takeStatic (ab : @& StaticAbility) : ArgM StaticAbility := do
   match ab with
   | .otherCreaturesHaveTrample ss =>
@@ -726,32 +755,7 @@ def takeStatic (ab : @& StaticAbility) : ArgM StaticAbility := do
     return .ability (.keywordIfYouControlOtherSubtype k (← takeStr s))
   | .cantAttackUnlessYouControlNOther n s =>
     return .cantAttackUnlessYouControlNOther (← takeNat n) (← takeStr s)
-  | .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w) =>
-    let p ← takeInt p
-    let t ← takeInt t
-    let w ← if legendary then takeNat w else pure 0
-    return .pt (.legendaryOrNonlegendaryCreaturesGet p t legendary w)
-  | .pt (.thresholdGets p t k) =>
-    if k == Keywords.none then return .thresholdGets (← takeInt p) (← takeInt t)
-    else return ab
-  | .combat (.cantBeBlockedByPower n atLeast) =>
-    return .combat (.cantBeBlockedByPower (← takeInt n) atLeast)
-  | .pt (.getsIfEnduringStory p t k team) =>
-    return .pt (.getsIfEnduringStory (← takeInt p) (← takeInt t) k team)
-  | .artifactsAndCreaturesHaveWardIfEnduringStory n =>
-    return .artifactsAndCreaturesHaveWardIfEnduringStory (← takeNat n)
-  | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
-    return .creaturesCantAttackYouUnlessPayIfEnduringStory (← takeNat n)
-  | .otherSubtypeHaveTapAddOneOf ss m =>
-    return .otherSubtypeHaveTapAddOneOf (← takeStrs ss) m
-  | .equipAbilitiesTargetingThisCostLess n =>
-    return .equipAbilitiesTargetingThisCostLess (← takeNat n)
-  | .chosenTypeCreaturesGet p t => return .chosenTypeCreaturesGet (← takeInt p) (← takeInt t)
-  | .otherSubtypeGetPowerPerArtifactToken s =>
-    return .otherSubtypeGetPowerPerArtifactToken (← takeStr s)
-  | .extraTriggerIfEnduringStorySubtype s =>
-    return .extraTriggerIfEnduringStorySubtype (← takeStr s)
-  | ab => takeStaticPart2 ab
+  | ab => takeStaticPart1 ab
 
 def takeCostPick (p : CostPick) : ArgM CostPick := do
   match p with

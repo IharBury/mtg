@@ -11,6 +11,8 @@ player must answer before the game continues.
 
 namespace Mtg.Engine
 
+set_option synthInstance.maxSize 1024
+
 /-- Work that still belongs to an effect after a `--norandom` result is
 applied. The RNG path runs the same work immediately. -/
 abbrev AfterRandom := CopyDuration
@@ -115,7 +117,7 @@ structure WardObligation where
   player : PlayerId
   spellId : ObjectId
   cost : WardCost
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Where cards found by a library search go (CR 701.19). -/
 abbrev SearchDest := AfterRandom
@@ -196,6 +198,13 @@ inductive LibraryChoice where
       (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
       (b5 : Bool := false) (b6 : Bool := false) (b7 : Bool := false) (b8 : Bool := false)
       (b9 : Bool := false) (b10 : Bool := false)
+      (tsOpt : Option (Array Target) := none)
+      (manaOpt : Option ManaType := none) (manaArrOpt : Option (Array ManaType) := none)
+      (divOpt : Option (Array (Target × Nat)) := none)
+      (eachOpt : Option (Array (Option PlayerId)) := none)
+      (pwOpt : Option (Array (Option ObjectId)) := none)
+      (blockOpt : Option (Array (ObjectId × ObjectId)) := none)
+      (combatOpt : Option (Array CreatureCombatAssignment) := none)
 deriving Repr, Inhabited, BEq
 
 namespace LibraryChoice
@@ -643,26 +652,22 @@ end CostModeChoice
 /-- A choice made while an effect resolves (CR 608 / CR 701). The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
-abbrev FraChoice :=
-  Option HandGraveyardChoice × Option LibraryChoice × Option BattlefieldChoice × Option CostModeChoice
+abbrev FraChoice := LibraryChoice × Bool × Bool
 
 namespace FraChoice
 
-/-- Unified resolution choice (CR 608 / CR 701): hand/graveyard, library, battlefield, or cost/mode. -/
-@[match_pattern] abbrev fraChoiceKind (hgOpt : Option HandGraveyardChoice := none)
-    (libOpt : Option LibraryChoice := none)
-    (bfOpt : Option BattlefieldChoice := none)
-    (cmOpt : Option CostModeChoice := none) : FraChoice :=
-  (hgOpt, libOpt, bfOpt, cmOpt)
+/-- Unified resolution choice (CR 608 / CR 701): hand/graveyard (`!cat0 && !cat1`), library (`cat0 && !cat1`), battlefield (`!cat0 && cat1`), or cost/mode (`cat0 && cat1`). -/
+@[match_pattern] abbrev fraChoiceKind (c : LibraryChoice) (cat0 : Bool := false) (cat1 : Bool := false) : FraChoice :=
+  (c, cat0, cat1)
 
 @[match_pattern] abbrev handGraveyard (c : HandGraveyardChoice) : FraChoice :=
-  .fraChoiceKind (some c) none none none
+  .fraChoiceKind c false false
 @[match_pattern] abbrev library (c : LibraryChoice) : FraChoice :=
-  .fraChoiceKind none (some c) none none
+  .fraChoiceKind c true false
 @[match_pattern] abbrev battlefield (c : BattlefieldChoice) : FraChoice :=
-  .fraChoiceKind none none (some c) none
+  .fraChoiceKind c false true
 @[match_pattern] abbrev costMode (c : CostModeChoice) : FraChoice :=
-  .fraChoiceKind none none none (some c)
+  .fraChoiceKind c true true
 
 -- LibraryChoice aliases
 @[match_pattern] abbrev mayWheel (n : Nat) (rest : Array PlayerId) : FraChoice := .library (.mayWheel n rest)
@@ -975,32 +980,30 @@ end ResolvePending
 
 /-- Choice that must be made before priority proceeds. -/
 abbrev Pending :=
-  PlayerId × Option TurnCombatPending × Option CastPending ×
-    Option ResolvePending × Option FraChoice × Option RandomRequest
+  PlayerId × Option CopyDuration × Option ResolvePending × Option FraChoice × Bool × Bool
 
 namespace Pending
 
 /-- Unified pending choice (CR 103 / 508–510 / 601 / 608): `none`, `turnCombat`, `cast`, `resolve`, `fraChoice`, or `resolveRandom`. -/
 @[match_pattern] abbrev pendingKind (player : PlayerId := ⟨0⟩)
-    (tcOpt : Option TurnCombatPending := Option.none)
-    (castOpt : Option CastPending := Option.none)
+    (tcCastRandOpt : Option CopyDuration := Option.none)
     (resOpt : Option ResolvePending := Option.none)
     (fraOpt : Option FraChoice := Option.none)
-    (randOpt : Option RandomRequest := Option.none) : Pending :=
-  (player, tcOpt, castOpt, resOpt, fraOpt, randOpt)
+    (isCast : Bool := false) (isRandom : Bool := false) : Pending :=
+  (player, tcCastRandOpt, resOpt, fraOpt, isCast, isRandom)
 
 @[match_pattern] abbrev none : Pending :=
-  .pendingKind ⟨0⟩ Option.none Option.none Option.none Option.none Option.none
+  .pendingKind ⟨0⟩ Option.none Option.none Option.none false false
 @[match_pattern] abbrev turnCombat (step : TurnCombatPending) : Pending :=
-  .pendingKind ⟨0⟩ (some step) Option.none Option.none Option.none Option.none
+  .pendingKind ⟨0⟩ (some step) Option.none Option.none false false
 @[match_pattern] abbrev cast (player : PlayerId) (step : CastPending) : Pending :=
-  .pendingKind player Option.none (some step) Option.none Option.none Option.none
+  .pendingKind player (some step) Option.none Option.none true false
 @[match_pattern] abbrev resolve (player : PlayerId) (choice : ResolvePending) : Pending :=
-  .pendingKind player Option.none Option.none (some choice) Option.none Option.none
+  .pendingKind player Option.none (some choice) Option.none false false
 @[match_pattern] abbrev fraChoice (player : PlayerId) (choice : FraChoice) : Pending :=
-  .pendingKind player Option.none Option.none Option.none (some choice) Option.none
+  .pendingKind player Option.none Option.none (some choice) false false
 @[match_pattern] abbrev resolveRandom (req : RandomRequest) : Pending :=
-  .pendingKind ⟨0⟩ Option.none Option.none Option.none Option.none (some req)
+  .pendingKind ⟨0⟩ (some req) Option.none Option.none false true
 
 -- TurnCombatPending aliases
 @[match_pattern] abbrev declareAttackers : Pending := .turnCombat .declareAttackers

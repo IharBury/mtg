@@ -314,23 +314,7 @@ end ActionEvent
 end TriggerEvent
 
 /-- When a triggered ability fires (CR 603). -/
-inductive TriggerEvent where
-  /-- Atomic trigger event (CR 603): enters (`entersOpt = some w`), leaves (`leavesOpt = some w`), step (`stepOpt = some w`), taps (`tapOpt = some w`), casts (`castsOpt = some w`), combat (`combatOpt = some w`), damage (`damageOpt = some w`), draws (`drawOpt = some w`), discards (`discardOpt = some w`), counters (`counterOpt = some w`), action (`actionOpt = some w`), or special (`isSpecial = true`). -/
-  | atomicTriggerEvent (entersOpt : Option TriggerEvent.EntersEvent := none)
-      (leavesOpt : Option TriggerEvent.LeavesEvent := none)
-      (stepOpt : Option TriggerEvent.StepEvent := none)
-      (tapOpt : Option TriggerEvent.TapEvent := none)
-      (castsOpt : Option TriggerEvent.CastEvent := none)
-      (combatOpt : Option TriggerEvent.CombatEvent := none)
-      (damageOpt : Option TriggerEvent.DamageEvent := none)
-      (drawOpt : Option TriggerEvent.DrawEvent := none)
-      (discardOpt : Option TriggerEvent.DiscardEvent := none)
-      (counterOpt : Option TriggerEvent.CounterEvent := none)
-      (actionOpt : Option TriggerEvent.ActionEvent := none)
-      (fromEffectFlag : Bool := false) (isSpecial : Bool := false)
-  /-- Disjunction of two trigger events ("Whenever A or B"). -/
-  | «or» (a b : TriggerEvent)
-deriving Repr, Inhabited, BEq, DecidableEq
+abbrev TriggerEvent := EffectTargetKind
 
 /-- Unified event type for shared triggered abilities. -/
 abbrev SharedTriggerWhen := TriggerEvent
@@ -340,32 +324,41 @@ abbrev FraEvent := TriggerEvent
 
 namespace TriggerEvent
 
+/-- Atomic trigger event (CR 603). -/
+@[match_pattern] abbrev atomicTriggerEvent (whatOpt : Option BattlefieldTarget := none)
+    (ev0 : Bool := false) (ev1 : Bool := false) (ev2 : Bool := false) (ev3 : Bool := false) : TriggerEvent :=
+  .atomicTargetKind whatOpt Option.none Option.none Option.none false false ev0 ev1 ev2 ev3
+
+/-- Disjunction of two trigger events ("Whenever A or B"). -/
+@[match_pattern] abbrev «or» (a b : TriggerEvent) : TriggerEvent :=
+  .pair a b
+
 @[match_pattern] abbrev fra (e : FraEvent) : TriggerEvent := e
 
 @[match_pattern] abbrev enters (what : TriggerEvent.EntersEvent := .source) : TriggerEvent :=
-  .atomicTriggerEvent (some what) none none none none none none none none none none false false
+  .atomicTriggerEvent (some what) true false false false
 @[match_pattern] abbrev leaves (what : TriggerEvent.LeavesEvent := .source) : TriggerEvent :=
-  .atomicTriggerEvent none (some what) none none none none none none none none none false false
+  .atomicTriggerEvent (some what) false true false false
 @[match_pattern] abbrev step (which : TriggerEvent.StepEvent) : TriggerEvent :=
-  .atomicTriggerEvent none none (some which) none none none none none none none none false false
+  .atomicTriggerEvent (some which) true true false false
 @[match_pattern] abbrev taps (what : TriggerEvent.TapEvent := .source) : TriggerEvent :=
-  .atomicTriggerEvent none none none (some what) none none none none none none none false false
+  .atomicTriggerEvent (some what) false false true false
 @[match_pattern] abbrev casts (what : TriggerEvent.CastEvent := .spell) : TriggerEvent :=
-  .atomicTriggerEvent none none none none (some what) none none none none none none false false
+  .atomicTriggerEvent (some what) true false true false
 @[match_pattern] abbrev combat (what : TriggerEvent.CombatEvent := .sourceAttacks) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none (some what) none none none none none false false
+  .atomicTriggerEvent (some what) false true true false
 @[match_pattern] abbrev damage (what : TriggerEvent.DamageEvent := .sourceCombatToPlayer) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none (some what) none none none none false false
+  .atomicTriggerEvent (some what) true true true false
 @[match_pattern] abbrev draws (what : TriggerEvent.DrawEvent := .youCard) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none none (some what) none none none false false
+  .atomicTriggerEvent (some what) false false false true
 @[match_pattern] abbrev discards (what : TriggerEvent.DiscardEvent := .youCard) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none none none (some what) none none false false
+  .atomicTriggerEvent (some what) true false false true
 @[match_pattern] abbrev counters (what : TriggerEvent.CounterEvent) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none none none none (some what) none false false
+  .atomicTriggerEvent (some what) false true false true
 @[match_pattern] abbrev action (what : TriggerEvent.ActionEvent) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none none none none none (some what) false false
+  .atomicTriggerEvent (some what) true true false true
 @[match_pattern] abbrev specialTrigger (fromEffect : Bool := false) : TriggerEvent :=
-  .atomicTriggerEvent none none none none none none none none none none none fromEffect true
+  .atomicTriggerEvent none fromEffect false true true
 @[match_pattern] abbrev cascade : TriggerEvent := .specialTrigger false
 @[match_pattern] abbrev fromEffect : TriggerEvent := .specialTrigger true
 
@@ -983,6 +976,7 @@ export TriggerEvent (
   youCreateCreatureTokens youGainLife playerLosesLife youScry youScryOrSurveil
   theRingTemptsYou youChooseRingBearer
   enterOrAttack castGreenOrForestEnters enterOrOpponentDrawsExceptFirst
+  spec clause isWhenever label checkTargets isAnotherAbilityTriggering
 )
 abbrev events (w : SharedTriggerWhen) : Array TriggerEvent := TriggerEvent.events w
 end SharedTriggerWhen
@@ -1003,6 +997,7 @@ export TriggerEvent (
   creatureYouControlLeaves youProliferate youDiscardOne
   nontokenCreatureYouControlDies opponentBeginCombat youCreateCreatureTokens
   zombieTokenAttacks sphinxesAttack youCycle
+  spec clause isWhenever label checkTargets isAnotherAbilityTriggering events
 )
 end FraEvent
 

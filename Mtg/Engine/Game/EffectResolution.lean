@@ -384,7 +384,7 @@ def mayPutHeroOrDraw (g : Game) (p : PlayerId) (maxMv : Nat)
 
 /-- Spells matching `which` cost `{n}` less this turn (CR 601.2f). -/
 def grantSpellsCostLessThisTurn (g : Game) (p : PlayerId) (which : SpellCostLess) (n : Nat) : Game :=
-  let kind := match which with | .supertype s => toString s | .milledPickKind ty _ _ _ _ => toString ty | _ => ""
+  let kind := match which with | .supertype s => toString s | .milledPickKind (some ty) _ _ _ _ => toString ty | _ => ""
   g.modifyPlayer p (fun pl =>
     { pl with spellsCostLessThisTurn := pl.spellsCostLessThisTurn.push (which, n) })
     |>.logMsg s!"{kind} spells {(g.player p).name} casts this turn cost \{{n}} less"
@@ -1562,7 +1562,7 @@ def applyUnifiedScryOrMill (g : Game) (controller : PlayerId) (effect : Effect)
         (fun o => o.printed.hasType a || o.printed.hasType b) 1 true
     | .upTo max ty =>
       g.millThenChooseForHand controller n.toNat (fun o => o.printed.hasType ty) max false
-    | .milledPickKind a b _ _ _ =>
+    | .milledPickKind (some a) (some b) _ _ _ =>
       g.millThenPutFromGy controller n.toNat
         (fun o => o.printed.hasType a || o.printed.hasType b)
     | _ => g

@@ -25,11 +25,11 @@ instance : ToString ObjectId where
   toString o := s!"#{o.raw}"
 
 /-- The zones of the game (CR 400.1). -/
-inductive Zone where
-  | zoneKind (k : Option (Option PlayerId × Bool × Bool) := none)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev Zone := Option (Option PlayerId × Bool × Bool)
 
 namespace Zone
+
+@[match_pattern] abbrev zoneKind (k : Option (Option PlayerId × Bool × Bool) := none) : Zone := k
 
 /-- Per-player hidden zone; the player’s deck at the start of the game (CR 401). -/
 @[match_pattern] abbrev library (owner : PlayerId) : Zone :=

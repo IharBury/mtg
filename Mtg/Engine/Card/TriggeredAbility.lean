@@ -2218,6 +2218,81 @@ private def toNotationEnter (ab : TriggeredAbility) (r : TriggerResolution)
     some s!"When this enchantment enters, target opponent discards {cards}."
   | _, _ => none
 
+private def toNotationOtherPart3 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
+    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
+  match w, e.resolution, e.targetKind, opts with
+  | .yourUpkeep, .loseLife .perBurden _, _, _ =>
+    some "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
+  | .landYouControlEnters, .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source _) .ifYouDo, _, _ =>
+    some (leadInSentence ab "Landfall — Whenever a land you control enters")
+  | .youPutCountersOnGoblinOrcArmy, .dealDamage (.fixed 2) (.player (.target .opponent)) _, .opponent, _ =>
+    some "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
+  | .eachEndStep, .«if» (.or [.attackedWithSubtype subtype, .subtypeEntered _]) (.draw (.fixed 1) _), _, _ =>
+    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
+    some s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
+  | .attack, .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype subtype), _, _ =>
+    some s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
+  | (.youCastColorFromHand color), .connive .source, .none, _ =>
+    some s!"Whenever you cast a {color} spell from your hand, this connives."
+  | .sourceDealtDamage, .putCounters (.ofKind .plusOnePlusOne 1) .source, _, _ =>
+    some "Whenever this is dealt damage, put a +1/+1 counter on it."
+  | _, _, _, _ => none
+
+private def toNotationOtherPart2 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
+    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
+  match w, e.resolution, e.targetKind, opts with
+  | .attack, .mayCast .graveyard .unlimited .pay .exileInstead, _, _ =>
+    some (leadInSentence ab "Whenever Bilbo attacks")
+  | .attack, .grant (.keywords _) .equippedAttackers, _, _ =>
+    some (leadInSentence ab "Whenever Dáin attacks")
+  | .dies, .revealLibrary (.top _) (.put .randomCreature _ _) _, _, _ =>
+    some (leadInSentence ab "When this artifact is put into a graveyard from the battlefield")
+  | .yourBeginCombat, .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords _) .target]), .anotherCreatureYouControl, _ =>
+    some "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
+  | .anotherCreatureYouControlEnters, _, _, { subtype := some "Elf", anotherLegendary := true, .. } =>
+    some "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
+  | .dies, .put .source .asArtifact _, _, _ =>
+    some (leadInSentence ab "When Tom, Bert, and William die")
+  | .anotherCreatureYouControlEnters, .putCounters (.ofKind .plusOnePlusOne 2) .source, _, { subtype := some "Wolf", .. } =>
+    some "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
+  | .combatDamageToPlayer, .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying _], _, _ =>
+    some (leadInSentence ab "Whenever Gríma deals combat damage to a player")
+  | .yourEndStep, .sequence [.putCounters (.ofKind .influence 1) .source, .scry (.fixed 2), .may (.draw (.fixed 1) .opponentHasYou) (.sequence []) _], .opponent, _ =>
+    some "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
+  | .sourceDealtNoncombatDamage, .createTokens .treasure .lastKnownPower false _ _, _, _ =>
+    some (leadInSentence ab "Whenever Smaug is dealt noncombat damage")
+  | _, _, _, _ => toNotationOtherPart3 ab w e opts
+
+private def toNotationOtherPart1 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
+    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
+  match w, e.resolution, e.targetKind, opts with
+  | .sagaChapter _, _, _, _ =>
+    some s!"When a lore counter is put on this Saga, {e.phrase}."
+  | .combatDamageToPlayer, .createTokens .treasure .damagedPlayerArtifacts false _ _, _, _ =>
+    some (leadInSentence ab "Whenever this creature deals combat damage to a player")
+  | .enterOrOpponentDrawsExceptFirst, .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" _ _], _, _ =>
+    some "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+  | .eachUpkeep, .createTokens k (.fixed n) false _ _, _, _ =>
+    some s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n.toNat}."
+  | .eachOpponentDrawStep, .draw (.fixed 1) _, _, _ =>
+    some "At the beginning of each opponent's draw step, you draw a card."
+  | .youGainLife, .putCounters (.ofKind .loyalty 1) .source, _, _ =>
+    some "Whenever you gain life, put a loyalty counter on Ajani."
+  | .opponentDrawsSecond, .createTokens .treasure (.fixed 1) false _ _, _, _ =>
+    some "Whenever an opponent draws their second card each turn, you create a Treasure token."
+  | .youAttackWithTotalPower n, .sequence [.untap .attackingCreatures, .additionalCombatPhase], _, _ =>
+    some (leadInSentence ab
+      s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn")
+  | .anotherCreatureYouControlEnters, .chooseModes _ .oneUnusedThisTurn, _, _ =>
+    some (leadInSentence ab "Alliance — Whenever another creature you control enters")
+  | .combatDamageToPlayerOrBattle, .createTokens .treasure (.fixed 2) false _ _, _, { subtype := some "Dwarf", .. } =>
+    some (leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle")
+  | (.youCastColor .red), .dealDamage (.fixed 3) (.player .eachOpponent) _, .opponent, _ =>
+    some "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
+  | .thisOrAnotherSubtypeEnters, .sequence [.may (.discard .hand) (.sequence []) _, .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent) _)], _, { subtype := some "Dwarf", .. } =>
+    some "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
+  | _, _, _, _ => toNotationOtherPart2 ab w e opts
+
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
@@ -2232,70 +2307,8 @@ def toNotation (ab : TriggeredAbility) : String :=
         let once := if t.onceEachTurn then " This ability triggers only once each turn." else ""
         let clause := (sequenceClause ab.effect).getD (resolutionPhrase t)
         s!"{eventPrefix t}{interveningClause t}, {clause}.{once}"
+    else if let some s := toNotationOtherPart1 ab w e opts then s
     else
-    match w, e.resolution, e.targetKind, opts with
-    | .sagaChapter _, _, _, _ =>
-      s!"When a lore counter is put on this Saga, {e.phrase}."
-    | .combatDamageToPlayer, .createTokens .treasure .damagedPlayerArtifacts false _ _, _, _ =>
-      leadInSentence ab "Whenever this creature deals combat damage to a player"
-    | .enterOrOpponentDrawsExceptFirst, .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" _ _], _, _ =>
-    "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
-    | .eachUpkeep, .createTokens k (.fixed n) false _ _, _, _ =>
-    s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n.toNat}."
-    | .eachOpponentDrawStep, .draw (.fixed 1) _, _, _ =>
-    "At the beginning of each opponent's draw step, you draw a card."
-    | .youGainLife, .putCounters (.ofKind .loyalty 1) .source, _, _ =>
-    "Whenever you gain life, put a loyalty counter on Ajani."
-    | .opponentDrawsSecond, .createTokens .treasure (.fixed 1) false _ _, _, _ =>
-    "Whenever an opponent draws their second card each turn, you create a Treasure token."
-    | .youAttackWithTotalPower n, .sequence [.untap .attackingCreatures, .additionalCombatPhase], _, _ =>
-      leadInSentence ab
-        s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn"
-    | .anotherCreatureYouControlEnters, .chooseModes _ .oneUnusedThisTurn, _, _ =>
-      leadInSentence ab "Alliance — Whenever another creature you control enters"
-    | .combatDamageToPlayerOrBattle, .createTokens .treasure (.fixed 2) false _ _, _, { subtype := some "Dwarf", .. } =>
-      leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
-    | (.youCastColor .red), .dealDamage (.fixed 3) (.player .eachOpponent) _, .opponent, _ =>
-    "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
-    | .thisOrAnotherSubtypeEnters, .sequence [.may (.discard .hand) (.sequence []) _, .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent) _)], _, { subtype := some "Dwarf", .. } =>
-    "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
-    | .attack, .mayCast .graveyard .unlimited .pay .exileInstead, _, _ =>
-      leadInSentence ab "Whenever Bilbo attacks"
-    | .attack, .grant (.keywords _) .equippedAttackers, _, _ =>
-      leadInSentence ab "Whenever Dáin attacks"
-    | .dies, .revealLibrary (.top _) (.put .randomCreature _ _) _, _, _ =>
-      leadInSentence ab "When this artifact is put into a graveyard from the battlefield"
-    | .yourBeginCombat, .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords _) .target]), .anotherCreatureYouControl, _ =>
-    "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
-    | .anotherCreatureYouControlEnters, _, _, { subtype := some "Elf", anotherLegendary := true, .. } =>
-    "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
-    | .dies, .put .source .asArtifact _, _, _ =>
-      leadInSentence ab "When Tom, Bert, and William die"
-    | .anotherCreatureYouControlEnters, .putCounters (.ofKind .plusOnePlusOne 2) .source, _, { subtype := some "Wolf", .. } =>
-    "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
-    | .combatDamageToPlayer, .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying _], _, _ =>
-      leadInSentence ab "Whenever Gríma deals combat damage to a player"
-    | .yourEndStep, .sequence [.putCounters (.ofKind .influence 1) .source, .scry (.fixed 2), .may (.draw (.fixed 1) .opponentHasYou) (.sequence []) _], .opponent, _ =>
-    "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
-    | .sourceDealtNoncombatDamage, .createTokens .treasure .lastKnownPower false _ _, _, _ =>
-      leadInSentence ab "Whenever Smaug is dealt noncombat damage"
-    | .yourUpkeep, .loseLife .perBurden _, _, _ =>
-    "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
-    | .landYouControlEnters, .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source _) .ifYouDo, _, _ =>
-      leadInSentence ab "Landfall — Whenever a land you control enters"
-    | .youPutCountersOnGoblinOrcArmy, .dealDamage (.fixed 2) (.player (.target .opponent)) _, .opponent, _ =>
-    "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-    | .eachEndStep, .«if» (.or [.attackedWithSubtype subtype, .subtypeEntered _]) (.draw (.fixed 1) _), _, _ =>
-    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
-    s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
-    | .attack, .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype subtype), _, _ =>
-    s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
-    | (.youCastColorFromHand color), .connive .source, .none, _ =>
-    s!"Whenever you cast a {color} spell from your hand, this connives."
-    | .sourceDealtDamage, .putCounters (.ofKind .plusOnePlusOne 1) .source, _, _ =>
-    "Whenever this is dealt damage, put a +1/+1 counter on it."
-
-    | _, _, _, _ =>
     if !e.phrase.isEmpty then e.phrase else
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then

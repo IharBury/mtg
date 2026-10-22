@@ -9,11 +9,12 @@ phases are further broken down into steps.
 namespace Mtg.Engine
 
 /-- A step or a main phase (main phases have no steps; CR 505.2). -/
-inductive Step where
-  | stepKind (o : Option Bool := none) (b0 : Bool := false) (b1 : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+abbrev Step := Option Bool × Bool × Bool
 
 namespace Step
+
+@[match_pattern] abbrev stepKind (o : Option Bool := none) (b0 : Bool := false) (b1 : Bool := false) : Step :=
+  (o, b0, b1)
 
 @[match_pattern] abbrev untap : Step := .stepKind none false false
 @[match_pattern] abbrev upkeep : Step := .stepKind none false true

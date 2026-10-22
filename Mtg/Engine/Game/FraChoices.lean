@@ -136,7 +136,7 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false
 
-def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+private def answerFraChoicePart1a (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
@@ -217,6 +217,11 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     let g := g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
+  | _, _ => throw "Nothing to choose now"
+
+private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .mayThen next sourceId, .accept =>
     return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .mayThen .., .decline => return g.finishFraChoice
@@ -351,6 +356,11 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
       return (g.logMsg s!"{(g.player p).name} chooses {c.englishName} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseColor _, _ => throw "Choose a color"
+  | choice, answer => answerFraChoicePart1a g p choice answer
+
+def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
     if !o.isOnBattlefield || !o.isCreature || !o.controlledBy p then
@@ -461,7 +471,7 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
-  | _, _ => throw "Nothing to choose now"
+  | choice, answer => answerFraChoicePart1b g p choice answer
 
 def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
@@ -1182,7 +1192,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
-def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+private def defaultFraActionPart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
     .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
@@ -1244,6 +1254,10 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action 
   | .mayRevealToHand _ eligible _ =>
     if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
   | .arrangeCards ids _ => .choosePermanents ids
+  | _ => .decline
+
+def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+  match choice with
   | .chooseCards ids max purpose =>
     match purpose with
     | .amassArmy .. =>
@@ -1315,7 +1329,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action 
         o.subtypes.foldl (fun acc s =>
           if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD "Human")
-  | _ => .decline
+  | choice => defaultFraActionPart1 g p choice
 
 end Game
 end Mtg.Engine
