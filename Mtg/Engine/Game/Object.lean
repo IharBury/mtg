@@ -12,14 +12,16 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
-/-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
+/-- Permission to play a card from exile (CR 701.14 / 715.3d), or snapshot of
+the object whose event caused a triggered ability to trigger (`TriggerCause`,
+CR 603.2 / CR 603.7c / CR 608.2c). -/
 structure PlayPermission where
   /-- The player who may play the card. -/
-  player : PlayerId
+  player : PlayerId := ⟨0⟩
   /-- Remaining endings of `player`'s turns before the permission expires.
   Granted as 2 during that player's turn so it lasts until the end of their
   next turn. Ignored when `fromAdventure` is true. -/
-  turnEndsRemaining : Nat
+  turnEndsRemaining : Nat := 0
   /-- CR 715.3d permission from resolving an Adventure: lasts while the card
   remains exiled, and the card cannot be recast as an Adventure this way. -/
   fromAdventure : Bool := false
@@ -41,16 +43,20 @@ structure PlayPermission where
   prepareSource : Option ObjectId := none
   /-- Cast by paying life equal to mana value instead of the mana cost. -/
   payLifeEqualManaValue : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Snapshot of the object whose event caused a triggered ability to trigger
-(CR 603.2 / CR 603.7c / CR 608.2c). -/
-structure TriggerCause where
   id : Option ObjectId := none
   controller : Option PlayerId := none
   power : Option Int := none
   status : Option Status := none
+  ids : Array ObjectId := #[]
+  boardTitle : String := ""
+  label : String := ""
+  detail : Option String := none
+  hiddenActivity : String := ""
 deriving Repr, Inhabited, BEq
+
+/-- Snapshot of the object whose event caused a triggered ability to trigger
+(CR 603.2 / CR 603.7c / CR 608.2c). -/
+abbrev TriggerCause := PlayPermission
 
 /-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
 abbrev CopyDuration :=
@@ -82,10 +88,16 @@ namespace CopyDuration
 end CopyDuration
 
 /-- Active temporary copy effect on a permanent, storing the original printed
-characteristics to restore when `duration` expires (CR 707 / CR 613.2). -/
+characteristics to restore when `duration` expires (CR 707 / CR 613.2), or a
+seat at the table before objects are created (`Seat`, CR 103). -/
 structure CopyEffect where
-  restore : CardDef
+  restore : CardDef := default
   duration : CopyDuration := .permanent
+  name : String := ""
+  deck : Array CardDef := #[]
+  /-- Cards outside the game the player may use, such as a sideboard
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
 deriving Repr, Inhabited
 
 /-- Additional and alternative costs paid when casting a spell (CR 601.2b / CR 702.32 / CR 702.194). -/
@@ -217,14 +229,18 @@ structure GameObject extends ControlState, StackAbilityState, ObjectCastAndExile
   attachedTo : Option ObjectId := none
 deriving Repr, Inhabited
 
-/-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
+/-- How one attacking or blocking creature assigns its combat damage (CR 510.1),
+or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
 structure CreatureCombatAssignment where
-  source : ObjectId
+  source : ObjectId := ⟨0⟩
   /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
   blocking (CR 510.1d). -/
   toCreatures : Array (ObjectId × Int) := #[]
   /-- Leftover assigned to the defending player (unblocked or trample). -/
   toPlayer : Int := 0
+  player : PlayerId := ⟨0⟩
+  spellId : ObjectId := ⟨0⟩
+  cost : CopyDuration := .permanent
 deriving Repr, Inhabited, BEq
 
 namespace GameObject
@@ -419,15 +435,16 @@ def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a
-player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
+player would receive priority (CR 603.3 / 603.3b), or game start configuration
+(`StartConfig`, CR 103). `source` is a snapshot of
 the permanent as it existed when the trigger event occurred. `lastKnownPower`
 is last-known power for dies triggers (CR 113.7a) and the number of cards
 looked at for “whenever you scry” (CR 701.20). `lastKnownToughness` is
 last-known toughness for attack triggers that copy P/T (CR 113.7a). -/
 structure WaitingTrigger where
-  controller : PlayerId
-  source : GameObject
-  ability : TriggeredAbility
+  controller : PlayerId := ⟨0⟩
+  source : GameObject := default
+  ability : TriggeredAbility := default
   /-- Event this ability is waiting to be put on the stack for. -/
   event : TriggerEvent := .dying
   lastKnownPower : Option Int := none
@@ -440,6 +457,15 @@ structure WaitingTrigger where
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
+  seats : Array CopyEffect := #[]
+  format : Format := .constructed
+  /-- CR 903.12 Brawl option. The first mulligan is free (CR 103.5c / 903.12g). -/
+  brawl : Bool := false
+  seed : UInt64 := 20260807
+  /-- Index into `seats`. `none` means the RNG chooses. -/
+  startingPlayer : Option Nat := none
+  /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
+  norandom : Bool := false
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

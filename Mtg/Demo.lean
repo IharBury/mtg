@@ -144,10 +144,33 @@ namespace DemoDeck
 
 end DemoDeck
 
-/-- A named player and the deck they sit with. -/
+/-- A named player and the deck they sit with, a pass-until shortcut goal
+(`PassUntilGoal`), an `--input` script (`InputScript`), or raw CLI flag values
+(`DemoFlagValues`). -/
 structure DemoPlayer where
-  name : String
-  deck : DemoDeck
+  name : String := ""
+  deck : DemoDeck := .welcome .white
+  issuer : PlayerId := ⟨0⟩
+  startTurn : Nat := 0
+  startStep : Step := .untap
+  kind : DemoDeck := .welcome .white
+  flags : List String := []
+  commands : List String := []
+  interactive : Bool := false
+  multiplayer : Bool := false
+  playerView : Bool := false
+  norandom : Bool := false
+  constructed : Bool := false
+  seed : Option UInt64 := none
+  fuel : Option Nat := none
+  inputFile : Option String := none
+  outputFile : Option String := none
+  check : Bool := false
+  names : Array String := #[]
+  decks : Array DemoDeck := #[]
+  decidesName : Option String := none
+  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
+  modeSet : Bool := false
 deriving Repr, Inhabited, DecidableEq
 
 /-- Default table: Chandra (red) and Nissa (green). -/
@@ -1262,10 +1285,26 @@ def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | _, [] => g.apply p .keep
   | _, _ => throw keepUsage
 
-/-- Game after `autopay`, and the `tap`/`pay` lines that produced it. -/
+/-- Game after `autopay` or a pass-until shortcut (`PassUntilResult`), the
+lines that produced it, or parsed CLI options (`DemoOptions`). -/
 structure AutopayResult where
-  game : Game
-  commands : Array String
+  game : Game := default
+  commands : Array String := #[]
+  interactive : Bool := false
+  multiplayer : Bool := false
+  playerView : Bool := false
+  norandom : Bool := false
+  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
+  constructed : Bool := false
+  seed : UInt64 := 20260807
+  fuel : Nat := 300
+  inputFile : Option String := none
+  outputFile : Option String := none
+  /-- Replay `--input` and require a finished legal game. -/
+  check : Bool := false
+  players : Array DemoPlayer := #[]
+  /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
+  decides : Option Nat := none
 
 /-- Accepted `tap` line for one mana ability so `--output` can replay it. -/
 def tapCommand (id : ObjectId) (m : ManaType) : String :=
@@ -1410,9 +1449,7 @@ export PassUntilTarget (passUntilTargetKind nextTurnCombat nextTurnMain nextMain
 end DemoDeck
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
-structure PassUntilResult where
-  game : Game
-  commands : Array String
+abbrev PassUntilResult := AutopayResult
 
 def yourTurnUsage : String := "usage: your turn"
 def myTurnUsage : String := "usage: my turn"
@@ -1489,12 +1526,7 @@ end DemoDeck
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/
-structure PassUntilGoal where
-  issuer : PlayerId
-  startTurn : Nat
-  startStep : Step
-  kind : PassUntilKind
-deriving DecidableEq, Repr
+abbrev PassUntilGoal := DemoPlayer
 
 def PassUntilGoal.uninterruptible (goal : PassUntilGoal) : Bool :=
   match goal.kind with
@@ -1552,7 +1584,7 @@ def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
     (cmds : Array String) (forceEmptyCombat := false) :
     Except String PassUntilResult :=
   match fuel with
-  | 0 => throw goal.kind.fuelError
+  | 0 => throw (PassUntilKind.fuelError goal.kind)
   | n + 1 =>
     if g.over || reachedPassUntilGoal g goal then
       .ok { game := g, commands := cmds }
@@ -1807,9 +1839,7 @@ def isFlagLine (s : String) : Bool :=
   s.startsWith "--"
 
 /-- Flags and remaining commands from an `--input` file. -/
-structure InputScript where
-  flags : List String
-  commands : List String
+abbrev InputScript := DemoPlayer
 
 /-- Split trimmed non-empty lines into flag lines and commands. -/
 def inputScriptFromLines (lines : Array String) : InputScript :=
@@ -2544,41 +2574,11 @@ def parseDemoDeck (token : String) : Except String DemoDeck :=
     else
       .error s!"Unknown Welcome Deck: {token} (white, blue, black, red, or green, or a deck list file)"
 
-structure DemoOptions where
-  interactive : Bool
-  multiplayer : Bool
-  playerView : Bool
-  norandom : Bool
-  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
-  constructed : Bool
-  seed : UInt64
-  fuel : Nat
-  inputFile : Option String
-  outputFile : Option String
-  /-- Replay `--input` and require a finished legal game. -/
-  check : Bool
-  players : Array DemoPlayer
-  /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
-  decides : Option Nat
+abbrev DemoOptions := AutopayResult
 
 /-- Raw flag values before player-name validation. `seed` / `fuel` are `none`
 until those flags appear, so input-file flags can fill the defaults. -/
-structure DemoFlagValues where
-  interactive : Bool
-  multiplayer : Bool
-  playerView : Bool
-  norandom : Bool
-  constructed : Bool
-  seed : Option UInt64
-  fuel : Option Nat
-  inputFile : Option String
-  outputFile : Option String
-  check : Bool
-  names : Array String
-  decks : Array DemoDeck
-  decidesName : Option String
-  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
-  modeSet : Bool
+abbrev DemoFlagValues := DemoPlayer
 
 /-- Parse flag tokens without checking that `--input` / `--visible` have a mode. -/
 def parseFlagList (args : List String) : Except String DemoFlagValues :=

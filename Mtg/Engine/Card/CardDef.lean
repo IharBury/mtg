@@ -13,10 +13,7 @@ adventurer cards, and per-card mana-ability storage.
 namespace Mtg.Engine
 
 /-- A `{T}: Add {M} for each [subtype] you control` mana ability (CR 106.4 / 605). -/
-structure TapAddForEach where
-  mana : ManaType
-  subtype : String
-deriving Repr, Inhabited, BEq
+abbrev TapAddForEach := SagaDef
 
 namespace TapAddForEach
 
@@ -38,19 +35,7 @@ abbrev SpellAdditionalCost := CostSelector
 
 /-- Alternative characteristics of an adventurer card while it is a spell
 cast as an Adventure (CR 715.2). -/
-structure AdventureFace where
-  name : String
-  manaCost : ManaCost := ManaCost.empty
-  types : Array CardType := #[.sorcery]
-  subtypes : Array Subtype := #["Adventure"]
-  spellEffect : Option Effect := none
-  /-- Additional cost to cast this Adventure (CR 601.2b / 715.2). -/
-  additionalCost : SpellAdditionalCost := .none
-  /-- Rules lines of this face that are not a modeled spell effect. -/
-  extraLines : Array String := #[]
-  /-- Empower Jace N on this alternate face. -/
-  empowerJace : Option Nat := none
-deriving Repr, Inhabited, BEq
+abbrev AdventureFace := SagaDef
 
 namespace AdventureFace
 

@@ -468,13 +468,19 @@ where
     dropLeadingThis (collapseWs (keepSignificant (normalizePhrases (replaceNumberWords s))))
 
 /-- A stored Oracle line with the normal forms it has on a card whose name does
-not occur in it. They are computed once instead of for every card. -/
+not occur in it, or one Oracle line normalized for the card being parsed (`EffectQuery`). -/
 structure NormLine where
-  raw : String
+  raw : String := ""
   /-- `prepareBase raw`, where a name alias would be found. -/
-  base : String
-  unit : String
-  structural : String
+  base : String := ""
+  unit : String := ""
+  structural : String := ""
+  cardName : String := ""
+  /-- `nameKeys cardName`. -/
+  keys : List String := []
+  unitToks : List String := []
+  structToks : List String := []
+deriving Inhabited
 
 def NormLine.of (raw : String) : NormLine :=
   let base := prepareBase raw

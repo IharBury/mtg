@@ -203,17 +203,18 @@ def parseBareModifierPair (line : String) : Option (Int × Int) :=
 has `number = none` and `star = true`. `1+*` and `*+1` both have
 `number = some 1` and `star = true`. When the star can't be determined,
 count it as 0 (CR 208.2a), so the value is `number.getD 0`. -/
-structure PrintedStat where
-  number : Option Int := none
-  star : Bool := false
-deriving Repr, Inhabited, BEq
+abbrev PrintedStat := SagaDef
 
-namespace PrintedStat
+namespace SagaDef
 
 /-- This stat with an undetermined star counted as 0 (CR 208.2a / 208.5). -/
 def undetermined (s : PrintedStat) : Int :=
   s.number.getD 0
 
+end SagaDef
+
+namespace PrintedStat
+export SagaDef (undetermined)
 end PrintedStat
 
 private def digitValue (c : Char) : Nat :=
@@ -968,29 +969,42 @@ the same way a real card name is rewritten. -/
 private def indexName : String := "CARDNAME"
 
 /-- A chapter or one-line spell effect with its printed line, normal forms, and
-argument holes, prepared once for every card that does not name it. -/
+argument holes, prepared once for every card that does not name it, a spell
+effect candidate (`SpellProto`), or an indexed multi-line ability (`IndexedAbility`). -/
 structure EffectProto where
-  line : NormLine
-  effect : Effect
-  args : Array SlotVal
-  unitPats : List Pat
-  structPats : List Pat
+  line : NormLine := {}
+  effect : Effect := default
+  args : Array SlotVal := #[]
+  unitPats : List Pat := []
+  unitStructPats : List Pat := []
+  namesCard : Bool := false
+  hasFixed : Bool := true
+  ability : ParsedAbility := .spell default
+  raw : List String := []
+  norm : List String := []
+  light : List String := []
+  priority : Nat := 0
+  /-- Position in the catalog. On a score tie, the earlier entry wins. -/
+  order : Nat := 0
+  /-- Holes learned from `normalizeUnit`. -/
+  pats : List (List Pat) := []
+  /-- Holes learned before phrase equivalences, so open subtypes stay words. -/
+  structPats : List (List Pat) := []
+  /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
+  those are the ability's lines on every card and `light` is their light form. -/
+  ownLines : Bool := false
+  /-- `raw` joined and lowercased, to look for the card's name. -/
+  rawLower : String := ""
 
 def EffectProto.of (line : String) (e : Effect) : EffectProto :=
   let line := NormLine.of line
   let args := collectEffect e
   { line, effect := e, args
     unitPats := patsOf line.unit args
-    structPats := patsOf line.structural args }
+    unitStructPats := patsOf line.structural args }
 
 /-- One Oracle line normalized for the card being parsed. -/
-structure EffectQuery where
-  cardName : String
-  /-- `nameKeys cardName`. -/
-  keys : List String
-  unit : String
-  unitToks : List String
-  structToks : List String
+abbrev EffectQuery := NormLine
 
 def EffectQuery.of (cardName text : String) : EffectQuery :=
   let unit := normalizeUnit cardName text
@@ -1009,7 +1023,7 @@ def EffectProto.matchText (p : EffectProto) (q : EffectQuery) : Option Effect :=
   let unitPats :=
     if named then patsOf (normalizeUnit q.cardName p.line.raw) p.args else p.unitPats
   let structPats (_ : Unit) :=
-    if named then patsOf (normalizeStructural q.cardName p.line.raw) p.args else p.structPats
+    if named then patsOf (normalizeStructural q.cardName p.line.raw) p.args else p.unitStructPats
   let found := (matchPats unitPats q.unitToks p.args).orElse fun _ =>
     matchPats (structPats ()) q.structToks p.args
   found.map fun vals => if vals == p.args then p.effect else refillEffect p.effect vals
@@ -1017,30 +1031,32 @@ def EffectProto.matchText (p : EffectProto) (q : EffectQuery) : Option Effect :=
 @[irreducible, noinline] def chapterProtos : Thunk (Array EffectProto) :=
   Thunk.mk fun _ => chapterEffects.get.map fun (stored, e) => EffectProto.of stored e
 
-/-- A spell effect as a chapter or mode candidate. `fixed` is its one printed
-line when that line never includes the card's name; `effectLines` is
-recomputed for the card otherwise. -/
-structure SpellProto where
-  effect : Effect
-  fixed : Option EffectProto
-  namesCard : Bool
+/-- A spell effect as a chapter or mode candidate. When `hasFixed` is true, its
+one printed line never includes the card's name; `effectLines` is recomputed for
+the card otherwise. -/
+abbrev SpellProto := EffectProto
 
 @[irreducible, noinline] def spellProtos : Thunk (Array SpellProto) :=
   Thunk.mk fun _ => spellEffects.get.map fun e =>
     let lines := effectLines indexName e
     let namesCard := lines.any (·.contains indexName)
-    let fixed := match lines with
-      | [line] => if namesCard then none else some (EffectProto.of line e)
-      | _ => none
-    { effect := e, fixed, namesCard }
+    match lines with
+    | [line] =>
+      if namesCard then { effect := e, namesCard := true, hasFixed := false }
+      else EffectProto.of line e
+    | _ => { effect := e, namesCard, hasFixed := false }
 
 /-- The one-line prototype of a spell effect on this card, if it has one line. -/
-def SpellProto.forCard (p : SpellProto) (cardName : String) : Option EffectProto :=
+def EffectProto.forCard (p : SpellProto) (cardName : String) : Option EffectProto :=
   if p.namesCard then
     match effectLines cardName p.effect with
     | [line] => some (EffectProto.of line p.effect)
     | _ => none
-  else p.fixed
+  else if p.hasFixed then some p else none
+
+namespace SpellProto
+export EffectProto (forCard)
+end SpellProto
 
 /-- Stored text of the first chapter whose printed line reads as `text`. -/
 def chapterStoredText (cardName text : String) : Option String :=
@@ -1210,24 +1226,7 @@ def abilityLines (cardName : String) (ab : ParsedAbility) : List String :=
   | .spell e => effectLines cardName e
   | .modes .. => []
 
-structure IndexedAbility where
-  ability : ParsedAbility
-  raw : List String
-  norm : List String
-  light : List String
-  priority : Nat
-  /-- Position in the catalog. On a score tie, the earlier entry wins. -/
-  order : Nat
-  args : Array SlotVal
-  /-- Holes learned from `normalizeUnit`. -/
-  pats : List (List Pat)
-  /-- Holes learned before phrase equivalences, so open subtypes stay words. -/
-  structPats : List (List Pat)
-  /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
-  those are the ability's lines on every card and `light` is their light form. -/
-  ownLines : Bool
-  /-- `raw` joined and lowercased, to look for the card's name. -/
-  rawLower : String
+abbrev IndexedAbility := EffectProto
 
 def collectParsed (ab : ParsedAbility) : Array SlotVal :=
   match ab with

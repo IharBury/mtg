@@ -20,7 +20,7 @@ structure EvasionKeywords where
   islandwalk : Bool := false
   /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
   shadow : Bool := false
-deriving BEq, Repr, Inhabited
+deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Combat-damage and attacking/blocking keyword abilities (CR 702.2 / 702.3 / 702.4 / 702.7 / 702.10 / 702.15 / 702.19 / 702.20). -/
 structure CombatKeywords where
@@ -36,7 +36,7 @@ structure CombatKeywords where
   firstStrike : Bool := false
   /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
   doubleStrike : Bool := false
-deriving BEq, Repr, Inhabited
+deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Spell, protection, triggered, and characteristic-defining keyword abilities (CR 702.8 / 702.11 / 702.12 / 702.51 / 702.72 / 702.108 / 702.131). -/
 structure SpellAndStaticKeywords where
@@ -54,11 +54,11 @@ structure SpellAndStaticKeywords where
   changeling : Bool := false
   /-- Convoke (CR 702.51): tap creatures to help pay this spell. -/
   convoke : Bool := false
-deriving BEq, Repr, Inhabited
+deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Keyword abilities that the engine currently understands. -/
 structure Keywords extends EvasionKeywords, CombatKeywords, SpellAndStaticKeywords where
-deriving BEq, Repr, Inhabited
+deriving DecidableEq, BEq, Repr, Inhabited
 
 namespace Keywords
 

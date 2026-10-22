@@ -722,8 +722,10 @@ def takeStatic (ab : @& StaticAbility) : ArgM StaticAbility := do
   | .pt (.creaturesYouControlGet p t ss otherOnly) =>
     let ss ← takeStrs ss
     return .pt (.creaturesYouControlGet (← takeInt p) (← takeInt t) ss otherOnly)
-  | .enchantedCreatureGets p t => return .enchantedCreatureGets (← takeInt p) (← takeInt t)
-  | .equippedCreatureGets p t => return .equippedCreatureGets (← takeInt p) (← takeInt t)
+  | .pt (.hostGets host p t) =>
+    if host == "Enchanted creature" || host == "Equipped creature" then
+      return .pt (.hostGets host (← takeInt p) (← takeInt t))
+    else return ab
   | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeStrs ss)
   | .combat (.cantBeBlockedCount n maxBlockers) =>
     return .combat (.cantBeBlockedCount (← takeNat n) maxBlockers)

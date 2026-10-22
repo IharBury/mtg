@@ -224,24 +224,9 @@ def clearedAtEndOfTurn (pl : Player) : Player :=
 end Player
 
 /-- A seat at the table before objects are created. -/
-structure Seat where
-  name : String
-  deck : Array CardDef
-  /-- Cards outside the game the player may use, such as a sideboard
-  (CR 400.11b). -/
-  sideboard : Array CardDef := #[]
-deriving Repr, Inhabited
+abbrev Seat := CopyEffect
 
-structure StartConfig where
-  seats : Array Seat
-  format : Format := .constructed
-  /-- CR 903.12 Brawl option. The first mulligan is free (CR 103.5c / 903.12g). -/
-  brawl : Bool := false
-  seed : UInt64 := 20260807
-  /-- Index into `seats`. `none` means the RNG chooses. -/
-  startingPlayer : Option Nat := none
-  /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
-  norandom : Bool := false
+abbrev StartConfig := WaitingTrigger
 
 abbrev Action := LibraryChoice
 

@@ -31,11 +31,12 @@ namespace Target
 
 end Target
 
-/-- A spell or ability on the stack (CR 405). Last array element is the top. -/
+/-- A spell or ability on the stack (CR 405), or shared spell-resolution context
+(`SpellResolutionContext`, CR 608.2c). Last array element is the top. -/
 structure StackEntry where
-  objectId : ObjectId
-  controller : PlayerId
-  targets : Array Target
+  objectId : ObjectId := ⟨0⟩
+  controller : PlayerId := ⟨0⟩
+  targets : Array Target := #[]
   /-- Damage assigned to each target of a “divided as you choose” effect
   (CR 601.2d). Parallel to `targets`. -/
   dividedDamage : Array Nat := #[]

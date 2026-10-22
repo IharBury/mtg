@@ -250,19 +250,15 @@ def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) 
 
 /-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
 cost (CR 106.10). -/
-structure ManaAllowances where
-  hero : Bool := false
-  villain : Bool := false
-  cantNonartifact : Bool := false
-  creature : Bool := false
-  spend : ManaSpend := {}
-deriving Inhabited
+abbrev ManaAllowances := ManaSpend
 
 /-- What restricted mana may pay for `prop`. -/
 def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
-  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
+  { g.proposedManaSpend prop with
+    hero := g.proposedAllowsHeroRestricted prop
+    villain := g.proposedAllowsVillainRestricted prop
     cantNonartifact := g.proposedAllowsCantNonartifact prop
-    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
+    creature := g.proposedAllowsCreatureRestricted prop }
 
 /-- Whether some assignment of types from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)

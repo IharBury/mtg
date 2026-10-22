@@ -413,8 +413,9 @@ def ManaUse.isFra : ManaUse → Bool
   | .elf | .instantOrSorcery | .hero | .villain | .cantNonartifact | .creatureSource | .manaUseKind _ _ _ _ _ _ false => false
   | _ => true
 
-/-- What a payment is for, as far as `ManaUse` restrictions care. The
-default is an activated ability or another non-spell payment. -/
+/-- What a payment is for, as far as `ManaUse` restrictions care, and restricted
+mana allowances (`ManaAllowances`, CR 106.10). The default is an activated
+ability or another non-spell payment. -/
 structure ManaSpend where
   spell : Bool := false
   fromHand : Bool := false
@@ -428,7 +429,13 @@ structure ManaSpend where
   sourceSubtypes : Array String := #[]
   /-- Activating an equip ability. -/
   equip : Bool := false
+  hero : Bool := false
+  villain : Bool := false
+  cantNonartifact : Bool := false
+  creature : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
+
+def ManaSpend.spend (s : ManaSpend) : ManaSpend := s
 
 /-- Whether mana restricted to `u` may pay for `s`. -/
 def ManaUse.allows : ManaUse → ManaSpend → Bool

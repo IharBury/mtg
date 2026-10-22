@@ -212,13 +212,25 @@ def romanNumeral (n : Nat) : String :=
         n := n - v
     return acc
 
-/-- Printed Saga (CR 714). The sacrifice point is the final chapter number
+/-- Printed Saga (CR 714), adventurer card's alternative characteristics (`AdventureFace`, CR 715.2), `{T}: Add {M} for each [subtype] you control` entry (`TapAddForEach`, CR 106.4 / 605), or printed power/toughness box side (`PrintedStat`, CR 208.1 / 208.2). The sacrifice point is the final chapter number
 (CR 714.2d / 714.4). The parenthetical “Sacrifice after …” line is reminder
 text and is not read (CR 207.2a). -/
 structure SagaDef where
   /-- Final chapter as a Roman numeral (CR 714.2d). -/
-  sacrificeAfter : String
-  chapters : Array SagaChapter
+  sacrificeAfter : String := ""
+  chapters : Array SagaChapter := #[]
+  mana : ManaType := .colorless
+  subtype : String := ""
+  number : Option Int := none
+  star : Bool := false
+  name : String := ""
+  manaCost : ManaCost := ManaCost.empty
+  types : Array CardType := #[.sorcery]
+  subtypes : Array Subtype := #["Adventure"]
+  spellEffect : Option Effect := none
+  additionalCost : CostSelector := .none
+  extraLines : Array String := #[]
+  empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 namespace SagaDef

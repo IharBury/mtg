@@ -15,10 +15,7 @@ set_option synthInstance.maxSize 1024
 
 /-- Shared spell-resolution context (controller and announced targets) for a
 pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
-structure SpellResolutionContext where
-  controller : PlayerId := ⟨0⟩
-  targets : Array Target := #[]
-deriving Repr, Inhabited
+abbrev SpellResolutionContext := StackEntry
 
 /-- Shared ability context for a triggered ability whose resolution is paused on
 a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2), or
@@ -26,7 +23,6 @@ context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`). -/
 structure TriggerResolutionContext extends SpellResolutionContext where
   ability : TriggeredAbility := default
   sourceId : Option ObjectId := none
-  dividedDamage : Array Nat := #[]
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
   sourceName : String := "This creature"
@@ -78,7 +74,9 @@ namespace CopyDuration
 export DelayedEndStepTrigger (delayedEndStepKind returnExiled exilePermanent sacrificePermanent returnFromGraveyard syntheticDestiny)
 end CopyDuration
 
-/-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
+/-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6), multi-card
+or conditional discard requirement (`DiscardRequirement`, CR 701.8), or extra
+turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720). -/
 structure MulliganState where
   /-- Opening hands are kept and a “may begin on the battlefield” choice is
   still unfinished (CR 103.6). -/
@@ -90,6 +88,28 @@ structure MulliganState where
   willMulligan : Array PlayerId := #[]
   /-- Players who still must put cards on the bottom after simultaneous mulligans. -/
   toBottom : Array PlayerId := #[]
+  /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
+  card finishes the requirement early. -/
+  thirstDiscardsLeft : Nat := 0
+  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
+  thirstDiscardType : CardType := .artifact
+  /-- Remaining discards for a required multi-card discard such as “discard
+  two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
+  early. -/
+  pendingDiscardsLeft : Nat := 0
+  /-- Put a +1/+1 counter on this permanent after the current discard choices
+  finish (Ninja of the Hand). -/
+  plusOneAfterDiscards : Option ObjectId := none
+  /-- Extra turns to take before the next player in turn order (Kang). -/
+  extraTurns : Array PlayerId := #[]
+  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
+  powerUpsForbidden : Bool := false
+  /-- Player-controlling effect: (you, the player you control). Last created
+  wins (MSH 259). -/
+  playerControl : Option (PlayerId × PlayerId) := none
+  /-- If the controlled player skips their next turn, control applies to the
+  next turn they actually take (MSH 221). -/
+  controlOnNextTakenTurn : Bool := false
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
@@ -107,11 +127,41 @@ abbrev MayEffectRest := UnlessPaysRest
 /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
 abbrev SpellOrRest := UnlessPaysRest
 
-/-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
+/-- Pending `TriggerResolution.may` or `mayThen` branch choice (CR 603.3 / 608.2c),
+or follow-up actions after a pending scry or surveil completes (`AfterScrySurveil`, CR 701.18 / CR 701.42). -/
 structure TriggerMayBranch where
   onAccept : Option TriggeredAbility.TriggerResolution := none
   onDecline : Option TriggeredAbility.TriggerResolution := none
   context : Option TriggerSequenceRest := none
+  /-- Flattened steps of the `mayThen` conditional waiting in
+  `triggerSequenceRest`. Declining the optional action drops this many. -/
+  drop : Nat := 0
+  /-- After an optional `mayThen` action cannot be performed, the sequence
+  fold skips this many following steps. -/
+  skip : Nat := 0
+  /-- Conditional of the `mayThen` currently offered. The optional action
+  reads it for its log and which choice to open. -/
+  conditional : Option TriggeredAbility.TriggerResolution := none
+  /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
+  resumes the conditional. -/
+  resume : Bool := false
+  /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
+  pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- After Palantír of Orthanc finishes scrying, this opponent may have
+  the controller draw. Stores controller, opponent, and the Palantír. -/
+  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
+  its controller, source, and what to do. -/
+  fraAfterLook : Option (PlayerId × Option ObjectId × Resolution) := none
+  /-- The following `surveil` returns a card with mana value at most the life
+  gained this turn (ruling 750). -/
+  armSurveilReturn : Bool := false
+  /-- After the pending surveil, a card with mana value at most this put into
+  the graveyard goes to its owner's hand (Enlightened Confidant). -/
+  surveilReturnMvAtMost : Option Nat := none
+  /-- A noncreature, nonland card put into the graveyard by the pending
+  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
+  surveilReturnNoncreatureNonland : Bool := false
 deriving Repr, Inhabited
 
 /-- Follow-up action after a library search completes (CR 701.23). -/
@@ -159,60 +209,17 @@ deriving Repr, Inhabited, BEq
 
 /-- State for a pending `TriggerResolution.mayThen` ("you may ... If you do, ...")
 branch in a trigger sequence (CR 603.3 / CR 608.2c). -/
-structure MayThenState where
-  /-- Flattened steps of the `mayThen` conditional waiting in
-  `triggerSequenceRest`. Declining the optional action drops this many. -/
-  drop : Nat := 0
-  /-- After an optional `mayThen` action cannot be performed, the sequence
-  fold skips this many following steps. -/
-  skip : Nat := 0
-  /-- Conditional of the `mayThen` currently offered. The optional action
-  reads it for its log and which choice to open. -/
-  conditional : Option TriggeredAbility.TriggerResolution := none
-  /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
-  resumes the conditional. -/
-  resume : Bool := false
-deriving Repr, Inhabited
+abbrev MayThenState := TriggerMayBranch
 
 /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
-structure AfterScrySurveil where
-  /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
-  pendingDrawAfterScry : Option (PlayerId × Nat) := none
-  /-- After Palantír of Orthanc finishes scrying, this opponent may have
-  the controller draw. Stores controller, opponent, and the Palantír. -/
-  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
-  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
-  its controller, source, and what to do. -/
-  fraAfterLook : Option (PlayerId × Option ObjectId × Resolution) := none
-  /-- The following `surveil` returns a card with mana value at most the life
-  gained this turn (ruling 750). -/
-  armSurveilReturn : Bool := false
-  /-- After the pending surveil, a card with mana value at most this put into
-  the graveyard goes to its owner's hand (Enlightened Confidant). -/
-  surveilReturnMvAtMost : Option Nat := none
-  /-- A noncreature, nonland card put into the graveyard by the pending
-  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
-  surveilReturnNoncreatureNonland : Bool := false
-deriving Repr, Inhabited
+abbrev AfterScrySurveil := TriggerMayBranch
 
 /-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
-structure DiscardRequirement where
-  /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
-  card finishes the requirement early. -/
-  thirstDiscardsLeft : Nat := 0
-  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
-  thirstDiscardType : CardType := .artifact
-  /-- Remaining discards for a required multi-card discard such as “discard
-  two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
-  early. -/
-  pendingDiscardsLeft : Nat := 0
-  /-- Put a +1/+1 counter on this permanent after the current discard choices
-  finish (Ninja of the Hand). -/
-  plusOneAfterDiscards : Option ObjectId := none
-deriving Repr, Inhabited, BEq
+abbrev DiscardRequirement := MulliganState
 
 /-- Simultaneous zone-change batch state for replacement effects and batch triggers
-(CR 614.6 / CR 603.2c). -/
+(CR 614.6 / CR 603.2c) and most recent event parameters read by triggered abilities
+(`LastTriggerEvent`, CR 603.2 / CR 608.2c). -/
 structure BatchMoveState where
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
@@ -226,11 +233,6 @@ structure BatchMoveState where
   per-object “creature cards to graveyard” triggers so “one or more”
   fires once (Robot Domination; MSH 138). -/
   suppressCreatureCardsToGy : Bool := false
-deriving Repr, Inhabited
-
-/-- Most recent event parameters read by triggered abilities ("that player",
-"that much", "that creature", CR 603.2 / CR 608.2c). -/
-structure LastTriggerEvent where
   /-- Player most recently dealt combat damage by a creature whose
   combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
   lastCombatDamagePlayer : Option PlayerId := none
@@ -242,21 +244,14 @@ structure LastTriggerEvent where
   lastBecameTapped : Option ObjectId := none
   /-- Most recent attacking creature that died (new GY object id; Ares). -/
   lastDiedAttacker : Option ObjectId := none
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited
+
+/-- Most recent event parameters read by triggered abilities ("that player",
+"that much", "that creature", CR 603.2 / CR 608.2c). -/
+abbrev LastTriggerEvent := BatchMoveState
 
 /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
-structure TurnControlState where
-  /-- Extra turns to take before the next player in turn order (Kang). -/
-  extraTurns : Array PlayerId := #[]
-  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
-  powerUpsForbidden : Bool := false
-  /-- Player-controlling effect: (you, the player you control). Last created
-  wins (MSH 259). -/
-  playerControl : Option (PlayerId × PlayerId) := none
-  /-- If the controlled player skips their next turn, control applies to the
-  next turn they actually take (MSH 221). -/
-  controlOnNextTakenTurn : Bool := false
-deriving Repr, Inhabited, BEq
+abbrev TurnControlState := MulliganState
 
 /-- Numeric counts recorded across sequential resolution steps (CR 608.2c). -/
 structure ResolutionCountNotes where

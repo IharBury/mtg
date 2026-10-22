@@ -317,18 +317,7 @@ def canSeeScry (viewer : Option PlayerId) (scrying : PlayerId) : Bool :=
 
 /-- A pending look at library cards (scry, or a Cosmic Cube may-cast) with
 the wording pieces shared by the board block and the player section. -/
-structure LibraryLook where
-  player : PlayerId
-  /-- Looked-at cards, last = current top. -/
-  ids : Array ObjectId
-  /-- Board-block heading (`Scry`, `May cast`). -/
-  boardTitle : String
-  /-- Player-section label (`scry 2`, `may cast`). -/
-  label : String
-  /-- Extra parenthetical detail (`mana value ≤ 3`). -/
-  detail : Option String := none
-  /-- What other players see instead of the faces (`is scrying 2`). -/
-  hiddenActivity : String
+abbrev LibraryLook := PlayPermission
 
 /-- The pending library look, if a player is looking at cards. -/
 def libraryLook? (g : Game) : Option LibraryLook :=

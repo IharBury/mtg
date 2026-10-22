@@ -113,11 +113,7 @@ export WardCost (wardCostKind manaOrDiscard nonManaWard sacrificePermanents gene
 end CopyDuration
 
 /-- A queued ward obligation waiting to be announced. -/
-structure WardObligation where
-  player : PlayerId
-  spellId : ObjectId
-  cost : WardCost
-deriving Repr, Inhabited, BEq
+abbrev WardObligation := CreatureCombatAssignment
 
 /-- Where cards found by a library search go (CR 701.19). -/
 abbrev SearchDest := AfterRandom
