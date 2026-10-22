@@ -1,5 +1,6 @@
 import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.TriggerEvent
+import Mtg.Engine.Game.Player
 import Mtg.Engine.Turn
 import Mtg.Engine.TypeLine
 import Mtg.Engine.Zone
@@ -72,6 +73,388 @@ def mountain (o : EventObject) : Bool :=
 
 end EventObject
 
+/-- This object as it is now, for a `GameEvent` (CR 113.7a). -/
+def GameObject.asEvent (o : GameObject) : EventObject :=
+  { id := o.id
+    controller := o.controller
+    owner := o.owner
+    creature := o.isCreature
+    token := o.printed.isToken
+    artifact := o.printed.isArtifact || o.types.any (· == .artifact)
+    land := o.printed.isLand || o.types.any (· == .land)
+    planeswalker := o.printed.isPlaneswalker
+    instantOrSorcery := o.printed.isInstantOrSorcery
+    equipment := o.printed.isEquipment
+    legendary := o.isLegendary
+    attacking := o.status.attacking
+    changeling := o.printed.keywords.changeling
+    subtypes := o.subtypes }
+
+/-- Later steps of a trigger `sequence`, waiting until the pending choice
+opened by an earlier step finishes. They run before any player receives
+priority, so they stay part of that resolution. -/
+structure TriggerSequenceRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  steps : List TriggeredAbility.TriggerResolution := []
+deriving Repr, Inhabited, BEq
+
+/-- A pending `TriggerResolution.or`. The controller chooses one alternative,
+then that step resolves with this ability context. -/
+structure TriggerOrRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+deriving Repr, Inhabited, BEq
+
+/-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
+The chosen index resolves with this ability context. -/
+structure ChooseModesRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
+deriving Repr, Inhabited, BEq
+
+/-- One change to a permanent's `Status` (CR 110.5). -/
+inductive StatusChange where
+  | set (s : Status)
+  | reset
+  | addDamage (n : Int) (deathtouch : Bool := false)
+  | withoutCounters
+  | proliferatedExceptPlusOne (extra : Nat := 0)
+  | addCountersExceptPlusOne («from» : Status) (extra : Nat := 0)
+  | addPump (p t : Int)
+  | addPlusOnePlusOne (n : Nat := 1)
+  | addCounters (kind : CounterKind) (n : Nat)
+  | removeCounters (kind : CounterKind) (n : Nat := 1)
+  | grantUntilEot (k : Keywords)
+  | clearedAtCleanup
+  | clearCombat
+  | addBlocking (attackerId : ObjectId)
+  | removeBlocking (attackerId : ObjectId)
+  | pushAbilitiesActivated (idx : Nat)
+  | incActivationsThisTurn
+  | pushGrantedStatic (sa : StaticAbility)
+  | pushGrantedTriggered (ta : TriggeredAbility)
+  | pushGrantedTriggerUntilEot (ta : TriggeredAbility)
+  | pushHexproofGrantedBy (id : ObjectId)
+  | removeHexproofGrantedBy (id : ObjectId)
+  | pushPreventDamageGrantedBy (id : ObjectId)
+  | removePreventDamageGrantedBy (id : ObjectId)
+  | pushCantUntapGrantedBy (id : ObjectId)
+  | removeCantUntapGrantedBy (id : ObjectId)
+  | pushLosesAbilitiesGrantedBy (id : ObjectId)
+  | removeLosesAbilitiesGrantedBy (id : ObjectId)
+  | addAdditionalSubtype (sub : String)
+  | pushAdditionalSubtype (sub : String)
+  | pushChosenMode (m : Nat)
+  | pushModeChosenThisTurn (m : Nat)
+  | pushAllianceModeChosen (m : Nat)
+  | pushUntilTurnOfPump (p : PlayerId) (dp dt : Int)
+  | clearUntilTurnOfPumpFor (p : PlayerId)
+  | pushColorlessGrantUntilCast (id : ObjectId)
+  | removeColorlessGrantUntilCast (id : ObjectId)
+  | addCombatDamageToPlayer (p : PlayerId)
+  | resetPerTurnFlags
+  | tapped (v : Bool)
+  | damage (v : Int)
+  | summoningSick (v : Bool)
+  | pump (v : Int × Int)
+  | attacking (v : Bool)
+  | attackingWhom (v : Option PlayerId)
+  | attackingPlaneswalker (v : Option ObjectId)
+  | blocking (v : Array ObjectId)
+  | blocked (v : Bool)
+  | activationsThisTurn (v : Nat)
+  | abilitiesActivatedThisTurn (v : Array Nat)
+  | plusOnePlusOne (v : Nat)
+  | minusOneMinusOne (v : Nat)
+  | loyaltyCounters (v : Nat)
+  | loyaltyActivatedThisTurn (v : Bool)
+  | prepared (v : Bool)
+  | untilEotKeywords (v : Keywords)
+  | untilEotLosesIndestructible (v : Bool)
+  | untilEotExileIfDies (v : Bool)
+  | setBasePT (v : Option (Int × Int))
+  | additionalCreature (v : Bool)
+  | additionalSubtypes (v : Array String)
+  | grantedStaticAbilities (v : Array StaticAbility)
+  | grantedTriggeredAbilities (v : Array TriggeredAbility)
+  | hexproofGrantedBy (v : Array ObjectId)
+  | preventDamageGrantedBy (v : Array ObjectId)
+  | dealtDeathtouch (v : Bool)
+  | hope (v : Nat)
+  | charge (v : Nat)
+  | stun (v : Nat)
+  | firedOnceEachTurn (v : Bool)
+  | optionalOnceUsed (v : Bool)
+  | additionalArtifactUntilEot (v : Bool)
+  | hone (v : Nat)
+  | shadow (v : Nat)
+  | phasedOut (v : Bool)
+  | phasedWith (v : Option ObjectId)
+  | ringBearer (v : Bool)
+  | allianceModesChosen (v : Array Nat)
+  | shield (v : Nat)
+  | finality (v : Nat)
+  | declaredAsAttackerThisTurn (v : Bool)
+  | boastUsedThisTurn (v : Bool)
+  | plan (v : Nat)
+  | powerUpUsed (v : Bool)
+  | powerUpActivations (v : Nat)
+  | becameTappedThisTurn (v : Bool)
+  | gotPlusOneThisTurn (v : Bool)
+  | cantUntapGrantedBy (v : Array ObjectId)
+  | additionalCreatureUntilEot (v : Bool)
+  | harnessed (v : Bool)
+  | transformed (v : Bool)
+  | cantTransform (v : Bool)
+  | losesAbilitiesGrantedBy (v : Array ObjectId)
+  | losesAbilitiesUntilEot (v : Bool)
+  | chosenModes (v : Array Nat)
+  | modesChosenThisTurn (v : Array Nat)
+  | cardsInHandPowerUntilEot (v : Bool)
+  | chosenOdd (v : Option Bool)
+  | lore (v : Nat)
+  | indestructibleCounters (v : Nat)
+  | lifelinkCounters (v : Nat)
+  | chosenCreatureType (v : Option String)
+  | cantBeBlockedByPlayer (v : Option PlayerId)
+  | cantBeBlockedExceptByHasteUntilEot (v : Bool)
+  | cantBlockUntilEot (v : Bool)
+  | manaSpentToCast (v : Nat)
+  | dealtDamageThisTurn (v : Bool)
+  | replacedCreatureTypesUntilEot (v : Option (Array String))
+  | pumpPerArtifactUntilEot (v : Bool)
+  | influence (v : Nat)
+  | onlyFoodArtifact (v : Bool)
+  | burden (v : Nat)
+  | quest (v : Nat)
+  | invasion (v : Nat)
+  | trampleCounters (v : Nat)
+  | keywordCounters (v : KeywordCounters)
+  | combatDamageCreatesTreasure (v : Bool)
+  | returnedAsArtifact (v : Bool)
+  | controlUntilEot (v : Bool)
+  | controlTurnEndsLeft (v : Nat)
+  | ironFistTapGrants (v : Nat)
+  | untilTurnOfPump (v : Array (PlayerId × Int × Int))
+  | grantedTriggersUntilEot (v : Array TriggeredAbility)
+  | exhaustUsed (v : Bool)
+  | colorlessGrantUntilCast (v : Array ObjectId)
+  | chosenColor (v : Option Color)
+  | dealtCombatDamage (v : Bool)
+  | combatDamageToPlayers (v : Array PlayerId)
+  | animatedConstruct55 (v : Bool)
+  | chosenName (v : Option String)
+  | faceDown (v : Bool)
+  | goaded (v : Bool)
+  | story (v : Nat)
+  | time (v : Nat)
+  | notACreature (v : Bool)
+  | windcragMardu (v : Bool)
+  | chosenCardType (v : Option String)
+  | freeCastFromGraveyard (v : Bool)
+  | isCommander (v : Bool)
+  | firstStrikeOnYourTurn (v : Bool)
+deriving Repr, Inhabited, BEq
+
+/-- One change to a `GameObject` (CR 109). -/
+inductive ObjectChange where
+  | status (c : StatusChange)
+  | statuses (cs : Array StatusChange)
+  | printed (v : CardDef)
+  | owner (v : PlayerId)
+  | controller (v : Option PlayerId)
+  | lastController (v : Option PlayerId)
+  | defaultController (v : Option PlayerId)
+  | controlChanged (v : Bool)
+  | zone (v : Zone)
+  | timestamp (v : Nat)
+  | abilityEffect (v : Option Effect)
+  | triggeredAbility (v : Option TriggeredAbility)
+  | reflexiveResolution (v : Option TriggeredAbility.TriggerResolution)
+  | sourceId (v : Option ObjectId)
+  | lastKnownPower (v : Option Int)
+  | lastKnownToughness (v : Option Int)
+  | playPermission (v : Option PlayPermission)
+  | decrementPlayTurnEnds
+  | attachedTo (v : Option ObjectId)
+  | adventurerCard (v : Option CardDef)
+  | linkedExile (v : Array ObjectId)
+  | pushLinkedExile (id : ObjectId)
+  | returnToZone (v : Option Zone)
+  | leaveTriggerExile (v : Array ObjectId)
+  | pushLeaveTriggerExile (id : ObjectId)
+  | castFromGraveyard (v : Bool)
+  | exileInstantSorceryInstead (v : Bool)
+  | castFromHand (v : Bool)
+  | wasCast (v : Bool)
+  | isPreparedSpell (v : Bool)
+  | fraCauseId (v : Option ObjectId)
+  | fraCauseController (v : Option PlayerId)
+  | fraCausePower (v : Option Int)
+  | fraCauseStatus (v : Option Status)
+  | exiledBy (v : Option ObjectId)
+  | fraEffectUntilTurnOf (v : Option PlayerId)
+  | flashbackUntilEot (v : Bool)
+  | kicked (v : Bool)
+  | teamworkPaid (v : Bool)
+  | sneakPaid (v : Bool)
+  | sneakAttackWhom (v : Option PlayerId)
+  | giftPromisedTo (v : Option PlayerId)
+  | isCopy (v : Bool)
+  | uncounterableThisCast (v : Bool)
+  | boastExiled (v : Array ObjectId)
+  | enterProcessed (v : Bool)
+  | treasureManaSpent (v : Bool)
+  | chosenX (v : Option Nat)
+  | copyRestore (v : Option CardDef)
+  | copyUntilEot (v : Bool)
+  | copyUntilNextTurn (v : Bool)
+  | copyUntilSourceLeaves (v : Option ObjectId)
+  | controlUntilSourceLeaves (v : Option ObjectId)
+  | restoreCopy
+deriving Repr, Inhabited, BEq
+
+/-- One change to a `Player` (CR 102). -/
+inductive PlayerChange where
+  | name (v : String)
+  | life (v : Int)
+  | startingLife (v : Int)
+  | maxHandSize (v : Nat)
+  | startingHandSize (v : Nat)
+  | manaPool (v : ManaPool)
+  | addMana (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)
+      (instRestricted : Bool := false) (heroRestricted : Bool := false)
+      (villainRestricted : Bool := false) (cantNonartifact : Bool := false)
+      (creatureRestricted : Bool := false) (fra : Option FraManaUse := none)
+  | emptyManaPool (becomesColorless : Bool := false)
+  | additionalLandsThisTurn (v : Nat)
+  | addAdditionalLandsThisTurn (n : Nat := 1)
+  | poison (v : Nat)
+  | addPoison (n : Nat)
+  | lost (v : Bool)
+  | leftTheGame (v : Bool)
+  | drewFromEmpty (v : Bool)
+  | mulligansTaken (v : Nat)
+  | incMulligansTaken
+  | keptOpeningHand (v : Bool)
+  | library (v : Array ObjectId)
+  | pushLibrary (id : ObjectId)
+  | prependLibrary (ids : Array ObjectId)
+  | appendLibrary (ids : Array ObjectId)
+  | stripLibrary (id : ObjectId)
+  | hand (v : Array ObjectId)
+  | pushHand (id : ObjectId)
+  | stripHand (id : ObjectId)
+  | graveyard (v : Array ObjectId)
+  | pushGraveyard (id : ObjectId)
+  | stripGraveyard (id : ObjectId)
+  | enduringStory (v : Bool)
+  | theRingAbilities (v : Nat)
+  | ringBearerId (v : Option ObjectId)
+  | citysBlessing (v : Bool)
+  | hasCommander (v : Bool)
+  | commanderColorIdentity (v : ColorSet)
+  | protectionFromEverything (v : Bool)
+  | eaglesBirdsNextUpkeep (v : Nat)
+  | addEaglesBirdsNextUpkeep (n : Nat)
+  | beheldQualities (v : Array String)
+  | pushBeheldQuality (q : String)
+  | cantCastSpellsThisTurn (v : Bool)
+  | attackPumpPerPlainsThisTurn (v : Nat)
+  | addAttackPumpPerPlainsThisTurn (n : Nat := 1)
+  | lifeLocked (v : Bool)
+  | typeSpellCostLessThisTurn (v : Array (CardType × Nat))
+  | pushTypeSpellCostLess (t : CardType) (n : Nat)
+  | supertypeSpellCostLessThisTurn (v : Array (Supertype × Nat))
+  | pushSupertypeSpellCostLess (s : Supertype) (n : Nat)
+  | jaceLoyaltyAtInstantSpeed (v : Bool)
+  | legendRuleOffThisTurn (v : Bool)
+  | copyNextInstantSorceryThisTurn (v : Nat)
+  | addCopyNextInstantSorceryThisTurn (n : Nat := 1)
+  | decCopyNextInstantSorceryThisTurn
+  | sideboard (v : Array CardDef)
+  | removeSideboardAt (idx : Nat)
+  | mountainExtraRedThisTurn (v : Nat)
+  | addMountainExtraRedThisTurn (n : Nat := 1)
+  | nextSpellCantBeCountered (v : Bool)
+  | teammate (v : Option PlayerId)
+  | isMonarch (v : Bool)
+  | lifeCantChange (v : Bool)
+  | cantAttackJaces (v : Bool)
+  | commanderCreatureTypes (v : Array String)
+  | resetPerTurnFlags
+deriving Repr, Inhabited, BEq
+
+/-- One change to a `StackEntry` on the stack (CR 405). -/
+inductive StackEntryChange where
+  | targets (v : Array Target)
+  | pushTarget (t : Target)
+  | pushTargets (ts : Array Target)
+  | setTargetAt (idx : Nat) (t : Target)
+  | dividedDamage (v : Array Nat)
+  | pushDividedDamage (n : Nat)
+  | targetsAnnounced (v : Bool)
+  | chosenMode (v : Option Nat)
+  | extraModes (v : Array Nat)
+  | pushExtraMode (m : Nat)
+  | skippedOptionalSlots (v : Nat)
+  | incSkippedOptionalSlots
+deriving Repr, Inhabited, BEq
+
+/-- One change to a `ProposedSpell` (CR 601.2f–h / 602.2b). -/
+inductive ProposalChange where
+  | cost (v : ManaCost)
+  | addGenericCost (n : Nat)
+  | addManaCost (c : ManaCost)
+  | reduceCostBy (c : ManaCost)
+  | substituteX (x : Nat)
+  | tapped (v : Array ObjectId)
+  | pushTapped (id : ObjectId)
+  | tapSource (v : Bool)
+  | sacrificeSource (v : Bool)
+  | needsSacrificeOther (v : Bool)
+  | needsDiscardCard (v : Bool)
+  | payLife (v : Nat)
+  | discardSource (v : Bool)
+  | abilityModes (v : Array Effect)
+  | targetKindOverride (v : Option EffectTargetKind)
+  | kicked (v : Bool)
+  | kickerAnnounced (v : Bool)
+  | giftTo (v : Option PlayerId)
+  | giftAnnounced (v : Bool)
+  | teamworkPaid (v : Bool)
+  | teamworkAnnounced (v : Bool)
+  | activation (v : Option ActivatedAbility)
+  | loyaltyX (v : Bool)
+  | removePlusOneX (v : Bool)
+  | sneakAttacker (v : Option ObjectId)
+deriving Repr, Inhabited, BEq
+
 /-- One change to the game, without the turn number. `GameEvent` stores the turn. -/
 inductive GameChange where
   /-- `object` moved from `fromZone` to `toZone`.
@@ -141,6 +524,188 @@ inductive GameChange where
   /-- `object` untapped. `replacedByStun` means a stun counter was removed
   instead, so the untap did not happen (CR 122.1d). -/
   | untapped (object : EventObject) (replacedByStun : Bool := false)
+  /-- Update a player's state. -/
+  | player (p : PlayerId) (c : PlayerChange)
+  | playerChanges (p : PlayerId) (cs : Array PlayerChange)
+  | players (v : Array Player)
+  | setPlayer (pl : Player)
+  /-- Update an object's state. -/
+  | object (id : ObjectId) (c : ObjectChange)
+  | objectChanges (id : ObjectId) (cs : Array ObjectChange)
+  | objects (v : Array GameObject)
+  | setObject (o : GameObject)
+  | removeObject (id : ObjectId)
+  | replaceObject (oldId : ObjectId) (fresh : GameObject)
+  /-- Update the stack. -/
+  | stack (v : Array StackEntry)
+  | pushStack (e : StackEntry)
+  | popStack
+  | removeFromStack (objectId : ObjectId)
+  | setStackEntryAt (idx : Nat) (e : StackEntry)
+  | stackEntry (idx : Nat) (c : StackEntryChange)
+  | stackEntryById (objectId : ObjectId) (c : StackEntryChange)
+  /-- Update the proposed spell or ability. -/
+  | proposedSpell (v : Option ProposedSpell)
+  | proposal (c : ProposalChange)
+  | proposalChanges (cs : Array ProposalChange)
+  /-- Update game fields. -/
+  | activePlayer (v : PlayerId)
+  | priority (v : PlayerId)
+  | step (v : Step)
+  | turnNumber (v : Nat)
+  | startingPlayer (v : PlayerId)
+  | isFirstTurn (v : Bool)
+  | pending (v : Pending)
+  | nextObjectId (v : Nat)
+  | timestamp (v : Nat)
+  | rng (v : Rng)
+  | norandom (v : Bool)
+  | afterRandom (v : AfterRandom)
+  | result (v : Option GameResult)
+  | log (v : Array String)
+  | logMsg (msg : String)
+  | format (v : Format)
+  | brawl (v : Bool)
+  | consecutivePasses (v : Nat)
+  | cleanupGivesPriority (v : Bool)
+  | creaturesWithoutFlyingCantBlock (v : Bool)
+  | awaitingOpeningBegin (v : Bool)
+  | mulliganToDeclare (v : Array PlayerId)
+  | willMulligan (v : Array PlayerId)
+  | pushWillMulligan (p : PlayerId)
+  | mulliganToBottom (v : Array PlayerId)
+  | assignedCombatDamage (v : Array CreatureCombatAssignment)
+  | blockersQueue (v : Array PlayerId)
+  | waitingTriggers (v : Array WaitingTrigger)
+  | enqueueWaitingTriggers (wts : Array WaitingTrigger)
+  | pushWaitingTrigger (wt : WaitingTrigger)
+  | removeWaitingTriggersOf (p : PlayerId)
+  | removeWaitingTriggersForEvent (ev : TriggerEvent)
+  | removeWaitingTriggersForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
+  | eraseFirstWaitingTriggerForPlayerSource (p : PlayerId) (sourceId : ObjectId) (part2 : Bool)
+  | addSourceDealtDamagePower (sourceId : ObjectId) (n : Int)
+  | firstStrikeDamageDone (v : Bool)
+  | pendingRegularCombatDamage (v : Bool)
+  | firstStrikeAssignedThisCombat (v : Array ObjectId)
+  | isNight (v : Bool)
+  | pendingDrawAfterScry (v : Option (PlayerId × Nat))
+  | discardedCardThisWay (v : Option (PlayerId × ObjectId))
+  | palantirAfterScry (v : Option (PlayerId × PlayerId × ObjectId))
+  | lastKnownStatus (v : Array (ObjectId × Status))
+  | recordLastKnownStatus (id : ObjectId) (s : Status)
+  | resolvingSpell (v : Option ObjectId)
+  | resolvingAbility (v : Option ObjectId)
+  | movedTo (v : Array (ObjectId × ObjectId))
+  | recordMovedTo (oldId newId : ObjectId)
+  | recentTokenIds (v : Array ObjectId)
+  | pushRecentTokenId (id : ObjectId)
+  | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
+  | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
+  | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
+  | mayPayAlsoPlusOneOn (v : Option ObjectId)
+  | humansTappedThisWay (v : Nat)
+  | permanentsDestroyedThisWay (v : Nat)
+  | removedHopeThisWay (v : Bool)
+  | permanentDealtDamageThisWay (v : Option ObjectId)
+  | returnedPermanentThisWay (v : Bool)
+  | nthResolveThisWay (v : Option Nat)
+  | skipTriggerSequenceRest (v : Bool)
+  | excessDamageThisWay (v : Nat)
+  | destroyedForAmassThisWay (v : Bool)
+  | amassControllerThisWay (v : Option PlayerId)
+  | amassAmountThisWay (v : Nat)
+  | amassYouControlledThisWay (v : Bool)
+  | milledIdsThisWay (v : Array ObjectId)
+  | pushMilledIdThisWay (id : ObjectId)
+  | revealedIdsThisWay (v : Array ObjectId)
+  | opponentsMilledThisWay (v : Bool)
+  | palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId))
+  | grimaImpulseReady (v : Bool)
+  | grimaImpulseVictim (v : Option PlayerId)
+  | grimaImpulseFound (v : Option ObjectId)
+  | grimaImpulseOthers (v : Array ObjectId)
+  | planWasSacrificed (v : Bool)
+  | sourceWasSacrificed (v : Bool)
+  | exiledIdsThisWay (v : Array ObjectId)
+  | pushExiledIdThisWay (id : ObjectId)
+  | notedCopyObject (v : Option GameObject)
+  | notedHostId (v : Option ObjectId)
+  | handDiscardedThisWay (v : Option Nat)
+  | notedSourceThisWay (v : Option ObjectId)
+  | equipmentAttachedHost (v : Option ObjectId)
+  | notedCountThisWay (v : Nat)
+  | createdTokenThisWay (v : Option ObjectId)
+  | putArtifactThisWay (v : Option (ObjectId × ObjectId))
+  | playExiledThisWay (v : Option ObjectId)
+  | armSurveilReturn (v : Bool)
+  | triggerSequenceRest (v : Option TriggerSequenceRest)
+  | setTriggerSequenceRestSteps (steps : List TriggeredAbility.TriggerResolution)
+  | setTriggerSequenceRestFromMay (steps : List TriggeredAbility.TriggerResolution)
+  | mayThenDrop (v : Nat)
+  | mayThenSkip (v : Nat)
+  | mayThenConditional (v : Option TriggeredAbility.TriggerResolution)
+  | mayOnAccept (v : Option TriggeredAbility.TriggerResolution)
+  | mayOnDecline (v : Option TriggeredAbility.TriggerResolution)
+  | mayContext (v : Option TriggerSequenceRest)
+  | sacrificedPowerThisWay (v : Option Nat)
+  | mayThenResume (v : Bool)
+  | triggerOr (v : Option TriggerOrRest)
+  | chooseModesRest (v : Option ChooseModesRest)
+  | unlessPaysInstead (v : Option Effect)
+  | unlessPaysController (v : PlayerId)
+  | unlessPaysTargets (v : Array Target)
+  | unlessPaysDue (v : Bool)
+  | mayEffect (v : Option Effect)
+  | mayController (v : PlayerId)
+  | mayTargets (v : Array Target)
+  | spellOr (v : Array Effect)
+  | spellOrController (v : PlayerId)
+  | spellOrTargets (v : Array Target)
+  | spellOrLibrary (v : Bool)
+  | surveilReturnMvAtMost (v : Option Nat)
+  | surveilReturnNoncreatureNonland (v : Bool)
+  | lockedDeathReplacements (v : Option (Array GameObject))
+  | suppressOthersDie (v : Bool)
+  | suppressCreatureCardsToGy (v : Bool)
+  | castingFromTop (v : Bool)
+  | delayedEndStepReturns (v : Array ObjectId)
+  | pushDelayedEndStepReturn (id : ObjectId)
+  | extraTurns (v : Array PlayerId)
+  | pushExtraTurn (p : PlayerId)
+  | powerUpsForbidden (v : Bool)
+  | delayedEndStepExiles (v : Array ObjectId)
+  | pushDelayedEndStepExile (id : ObjectId)
+  | conniveSource (v : Option ObjectId)
+  | plusOneAfterDiscards (v : Option ObjectId)
+  | additionalCombatPhases (v : Nat)
+  | enrageGrantsAdditionalCombat (v : Nat)
+  | resolvingDivision (v : Array Nat)
+  | pendingTokenEnters (v : Array ObjectId)
+  | pushPendingTokenEnter (id : ObjectId)
+  | playerControl (v : Option (PlayerId × PlayerId))
+  | controlOnNextTakenTurn (v : Bool)
+  | pendingLokiCopy (v : Option (PlayerId × Option ObjectId × Int))
+  | assignCombatDamageEqualToughness (v : Option PlayerId)
+  | pendingFreeRGCreature (v : Option PlayerId)
+  | plusOneAfterSearch (v : Option ObjectId)
+  | thirstDiscardsLeft (v : Nat)
+  | thirstDiscardType (v : CardType)
+  | pendingDiscardsLeft (v : Nat)
+  | wardQueue (v : Array WardObligation)
+  | enqueueWard (ws : Array WardObligation)
+  | delayedEndStepSacrifices (v : Array ObjectId)
+  | pushDelayedEndStepSacrifice (id : ObjectId)
+  | delayedGraveReturns (v : Array (ObjectId × PlayerId))
+  | pushDelayedGraveReturn (id : ObjectId) (p : PlayerId)
+  | delayedSynthetic (v : Array (PlayerId × Nat))
+  | pushDelayedSynthetic (p : PlayerId) (n : Nat)
+  | untapSearchedIfLands (v : Option Nat)
+  | pendingCreatureTokenCreators (v : Array PlayerId)
+  | pushPendingCreatureTokenCreator (p : PlayerId)
+  | ancestryLandsTapped (v : Array ObjectId)
+  | pushAncestryLandTapped (id : ObjectId)
+  | removeAncestryLandTapped (id : ObjectId)
+  | clearEvents
 deriving Repr, Inhabited, BEq
 
 /-- A game state change on a given turn (CR 500). `Game.events` records each

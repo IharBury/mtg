@@ -542,17 +542,17 @@ open Mtg.Demo.Render
 
 #guard isPassShortcutCmd "ignore" []
 
-#guard !reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
+#guard !reachedPassUntil (Tests.afterDraw.change (.step .beginningOfCombat))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
 
 #guard
   let goal := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
   !reachedIgnore Tests.afterDraw goal &&
-    reachedIgnore { Tests.afterDraw with step := .postcombatMain } goal &&
-    !reachedIgnore { Tests.afterDraw with
-      turnNumber := 2, activePlayer := ⟨1⟩, step := .precombatMain } goal &&
-    reachedIgnore { Tests.afterDraw with
-      turnNumber := 3, activePlayer := ⟨0⟩, step := .precombatMain } goal
+    reachedIgnore (Tests.afterDraw.change (.step .postcombatMain)) goal &&
+    !reachedIgnore (Tests.afterDraw.changes
+      #[.turnNumber 2, .activePlayer ⟨1⟩, .step .precombatMain]) goal &&
+    reachedIgnore (Tests.afterDraw.changes
+      #[.turnNumber 3, .activePlayer ⟨0⟩, .step .precombatMain]) goal
 
 #guard isPassSequenceCommand "main" ["phase"]
 
@@ -935,7 +935,7 @@ open Mtg.Demo.Render
       g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
   | _, _ => false
 
-#guard !shouldAutoPass { Tests.started with step := .precombatMain } []
+#guard !shouldAutoPass (Tests.started.change (.step .precombatMain)) []
 
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
 

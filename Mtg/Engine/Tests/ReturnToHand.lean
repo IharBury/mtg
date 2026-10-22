@@ -40,15 +40,15 @@ def plot : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl => { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with
@@ -107,8 +107,8 @@ noted. No target, or an illegal one, clears that note and moves nothing. -/
     logContains g "Grave Relic is returned to Nissa's hand"
 
 #guard
-  let g0 := { addPermanent afterDraw relic caster caster with
-    returnedPermanentThisWay := true }
+  let g0 := (addPermanent afterDraw relic caster caster).change
+    (.returnedPermanentThisWay true)
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken)
     (r := some (.returnToHand .permanent .returnedPermanent))
   onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
@@ -152,7 +152,7 @@ milled cards stay, and the note is cleared. -/
   let g0 := putInGraveyard (putInGraveyard afterDraw bear caster) relic caster
   let elf := namedIn g0 (g0.player caster).graveyard "Grave Bear"
   let art := namedIn g0 (g0.player caster).graveyard "Grave Relic"
-  let g0 := { g0 with milledIdsThisWay := #[elf, art] }
+  let g0 := g0.change (.milledIdsThisWay #[elf, art])
   let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
     (r := some (.returnToHand (.milledSubtype "Elf")))
   inHand g caster "Grave Bear" && inGraveyard g caster "Grave Relic" &&

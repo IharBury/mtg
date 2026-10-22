@@ -118,8 +118,8 @@ def spearDiscardedForest : Game :=
 
 /-- An empty hand skips the optional discard; no draw. -/
 def spearEmptyHand : Game :=
-  let g := { spearEntered with pending := .none, stack := #[] }
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  let g := spearEntered.changes #[.pending .none, .stack #[]]
+  let g := g.changePlayer ⟨0⟩ (.hand #[])
   g.beginMayDiscardDraw ⟨0⟩ 2
 
 #guard spearEmptyHand.pending == .none
@@ -892,8 +892,7 @@ def hospitalityTargetGone : Game :=
 def hospitalityAnimateSetup : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
-  (g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with manaPool := pl.manaPool.add (.colored .green) 7 })).recordLandPlayed ⟨0⟩
+  (g.changePlayer ⟨0⟩ (.addMana (.colored .green) 7)).recordLandPlayed ⟨0⟩
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
@@ -963,11 +962,10 @@ def hospitalitySelfLandfall : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
   let o := namedPermanent g "Beorn's Hospitality"
-  let g := g.setObject { o with
-    status := { o.status with
-      additionalCreature := true
-      additionalSubtypes := #["Bear"]
-      grantedStaticAbilities := #[.powerToughnessEqualLandsYouControl] } }
+  let g := g.changeStatuses o.id #[
+    .additionalCreature true,
+    .additionalSubtypes #["Bear"],
+    .grantedStaticAbilities #[.powerToughnessEqualLandsYouControl]]
   let g := addToHand g forest ⟨0⟩
   let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
   let g := mustApply g ⟨0⟩

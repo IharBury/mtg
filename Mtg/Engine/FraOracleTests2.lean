@@ -142,7 +142,7 @@ because X there is 0. On the stack the chosen X is included. -/
     let g := addToGraveyard afterDraw guidingHydra ⟨0⟩
     let card := graveyardCard g ⟨0⟩ "Guiding Hydra"
     let (gStack, spell) := g.allocObject guidingHydra ⟨0⟩ .stack (some ⟨0⟩)
-    let gStack := gStack.setObject { spell with chosenX := some 5 }
+    let gStack := gStack.changeObject spell.id (.chosenX (some 5))
     g.objectManaValue card == 1 &&
       (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.card card.id) &&
       gStack.objectManaValue (gStack.object! spell.id) == 6 &&
@@ -157,7 +157,7 @@ X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
   | some e =>
     let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
     let o := namedPermanent g "Guiding Hydra"
-    let g := g.setObject { o with chosenX := some 9 }
+    let g := g.changeObject o.id (.chosenX (some 9))
     let id := (namedPermanent g "Guiding Hydra").id
     g.objectManaValue (g.object! id) == 1 &&
       (let g := g.applyEffect ⟨0⟩ e #[Target.permanent id]
@@ -174,7 +174,7 @@ X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
 /-- Grant lifelink until end of turn so the creature's combat damage gains life. -/
 def withLifelink (g : Game) (name : String) : Game :=
   let o := namedPermanent g name
-  g.mapObjectStatus o (fun s => s.grantUntilEot Keyword.lifelink)
+  g.changeStatus o.id (.grantUntilEot Keyword.lifelink)
 
 /-- Attack with every creature named in `names` and let combat damage happen,
 optionally blocked by `blockers` (blocker name, attacker name). -/
@@ -282,8 +282,7 @@ def breakHexproofWurm : Game :=
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Break Under Pressure").id (.player ⟨1⟩)
   let g := mustApply g ⟨0⟩ .pay
   let g := addPermanent g crawWurm ⟨1⟩ ⟨1⟩
-  let g := g.mapObjectStatus (namedPermanent g "Craw Wurm") (fun s =>
-    s.grantUntilEot Keyword.hexproof)
+  let g := g.changeStatus (namedPermanent g "Craw Wurm").id (.grantUntilEot Keyword.hexproof)
   passBoth g
 
 #guard !breakHexproofWurm.battlefield.any (fun o => o.name == "Craw Wurm")
@@ -353,7 +352,7 @@ def shockedGoyf : Game :=
 +1/+1 counter still applies, so it survives as a 1/1. -/
 def zeroedGoyf : Game :=
   let g := addToGraveyard goyfOnBattlefield grizzlyBears ⟨1⟩
-  let g := g.mapObjectStatus (namedPermanent g "Tarmogoyf") (fun s => s.addPlusOnePlusOne 1)
+  let g := g.changeStatus (namedPermanent g "Tarmogoyf").id (.addPlusOnePlusOne 1)
   let g := withBlackMana (addToHand g multiplyByZero ⟨0⟩) ⟨0⟩ 2
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Multiply by Zero").id
     (.permanent (namedPermanent g "Tarmogoyf").id)
@@ -511,7 +510,7 @@ first, so the hand-sized creature has power 3 when the cost is determined. -/
 power changes while paying. -/
 #guard
   let o := namedPermanent ghaltaProposed "Test Hand Sizer"
-  let g := ghaltaProposed.mapObjectStatus o (fun s => s.addPump 10 0)
+  let g := ghaltaProposed.changeStatus o.id (.addPump 10 0)
   let g := withGreenMana g ⟨0⟩ 6
   let g := mustApply g ⟨0⟩ .pay
   g.stack.size == 1 && (g.player ⟨0⟩).manaPool.total == 0

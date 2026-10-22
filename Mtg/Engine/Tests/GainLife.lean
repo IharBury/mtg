@@ -30,8 +30,8 @@ def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (resolutionOverride := some r) (sequencedCardPower := cardPower)
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with
@@ -133,7 +133,7 @@ An illegal graveyard card skips both steps. -/
 /- One life for each permanent an earlier step destroyed. None clears the
 note and gains nothing. -/
 #guard
-  let g0 := { afterDraw with permanentsDestroyedThisWay := 3 }
+  let g0 := afterDraw.change (.permanentsDestroyedThisWay 3)
   let g := step g0 perDestroyed
   life g == life g0 + 3 && g.permanentsDestroyedThisWay == 0
 

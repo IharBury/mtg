@@ -21,7 +21,7 @@ open Mtg.Engine.Catalog
 
 /-- Empty `p`'s hand so injected spells are the only playable cards. -/
 def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+  g.changePlayer p (.hand #[])
 
 def readyMain (g : Game) : Game :=
   g.recordLandPlayed ⟨0⟩
@@ -322,7 +322,7 @@ def batCloudReduced : Game :=
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Hill Giant"
-  let g := g.setObject { o with status := { o.status with untilEotExileIfDies := true } }
+  let g := g.changeStatus o.id (.untilEotExileIfDies true)
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
   g.loggedCreatureDeaths == 0
 
@@ -391,7 +391,7 @@ def shadowResolved : Game :=
 
 def shadowCastOgre : Game :=
   let g := readyMain (emptyHand shadowResolved ⟨0⟩)
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with manaPool := {} })
+  let g := g.changePlayer ⟨0⟩ (.manaPool {})
   let g := withGreenMana g ⟨0⟩ 3
   match g.objects.find? (fun o => o.name == "Gray Ogre" && o.zone == .exile) with
   | none => panic! "expected Gray Ogre in exile"
@@ -587,7 +587,7 @@ def downfallSetup (damaged : Bool) : Game :=
   let g :=
     if damaged then
       let o := namedPermanent g "Grizzly Bears"
-      g.setObject { o with status := { o.status with damage := 1 } }
+      g.changeStatus o.id (.damage 1)
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
   withBlackMana (addToHand g bitterDownfall ⟨0⟩) ⟨0⟩ 4
@@ -826,7 +826,7 @@ def frozenInIceTapOk : Bool :=
 def superSuitUntapOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.mapObjectStatus host (fun s => { s with tapped := true })
+  let g := g.changeStatus host.id (.tapped true)
   let g := addPermanent g superSuit ⟨0⟩ ⟨0⟩
   let eq := namedPermanent g "Super Suit"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterAttachThen .untap)

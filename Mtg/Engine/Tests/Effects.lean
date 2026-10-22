@@ -87,7 +87,7 @@ def hunterVsToken : Game :=
   let g := addPermanent started duskwatchHunter ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Catalog.humanSoldierToken
   let o := namedPermanent g "Duskwatch Hunter"
-  g.setObject { o with status := { o.status with attacking := true } }
+  g.changeStatus o.id (.attacking true)
 
 #guard
   !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
@@ -170,7 +170,7 @@ def riderKeepsWithLegend : Game :=
 def dawnLastHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.setObject { dawn with status := { dawn.status with hope := 1 } }
+  let g := g.changeStatus dawn.id (.hope 1)
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -187,7 +187,7 @@ def dawnLastHope : Game :=
 def dawnKeepsHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.setObject { dawn with status := { dawn.status with hope := 2 } }
+  let g := g.changeStatus dawn.id (.hope 2)
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -352,7 +352,7 @@ def ownerShuffleSourceGone : Game :=
 
 /-- `--norandom` shuffles first; the draw waits for the supplied order. -/
 def ownerShuffleSourceNorandomPending : Game :=
-  let g := addPermanent { afterDraw with norandom := true } gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+  let g := addPermanent (afterDraw.change (.norandom true)) gandalfWanderingWizard ⟨0⟩ ⟨0⟩
   g.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
     (some (namedPermanent g "Gandalf, Wandering Wizard").id)
 
@@ -586,7 +586,7 @@ def oriClears : Game :=
     (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
   let g := addPermanent g (artifact "Shielded Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
   let shielded := namedPermanent g "Shielded Relic"
-  let g := g.setObject { shielded with status := { shielded.status with shield := 1 } }
+  let g := g.changeStatus shielded.id (.shield 1)
   let g := addPermanent g (artifactCreature "Opp Construct" ManaCost.empty #[] 1 1) ⟨1⟩ ⟨1⟩
   g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
     (some (namedPermanent g "Ori, Plate Stacker").id)
@@ -692,7 +692,7 @@ def arrowShielded : Game :=
   let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
   let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
   let wyrm := namedPermanent g "Wyrm"
-  let g := g.setObject { wyrm with status := { wyrm.status with shield := 1 } }
+  let g := g.changeStatus wyrm.id (.shield 1)
   let arrow := namedPermanent g "The Black Arrow"
   let wyrm := namedPermanent g "Wyrm"
   g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
@@ -1691,7 +1691,7 @@ The counters still land. The same check is `Effect.fight`. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.mapObjectStatus baloth (·.grantUntilEot Keyword.hexproof)
+  let g := g.changeStatus baloth.id (.grantUntilEot Keyword.hexproof)
   let fought := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
     #[Target.permanent bears.id, Target.permanent baloth.id]
   let alone := g.applyEffect ⟨0⟩ Effect.fight
@@ -1775,7 +1775,7 @@ def controllerOfBearLosesTwo : Game :=
 `oneOf` asks for one instant or sorcery, `upTo` may take lands, and `allOf`
 moves every instant or sorcery without a choice. -/
 def millLibrary : Game :=
-  afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[], hand := #[] })
+  afterDraw.changePlayers ⟨0⟩ #[.library #[], .hand #[]]
 
 def millOneInstantOrSorcery : Game :=
   let g := addToLibraryTop (addToLibraryTop millLibrary mountain ⟨0⟩) lightningBolt ⟨0⟩

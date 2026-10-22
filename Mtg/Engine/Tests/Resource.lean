@@ -154,8 +154,8 @@ def moonGirl : Game :=
 
 def moonOverwrite : Game :=
   let src := named moonBoard "Moon Girl and Devil Dinosaur"
-  let g := moonBoard.mapObjectStatus src (fun s =>
-    { s with setBasePT := some (1, 1), pump := (1, 1) })
+  let g := moonBoard.changeStatuses src.id #[
+    .setBasePT (some (1, 1)), .pump (1, 1)]
   let g := g.addPlusOnePlusOneTo (named g "Moon Girl and Devil Dinosaur") 1
   resolve g (resource Effect.resourceSecondDrawBecome66)
     (some (named g "Moon Girl and Devil Dinosaur").id)

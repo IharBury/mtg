@@ -12,56 +12,9 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
-/-- Later steps of a trigger `sequence`, waiting until the pending choice
-opened by an earlier step finishes. They run before any player receives
-priority, so they stay part of that resolution. -/
-structure TriggerSequenceRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  steps : List TriggeredAbility.TriggerResolution := []
-deriving Repr, Inhabited
-
-/-- A pending `TriggerResolution.or`. The controller chooses one alternative,
-then that step resolves with this ability context. -/
-structure TriggerOrRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-deriving Repr, Inhabited
-
-/-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
-The chosen index resolves with this ability context. -/
-structure ChooseModesRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-deriving Repr, Inhabited
-
 structure Game where
-  players : Array Player
-  objects : Array GameObject
+  players : Array Player := #[]
+  objects : Array GameObject := #[]
   stack : Array StackEntry := #[]
   activePlayer : PlayerId := ⟨0⟩
   priority : PlayerId := ⟨0⟩
@@ -381,28 +334,916 @@ structure Game where
   events : Array GameEvent := #[]
 deriving Repr, Inhabited
 
+namespace Status
+
+/-- Apply one `StatusChange` in isolation (CR 110.5). -/
+def applyChange (s : Status) (c : StatusChange) : Status :=
+  let kw (f : KeywordCounters → KeywordCounters) : Status :=
+    { s with keywordCounters := f s.keywordCounters }
+  match c with
+  | .set s' => s'
+  | .reset => {}
+  | .addDamage n deathtouch =>
+    { s with
+      damage := s.damage + n
+      dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
+  | .withoutCounters =>
+    { s with
+      plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
+      stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
+      influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
+      hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
+  | .proliferatedExceptPlusOne extra =>
+    let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
+    { s with
+      loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
+      minusOneMinusOne := inc s.minusOneMinusOne
+      stun := inc s.stun
+      shield := inc s.shield
+      finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
+      quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
+      trampleCounters := inc s.trampleCounters
+      indestructibleCounters := inc s.indestructibleCounters
+      lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
+      lore := inc s.lore, story := inc s.story, time := inc s.time
+      keywordCounters := s.keywordCounters.incPresent extra }
+  | .addCountersExceptPlusOne «from» extra =>
+    let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
+    { s with
+      loyaltyCounters := s.loyaltyCounters + bump «from».loyaltyCounters
+      minusOneMinusOne := s.minusOneMinusOne + bump «from».minusOneMinusOne
+      hope := s.hope + bump «from».hope, charge := s.charge + bump «from».charge
+      stun := s.stun + bump «from».stun
+      shield := s.shield + bump «from».shield, finality := s.finality + bump «from».finality
+      plan := s.plan + bump «from».plan, burden := s.burden + bump «from».burden
+      quest := s.quest + bump «from».quest, invasion := s.invasion + bump «from».invasion
+      influence := s.influence + bump «from».influence
+      trampleCounters := s.trampleCounters + bump «from».trampleCounters
+      indestructibleCounters := s.indestructibleCounters + bump «from».indestructibleCounters
+      lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
+      hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
+      lore := s.lore + bump «from».lore
+      story := s.story + bump «from».story, time := s.time + bump «from».time
+      keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
+  | .addPump p t =>
+    { s with pump := (s.pump.1 + p, s.pump.2 + t) }
+  | .addPlusOnePlusOne n =>
+    { s with plusOnePlusOne := s.plusOnePlusOne + n }
+  | .addCounters kind n =>
+    match kind with
+    | .plusOnePlusOne =>
+      { s with
+        plusOnePlusOne := s.plusOnePlusOne + n
+        gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 }
+    | .minusOneMinusOne => { s with minusOneMinusOne := s.minusOneMinusOne + n }
+    | .loyalty => { s with loyaltyCounters := s.loyaltyCounters + n }
+    | .hope => { s with hope := s.hope + n }
+    | .charge => { s with charge := s.charge + n }
+    | .stun => { s with stun := s.stun + n }
+    | .shield => { s with shield := s.shield + n }
+    | .finality => { s with finality := s.finality + n }
+    | .plan => { s with plan := s.plan + n }
+    | .burden => { s with burden := s.burden + n }
+    | .quest => { s with quest := s.quest + n }
+    | .invasion => { s with invasion := s.invasion + n }
+    | .influence => { s with influence := s.influence + n }
+    | .trample => { s with trampleCounters := s.trampleCounters + n }
+    | .indestructible => { s with indestructibleCounters := s.indestructibleCounters + n }
+    | .lifelink => { s with lifelinkCounters := s.lifelinkCounters + n }
+    | .hone => { s with hone := s.hone + n }
+    | .shadow => { s with shadow := s.shadow + n }
+    | .lore => { s with lore := s.lore + n }
+    | .story => { s with story := s.story + n }
+    | .time => { s with time := s.time + n }
+    | .haste => kw fun k => { k with haste := k.haste + n }
+    | .vigilance => kw fun k => { k with vigilance := k.vigilance + n }
+    | .flying => kw fun k => { k with flying := k.flying + n }
+    | .menace => kw fun k => { k with menace := k.menace + n }
+    | .reach => kw fun k => { k with reach := k.reach + n }
+    | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
+    | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
+    | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
+  | .removeCounters kind n =>
+    match kind with
+    | .plusOnePlusOne => { s with plusOnePlusOne := s.plusOnePlusOne - n }
+    | .minusOneMinusOne => { s with minusOneMinusOne := s.minusOneMinusOne - n }
+    | .loyalty => { s with loyaltyCounters := s.loyaltyCounters - n }
+    | .hope => { s with hope := s.hope - n }
+    | .charge => { s with charge := s.charge - n }
+    | .stun => { s with stun := s.stun - n }
+    | .shield => { s with shield := s.shield - n }
+    | .finality => { s with finality := s.finality - n }
+    | .plan => { s with plan := s.plan - n }
+    | .burden => { s with burden := s.burden - n }
+    | .quest => { s with quest := s.quest - n }
+    | .invasion => { s with invasion := s.invasion - n }
+    | .influence => { s with influence := s.influence - n }
+    | .trample => { s with trampleCounters := s.trampleCounters - n }
+    | .indestructible => { s with indestructibleCounters := s.indestructibleCounters - n }
+    | .lifelink => { s with lifelinkCounters := s.lifelinkCounters - n }
+    | .hone => { s with hone := s.hone - n }
+    | .shadow => { s with shadow := s.shadow - n }
+    | .lore => { s with lore := s.lore - n }
+    | .story => { s with story := s.story - n }
+    | .time => { s with time := s.time - n }
+    | .haste => kw fun k => { k with haste := k.haste - n }
+    | .vigilance => kw fun k => { k with vigilance := k.vigilance - n }
+    | .flying => kw fun k => { k with flying := k.flying - n }
+    | .menace => kw fun k => { k with menace := k.menace - n }
+    | .reach => kw fun k => { k with reach := k.reach - n }
+    | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch - n }
+    | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike - n }
+    | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike - n }
+  | .grantUntilEot k =>
+    { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
+  | .clearedAtCleanup =>
+    { s with
+      damage := 0
+      pump := (0, 0)
+      untilEotKeywords := Keywords.none
+      untilEotLosesIndestructible := false
+      untilEotExileIfDies := false
+      setBasePT := none
+      additionalArtifactUntilEot := false
+      additionalCreatureUntilEot := false
+      cantBeBlockedByPlayer := none
+      cantBeBlockedExceptByHasteUntilEot := false
+      cantBlockUntilEot := false
+      dealtDamageThisTurn := false
+      replacedCreatureTypesUntilEot := none
+      pumpPerArtifactUntilEot := false
+      ironFistTapGrants := 0
+      losesAbilitiesUntilEot := false
+      grantedTriggersUntilEot := #[]
+      cardsInHandPowerUntilEot := false
+      firstStrikeOnYourTurn := false }
+  | .clearCombat =>
+    { s with
+      attacking := false
+      attackingWhom := none
+      attackingPlaneswalker := none
+      blocking := #[]
+      blocked := false }
+  | .addBlocking attackerId =>
+    { s with
+      blocking :=
+        if s.blocking.contains attackerId then s.blocking else s.blocking.push attackerId }
+  | .removeBlocking attackerId =>
+    { s with blocking := s.blocking.filter (· != attackerId) }
+  | .pushAbilitiesActivated idx =>
+    { s with abilitiesActivatedThisTurn := s.abilitiesActivatedThisTurn.push idx }
+  | .incActivationsThisTurn =>
+    { s with activationsThisTurn := s.activationsThisTurn + 1 }
+  | .pushGrantedStatic sa =>
+    { s with grantedStaticAbilities := s.grantedStaticAbilities.push sa }
+  | .pushGrantedTriggered ta =>
+    { s with grantedTriggeredAbilities := s.grantedTriggeredAbilities.push ta }
+  | .pushGrantedTriggerUntilEot ta =>
+    { s with grantedTriggersUntilEot := s.grantedTriggersUntilEot.push ta }
+  | .pushHexproofGrantedBy id =>
+    { s with hexproofGrantedBy := s.hexproofGrantedBy.push id }
+  | .removeHexproofGrantedBy id =>
+    { s with hexproofGrantedBy := s.hexproofGrantedBy.filter (· != id) }
+  | .pushPreventDamageGrantedBy id =>
+    { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push id }
+  | .removePreventDamageGrantedBy id =>
+    { s with preventDamageGrantedBy := s.preventDamageGrantedBy.filter (· != id) }
+  | .pushCantUntapGrantedBy id =>
+    { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push id }
+  | .removeCantUntapGrantedBy id =>
+    { s with cantUntapGrantedBy := s.cantUntapGrantedBy.filter (· != id) }
+  | .pushLosesAbilitiesGrantedBy id =>
+    { s with losesAbilitiesGrantedBy := s.losesAbilitiesGrantedBy.push id }
+  | .removeLosesAbilitiesGrantedBy id =>
+    { s with losesAbilitiesGrantedBy := s.losesAbilitiesGrantedBy.filter (· != id) }
+  | .addAdditionalSubtype sub =>
+    { s with
+      additionalSubtypes :=
+        if s.additionalSubtypes.any (· == sub) then s.additionalSubtypes
+        else s.additionalSubtypes.push sub }
+  | .pushAdditionalSubtype sub =>
+    { s with additionalSubtypes := s.additionalSubtypes.push sub }
+  | .pushChosenMode m =>
+    { s with chosenModes := s.chosenModes.push m }
+  | .pushModeChosenThisTurn m =>
+    { s with modesChosenThisTurn := s.modesChosenThisTurn.push m }
+  | .pushAllianceModeChosen m =>
+    { s with allianceModesChosen := s.allianceModesChosen.push m }
+  | .pushUntilTurnOfPump p dp dt =>
+    { s with untilTurnOfPump := s.untilTurnOfPump.push (p, dp, dt) }
+  | .clearUntilTurnOfPumpFor p =>
+    { s with untilTurnOfPump := s.untilTurnOfPump.filter (fun (q, _, _) => q != p) }
+  | .pushColorlessGrantUntilCast id =>
+    { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.push id }
+  | .removeColorlessGrantUntilCast id =>
+    { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.filter (· != id) }
+  | .addCombatDamageToPlayer p =>
+    { s with
+      combatDamageToPlayers :=
+        if s.combatDamageToPlayers.contains p then s.combatDamageToPlayers
+        else s.combatDamageToPlayers.push p }
+  | .resetPerTurnFlags =>
+    { s with
+      activationsThisTurn := 0
+      abilitiesActivatedThisTurn := #[]
+      loyaltyActivatedThisTurn := false
+      firedOnceEachTurn := false
+      optionalOnceUsed := false
+      allianceModesChosen := #[]
+      declaredAsAttackerThisTurn := false
+      boastUsedThisTurn := false
+      becameTappedThisTurn := false
+      gotPlusOneThisTurn := false
+      modesChosenThisTurn := #[]
+      combatDamageCreatesTreasure := false
+      combatDamageToPlayers := #[]
+      freeCastFromGraveyard := false }
+  | .tapped v => { s with tapped := v }
+  | .damage v => { s with damage := v }
+  | .summoningSick v => { s with summoningSick := v }
+  | .pump v => { s with pump := v }
+  | .attacking v => { s with attacking := v }
+  | .attackingWhom v => { s with attackingWhom := v }
+  | .attackingPlaneswalker v => { s with attackingPlaneswalker := v }
+  | .blocking v => { s with blocking := v }
+  | .blocked v => { s with blocked := v }
+  | .activationsThisTurn v => { s with activationsThisTurn := v }
+  | .abilitiesActivatedThisTurn v => { s with abilitiesActivatedThisTurn := v }
+  | .plusOnePlusOne v => { s with plusOnePlusOne := v }
+  | .minusOneMinusOne v => { s with minusOneMinusOne := v }
+  | .loyaltyCounters v => { s with loyaltyCounters := v }
+  | .loyaltyActivatedThisTurn v => { s with loyaltyActivatedThisTurn := v }
+  | .prepared v => { s with prepared := v }
+  | .untilEotKeywords v => { s with untilEotKeywords := v }
+  | .untilEotLosesIndestructible v => { s with untilEotLosesIndestructible := v }
+  | .untilEotExileIfDies v => { s with untilEotExileIfDies := v }
+  | .setBasePT v => { s with setBasePT := v }
+  | .additionalCreature v => { s with additionalCreature := v }
+  | .additionalSubtypes v => { s with additionalSubtypes := v }
+  | .grantedStaticAbilities v => { s with grantedStaticAbilities := v }
+  | .grantedTriggeredAbilities v => { s with grantedTriggeredAbilities := v }
+  | .hexproofGrantedBy v => { s with hexproofGrantedBy := v }
+  | .preventDamageGrantedBy v => { s with preventDamageGrantedBy := v }
+  | .dealtDeathtouch v => { s with dealtDeathtouch := v }
+  | .hope v => { s with hope := v }
+  | .charge v => { s with charge := v }
+  | .stun v => { s with stun := v }
+  | .firedOnceEachTurn v => { s with firedOnceEachTurn := v }
+  | .optionalOnceUsed v => { s with optionalOnceUsed := v }
+  | .additionalArtifactUntilEot v => { s with additionalArtifactUntilEot := v }
+  | .hone v => { s with hone := v }
+  | .shadow v => { s with shadow := v }
+  | .phasedOut v => { s with phasedOut := v }
+  | .phasedWith v => { s with phasedWith := v }
+  | .ringBearer v => { s with ringBearer := v }
+  | .allianceModesChosen v => { s with allianceModesChosen := v }
+  | .shield v => { s with shield := v }
+  | .finality v => { s with finality := v }
+  | .declaredAsAttackerThisTurn v => { s with declaredAsAttackerThisTurn := v }
+  | .boastUsedThisTurn v => { s with boastUsedThisTurn := v }
+  | .plan v => { s with plan := v }
+  | .powerUpUsed v => { s with powerUpUsed := v }
+  | .powerUpActivations v => { s with powerUpActivations := v }
+  | .becameTappedThisTurn v => { s with becameTappedThisTurn := v }
+  | .gotPlusOneThisTurn v => { s with gotPlusOneThisTurn := v }
+  | .cantUntapGrantedBy v => { s with cantUntapGrantedBy := v }
+  | .additionalCreatureUntilEot v => { s with additionalCreatureUntilEot := v }
+  | .harnessed v => { s with harnessed := v }
+  | .transformed v => { s with transformed := v }
+  | .cantTransform v => { s with cantTransform := v }
+  | .losesAbilitiesGrantedBy v => { s with losesAbilitiesGrantedBy := v }
+  | .losesAbilitiesUntilEot v => { s with losesAbilitiesUntilEot := v }
+  | .chosenModes v => { s with chosenModes := v }
+  | .modesChosenThisTurn v => { s with modesChosenThisTurn := v }
+  | .cardsInHandPowerUntilEot v => { s with cardsInHandPowerUntilEot := v }
+  | .chosenOdd v => { s with chosenOdd := v }
+  | .lore v => { s with lore := v }
+  | .indestructibleCounters v => { s with indestructibleCounters := v }
+  | .lifelinkCounters v => { s with lifelinkCounters := v }
+  | .chosenCreatureType v => { s with chosenCreatureType := v }
+  | .cantBeBlockedByPlayer v => { s with cantBeBlockedByPlayer := v }
+  | .cantBeBlockedExceptByHasteUntilEot v => { s with cantBeBlockedExceptByHasteUntilEot := v }
+  | .cantBlockUntilEot v => { s with cantBlockUntilEot := v }
+  | .manaSpentToCast v => { s with manaSpentToCast := v }
+  | .dealtDamageThisTurn v => { s with dealtDamageThisTurn := v }
+  | .replacedCreatureTypesUntilEot v => { s with replacedCreatureTypesUntilEot := v }
+  | .pumpPerArtifactUntilEot v => { s with pumpPerArtifactUntilEot := v }
+  | .influence v => { s with influence := v }
+  | .onlyFoodArtifact v => { s with onlyFoodArtifact := v }
+  | .burden v => { s with burden := v }
+  | .quest v => { s with quest := v }
+  | .invasion v => { s with invasion := v }
+  | .trampleCounters v => { s with trampleCounters := v }
+  | .keywordCounters v => { s with keywordCounters := v }
+  | .combatDamageCreatesTreasure v => { s with combatDamageCreatesTreasure := v }
+  | .returnedAsArtifact v => { s with returnedAsArtifact := v }
+  | .controlUntilEot v => { s with controlUntilEot := v }
+  | .controlTurnEndsLeft v => { s with controlTurnEndsLeft := v }
+  | .ironFistTapGrants v => { s with ironFistTapGrants := v }
+  | .untilTurnOfPump v => { s with untilTurnOfPump := v }
+  | .grantedTriggersUntilEot v => { s with grantedTriggersUntilEot := v }
+  | .exhaustUsed v => { s with exhaustUsed := v }
+  | .colorlessGrantUntilCast v => { s with colorlessGrantUntilCast := v }
+  | .chosenColor v => { s with chosenColor := v }
+  | .dealtCombatDamage v => { s with dealtCombatDamage := v }
+  | .combatDamageToPlayers v => { s with combatDamageToPlayers := v }
+  | .animatedConstruct55 v => { s with animatedConstruct55 := v }
+  | .chosenName v => { s with chosenName := v }
+  | .faceDown v => { s with faceDown := v }
+  | .goaded v => { s with goaded := v }
+  | .story v => { s with story := v }
+  | .time v => { s with time := v }
+  | .notACreature v => { s with notACreature := v }
+  | .windcragMardu v => { s with windcragMardu := v }
+  | .chosenCardType v => { s with chosenCardType := v }
+  | .freeCastFromGraveyard v => { s with freeCastFromGraveyard := v }
+  | .isCommander v => { s with isCommander := v }
+  | .firstStrikeOnYourTurn v => { s with firstStrikeOnYourTurn := v }
+
+end Status
+
+namespace GameObject
+
+/-- Apply one `ObjectChange` in isolation (CR 109). -/
+def applyChange (o : GameObject) (c : ObjectChange) : GameObject :=
+  match c with
+  | .status sc => { o with status := o.status.applyChange sc }
+  | .statuses scs => { o with status := scs.foldl Status.applyChange o.status }
+  | .printed v => { o with printed := v }
+  | .owner v => { o with owner := v }
+  | .controller v => { o with controller := v }
+  | .lastController v => { o with lastController := v }
+  | .defaultController v => { o with defaultController := v }
+  | .controlChanged v => { o with controlChanged := v }
+  | .zone v => { o with zone := v }
+  | .timestamp v => { o with timestamp := v }
+  | .abilityEffect v => { o with abilityEffect := v }
+  | .triggeredAbility v => { o with triggeredAbility := v }
+  | .reflexiveResolution v => { o with reflexiveResolution := v }
+  | .sourceId v => { o with sourceId := v }
+  | .lastKnownPower v => { o with lastKnownPower := v }
+  | .lastKnownToughness v => { o with lastKnownToughness := v }
+  | .playPermission v => { o with playPermission := v }
+  | .decrementPlayTurnEnds =>
+    match o.playPermission with
+    | none => o
+    | some perm =>
+      if perm.fromAdventure || perm.whileExiled then o
+      else if perm.turnEndsRemaining ≤ 1 then { o with playPermission := none }
+      else { o with playPermission := some { perm with turnEndsRemaining := perm.turnEndsRemaining - 1 } }
+  | .attachedTo v => { o with attachedTo := v }
+  | .adventurerCard v => { o with adventurerCard := v }
+  | .linkedExile v => { o with linkedExile := v }
+  | .pushLinkedExile id => { o with linkedExile := o.linkedExile.push id }
+  | .returnToZone v => { o with returnToZone := v }
+  | .leaveTriggerExile v => { o with leaveTriggerExile := v }
+  | .pushLeaveTriggerExile id => { o with leaveTriggerExile := o.leaveTriggerExile.push id }
+  | .castFromGraveyard v => { o with castFromGraveyard := v }
+  | .exileInstantSorceryInstead v => { o with exileInstantSorceryInstead := v }
+  | .castFromHand v => { o with castFromHand := v }
+  | .wasCast v => { o with wasCast := v }
+  | .isPreparedSpell v => { o with isPreparedSpell := v }
+  | .fraCauseId v => { o with fraCauseId := v }
+  | .fraCauseController v => { o with fraCauseController := v }
+  | .fraCausePower v => { o with fraCausePower := v }
+  | .fraCauseStatus v => { o with fraCauseStatus := v }
+  | .exiledBy v => { o with exiledBy := v }
+  | .fraEffectUntilTurnOf v => { o with fraEffectUntilTurnOf := v }
+  | .flashbackUntilEot v => { o with flashbackUntilEot := v }
+  | .kicked v => { o with kicked := v }
+  | .teamworkPaid v => { o with teamworkPaid := v }
+  | .sneakPaid v => { o with sneakPaid := v }
+  | .sneakAttackWhom v => { o with sneakAttackWhom := v }
+  | .giftPromisedTo v => { o with giftPromisedTo := v }
+  | .isCopy v => { o with isCopy := v }
+  | .uncounterableThisCast v => { o with uncounterableThisCast := v }
+  | .boastExiled v => { o with boastExiled := v }
+  | .enterProcessed v => { o with enterProcessed := v }
+  | .treasureManaSpent v => { o with treasureManaSpent := v }
+  | .chosenX v => { o with chosenX := v }
+  | .copyRestore v => { o with copyRestore := v }
+  | .copyUntilEot v => { o with copyUntilEot := v }
+  | .copyUntilNextTurn v => { o with copyUntilNextTurn := v }
+  | .copyUntilSourceLeaves v => { o with copyUntilSourceLeaves := v }
+  | .controlUntilSourceLeaves v => { o with controlUntilSourceLeaves := v }
+  | .restoreCopy =>
+    match o.copyRestore with
+    | none => o
+    | some card =>
+      { o with
+        printed := card
+        copyRestore := none
+        copyUntilEot := false
+        copyUntilNextTurn := false
+        copyUntilSourceLeaves := none }
+
+end GameObject
+
+namespace Player
+
+/-- Apply one `PlayerChange` in isolation (CR 102). -/
+def applyChange (pl : Player) (c : PlayerChange) : Player :=
+  match c with
+  | .name v => { pl with name := v }
+  | .life v => { pl with life := v }
+  | .startingLife v => { pl with startingLife := v }
+  | .maxHandSize v => { pl with maxHandSize := v }
+  | .startingHandSize v => { pl with startingHandSize := v }
+  | .manaPool v => { pl with manaPool := v }
+  | .addMana t n elf inst hero villain cantNonart creature fra =>
+    { pl with
+      manaPool :=
+        pl.manaPool.add t n
+          (elfRestricted := elf) (instRestricted := inst)
+          (heroRestricted := hero) (villainRestricted := villain)
+          (cantNonartifact := cantNonart) (creatureRestricted := creature)
+          (fra := fra) }
+  | .emptyManaPool becomesColorless =>
+    if becomesColorless then
+      let total :=
+        pl.manaPool.white + pl.manaPool.blue + pl.manaPool.black +
+          pl.manaPool.red + pl.manaPool.green + pl.manaPool.colorless
+      { pl with manaPool := { colorless := total } }
+    else
+      { pl with manaPool := {} }
+  | .additionalLandsThisTurn v => { pl with additionalLandsThisTurn := v }
+  | .addAdditionalLandsThisTurn n =>
+    { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + n }
+  | .poison v => { pl with poison := v }
+  | .addPoison n => { pl with poison := pl.poison + n }
+  | .lost v => { pl with lost := v }
+  | .leftTheGame v => { pl with leftTheGame := v }
+  | .drewFromEmpty v => { pl with drewFromEmpty := v }
+  | .mulligansTaken v => { pl with mulligansTaken := v }
+  | .incMulligansTaken => { pl with mulligansTaken := pl.mulligansTaken + 1 }
+  | .keptOpeningHand v => { pl with keptOpeningHand := v }
+  | .library v => { pl with library := v }
+  | .pushLibrary id => { pl with library := pl.library.push id }
+  | .prependLibrary ids => { pl with library := ids ++ pl.library }
+  | .appendLibrary ids => { pl with library := pl.library ++ ids }
+  | .stripLibrary id => { pl with library := pl.library.filter (· != id) }
+  | .hand v => { pl with hand := v }
+  | .pushHand id => { pl with hand := pl.hand.push id }
+  | .stripHand id => { pl with hand := pl.hand.filter (· != id) }
+  | .graveyard v => { pl with graveyard := v }
+  | .pushGraveyard id => { pl with graveyard := pl.graveyard.push id }
+  | .stripGraveyard id => { pl with graveyard := pl.graveyard.filter (· != id) }
+  | .enduringStory v => { pl with enduringStory := v }
+  | .theRingAbilities v => { pl with theRingAbilities := v }
+  | .ringBearerId v => { pl with ringBearerId := v }
+  | .citysBlessing v => { pl with citysBlessing := v }
+  | .hasCommander v => { pl with hasCommander := v }
+  | .commanderColorIdentity v => { pl with commanderColorIdentity := v }
+  | .protectionFromEverything v => { pl with protectionFromEverything := v }
+  | .eaglesBirdsNextUpkeep v => { pl with eaglesBirdsNextUpkeep := v }
+  | .addEaglesBirdsNextUpkeep n =>
+    { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n }
+  | .beheldQualities v => { pl with beheldQualities := v }
+  | .pushBeheldQuality q => { pl with beheldQualities := pl.beheldQualities.push q }
+  | .cantCastSpellsThisTurn v => { pl with cantCastSpellsThisTurn := v }
+  | .attackPumpPerPlainsThisTurn v => { pl with attackPumpPerPlainsThisTurn := v }
+  | .addAttackPumpPerPlainsThisTurn n =>
+    { pl with attackPumpPerPlainsThisTurn := pl.attackPumpPerPlainsThisTurn + n }
+  | .lifeLocked v => { pl with lifeLocked := v }
+  | .typeSpellCostLessThisTurn v => { pl with typeSpellCostLessThisTurn := v }
+  | .pushTypeSpellCostLess t n =>
+    { pl with typeSpellCostLessThisTurn := pl.typeSpellCostLessThisTurn.push (t, n) }
+  | .supertypeSpellCostLessThisTurn v => { pl with supertypeSpellCostLessThisTurn := v }
+  | .pushSupertypeSpellCostLess s n =>
+    { pl with supertypeSpellCostLessThisTurn := pl.supertypeSpellCostLessThisTurn.push (s, n) }
+  | .jaceLoyaltyAtInstantSpeed v => { pl with jaceLoyaltyAtInstantSpeed := v }
+  | .legendRuleOffThisTurn v => { pl with legendRuleOffThisTurn := v }
+  | .copyNextInstantSorceryThisTurn v => { pl with copyNextInstantSorceryThisTurn := v }
+  | .addCopyNextInstantSorceryThisTurn n =>
+    { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn + n }
+  | .decCopyNextInstantSorceryThisTurn =>
+    { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn - 1 }
+  | .sideboard v => { pl with sideboard := v }
+  | .removeSideboardAt idx => { pl with sideboard := pl.sideboard.eraseIdx! idx }
+  | .mountainExtraRedThisTurn v => { pl with mountainExtraRedThisTurn := v }
+  | .addMountainExtraRedThisTurn n =>
+    { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + n }
+  | .nextSpellCantBeCountered v => { pl with nextSpellCantBeCountered := v }
+  | .teammate v => { pl with teammate := v }
+  | .isMonarch v => { pl with isMonarch := v }
+  | .lifeCantChange v => { pl with lifeCantChange := v }
+  | .cantAttackJaces v => { pl with cantAttackJaces := v }
+  | .commanderCreatureTypes v => { pl with commanderCreatureTypes := v }
+  | .resetPerTurnFlags =>
+    { pl with
+      cantCastSpellsThisTurn := false
+      attackPumpPerPlainsThisTurn := 0
+      typeSpellCostLessThisTurn := #[]
+      supertypeSpellCostLessThisTurn := #[]
+      jaceLoyaltyAtInstantSpeed := false
+      legendRuleOffThisTurn := false
+      copyNextInstantSorceryThisTurn := 0
+      mountainExtraRedThisTurn := 0
+      nextSpellCantBeCountered := false
+      cantAttackJaces := false }
+
+end Player
+
+namespace StackEntry
+
+/-- Apply one `StackEntryChange` in isolation (CR 405). -/
+def applyChange (e : StackEntry) (c : StackEntryChange) : StackEntry :=
+  match c with
+  | .targets v => { e with targets := v }
+  | .pushTarget t => { e with targets := e.targets.push t }
+  | .pushTargets ts => { e with targets := e.targets ++ ts }
+  | .setTargetAt idx t => { e with targets := e.targets.set! idx t }
+  | .dividedDamage v => { e with dividedDamage := v }
+  | .pushDividedDamage n => { e with dividedDamage := e.dividedDamage.push n }
+  | .targetsAnnounced v => { e with targetsAnnounced := v }
+  | .chosenMode v => { e with chosenMode := v }
+  | .extraModes v => { e with extraModes := v }
+  | .pushExtraMode m => { e with extraModes := e.extraModes.push m }
+  | .skippedOptionalSlots v => { e with skippedOptionalSlots := v }
+  | .incSkippedOptionalSlots => { e with skippedOptionalSlots := e.skippedOptionalSlots + 1 }
+
+end StackEntry
+
+namespace ProposedSpell
+
+/-- Apply one `ProposalChange` in isolation (CR 601.2f–h). -/
+def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
+  match c with
+  | .cost v => { p with cost := v }
+  | .addGenericCost n => { p with cost := p.cost.addGeneric n }
+  | .addManaCost mc => { p with cost := ManaCost.addCost p.cost mc }
+  | .reduceCostBy mc => { p with cost := p.cost.reduceByCost mc }
+  | .substituteX x => { p with cost := p.cost.substituteX x }
+  | .tapped v => { p with tapped := v }
+  | .pushTapped id => { p with tapped := p.tapped.push id }
+  | .tapSource v => { p with tapSource := v }
+  | .sacrificeSource v => { p with sacrificeSource := v }
+  | .needsSacrificeOther v => { p with needsSacrificeOther := v }
+  | .needsDiscardCard v => { p with needsDiscardCard := v }
+  | .payLife v => { p with payLife := v }
+  | .discardSource v => { p with discardSource := v }
+  | .abilityModes v => { p with abilityModes := v }
+  | .targetKindOverride v => { p with targetKindOverride := v }
+  | .kicked v => { p with kicked := v }
+  | .kickerAnnounced v => { p with kickerAnnounced := v }
+  | .giftTo v => { p with giftTo := v }
+  | .giftAnnounced v => { p with giftAnnounced := v }
+  | .teamworkPaid v => { p with teamworkPaid := v }
+  | .teamworkAnnounced v => { p with teamworkAnnounced := v }
+  | .activation v => { p with activation := v }
+  | .loyaltyX v => { p with loyaltyX := v }
+  | .removePlusOneX v => { p with removePlusOneX := v }
+  | .sneakAttacker v => { p with sneakAttacker := v }
+
+end ProposedSpell
+
 namespace Game
 
-def logMsg (g : Game) (msg : String) : Game :=
-  { g with log := g.log.push msg }
+/-- Process one `GameChange` in isolation. -/
+def applyChange (g : Game) (c : GameChange) : Game :=
+  match c with
+  | .moved .. | .drew .. | .life .. | .damaged .. | .damagedPlayer ..
+  | .cast .. | .attacked .. | .tapped .. | .counters .. | .looked ..
+  | .sacrificed .. | .created .. | .control .. | .stepped .. | .activated ..
+  | .spentMana .. | .playedLand .. | .resolved .. | .attached .. | .beheld ..
+  | .poisoned .. | .proliferated .. | .sheHulkDealtDamage .. | .untapped .. => g
+  | .player p pc =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      { g with players := g.players.set! p.idx (pl.applyChange pc) }
+    else g
+  | .playerChanges p pcs =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      { g with players := g.players.set! p.idx (pcs.foldl Player.applyChange pl) }
+    else g
+  | .players v => { g with players := v }
+  | .setPlayer pl => { g with players := g.players.set! pl.id.idx pl }
+  | .object id oc =>
+    match g.objects.findIdx? (·.id == id) with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i (o.applyChange oc) }
+    | none => g
+  | .objectChanges id ocs =>
+    match g.objects.findIdx? (·.id == id) with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i (ocs.foldl GameObject.applyChange o) }
+    | none => g
+  | .objects v => { g with objects := v }
+  | .setObject o =>
+    match g.objects.findIdx? (·.id == o.id) with
+    | some i => { g with objects := g.objects.set! i o }
+    | none => { g with objects := g.objects.push o }
+  | .removeObject id =>
+    { g with objects := g.objects.filter (·.id != id) }
+  | .replaceObject oldId fresh =>
+    { g with objects := g.objects.filter (·.id != oldId) |>.push fresh }
+  | .stack v => { g with stack := v }
+  | .pushStack e => { g with stack := g.stack.push e }
+  | .popStack => { g with stack := g.stack.pop }
+  | .removeFromStack objectId =>
+    { g with stack := g.stack.filter (·.objectId != objectId) }
+  | .setStackEntryAt idx e =>
+    { g with stack := g.stack.set! idx e }
+  | .stackEntry idx sc =>
+    if h : idx < g.stack.size then
+      let e := g.stack[idx]
+      { g with stack := g.stack.set! idx (e.applyChange sc) }
+    else g
+  | .stackEntryById objectId sc =>
+    match g.stack.findIdx? (·.objectId == objectId) with
+    | some i =>
+      let e := g.stack[i]!
+      { g with stack := g.stack.set! i (e.applyChange sc) }
+    | none => g
+  | .proposedSpell v => { g with proposedSpell := v }
+  | .proposal pc =>
+    match g.proposedSpell with
+    | some prop => { g with proposedSpell := some (prop.applyChange pc) }
+    | none => g
+  | .proposalChanges pcs =>
+    match g.proposedSpell with
+    | some prop => { g with proposedSpell := some (pcs.foldl ProposedSpell.applyChange prop) }
+    | none => g
+  | .activePlayer v => { g with activePlayer := v }
+  | .priority v => { g with priority := v }
+  | .step v => { g with step := v }
+  | .turnNumber v => { g with turnNumber := v }
+  | .startingPlayer v => { g with startingPlayer := v }
+  | .isFirstTurn v => { g with isFirstTurn := v }
+  | .pending v => { g with pending := v }
+  | .nextObjectId v => { g with nextObjectId := v }
+  | .timestamp v => { g with timestamp := v }
+  | .rng v => { g with rng := v }
+  | .norandom v => { g with norandom := v }
+  | .afterRandom v => { g with afterRandom := v }
+  | .result v => { g with result := v }
+  | .log v => { g with log := v }
+  | .logMsg msg => { g with log := g.log.push msg }
+  | .format v => { g with format := v }
+  | .brawl v => { g with brawl := v }
+  | .consecutivePasses v => { g with consecutivePasses := v }
+  | .cleanupGivesPriority v => { g with cleanupGivesPriority := v }
+  | .creaturesWithoutFlyingCantBlock v => { g with creaturesWithoutFlyingCantBlock := v }
+  | .awaitingOpeningBegin v => { g with awaitingOpeningBegin := v }
+  | .mulliganToDeclare v => { g with mulliganToDeclare := v }
+  | .willMulligan v => { g with willMulligan := v }
+  | .pushWillMulligan p => { g with willMulligan := g.willMulligan.push p }
+  | .mulliganToBottom v => { g with mulliganToBottom := v }
+  | .assignedCombatDamage v => { g with assignedCombatDamage := v }
+  | .blockersQueue v => { g with blockersQueue := v }
+  | .waitingTriggers v => { g with waitingTriggers := v }
+  | .enqueueWaitingTriggers wts =>
+    if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
+  | .pushWaitingTrigger wt => { g with waitingTriggers := g.waitingTriggers.push wt }
+  | .removeWaitingTriggersOf p =>
+    { g with waitingTriggers := g.waitingTriggers.filter (·.controller != p) }
+  | .removeWaitingTriggersForEvent ev =>
+    { g with waitingTriggers := g.waitingTriggers.filter (·.event != ev) }
+  | .removeWaitingTriggersForPlayerSource p sourceId part2 =>
+    { g with
+      waitingTriggers :=
+        g.waitingTriggers.filter (fun w =>
+          !(w.controller == p && w.source.id == sourceId &&
+            w.event.isAnotherAbilityTriggering == part2)) }
+  | .eraseFirstWaitingTriggerForPlayerSource p sourceId part2 =>
+    match g.waitingTriggers.findIdx? (fun w =>
+        w.controller == p && w.source.id == sourceId &&
+        w.event.isAnotherAbilityTriggering == part2) with
+    | some i => { g with waitingTriggers := g.waitingTriggers.eraseIdx! i }
+    | none => g
+  | .addSourceDealtDamagePower sourceId n =>
+    { g with
+      waitingTriggers := g.waitingTriggers.map (fun t =>
+        if t.source.id == sourceId && t.event == .sourceDealtDamage then
+          { t with lastKnownPower := some ((t.lastKnownPower.getD 0) + n) }
+        else t) }
+  | .firstStrikeDamageDone v => { g with firstStrikeDamageDone := v }
+  | .pendingRegularCombatDamage v => { g with pendingRegularCombatDamage := v }
+  | .firstStrikeAssignedThisCombat v => { g with firstStrikeAssignedThisCombat := v }
+  | .isNight v => { g with isNight := v }
+  | .pendingDrawAfterScry v => { g with pendingDrawAfterScry := v }
+  | .discardedCardThisWay v => { g with discardedCardThisWay := v }
+  | .palantirAfterScry v => { g with palantirAfterScry := v }
+  | .lastKnownStatus v => { g with lastKnownStatus := v }
+  | .recordLastKnownStatus id s =>
+    let lki := g.lastKnownStatus.push (id, s)
+    { g with lastKnownStatus := lki.extract (lki.size - Nat.min lki.size 32) lki.size }
+  | .resolvingSpell v => { g with resolvingSpell := v }
+  | .resolvingAbility v => { g with resolvingAbility := v }
+  | .movedTo v => { g with movedTo := v }
+  | .recordMovedTo oldId newId =>
+    let m := g.movedTo.push (oldId, newId)
+    { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }
+  | .recentTokenIds v => { g with recentTokenIds := v }
+  | .pushRecentTokenId id => { g with recentTokenIds := g.recentTokenIds.push id }
+  | .fraAfterLook v => { g with fraAfterLook := v }
+  | .pendingFreeCopies v => { g with pendingFreeCopies := v }
+  | .pendingMayCastFromExile v => { g with pendingMayCastFromExile := v }
+  | .mayPayAlsoPlusOneOn v => { g with mayPayAlsoPlusOneOn := v }
+  | .humansTappedThisWay v => { g with humansTappedThisWay := v }
+  | .permanentsDestroyedThisWay v => { g with permanentsDestroyedThisWay := v }
+  | .removedHopeThisWay v => { g with removedHopeThisWay := v }
+  | .permanentDealtDamageThisWay v => { g with permanentDealtDamageThisWay := v }
+  | .returnedPermanentThisWay v => { g with returnedPermanentThisWay := v }
+  | .nthResolveThisWay v => { g with nthResolveThisWay := v }
+  | .skipTriggerSequenceRest v => { g with skipTriggerSequenceRest := v }
+  | .excessDamageThisWay v => { g with excessDamageThisWay := v }
+  | .destroyedForAmassThisWay v => { g with destroyedForAmassThisWay := v }
+  | .amassControllerThisWay v => { g with amassControllerThisWay := v }
+  | .amassAmountThisWay v => { g with amassAmountThisWay := v }
+  | .amassYouControlledThisWay v => { g with amassYouControlledThisWay := v }
+  | .milledIdsThisWay v => { g with milledIdsThisWay := v }
+  | .pushMilledIdThisWay id => { g with milledIdsThisWay := g.milledIdsThisWay.push id }
+  | .revealedIdsThisWay v => { g with revealedIdsThisWay := v }
+  | .opponentsMilledThisWay v => { g with opponentsMilledThisWay := v }
+  | .palantirChoiceReady v => { g with palantirChoiceReady := v }
+  | .grimaImpulseReady v => { g with grimaImpulseReady := v }
+  | .grimaImpulseVictim v => { g with grimaImpulseVictim := v }
+  | .grimaImpulseFound v => { g with grimaImpulseFound := v }
+  | .grimaImpulseOthers v => { g with grimaImpulseOthers := v }
+  | .planWasSacrificed v => { g with planWasSacrificed := v }
+  | .sourceWasSacrificed v => { g with sourceWasSacrificed := v }
+  | .exiledIdsThisWay v => { g with exiledIdsThisWay := v }
+  | .pushExiledIdThisWay id => { g with exiledIdsThisWay := g.exiledIdsThisWay.push id }
+  | .notedCopyObject v => { g with notedCopyObject := v }
+  | .notedHostId v => { g with notedHostId := v }
+  | .handDiscardedThisWay v => { g with handDiscardedThisWay := v }
+  | .notedSourceThisWay v => { g with notedSourceThisWay := v }
+  | .equipmentAttachedHost v => { g with equipmentAttachedHost := v }
+  | .notedCountThisWay v => { g with notedCountThisWay := v }
+  | .createdTokenThisWay v => { g with createdTokenThisWay := v }
+  | .putArtifactThisWay v => { g with putArtifactThisWay := v }
+  | .playExiledThisWay v => { g with playExiledThisWay := v }
+  | .armSurveilReturn v => { g with armSurveilReturn := v }
+  | .triggerSequenceRest v => { g with triggerSequenceRest := v }
+  | .setTriggerSequenceRestSteps steps =>
+    match g.triggerSequenceRest with
+    | none => g
+    | some rest =>
+      if steps.isEmpty then { g with triggerSequenceRest := none }
+      else { g with triggerSequenceRest := some { rest with steps } }
+  | .setTriggerSequenceRestFromMay steps =>
+    match g.mayContext with
+    | none => g
+    | some ctx =>
+      { g with
+        mayContext := none
+        triggerSequenceRest := if steps.isEmpty then none else some { ctx with steps } }
+  | .mayThenDrop v => { g with mayThenDrop := v }
+  | .mayThenSkip v => { g with mayThenSkip := v }
+  | .mayThenConditional v => { g with mayThenConditional := v }
+  | .mayOnAccept v => { g with mayOnAccept := v }
+  | .mayOnDecline v => { g with mayOnDecline := v }
+  | .mayContext v => { g with mayContext := v }
+  | .sacrificedPowerThisWay v => { g with sacrificedPowerThisWay := v }
+  | .mayThenResume v => { g with mayThenResume := v }
+  | .triggerOr v => { g with triggerOr := v }
+  | .chooseModesRest v => { g with chooseModesRest := v }
+  | .unlessPaysInstead v => { g with unlessPaysInstead := v }
+  | .unlessPaysController v => { g with unlessPaysController := v }
+  | .unlessPaysTargets v => { g with unlessPaysTargets := v }
+  | .unlessPaysDue v => { g with unlessPaysDue := v }
+  | .mayEffect v => { g with mayEffect := v }
+  | .mayController v => { g with mayController := v }
+  | .mayTargets v => { g with mayTargets := v }
+  | .spellOr v => { g with spellOr := v }
+  | .spellOrController v => { g with spellOrController := v }
+  | .spellOrTargets v => { g with spellOrTargets := v }
+  | .spellOrLibrary v => { g with spellOrLibrary := v }
+  | .surveilReturnMvAtMost v => { g with surveilReturnMvAtMost := v }
+  | .surveilReturnNoncreatureNonland v => { g with surveilReturnNoncreatureNonland := v }
+  | .lockedDeathReplacements v => { g with lockedDeathReplacements := v }
+  | .suppressOthersDie v => { g with suppressOthersDie := v }
+  | .suppressCreatureCardsToGy v => { g with suppressCreatureCardsToGy := v }
+  | .castingFromTop v => { g with castingFromTop := v }
+  | .delayedEndStepReturns v => { g with delayedEndStepReturns := v }
+  | .pushDelayedEndStepReturn id =>
+    { g with delayedEndStepReturns := g.delayedEndStepReturns.push id }
+  | .extraTurns v => { g with extraTurns := v }
+  | .pushExtraTurn p => { g with extraTurns := g.extraTurns.push p }
+  | .powerUpsForbidden v => { g with powerUpsForbidden := v }
+  | .delayedEndStepExiles v => { g with delayedEndStepExiles := v }
+  | .pushDelayedEndStepExile id =>
+    { g with delayedEndStepExiles := g.delayedEndStepExiles.push id }
+  | .conniveSource v => { g with conniveSource := v }
+  | .plusOneAfterDiscards v => { g with plusOneAfterDiscards := v }
+  | .additionalCombatPhases v => { g with additionalCombatPhases := v }
+  | .enrageGrantsAdditionalCombat v => { g with enrageGrantsAdditionalCombat := v }
+  | .resolvingDivision v => { g with resolvingDivision := v }
+  | .pendingTokenEnters v => { g with pendingTokenEnters := v }
+  | .pushPendingTokenEnter id => { g with pendingTokenEnters := g.pendingTokenEnters.push id }
+  | .playerControl v => { g with playerControl := v }
+  | .controlOnNextTakenTurn v => { g with controlOnNextTakenTurn := v }
+  | .pendingLokiCopy v => { g with pendingLokiCopy := v }
+  | .assignCombatDamageEqualToughness v => { g with assignCombatDamageEqualToughness := v }
+  | .pendingFreeRGCreature v => { g with pendingFreeRGCreature := v }
+  | .plusOneAfterSearch v => { g with plusOneAfterSearch := v }
+  | .thirstDiscardsLeft v => { g with thirstDiscardsLeft := v }
+  | .thirstDiscardType v => { g with thirstDiscardType := v }
+  | .pendingDiscardsLeft v => { g with pendingDiscardsLeft := v }
+  | .wardQueue v => { g with wardQueue := v }
+  | .enqueueWard ws => { g with wardQueue := g.wardQueue ++ ws }
+  | .delayedEndStepSacrifices v => { g with delayedEndStepSacrifices := v }
+  | .pushDelayedEndStepSacrifice id =>
+    { g with delayedEndStepSacrifices := g.delayedEndStepSacrifices.push id }
+  | .delayedGraveReturns v => { g with delayedGraveReturns := v }
+  | .pushDelayedGraveReturn id p =>
+    { g with delayedGraveReturns := g.delayedGraveReturns.push (id, p) }
+  | .delayedSynthetic v => { g with delayedSynthetic := v }
+  | .pushDelayedSynthetic p n =>
+    { g with delayedSynthetic := g.delayedSynthetic.push (p, n) }
+  | .untapSearchedIfLands v => { g with untapSearchedIfLands := v }
+  | .pendingCreatureTokenCreators v => { g with pendingCreatureTokenCreators := v }
+  | .pushPendingCreatureTokenCreator p =>
+    { g with pendingCreatureTokenCreators := g.pendingCreatureTokenCreators.push p }
+  | .ancestryLandsTapped v => { g with ancestryLandsTapped := v }
+  | .pushAncestryLandTapped id =>
+    { g with ancestryLandsTapped := g.ancestryLandsTapped.push id }
+  | .removeAncestryLandTapped id =>
+    { g with ancestryLandsTapped := g.ancestryLandsTapped.filter (· != id) }
+  | .clearEvents => { g with events := #[] }
+
+/-- Process one `GameEvent` in isolation, appending it to `g.events` and
+applying its `GameChange`. -/
+def applyEvent (g : Game) (e : GameEvent) : Game :=
+  let g := { g with events := g.events.push e }
+  g.applyChange e.change
 
 /-- Record a change that happened. Replacements consult an event before
 this, and do not record a change they replace (CR 614.6). -/
 def record (g : Game) (e : GameEvent) : Game :=
-  { g with events := g.events.push e }
+  g.applyEvent e
+
+/-- Record a sequence of events in order, processing each in isolation. -/
+def recordAll (g : Game) (es : Array GameEvent) : Game :=
+  es.foldl Game.record g
+
+/-- Add and process a `GameChange` on the current turn. -/
+def change (g : Game) (c : GameChange) : Game :=
+  g.record ⟨g.turnNumber, c⟩
+
+/-- Add and process a sequence of `GameChange`s on the current turn. -/
+def changes (g : Game) (cs : Array GameChange) : Game :=
+  cs.foldl Game.change g
+
+/-- Add and process a `PlayerChange` for `p`. -/
+def changePlayer (g : Game) (p : PlayerId) (c : PlayerChange) : Game :=
+  g.change (.player p c)
+
+/-- Add and process multiple `PlayerChange`s for `p`. -/
+def changePlayers (g : Game) (p : PlayerId) (cs : Array PlayerChange) : Game :=
+  g.change (.playerChanges p cs)
+
+/-- Add and process an `ObjectChange` for `id`. -/
+def changeObject (g : Game) (id : ObjectId) (c : ObjectChange) : Game :=
+  g.change (.object id c)
+
+/-- Add and process multiple `ObjectChange`s for `id`. -/
+def changeObjects (g : Game) (id : ObjectId) (cs : Array ObjectChange) : Game :=
+  g.change (.objectChanges id cs)
+
+/-- Add and process a `StatusChange` for `id`. -/
+def changeStatus (g : Game) (id : ObjectId) (c : StatusChange) : Game :=
+  g.change (.object id (.status c))
+
+/-- Add and process multiple `StatusChange`s for `id`. -/
+def changeStatuses (g : Game) (id : ObjectId) (cs : Array StatusChange) : Game :=
+  g.change (.object id (.statuses cs))
+
+/-- Add and process a `StackEntryChange` at stack index `idx`. -/
+def changeStackEntry (g : Game) (idx : Nat) (c : StackEntryChange) : Game :=
+  g.change (.stackEntry idx c)
+
+/-- Add and process a `StackEntryChange` for the stack entry with `objectId`. -/
+def changeStackEntryById (g : Game) (objectId : ObjectId) (c : StackEntryChange) : Game :=
+  g.change (.stackEntryById objectId c)
+
+/-- Add and process a `ProposalChange` on the current proposed spell or ability. -/
+def changeProposal (g : Game) (c : ProposalChange) : Game :=
+  g.change (.proposal c)
+
+/-- Add and process multiple `ProposalChange`s on the current proposed spell or ability. -/
+def changeProposals (g : Game) (cs : Array ProposalChange) : Game :=
+  g.change (.proposalChanges cs)
+
+def logMsg (g : Game) (msg : String) : Game :=
+  g.change (.logMsg msg)
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
-  { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
+  g.changes #[.unlessPaysInstead none, .unlessPaysDue false, .unlessPaysTargets #[]]
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  { g with mayEffect := none, mayTargets := #[] }
+  g.changes #[.mayEffect none, .mayTargets #[]]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
-  { g with spellOr := #[], spellOrTargets := #[], spellOrLibrary := false }
+  g.changes #[.spellOr #[], .spellOrTargets #[], .spellOrLibrary false]
 
 def over (g : Game) : Bool := g.result.isSome
 
@@ -525,25 +1366,19 @@ def loggedSheHulkDealtDamage (g : Game) : Bool :=
 def noteCombatDamageTo (g : Game) (p : PlayerId) : Game :=
   g.record (GameEvent.damagedPlayer g.turnNumber none p 1 true)
 
-def setPlayer (g : Game) (pl : Player) : Game :=
-  { g with players := g.players.set! pl.id.idx pl }
-
-def modifyPlayer (g : Game) (p : PlayerId) (f : Player → Player) : Game :=
-  g.setPlayer (f (g.player p))
-
 /-- Set `p`'s life total and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
   let pl := g.player p
   if (pl.lifeLocked || pl.lifeCantChange) && life != pl.life then
     g.logMsg s!"{pl.name}'s life total can't change"
   else
-    g.setPlayer { pl with life := life } |>.logMsg msg
+    g.changePlayer p (.life life) |>.logMsg msg
 
 /-- Remember that `p` created one or more creature tokens (CR 603.2c).
 One instruction notes the player once. -/
 def noteCreatureTokenEvent (g : Game) (p : PlayerId) : Game :=
   if (g.player p).lost || g.pendingCreatureTokenCreators.contains p then g
-  else { g with pendingCreatureTokenCreators := g.pendingCreatureTokenCreators.push p }
+  else g.change (.pushPendingCreatureTokenCreator p)
 
 def livingPlayers (g : Game) : Array Player :=
   g.players.filter (fun pl => !pl.lost)
@@ -648,15 +1483,6 @@ def object! (g : Game) (id : ObjectId) : GameObject :=
   | some o => o
   | none => panic! s!"missing object {id}"
 
-def setObject (g : Game) (o : GameObject) : Game :=
-  match g.objects.findIdx? (fun x => x.id == o.id) with
-  | some i => { g with objects := g.objects.set! i o }
-  | none => { g with objects := g.objects.push o }
-
-/-- Update `o`'s status in place. -/
-def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
-  g.setObject { o with status := f o.status }
-
 def battlefield (g : Game) : Array GameObject :=
   g.objects.filter GameObject.isOnBattlefield
 
@@ -687,13 +1513,8 @@ def restoreCopy (g : Game) (o : GameObject) : Game :=
   | none => g
   | some card =>
     let copied := o.printed.name
-    g.setObject { o with
-      printed := card
-      copyRestore := none
-      copyUntilEot := false
-      copyUntilNextTurn := false
-      copyUntilSourceLeaves := none }
-    |>.logMsg s!"{card.name} is no longer a copy of {copied}"
+    g.changeObject o.id .restoreCopy
+      |>.logMsg s!"{card.name} is no longer a copy of {copied}"
 
 /-- Restore copy effects on battlefield objects that satisfy `p`. -/
 def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
@@ -720,10 +1541,11 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
       if (acc.player p).lost then
         acc.logMsg s!"{o.name} does not change control (CR 800.4b)"
       else
-        acc.setObject { o with
-          controller := some p
-          controlChanged := false
-          controlUntilSourceLeaves := none }
+        acc.changeObjects o.id #[
+          .controller (some p),
+          .controlChanged false,
+          .controlUntilSourceLeaves none
+        ]
           |>.logMsg s!"{o.name} returns to {(acc.player p).name}'s control"
     else acc) g
 
@@ -737,7 +1559,7 @@ remains the active player on their turn (MSH 300) and still controls their
 permanents (MSH 358). -/
 def setPlayerControl (g : Game) (you them : PlayerId) : Game :=
   let g :=
-    { g with playerControl := some (you, them), controlOnNextTakenTurn := false }
+    g.changes #[.playerControl (some (you, them)), .controlOnNextTakenTurn false]
       |>.logMsg
         s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
   match (g.player them).teammate with

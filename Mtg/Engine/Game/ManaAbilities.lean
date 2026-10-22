@@ -387,7 +387,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       | some pool => pure pool
       | none => throw s!"{pl.name} cannot pay {d.cost}"
     else pure pl.manaPool
-  let mut g := g.setPlayer { pl with manaPool := pool }
+  let mut g := g.changePlayer p (.manaPool pool)
   g ← g.payLifeCost p d.payLife
   let mut rest := costIds
   for pick in d.picks do
@@ -400,14 +400,10 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {src.name}"
   match d.activatedIdx with
   | some i =>
-    match g.findObject? id with
-    | some x =>
-      g := g.setObject { x with status := { x.status with
-        activationsThisTurn := x.status.activationsThisTurn + 1
-        abilitiesActivatedThisTurn := x.status.abilitiesActivatedThisTurn.push i } }
-    | none => pure ()
+    if (g.findObject? id).isSome then
+      g := g.changeStatuses id #[.incActivationsThisTurn, .pushAbilitiesActivated i]
   | none => pure ()
-  g := g.modifyPlayer p (fun pl => { pl with manaPool := addRestrictedMana pl.manaPool mana d.restriction })
+  g := g.changePlayer p (.manaPool (addRestrictedMana (g.player p).manaPool mana d.restriction))
   if d.damageYou > 0 then
     let before := (g.player p).life
     g := g.setLife p (before - (d.damageYou : Int))
@@ -420,8 +416,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       (g.player p).mountainExtraRedThisTurn
     else 0
   if extraRed > 0 then
-    g := (g.modifyPlayer p (fun pl =>
-      { pl with manaPool := pl.manaPool.add (.colored .red) extraRed })).logMsg
+    g := (g.changePlayer p (.addMana (.colored .red) extraRed)).logMsg
       (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
   let produced :=
     match mana[0]? with
@@ -436,15 +431,15 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     else g.logMsg s!"{(g.player p).name} {verb} {o.name} for {produced}{d.restriction.note}"
   if d.tap then
     g := match g.proposedSpell with
-      | some prop =>
-        let g := { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
+      | some _ =>
+        let g := g.changeProposal (.pushTapped id)
         if o.printed.commanderIdentityScryCreature then
-          { g with ancestryLandsTapped := g.ancestryLandsTapped.push id }
+          g.change (.pushAncestryLandTapped id)
         else g
       | none => g
   if o.isCreature then
     g := g.putControlledTriggers p .youActivateCreatureAbility
-  return { g with consecutivePasses := 0 }
+  return g.change (.consecutivePasses 0)
 
 /-- Index of the first mana ability of `o` that can add `mana` by tapping
 alone, or with only mana and life costs when `plainOnly` is false. -/

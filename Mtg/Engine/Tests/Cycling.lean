@@ -248,7 +248,7 @@ def gollumAndOgreVsOneBearReadyToBlock : Game :=
 def ogreGrantedMenaceReadyToBlock : Game :=
   let g := readyToDeclareBlockers
   let ogre := namedPermanent g "Gray Ogre"
-  g.setObject { ogre with status := ogre.status.grantUntilEot Keyword.menace }
+  g.changeStatus ogre.id (.grantUntilEot Keyword.menace)
 
 #guard ogreGrantedMenaceReadyToBlock.hasMenace
   (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre")
@@ -412,7 +412,7 @@ def magnificentEndSetup (tapped : Bool) : Game :=
   let g :=
     if tapped then
       let o := namedPermanent g "Grizzly Bears"
-      g.setObject { o with status := { o.status with tapped := true } }
+      g.changeStatus o.id (.tapped true)
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
   withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
@@ -515,14 +515,14 @@ def islandwalkBlocked : Bool :=
   let g := addPermanent g island ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let whale := namedPermanent g "Colossal Whale"
-  let g := g.setObject { whale with status := { whale.status with attacking := true } }
+  let g := g.changeStatus whale.id (.attacking true)
   !g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
 
 def islandwalkOpen : Bool :=
   let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let whale := namedPermanent g "Colossal Whale"
-  let g := g.setObject { whale with status := { whale.status with attacking := true } }
+  let g := g.changeStatus whale.id (.attacking true)
   g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
 
 #guard islandwalkBlocked
@@ -534,7 +534,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.setObject { fog with attachedTo := some bears.id }
+  let g := g.changeObject fog.id (.attachedTo (some bears.id))
   !g.canAttack (namedPermanent g "Grizzly Bears")
 
 #guard fogCantAttack
@@ -545,7 +545,7 @@ def fogCantAttack : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let fog := namedPermanent g "Fog on the Barrow-Downs"
-  let g := g.setObject { fog with attachedTo := some bears.id }
+  let g := g.changeObject fog.id (.attachedTo (some bears.id))
   let host := namedPermanent g "Grizzly Bears"
   g.hasSubtype host "Spirit" && !g.hasSubtype host "Bear"
 

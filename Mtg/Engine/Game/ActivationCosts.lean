@@ -15,8 +15,7 @@ namespace Game
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{o.name} has no indestructible counter"
-  let g := g.setObject { o with status :=
-    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
+  let g := g.changeStatus o.id (.indestructibleCounters (o.status.indestructibleCounters - 1))
   return g.logMsg s!"{o.name} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
@@ -118,8 +117,8 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
         let pw := g.power o
         g := g.sacrificeToGraveyard o s!"{name} sacrifices {o.name}"
         if records then
-          if let some ab := g.findObject? abilityId then
-            g := g.setObject { ab with lastKnownPower := some pw }
+          if (g.findObject? abilityId).isSome then
+            g := g.changeObject abilityId (.lastKnownPower (some pw))
       else
         g := (g.move id (.graveyard o.owner) none).1.logMsg s!"{name} discards {o.name}"
   return g
@@ -179,21 +178,20 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let src := g.object! sourceId
       if src.status.story == 0 then
         throw s!"{src.name} has no story counter"
-      g := g.setObject { src with status := { src.status with story := src.status.story - 1 } }
+      g := g.changeStatus sourceId (.story (src.status.story - 1))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {src.name}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
     if a.cost.putStunCounterOnSource then
       let src := g.object! sourceId
       let n := g.countersYouPut src 1 (putter := some p)
-      g := (g.setObject { src with status := { src.status with stun := src.status.stun + n } }).logMsg
+      g := (g.changeStatus sourceId (.stun (src.status.stun + n))).logMsg
         s!"{(g.player p).name} puts a stun counter on {src.name}"
     if a.cost.removeAnyNumberPlusOne then
       let src := g.object! sourceId
       if src.status.plusOnePlusOne < removePlusOnes then
         throw s!"{src.name} doesn't have {removePlusOnes} +1/+1 counters"
-      g := (g.setObject { src with status := { src.status with
-        plusOnePlusOne := src.status.plusOnePlusOne - removePlusOnes } }).logMsg
+      g := (g.changeStatus sourceId (.plusOnePlusOne (src.status.plusOnePlusOne - removePlusOnes))).logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {src.name}"
   | none => pure ()
   if sacrificeSource then
@@ -237,7 +235,7 @@ def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
 def markBoastUsed (g : Game) (o : GameObject) : Game :=
   match g.findObject? o.id with
   | some o =>
-    (g.setObject { o with status := { o.status with boastUsedThisTurn := true } }).logMsg
+    (g.changeStatus o.id (.boastUsedThisTurn true)).logMsg
       s!"{o.name}'s boast ability is activated"
   | none => g
 

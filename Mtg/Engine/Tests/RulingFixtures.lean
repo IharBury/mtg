@@ -25,7 +25,7 @@ def oliphauntCycleAbility : ActivatedAbility :=
 
 /-- Isolated library so the search finds a known card. -/
 def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
-  let g := g.modifyPlayer p (fun pl => { pl with library := #[] })
+  let g := g.changePlayer p (.library #[])
   cards.foldl (fun g c => addToLibraryTop g c p) g
 
 def oliphauntCycleReady : Game :=
@@ -69,7 +69,7 @@ def cosmicCubeSetup : Game :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := g.changeStatus bears.id (.attacking true)
   let g := addToLibraryTop g hillGiant ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
   addToLibraryTop g lightningBolt ⟨0⟩

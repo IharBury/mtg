@@ -360,7 +360,7 @@ def guttersnipeGoneResolved : Game :=
 
 /-- Lethal Guttersnipe damage ends the game before the spell resolves. -/
 def guttersnipeLethal : Game :=
-  let g := paidGuttersnipeBolt.modifyPlayer ⟨1⟩ (fun pl => { pl with life := 2 })
+  let g := paidGuttersnipeBolt.changePlayer ⟨1⟩ (.life 2)
   passBoth g
 
 #guard guttersnipeLethal.over
@@ -767,7 +767,7 @@ def guardianAtEndStep : Game := skipTo guardianReady .end 80
 /-- Two damage is lethal to the 2/2, but not after three +1/+1 counters. -/
 def guardianDiesFromTwoDamage : Game :=
   let o := namedPermanent guardianReady "Guardian of the Halls"
-  let g := guardianReady.setObject { o with status := { o.status with damage := 2 } }
+  let g := guardianReady.changeStatus o.id (.damage 2)
   g.receivePriority ⟨0⟩
 
 #guard !(guardianDiesFromTwoDamage.battlefield.any (fun o =>
@@ -777,8 +777,8 @@ def guardianDiesFromTwoDamage : Game :=
 
 def guardianSurvivesTwoDamage : Game :=
   let o := namedPermanent guardianResolved "Guardian of the Halls"
-  let g := guardianResolved.setObject { o with status := { o.status with
-    plusOnePlusOne := o.status.plusOnePlusOne, damage := 2 } }
+  let g := guardianResolved.changeStatuses o.id #[
+    .plusOnePlusOne o.status.plusOnePlusOne, .damage 2]
   g.receivePriority ⟨0⟩
 
 #guard guardianSurvivesTwoDamage.battlefield.any (fun o =>

@@ -13,7 +13,7 @@ namespace Mtg.Engine
 inductive GameResult where
   | won (player : PlayerId)
   | draw
-deriving DecidableEq, Repr, BEq
+deriving DecidableEq, Repr, Inhabited, BEq
 
 structure Player where
   id : PlayerId
@@ -102,7 +102,7 @@ structure Player where
   cantAttackJaces : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array String := #[]
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- A seat at the table before objects are created. -/
 structure Seat where

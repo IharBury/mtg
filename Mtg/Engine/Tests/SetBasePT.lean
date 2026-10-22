@@ -49,7 +49,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def titan : CardDef := creature "Titan" ManaCost.empty #[] 4 4
 def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
@@ -80,7 +80,7 @@ and a creature that has left are not set. -/
 
 #guard
   let o := obj board "Bear"
-  let marked := board.setObject { o with status := { o.status with plusOnePlusOne := 1 } }
+  let marked := board.changeStatus o.id (.plusOnePlusOne 1)
   let g := step marked fixed (targets := #[Target.permanent (pid marked "Bear")])
   base g "Bear" == some (1, 1) && g.basePower (obj g "Bear") == 1 &&
     g.power (obj g "Bear") == 2 &&

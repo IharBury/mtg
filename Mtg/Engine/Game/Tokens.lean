@@ -63,8 +63,8 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
   let n := g.hopeCountersOnEnter o asOf
   if n == 0 then g
   else
-    let o := { o with status := o.status.addPlusOnePlusOne n }
-    (g.setObject o).logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
+    let g := g.changeStatus o.id (.addPlusOnePlusOne n)
+    g.logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
 
 /-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
 that must let enters-the-battlefield triggers see the token (amass, recruit)
@@ -83,7 +83,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       (status := { tapped := tapped, summoningSick := sick })
     let g := g.record (GameEvent.created g.turnNumber controller obj.asEvent)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
-    let g := { g with pendingTokenEnters := g.pendingTokenEnters.push obj.id }
+    let g := g.change (.pushPendingTokenEnter obj.id)
     let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
     -- Storied is not a trigger; an artifact token can be the third permanent.
     let g := g.refreshEnduringStory
@@ -406,7 +406,7 @@ for `p` (Inspired Tethermage). Entering with loyalty counters counts
 def queueLoyaltyPutTriggers (g : Game) (p : PlayerId) : Game :=
   let wts := (g.permanentsOf p).foldl (fun acc o =>
     acc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
-  { g with waitingTriggers := g.waitingTriggers ++ wts }
+  g.change (.enqueueWaitingTriggers wts)
 
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
@@ -433,8 +433,7 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
     let k := g.countersYouPut o n (putter := some controller)
-    let g := g.setObject { o with status :=
-      { o.status with loyaltyCounters := o.status.loyaltyCounters + k } }
+    let g := g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters + k))
     let g := if k > 0 then g.queueLoyaltyPutTriggers controller else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
@@ -486,8 +485,9 @@ def tokenPrinted (k : TokenKind) : CardDef :=
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (n : Nat) (tapped := false) (attacking := false) : Game :=
   if (g.player controller).lost then
-    if n == 0 then { g with recentTokenIds := #[] }
-    else { g with recentTokenIds := #[] }.logMsg "no token is created (CR 800.4b)"
+    let g := g.change (.recentTokenIds #[])
+    if n == 0 then g
+    else g.logMsg "no token is created (CR 800.4b)"
   else
   Id.run do
     let mut g := g
@@ -501,11 +501,10 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
       g := g'
       ids := ids.push obj.id
       if attacking then
-        g := g.setObject { (g.object! obj.id) with
-          status := { (g.object! obj.id).status with
-            attacking := true
-            attackingWhom := dest } }
-    g := { g with recentTokenIds := ids }
+        g := g.changeStatuses obj.id #[
+          .attacking true,
+          .attackingWhom dest]
+    g := g.change (.recentTokenIds ids)
     if n > 0 && creature then
       g := g.noteCreatureTokenEvent controller
     return g

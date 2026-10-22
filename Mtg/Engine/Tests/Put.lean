@@ -36,12 +36,12 @@ def sword : CardDef :=
   equipment "Test Sword" (ManaCost.ofGeneric 1) "" (ManaCost.ofGeneric 2)
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ =>
+    #[.pushHand id])
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def putInExile (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   insertObject g card p .exile
@@ -73,8 +73,8 @@ returns nothing. -/
   let src := onBoard g "Test Hunter"
   match bearId, beastId, src with
   | some bearId, some beastId, some src =>
-    let g := g.setObject { src with
-      leaveTriggerExile := #[bearId], linkedExile := #[beastId] }
+    let g := g.changeObjects src.id
+      #[.leaveTriggerExile #[bearId], .linkedExile #[beastId]]
     let g := g.applyTriggeredAbility caster .onLeaveReturnExiled (some src.id)
     match onBoard g "Test Bear", onBoard g "Costly Beast", onBoard g "Test Hunter" with
     | some bear, some beast, some _ =>
@@ -157,7 +157,7 @@ nothing. -/
   | none => false
   | some land =>
     let (g, eid) := g.move land.id .exile none
-    let g := putStep { g with exiledIdsThisWay := #[eid] }
+    let g := putStep (g.change (.exiledIdsThisWay #[eid]))
       (.put .notedLands (how := .tapped))
     match onBoard g "Test Isle" with
     | some o =>
@@ -176,7 +176,7 @@ do not. -/
   match idNamed g (g.player caster).graveyard "Test Isle" with
   | none => false
   | some id =>
-    let g := putStep { g with discardedCardThisWay := some (caster, id) }
+    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
       (.put .discardedLand (how := .tapped))
     match onBoard g "Test Isle" with
     | some o =>
@@ -189,7 +189,7 @@ do not. -/
   match idNamed g (g.player caster).graveyard "Test Bear" with
   | none => false
   | some id =>
-    let g := putStep { g with discardedCardThisWay := some (caster, id) }
+    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
       (.put .discardedLand (how := .tapped))
     (onBoard g "Test Bear").isNone && g.discardedCardThisWay.isNone &&
       (g.player caster).graveyard.contains id

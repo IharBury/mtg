@@ -69,20 +69,20 @@ def light : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ =>
+    #[.pushHand id])
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.modifyPlayer p (fun pl => { pl with library := #[] }))
+    (g.changePlayer p (.library #[]))
 
 def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+  g.changePlayer p (.hand #[])
 
 def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))
@@ -134,7 +134,7 @@ def declineSearch (g : Game) : Game :=
 def withQuest (n : Nat) : Game :=
   let g := addPermanent afterDraw light caster caster
   let o := lastPermanent g
-  g.setObject { o with status := { o.status with quest := n } }
+  g.changeStatus o.id (.quest n)
 
 #guard isForestCard forest && isBasicLandCard forest
 #guard isBasicLandCard mountain && !isForestCard mountain

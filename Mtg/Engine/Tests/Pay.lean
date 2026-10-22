@@ -59,12 +59,12 @@ def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ =>
+    #[.pushHand id])
 
 def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   match ids.find? (fun id => (g.findObject? id).any (·.name == name)) with
@@ -72,12 +72,11 @@ def namedIn (g : Game) (ids : Array ObjectId) (name : String) : ObjectId :=
   | none => panic! s!"missing {name}"
 
 def withMana (g : Game) : Game :=
-  g.modifyPlayer caster (fun pl =>
-    let pool := (pl.manaPool.add (.colored .green) 2).add (.colored .blue) 1
-    { pl with manaPool := pool.add (.colorless) 1 })
+  g.changePlayers caster
+    #[.addMana (.colored .green) 2, .addMana (.colored .blue) 1, .addMana .colorless 1]
 
 def emptyHand (g : Game) : Game :=
-  g.modifyPlayer caster (fun pl => { pl with hand := #[] })
+  g.changePlayer caster (.hand #[])
 
 def payDraw : TriggeredAbility.TriggerResolution :=
   .may (.pay (.mana #[.generic 1])) (.draw (.fixed 1)) .ifYouDo

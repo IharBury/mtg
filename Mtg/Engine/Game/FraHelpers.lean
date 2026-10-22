@@ -66,7 +66,7 @@ def createOneKindToken (g : Game) (controller : PlayerId) (kind : TokenKind) :
 
 /-- Begin a `FraChoice` for `p`. -/
 def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String) : Game :=
-  { g with pending := .fraChoice p choice }.logMsg msg
+  (g.change (.pending (.fraChoice p choice))).logMsg msg
 
 /-- Cards in `p`'s hand that a “reveal your hand, you choose” effect may pick. -/
 def revealedHandChoices (g : Game) (p : PlayerId) (permanentOnly : Bool) : Array ObjectId :=
@@ -94,7 +94,7 @@ def outsideCards (g : Game) (p : PlayerId) : Array GameObject :=
 effect can reveal or move them (CR 400.11b). -/
 def materializeSideboard (g : Game) (p : PlayerId) : Game :=
   let side := (g.player p).sideboard
-  let g := g.modifyPlayer p (fun pl => { pl with sideboard := #[] })
+  let g := g.changePlayer p (.sideboard #[])
   side.foldl (fun g card => (g.allocObject card p (.outside p)).1) g
 
 /-- Cards named Sphinx's Approach in `p`'s graveyard. -/
@@ -114,7 +114,7 @@ def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
   let (g, newId) := g.putOntoBattlefield id controller (tapped := tapped)
   let g :=
     if plusOnes > 0 then
-      g.mapObjectStatus (g.object! newId) (fun s => s.addPlusOnePlusOne plusOnes)
+      g.changeStatus newId (.addPlusOnePlusOne plusOnes)
     else g
   let g := g.logMsg s!"{name} returns to the battlefield"
   (g, newId)
@@ -141,19 +141,19 @@ then +1/+1, then other kinds) or hurt their own (stun, then minus-one counters).
 def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (n : Nat) : Game :=
   let take (have_ left : Nat) : Nat × Nat := (Nat.min have_ left, left - Nat.min have_ left)
   let s := o.status
-  let s' :=
+  let changes : Array StatusChange :=
     if o.controlledBy controller then
       let (a, left) := take s.stun n
       let (b, _) := take s.minusOneMinusOne left
-      { s with stun := s.stun - a, minusOneMinusOne := s.minusOneMinusOne - b }
+      #[.removeCounters .stun a, .removeCounters .minusOneMinusOne b]
     else
       let (a, left) := take s.loyaltyCounters n
       let (b, left) := take s.plusOnePlusOne left
       let (c, left) := take s.shield left
       let (d, _) := take s.indestructibleCounters left
-      { s with loyaltyCounters := s.loyaltyCounters - a, plusOnePlusOne := s.plusOnePlusOne - b
-               shield := s.shield - c, indestructibleCounters := s.indestructibleCounters - d }
-  (g.setObject { o with status := s' }).logMsg s!"Counters are removed from {o.name}"
+      #[.removeCounters .loyalty a, .removeCounters .plusOnePlusOne b,
+        .removeCounters .shield c, .removeCounters .indestructible d]
+  (g.changeStatuses o.id changes).logMsg s!"Counters are removed from {o.name}"
 
 /-- The resolving activated or triggered ability's stack object. -/
 def resolvingAbilityObject? (g : Game) : Option GameObject :=
@@ -185,8 +185,7 @@ def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
   else
     let g := pws.foldl (fun g o =>
       let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
-      (g.mapObjectStatus (g.object! o.id) (fun s =>
-        { s with loyaltyCounters := s.loyaltyCounters + n })).logMsg
+      (g.changeStatus o.id (.addCounters .loyalty n)).logMsg
         s!"A loyalty counter is put on {o.name}") g
     g.queueLoyaltyPutTriggers p
 

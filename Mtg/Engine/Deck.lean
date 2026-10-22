@@ -16,7 +16,7 @@ inductive Format where
   | constructed
   /-- CR 100.2b: minimum 40, duplicates unrestricted. -/
   | limited
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Format
 

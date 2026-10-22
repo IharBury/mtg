@@ -16,7 +16,7 @@ namespace Game
 `move` sends it to exile instead of the graveyard (CR 614.1). -/
 def destroyPermanent (g : Game) (o : GameObject) : Game :=
   if o.status.shield > 0 then
-    let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
+    let g := g.changeStatus o.id (.shield (o.status.shield - 1))
     g.logMsg s!"A shield counter is removed from {o.name} instead of destroying it"
   else if g.hasIndestructible o then
     g.logMsg s!"{o.name} is indestructible and isn't destroyed"
@@ -48,22 +48,19 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     o.printed.staticAbilities.any (fun
       | .healOtherDamageWhenDealt => true
       | _ => false)
-  let o :=
-    if healsOther && n > 0 then
-      { o with status := { o.status with damage := 0 } }
-    else o
-  let g := if healsOther && n > 0 then g.setObject o else g
+  let g := if healsOther && n > 0 then g.changeStatus o.id (.damage 0) else g
+  let o := g.findObject? o.id |>.getD o
   if n > 0 && o.status.shield > 0 && !unpreventable then
-    let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
+    let g := g.changeStatus o.id (.shield (o.status.shield - 1))
     let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
     g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
   else if n > 0 && o.status.shield > 0 && unpreventable then
-    let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
+    let g := g.changeStatus o.id (.shield (o.status.shield - 1))
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
     let marked := g.object! o.id
     let happened := GameEvent.damaged g.turnNumber none marked.asEvent n.toNat combat
     let g := g.record happened
-    let g := (g.mapObjectStatus marked (fun s => s.addDamage n deathtouch)).logMsg msg
+    let g := (g.changeStatus marked.id (.addDamage n deathtouch)).logMsg msg
     if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
       g.queueCreatureYouControlDealtDamage (g.object! o.id) n
     else g
@@ -75,11 +72,13 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     match happened with
     | some e => g.record e
     | none => g
-  let g := (g.mapObjectStatus o (fun s =>
-    let s := s.addDamage n deathtouch
-    if o.printed.isPlaneswalker && n > 0 then
-      { s with loyaltyCounters := s.loyaltyCounters - n.toNat }
-    else s)).logMsg msg
+  let g :=
+    let g := g.changeStatus o.id (.addDamage n deathtouch)
+    let g :=
+      if o.printed.isPlaneswalker && n > 0 then
+        g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters - n.toNat))
+      else g
+    g.logMsg msg
   let g :=
     if n > 0 then
       match o.controller with
@@ -90,10 +89,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         -- simultaneous damage adds up.
         let g :=
           if already then
-            { g with waitingTriggers := g.waitingTriggers.map (fun t =>
-                if t.source.id == o.id && t.event == .sourceDealtDamage then
-                  { t with lastKnownPower := some ((t.lastKnownPower.getD 0) + n) }
-                else t) }
+            g.change (.addSourceDealtDamagePower o.id n)
           else if (happened.getD (GameEvent.damaged g.turnNumber none o.asEvent n.toNat combat)).matchesTrigger
               p o.id .sourceDealtDamage then
             g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
@@ -104,7 +100,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
             | .watch .hulk => true
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
-          { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
+          g.change (.enrageGrantsAdditionalCombat (g.enrageGrantsAdditionalCombat + 1))
         else g
       | none => g
     else g
@@ -212,8 +208,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           | none => n
         else n
       let prevented := g.preventsAllDamageTo o || o.status.shield > 0
-      let g :=
-        g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
+      let g := g.changeStatus src.id (.dealtDamageThisTurn true)
       let g := g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
         (deathtouch || g.hasDeathtouch src)
       -- CR 702.15b: damage dealt by a source with lifelink.
@@ -310,11 +305,11 @@ def continueIfShuffled (g : Game) : Game :=
   | some _ => g
   | none =>
     let after := g.afterRandom
-    let g := { g with afterRandom := .none }
+    let g := g.change (.afterRandom .none)
     match after with
     | .draw p n => g.draw p n
     | .gainLife p n => g.gainLife p n
-    | other => { g with afterRandom := other }
+    | other => g.change (.afterRandom other)
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=

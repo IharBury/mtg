@@ -34,7 +34,7 @@ def modeStep (g : Game) (r : TriggeredAbility.TriggerResolution)
 
 def withModes (modes : Array Nat) : Game :=
   let g := addPermanent afterDraw ally caster caster
-  g.mapObjectStatus (allyOf g) (fun s => { s with chosenModes := modes })
+  g.changeStatus (allyOf g).id (.chosenModes modes)
 
 def allianceModes : TriggeredAbility.TriggerResolution :=
   .chooseModes TriggeredAbility.TriggerResolution.allianceModes .oneUnusedThisTurn
@@ -85,8 +85,7 @@ removes the ability. A missing source does the same. -/
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
-  let g0 := g0.mapObjectStatus (allyOf g0) (fun s =>
-    { s with allianceModesChosen := #[0, 1, 2] })
+  let g0 := g0.changeStatus (allyOf g0).id (.allianceModesChosen #[0, 1, 2])
   let g := modeStep g0 (allianceModes)
     (some (allyOf g0).id)
   g.pending == .none && logContains g "all three modes have been chosen" &&
@@ -162,8 +161,7 @@ lifetime, and spending every mode leaves the source on the battlefield. -/
 
 #guard
   let g0 := addPermanent afterDraw ally caster caster
-  let g0 := g0.mapObjectStatus (allyOf g0) (fun s =>
-    { s with chosenModes := #[0, 1, 2] })
+  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[0, 1, 2])
   let g := modeStep g0 (gollumModes) (some (allyOf g0).id)
   g.battlefield.any (·.name == "Test Ally") && g.pending == .none &&
     logContains g "all three modes have been chosen"
@@ -187,7 +185,7 @@ means the sacrifice mode finds it already gone. -/
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let (g0, tok) := g0.createToken caster Game.soldier11whiteToken
-  let g0 := g0.mapObjectStatus (allyOf g0) (fun s => { s with chosenModes := #[2, 3] })
+  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[2, 3])
   let g := modeStep g0 (upToXModes) (some (allyOf g0).id)
     #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
@@ -221,7 +219,7 @@ means the sacrifice mode finds it already gone. -/
 #guard
   let g0 := addPermanent afterDraw ally caster caster
   let (g0, tok) := g0.createToken caster Game.soldier11whiteToken
-  let g0 := g0.mapObjectStatus (allyOf g0) (fun s => { s with chosenModes := #[2, 3] })
+  let g0 := g0.changeStatus (allyOf g0).id (.chosenModes #[2, 3])
   let g := g0.applyTriggeredAbility caster (.onEnter Effect.enterChooseUpToXModes)
     (some (allyOf g0).id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&

@@ -15,13 +15,13 @@ namespace Game
 def drawOneCard (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then
-    let g := g.setPlayer { pl with drewFromEmpty := true }
+    let g := g.changePlayer p (.drewFromEmpty true)
     g.logMsg s!"{pl.name} tries to draw from an empty library"
   else
     let top := pl.library.back!
     let cardName := (g.object! top).name
     let rest := pl.library.pop
-    let g := g.setPlayer { pl with library := rest }
+    let g := g.changePlayer p (.library rest)
     let (g, _) := g.move top (.hand p) none
     let pl := g.player p
     let nth := GameEvent.draws g.events g.turnNumber p + 1
@@ -37,27 +37,25 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
       let mut g := g
       for o in g.permanentsOf p do
         if happened.matchesTrigger p o.id .youDraw then
-          g := { g with waitingTriggers :=
-            g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
+          g := g.change (.enqueueWaitingTriggers
+            (o.waitingTriggersFor p .youDraw))
         if happened.matchesTrigger p o.id .youDrawSecondCard then
-          g := { g with waitingTriggers :=
-            g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+          g := g.change (.enqueueWaitingTriggers
+            (o.waitingTriggersFor p .youDrawSecondCard))
       if happened.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
         for q in g.livingPlayers do
           for o in g.permanentsOf q.id do
             if happened.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
-              g := { g with waitingTriggers :=
-                g.waitingTriggers ++ o.waitingTriggersFor q.id .anyPlayerDrawsSecond }
+              g := g.change (.enqueueWaitingTriggers
+                (o.waitingTriggersFor q.id .anyPlayerDrawsSecond))
       for opp in g.livingOpponents p do
         for o in g.permanentsOf opp.id do
           if happened.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
-            g := { g with waitingTriggers :=
-              g.waitingTriggers ++
-                o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep }
+            g := g.change (.enqueueWaitingTriggers
+              (o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep))
           if happened.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
-            g := { g with waitingTriggers :=
-              g.waitingTriggers ++
-                o.waitingTriggersFor opp.id .opponentDrawsSecondCard }
+            g := g.change (.enqueueWaitingTriggers
+              (o.waitingTriggersFor opp.id .opponentDrawsSecondCard))
       return g
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
@@ -94,7 +92,7 @@ def beginRecruit (g : Game) (p : PlayerId) : Game :=
   if (g.player p).hand.isEmpty then
     g.logMsg s!"{(g.player p).name} has no card to discard"
   else
-    { g with pending := .recruitDiscard p }.logMsg
+    g.change (.pending (.recruitDiscard p)) |>.logMsg
       s!"{(g.player p).name} discards a card. If it is not a land, they create a Human Soldier token"
 
 /-- Return a spell on the stack to its owner's hand. -/
@@ -124,17 +122,17 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
     if pl.library.size ≤ 1 then
       g.logMsg s!"{pl.name} shuffles their library"
     else
-      { g with pending := .resolveRandom (.shuffleLibrary p) }
+      g.change (.pending (.resolveRandom (.shuffleLibrary p)))
         |>.logMsg s!"{pl.name} shuffles their library"
   else
     let (rng, lib) := g.rng.shuffle pl.library
-    { g with rng := rng } |>.setPlayer { pl with library := lib }
-     |>.logMsg s!"{pl.name} shuffles their library"
+    g.changes #[.rng rng, .player p (.library lib)]
+      |>.logMsg s!"{pl.name} shuffles their library"
 
 /-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
 game until the host supplies an order. -/
 def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Game :=
-  { g with afterRandom := after }.shuffleLibrary p
+  (g.change (.afterRandom after)).shuffleLibrary p
 
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes
 the new bottom of that group. -/
@@ -150,7 +148,7 @@ def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
         newBottom := newBottom.push newId
       let pl := g.player owner
       let without := newBottom.foldl (fun lib id => lib.filter (· != id)) pl.library
-      g.setPlayer { pl with library := newBottom ++ without }
+      g.changePlayer owner (.library (newBottom ++ without))
   | _ =>
     ids.foldl (fun acc id => (acc.move id dest none).1) g
 
@@ -164,8 +162,7 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
       | some o =>
         if o.zone == .library p then
           let name := o.name
-          g := g.modifyPlayer p (fun pl =>
-            { pl with library := (pl.library.filter (· != id)).push id })
+          g := g.changePlayer p (.library (((g.player p).library.filter (· != id)).push id))
           g := g.logMsg s!"{(g.player p).name} puts {name} on top of their library"
         else pure ()
       | none => pure ()
@@ -178,10 +175,10 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
   if ids.size ≤ 1 then
     g.moveIdsInOrder ids dest |>.logMsg log
   else if g.norandom then
-    { g with pending := .resolveRandom (.orderInto ids dest) }.logMsg log
+    (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
   else
     let (rng, ordered) := g.rng.shuffle ids
-    { g with rng := rng }.moveIdsInOrder ordered dest |>.logMsg log
+    (g.change (.rng rng)).moveIdsInOrder ordered dest |>.logMsg log
 
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/

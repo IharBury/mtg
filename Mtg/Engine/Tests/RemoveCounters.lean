@@ -37,24 +37,24 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def withHope (g : Game) (name : String) (n : Nat) : Game :=
   let o := obj g name
-  g.setObject { o with status := { o.status with hope := n } }
+  g.changeStatus o.id (.hope n)
 
 def load (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.setObject { o with status := { o.status with
-    plusOnePlusOne := 2
-    hope := 1
-    charge := 2
-    stun := 1
-    shield := 1
-    lore := 3
-    keywordCounters := { flying := 1 }
-    damage := 4
-    pump := (1, 2) } }
+  g.changeStatuses o.id #[
+    .plusOnePlusOne 2,
+    .hope 1,
+    .charge 2,
+    .stun 1,
+    .shield 1,
+    .lore 3,
+    .keywordCounters { flying := 1 },
+    .damage 4,
+    .pump (1, 2)]
 
 def dawn : CardDef := { name := "Dawn", types := #[.enchantment] }
 def grasp : CardDef := { name := "Grasp", types := #[.enchantment] }
@@ -108,7 +108,7 @@ source, and a source that has left, remove nothing. -/
 
 #guard
   let base := addPermanent afterDraw dawn caster caster
-  let g0 := { base with removedHopeThisWay := true }
+  let g0 := base.change (.removedHopeThisWay true)
   let g := step g0 hopeFromSource (some (pid g0 "Dawn"))
   (obj g "Dawn").status.hope == 0 && !g.removedHopeThisWay &&
     g.log == g0.log
@@ -122,14 +122,14 @@ source, and a source that has left, remove nothing. -/
     !(logContains g "loses a hope counter")
 
 #guard
-  let g0 := { afterDraw with removedHopeThisWay := true }
+  let g0 := afterDraw.change (.removedHopeThisWay true)
   let g := step g0 hopeFromSource
   !g.removedHopeThisWay && logContains g "no longer in play"
 
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 3
   let (g1, newId) := g0.move (pid g0 "Dawn") (.graveyard caster) none
-  let g1 := g1.mapObjectStatus (anyObj g1 "Dawn") (fun s => { s with hope := 3 })
+  let g1 := g1.changeStatus (anyObj g1 "Dawn").id (.hope 3)
   let g := step g1 hopeFromSource (some newId)
   (anyObj g "Dawn").status.hope == 3 && !g.removedHopeThisWay &&
     logContains g "no longer on the battlefield"
@@ -178,7 +178,7 @@ Removing them does not count as removing a hope counter. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear") "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.setObject { aura with attachedTo := some ⟨99999⟩ }
+  let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
   stillLoaded (obj g "Bear").status && g.log == g0.log
 
@@ -190,10 +190,10 @@ Removing them does not count as removing a hope counter. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
-  let g1 := g1.mapObjectStatus (anyObj g1 "Bear") (fun s =>
-    { s with plusOnePlusOne := 2, hope := 1, damage := 4, pump := (1, 2) })
+  let g1 := g1.changeStatuses (anyObj g1 "Bear").id #[
+    .plusOnePlusOne 2, .hope 1, .damage 4, .pump (1, 2)]
   let aura := obj g1 "Grasp"
-  let g1 := g1.setObject { aura with attachedTo := some bearId }
+  let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
   let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))
   let host := anyObj g "Bear"
   !Status.hasCounters host.status && host.status.damage == 4 && host.status.pump == (1, 2) &&
@@ -207,7 +207,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with removedHopeThisWay := false }
+  let g0 := g0.change (.removedHopeThisWay false)
   let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
   crossed.removedHopeThisWay && (obj crossed "Bear").status.hope == 0 &&
     (obj crossed "Bear").status.plusOnePlusOne == 2 &&
@@ -219,7 +219,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with removedHopeThisWay := true }
+  let g0 := g0.change (.removedHopeThisWay true)
   let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
   swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
     (obj swapped "Grasp").status.hope == 0 &&
@@ -231,7 +231,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with removedHopeThisWay := true }
+  let g0 := g0.change (.removedHopeThisWay true)
   let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
   !other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
     (obj other "Grasp").status.hope == 2 && other.log == g0.log

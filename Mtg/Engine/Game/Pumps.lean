@@ -15,9 +15,8 @@ namespace Game
 /-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). `trample` also grants
 trample until end of turn (e.g. Oliphaunt). -/
 def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : Game :=
-  let g := g.mapObjectStatus o (fun s =>
-    let s := s.addPump p t
-    if trample then s.grantUntilEot Keyword.trample else s)
+  let base : Array StatusChange := #[.addPump p t]
+  let g := g.changeStatuses o.id (if trample then base.push (.grantUntilEot Keyword.trample) else base)
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
@@ -30,20 +29,19 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
     (label : String) (pred : Game → GameObject → Bool := fun _ _ => true) : Game :=
   g.forEachControlledCreature p fun g o =>
     if pred g o then
-      g.mapObjectStatus o (·.grantUntilEot kw)
+      (g.changeStatus o.id (.grantUntilEot kw))
         |>.logMsg s!"{o.name} gains {label} until end of turn"
     else g
 
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
 def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Game :=
   kws.foldl (fun g kw =>
-    match g.findObject? o.id with
-    | some o => g.mapObjectStatus o (·.grantUntilEot kw)
-    | none => g) g
+    if (g.findObject? o.id).isSome then g.changeStatus o.id (.grantUntilEot kw)
+    else g) g
 
 /-- Grant `k` until end of turn and log the standard “gains … until end of turn”. -/
 def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
-  g.mapObjectStatus o (·.grantUntilEot k)
+  (g.changeStatus o.id (.grantUntilEot k))
     |>.logMsg s!"{o.name} gains {k} until end of turn"
 
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
@@ -52,21 +50,22 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     (types : Option (Array String) := none)
     (additionalCreature := false) (additionalArtifact := false)
     (pumpPerArtifact := false) : Game :=
-  g.mapObjectStatus o (fun s =>
-    { s with
-      setBasePT := some pt
-      replacedCreatureTypesUntilEot := types.orElse fun _ => s.replacedCreatureTypesUntilEot
-      untilEotKeywords := Keywords.merge s.untilEotKeywords kws
-      additionalCreatureUntilEot := additionalCreature || s.additionalCreatureUntilEot
-      additionalArtifactUntilEot := additionalArtifact || s.additionalArtifactUntilEot
-      pumpPerArtifactUntilEot := pumpPerArtifact || s.pumpPerArtifactUntilEot })
-    |>.logMsg msg
+  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
+  (g.changeStatuses o.id #[
+    .setBasePT (some pt),
+    .replacedCreatureTypesUntilEot (types.orElse fun _ => s.replacedCreatureTypesUntilEot),
+    .grantUntilEot kws,
+    .additionalCreatureUntilEot (additionalCreature || s.additionalCreatureUntilEot),
+    .additionalArtifactUntilEot (additionalArtifact || s.additionalArtifactUntilEot),
+    .pumpPerArtifactUntilEot (pumpPerArtifact || s.pumpPerArtifactUntilEot)
+  ]).logMsg msg
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
+  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
+  let g := g.changeStatus o.id (.finality (s.finality + n))
   g.logMsg s!"{o.name} gets a finality counter"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
@@ -176,8 +175,8 @@ def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s =>
-    { s with indestructibleCounters := s.indestructibleCounters + n })
+  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
+  let g := g.changeStatus o.id (.indestructibleCounters (s.indestructibleCounters + n))
   let g := g.logMsg s!"{o.name} gets an indestructible counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
@@ -185,8 +184,8 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s =>
-    { s with lifelinkCounters := s.lifelinkCounters + n })
+  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
+  let g := g.changeStatus o.id (.lifelinkCounters (s.lifelinkCounters + n))
   let g := g.logMsg s!"{o.name} gets a lifelink counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
@@ -194,7 +193,8 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let g := g.mapObjectStatus o (fun s => { s with burden := s.burden + n })
+  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
+  let g := g.changeStatus o.id (.burden (s.burden + n))
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
@@ -212,7 +212,7 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
     if n == 0 then g
     else
-      let g := g.mapObjectStatus o (fun s => s.addCounters kind n)
+      let g := g.changeStatus o.id (.addCounters kind n)
       let g := g.logMsg s!"{o.name} gets {kind.countersPhrase n}"
       let putter := byPlayer.orElse (fun _ => o.controller)
       let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
@@ -232,9 +232,7 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     else
       let g :=
         if g.hasSubtype army subtype then g
-        else
-          g.mapObjectStatus army (fun s =>
-            { s with additionalSubtypes := s.additionalSubtypes.push subtype })
+        else g.changeStatus army.id (.pushAdditionalSubtype subtype)
       let army := g.object! army.id
       let g := g.addPlusOnePlusOneTo army n
       let g := g.logMsg
@@ -255,8 +253,8 @@ def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat)
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
   if armies.size > 1 then
     let ids := armies.map (fun (o : GameObject) => o.id)
-    { g with pending := .fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach)) }
-      |>.logMsg s!"{(g.player controller).name} chooses an Army to amass"
+    (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
+      s!"{(g.player controller).name} chooses an Army to amass"
   else
     let createdFresh := armies.isEmpty
     let (g, army) :=
@@ -285,17 +283,17 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
-  let g := g.mapObjectStatus o (fun s =>
-    let s := s.addDamage n
-    { s with
-      untilEotLosesIndestructible := true
-      untilEotExileIfDies := true })
+  let g := g.changeStatuses o.id #[
+    .addDamage n false,
+    .untilEotLosesIndestructible true,
+    .untilEotExileIfDies true
+  ]
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
+  let g := g.changeStatus o.id (.grantUntilEot Keyword.cantBeBlocked)
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/

@@ -121,13 +121,11 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
         let name := o.name
         let (g', newId) := g.move id .exile none
         g := g'
-        let o := g.object! newId
-        g := g.setObject { o with
-          playPermission := some {
-            player := controller
-            turnEndsRemaining := 0
-            whileExiled := true
-            anyMana := true } }
+        g := g.changeObject newId (.playPermission (some {
+          player := controller
+          turnEndsRemaining := 0
+          whileExiled := true
+          anyMana := true }))
         g := g.logMsg
           s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
     return g
@@ -141,7 +139,7 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let pl := g.player owner
   let without := stripId pl.library newId
   let library := if top then without ++ #[newId] else #[newId] ++ without
-  (g.setPlayer { pl with library := library }).logMsg
+  (g.changePlayer owner (.library library)).logMsg
     s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
@@ -152,15 +150,14 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .plusOne n => g.addPlusOnePlusOneTo o n
   | .dealDamage n => g.dealDamageToPermanent o n
   | .loseIndestructible =>
-    let g := g.mapObjectStatus o (fun s => { s with untilEotLosesIndestructible := true })
+    let g := g.changeStatus o.id (.untilEotLosesIndestructible true)
     g.logMsg s!"{o.name} loses indestructible until end of turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
-    let g := g.mapObjectStatus o (fun s => { s with keywordCounters :=
-      { s.keywordCounters with doubleStrike := s.keywordCounters.doubleStrike + 1 } })
+    let g := g.changeStatus o.id (.addCounters .doubleStrike 1)
     g.logMsg s!"{o.name} gets a double strike counter"
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
@@ -170,16 +167,14 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
     else if o.status.stun > 0 then
-      let g := g.mapObjectStatus o (fun s => { s with stun := s.stun - 1 })
+      let g := g.changeStatus o.id (.removeCounters .stun 1)
       g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
     else
-      let g := g.mapObjectStatus o (fun s => { s with tapped := false })
+      let g := g.changeStatus o.id (.tapped false)
       g.logMsg s!"{o.name} untaps"
   | .becomeArtifactIndestructible =>
-    let g := g.mapObjectStatus o (fun s =>
-      { s with
-        additionalArtifactUntilEot := true
-        untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.indestructible })
+    let g := g.changeStatuses o.id
+      #[.additionalArtifactUntilEot true, .grantUntilEot Keyword.indestructible]
     g.logMsg
       s!"{o.name} becomes an artifact and gains indestructible until end of turn"
   | .becomePrepared => g.becomePrepared o
@@ -187,10 +182,10 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     -- Ruling 764: an already tapped creature still gets the stun counter.
     let g := if o.status.tapped then g else g.becomeTapped o
     let n := g.countersYouPut (g.object! o.id) 1
-    let g := g.mapObjectStatus (g.object! o.id) (fun s => { s with stun := s.stun + n })
+    let g := g.changeStatus o.id (.addCounters .stun n)
     g.logMsg s!"A stun counter is put on {o.name}"
   | .setBasePT pw tw =>
-    let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
+    let g := g.changeStatus o.id (.setBasePT (some (pw, tw)))
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
   | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
   | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
@@ -222,7 +217,7 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if count == 0 then
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
-    { g with pending := .surveil p count }.logMsg
+    (g.change (.pending (.surveil p count))).logMsg
       s!"{pl.name} surveils {n}"
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/

@@ -756,7 +756,10 @@ def pushCombatAmount (acc : Array CreatureCombatAssignment) (src tgt : ObjectId)
   | none => acc.push { source := src, toCreatures := #[(tgt, amt)] }
   | some i =>
     let a := acc[i]!
-    acc.set! i { a with toCreatures := a.toCreatures.push (tgt, amt) }
+    acc.set! i {
+      source := a.source
+      toCreatures := a.toCreatures.push (tgt, amt)
+      toPlayer := a.toPlayer }
 
 /-- Add `amt` from `src` to the defending player. -/
 def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectId) (amt : Int) :
@@ -765,7 +768,10 @@ def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectI
   | none => acc.push { source := src, toPlayer := amt }
   | some i =>
     let a := acc[i]!
-    acc.set! i { a with toPlayer := a.toPlayer + amt }
+    acc.set! i {
+      source := a.source
+      toCreatures := a.toCreatures
+      toPlayer := a.toPlayer + amt }
 
 /-- True when `token` names the defending player, or `opponent` while the
 attacking player is assigning (CR 510.1a / 702.19). -/

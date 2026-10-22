@@ -325,7 +325,7 @@ def angelTokenCopy : Game × GameObject :=
 prepared, and its controller may still cast the copy. -/
 def angelNoLongerCreature : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.setObject { o with status := { o.status with returnedAsArtifact := true } }
+  preparedAngel.changeStatus o.id (.returnedAsArtifact true)
 
 #guard !(namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").isCreature
 #guard (namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").status.prepared
@@ -392,7 +392,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
 the copy. -/
 def angelStolen : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.setObject { o with controller := some ⟨1⟩ }
+  preparedAngel.changeObject o.id (.controller (some ⟨1⟩))
 
 #guard !angelStolen.mayPlayFromExile ⟨0⟩ (seedSutureCopy angelStolen)
 #guard angelStolen.mayPlayFromExile ⟨1⟩ (seedSutureCopy angelStolen)
@@ -401,8 +401,7 @@ def angelStolen : Game :=
 /- Ruling 746: losing all abilities doesn't unprepare the creature. -/
 #guard
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  let g := preparedAngel.setObject { o with status :=
-    { o.status with losesAbilitiesGrantedBy := #[o.id] } }
+  let g := preparedAngel.changeStatus o.id (.losesAbilitiesGrantedBy #[o.id])
   (namedPermanent g "Blossom-Blessed Angel").status.prepared &&
     (exiledCopies g "Seed Suture").size == 1
 #guard (fraRuling 746).comment.contains "it won't stop being prepared"

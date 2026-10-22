@@ -59,11 +59,11 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       | none => g.resolveAttackDestination p want
     if g.hasFlying o && g.leftoverFlyingRestriction dest then
       throw s!"{o.name} can't attack {(g.player dest).name}"
-    g := g.setObject { o with status := { o.status with
-      attacking := true
-      attackingWhom := some dest
-      attackingPlaneswalker := pw?.map (·.id)
-      declaredAsAttackerThisTurn := true } }
+    g := g.changeStatuses o.id #[
+      .attacking true,
+      .attackingWhom (some dest),
+      .attackingPlaneswalker (pw?.map (·.id)),
+      .declaredAsAttackerThisTurn true ]
     if !g.hasVigilance (g.object! id) then
       g := g.becomeTapped (g.object! id)
     g := g.logMsg
@@ -101,7 +101,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
   if sphinxes > 0 then
     g := g.putFraEventTriggers p .sphinxesAttack (lastKnownPower := some (Int.ofNat sphinxes))
   g := g.putAttackTriggersOnStack p ids
-  g := { g with pending := .none }
+  g := g.change (.pending .none)
   g := g.promptTriggerTargetsIfNeeded
   if g.pending != .none then
     return g
@@ -119,9 +119,8 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     let a := g.object! attackerId
     if !g.canBlock b a then
       throw s!"{b.name} cannot block {a.name}"
-    g := g.setObject { b with status := { b.status with blocking := #[attackerId] } }
-    let aNow := g.object! attackerId
-    g := g.setObject { aNow with status := { aNow.status with blocked := true } }
+    g := g.changeStatus b.id (.blocking #[attackerId])
+    g := g.changeStatus attackerId (.blocked true)
     g := g.logMsg s!"{b.name} blocks {a.name}"
   -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
   -- blocked must be blocked by at least that many creatures.
@@ -138,9 +137,9 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   g := g.putBlockedTriggersOnStack assignments
   let rest := g.blockersQueue.extract 1 g.blockersQueue.size
   if rest.isEmpty then
-    return { g with pending := .none, blockersQueue := #[] } |>.receivePriority g.activePlayer
+    return g.changes #[.pending .none, .blockersQueue #[]] |>.receivePriority g.activePlayer
   else
-    return { g with pending := .declareBlockers, blockersQueue := rest }
+    return g.changes #[.pending .declareBlockers, .blockersQueue rest]
 
 /-- Sum of combat damage this assignment sends to creatures. -/
 def creatureDamageTotal (asgn : CreatureCombatAssignment) : Int :=
@@ -330,19 +329,18 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         else if pl.lifeLocked || pl.lifeCantChange then
           g := g.logMsg s!"{pl.name}'s life total can't change"
         else
-          g := g.setPlayer { pl with life := pl.life - toPlayer }
+          g := g.changePlayer defn (.life (pl.life - toPlayer))
           if toPlayer > 0 then
             g := g.record (GameEvent.damagedPlayer g.turnNumber (some src.id) defn toPlayer.toNat true)
           totalDealt := totalDealt + toPlayer
           if toPlayer > 0 && src.printed.toxic > 0 then
-            g := g.modifyPlayer defn (fun q => { q with poison := q.poison + src.printed.toxic })
+            g := g.changePlayer defn (.addPoison src.printed.toxic)
             g := g.record (GameEvent.poisoned g.turnNumber defn src.printed.toxic)
             g := g.logMsg s!"{pl.name} gets {src.printed.toxic} poison counter(s) (toxic)"
           if toPlayer > 0 then
-            g := g.mapObjectStatus (g.object! src.id) (fun s =>
-              { s with combatDamageToPlayers :=
-                if s.combatDamageToPlayers.contains defn then s.combatDamageToPlayers
-                else s.combatDamageToPlayers.push defn })
+            let s := (g.object! src.id).status
+            if !s.combatDamageToPlayers.contains defn then
+              g := g.changeStatus src.id (.combatDamageToPlayers (s.combatDamageToPlayers.push defn))
           if src.status.blocked then
             g := g.logMsg
               s!"{src.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
@@ -354,7 +352,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | some pid => g := g.gainLife pid totalDealt.toNat
         | none => pure ()
       if totalDealt > 0 then
-        g := g.mapObjectStatus (g.object! src.id) (fun s => { s with dealtCombatDamage := true })
+        g := g.changeStatus src.id (.dealtCombatDamage true)
       if asgn.toPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
         match src.controller with
         | some pid =>
@@ -404,12 +402,12 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if pendingRegular then
         g.firstStrikeAssignedThisCombat ++ g.assignedCombatDamage.map (·.source)
       else g.firstStrikeAssignedThisCombat
-    g := { g with
-      assignedCombatDamage := #[]
-      pending := .none
-      firstStrikeDamageDone := g.firstStrikeDamageDone || g.combatHasFirstStrike
-      pendingRegularCombatDamage := pendingRegular
-      firstStrikeAssignedThisCombat := assignedFs }
+    g := g.changes #[
+      .assignedCombatDamage #[],
+      .pending .none,
+      .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
+      .pendingRegularCombatDamage pendingRegular,
+      .firstStrikeAssignedThisCombat assignedFs ]
     return g.receivePriority g.activePlayer
 
 /-- Record a legal assignment batch and append it for later dealing. -/
@@ -417,14 +415,14 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
     (listed : Array CreatureCombatAssignment) : Except String Game := do
   let batch ← g.completeCombatAssignments forAttackers listed
   let _ ← checkCombatAssignmentBatch g forAttackers batch
-  return { g with assignedCombatDamage := g.assignedCombatDamage ++ batch }
+  return g.change (.assignedCombatDamage (g.assignedCombatDamage ++ batch))
 
 /-- After attackers have assigned, the defending player assigns (CR 510.1d)
 or damage is dealt if they have no division to announce. -/
 def finishAttackerCombatAssignment (g : Game) : Game :=
   let defender := g.defendingPlayer
   if g.needsCombatDamageChoice false then
-    { g with pending := .assignCombatDamage defender false }
+    g.change (.pending (.assignCombatDamage defender false))
       |>.logMsg s!"{(g.player defender).name} assigns combat damage (CR 510.1d)"
   else
     match g.storeCombatAssignments false #[] with
@@ -433,9 +431,9 @@ def finishAttackerCombatAssignment (g : Game) : Game :=
 
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
-  let g := { g with assignedCombatDamage := #[], pending := .none }
+  let g := g.changes #[.assignedCombatDamage #[], .pending .none]
   if g.needsCombatDamageChoice true then
-    { g with pending := .assignCombatDamage g.activePlayer true }
+    g.change (.pending (.assignCombatDamage g.activePlayer true))
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"
   else
     match g.storeCombatAssignments true #[] with
@@ -462,20 +460,14 @@ def announceCombatDamage (g : Game) (p : PlayerId)
 
 def clearCombat (g : Game) : Game :=
   Id.run do
-    let mut g := { g with
-      firstStrikeDamageDone := false
-      pendingRegularCombatDamage := false
-      firstStrikeAssignedThisCombat := #[]
-      blockersQueue := #[] }
+    let mut g := g.changes #[
+      .firstStrikeDamageDone false,
+      .pendingRegularCombatDamage false,
+      .firstStrikeAssignedThisCombat #[],
+      .blockersQueue #[] ]
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
-        g := g.setObject { o with
-          status := { o.status with
-            attacking := false
-            attackingWhom := none
-            attackingPlaneswalker := none
-            blocking := #[]
-            blocked := false } }
+        g := g.changeStatus o.id .clearCombat
     return g
 
 end Game

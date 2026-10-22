@@ -9,7 +9,7 @@ namespace Mtg.Engine
 
 structure Rng where
   state : UInt64
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 namespace Rng
 

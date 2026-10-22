@@ -51,7 +51,7 @@ def passageSource (g : Game) : GameObject :=
 -- Cannot activate while the land is tapped.
 #guard
   let o := passageSource passageReady
-  let g := passageReady.setObject { o with status := { o.status with tapped := true } }
+  let g := passageReady.changeStatus o.id (.tapped true)
   !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
 
 -- Instant-speed: Passage can activate during the end step.
@@ -150,8 +150,7 @@ def passageResolved : Game := passBoth paidPassage
 -- Hexproof makes an opposing creature an illegal target (CR 702.11b).
 #guard
   let bears := namedPermanent proposedPassage "Grizzly Bears"
-  let g := proposedPassage.setObject { bears with
-    status := { bears.status with untilEotKeywords := Keyword.hexproof } }
+  let g := proposedPassage.changeStatus bears.id (.untilEotKeywords Keyword.hexproof)
   match g.apply ⟨0⟩
       (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
   | .error msg => mentions msg "Illegal target"
@@ -368,8 +367,7 @@ def resolvedSmiteOnWurm : Game :=
 /-- Later this turn, 0 toughness is replaced by exile. -/
 def smiteWurmThenZeroToughness : Game :=
   let o := namedPermanent resolvedSmiteOnWurm "Craw Wurm"
-  let g := resolvedSmiteOnWurm.setObject { o with
-    status := { o.status with pump := (o.status.pump.1, -4) } }
+  let g := resolvedSmiteOnWurm.changeStatus o.id (.pump (o.status.pump.1, -4))
   g.receivePriority ⟨0⟩
 
 #guard !(smiteWurmThenZeroToughness.battlefield.any (fun o => o.name == "Craw Wurm"))
@@ -532,7 +530,7 @@ def countWaitingAbility (g : Game) (ab : TriggeredAbility) : Nat :=
 /-- Mark `name` with lethal damage so the next SBA check will try to make it die. -/
 def withLethal (g : Game) (name : String) : Game :=
   let o := namedPermanent g name
-  g.setObject { o with status := { o.status with damage := 20 } }
+  g.changeStatus o.id (.damage 20)
 
 /-!
 CR 614.6: if an event is replaced, it never happens. A modified event occurs
@@ -606,8 +604,7 @@ def hunterExiledInsteadLeaves : Game :=
   let hunter := namedPermanent g "Fiend Hunter"
   let g := g.exileForLeaveTrigger (some hunter.id) (namedPermanent g "Grizzly Bears")
   let hunter := namedPermanent g "Fiend Hunter"
-  let g := g.setObject { hunter with status :=
-    { hunter.status with untilEotExileIfDies := true } }
+  let g := g.changeStatus hunter.id (.untilEotExileIfDies true)
   (g.move (namedPermanent g "Fiend Hunter").id (.graveyard ⟨0⟩) none).1
 
 #guard hunterExiledInsteadLeaves.objects.any (fun o =>
@@ -755,7 +752,7 @@ def wargFerociousSourceGone : Game :=
 /-- Ravening Warg itself at power 4 or greater also enables Ferocious. -/
 def wargPumpedToFive : Game :=
   let o := namedPermanent withWarg "Ravening Warg"
-  withWarg.setObject { o with status := { o.status with pump := (3, 3) } }
+  withWarg.changeStatus o.id (.pump (3, 3))
 
 #guard wargPumpedToFive.power (namedPermanent wargPumpedToFive "Ravening Warg") == 5
 #guard wargPumpedToFive.triggerConditionHolds ⟨0⟩ (.onAttackFerociousGainLife 2)
@@ -968,7 +965,7 @@ def resolvedNightsWhisper : Game := passBoth nightsWhisperKnownLib
 
 /-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
 def nightsWhisperEmptyLib : Game :=
-  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := paidNightsWhisper.changePlayer ⟨0⟩ (.library #[])
   passBoth g
 
 #guard nightsWhisperEmptyLib.over
@@ -979,7 +976,7 @@ def nightsWhisperEmptyLib : Game :=
 
 /-- Losing the last 2 life ends the game (CR 704.5a). The spell is still legal. -/
 def nightsWhisperPaysLastLife : Game :=
-  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  let g := paidNightsWhisper.changePlayer ⟨0⟩ (.life 2)
   passBoth g
 
 #guard (nightsWhisperPaysLastLife.player ⟨0⟩).life == 0
@@ -1000,21 +997,21 @@ def agentNightsWhisperOnly : Game :=
 
 -- The heuristic will not lose the last 2 life.
 #guard
-  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.life 2)
   match Agent.choose g ⟨0⟩ with
   | some (.cast _) => false
   | _ => true
 
 -- The heuristic will not draw into an empty library.
 #guard
-  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.library #[])
   match Agent.choose g ⟨0⟩ with
   | some (.cast _) => false
   | _ => true
 
 -- The heuristic still casts at 3 life (survives at 1).
 #guard
-  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 3 })
+  let g := agentNightsWhisperOnly.changePlayer ⟨0⟩ (.life 3)
   match Agent.choose g ⟨0⟩ with
   | some (.cast id) => (g.object! id).name == "Night's Whisper"
   | _ => false

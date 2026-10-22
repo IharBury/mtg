@@ -115,7 +115,7 @@ def fiction : Game :=
 def faceDownAkroma : Game :=
   let g := addPermanent afterDraw akromaAngelOfFury ⟨0⟩ ⟨0⟩
   let o := findPerm g "Akroma, Angel of Fury"
-  g.setObject { o with status := { o.status with faceDown := true } }
+  g.changeStatus o.id (.faceDown true)
 
 #guard faceDownAkroma.power (findPerm faceDownAkroma "Akroma, Angel of Fury") == 2
 #guard faceDownAkroma.toughness (findPerm faceDownAkroma "Akroma, Angel of Fury") == 2
@@ -144,7 +144,7 @@ def reproach : Game :=
   (g.object! id).status.chosenCardType == some "Creature"
 
 def monarchGinger : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with isMonarch := true })
+  let g := afterDraw.changePlayer ⟨0⟩ (.isMonarch true)
   g.applyFrc ⟨0⟩ {} .gingerbrute #[] none
 
 #guard monarchGinger.battlefield.any (fun o => o.name == "Gingerbrute" && o.printed.isToken)

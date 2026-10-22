@@ -11,10 +11,12 @@ namespace Mtg.Engine
 namespace Game
 
 def allocId (g : Game) : Game × ObjectId :=
-  ({ g with nextObjectId := g.nextObjectId + 1 }, ⟨g.nextObjectId⟩)
+  let id : ObjectId := ⟨g.nextObjectId⟩
+  (g.change (.nextObjectId (g.nextObjectId + 1)), id)
 
 def bumpTime (g : Game) : Game × Nat :=
-  ({ g with timestamp := g.timestamp + 1 }, g.timestamp)
+  let ts := g.timestamp
+  (g.change (.timestamp (ts + 1)), ts)
 
 /-- Allocate a new object identity and timestamp, then put `obj` into the game. -/
 def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
@@ -33,13 +35,13 @@ def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
     attachedTo,
     defaultController := if zone == .battlefield then controller else none
   }
-  ({ g with objects := g.objects.push obj }, obj)
+  (g.change (.setObject obj), obj)
 
 /-- Push a stack entry for an already-allocated object (CR 601.2a / 602.2a / 603.3). -/
 def putStackEntry (g : Game) (controller : PlayerId) (objectId : ObjectId) : Game :=
-  { g with
-    stack := g.stack.push { objectId, controller, targets := #[] }
-    consecutivePasses := 0 }
+  g.changes #[
+    .pushStack { objectId, controller, targets := #[] },
+    .consecutivePasses 0]
 
 /-- Allocate a stack object representing an activated or triggered ability of
 `source` (CR 602.2a / 603.3). -/

@@ -295,7 +295,7 @@ def giantReadyToAssign : Game := passBoth giantBlockedByTwoElves
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
   let giant := namedPermanent g "Hill Giant"
   g.hasTrample giant && g.canAssignCombatDamageToDefendingPlayer giant true &&
     g.combatDamageToAssign giant true == 3
@@ -403,13 +403,11 @@ def bearsBlockingTwoOgresReady : Game :=
   let g := passBoth g
   let g := mustApply g ⟨1⟩ (.declareBlockers #[])
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with
-    status := { bears.status with blocking := ogres.map (·.id) } }
+  let g := g.changeStatus bears.id (.blocking (ogres.map (·.id)))
   let g := Id.run do
     let mut g := g
     for o in ogres do
-      let a := g.object! o.id
-      g := g.setObject { a with status := { a.status with blocked := true } }
+      g := g.changeStatus o.id (.blocked true)
     return g
   passBoth g
 

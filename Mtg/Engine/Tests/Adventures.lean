@@ -506,7 +506,7 @@ def crusherBlocksOgre : Game :=
 def ogreVsCrusherTappedGoblinReadyToBlock : Game :=
   let g := ogreVsCrusherAndGoblinReadyToBlock
   let goblin := namedPermanent g "Raging Goblin"
-  g.setObject { goblin with status := { goblin.status with tapped := true } }
+  g.changeStatus goblin.id (.tapped true)
 
 #guard
   let g := ogreVsCrusherTappedGoblinReadyToBlock

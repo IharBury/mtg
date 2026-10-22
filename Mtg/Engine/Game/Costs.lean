@@ -37,8 +37,7 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   let whom := attacker.status.attackingWhom
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
-  let g := g.setObject { (g.object! spellId) with
-    sneakPaid := true, sneakAttackWhom := whom }
+  let g := g.changeObjects spellId #[.sneakPaid true, .sneakAttackWhom whom]
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
@@ -72,16 +71,17 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
   let paid :=
     match prop.kind, paid.findObject? prop.spellId with
-    | .spell, some o => paid.setObject { o with status := { o.status with manaSpentToCast := manaSpent } }
+    | .spell, some o => paid.changeStatus o.id (.manaSpentToCast manaSpent)
     | _, _ => paid
   let g :=
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>
       if spent .legendarySpell then
-        (paid.setObject { o with treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
-                                 uncounterableThisCast := true }).logMsg
-          s!"{o.name} can't be countered (Delighted Halfling)"
-      else paid.setObject { o with treasureManaSpent := spent .fromTreasure }
+        (paid.changeObjects o.id #[
+          .treasureManaSpent (o.treasureManaSpent || spent .fromTreasure),
+          .uncounterableThisCast true
+        ]).logMsg s!"{o.name} can't be countered (Delighted Halfling)"
+      else paid.changeObject o.id (.treasureManaSpent (spent .fromTreasure))
     | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
@@ -94,19 +94,15 @@ def finishProposedSpell (g : Game) : Except String Game := do
     | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
   | _, true, _ =>
-    let g := { g with
-      pending := .sacrificePermanent prop.caster prop.spellId
-      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
   | _, _, true =>
-    let g := { g with
-      pending := .discardForAdditionalCost prop.caster
-      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must discard a card"
   | _, _, _ =>
-    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
     return g.becomeCast prop.caster (g.object! prop.spellId)
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/

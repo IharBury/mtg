@@ -320,7 +320,7 @@ Choosing no creature for prevention changes nothing. -/
   let g0 := insertObject withSaga lost caster .exile
   let card := pid g0 "Lost"
   let src := obj g0 "Saga"
-  let g0 := g0.setObject { src with linkedExile := #[card] }
+  let g0 := g0.changeObject src.id (.linkedExile #[card])
   let g := step g0 Effect.chapterReturnLinkedExileToHand
     (sourceId := some src.id)
   (obj g "Lost").zone == .hand caster &&
@@ -329,7 +329,7 @@ Choosing no creature for prevention changes nothing. -/
 /- The opponent reveals a nonland and discards it. -/
 #guard
   let g0 := insertObject withSaga bolt opp (.hand opp)
-    (updateOwner := fun id pl => { pl with hand := #[id] })
+    (updateOwner := fun id _ => #[.hand #[id]])
   let g := step g0 Effect.chapterOpponentDiscardsNonland
     (targets := #[Target.player opp])
   (obj g "Bolt").zone == .graveyard opp &&
@@ -344,7 +344,7 @@ Choosing no creature for prevention changes nothing. -/
 
 #guard
   let g0 := insertObject withSaga plains caster (.library caster)
-    (updateOwner := fun id pl => { pl with library := pl.library.push id })
+    (updateOwner := fun id _ => #[.pushLibrary id])
   let g := step g0 (Effect.chapterSearchBasicPlainsExileGainLife 2 2)
     (sourceId := some (pid g0 "Saga"))
   match g.pending with

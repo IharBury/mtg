@@ -56,8 +56,7 @@ def named (g : Game) (name : String) : GameObject :=
   | none => panic! s!"missing {name}"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ => #[.pushGraveyard id])
 
 /- No legendary creature fails the printed check. One succeeds, and two
 succeeds at a higher count. The threshold can be another count. -/
@@ -127,7 +126,7 @@ four others. The cause's id is the last-known power. -/
   let g := addPermanent afterDraw questCard caster caster
   let src := named g "Count Quest"
   let (g, zero) := holds g (.atLeast (.count .questCounters) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus src (fun s => { s with quest := 6 })
+  let g := g.changeStatus src.id (.quest 6)
   let (g, six) := holds g (.atLeast (.count .questCounters) (.fixed 6)) (some src.id)
   let (g, seven) := holds g (.atLeast (.count .questCounters) (.fixed 7)) (some src.id)
   let (g, missing) := holds g (.atLeast (.count .questCounters) (.fixed 0)) none
@@ -177,10 +176,10 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
   let (g, idle) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus src (fun s => { s with attacking := true })
+  let g := g.changeStatus src.id (.attacking true)
   let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus (named g "Count Bear") (fun s => { s with harnessed := true })
+  let g := g.changeStatus (named g "Count Bear").id (.harnessed true)
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
   !idle && attacking && !unharnessed && logContains g "not harnessed" && harnessed && !gone
@@ -191,12 +190,12 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent g bear caster caster
   let eq := named g "Count Sword"
   let host := named g "Count Bear"
-  let g := { g with putArtifactThisWay := some (eq.id, host.id) }
+  let g := g.change (.putArtifactThisWay (some (eq.id, host.id)))
   let (g, equip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   let kept := g.putArtifactThisWay.isSome
   let g := addPermanent g isle caster caster
   let land := named g "Count Isle"
-  let g := { g with putArtifactThisWay := some (land.id, host.id) }
+  let g := g.change (.putArtifactThisWay (some (land.id, host.id)))
   let (g, notEquip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   equip && kept && !notEquip && g.putArtifactThisWay.isNone
 
@@ -268,10 +267,9 @@ power. A number that cannot be read does not hold. -/
 
 /- A library with a card, and an empty library. -/
 #guard
-  let filled := afterDraw.modifyPlayer caster (fun pl =>
-    { pl with library := pl.library.push ⟨0⟩ })
+  let filled := afterDraw.changePlayer caster (.pushLibrary ⟨0⟩)
   let (g, has) := holds filled (.atLeast .libraryCards (.fixed 1))
-  let emptied := g.modifyPlayer caster (fun pl => { pl with library := #[] })
+  let emptied := g.changePlayer caster (.library #[])
   let (g, empty) := holds emptied (.atLeast .libraryCards (.fixed 1))
   let (_, negated) := holds emptied (.not (.atLeast .libraryCards (.fixed 1)))
   has && !empty && negated && g.log.size == emptied.log.size
@@ -332,9 +330,9 @@ creatures. Pumping creatures of a subtype leaves the other permanents. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
-  let g := g.mapObjectStatus src (fun s => { s with attacking := true })
+  let g := g.changeStatus src.id (.attacking true)
   let g := addPermanent g hero caster caster
-  let g := g.mapObjectStatus (named g "Count Hero") (fun s => { s with attacking := true })
+  let g := g.changeStatus (named g "Count Hero").id (.attacking true)
   let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
   let attacking := .intersection [.source, .attackingCreatures]
   let pumped := g.applyTriggeredAbility caster (.onEnterDraw 1) (some src.id)

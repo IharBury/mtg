@@ -170,8 +170,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       match pl.manaPool.pay? cost with
       | none => throw s!"{pl.name} cannot pay {cost}"
       | some pool =>
-        return (g.setPlayer { pl with manaPool := pool }).setObject
-          { o with status := { o.status with faceDown := false } }
+        return ((g.changePlayer p (.manaPool pool)).changeStatus o.id (.faceDown false))
           |>.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
@@ -197,8 +196,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     | none => g
   let g :=
     if ab.exhaust then
-      let o := g.object! id
-      g.setObject { o with status := { o.status with exhaustUsed := true } }
+      g.changeStatus id (.exhaustUsed true)
     else g
   let o := g.object! id
   let pl := g.player p
@@ -212,10 +210,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let g := g.record happened
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if ab.cost.fra == .zemoBoast then
-    return { g with pending := .fraChoice p (.zemoBoastExile newId id) }.logMsg
+    return (g.change (.pending (.fraChoice p (.zemoBoastExile newId id)))).logMsg
       s!"{pl.name} chooses black cards to exile from their graveyard"
   if let .crew n := ab.cost.fra then
-    return { g with pending := .fraChoice p (.crew newId id n) }.logMsg
+    return (g.change (.pending (.fraChoice p (.crew newId id n)))).logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
@@ -246,10 +244,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       !ab.cost.removeAnyNumberPlusOne &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then
-    let g := { g with proposedSpell := some prop }
+    let g := g.change (.proposedSpell (some prop))
     return (← g.beginActivationPayment prop)
   if loyaltyX || ab.cost.removeAnyNumberPlusOne then
-    let g := { g with pending := .chooseX p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseX p), .proposedSpell (some prop)]
     return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 

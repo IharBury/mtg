@@ -75,11 +75,10 @@ not count. A permanent exiled instead of dying still counts. -/
     (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) opp opp
   let g0 := addPermanent g0 (artifact "Shielded Relic" ManaCost.empty "") opp opp
   let shielded := obj g0 "Shielded Relic"
-  let g0 := g0.setObject { shielded with status := { shielded.status with shield := 1 } }
+  let g0 := g0.changeStatus shielded.id (.shield 1)
   let g0 := addPermanent g0 (artifact "Fleeting Relic" ManaCost.empty "") opp opp
   let fleeting := obj g0 "Fleeting Relic"
-  let g0 := g0.setObject { fleeting with status :=
-    { fleeting.status with untilEotExileIfDies := true } }
+  let g0 := g0.changeStatus fleeting.id (.untilEotExileIfDies true)
   let g0 := addPermanent g0 (creature "Opp Bear" ManaCost.empty #[] 2 2) opp opp
   let g := step g0 oppArts
   !onBoard g "Opp Sword" && buried g "Opp Sword" &&
@@ -118,7 +117,7 @@ counter each leave the permanent in play. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
-  let g := step { g0 with permanentDealtDamageThisWay := some id } markedDestroy
+  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   !onBoard g "Wyrm" && buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone
 
 #guard
@@ -129,7 +128,7 @@ counter each leave the permanent in play. -/
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
   let (g1, _) := g0.move id (.graveyard opp) none
-  let g := step { g1 with permanentDealtDamageThisWay := some id } markedDestroy
+  let g := step (g1.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone &&
     !(logContains g "is destroyed")
 
@@ -138,16 +137,16 @@ counter each leave the permanent in play. -/
     (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
       (keywords := Keyword.indestructible)) opp opp
   let id := pid g0 "Adamant Wyrm"
-  let g := step { g0 with permanentDealtDamageThisWay := some id } markedDestroy
+  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   onBoard g "Adamant Wyrm" && g.permanentDealtDamageThisWay.isNone &&
     logContains g "is indestructible and isn't destroyed"
 
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let wyrm := obj g0 "Wyrm"
-  let g0 := g0.setObject { wyrm with status := { wyrm.status with shield := 1 } }
+  let g0 := g0.changeStatus wyrm.id (.shield 1)
   let id := pid g0 "Wyrm"
-  let g := step { g0 with permanentDealtDamageThisWay := some id } markedDestroy
+  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   onBoard g "Wyrm" && (obj g "Wyrm").status.shield == 0 &&
     g.permanentDealtDamageThisWay.isNone &&
     logContains g "shield counter is removed"
@@ -157,7 +156,7 @@ The printed `.none` note is what clears the mark. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
-  let g := step { g0 with permanentDealtDamageThisWay := some id }
+  let g := step (g0.change (.permanentDealtDamageThisWay (some id)))
     (.destroy .permanentDealtDamage (note := .forAmass))
   !onBoard g "Wyrm" && buried g "Wyrm" &&
     g.permanentDealtDamageThisWay == some id &&

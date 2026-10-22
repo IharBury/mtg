@@ -35,7 +35,7 @@ def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
 /-- Sacrifice the chosen creatures simultaneously, then give priority. -/
 def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
   Id.run do
-    let mut g := { g with pending := .none }
+    let mut g := g.change (.pending .none)
     for id in chosen do
       match g.findObject? id with
       | some o =>
@@ -60,8 +60,8 @@ def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
       s!"{(g.player p).name} has no creature to sacrifice")
     g.finishChosenSacrifices chosen
   | some (p, rest) =>
-    { g with pending := .chooseSacrificeCreature p chosen rest }
-      |>.logMsg s!"{(g.player p).name} must sacrifice a creature"
+    (g.change (.pending (.chooseSacrificeCreature p chosen rest))).logMsg
+      s!"{(g.player p).name} must sacrifice a creature"
 
 /-- Ask the next player who has a card to discard, or resume priority.
 `count` is how many cards that player must discard, one at a time. Calling
@@ -69,7 +69,7 @@ this twice does not queue two discards; it would replace the pending choice. -/
 def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
     Game :=
   let g :=
-    if count > 1 then { g with pendingDiscardsLeft := count } else g
+    if count > 1 then g.change (.pendingDiscardsLeft count) else g
   match g.nextActorWithHandCard players with
   | none =>
     let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
@@ -77,17 +77,17 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
       s!"{(g.player p).name} has no card to discard")
     let g :=
       if g.conniveSource.isSome then
-        { g with conniveSource := none }.logMsg
+        (g.change (.conniveSource none)).logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    let g := { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
+    let g := g.changes #[.pending .none, .thirstDiscardsLeft 0, .pendingDiscardsLeft 0]
     -- A following +1/+1 counter, or the rest of a trigger sequence, waits
     -- until the caller finishes the discards.
     if g.plusOneAfterDiscards.isSome || g.triggerSequenceRest.isSome then g
     else g.receivePriority g.activePlayer
   | some (p, rest) =>
-    { g with pending := .chooseDiscardCard p rest }
-      |>.logMsg s!"{(g.player p).name} must discard a card"
+    (g.change (.pending (.chooseDiscardCard p rest))).logMsg
+      s!"{(g.player p).name} must discard a card"
 
 /-- Draw `cards`, then start `discardRounds` discard choices for `p`. -/
 def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
@@ -103,13 +103,13 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       o.staticAbilities.any (fun
         | .extraDrawOnConnive => true
         | _ => false))).size
-  let g := { g with conniveSource := sourceId }
+  let g := g.change (.conniveSource sourceId)
   let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
   -- Each Leader replaces the connive with a draw, then that connive.
   let g := if leaders > 0 then g.draw controller leaders else g
   let g := g.draw controller 1
   if (g.player controller).hand.isEmpty then
-    let g := { g with conniveSource := none }
+    let g := g.change (.conniveSource none)
     g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
   else
     g.beginDiscardCards #[controller]
@@ -119,7 +119,7 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
   match g.conniveSource with
   | none => g
   | some sid =>
-    let g := { g with conniveSource := none }
+    let g := g.change (.conniveSource none)
     if discarded.printed.isLand then
       g.logMsg "A land was discarded; the conniving creature does not receive a +1/+1 counter"
     else
@@ -158,7 +158,7 @@ def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
     match g.findObject? villainId with
     | some o => o.name
     | none => "the Villain"
-  { g with pending := .mayHaveVillainConnive controller sourceId villainId }.logMsg
+  (g.change (.pending (.mayHaveVillainConnive controller sourceId villainId))).logMsg
     s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
 
 /-- Accept Baron Strucker's optional connive (MSH 422). -/
@@ -167,13 +167,11 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
   | .mayHaveVillainConnive q sourceId villainId =>
     if p != q then
       throw s!"Only {(g.player q).name} may have the Villain connive"
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     let g :=
-      match g.findObject? sourceId with
-      | some src =>
-        g.setObject { src with status :=
-          { src.status with optionalOnceUsed := true } }
-      | none => g
+      if (g.findObject? sourceId).isSome then
+        g.changeStatus sourceId (.optionalOnceUsed true)
+      else g
     let g := g.applyConnive p (some villainId)
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to have a Villain connive"
@@ -182,9 +180,9 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
 conditional does the draw, so this only records that the cost was paid. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if g.mayThenDrop > 0 then
-    { g with pending := .none, mayThenResume := true }
+    g.changes #[.pending .none, .mayThenResume true]
   else
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     g.draw p n |>.receivePriority g.activePlayer
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
@@ -200,13 +198,13 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       s!"{(g.player p).name} sacrifices {sac.name}"
     match g.proposedSpell with
     | some prop =>
-      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       match prop.kind with
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
       | .activatedAbility =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
     | none =>
-      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
@@ -223,7 +221,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {sac.name}"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .maySacrificeAnotherBolg q bolgId =>
     if p != q then
@@ -235,7 +233,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let pw := g.power sac
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     match g.findObject? bolgId with
     | none =>
       return g.receivePriority g.activePlayer
@@ -257,7 +255,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (ward)"
     if left ≤ 1 then return g.afterWardResolved
-    else return { g with pending := .payWard q spellId (.sacrificePermanents (left - 1) (paid + 1)) }
+    else return g.change (.pending (.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1))))
   | .payWard q _ .sacrificeLegendary =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"

@@ -33,10 +33,10 @@ def pendingFra (g : Game) : Option FraChoice :=
   | _ => none
 
 def tapped (g : Game) (name : String) : Game :=
-  g.mapObjectStatus (namedPermanent g name) (fun s => { s with tapped := true })
+  g.changeStatus (namedPermanent g name).id (.tapped true)
 
 def plusOnes (g : Game) (name : String) (n : Nat) : Game :=
-  g.mapObjectStatus (namedPermanent g name) (fun s => { s with plusOnePlusOne := n })
+  g.changeStatus (namedPermanent g name).id (.plusOnePlusOne n)
 
 def mine (g : Game) (name : String) : GameObject :=
   ((g.permanentsOf me).find? (·.name == name)).get!
@@ -524,11 +524,9 @@ value in your graveyard; they annihilate with +1/+1 counters (ruling 885). -/
 /- Graft Surgeon counts minus-one counters too (rulings 759 / 760). -/
 #guard
   let g := addPermanent withBears graftSurgeon me me
-  let g := g.mapObjectStatus (namedPermanent g "Graft Surgeon")
-    (fun s => { s with minusOneMinusOne := 2 })
+  let g := g.changeStatus (namedPermanent g "Graft Surgeon").id (.minusOneMinusOne 2)
   let g := addPermanent g hillGiant me me
-  let g := g.mapObjectStatus (namedPermanent g "Graft Surgeon")
-    (fun s => { s with damage := 5 })
+  let g := g.changeStatus (namedPermanent g "Graft Surgeon").id (.damage 5)
   let g := stackTriggers g.checkSBA
   let g := match g.pending with
     | .chooseTargets _ => mustApply g me (tgt g "Hill Giant")

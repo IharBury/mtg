@@ -27,7 +27,7 @@ def holds (g : Game) (cond : TriggeredAbility.ConditionSelector) : Game × Bool 
   g.triggerIfHolds me (.onEnterDraw 1) none #[] none cond
 
 def quiet (g : Game) : Game :=
-  { g with events := #[] }
+  g.change .clearEvents
 
 /- Drawing is recorded, and the draw condition reads the log after the
 turn counter is cleared. -/
@@ -110,7 +110,7 @@ records the exile instead of the death. -/
     | none => false
   let g := addPermanent g hero me me
   let h := (g.battlefield.filter (·.name == "Event Hero"))[0]!
-  let g := g.setObject { h with status := { h.status with untilEotExileIfDies := true } }
+  let g := g.changeStatus h.id (.untilEotExileIfDies true)
   let (g, id) := g.move h.id (.graveyard me) none
   let replaced :=
     (g.object! id).zone == .exile &&

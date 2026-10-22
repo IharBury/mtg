@@ -88,11 +88,11 @@ def board : Game :=
 
 def attach (g : Game) (auraName hostName : String) : Game :=
   let a := obj g auraName
-  g.setObject { a with attachedTo := some (pid g hostName) }
+  g.changeObject a.id (.attachedTo (some (pid g hostName)))
 
 def leave (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.setObject { o with zone := .graveyard o.owner }
+  g.changeObject o.id (.zone (.graveyard o.owner))
 
 /- Each creature you control gets one +1/+1 counter. A subtype limits that
 to permanents of the subtype. The city's blessing puts two instead.
@@ -111,7 +111,7 @@ An opponent's creature and an artifact are left alone. -/
 #guard
   let plain := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
   let blessed := step
-    (board.modifyPlayer caster (fun pl => { pl with citysBlessing := true }))
+    (board.changePlayer caster (.citysBlessing true))
     (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
   plus plain "Counter Bear" == 1 && plus plain "Counter Rock" == 0 &&
     plus blessed "Counter Bear" == 2 && plus blessed "Counter Elf" == 2 &&
@@ -194,7 +194,7 @@ counter. A noncreature is reported. Zero puts nothing. -/
 #guard
   let g0 := board
   let id := pid g0 "Counter Other"
-  let g := step { g0 with createdTokenThisWay := some id, notedCountThisWay := 3 }
+  let g := step (g0.changes #[.createdTokenThisWay (some id), .notedCountThisWay 3])
     (.putCounters .plusOneNoted .createdToken)
   plus g "Counter Other" == 3 && g.createdTokenThisWay.isNone &&
     g.notedCountThisWay == 3

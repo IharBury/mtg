@@ -87,8 +87,7 @@ def antManDeclines : Game :=
   logContains antManDeclines "isn't paid"
 
 def antManPays : Game :=
-  let g := antManOffer.modifyPlayer me (fun pl =>
-    { pl with manaPool := pl.manaPool.add (.colored .green) 1 })
+  let g := antManOffer.changePlayer me (.addMana (.colored .green) 1)
   let g := mustApply g me .accept
   g.applyModeledReflexive #[Target.permanent (named g "Ant-Man, Colony Commander").id]
 

@@ -35,17 +35,14 @@ def tokensNamed (g : Game) (name : String) : Nat :=
 def withCause (g : Game) (source : GameObject) (spell : CardDef)
     (targets : Array Target := #[]) (x : Option Nat := none) : Game :=
   let (g, spellObj) := g.allocObject spell me .stack (some me)
-  let spellObj := { spellObj with chosenX := x }
-  let g := g.setObject spellObj
+  let g := g.changeObject spellObj.id (.chosenX x)
   let g := g.putStackEntry me spellObj.id
   let g :=
     if targets.isEmpty then g
-    else
-      { g with stack := g.stack.map fun e =>
-          if e.objectId == spellObj.id then { e with targets } else e }
+    else g.changeStackEntryById spellObj.id (.targets targets)
   let (g, ab) := g.allocStackAbility source me
-  let g := g.setObject { ab with fraCauseId := some spellObj.id }
-  { g with resolvingAbility := some ab.id }
+  let g := g.changeObject ab.id (.fraCauseId (some spellObj.id))
+  g.change (.resolvingAbility (some ab.id))
 
 def casting (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onCasting e
@@ -165,8 +162,7 @@ def speedDeclines : Game :=
   logContains speedDeclines "isn't paid"
 
 def speedPays : Game :=
-  let g := speedOffer.modifyPlayer me (fun pl =>
-    { pl with manaPool := pl.manaPool.add (.colored .green) 1 })
+  let g := speedOffer.changePlayer me (.addMana (.colored .green) 1)
   let g := mustApply g me .accept
   g.applyModeledReflexive #[Target.permanent (named g "Volcanic Villain").id]
 
@@ -195,7 +191,7 @@ def wiccanBoard : Game :=
   let g := addPermanent g grizzlyBears me me
   let g := addPermanent g hillGiant me me
   let giant := named g "Hill Giant"
-  g.setObject { giant with printed := { giant.printed with isToken := true } }
+  g.changeObject giant.id (.printed { giant.printed with isToken := true })
 
 def wiccanExiles : Game :=
   let src := named wiccanBoard "Wiccan, Rising Magician"
@@ -246,7 +242,7 @@ def visionDraw : Game :=
 def visionExhausted : Game :=
   let g := visionBoard
   let src := named g "The Vision"
-  let g := g.mapObjectStatus src (fun s => { s with modesChosenThisTurn := #[0, 1, 2] })
+  let g := g.changeStatus src.id (.modesChosenThisTurn #[0, 1, 2])
   resolve g (casting Effect.castingVisionModes) (some (named g "The Vision").id)
 
 #guard (visionExhausted.player me).hand.size == (visionBoard.player me).hand.size &&

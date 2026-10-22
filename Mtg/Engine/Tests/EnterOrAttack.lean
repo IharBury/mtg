@@ -64,8 +64,7 @@ def doubleStrikeOnly : Game :=
   let g := addPermanent afterDraw superAdaptoid me me
   let g := addPermanent g grizzlyBears me me
   let bears := named g "Grizzly Bears"
-  let g := g.mapObjectStatus bears (fun s =>
-    { s with untilEotKeywords := Keyword.doubleStrike })
+  let g := g.changeStatus bears.id (.untilEotKeywords Keyword.doubleStrike)
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
@@ -92,8 +91,7 @@ def sourceLeft : Game :=
   let g := addPermanent g grizzlyBears me me
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
-  let g := g.mapObjectStatus bears (fun s =>
-    { s with untilEotKeywords := Keyword.haste })
+  let g := g.changeStatus bears.id (.untilEotKeywords Keyword.haste)
   let (g, _) := g.move adaptoid.id (.graveyard me) none
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
     (some adaptoid.id) #[Target.permanent bears.id]

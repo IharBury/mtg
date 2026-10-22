@@ -18,9 +18,7 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
     else
       let landfall : TriggeredAbility :=
         .onLandYouControlEntersCreateTokens TokenKind.elf 1
-      let g := g.mapObjectStatus src (fun s =>
-        { s with grantedTriggeredAbilities :=
-          s.grantedTriggeredAbilities.push landfall })
+      let g := g.changeStatus src.id (.pushGrantedTriggered landfall)
       g.logMsg s!"{src.name} gains landfall"
   | none => g
 
@@ -29,7 +27,7 @@ def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
   g.forEachControlledCreature controller fun g o =>
     if g.hasSubtype o "Elf" then
       let g := g.pumpPermanent o power 0
-      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.vigilance)
+      g.changeStatus o.id (.grantUntilEot Keyword.vigilance)
         |>.logMsg s!"{o.name} gets {signedStat power}/+0 and gains vigilance until end of turn"
     else g
 
@@ -41,8 +39,7 @@ def grantHexproofWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
+      let g := g.changeStatus o.id (.pushHexproofGrantedBy sid)
       g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
       sourceId (some "The target is no longer legal")
 
@@ -54,8 +51,7 @@ def preventDamageWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
+      let g := g.changeStatus o.id (.pushPreventDamageGrantedBy sid)
       g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
       sourceId none
 
@@ -73,16 +69,14 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
         let owner := card.owner
         let name := card.name
         let (g, _) := g.move eid (.hand owner) none
-        let src := g.object! src.id
-        let g := g.setObject { src with
-          linkedExile := src.linkedExile.filter (· != eid) }
+        let srcNow := g.object! src.id
+        let g := g.changeObject src.id (.linkedExile (srcNow.linkedExile.filter (· != eid)))
         g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
 
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
 def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
-  g.modifyPlayer controller (fun pl =>
-    { pl with attackPumpPerPlainsThisTurn := pl.attackPumpPerPlainsThisTurn + 1 })
+  g.changePlayer controller (.addAttackPumpPerPlainsThisTurn 1)
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 
@@ -116,10 +110,10 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
               if (g.player controller).lost then
                 g.logMsg s!"{o.name} does not change control (CR 800.4b)"
               else
-                g.setObject { o with
-                  controller := some controller
-                  controlChanged := true
-                  controlUntilSourceLeaves := some src.id }
+                g.changeObjects o.id #[
+                  .controller (some controller),
+                  .controlChanged true,
+                  .controlUntilSourceLeaves (some src.id)]
             g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
           else g
         | none => g
@@ -140,8 +134,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
       g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .addMana mana =>
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add mana })
+    g.changePlayer controller (.addMana mana 1)
       |>.logMsg s!"{(g.player controller).name} adds {mana}"
   | .searchBasicLandToHand =>
     g.resolveSearchBasicLandToHand controller

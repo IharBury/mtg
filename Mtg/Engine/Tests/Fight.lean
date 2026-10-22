@@ -69,8 +69,7 @@ def fireOfOrthancSetup : Game :=
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
   let forest := namedPermanent g "Forest"
-  let g := g.setObject { forest with
-    status := { forest.status with untilEotKeywords := Keyword.hexproof } }
+  let g := g.changeStatus forest.id (.untilEotKeywords Keyword.hexproof)
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
 
@@ -402,8 +401,7 @@ def quarrelSourceGone : Game :=
 /-- Hexproof gained after targeting makes the dest illegal (CR 608.2b / 702.11b). -/
 def quarrelDestHexproof : Game :=
   let dest := namedPermanent paidQuarrel "Grizzly Bears"
-  let g := paidQuarrel.setObject { dest with
-    status := { dest.status with untilEotKeywords := Keyword.hexproof } }
+  let g := paidQuarrel.changeStatus dest.id (.untilEotKeywords Keyword.hexproof)
   passBoth g
 
 #guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
@@ -436,7 +434,7 @@ def flyerVsAttercop : Game :=
   let g := addPermanent g attercop ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.setObject { smaug with status := { smaug.status with attacking := true } }
+  g.changeStatus smaug.id (.attacking true)
 
 #guard flyerVsAttercop.canBlock
   (namedPermanent flyerVsAttercop "Attercop")
@@ -640,7 +638,7 @@ def attercopWoodElvesPumped : Game := passBoth attercopWoodElvesResolved
 
 /-- The heuristic plays a land when Attercop is in play. -/
 def agentAttercopLand : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  let g := afterDraw.changePlayer ⟨0⟩ (.hand #[])
   let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
   addToHand g forest ⟨0⟩
 

@@ -44,7 +44,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def titan : CardDef :=
   creature "Titan" ManaCost.empty #[] 4 4 (keywords := Keyword.indestructible)
@@ -93,7 +93,7 @@ missing target, and a creature that has left lose nothing. -/
 #guard
   let marked :=
     let o := obj board "Bear"
-    board.setObject { o with status := { o.status with indestructibleCounters := 1 } }
+    board.changeStatus o.id (.indestructibleCounters 1)
   marked.hasIndestructible (obj marked "Bear") &&
     lostFlag (step marked indestructible
       (targets := #[Target.permanent (pid marked "Bear")])) "Bear"

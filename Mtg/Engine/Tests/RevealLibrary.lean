@@ -67,13 +67,13 @@ def tale : CardDef := {
 }
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.modifyPlayer p (fun pl => { pl with library := #[] }))
+    (g.changePlayer p (.library #[]))
 
 def withLands (g : Game) (n : Nat) : Game :=
   (List.range n).foldl (fun g _ => addPermanent g plot caster caster) g
@@ -186,13 +186,13 @@ reveals only the cards it has. -/
 /- With `norandom` and one creature, that creature enters. With two, the
 choice waits, and the chosen creature then enters. -/
 #guard
-  let g0 := { onlyLibrary afterDraw caster [plot, bear] with norandom := true }
+  let g0 := (onlyLibrary afterDraw caster [plot, bear]).change (.norandom true)
   let g := step g0 (randomCreature 2)
   onBattlefield g "Reveal Bear" && g.pending == .none &&
     libNames g caster == ["Reveal Plot"]
 
 #guard
-  let g0 := { onlyLibrary afterDraw caster [plot, bear, elf] with norandom := true }
+  let g0 := (onlyLibrary afterDraw caster [plot, bear, elf]).change (.norandom true)
   let g := step g0 (randomCreature 3)
   let bearId := libId g caster "Reveal Bear"
   let elfId := libId g caster "Reveal Elf"
@@ -267,7 +267,7 @@ library changes nothing. -/
   (g.player caster).library.isEmpty && g.log.size == g0.log.size
 
 #guard
-  let g0 := { onlyLibrary afterDraw caster [bolt, plot] with norandom := true }
+  let g0 := (onlyLibrary afterDraw caster [bolt, plot]).change (.norandom true)
   let g := step g0 untilCreature
   (g.player caster).library.isEmpty && inExile g "Reveal Bolt" && inExile g "Reveal Plot" &&
     (match g.pending with
@@ -414,7 +414,7 @@ reported, and an empty library exiles nothing. -/
 then resolves the follow-up. No announced player reveals nothing. -/
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := { g0 with grimaImpulseReady := false }.noteCombatDamageTo opp
+  let g0 := (g0.change (.grimaImpulseReady false)).noteCombatDamageTo opp
   let g := step g0 (.revealLibrary (.top 3) (.put .revealed))
   onBattlefield g "Reveal Plot" && onBattlefield g "Reveal Bear" &&
     onBattlefield g "Reveal Tale" && libNames g caster == []
@@ -427,7 +427,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := { g0 with grimaImpulseReady := false }
+  let g0 := g0.change (.grimaImpulseReady false)
   let g := step g0 (.revealLibrary (.top 3) (.exile .top .forLater .impulse))
   g.grimaImpulseReady && inExile g "Reveal Plot" && inExile g "Reveal Bear" &&
     inExile g "Reveal Tale" && libNames g caster == []

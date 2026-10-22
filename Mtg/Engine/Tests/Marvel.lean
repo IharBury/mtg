@@ -162,8 +162,7 @@ def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
 def pantherCombatDraw : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Black Panther, Hope Enduring"
-  let g := g.setObject { o with status := { o.status with
-    attacking := true, summoningSick := false } }
+  let g := g.changeStatuses o.id #[.attacking true, .summoningSick false]
   settle g.combatDamage 24
 
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
@@ -329,7 +328,7 @@ def staturePumpedInCombat : Game :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Stature, Size Shifter"
-  let g := g.setObject { o with status := { o.status with plusOnePlusOne := 3 } }
+  let g := g.changeStatus o.id (.plusOnePlusOne 3)
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
     (.declareAttackers #[(namedPermanent g "Stature, Size Shifter").id])
@@ -513,7 +512,7 @@ def bilboRingEquipped : Game :=
   (namedPermanent bilboRingEquipped "Grizzly Bears")
 
 def bilboRingOnNissaTurn : Game :=
-  { bilboRingEquipped with activePlayer := ⟨1⟩ }
+  bilboRingEquipped.change (.activePlayer ⟨1⟩)
 
 #guard !bilboRingOnNissaTurn.hasHexproof
   (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
@@ -617,8 +616,9 @@ def gandalfWardPending : Game :=
   | _ => false
 
 def gandalfWardPaid : Game :=
-  let g := gandalfWardPending.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with manaPool := { pl.manaPool with colorless := 3 } })
+  let pl := gandalfWardPending.player ⟨0⟩
+  let g := gandalfWardPending.changePlayer ⟨0⟩
+    (.manaPool (pl.manaPool.set .colorless 3))
   mustApply g ⟨0⟩ .payGeneric
 
 #guard gandalfWardPaid.stack.any (fun e =>
@@ -761,8 +761,8 @@ def titaniaFreeCastReady : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
   let g := addToHand (addToHand g titaniaRuggedRumbler ⟨0⟩) forest ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Titania, Rugged Rumbler"
-  g.setObject { card with playPermission := some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  g.changeObject card.id (.playPermission (some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
 
 def titaniaFreeCastViaDiscard : Game :=
   let g := mustApply titaniaFreeCastReady ⟨0⟩
@@ -916,7 +916,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.setObject { smaug with status := { smaug.status with attacking := true } }
+  g.changeStatus smaug.id (.attacking true)
 
 #guard flyerVsHawkeyeBow.canBlock
   (namedPermanent flyerVsHawkeyeBow "Grizzly Bears")
@@ -925,7 +925,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  let g := g.setObject { smaug with status := { smaug.status with attacking := true } }
+  let g := g.changeStatus smaug.id (.attacking true)
   !g.canBlock (namedPermanent g "Grizzly Bears")
     (namedPermanent g "Smaug, the Great Calamity")
 

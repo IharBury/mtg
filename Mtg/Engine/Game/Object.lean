@@ -1,4 +1,3 @@
-import Mtg.Engine.Game.Event
 import Mtg.Engine.Game.Status
 
 /-!
@@ -12,6 +11,9 @@ triggered abilities waiting to go on the stack (CR 603.3).
 -/
 
 namespace Mtg.Engine
+
+set_option maxRecDepth 2048 in
+deriving instance BEq for CardDef
 
 /-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
 structure PlayPermission where
@@ -153,7 +155,7 @@ structure GameObject where
   /-- A control-changing effect lasts until this source leaves (Super Hero
   Civil War; MSH 143). -/
   controlUntilSourceLeaves : Option ObjectId := none
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
 structure CreatureCombatAssignment where
@@ -267,23 +269,6 @@ def hasSubtype (o : GameObject) (s : String) : Bool :=
   o.subtypes.any (· == s) ||
     (o.printed.keywords.changeling && !isNoncreatureSubtype s)
 
-/-- This object as it is now, for a `GameEvent` (CR 113.7a). -/
-def asEvent (o : GameObject) : EventObject :=
-  { id := o.id
-    controller := o.controller
-    owner := o.owner
-    creature := o.isCreature
-    token := o.printed.isToken
-    artifact := o.printed.isArtifact || o.types.any (· == .artifact)
-    land := o.printed.isLand || o.types.any (· == .land)
-    planeswalker := o.printed.isPlaneswalker
-    instantOrSorcery := o.printed.isInstantOrSorcery
-    equipment := o.printed.isEquipment
-    legendary := o.isLegendary
-    attacking := o.status.attacking
-    changeling := o.printed.keywords.changeling
-    subtypes := o.subtypes }
-
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
   o.printed.staticAbilities ++ o.status.grantedStaticAbilities
@@ -350,16 +335,23 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
+  /-- Explicit causing player override (e.g. the attacked opponent for
+  `creaturesAttackYourOpponent`). -/
+  causeController : Option PlayerId := none
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
 def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
     (event : TriggerEvent) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
+    (lastKnownToughness : Option Int := none)
+    (causeId : Option ObjectId := none)
+    (cause : Option GameObject := none)
+    (checked : Bool := false) : Array WaitingTrigger :=
   source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
+    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
+      causeId, cause, checked })
 
 end Mtg.Engine

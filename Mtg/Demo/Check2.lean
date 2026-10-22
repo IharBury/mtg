@@ -506,10 +506,10 @@ open Mtg.Demo.Render
 
 #guard isPassShortcutCmd "your" []
 
-#guard reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+#guard reachedPassUntil (Tests.afterDraw.change (.step .declareAttackers))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
 
-#guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
+#guard reachedPassUntil (Tests.afterDraw.change (.step .postcombatMain))
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextMain
 
 #guard isPassSequenceCommand "noblock" []
@@ -534,7 +534,7 @@ open Mtg.Demo.Render
   let ign := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
   !named.uninterruptible && ign.uninterruptible &&
     !reachedPassUntilGoal Tests.afterDraw named &&
-    reachedPassUntilGoal { Tests.afterDraw with step := .postcombatMain } named
+    reachedPassUntilGoal (Tests.afterDraw.change (.step .postcombatMain)) named
 
 #guard
   match applyKeep Tests.twoBofursSBA ⟨0⟩ [] with
@@ -859,7 +859,7 @@ open Mtg.Demo.Render
   | .error _ => false
 
 
-#guard describeCheckResult { Tests.started with result := some .draw } == "The game is a draw."
+#guard describeCheckResult (Tests.started.change (.result (some .draw))) == "The game is a draw."
 
 #guard shouldWriteOutput false false true "target"
 
@@ -880,9 +880,9 @@ open Mtg.Demo.Render
 #guard !shouldAutoPass Tests.started ["pass"]
 
 #guard
-  let g := { Tests.readyToDeclareAttackers with
-    objects := Tests.readyToDeclareAttackers.objects.map (fun o =>
-      { o with status := { o.status with tapped := true } }) }
+  let g := Tests.readyToDeclareAttackers.objects.foldl
+    (fun g o => g.changeStatus o.id (.tapped true))
+    Tests.readyToDeclareAttackers
   !shouldAutoNoAttack g ["noattack"]
 
 #guard !shouldAutoNoBlock Tests.readyToDeclareBlockers []

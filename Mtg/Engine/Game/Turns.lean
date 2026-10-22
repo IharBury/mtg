@@ -13,13 +13,13 @@ namespace Game
 
 def clearEOT (g : Game) : Game :=
   Id.run do
-    let mut g := { g with
-      creaturesWithoutFlyingCantBlock := false
-      assignCombatDamageEqualToughness := none }
+    let mut g := g.changes #[
+      .creaturesWithoutFlyingCantBlock false,
+      .assignCombatDamageEqualToughness none ]
     g := g.restoreCopiesUntilEot
     for pl in g.players do
       if pl.legendRuleOffThisTurn then
-        g := g.setPlayer { pl with legendRuleOffThisTurn := false }
+        g := g.changePlayer pl.id (.legendRuleOffThisTurn false)
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)
@@ -28,10 +28,9 @@ def clearEOT (g : Game) : Game :=
         if left == 0 then
           g := g.endControlChangingEffect (g.object! o.id)
         else
-          g := g.mapObjectStatus (g.object! o.id) (fun s =>
-            { s with controlTurnEndsLeft := left })
+          g := g.changeStatus o.id (.controlTurnEndsLeft left)
       if (g.object! o.id).status.clearsAtCleanup then
-        g := g.mapObjectStatus (g.object! o.id) Status.clearedAtCleanup
+        g := g.changeStatus o.id .clearedAtCleanup
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
@@ -54,13 +53,13 @@ def discardToMaxHandSize (g : Game) : Game :=
 /-- Clear “once each turn” activation counts as a turn ends. -/
 def clearTurnActivations (g : Game) : Game :=
   Id.run do
-    let mut g := { g with pendingFreeRGCreature := none }
+    let mut g := g.change (.pendingFreeRGCreature none)
     -- Stingcaster Mage: flashback granted until end of turn ends.
     for o in g.objects do
       if o.flashbackUntilEot || o.status.freeCastFromGraveyard then
-        g := g.setObject { o with
-          flashbackUntilEot := false
-          status := { o.status with freeCastFromGraveyard := false } }
+        g := g.changeObjects o.id #[
+          .flashbackUntilEot false,
+          .status (.freeCastFromGraveyard false) ]
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -74,16 +73,7 @@ def clearTurnActivations (g : Game) : Game :=
           pl.nextSpellCantBeCountered ||
           !pl.typeSpellCostLessThisTurn.isEmpty ||
           !pl.supertypeSpellCostLessThisTurn.isEmpty then
-        g := g.setPlayer { pl with
-          cantCastSpellsThisTurn := false
-          attackPumpPerPlainsThisTurn := 0
-          jaceLoyaltyAtInstantSpeed := false
-          copyNextInstantSorceryThisTurn := 0
-          mountainExtraRedThisTurn := 0
-          nextSpellCantBeCountered := false
-          cantAttackJaces := false
-          typeSpellCostLessThisTurn := #[]
-          supertypeSpellCostLessThisTurn := #[] }
+        g := g.changePlayer pl.id .resetPerTurnFlags
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
@@ -93,19 +83,19 @@ def clearTurnActivations (g : Game) : Game :=
           o.status.loyaltyActivatedThisTurn ||
           !o.status.combatDamageToPlayers.isEmpty ||
           !o.status.modesChosenThisTurn.isEmpty then
-        g := g.setObject { o with status := { o.status with
-          activationsThisTurn := 0
-          abilitiesActivatedThisTurn := #[]
-          loyaltyActivatedThisTurn := false
-          firedOnceEachTurn := false
-          optionalOnceUsed := false
-          allianceModesChosen := #[]
-          declaredAsAttackerThisTurn := false
-          boastUsedThisTurn := false
-          becameTappedThisTurn := false
-          gotPlusOneThisTurn := false
-          combatDamageToPlayers := #[]
-          modesChosenThisTurn := #[] } }
+        g := g.changeStatuses o.id #[
+          .activationsThisTurn 0,
+          .abilitiesActivatedThisTurn #[],
+          .loyaltyActivatedThisTurn false,
+          .firedOnceEachTurn false,
+          .optionalOnceUsed false,
+          .allianceModesChosen #[],
+          .declaredAsAttackerThisTurn false,
+          .boastUsedThisTurn false,
+          .becameTappedThisTurn false,
+          .gotPlusOneThisTurn false,
+          .combatDamageToPlayers #[],
+          .modesChosenThisTurn #[] ]
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -120,13 +110,11 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
           pure ()
         else if perm.player == endingPlayer then
           if perm.turnEndsRemaining ≤ 1 then
-            g := g.setObject { o with playPermission := none }
+            g := g.changeObject o.id (.playPermission none)
             if o.zone == .exile then
               g := g.logMsg s!"{o.name} can no longer be played from exile"
           else
-            g := g.setObject { o with
-              playPermission := some { perm with
-                turnEndsRemaining := perm.turnEndsRemaining - 1 } }
+            g := g.changeObject o.id .decrementPlayTurnEnds
     return g
 
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
@@ -135,8 +123,7 @@ and Garruk, Curse Breaker (CR 611.2b). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.objects.foldl (fun g o =>
     if o.status.untilTurnOfPump.any (·.1 == p) then
-      g.setObject { o with status := { o.status with
-        untilTurnOfPump := o.status.untilTurnOfPump.filter (·.1 != p) } }
+      g.changeStatus o.id (.untilTurnOfPump (o.status.untilTurnOfPump.filter (·.1 != p)))
     else g) g
   g.objects.foldl (fun g o =>
     if o.zone == .command && o.fraEffectUntilTurnOf == some p then
@@ -149,15 +136,15 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.expireFraUntilTurnEffects p
   let g :=
     if (g.player p).protectionFromEverything then
-      g.setPlayer { (g.player p) with protectionFromEverything := false }
+      g.changePlayer p (.protectionFromEverything false)
         |>.logMsg
           s!"{(g.player p).name}'s protection from everything ends (CR 800.4m)"
     else g
   let g := g.restoreCopiesUntilNextTurn p
   let g := g.expirePlayPermissions p
-  g.setPlayer { (g.player p) with
-    cantCastSpellsThisTurn := false
-    attackPumpPerPlainsThisTurn := 0 }
+  g.changePlayers p #[
+    .cantCastSpellsThisTurn false,
+    .attackPumpPerPlainsThisTurn 0 ]
 
 /-- Advance to the next living player's turn after a cleanup step ends.
 A player who has left does not begin a turn (CR 800.4k); effects that last
@@ -172,16 +159,16 @@ def startNextTurn (g : Game) : Game :=
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-        g := { g with extraTurns := g.extraTurns.extract 1 g.extraTurns.size }
+        g := g.change (.extraTurns (g.extraTurns.extract 1 g.extraTurns.size))
     match g.extraTurns[0]? with
     | some q =>
-      g := { g with
-        extraTurns := g.extraTurns.extract 1 g.extraTurns.size
-        activePlayer := q
-        powerUpsForbidden := true
-        turnNumber := g.turnNumber + 1
-        isFirstTurn := false
-        cleanupGivesPriority := false }
+      g := g.changes #[
+        .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
+        .activePlayer q,
+        .powerUpsForbidden true,
+        .turnNumber (g.turnNumber + 1),
+        .isFirstTurn false,
+        .cleanupGivesPriority false ]
       return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
       let n := g.players.size
@@ -190,12 +177,12 @@ def startNextTurn (g : Game) : Game :=
         if (g.player q).lost then
           g := g.expireUntilNextTurnEffects q
         else
-          g := { g with
-            activePlayer := q
-            powerUpsForbidden := false
-            turnNumber := g.turnNumber + 1
-            isFirstTurn := false
-            cleanupGivesPriority := false }
+          g := g.changes #[
+            .activePlayer q,
+            .powerUpsForbidden false,
+            .turnNumber (g.turnNumber + 1),
+            .isFirstTurn false,
+            .cleanupGivesPriority false ]
           return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
       return g
 
@@ -203,12 +190,12 @@ def startNextTurn (g : Game) : Game :=
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
-  let g := { g with
-    step := st
-    pending := .none
-    consecutivePasses := 0
-    cleanupGivesPriority := false
-    proposedSpell := none }
+  let g := g.changes #[
+    .step st,
+    .pending .none,
+    .consecutivePasses 0,
+    .cleanupGivesPriority false,
+    .proposedSpell none ]
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
   -- A skipped step does not happen (CR 614.10), so it is not recorded.
@@ -222,7 +209,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.expireFraUntilTurnEffects ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
-      g := g.modifyPlayer ap (fun pl => { pl with additionalLandsThisTurn := 0 })
+      g := g.changePlayer ap (.additionalLandsThisTurn 0)
       for o in g.permanentsOf ap do
         -- CR 502.2: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
@@ -246,8 +233,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true)
         let tapped := if skipUntap || stunned then o.status.tapped else false
         let stun := if stunned then o.status.stun - 1 else o.status.stun
-        g := g.setObject { o with status :=
-          { o.status with tapped := tapped, stun := stun, summoningSick := false } }
+        g := g.changeStatuses o.id #[
+          .tapped tapped,
+          .stun stun,
+          .summoningSick false ]
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>
@@ -264,7 +253,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         acc.putControlledTriggers pl.id .eachOpponentDrawStep) g
       g.receivePriority g.activePlayer
   | .declareAttackers =>
-    { g with pending := .declareAttackers }
+    g.change (.pending .declareAttackers)
   | .declareBlockers =>
     if (g.battlefield.filter (·.status.attacking)).isEmpty then
       g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
@@ -272,7 +261,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let queue :=
         let ps := g.defendingPlayers
         if ps.isEmpty then #[g.opponent g.activePlayer] else ps
-      { g with pending := .declareBlockers, blockersQueue := queue }
+      g.changes #[.pending .declareBlockers, .blockersQueue queue]
   | .combatDamage =>
       g.beginCombatDamageAssignment
   | .upkeep =>
@@ -282,7 +271,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       for pl in g.players do
         if pl.eaglesBirdsNextUpkeep > 0 then
           let n := pl.eaglesBirdsNextUpkeep
-          g := g.setPlayer { pl with eaglesBirdsNextUpkeep := 0 }
+          g := g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)
           if g.stillInGame pl.id then
             g := g.createKindTokens pl.id .birdSoldier n
           g := g.logMsg
@@ -338,11 +327,13 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         for o in g.permanentsOf ap do
           if o.printed.impending.isSome && o.status.time > 0 then
             let left := o.status.time - 1
-            g := g.mapObjectStatus (g.object! o.id) (fun s =>
-              { s with time := left, notACreature := left != 0 && s.notACreature })
+            let s := (g.object! o.id).status
+            g := g.changeStatuses o.id #[
+              .time left,
+              .notACreature (left != 0 && s.notACreature) ]
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
-        g := { g with delayedEndStepSacrifices := #[] }
+        g := g.change (.delayedEndStepSacrifices #[])
         for id in sacrifices do
           match g.findObject? id with
           | some o =>
@@ -350,7 +341,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
           | none => pure ()
         let returns := g.delayedGraveReturns
-        g := { g with delayedGraveReturns := #[] }
+        g := g.change (.delayedGraveReturns #[])
         for (id, who) in returns do
           match g.findObject? id with
           | some o =>
@@ -363,7 +354,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           | none => pure ()
         g := g.applyDelayedSynthetic
         let ids := g.delayedEndStepReturns
-        g := { g with delayedEndStepReturns := #[] }
+        g := g.change (.delayedEndStepReturns #[])
         for id in ids do
           match g.findObject? id with
           | none => pure ()
@@ -384,7 +375,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
                   if back.printed.isLand then g.afterLandEnters back
                   else g.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
-        g := { g with delayedEndStepExiles := #[] }
+        g := g.change (.delayedEndStepExiles #[])
         for id in exiles do
           match g.findObject? id with
           | some o =>
@@ -414,7 +405,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let (g, sba) := g.checkSBACounted
     if g.over then g
     else if sba || g.hasWaitingTriggers then
-      let g := { g with cleanupGivesPriority := true }
+      let g := g.change (.cleanupGivesPriority true)
       let g := g.logMsg "Players receive priority during cleanup (CR 514.3a)"
       g.receivePriority g.activePlayer
     else
@@ -436,8 +427,7 @@ def beginTurn (g : Game) : Game :=
     if (g.player p).protectionFromEverything || (g.player p).lifeCantChange then
       let hadLife := (g.player p).lifeCantChange
       let hadProt := (g.player p).protectionFromEverything
-      g.setPlayer { (g.player p) with
-          protectionFromEverything := false, lifeCantChange := false }
+      g.changePlayers p #[.protectionFromEverything false, .lifeCantChange false]
         |>.logMsg
           (if hadProt && hadLife then s!"{(g.player p).name}'s protection and life lock end"
            else if hadProt then s!"{(g.player p).name}'s protection from everything ends"
@@ -458,10 +448,10 @@ def advanceStep (g : Game) : Game :=
     else if g.step == .declareBlockers && attackers.isEmpty then
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
-      { g with pendingRegularCombatDamage := false }.beginCombatDamageAssignment
+      (g.change (.pendingRegularCombatDamage false)).beginCombatDamageAssignment
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
       let g := g.clearCombat
-      let g := { g with additionalCombatPhases := g.additionalCombatPhases - 1 }
+      let g := g.change (.additionalCombatPhases (g.additionalCombatPhases - 1))
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else
