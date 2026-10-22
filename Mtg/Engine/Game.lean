@@ -142,6 +142,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Stack`: Stack entries and proposed casts (CR 405 / 601)
 - `Pending`: Pending decisions
 - `Player`: Players, actions, and setup (CR 102 / 103)
+- `Event`: Game state changes recorded for the whole game (CR 603.2 / 614.1)
 - `Core`: Game state core
 - `Designations`: Player designations
 - `Phasing`: Attachments in play and phasing (CR 702.26)

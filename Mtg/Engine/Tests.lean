@@ -64,6 +64,7 @@ import Mtg.Engine.Tests.PutCounters
 import Mtg.Engine.Tests.BecomeArtifact
 import Mtg.Engine.Tests.BecomePrepared
 import Mtg.Engine.Tests.Exile
+import Mtg.Engine.Tests.Events
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -155,4 +156,5 @@ keep working.
 - `BecomeArtifact`: who becomes an artifact until end of turn, as an `ObjectSelector`
 - `BecomePrepared`: who becomes prepared, as an `ObjectSelector`
 - `Exile`: which cards are exiled, as an `ObjectSelector`
+- `Events`: the game event log, conditions read from it, and trigger and replacement matching
 -/

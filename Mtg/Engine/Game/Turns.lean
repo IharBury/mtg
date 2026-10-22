@@ -252,6 +252,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     cleanupGivesPriority := false
     proposedSpell := none }
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
+  let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
+  -- A skipped step does not happen (CR 614.10), so it is not recorded.
+  let g := if st == .draw && g.skipsFirstDraw then g else g.record stepEvent
   match st with
   | .untap =>
     Id.run do
@@ -275,10 +278,15 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           g.hostSkipsUntapStep o
         -- CR 122.1d: a stun counter is removed instead of untapping.
         let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
-        if o.status.tapped && !skipUntap && !stunned then
+        if o.status.tapped && !skipUntap && !stunned then do
           g := g.logMsg s!"{apName} untaps {o.name}"
-        if stunned then
+          let untap := GameEvent.untapped g.turnNumber o.asEvent false
+          if untap.watches .wouldUntap then
+            g := g.record untap
+        if stunned then do
           g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
+          g := g.record (GameEvent.untapped g.turnNumber o.asEvent true)
+          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true)
         let tapped := if skipUntap || stunned then o.status.tapped else false
         let stun := if stunned then o.status.stun - 1 else o.status.stun
         g := g.setObject { o with status :=
@@ -323,9 +331,15 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           g := g.logMsg
             s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
-    let g := g.putControlledTriggers ap .yourUpkeep
     let g :=
-      g.livingPlayers.foldl (fun acc pl => acc.putControlledTriggers pl.id .eachUpkeep) g
+      if stepEvent.matchesTrigger ap ⟨0⟩ .yourUpkeep then
+        g.putControlledTriggers ap .yourUpkeep
+      else g
+    let g :=
+      g.livingPlayers.foldl (fun acc pl =>
+        if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachUpkeep then
+          acc.putControlledTriggers pl.id .eachUpkeep
+        else acc) g
     -- Abilities that trigger from a graveyard (Command the Stage).
     let g :=
       g.livingPlayers.foldl (fun g pl =>
@@ -346,8 +360,14 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let g := g.livingPlayers.foldl (fun g pl =>
       if pl.id == ap then g
       else g.putFraEventTriggers pl.id .opponentBeginCombat) g
-    let g := g.putControlledTriggers ap .yourBeginCombat
-    let g := g.livingPlayers.foldl (fun g pl => g.putControlledTriggers pl.id .eachBeginCombat) g
+    let g :=
+      if stepEvent.matchesTrigger ap ⟨0⟩ .yourBeginCombat then
+        g.putControlledTriggers ap .yourBeginCombat
+      else g
+    let g := g.livingPlayers.foldl (fun g pl =>
+      if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachBeginCombat then
+        g.putControlledTriggers pl.id .eachBeginCombat
+      else g) g
     let g := (g.player ap).graveyard.foldl (fun g id =>
       match g.findObject? id with
       | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)
@@ -418,8 +438,13 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         return g
     let g :=
       g.livingPlayers.foldl (fun acc pl =>
-        acc.putControlledTriggers pl.id .eachEndStep) g
-    let g := g.putControlledTriggers ap .yourEndStep
+        if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachEndStep then
+          acc.putControlledTriggers pl.id .eachEndStep
+        else acc) g
+    let g :=
+      if stepEvent.matchesTrigger ap ⟨0⟩ .yourEndStep then
+        g.putControlledTriggers ap .yourEndStep
+      else g
     g.receivePriority ap
   | .cleanup =>
     -- Combatants leave combat; then CR 514.1–514.3.

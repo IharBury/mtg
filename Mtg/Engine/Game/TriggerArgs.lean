@@ -438,7 +438,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some (g.countArtifactsControlledBy pid)
   | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
-  | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn
+  | .cardsDrawnThisTurn => some (g.loggedDraws controller)
   | .libraryCards => some (g.player controller).library.size
   | .chosenX => none
 

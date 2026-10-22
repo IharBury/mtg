@@ -217,12 +217,15 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         let o := g.object! id
         g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
         if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
+        g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
         g := g.setPlayer { pl with poison := pl.poison + 1 }
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1)
+        g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
     if loyaltyPut then

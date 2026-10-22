@@ -331,9 +331,12 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           g := g.logMsg s!"{pl.name}'s life total can't change"
         else
           g := g.setPlayer { pl with life := pl.life - toPlayer }
+          if toPlayer > 0 then
+            g := g.record (GameEvent.damagedPlayer g.turnNumber (some src.id) defn toPlayer.toNat true)
           totalDealt := totalDealt + toPlayer
           if toPlayer > 0 && src.printed.toxic > 0 then
             g := g.modifyPlayer defn (fun q => { q with poison := q.poison + src.printed.toxic })
+            g := g.record (GameEvent.poisoned g.turnNumber defn src.printed.toxic)
             g := g.logMsg s!"{pl.name} gets {src.printed.toxic} poison counter(s) (toxic)"
           if toPlayer > 0 then
             g := g.mapObjectStatus (g.object! src.id) (fun s =>
@@ -356,8 +359,13 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         match src.controller with
         | some pid =>
           g := { g with lastCombatDamagePlayer := some defn }
-          g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
-            (lastKnownToughness := some (Int.ofNat defn.idx))
+          let happened :=
+            GameEvent.damagedPlayer g.turnNumber (some src.id) defn asgn.toPlayer.toNat true
+          g :=
+            if happened.matchesTrigger pid src.id .dealsCombatDamageToPlayer then
+              g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
+                (lastKnownToughness := some (Int.ofNat defn.idx))
+            else g
           if g.hasSubtype src "Hero" then
             g := g.putControlledTriggersOncePerBatch pid .heroesDealDamageToPlayer
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle

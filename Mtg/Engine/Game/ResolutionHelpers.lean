@@ -214,7 +214,11 @@ order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
+  let happened := GameEvent.looked g.turnNumber p count true n
+  let g := if n == 0 then g else g.record happened
+  let g :=
+    if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
+    else g.queueScryOrSurveilTriggers p
   let g := if n == 0 then g else
     g.modifyPlayer p (fun pl => { pl with surveilledThisTurn := true })
   if count == 0 then

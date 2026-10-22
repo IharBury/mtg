@@ -363,7 +363,9 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
       allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
-    return g.setPlayer { pl with manaPool := pool }
+    let spent := cost.manaValue
+    return (g.setPlayer { pl with manaPool := pool }).record
+      (GameEvent.spentMana g.turnNumber p spent)
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=

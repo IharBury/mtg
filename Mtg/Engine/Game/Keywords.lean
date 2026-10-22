@@ -84,9 +84,8 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
   match o.controller with
   | none => false
   | some p =>
-    let pl := g.player p
     (o.staticAbilities.any (· == .fra .attackDespiteDefenderIfScried) &&
-      (pl.scriedThisTurn || pl.surveilledThisTurn)) ||
+      (g.loggedScried p || g.loggedSurveilled p)) ||
     (g.permanentsOf p).any (·.staticAbilities.any (· == .fra .creaturesAttackDespiteDefender))
 
 
@@ -107,6 +106,12 @@ def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
 checked before the permanent enters, so lands or planeswalkers entering at
 the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+  let proposed := GameEvent.moved g.turnNumber
+    { id := ⟨0⟩, controller := some p, owner := p, land := card.isLand
+      creature := card.isCreature, artifact := card.isArtifact
+      subtypes := card.subtypes } .stack .battlefield
+  if !proposed.watches .wouldEnterBattlefield then false
+  else
   card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
     (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
     (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||

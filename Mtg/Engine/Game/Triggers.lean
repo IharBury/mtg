@@ -121,16 +121,15 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
 /-- A Reality Fracture intervening “if” clause on the trigger's options. -/
 def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
     (source : Option GameObject) (causeStatus : Option Status := none) : Bool :=
-  let pl := g.player controller
   match cond with
   | .none => true
   | .sourceNotToken => !(source.any (·.printed.isToken))
-  | .twoCreaturesDiedThisTurn => g.creatureDeathsThisTurn ≥ 2
+  | .twoCreaturesDiedThisTurn => g.loggedCreatureDeaths ≥ 2
   | .opponentDealtNoncombatDamageLastTurn =>
-    (g.livingOpponents controller).any (·.dealtNoncombatDamageLastTurn)
-  | .drewThreeThisTurn => pl.cardsDrawnThisTurn ≥ 3
-  | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
-  | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
+    (g.livingOpponents controller).any (fun opp => g.loggedNoncombatDamageLastTurn opp.id)
+  | .drewThreeThisTurn => g.loggedDraws controller ≥ 3
+  | .castNoSpellThisTurn => g.loggedSpellsCast controller == 0
+  | .activatedLoyaltyThisTurn => g.loggedActivatedLoyalty controller
   | .sourceWasCast => source.any (·.wasCast)
   | .causeHadCounters => causeStatus.any (·.hasCounters)
   | .sourceHasCounters =>
@@ -153,7 +152,7 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
   | .prepareSource .ifThreeCreaturesDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
   | .sacrificeSourceIfNoPlaneswalker =>
     !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
-  | .surveilReturnIfGainedLife => (g.player controller).lifeGainedThisTurn > 0
+  | .surveilReturnIfGainedLife => g.loggedLifeGained controller > 0
   | _ => true
 
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
@@ -173,7 +172,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   let lifeOk :=
     match ab.timing.gainedLifeAtLeast with
     | none => true
-    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+    | some n => g.loggedLifeGained controller ≥ n
   let hulklingOk :=
     match ab.shared, cause, source with
     | .watch .hulklingCompare, some entered, some hulkling =>
@@ -191,11 +190,11 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   -- they are checked again on resolution.
   let interveningOk :=
     match ab.shared with
-    | .beginCombatIfDrawnTwoPump => (g.player controller).cardsDrawnThisTurn ≥ 2
+    | .beginCombatIfDrawnTwoPump => g.loggedDraws controller ≥ 2
     | .thisAttack .equippedDrain =>
       source.any (fun s => g.battlefield.any (fun e => e.attachedTo == some s.id && e.printed.isEquipment))
     | .thisAttack .ifArtifactEnteredDraw =>
-      (g.player controller).artifactEnteredThisTurn
+      g.loggedArtifactEntered controller
     | .resource .drawIfAnotherHeroDamage =>
       (g.permanentsOf controller).any (fun o => g.hasSubtype o "Hero" && some o.id != source.map (·.id))
     | .step .drawToTen => (g.player controller).hand.size < 10
@@ -415,25 +414,37 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
     let g := g.setObject { o with status :=
       { o.status with tapped := true, becameTappedThisTurn := true } }
     let g := g.logMsg s!"{o.name} becomes tapped"
+    let during :=
+      match o.controller with
+      | some p => g.activePlayer == p
+      | none => false
+    let happened := GameEvent.tapped g.turnNumber (g.object! o.id).asEvent true during
+    let g := g.record happened
     let g := { g with lastBecameTapped := some o.id }
     match o.controller with
     | some p =>
-      let g := g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
+      let g :=
+        if happened.matchesTrigger p o.id .sourceBecomesTapped then
+          g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
+        else g
       -- “Whenever one or more creatures you control become tapped” triggers once
       -- per batch of tapping.
       let g :=
-        if o.isCreature then
+        if happened.matchesTrigger p o.id .creaturesYouControlBecomeTapped then
           g.foldControlledPermanents p none fun g src =>
             if g.waitingTriggers.any (fun w =>
                 w.source.id == src.id && w.event == .creaturesYouControlBecomeTapped) then g
-            else g.putMatchingSourceTriggers p src .creaturesYouControlBecomeTapped
+            else if happened.matchesTrigger p src.id .creaturesYouControlBecomeTapped then
+              g.putMatchingSourceTriggers p src .creaturesYouControlBecomeTapped
+            else g
         else g
       let g :=
         (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
-          if eq.printed.isEquipment then
+          if eq.printed.isEquipment &&
+              happened.matchesTrigger p eq.id .equippedBecomesTapped then
             g.putMatchingSourceTriggers p eq .equippedBecomesTapped
           else g) g
-      if first && g.activePlayer == p then
+      if first && happened.matchesTrigger p o.id .creatureYouControlTapped then
         g.foldControlledPermanents p (excludeId := none) (fun g src =>
           g.putMatchingSourceTriggers p src .creatureYouControlTapped
             (cause := some (g.object! o.id)))
@@ -460,13 +471,19 @@ Lake-town). -/
 def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
+    let happened := GameEvent.life g.turnNumber p n false true
+    let g := g.record happened
     let g := g.modifyPlayer p (fun pl =>
       { pl with lifeLostThisTurn := pl.lifeLostThisTurn + n })
     let g := { g with lastLifeLost := some (p, n) }
-    g.livingPlayers.foldl (fun acc pl =>
-      acc.foldControlledPermanents pl.id none fun acc o =>
-        acc.putMatchingSourceTriggers pl.id o .playerLosesLife
-          (lastKnownPower := some (Int.ofNat n)) (lastKnownToughness := some (Int.ofNat p.idx))) g
+    if !happened.matchesTrigger p ⟨0⟩ .playerLosesLife then g
+    else
+      g.livingPlayers.foldl (fun acc pl =>
+        acc.foldControlledPermanents pl.id none fun acc o =>
+          if happened.matchesTrigger pl.id o.id .playerLosesLife then
+            acc.putMatchingSourceTriggers pl.id o .playerLosesLife
+              (lastKnownPower := some (Int.ofNat n)) (lastKnownToughness := some (Int.ofNat p.idx))
+          else acc) g
 
 /-- Put matching triggers of permanents `p` controls that fire on `event`.
 `cause` is the object that made them trigger, when there is one. -/
@@ -508,13 +525,26 @@ def putFraEventTriggers (g : Game) (p : PlayerId) (e : FraEvent)
 def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
   if !o.printed.isToken then g
   else
-    match o.controller with
-    | some p => g.putControlledTriggers p .youSacrificeToken
-    | none => g.putControlledTriggers o.owner .youSacrificeToken
+    let p := o.controller.getD o.owner
+    match g.events.back? with
+    | some happened =>
+      if happened.matchesTrigger p o.id .youSacrificeToken then
+        g.putControlledTriggers p .youSacrificeToken
+      else g
+    | none => g
 
 /-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers. -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   let g := g.moveToOwnerGraveyard o reason
+  let now := g.followMoved o.id
+  let g :=
+    match g.findObject? now with
+    | some moved =>
+      if moved.zone == Zone.graveyard moved.owner then
+        let happened := GameEvent.sacrificed g.turnNumber (o.controller.getD o.owner) o.asEvent
+        g.record happened
+      else g
+    | none => g
   g.queueYouSacrificeToken o
 
 /-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/
@@ -884,8 +914,10 @@ Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let g := if n == 0 then g else g.queueScryTriggers p count
-  let g := if n == 0 then g else g.queueScryOrSurveilTriggers p
+  let happened := GameEvent.looked g.turnNumber p count false n
+  let g := if n == 0 then g else g.record happened
+  let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
+  let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
   let g := if n == 0 then g else
     g.modifyPlayer p (fun pl => { pl with scriedThisTurn := true })
   if count == 0 then

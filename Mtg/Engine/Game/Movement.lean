@@ -119,34 +119,33 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if old.zone == .battlefield then some (g.snapshotPower old) else none
   let lkiToughness :=
     if old.zone == .battlefield then some (g.snapshotToughness old) else none
-  let wouldGoToGy :=
-    match dest with
-    | .graveyard _ => true
-    | _ => false
+  let discarded :=
+    match old.zone, dest with
+    | .hand p, .graveyard q => p == q
+    | _, _ => false
+  -- The change that would happen. Replacements match it before it is recorded
+  -- (CR 614.1). A replaced change never happens (CR 614.6).
+  let proposed :=
+    GameEvent.moved g.turnNumber old.asEvent old.zone dest (discarded := discarded)
   -- Snapshot the replacement source before the object leaves so a
   -- simultaneous death of Head of the Hunt still applies (CR 614.6).
   let headSource :=
-    if old.zone == .battlefield && old.isCreature && wouldGoToGy then
-      g.exileInsteadSource? old
-    else none
+    if proposed.watches .wouldDie then g.exileInsteadSource? old else none
   let headExile := headSource.isSome
   let smiteExile :=
-    old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
+    proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.untilEotExileIfDies
   let finalityExile :=
-    old.zone == .battlefield && wouldGoToGy && old.status.finality > 0
+    proposed.watches .wouldEnterGraveyardFromBattlefield && old.status.finality > 0
   -- CR 702.34a: a spell cast with flashback is exiled whenever it would
   -- leave the stack for anywhere else.
   let flashbackExile :=
-    old.zone == .stack && old.castFromGraveyard && old.printed.flashback.isSome &&
-      !old.isCopy && dest != .exile
+    proposed.watches .wouldLeaveStack && old.castFromGraveyard &&
+      old.printed.flashback.isSome && !old.isCopy && dest != .exile
   -- Bilbo, Thief in the Night: an instant or sorcery cast this way is exiled
   -- instead of going to its owner's graveyard.
   let bilboExile :=
-    old.zone == .stack && old.exileInstantSorceryInstead &&
-      old.printed.isInstantOrSorcery && !old.isCopy &&
-      match dest with
-      | .graveyard owner => owner == old.owner
-      | _ => false
+    proposed.watches .wouldEnterGraveyardFromStack && old.exileInstantSorceryInstead &&
+      !old.isCopy
   let exileInstead := headExile || smiteExile || finalityExile || flashbackExile || bilboExile
   -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
@@ -154,17 +153,18 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if finalityExile then
       g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
     else g
+  let happened :=
+    proposed.withDestination dest (match old.zone, dest with
+      | .hand p, .graveyard q => p == q
+      | _, _ => false)
+  let g := g.record happened
   let died :=
-    old.zone == .battlefield && old.isCreature &&
-      match dest with
-      | .graveyard _ => true
-      | _ => false
+    happened.matchesTrigger (old.controller.getD old.owner) old.id .dying
   let dying := g.dyingTriggers old dest
   let pwDied :=
-    old.zone == .battlefield && old.printed.isPlaneswalker &&
-      match dest with
-      | .graveyard _ => true
-      | _ => false
+    match happened.change with
+    | .moved object .battlefield (.graveyard _) _ _ => object.planeswalker
+    | _ => false
   let withCause (wts : Array WaitingTrigger) : Array WaitingTrigger :=
     wts.map (fun wt => { wt with causeId := some old.id, cause := some old })
   -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
@@ -400,8 +400,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- per batch.
   let discardTriggers :=
     match old.zone, dest with
-    | .hand p, .graveyard q =>
-      if p == q then
+    | .hand p, .graveyard _ =>
+      if happened.matchesTrigger p old.id .youDiscard then
         let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis) ++
           (g.permanentsOf p).foldl (fun acc o =>
             acc ++ o.waitingTriggersFor p .youDiscard (lastKnownPower := some (Int.ofNat newId.raw))) #[]

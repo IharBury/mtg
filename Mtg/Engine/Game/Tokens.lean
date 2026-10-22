@@ -81,6 +81,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let asOf := g.timestamp
     let (g, obj) := g.allocObject printed controller .battlefield (some controller)
       (status := { tapped := tapped, summoningSick := sick })
+    let g := g.record (GameEvent.created g.turnNumber controller obj.asEvent)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
     let g := { g with pendingTokenEnters := g.pendingTokenEnters.push obj.id }
     let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
@@ -121,10 +122,23 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     g.createOneToken controller printed (tapped := tapped)
   else
     let original := printed
-    let printed := g.replaceArtifactTokenWithDragon controller printed
-    let copies := g.tokenCreateMultiplier controller
+    let proposed := GameEvent.created g.turnNumber controller {
+      id := ⟨0⟩, controller := some controller, owner := controller, token := true
+      creature := printed.isCreature, artifact := printed.isArtifact, land := printed.isLand
+      subtypes := printed.subtypes, changeling := printed.keywords.changeling }
+    let printed :=
+      if proposed.watches .wouldCreateToken then
+        g.replaceArtifactTokenWithDragon controller printed
+      else printed
+    let copies :=
+      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
     let extraTreasure :=
-      if original.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+      if proposed.watches .wouldCreateToken &&
+          match proposed.change with
+          | .created _ object => object.hasSubtype "Food"
+          | _ => false then
+        g.foodTreasureReplacements controller
+      else 0
     Id.run do
       let mut g := g
       let mut last : Option GameObject := none

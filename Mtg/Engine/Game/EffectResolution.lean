@@ -70,7 +70,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{pl.name} may discard a card. If they do, they draw {n}")
   | .createTokensLifeGained kind =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
-    some (g.createKindTokens controller kind (g.player controller).lifeGainedThisTurn)
+    some (g.createKindTokens controller kind (g.loggedLifeGained controller))
   | .oppSacrificesGreatestMv =>
     some (g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
@@ -527,14 +527,16 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
           let g :=
             if plus > 0 then g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) else g
           let o := g.object! id
-          g.setObject { o with status := o.status.proliferatedExceptPlusOne extra }
-            |>.logMsg s!"{o.name} gets another counter of each kind"
+          let g := g.setObject { o with status := o.status.proliferatedExceptPlusOne extra }
+          (g.record (GameEvent.proliferated g.turnNumber controller)).logMsg
+            s!"{o.name} gets another counter of each kind"
         else g.logMsg s!"{o.name} has no counters"
       | none => g.logMsg "The target is no longer legal"
     | Target.player pid =>
       let pl := g.player pid
       if pl.poison > 0 then
-        g.modifyPlayer pid (fun pl => { pl with poison := pl.poison + 1 })
+        (g.modifyPlayer pid (fun pl => { pl with poison := pl.poison + 1 })).record
+            (GameEvent.poisoned g.turnNumber pid 1)
           |>.logMsg s!"{pl.name} gets a poison counter"
       else g.logMsg s!"{pl.name} has no counters"
     | Target.card _ => g.logMsg "The target is no longer legal") none

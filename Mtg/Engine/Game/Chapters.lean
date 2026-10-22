@@ -220,7 +220,7 @@ def interveningStillHolds (g : Game) (controller : PlayerId)
   let lifeOk :=
     match ab.timing.gainedLifeAtLeast with
     | none => true
-    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+    | some n => g.loggedLifeGained controller ≥ n
   let beginCombatFerocious :=
     match ab with
     | .triggered .yourBeginCombat _ opts =>

@@ -1,3 +1,4 @@
+import Mtg.Engine.Game.Event
 import Mtg.Engine.Game.Player
 
 /-!
@@ -394,12 +395,22 @@ structure Game where
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
   ancestryLandsTapped : Array ObjectId := #[]
+  /-- State changes that happened this game, oldest first (CR 603.2 / 614.1).
+  Conditions ask this log whether an action happened. Triggers and
+  replacement effects match the same events. A replaced change is not
+  recorded (CR 614.6). -/
+  events : Array GameEvent := #[]
 deriving Repr, Inhabited
 
 namespace Game
 
 def logMsg (g : Game) (msg : String) : Game :=
   { g with log := g.log.push msg }
+
+/-- Record a change that happened. Replacements consult an event before
+this, and do not record a change they replace (CR 614.6). -/
+def record (g : Game) (e : GameEvent) : Game :=
+  { g with events := g.events.push e }
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
@@ -418,6 +429,58 @@ def over (g : Game) : Bool := g.result.isSome
 
 def player (g : Game) (p : PlayerId) : Player :=
   g.players[p.idx]!
+
+/-- Cards `p` has drawn this turn, from the event log and the turn counter. -/
+def loggedDraws (g : Game) (p : PlayerId) : Nat :=
+  max (g.player p).cardsDrawnThisTurn (GameEvent.draws g.events g.turnNumber p)
+
+/-- Life `p` has gained this turn, from the event log and the turn counter. -/
+def loggedLifeGained (g : Game) (p : PlayerId) : Nat :=
+  max (g.player p).lifeGainedThisTurn (GameEvent.lifeGained g.events g.turnNumber p)
+
+/-- Creatures that have died this turn, from the event log and the turn counter. -/
+def loggedCreatureDeaths (g : Game) : Nat :=
+  max g.creatureDeathsThisTurn (GameEvent.creatureDeaths g.events g.turnNumber)
+
+/-- Spells `p` has cast this turn, from the event log and the turn counter. -/
+def loggedSpellsCast (g : Game) (p : PlayerId) : Nat :=
+  max (g.player p).spellsCastThisTurn (GameEvent.spellsCast g.events g.turnNumber p)
+
+/-- `p` has scried at least one card this turn. -/
+def loggedScried (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).scriedThisTurn || GameEvent.scried g.events g.turnNumber p
+
+/-- `p` has surveilled at least one card this turn. -/
+def loggedSurveilled (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).surveilledThisTurn || GameEvent.surveilled g.events g.turnNumber p
+
+/-- An artifact has entered under `p`'s control this turn. -/
+def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).artifactEnteredThisTurn || GameEvent.artifactEntered g.events g.turnNumber p
+
+/-- `p` has attacked with a permanent of `subtype` this turn. -/
+def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+  (subtype == "Hero" && (g.player p).attackedWithHeroThisTurn) ||
+    GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
+
+/-- A permanent of `subtype` has entered under `p`'s control this turn. -/
+def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+  (subtype == "Hero" && (g.player p).heroEnteredThisTurn) ||
+    GameEvent.subtypeEntered g.events g.turnNumber p subtype
+
+/-- `p` has activated a loyalty ability this turn. -/
+def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).activatedLoyaltyThisTurn || GameEvent.activatedLoyalty g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage this turn. -/
+def loggedNoncombatDamage (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).dealtNoncombatDamageThisTurn ||
+    GameEvent.dealtNoncombat g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage last turn. -/
+def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).dealtNoncombatDamageLastTurn ||
+    (g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p)
 
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }

@@ -380,7 +380,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.destroyIds ids
     g.gainLife controller ids.size
   | .obAngel =>
-    if (g.player controller).lifeGainedThisTurn > 0 then g.makeFrc controller .angel
+    if g.loggedLifeGained controller > 0 then g.makeFrc controller .angel
     else g
   | .omnathCc =>
     g.modifyPlayer controller (fun pl =>

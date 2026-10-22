@@ -35,7 +35,9 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId) : Game :=
     g.logMsg s!"{o.name} does not change control (CR 800.4b)"
   else if o.controlledBy p then g
   else
-    g.setObject { o with controller := some p, controlChanged := true }
+    let fromP := o.controller.getD o.owner
+    (g.setObject { o with controller := some p, controlChanged := true }).record
+      ⟨g.turnNumber, .control o.id fromP p⟩
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End a control-changing effect on `o` (CR 800.4a / 800.4c). -/

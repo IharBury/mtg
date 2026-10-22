@@ -1,3 +1,4 @@
+import Mtg.Engine.Game.Event
 import Mtg.Engine.Game.Status
 
 /-!
@@ -265,6 +266,23 @@ def isAdventureSpell (o : GameObject) : Bool :=
 def hasSubtype (o : GameObject) (s : String) : Bool :=
   o.subtypes.any (· == s) ||
     (o.printed.keywords.changeling && !isNoncreatureSubtype s)
+
+/-- This object as it is now, for a `GameEvent` (CR 113.7a). -/
+def asEvent (o : GameObject) : EventObject :=
+  { id := o.id
+    controller := o.controller
+    owner := o.owner
+    creature := o.isCreature
+    token := o.printed.isToken
+    artifact := o.printed.isArtifact || o.types.any (· == .artifact)
+    land := o.printed.isLand || o.types.any (· == .land)
+    planeswalker := o.printed.isPlaneswalker
+    instantOrSorcery := o.printed.isInstantOrSorcery
+    equipment := o.printed.isEquipment
+    legendary := o.isLegendary
+    attacking := o.status.attacking
+    changeling := o.printed.keywords.changeling
+    subtypes := o.subtypes }
 
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=

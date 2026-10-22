@@ -35,38 +35,46 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
     let g := g.logMsg s!"{pl.name} draws {cardName}"
     let firstOfTheirDrawStep :=
       g.step == .draw && g.activePlayer == p && drawStepDrawn == 1
+    let happened := GameEvent.drew g.turnNumber p top drawn firstOfTheirDrawStep
+    -- Opening hands are drawn before anyone keeps (CR 103.4). They are not
+    -- “cards drawn this turn” once that counter is cleared for the first turn.
+    let g := if pl.keptOpeningHand then g.record happened else g
     Id.run do
       let mut g := g
       for o in g.permanentsOf p do
-        g := { g with waitingTriggers :=
-          g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
-        if drawn == 2 then
+        if happened.matchesTrigger p o.id .youDraw then
+          g := { g with waitingTriggers :=
+            g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
+        if happened.matchesTrigger p o.id .youDrawSecondCard then
           g := { g with waitingTriggers :=
             g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
-      if drawn == 2 then
+      if happened.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
         for q in g.livingPlayers do
           for o in g.permanentsOf q.id do
-            g := { g with waitingTriggers :=
-              g.waitingTriggers ++ o.waitingTriggersFor q.id .anyPlayerDrawsSecond }
+            if happened.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
+              g := { g with waitingTriggers :=
+                g.waitingTriggers ++ o.waitingTriggersFor q.id .anyPlayerDrawsSecond }
       for opp in g.livingOpponents p do
         for o in g.permanentsOf opp.id do
-          if !firstOfTheirDrawStep then
+          if happened.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
             g := { g with waitingTriggers :=
               g.waitingTriggers ++
                 o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep }
-          if drawn == 2 then
+          if happened.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
             g := { g with waitingTriggers :=
               g.waitingTriggers ++
                 o.waitingTriggersFor opp.id .opponentDrawsSecondCard }
       return g
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
-card of your draw step). -/
+card of your draw step). The replacement matches the draw that would happen. -/
 def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
   let pl := g.player p
   let firstOfYourDrawStep :=
     g.step == .draw && g.activePlayer == p && pl.cardsDrawnThisDrawStep == 0
-  if firstOfYourDrawStep then 1
+  let proposed :=
+    GameEvent.drew g.turnNumber p ⟨0⟩ (pl.cardsDrawnThisTurn + 1) firstOfYourDrawStep
+  if !proposed.watches .wouldDraw || firstOfYourDrawStep then 1
   else
     let n := (g.permanentsOf p).filter (fun o =>
       o.printed.drawTwoExceptFirstDrawStep) |>.size
