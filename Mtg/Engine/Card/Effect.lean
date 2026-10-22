@@ -196,6 +196,32 @@ private def phrasePlayerAndCardsPart2 (r : @& Resolution) (noun : @& String) : O
     some s!"Mill {englishNumber n.toNat} cards. You may put a permanent card from among them into your hand. You gain {l} life"
   | _ => none
 
+private def phrasePlayerAndCardsPart1b (r : @& Resolution) (noun : @& String) : Option String :=
+  match r with
+  | .addMana #[] (.fixed 2) .creatureSources =>
+    some "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
+  | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact =>
+    some "Add {U}. This mana can't be spent to cast a nonartifact spell"
+  | .addMana #[] .equalSourcePower .anyColor =>
+    some "Add X mana of any one color, where X is this creature's power"
+  | .addMana #[] (.fixed 4) .anyCombination =>
+    some "Add four mana in any combination of colors"
+  | .addMana #[] (.fixed 2) .equipment =>
+    some "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
+  | .discard (.cards n) =>
+    some s!"Discard {cardPhrase n}"
+  | .putOnLibrary .shuffled .source =>
+    some "Shuffle this into its owner's library"
+  | .returnToHand .source _ =>
+    some "Return this card from your graveyard to your hand"
+  | .mill (.fixed n) .you .none =>
+    some s!"Mill {cardPhrase n.toNat}"
+  | .mill (.fixed n) .you (.subtypeOrEnchantmentToHand subtype) =>
+    some s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
+  | .mill (.fixed n) .player .none =>
+    some s!"{noun} mills {n} cards"
+  | r => phrasePlayerAndCardsPart2 r noun
+
 private def phrasePlayerAndCards (r : @& Resolution) (noun : @& String) : Option String :=
   match r with
   | .draw (.fixed n) .you =>
@@ -226,29 +252,7 @@ private def phrasePlayerAndCards (r : @& Resolution) (noun : @& String) : Option
     some s!"Add one mana of any color. Spend this mana only to cast {indefinite subtype} {subtype} spell or to activate an ability of {indefinite subtype} {subtype} source"
   | .addMana #[] (.fixed 1) .artifactSpell =>
     some "Add one mana of any color. Spend this mana only to cast an artifact spell"
-  | .addMana #[] (.fixed 2) .creatureSources =>
-    some "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
-  | .addMana #[.colored .blue] (.fixed 1) .cantNonartifact =>
-    some "Add {U}. This mana can't be spent to cast a nonartifact spell"
-  | .addMana #[] .equalSourcePower .anyColor =>
-    some "Add X mana of any one color, where X is this creature's power"
-  | .addMana #[] (.fixed 4) .anyCombination =>
-    some "Add four mana in any combination of colors"
-  | .addMana #[] (.fixed 2) .equipment =>
-    some "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
-  | .discard (.cards n) =>
-    some s!"Discard {cardPhrase n}"
-  | .putOnLibrary .shuffled .source =>
-    some "Shuffle this into its owner's library"
-  | .returnToHand .source _ =>
-    some "Return this card from your graveyard to your hand"
-  | .mill (.fixed n) .you .none =>
-    some s!"Mill {cardPhrase n.toNat}"
-  | .mill (.fixed n) .you (.subtypeOrEnchantmentToHand subtype) =>
-    some s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
-  | .mill (.fixed n) .player .none =>
-    some s!"{noun} mills {n} cards"
-  | r => phrasePlayerAndCardsPart2 r noun
+  | r => phrasePlayerAndCardsPart1b r noun
 
 private def phraseZoneAndReveal (r : Resolution) (noun : String) : Option String :=
   match r with
@@ -380,6 +384,19 @@ private def phraseCombatCountersAndFlowPart1 (r : @& Resolution) (noun : @& Stri
     some "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
   | r => phraseCombatCountersAndFlowPart2 r noun sequence
 
+private def phraseCombatCountersAndFlowPart1b (r : @& Resolution) (noun : @& String)
+    (sequence : List Resolution → String) : Option String :=
+  match r with
+  | .putCounters .plusOneChosenX .source =>
+    some "Put X +1/+1 counters on this"
+  | .sequence [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
+    some "Each opponent discards a card. Put a +1/+1 counter on this"
+  | .dealDamage (.fixed n) .allCreatures _ =>
+    some s!"This deals {n} damage to each creature"
+  | .proliferate (.fixed 1) .target =>
+    some "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
+  | r => phraseCombatCountersAndFlowPart1 r noun sequence
+
 private def phraseCombatCountersAndFlow (r : @& Resolution) (noun : @& String)
     (sequence : List Resolution → String) : Option String :=
   match r with
@@ -393,15 +410,7 @@ private def phraseCombatCountersAndFlow (r : @& Resolution) (noun : @& String)
     some s!"This deals {n} damage to each opponent"
   | .putCounters (.ofKind .plusOnePlusOne n) (.othersOfSubtype subtype) =>
     some s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
-  | .putCounters .plusOneChosenX .source =>
-    some "Put X +1/+1 counters on this"
-  | .sequence [.discard (.cards 1 .eachOpponent), .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
-    some "Each opponent discards a card. Put a +1/+1 counter on this"
-  | .dealDamage (.fixed n) .allCreatures _ =>
-    some s!"This deals {n} damage to each creature"
-  | .proliferate (.fixed 1) .target =>
-    some "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
-  | r => phraseCombatCountersAndFlowPart1 r noun sequence
+  | r => phraseCombatCountersAndFlowPart1b r noun sequence
 
 /-- `toPhrase` of one activated-ability resolution. Spell and trigger steps
 phrase through `SpellResolution.toPhrase`.

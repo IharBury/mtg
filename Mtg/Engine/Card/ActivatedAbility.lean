@@ -21,7 +21,7 @@ namespace CostPick
     (alt1 : Bool := false) (alt2 : Bool := false)
     (twoKind : Bool := false) (discardFlag : Bool := false)
     (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false) : CostPick :=
-  .spellCastKind powerOpt Option.none subtypeOpt alt1 alt2 twoKind discardFlag exileOrTap tapFlag (some subtypeSac) kindOpt
+  SpellCastKind.spellCastKind powerOpt Option.none subtypeOpt alt1 alt2 twoKind discardFlag exileOrTap tapFlag (some subtypeSac) kindOpt
 
 end CostPick
 

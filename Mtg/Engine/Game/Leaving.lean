@@ -83,6 +83,74 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (leavingPlayer : PlayerId) :
   else
     g.removeFromZoneList o.id o.zone |>.ceaseToExist o.id
 
+private def redirectResolvePendingAfterLeave (g : Game) (p q : PlayerId) (choice : ResolvePending) : Game :=
+  match choice with
+  | .payOrLetCounter _ spellId =>
+    if q == p then
+      let g := { g with pending := .none }
+      let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
+      if g.unlessPaysInstead.isSome then
+        { g with unlessPays := { g.unlessPays with due := true } }
+      else
+        match g.findObject? spellId with
+        | none => g
+        | some o =>
+          let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+          g.logMsg s!"{o.name} is countered"
+    else g
+  | .payWard spellId _ =>
+    if q == p then
+      let g := { g with pending := .none }
+      let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
+      match g.findObject? spellId with
+      | none => g
+      | some o =>
+        let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+        g.logMsg s!"{o.name} is countered"
+    else g
+  | .mayPayGeneric _ =>
+    if q == p then
+      { g with pending := .none }
+        |>.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
+    else g
+  | .chooseSacrificeCreature chosen remaining =>
+    if q != p then g
+    else
+      match remaining.find? (fun r => g.stillInGame r) with
+      | none => { g with pending := .none }
+      | some np =>
+        { g with
+          pending := .chooseSacrificeCreature np chosen
+            (remaining.filter (fun r => r != np && g.stillInGame r)) }
+  | .chooseDiscardCard remaining =>
+    if q != p then g
+    else
+      match remaining.find? (fun r => g.stillInGame r) with
+      | none => { g with pending := .none, discardReq := { g.discardReq with pendingDiscardsLeft := 0 } }
+      | some np =>
+        { g with
+          discardReq := { g.discardReq with pendingDiscardsLeft := 0 }
+          pending := .chooseDiscardCard np
+            (remaining.filter (fun r => r != np && g.stillInGame r)) }
+  | .mayCastExiledElseDamage _ _ =>
+    if q == p then { g with pending := .none } else g
+  | .chooseTriggerOr =>
+    if q == p then { g with pending := .none, triggerOr := none } else g
+  | .tapHumans =>
+    if q == p then
+      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with humansTappedThisWay := 0 } }
+    else g
+  | .mayPutArtifactFromHand _ =>
+    if q == p then
+      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with putArtifactThisWay := none } }
+    else g
+  | .mayResolve =>
+    if q == p then { g with pending := .none }.clearMay else g
+  | .chooseLibraryPlacement _ =>
+    if q == p then { g with pending := .none }.clearSpellOr else g
+  | _ =>
+    if q == p then { g with pending := .none, chooseModesRest := none } else g
+
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
 (CR 800.4g / 800.4h / 800.4j). Does not grant priority. -/
@@ -103,53 +171,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       else
         { g with pending := .declareBlockers, combat := { g.combat with blockersQueue := rest } }
     else g
-  | .payOrLetCounter q _ spellId =>
-    if q == p then
-      let g := { g with pending := .none }
-      let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
-      if g.unlessPaysInstead.isSome then
-        { g with unlessPays := { g.unlessPays with due := true } }
-      else
-        match g.findObject? spellId with
-        | none => g
-        | some o =>
-          let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
-          g.logMsg s!"{o.name} is countered"
-    else g
-  | .payWard q spellId _ =>
-    if q == p then
-      let g := { g with pending := .none }
-      let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
-      match g.findObject? spellId with
-      | none => g
-      | some o =>
-        let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
-        g.logMsg s!"{o.name} is countered"
-    else g
-  | .mayPayGeneric q _ =>
-    if q == p then
-      { g with pending := .none }
-        |>.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
-    else g
-  | .chooseSacrificeCreature q chosen remaining =>
-    if q != p then g
-    else
-      match remaining.find? (fun r => g.stillInGame r) with
-      | none => { g with pending := .none }
-      | some np =>
-        { g with
-          pending := .chooseSacrificeCreature np chosen
-            (remaining.filter (fun r => r != np && g.stillInGame r)) }
-  | .chooseDiscardCard q remaining =>
-    if q != p then g
-    else
-      match remaining.find? (fun r => g.stillInGame r) with
-      | none => { g with pending := .none, discardReq := { g.discardReq with pendingDiscardsLeft := 0 } }
-      | some np =>
-        { g with
-          discardReq := { g.discardReq with pendingDiscardsLeft := 0 }
-          pending := .chooseDiscardCard np
-            (remaining.filter (fun r => r != np && g.stillInGame r)) }
   | .chooseTriggerToStack q =>
     if q == p then { g with pending := .none } else g
   | .chooseLegend q _ _ =>
@@ -164,24 +185,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q == p then { g with pending := .none, chooseModesRest := none } else g
   | .cast q _ =>
     if q == p then { g with pending := .none, proposedSpell := none } else g
-  | .mayCastExiledElseDamage q _ _ =>
-    if q == p then { g with pending := .none } else g
-  | .chooseTriggerOr q =>
-    if q == p then { g with pending := .none, triggerOr := none } else g
-  | .tapHumans q =>
-    if q == p then
-      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with humansTappedThisWay := 0 } }
-    else g
-  | .mayPutArtifactFromHand q _ =>
-    if q == p then
-      { g with pending := .none, triggerSequenceRest := none, thisWay := { g.thisWay with putArtifactThisWay := none } }
-    else g
-  | .mayResolve q =>
-    if q == p then { g with pending := .none }.clearMay else g
-  | .chooseLibraryPlacement q _ =>
-    if q == p then { g with pending := .none }.clearSpellOr else g
-  | .putOnBottom q _ | .declareMulligan q | .resolve q _ | .fraChoice q _ =>
+  | .putOnBottom q _ | .declareMulligan q | .fraChoice q _ =>
     if q == p then { g with pending := .none, chooseModesRest := none } else g
+  | .resolve q choice =>
+    redirectResolvePendingAfterLeave g p q choice
   | .resolveRandom _ | _ => g
 
 /-- `p` loses and leaves the game (CR 800.4 / 800.4a). Owned objects leave

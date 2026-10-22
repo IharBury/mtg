@@ -261,7 +261,7 @@ namespace Action
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (b5 : Bool := false) (b6 : Bool := false)
     (isSingleObj : Bool := false) (isArrayObj : Bool := false) : Action :=
-  .libraryChoiceKind ids rest #[] id attackerId ⟨0⟩ n 0 0 0 #[] optId none to none none nameOpt none none none #[] targetOpt none #[] #[] none #[] none none alt1 alt2 alt3 alt4 b5 b6 isSingleObj isArrayObj false false tsOpt manaOpt manaArrOpt divOpt eachOpt pwOpt blockOpt combatOpt
+  LibraryChoice.libraryChoiceKind ids rest #[] id attackerId ⟨0⟩ n 0 0 0 #[] optId none to none none nameOpt none none #[] targetOpt none #[] #[] none #[] none alt1 alt2 alt3 alt4 b5 b6 isSingleObj isArrayObj false false tsOpt manaOpt manaArrOpt divOpt eachOpt pwOpt blockOpt combatOpt
 
 @[match_pattern] abbrev simpleOrNatAction (n : Nat := 0) (nameOpt : Option String := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)

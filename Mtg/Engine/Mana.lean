@@ -10,6 +10,8 @@ five colors and colorless (CR 106.1b). Players spend mana to pay costs.
 
 namespace Mtg.Engine
 
+set_option synthInstance.maxSize 1024
+
 /-- A type of mana that can exist in a mana pool (CR 106.1b). -/
 abbrev ManaType := Option Color
 
@@ -334,7 +336,7 @@ namespace ManaUse
 @[match_pattern] abbrev manaUseKind (subtype : String := "") (alt1 : Bool := false) (alt2 : Bool := false)
     (cardTypeGroup : Bool := false) (handOrTreasureGroup : Bool := false) (bySubtype : Bool := false)
     (restricted : Bool := true) : ManaUse :=
-  .cardTypeKind none (some false) true 0 subtype alt1 alt2 cardTypeGroup handOrTreasureGroup bySubtype restricted false false false
+  CardType.cardTypeKind none (some false) true 0 subtype alt1 alt2 cardTypeGroup handOrTreasureGroup bySubtype restricted false false false
 
 @[match_pattern] abbrev subtypeUse (subtype : String) (orAbility : Bool := false) : ManaUse :=
   .manaUseKind subtype orAbility false false false true true

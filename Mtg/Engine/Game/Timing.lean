@@ -11,6 +11,8 @@ graveyard, or the top of the library (CR 118.12 / 400.7).
 namespace Mtg.Engine
 namespace Game
 
+set_option synthInstance.maxSize 1024
+
 /-- CR 100.1b: a multiplayer game begins with more than two players. -/
 def isMultiplayer (g : Game) : Bool :=
   g.players.size > 2

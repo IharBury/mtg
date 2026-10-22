@@ -18,7 +18,7 @@ namespace CounterKind
 @[match_pattern] abbrev counterKind (cat1 : Bool := false) (cat2 : Bool := false)
     (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false) : CounterKind :=
-  .cardTypeKind none (some true) true 0 "" cat1 cat2 alt1 alt2 alt3 alt4 false false false
+  CardType.cardTypeKind none (some true) true 0 "" cat1 cat2 alt1 alt2 alt3 alt4 false false false
 end CounterKind
 
 /-- A keyword counter a permanent can have (CR 122.1b). -/

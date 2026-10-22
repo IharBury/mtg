@@ -1728,15 +1728,16 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .chosenNontokenCreature, .none =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | .source, .noted | .source, .none
-  | .sacrificedSource _, .noted | .sacrificedSource _, .none =>
+  | .sacrificedSource (.sacrificeSourceKind _ _), .noted
+  | .sacrificedSource (.sacrificeSourceKind _ _), .none =>
     let how := match what with | .sacrificedSource h => h | _ => .isSacrificed
     sacrificeSource how (note == .noted)
-  | .sacrificedSource how, .forReflexive =>
+  | .sacrificedSource (.sacrificeSourceKind c m), .forReflexive =>
     let stillThere :=
       match sourceId.bind g.findObject? with
       | some o => o.isOnBattlefield
       | none => false
-    let g := sacrificeSource how false
+    let g := sacrificeSource (.sacrificeSourceKind c m) false
     { g with thisWay := { g.thisWay with planWasSacrificed := stillThere } }
   | .plan, .none =>
     g.sacrificePlanIfOnBattlefield sourceId

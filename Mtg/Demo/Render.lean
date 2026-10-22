@@ -643,7 +643,7 @@ def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
     else
       s!" [choose targets (CR 601.2c, {name})]"
 
-def fraChoicePendingWhatPart1 (g : Game) (choice : @& FraChoice) : String :=
+def fraChoicePendingWhatPart1a (g : Game) (choice : @& FraChoice) : String :=
   match choice with
   | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"
   | .mayWheel n _ => s!"may discard your hand and draw {n}"
@@ -673,6 +673,10 @@ def fraChoicePendingWhatPart1 (g : Game) (choice : @& FraChoice) : String :=
       (List.range options.size).map (fun i => s!"{i} {fraKeywordName options[i]!}")
     "choose a keyword: " ++ String.intercalate ", " names
   | .chooseColor _ => "choose a color: 0 white, 1 blue, 2 black, 3 red, 4 green"
+  | _ => ""
+
+def fraChoicePendingWhatPart1b (g : Game) (choice : @& FraChoice) : String :=
+  match choice with
   | .sacrificeCreatureEach .. => "sacrifice a creature"
   | .discardTwo .. => "discard two cards"
   | .mayMoveAllCounters .. => "may move all counters (accept or decline)"
@@ -693,6 +697,10 @@ def fraChoicePendingWhatPart1 (g : Game) (choice : @& FraChoice) : String :=
     s!"may sacrifice {n}: choose <id> ..., or decline"
   | .mayDiscardThese n _ =>
     s!"may discard {n}: choose <id> ..., or decline"
+  | choice => fraChoicePendingWhatPart1a g choice
+
+def fraChoicePendingWhatPart1 (g : Game) (choice : @& FraChoice) : String :=
+  match choice with
   | .mayPaySymbolsThen .. => "may pay the cost (accept), or decline"
   | .attachAnyEquipment _ eligible =>
     s!"attach any number of Equipment ({eligible.size}): choose <id> ..., or decline"
@@ -713,21 +721,23 @@ def fraChoicePendingWhatPart1 (g : Game) (choice : @& FraChoice) : String :=
   | .nickFuryMayTransform _ _ => "may transform it (accept), or decline"
   | .orderLibraryBottom ids =>
     s!"put {ids.size} card(s) on the bottom in any order: choose <id> ... with the first card on the bottom"
-  | _ => ""
+  | choice => fraChoicePendingWhatPart1b g choice
 
-def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
+private def chooseCardsPendingWhat (ids : Array ObjectId) (max : Nat) (purpose : @& CardChoice) : String :=
+  let what :=
+    match purpose with
+    | .toHand true => "choose one card for your hand"
+    | .toHand false => s!"choose up to {max} card(s) for your hand"
+    | .creaturesToBattlefield => "put any number of creature cards onto the battlefield"
+    | .landsTappedGainLife _ => "put any number of land cards onto the battlefield tapped"
+    | .keepDestroyRest => s!"choose up to {max} creature(s) to keep"
+    | .amassArmy subtype n _ => s!"choose an Army to amass {subtype}s {n}"
+    | _ => ""
+  s!"{what} ({ids.size} card(s)): choose <id> ..., or decline"
+
+def fraChoicePendingWhatPart2a (g : Game) (choice : @& FraChoice) : String :=
   match choice with
-  | .chooseCards ids max purpose =>
-    let what :=
-      match purpose with
-      | .toHand true => "choose one card for your hand"
-      | .toHand false => s!"choose up to {max} card(s) for your hand"
-      | .creaturesToBattlefield => "put any number of creature cards onto the battlefield"
-      | .landsTappedGainLife _ => "put any number of land cards onto the battlefield tapped"
-      | .keepDestroyRest => s!"choose up to {max} creature(s) to keep"
-      | .amassArmy subtype n _ => s!"choose an Army to amass {subtype}s {n}"
-      | _ => ""
-    s!"{what} ({ids.size} card(s)): choose <id> ..., or decline"
+  | .chooseCards ids max purpose => chooseCardsPendingWhat ids max purpose
   | .blackGatePlayer _ players =>
     let names := (List.range players.size).map (fun i =>
       s!"{i} {(g.player players[i]!).name}")
@@ -744,6 +754,10 @@ def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
     s!"choose a new target for the copy ({copies.size} left): choose <id>, or decline to keep it"
   | .mayCastCascade .. => "cascade: cast the exiled card without paying its mana cost (accept), or decline"
   | .mayCastGrima .. => "may cast the exiled instant or sorcery without paying its mana cost (accept), or decline"
+  | choice => fraChoicePendingWhatPart1 g choice
+
+def fraChoicePendingWhatPart2 (g : Game) (choice : @& FraChoice) : String :=
+  match choice with
   | .palantirMayDraw .. => "may have that player draw a card (accept), or decline"
   | .mayCastCopy _ => "may cast the copy without paying its mana cost (accept), or decline"
   | .mayDiscardHandBalin _ => "may discard your hand, then draw that many (accept), or decline"
@@ -760,6 +774,10 @@ def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
   | .widowMayCounter .. =>
     "may put a +1/+1 counter on Black Widow (accept); otherwise you may cast the exiled card"
   | .ultronMayPay _ => "may pay {2} to copy the artifact (accept), or decline"
+  | choice => fraChoicePendingWhatPart2a g choice
+
+def fraChoicePendingWhatPart3 (g : Game) (choice : @& FraChoice) : String :=
+  match choice with
   | .visionMode _ available =>
     let names := available.toList.map (fun m =>
       if m == 0 then "0 double strike"
@@ -785,6 +803,10 @@ def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
   | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
   | .mayChangeSpellTarget .. =>
     "may choose a new target for the spell: choose <id>, or decline to keep it"
+  | choice => fraChoicePendingWhatPart2 g choice
+
+def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
+  match choice with
   | .mayCastCards eligible withoutPaying exileInstead =>
     let pay := if withoutPaying then "without paying" else "paying its cost"
     let exile := if exileInstead then ", exiling an instant or sorcery instead" else ""
@@ -814,7 +836,100 @@ def fraChoicePendingWhat (g : Game) (choice : @& FraChoice) : String :=
   | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
   | .mayBeginOnBattlefield ids =>
     s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
-  | _ => fraChoicePendingWhatPart1 g choice
+  | choice => fraChoicePendingWhatPart3 g choice
+
+private def resolvePendingHeader (g : Game) (p : PlayerId) (choice : @& ResolvePending) : String :=
+  match choice with
+  | .sacrificeCreature =>
+    s!" [sacrifice a creature ({g.player p |>.name})]"
+  | .scry n =>
+    s!" [scry {n} ({g.player p |>.name})]"
+  | .surveil n =>
+    s!" [surveil {n} ({g.player p |>.name})]"
+  | .mayDiscardDraw n =>
+    s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
+  | .chooseSacrificeCreature _ _ =>
+    s!" [sacrifice a creature ({g.player p |>.name})]"
+  | .chooseDiscardCard _ =>
+    s!" [discard a card ({g.player p |>.name})]"
+  | .mayPayGeneric n =>
+    s!" [may pay \{{n}} ({g.player p |>.name})]"
+  | .chooseLibraryPlacement _ =>
+    if g.spellOrLibrary || g.spellOr.isEmpty then
+      s!" [choose top or bottom ({g.player p |>.name})]"
+    else
+      s!" [choose one ({g.player p |>.name})]"
+  | .mayAttachEquipment _ =>
+    s!" [may attach Equipment ({g.player p |>.name})]"
+  | .mayResolve =>
+    let detail :=
+      match g.mayEffect with
+      | some e => if e.phrase.isEmpty then "" else s!" {e.phrase}"
+      | none => ""
+    s!" [may{detail} ({g.player p |>.name}): accept or decline]"
+  | .tapHumans =>
+    s!" [tap Humans ({g.player p |>.name})]"
+  | .payOrLetCounter n _ =>
+    if g.unlessPaysInstead.isSome then
+      s!" [pay \{{n}} or let the effect happen ({g.player p |>.name})]"
+    else
+      s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
+  | .payWard _ cost =>
+    let who := g.player p |>.name
+    match cost with
+    | .genericMana n =>
+      s!" [pay \{{n}} or let the spell be countered (ward, {who})]"
+    | .discardEnchantmentInstantOrSorcery =>
+      s!" [discard an enchantment, instant, or sorcery or let the spell be countered (ward, {who})]"
+    | .sacrificeLegendary =>
+      s!" [sacrifice a legendary artifact or creature or let the spell be countered (ward, {who})]"
+    | .discardOrPay n =>
+      s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
+    | .fivePoison =>
+      s!" [get five poison counters or let the spell be countered (ward, {who})]"
+    | .discardCard =>
+      s!" [discard a card or let the spell be countered (ward, {who})]"
+    | .sacrificePermanents left paid =>
+      if paid == 0 then
+        s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
+      else
+        s!" [sacrifice {left} more permanent(s) (ward, {who})]"
+    | _ => ""
+  | .recruitDiscard =>
+    s!" [recruit: discard a card ({g.player p |>.name})]"
+  | .chooseRingBearer =>
+    s!" [choose a Ring-bearer ({g.player p |>.name})]"
+  | .maySacrificeAnotherBolg _ =>
+    s!" [may sacrifice another creature ({g.player p |>.name})]"
+  | .mayCastFromLooked _ maxMv =>
+    s!" [may cast a looked-at spell (mana value ≤ {maxMv}, {g.player p |>.name})]"
+  | .mayPutLandFromHand =>
+    s!" [may put a land from hand onto the battlefield tapped ({g.player p |>.name})]"
+  | .chooseTriggerOr =>
+    let rs :=
+      match g.triggerOr with
+      | some rest => rest.alternatives.toList
+      | none => []
+    s!" [{triggerOrPendingText rs} ({g.player p |>.name})]"
+  | .maySacArtifactOrDiscard _ =>
+    s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
+  | .mayPutArtifactFromHand _ =>
+    s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
+  | .mayCastExiledElseDamage cardId n =>
+    let name :=
+      match g.findObject? cardId with
+      | some o => o.nameWithToken
+      | none => "the exiled card"
+    s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
+  | .chooseProliferate n =>
+    s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
+  | .mayHaveVillainConnive _ villainId =>
+    let who :=
+      match g.findObject? villainId with
+      | some o => o.nameWithToken
+      | none => "the Villain"
+    s!" [may have {who} connive ({g.player p |>.name})]"
+  | _ => ""
 
 def header (g : Game) (viewer : Option PlayerId := none) : String :=
   let viewTag :=
@@ -840,25 +955,13 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .discardForAdditionalCost p =>
       s!" [discard a card as an additional cost ({g.player p |>.name})]"
-    | .sacrificeCreature p =>
-      s!" [sacrifice a creature ({g.player p |>.name})]"
     | .declareMulligan p =>
       s!" [mulligan: {g.player p |>.name} may keep or mulligan (CR 103.5)]"
     | .putOnBottom p n =>
       let cards := if n == 1 then "1 card" else s!"{n} cards"
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
-    | .scry p n =>
-      s!" [scry {n} ({g.player p |>.name})]"
-    | .surveil p n =>
-      s!" [surveil {n} ({g.player p |>.name})]"
-    | .mayDiscardDraw p n =>
-      s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
     | .chooseAdditionalCost p =>
       s!" [choose an additional cost (CR 601.2b, {g.player p |>.name})]"
-    | .chooseSacrificeCreature p _ _ =>
-      s!" [sacrifice a creature ({g.player p |>.name})]"
-    | .chooseDiscardCard p _ =>
-      s!" [discard a card ({g.player p |>.name})]"
     | .assignCombatDamage p true =>
       s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
     | .assignCombatDamage p false =>
@@ -867,51 +970,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
     | .chooseTriggerToStack p =>
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
-    | .mayPayGeneric p n =>
-      s!" [may pay \{{n}} ({g.player p |>.name})]"
-    | .chooseLibraryPlacement p _ =>
-      if g.spellOrLibrary || g.spellOr.isEmpty then
-        s!" [choose top or bottom ({g.player p |>.name})]"
-      else
-        s!" [choose one ({g.player p |>.name})]"
-    | .mayAttachEquipment p _ =>
-      s!" [may attach Equipment ({g.player p |>.name})]"
-    | .mayResolve p =>
-      let detail :=
-        match g.mayEffect with
-        | some e => if e.phrase.isEmpty then "" else s!" {e.phrase}"
-        | none => ""
-      s!" [may{detail} ({g.player p |>.name}): accept or decline]"
-    | .tapHumans p =>
-      s!" [tap Humans ({g.player p |>.name})]"
-    | .payOrLetCounter p n _ =>
-      if g.unlessPaysInstead.isSome then
-        s!" [pay \{{n}} or let the effect happen ({g.player p |>.name})]"
-      else
-        s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
-    | .payWard p _ cost =>
-      let who := g.player p |>.name
-      match cost with
-      | .genericMana n =>
-        s!" [pay \{{n}} or let the spell be countered (ward, {who})]"
-      | .discardEnchantmentInstantOrSorcery =>
-        s!" [discard an enchantment, instant, or sorcery or let the spell be countered (ward, {who})]"
-      | .sacrificeLegendary =>
-        s!" [sacrifice a legendary artifact or creature or let the spell be countered (ward, {who})]"
-      | .discardOrPay n =>
-        s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
-      | .fivePoison =>
-        s!" [get five poison counters or let the spell be countered (ward, {who})]"
-      | .discardCard =>
-        s!" [discard a card or let the spell be countered (ward, {who})]"
-      | .sacrificePermanents left paid =>
-        if paid == 0 then
-          s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
-        else
-          s!" [sacrifice {left} more permanent(s) (ward, {who})]"
-      | _ => ""
-    | .recruitDiscard p =>
-      s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
       s!" [announce kicker (CR 702.32, {g.player p |>.name})]"
     | .chooseGift p =>
@@ -920,41 +978,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [announce teamwork (CR 702.194, {g.player p |>.name})]"
     | .chooseTeamworkCreatures p need =>
       s!" [tap creatures for teamwork {need} (CR 702.194, {g.player p |>.name})]"
-    | .chooseRingBearer p =>
-      s!" [choose a Ring-bearer ({g.player p |>.name})]"
-    | .maySacrificeAnotherBolg p _ =>
-      s!" [may sacrifice another creature ({g.player p |>.name})]"
-    | .mayCastFromLooked p _ maxMv =>
-      s!" [may cast a looked-at spell (mana value ≤ {maxMv}, {g.player p |>.name})]"
-    | .mayPutLandFromHand p =>
-      s!" [may put a land from hand onto the battlefield tapped ({g.player p |>.name})]"
-    | .chooseTriggerOr p =>
-      let rs :=
-        match g.triggerOr with
-        | some rest => rest.alternatives.toList
-        | none => []
-      s!" [{triggerOrPendingText rs} ({g.player p |>.name})]"
-    | .maySacArtifactOrDiscard p _ =>
-      s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
-    | .mayPutArtifactFromHand p _ =>
-      s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
-    | .mayCastExiledElseDamage p cardId n =>
-      let name :=
-        match g.findObject? cardId with
-        | some o => o.nameWithToken
-        | none => "the exiled card"
-      s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
-    | .chooseProliferate p n =>
-      s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
     | .fraChoice p choice =>
       let what := fraChoicePendingWhat g choice
       s!" [{what} ({g.player p |>.name})]"
-    | .mayHaveVillainConnive p _ villainId =>
-      let who :=
-        match g.findObject? villainId with
-        | some o => o.nameWithToken
-        | none => "the Villain"
-      s!" [may have {who} connive ({g.player p |>.name})]"
+    | .resolve p choice =>
+      resolvePendingHeader g p choice
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>

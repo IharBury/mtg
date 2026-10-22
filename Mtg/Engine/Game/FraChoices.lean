@@ -282,6 +282,11 @@ private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoi
     return (g.applyFra p default next #[] sourceId).finishFraChoice
   | .maySacrificeThen .., .decline => return g.finishFraChoice
   | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
+  | choice, answer => answerFraChoicePart1a g p choice answer
+
+private def answerFraChoicePart1c (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
+    Except String Game := do
+  match choice, answer with
   | .mayMovePlusOne sourceId, .accept =>
     match g.findObject? sourceId with
     | some o =>
@@ -356,7 +361,7 @@ private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoi
       return (g.logMsg s!"{(g.player p).name} chooses {c.englishName} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseColor _, _ => throw "Choose a color"
-  | choice, answer => answerFraChoicePart1a g p choice answer
+  | choice, answer => answerFraChoicePart1b g p choice answer
 
 def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
@@ -471,7 +476,7 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
-  | choice, answer => answerFraChoicePart1b g p choice answer
+  | choice, answer => answerFraChoicePart1c g p choice answer
 
 def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
     Except String Game := do
@@ -1190,71 +1195,86 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   answerFraChoicePart4 g p choice answer
 
 
+private def mkDecline : Action := .decline
+private def mkAccept : Action := .accept
+private def mkChoosePermanents (ids : Array ObjectId) : Action := .choosePermanents ids
+private def mkChooseMode (m : Nat) : Action := .chooseMode m
+private def mkCast (id : ObjectId) : Action := .cast id
+private def mkChooseName (s : String) : Action := .chooseName s
+
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
-private def defaultFraActionPart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+private def defaultFraActionPart1a (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
-    .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
-  | .mayWheel .. => .decline
-  | .maySacrificePlaneswalker => .decline
-  | .topOrBottomDamage .. => .decline
-  | .sphinxsApproach _ => .accept
+    mkChoosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
+  | .mayWheel .. => mkDecline
+  | .maySacrificePlaneswalker => mkDecline
+  | .topOrBottomDamage .. => mkDecline
+  | .sphinxsApproach _ => mkAccept
   | .extrapolateReveal =>
     let picks := (g.outsideCards p).foldl (fun (acc : Array GameObject) o =>
       if acc.size < 2 && !acc.any (·.name == o.name) then acc.push o else acc) #[]
-    .choosePermanents (picks.map (·.id))
-  | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
+    mkChoosePermanents (picks.map (·.id))
+  | .extrapolatePick _ ids => mkChoosePermanents (ids.extract 0 1)
   | .mayThen .. | .mayMoveAllCounters .. | .mayDrawThenDiscard ..
   | .mayCreateTokens .. | .mayBecomeBasePT .. | .mayTapSourceThen ..
-  | .mayCastCascade .. | .visionQuestZones .. | .riddlesChoosePile .. => .accept
+  | .mayCastCascade .. | .visionQuestZones .. | .riddlesChoosePile .. => mkAccept
   | .mayPayThen n .. =>
-    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
-  | .discardThen .. | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
-  | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
+    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then mkAccept else mkDecline
+  | .discardThen .. | .discardThenDraw => mkChoosePermanents ((g.player p).hand.extract 0 1)
+  | .discardThenStun n _ => mkChoosePermanents ((g.player p).hand.extract 0 n)
   | .exileFromRevealedHand victim _ =>
-    .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
+    mkChoosePermanents ((g.revealedHandChoices victim false).extract 0 1)
   | .allianceMode _ available | .gollumMode _ available | .visionMode _ available =>
     match available[0]? with
-    | some m => .chooseMode m
-    | none => .decline
+    | some m => mkChooseMode m
+    | none => mkDecline
+  | _ => mkDecline
+
+private def defaultFraActionPart1b (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+  match choice with
   | .triggerModes objId _ chosen =>
     match g.findObject? objId with
-    | none => .decline
+    | none => mkDecline
     | some obj =>
       let modes := g.triggerModesOf obj
       match (List.range modes.size).find? (fun i =>
           !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
-      | some i => .chooseMode i
-      | none => .decline
+      | some i => mkChooseMode i
+      | none => mkDecline
   | .chooseKeyword .. | .chooseColor _ | .chooseCreatureType _
   | .addManaColors .. | .blackGatePlayer .. | .hydeMode _
-  | .oddOrEvenDestroy _ | .palisadeCreatureType _ | .entersOddEven _ => .chooseMode 0
+  | .oddOrEvenDestroy _ | .palisadeCreatureType _ | .entersOddEven _ => mkChooseMode 0
   | .sacrificeCreatureEach .. =>
-    .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
-  | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
+    mkChoosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
+  | .discardTwo .. => mkChoosePermanents ((g.player p).hand.extract 0 2)
+  | choice => defaultFraActionPart1a g p choice
+
+private def defaultFraActionPart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+  match choice with
   | .crew _ vehicleId n =>
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
       (fun a b => g.power a > g.power b)
     let (picked, _) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
-    .choosePermanents picked
+    mkChoosePermanents picked
   | .costPicks sourceId picks _ =>
     match picks[0]? with
     | some pick =>
-      .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
-    | none => .decline
+      mkChoosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
+    | none => mkDecline
   | .mayPaySymbolsThen symbols .. | .mayPayManaForReflexive symbols _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
-  | .attachAnyEquipment _ eligible => .choosePermanents eligible
-  | .chooseCreatureFrom ids _ | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
-  | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := symbols } then mkAccept else mkDecline
+  | .attachAnyEquipment _ eligible => mkChoosePermanents eligible
+  | .chooseCreatureFrom ids _ | .sacrificeDamager ids .. => mkChoosePermanents (ids.extract 0 1)
+  | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then mkAccept else mkDecline
   | .mayPayExtort _ =>
-    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then mkAccept else mkDecline
   | .mayRevealToHand _ eligible _ =>
-    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
-  | .arrangeCards ids _ => .choosePermanents ids
-  | _ => .decline
+    if eligible.isEmpty then mkDecline else mkChoosePermanents (eligible.extract 0 1)
+  | .arrangeCards ids _ => mkChoosePermanents ids
+  | choice => defaultFraActionPart1b g p choice
 
 def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
   match choice with
@@ -1271,64 +1291,64 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action 
             | none => some id
           | some b, none => some b) none
       match best with
-      | some id => .choosePermanents #[id]
-      | none => .decline
+      | some id => mkChoosePermanents #[id]
+      | none => mkDecline
     | .toHand true =>
-      if ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
-    | .toHand false => .choosePermanents (ids.extract 0 max)
-    | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents ids
+      if ids.isEmpty then mkDecline else mkChoosePermanents (ids.extract 0 1)
+    | .toHand false => mkChoosePermanents (ids.extract 0 max)
+    | .creaturesToBattlefield | .landsTappedGainLife _ => mkChoosePermanents ids
     | .keepDestroyRest =>
       let yours := ids.filter (fun id => (g.findObject? id).any (·.controlledBy p))
       let pick := if yours.isEmpty then ids else yours
-      .choosePermanents (pick.extract 0 max)
-    | _ => .decline
+      mkChoosePermanents (pick.extract 0 max)
+    | _ => mkDecline
   | .sacrificeNontokenEach .. =>
-    .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
+    mkChoosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .hawkeyeModes _ chosen _ =>
     match [1, 0, 2].find? (!chosen.contains ·) with
-    | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then .decline
-      else .chooseMode m
-    | none => .decline
+    | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then mkDecline
+      else mkChooseMode m
+    | none => mkDecline
   | .tricksterLibrary .. => .chooseTop
   | .visionQuestPick ids _ _ =>
     match ids[0]? with
-    | some id => .choosePermanents #[id]
-    | none => .decline
+    | some id => mkChoosePermanents #[id]
+    | none => mkDecline
   | .mayCastCards eligible withoutPaying _ =>
     if withoutPaying then
       match eligible[0]? with
-      | some id => .cast id
-      | none => .decline
+      | some id => mkCast id
+      | none => mkDecline
     else
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
           (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
-      | some id => .cast id
-      | none => .decline
+      | some id => mkCast id
+      | none => mkDecline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>
         (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
-    | some id => .cast id
-    | none => .decline
+    | some id => mkCast id
+    | none => mkDecline
   | .maySearchLibrary eligible .. =>
-    if eligible.isEmpty then .decline else .accept
+    if eligible.isEmpty then mkDecline else mkAccept
   | .searchLibrary eligible count .. =>
-    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
+    if eligible.isEmpty then mkDecline else mkChoosePermanents (eligible.extract 0 count)
   | .zemoBoastExile .. =>
-    .choosePermanents ((g.player p).graveyard.filter (fun id =>
+    mkChoosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)
     let any := g.knownCardFaces.find? (fun c => !c.isLand)
-    .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
+    mkChooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
   | .entersCreatureType _ =>
     let yours :=
       (g.permanentsOf p).foldl (fun acc o =>
         o.subtypes.foldl (fun acc s =>
           if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
-    .chooseName (yours[0]?.getD "Human")
+    mkChooseName (yours[0]?.getD "Human")
   | choice => defaultFraActionPart1 g p choice
 
 end Game

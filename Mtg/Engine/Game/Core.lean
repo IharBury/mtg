@@ -11,6 +11,8 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
+set_option synthInstance.maxSize 1024
+
 /-- Shared ability context for a triggered ability whose resolution is paused on
 a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
 structure TriggerResolutionContext where

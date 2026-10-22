@@ -10,50 +10,21 @@ resolution helpers that return owned creatures or destroy the rest.
 namespace Mtg.Engine
 namespace Game
 
-def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
-  | .pass => g.pass p
-  | .playLandOrKeepLegend id keepLegend =>
-    if keepLegend then g.keepLegend p id else g.playLand p id
-  | .tapForMana id m => g.tapForMana p id m
-  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
-  | .cast id =>
-    match g.pending with
-    | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
-    | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
-    | .mayPutArtifactFromHand .. => do
-      let g ← g.choosePutArtifactFromHand p id
-      return g.resumeSequenceThenPriority
-    | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
-    | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
-    | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
-    | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
-    | _ => g.castSpell p id
-  | .castAdventure id => g.castSpell p id true
-  | .activateOrSneak id _ attackerId true => g.castSpell p id (sneakAttacker := some attackerId)
-  | .chooseNat idx true _ =>
-    match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (.mode idx)
-    | .chooseTriggerOr _ => g.chooseTriggerOr p idx
-    | .chooseLibraryPlacement _ _ =>
-      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
-    | _ => g.announceMode p idx
-  | .chooseNumber n supplyRandom =>
-    if supplyRandom then g.supplyIndex n else g.announceX p n
-  | .target t => g.announceTarget p t
-  | .targets ts =>
-    match g.pending with
-    | .chooseProliferate .. => g.finishProliferate p ts
-    | _ => g.announceTargets p ts
-  | .divideDamage as => g.announceDividedDamage p as
-  | .activateOrSneak id idx _ false => g.activateAbility p id idx
-  | .pay => g.pay p
-  | .objectAction id _ true discard => do
-    let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
-    return if g.mayThenResume then g.acceptMayThen else g
-  | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
-  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
-  | .declareBlockers as => g.declareBlockers p as
-  | .assignCombatDamage asgns => g.announceCombatDamage p asgns
+private def applyCastAction (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
+  match g.pending with
+  | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
+  | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
+  | .mayPutArtifactFromHand .. => do
+    let g ← g.choosePutArtifactFromHand p id
+    return g.resumeSequenceThenPriority
+  | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
+  | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
+  | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
+  | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
+  | _ => g.castSpell p id
+
+private def applyActionPart1 (g : Game) (p : PlayerId) (a : @& Action) : Except String Game :=
+  match a with
   | .keep => g.keepOpeningHand p
   | .takeMulligan => g.takeMulligan p
   | .arrayObjectAction ids _ true supplyRandom false =>
@@ -92,6 +63,42 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .booleanOrConcede _ _ _ true => return g.concede p
   | .chooseName name => g.answerFraChoice p (.name name)
   | _ => throw "Unrecognized action"
+
+def applyAction (g : Game) (p : PlayerId) (a : @& Action) : Except String Game :=
+  match a with
+  | .pass => g.pass p
+  | .playLandOrKeepLegend id keepLegend =>
+    if keepLegend then g.keepLegend p id else g.playLand p id
+  | .tapForMana id m => g.tapForMana p id m
+  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
+  | .cast id => applyCastAction g p id
+  | .castAdventure id => g.castSpell p id true
+  | .activateOrSneak id _ attackerId true => g.castSpell p id (sneakAttacker := some attackerId)
+  | .chooseNat idx true _ =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.mode idx)
+    | .chooseTriggerOr _ => g.chooseTriggerOr p idx
+    | .chooseLibraryPlacement _ _ =>
+      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
+    | _ => g.announceMode p idx
+  | .chooseNumber n supplyRandom =>
+    if supplyRandom then g.supplyIndex n else g.announceX p n
+  | .target t => g.announceTarget p t
+  | .targets ts =>
+    match g.pending with
+    | .chooseProliferate .. => g.finishProliferate p ts
+    | _ => g.announceTargets p ts
+  | .divideDamage as => g.announceDividedDamage p as
+  | .activateOrSneak id idx _ false => g.activateAbility p id idx
+  | .pay => g.pay p
+  | .objectAction id _ true discard => do
+    let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
+    return if g.mayThenResume then g.acceptMayThen else g
+  | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
+  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
+  | .declareBlockers as => g.declareBlockers p as
+  | .assignCombatDamage asgns => g.announceCombatDamage p asgns
+  | a => applyActionPart1 g p a
 
 
 /-- Apply an action, then process entering for tokens it created (CR 603.6a)

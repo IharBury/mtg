@@ -18,7 +18,7 @@ namespace TokenKind
 @[match_pattern] abbrev tokenKind (cat1 : Bool := false) (cat2 : Bool := false) (isJace : Bool := false)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : TokenKind :=
-  .cardTypeKind (some none) (some false) true 0 "" cat1 cat2 isJace alt1 alt2 alt3 g1 g2 g3
+  CardType.cardTypeKind (some none) (some false) true 0 "" cat1 cat2 isJace alt1 alt2 alt3 g1 g2 g3
 end TokenKind
 
 /-- Non-creature artifact tokens (CR 111.10). -/

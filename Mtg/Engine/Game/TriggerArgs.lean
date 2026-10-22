@@ -113,11 +113,10 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
     | none => someEmpty
   | .subtypeFilter subtype true _ =>
     some (g.battlefield.filter fun o => o.isCreature && !g.hasSubtype o subtype)
-  | .youControl which =>
-    match which with
-    | .subtype s =>
-      some ((g.permanentsOf controller).filter (g.hasSubtype · s))
-    | _ => some (g.creaturesControlledBy controller)
+  | .youControl (.subtype s) =>
+    some ((g.permanentsOf controller).filter (g.hasSubtype · s))
+  | .youControl (.creaturesYouControl _) =>
+    some (g.creaturesControlledBy controller)
   | .otherOrEquipmentYouControl false false =>
     some (g.battlefield.filter fun o =>
       o.isCreature && o.controlledBy controller && some o.id != sourceId)
@@ -235,7 +234,7 @@ private def permanentsNamedSingle (g : Game) (ctx : TriggerRead)
       | _ => none
   let someEmpty : Option (Array GameObject) := some #[]
   match who with
-  | .source | .sacrificedSource _ | .plan =>
+  | .source | .sacrificedSource (.sacrificeSourceKind _ _) | .plan =>
     match sourceId.bind onBf with
     | some o => some #[o]
     | none => someEmpty

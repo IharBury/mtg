@@ -18,7 +18,7 @@ abbrev TargetZone := CardType
 namespace TargetZone
 /-- Target zone kind: battlefield (`false, false, false`), your graveyard (`true, false, false`), any graveyard (`false, true, false`), stack (`true, true, false`), player (`false, false, true`), spell or creature (`true, false, true`), or any target (`false, true, true`, CR 115.4). -/
 @[match_pattern] abbrev targetZoneKind (alt1 : Bool := false) (alt2 : Bool := false) (crossOrPlayer : Bool := false) : TargetZone :=
-  .cardTypeKind (some none) (some true) true 0 "" alt1 alt2 crossOrPlayer false false false false false false
+  CardType.cardTypeKind (some none) (some true) true 0 "" alt1 alt2 crossOrPlayer false false false false false false
 @[match_pattern] abbrev battlefield : TargetZone := targetZoneKind false false false
 @[match_pattern] abbrev yourGraveyard : TargetZone := targetZoneKind true false false
 @[match_pattern] abbrev anyGraveyard : TargetZone := targetZoneKind false true false
@@ -35,7 +35,7 @@ namespace MultiTarget
 @[match_pattern] abbrev multiTargetKind (n : Nat := 0) (alt1 : Bool := false) (alt2 : Bool := false)
     (alt3 : Bool := false) (alt4 : Bool := false)
     (ownAndOpp : Bool := false) (mvAtMost : Bool := false) : MultiTarget :=
-  .cardTypeKind (some (some none)) (some false) true n "" alt1 alt2 alt3 alt4 ownAndOpp mvAtMost false false false
+  CardType.cardTypeKind (some (some none)) (some false) true n "" alt1 alt2 alt3 alt4 ownAndOpp mvAtMost false false false
 end MultiTarget
 
 /-- Who controls (or, for a card in a graveyard, owns) a filtered target, unified with `MultiTarget`. -/

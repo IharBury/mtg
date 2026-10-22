@@ -35,12 +35,12 @@ namespace SlotVal
 
 end SlotVal
 
-abbrev StrFmt := SpellCastKind
+abbrev StrFmt := Nat × Option Bool × Bool × Bool
 
-namespace _root_.Mtg.Engine.SpellCastKind
+namespace StrFmt
 
-@[match_pattern] abbrev strFmtKind (n : Nat := 0) (k0 : Option Bool := Option.none) (b1 : Bool := false) (b2 : Bool := false) : SpellCastKind :=
-  .spellCastKind (some n) Option.none Option.none b1 b2 false false false false k0
+@[match_pattern] abbrev strFmtKind (n : Nat := 0) (k0 : Option Bool := Option.none) (b1 : Bool := false) (b2 : Bool := false) : StrFmt :=
+  (n, k0, b1, b2)
 
 @[match_pattern] abbrev word (n : Nat) : StrFmt := strFmtKind n (some false) false false
 @[match_pattern] abbrev cycling (n : Nat) : StrFmt := strFmtKind n (some false) true false
@@ -66,13 +66,6 @@ namespace _root_.Mtg.Engine.SpellCastKind
 @[match_pattern] abbrev collect : StrFmt := modeKind false
 @[match_pattern] abbrev fill : StrFmt := modeKind true
 
-end _root_.Mtg.Engine.SpellCastKind
-
-namespace StrFmt
-export _root_.Mtg.Engine.SpellCastKind (
-  strFmtKind word cycling plural non sub subPlural natFmtKind intFmtKind
-  digits cards counters brace english times signed modeKind collect fill
-)
 end StrFmt
 
 abbrev NatFmt := StrFmt
@@ -105,14 +98,14 @@ namespace IntFmt
 end IntFmt
 
 /-- One token of a normalized Oracle line. A hole remembers which argument it is. -/
-abbrev Pat := TriggeredAbility.TargetObject
+abbrev Pat := Option String × Option Nat × Option Nat × Option StrFmt × Bool × Bool × Bool
 
-namespace _root_.Mtg.Engine.TargetObject
+namespace Pat
 
 @[match_pattern] abbrev patKind (subtype : Option String := Option.none) (nOpt : Option Nat := Option.none)
-    (boundOpt : Option Nat := Option.none) (fmtOpt : Option SpellCastKind := Option.none)
+    (boundOpt : Option Nat := Option.none) (fmtOpt : Option StrFmt := Option.none)
     (alt1 : Bool := false) (alt2 : Bool := false) (cat1 : Bool := false) : Pat :=
-  .targetObjectKind Option.none Option.none Option.none subtype nOpt boundOpt fmtOpt Option.none Option.none Option.none alt1 alt2 false false cat1
+  (subtype, nOpt, boundOpt, fmtOpt, alt1, alt2, cat1)
 
 @[match_pattern] abbrev lit (s : String) : Pat := patKind (some s)
 @[match_pattern] abbrev nat (i : Nat) (fmt : NatFmt) : Pat := patKind Option.none (some i) Option.none (some fmt) false false false
@@ -126,12 +119,6 @@ namespace _root_.Mtg.Engine.TargetObject
 slot and `ki` is the `CounterKind` slot. -/
 @[match_pattern] abbrev counterPhrase (ni ki : Nat) : Pat := patKind Option.none (some ni) (some ki) Option.none false false false
 
-end _root_.Mtg.Engine.TargetObject
-
-namespace Pat
-export _root_.Mtg.Engine.TargetObject (
-  patKind lit nat int str ty sup kind pt counterPhrase
-)
 end Pat
 
 abbrev Mode := IntFmt
