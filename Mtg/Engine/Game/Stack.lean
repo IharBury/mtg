@@ -54,19 +54,14 @@ namespace Target
 export ProposalKind (proposalKind spell activatedAbility)
 end Target
 
-/-- Rollback snapshot of the game state before a spell or activated ability
-was proposed (CR 733.1). -/
-structure ProposalSnapshot where
+/-- Snapshot of a spell or activated ability whose total cost is being paid
+(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
+structure ProposedSpell where
   original : GameObject
   handBefore : Array ObjectId
   stackBefore : Array StackEntry
   manaBefore : ManaPool
   tapped : Array ObjectId := #[]
-deriving Repr, Inhabited
-
-/-- Additional and alternative cost flags announced or awaiting payment on a
-proposed spell or activated ability (CR 601.2b–f / 602.2b). -/
-structure ProposedAdditionalCosts where
   tapSource : Bool := false
   sacrificeSource : Bool := false
   /-- After mana is paid, the player must sacrifice an artifact or creature
@@ -100,11 +95,6 @@ structure ProposedAdditionalCosts where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Snapshot of a spell or activated ability whose total cost is being paid
-(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
-structure ProposedSpell extends ProposalSnapshot, ProposedAdditionalCosts where
   caster : PlayerId
   cost : ManaCost
   spellId : ObjectId

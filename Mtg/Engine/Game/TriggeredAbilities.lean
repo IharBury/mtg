@@ -26,31 +26,34 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
       g.logMsg s!"{src.name} gains landfall"
   | none => g
 
-/-- The announced creature gains hexproof while the source remains. -/
-def grantHexproofWhileSource (g : Game) (controller : PlayerId)
+/-- Grant a source-linked status modifier to the announced legal permanent while the source remains. -/
+private def grantStatusWhileSource (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (kind : EffectTargetKind) : Game :=
+    (kind : EffectTargetKind) (illegalMsg : Option String)
+    (update : ObjectId → Status → Status) (msg : String → String) : Game :=
   match sourceId with
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
-      g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
-      sourceId (some "The target is no longer legal")
+      g.mapObjectStatus o (update sid) |>.logMsg (msg o.name))
+      sourceId illegalMsg
+
+/-- The announced creature gains hexproof while the source remains. -/
+def grantHexproofWhileSource (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (kind : EffectTargetKind) : Game :=
+  g.grantStatusWhileSource controller sourceId targets kind
+    (some "The target is no longer legal")
+    (fun sid s => { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
+    (fun name => s!"{name} gains hexproof for as long as the Saga remains")
 
 /-- Damage the announced creature would deal is prevented while the source remains. -/
 def preventDamageWhileSource (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
     (kind : EffectTargetKind) : Game :=
-  match sourceId with
-  | none => g
-  | some sid =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
-      g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
-      sourceId none
+  g.grantStatusWhileSource controller sourceId targets kind none
+    (fun sid s => { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
+    (fun name => s!"damage that would be dealt by {name} is prevented while the Saga remains")
 
 /-- A card the source exiled returns to its owner's hand. -/
 def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
@@ -468,19 +471,13 @@ private def evalStepNoteCondition (g : Game) (controller : PlayerId)
 private def evalTurnHistoryCondition (g : Game) (controller : PlayerId)
     (t : TriggeredAbility.TurnHistoryCondition) : Game × Bool :=
   match t with
-  | .subtypeTurnEvent subtype false =>
+  | .subtypeTurnEvent subtype entered =>
     let pl := g.player controller
     let holds :=
-      (subtype == "Hero" && pl.attackedWithHeroThisTurn) ||
+      (subtype == "Hero" && (if entered then pl.heroEnteredThisTurn else pl.attackedWithHeroThisTurn)) ||
         (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.attacking))
-    (g, holds)
-  | .subtypeTurnEvent subtype true =>
-    let pl := g.player controller
-    let holds :=
-      (subtype == "Hero" && pl.heroEnteredThisTurn) ||
-        (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
+          o.controlledBy controller && g.hasSubtype o subtype &&
+            (if entered then o.status.enteredThisTurn else o.status.attacking)))
     (g, holds)
   | .nthResolve n => (g, g.nthResolveThisWay == some n)
   | .scriedThisTurn surveilled =>

@@ -940,10 +940,21 @@ def renderStr (fmt : StrFmt) (s : String) : String :=
 def renderPt (signed : Bool) (p t : Int) : String :=
   if signed then s!"{signedStat p}/{signedStat t}" else s!"{p}/{t}"
 
-abbrev Hit := NormLine
+abbrev Hit := Nat × List Nat × Pat × String × String
+
+abbrev _root_.Prod.width (h : Hit) : Nat := h.1
+abbrev _root_.Prod.used (h : Hit) : List Nat := h.2.1
+abbrev _root_.Prod.pat (h : Hit) : Pat := h.2.2.1
+abbrev _root_.Prod.needle (h : Hit) : String := h.2.2.2.1
+abbrev _root_.Prod.repl (h : Hit) : String := h.2.2.2.2
 
 def prefixTokens (pre toks : List String) : Bool :=
   pre.isPrefixOf toks
+
+private def prefixHit (needle : List String) (toks : List String) (used : List Nat)
+    (pat : Pat) (repl : String) : Option Hit :=
+  if needle.isEmpty || !prefixTokens needle toks then none
+  else some (needle.length, used, pat, String.intercalate " " needle, repl)
 
 def consider (hits : List Hit) (h : Option Hit) : List Hit :=
   match h with
@@ -964,26 +975,12 @@ def bestHit (hits : List Hit) : Option Hit :=
       if better then some h else some b) none
 
 def natHit (i : Nat) (fmt : NatFmt) (n : Nat) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii (renderNat fmt n))
-  if needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.nat i fmt
-    needle := String.intercalate " " needle
-    repl := renderNat fmt n
-  }
+  let repl := renderNat fmt n
+  prefixHit (tokenize (lowerAscii repl)) toks (if fresh then [i] else []) (Pat.nat i fmt) repl
 
 def intHit (i : Nat) (fmt : IntFmt) (v : Int) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (renderInt fmt v)
-  if needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.int i fmt
-    needle := String.intercalate " " needle
-    repl := renderInt fmt v
-  }
+  let repl := renderInt fmt v
+  prefixHit (tokenize repl) toks (if fresh then [i] else []) (Pat.int i fmt) repl
 
 def strWords (s : String) : List String :=
   tokenize (lowerAscii s)
@@ -1000,13 +997,7 @@ def subHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
   match found with
   | some (name, n) =>
     if subtypeKey name == subtypeKey s then
-      some {
-        width := n
-        used := if fresh then [i] else []
-        pat := Pat.str i fmt
-        needle := String.intercalate " " (toks.take n)
-        repl := renderStr fmt s
-      }
+      some (n, if fresh then [i] else [], Pat.str i fmt, String.intercalate " " (toks.take n), renderStr fmt s)
     else none
   | none => none
 
@@ -1025,74 +1016,34 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
       | [] => ["non-" ++ lowerAscii s]
       | w :: ws => ("non-" ++ w) :: ws
     | _ => []
-  if s.length < 2 || needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.str i fmt
-    needle := String.intercalate " " needle
-    repl := renderStr fmt s
-  }
+  if s.length < 2 then none
+  else prefixHit needle toks (if fresh then [i] else []) (Pat.str i fmt) (renderStr fmt s)
 
 def tyHit (i : Nat) (t : CardType) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii t.englishName)
-  if needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.ty i
-    needle := String.intercalate " " needle
-    repl := t.englishName
-  }
+  let repl := t.englishName
+  prefixHit (tokenize (lowerAscii repl)) toks (if fresh then [i] else []) (Pat.ty i) repl
 
 def kindHit (i : Nat) (k : EffectTargetKind) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii (EffectTargetKind.noun k))
-  if needle.isEmpty || !needle.isPrefixOf toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.kind i
-    needle := String.intercalate " " needle
-    repl := EffectTargetKind.noun k
-  }
+  let repl := EffectTargetKind.noun k
+  prefixHit (tokenize (lowerAscii repl)) toks (if fresh then [i] else []) (Pat.kind i) repl
 
 def supHit (i : Nat) (s : Supertype) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii s.englishName)
-  if needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [i] else []
-    pat := Pat.sup i
-    needle := String.intercalate " " needle
-    repl := s.englishName
-  }
+  let repl := s.englishName
+  prefixHit (tokenize (lowerAscii repl)) toks (if fresh then [i] else []) (Pat.sup i) repl
 
 def ptHit (i j : Nat) (signed : Bool) (p t : Int) (toks : List String) (fresh : Bool) : Option Hit :=
   match toks with
   | tok :: _ =>
     let needle := renderPt signed p t
     if tok == needle then
-      some {
-        width := 1
-        used := if fresh then [i, j] else []
-        pat := Pat.pt i j signed
-        needle
-        repl := needle
-      }
+      some (1, if fresh then [i, j] else [], Pat.pt i j signed, needle, needle)
     else none
   | [] => none
 
 def counterPhraseHit (ni ki : Nat) (n : Nat) (k : CounterKind) (toks : List String)
     (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii (k.countersPhrase n))
-  if needle.isEmpty || !prefixTokens needle toks then none
-  else some {
-    width := needle.length
-    used := if fresh then [ni, ki] else []
-    pat := Pat.counterPhrase ni ki
-    needle := String.intercalate " " needle
-    repl := k.countersPhrase n
-  }
+  let repl := k.countersPhrase n
+  prefixHit (tokenize (lowerAscii repl)) toks (if fresh then [ni, ki] else []) (Pat.counterPhrase ni ki) repl
 
 def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List Hit :=
   Id.run do
@@ -1487,6 +1438,9 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
 
 /-- Every way an argument can be spelled, independent of the surrounding line. -/
 def allNeedles (args : Array SlotVal) : List Hit :=
+  let pushNeedle (hs : List Hit) (used : List Nat) (pat : Pat) (needle : String)
+      (repl : String := needle) : List Hit :=
+    (needle.length, used, pat, needle, repl) :: hs
   Id.run do
     let mut hs : List Hit := []
     for i in [:args.size] do
@@ -1497,30 +1451,21 @@ def allNeedles (args : Array SlotVal) : List Hit :=
           let skipDigit :=
             isCounterCount args i && (fmt == .digits || fmt == .english)
           if !skipDigit then
-            let needle := renderNat fmt n
-            hs := { width := needle.length, used := [i], pat := Pat.nat i fmt, needle, repl := needle } :: hs
+            hs := pushNeedle hs [i] (Pat.nat i fmt) (renderNat fmt n)
         if isCounterCount args i then
           match args[i - 1]! with
           | .ctr k =>
-            let needle := k.countersPhrase n
-            hs := {
-              width := needle.length, used := [i, i - 1], pat := Pat.counterPhrase i (i - 1),
-              needle, repl := needle
-            } :: hs
+            hs := pushNeedle hs [i, i - 1] (Pat.counterPhrase i (i - 1)) (k.countersPhrase n)
           | _ => pure ()
       | .int v =>
         for fmt in [IntFmt.signed, .digits] do
-          let needle := renderInt fmt v
-          hs := { width := needle.length, used := [i], pat := Pat.int i fmt, needle, repl := needle } :: hs
+          hs := pushNeedle hs [i] (Pat.int i fmt) (renderInt fmt v)
         for j in [:args.size] do
           if i < j then
             match args[j]! with
             | .int t =>
               for signed in [true, false] do
-                let needle := renderPt signed v t
-                hs := {
-                  width := needle.length, used := [i, j], pat := Pat.pt i j signed, needle, repl := needle
-                } :: hs
+                hs := pushNeedle hs [i, j] (Pat.pt i j signed) (renderPt signed v t)
             | _ => pure ()
       | .str s =>
         if s.length >= 2 then
@@ -1532,21 +1477,15 @@ def allNeedles (args : Array SlotVal) : List Hit :=
               [.word (strWords s).length, StrFmt.plural,
                 .cycling (strWords s).length, StrFmt.non]
           for fmt in fmts do
-            let needle := renderStr fmt s
-            hs := { width := needle.length, used := [i], pat := Pat.str i fmt, needle, repl := needle } :: hs
+            hs := pushNeedle hs [i] (Pat.str i fmt) (renderStr fmt s)
       | .ty t =>
-        let needle := lowerAscii t.englishName
-        hs := { width := needle.length, used := [i], pat := Pat.ty i, needle, repl := t.englishName } :: hs
+        hs := pushNeedle hs [i] (Pat.ty i) (lowerAscii t.englishName) t.englishName
       | .sup s =>
-        let needle := lowerAscii s.englishName
-        hs := { width := needle.length, used := [i], pat := Pat.sup i, needle, repl := s.englishName } :: hs
+        hs := pushNeedle hs [i] (Pat.sup i) (lowerAscii s.englishName) s.englishName
       | .kind k =>
         let needle := lowerAscii (EffectTargetKind.noun k)
         if !needle.isEmpty then
-          hs := {
-            width := needle.length, used := [i], pat := Pat.kind i, needle,
-            repl := EffectTargetKind.noun k
-          } :: hs
+          hs := pushNeedle hs [i] (Pat.kind i) needle (EffectTargetKind.noun k)
       | .ctr _ => pure ()
     return hs
 

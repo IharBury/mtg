@@ -670,8 +670,8 @@ def hostGetsPhrase (host : String) (p t : Int) : String :=
 def joinedSubtypes (subtypes : Array String) (each : String → String := fun s => s) : String :=
   String.intercalate " and " (subtypes.toList.map each)
 
-/-- Layer 4, Layer 6, Layer 7a, and Layer 7c continuous-effect projections (CR 613.1d / 613.1f / 613.4). -/
-structure StaticPtAndTypeMeta where
+/-- Projections Game reads from a static ability (CR 508 / 509 / 613.1d / 613.1f / 613.4). -/
+structure StaticMeta where
   lordPump : Option (Array String × Int × Int) := none
   trampleSubtypes : Option (Array String) := none
   hostBonus : Int × Int := (0, 0)
@@ -691,10 +691,6 @@ structure StaticPtAndTypeMeta where
   thresholdGets : Option (Int × Int) := none
   /-- During your turn, equipped creatures you control have these keywords. -/
   equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
-deriving Repr, Inhabited, BEq
-
-/-- Combat requirements and restrictions projections (CR 508 / CR 509). -/
-structure StaticCombatMeta where
   cantBlockUnless : Option (Array String) := none
   cantBeBlockedExcept : Option Nat := none
   /-- Maximum number of creatures that may block this creature. -/
@@ -710,10 +706,6 @@ structure StaticCombatMeta where
   cantBeBlockedByPowerAtLeast : Option Int := none
   /-- Equipped creature also can't be blocked. -/
   equippedCantBeBlocked : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Conditional static modifiers gated on having an enduring story. -/
-structure StaticEnduringStoryMeta where
   /-- Enduring-story self pump. -/
   selfIfEnduringStory : Option (Int × Int × Keywords) := none
   /-- Enduring-story team pump. -/
@@ -724,10 +716,6 @@ structure StaticEnduringStoryMeta where
   teamWardIfEnduringStory : Option Nat := none
   /-- Attack tax `{n}` if enduring story. -/
   attackTaxIfEnduringStory : Option Nat := none
-deriving Repr, Inhabited, BEq
-
-/-- Projections Game reads from a static ability. -/
-structure StaticMeta extends StaticPtAndTypeMeta, StaticCombatMeta, StaticEnduringStoryMeta where
 deriving Repr, Inhabited, BEq
 
 def specAbility : AbilityStatic → StaticMeta

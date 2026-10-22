@@ -65,9 +65,10 @@ end CopyDuration
 
 /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6), multi-card
 or conditional discard requirement (`DiscardRequirement`, CR 701.8), extra
-turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720), or
-demo player/script/flag state (`DemoPlayer`, `PassUntilGoal`, `InputScript`,
-`DemoFlagValues`). -/
+turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720),
+pending trigger/scry/combat/batch state (`TriggerMayBranch`, `AfterScrySurveil`,
+`CombatPhaseState`, `BatchMoveState`, `LastTriggerEvent`), or demo player/script/flag
+state (`DemoPlayer`, `InputScript`, `DemoFlagValues`). -/
 structure MulliganState where
   /-- Opening hands are kept and a “may begin on the battlefield” choice is
   still unfinished (CR 103.6). -/
@@ -103,44 +104,25 @@ structure MulliganState where
   controlOnNextTakenTurn : Bool := false
   name : String := ""
   deck : (Color ⊕ String) × Bool × Bool × Bool := (.inl .white, false, false, false)
-  issuer : PlayerId := ⟨0⟩
-  startTurn : Nat := 0
-  startStep : Step := .untap
-  kind : (Color ⊕ String) × Bool × Bool × Bool := (.inl .white, false, false, false)
   flags : List String := []
   commands : List String := []
   interactive : Bool := false
   multiplayer : Bool := false
   playerView : Bool := false
   norandom : Bool := false
+  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
   constructed : Bool := false
-  seed : Option UInt64 := none
-  fuel : Option Nat := none
+  rawSeed : Option UInt64 := none
+  rawFuel : Option Nat := none
   inputFile : Option String := none
   outputFile : Option String := none
+  /-- Replay `--input` and require a finished legal game. -/
   check : Bool := false
   names : Array String := #[]
   decks : Array ((Color ⊕ String) × Bool × Bool × Bool) := #[]
   decidesName : Option String := none
   /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
   modeSet : Bool := false
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
-abbrev UnlessPaysRest := TriggerResolutionContext
-
-/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-abbrev MayEffectRest := TriggerResolutionContext
-
-/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-abbrev SpellOrRest := TriggerResolutionContext
-
-/-- Pending `TriggerResolution.may` or `mayThen` branch choice (CR 603.3 / 608.2c),
-follow-up actions after a pending scry or surveil completes (`AfterScrySurveil`, CR 701.18 / CR 701.42),
-combat phase state (`CombatPhaseState`, CR 508–510 / CR 702.7b), or simultaneous
-zone-change batch and last-event state (`BatchMoveState`, `LastTriggerEvent`,
-CR 603.2 / CR 608.2c / CR 614.6). -/
-structure TriggerMayBranch where
   onAccept : Option TriggeredAbility.TriggerResolution := none
   onDecline : Option TriggeredAbility.TriggerResolution := none
   context : Option TriggerSequenceRest := none
@@ -215,6 +197,21 @@ structure TriggerMayBranch where
   /-- Most recent attacking creature that died (new GY object id; Ares). -/
   lastDiedAttacker : Option ObjectId := none
 deriving Repr, Inhabited
+
+instance : BEq MulliganState where
+  beq a b := a.name == b.name && a.deck == b.deck
+
+/-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
+abbrev UnlessPaysRest := TriggerResolutionContext
+
+/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
+abbrev MayEffectRest := TriggerResolutionContext
+
+/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
+abbrev SpellOrRest := TriggerResolutionContext
+
+/-- Pending `TriggerResolution.may` or `mayThen` branch choice (CR 603.3 / 608.2c). -/
+abbrev TriggerMayBranch := MulliganState
 
 /-- Follow-up action after a library search completes (CR 701.23). -/
 abbrev AfterLibrarySearch := CopyDuration

@@ -468,39 +468,30 @@ where
     dropLeadingThis (collapseWs (keepSignificant (normalizePhrases (replaceNumberWords s))))
 
 /-- A stored Oracle line with the normal forms it has on a card whose name does
-not occur in it, or one Oracle line normalized for the card being parsed (`EffectQuery`). -/
-structure NormLine where
-  raw : String := ""
-  /-- `prepareBase raw`, where a name alias would be found. -/
-  base : String := ""
-  unit : String := ""
-  structural : String := ""
-  cardName : String := ""
-  /-- `nameKeys cardName`. -/
-  keys : List String := []
-  unitToks : List String := []
-  structToks : List String := []
-  width : Nat := 0
-  used : List Nat := []
-  pat : Option String × Option Nat × Option Nat × Option (Nat × Option Bool × Bool × Bool) × Bool × Bool × Bool := (none, none, none, none, false, false, false)
-  needle : String := ""
-  repl : String := ""
-deriving Inhabited
+not occur in it. -/
+abbrev NormLine := String × String × String × String
+
+abbrev _root_.Prod.raw (n : NormLine) : String := n.1
+abbrev _root_.Prod.base (n : NormLine) : String := n.2.1
+abbrev _root_.Prod.unit (n : NormLine) : String := n.2.2.1
+abbrev _root_.Prod.structural (n : NormLine) : String := n.2.2.2
 
 def NormLine.of (raw : String) : NormLine :=
   let base := prepareBase raw
   let prepared := foldSelfReferences base
-  { raw, base
-    unit := normalizeUnit.unitTail prepared
-    structural := normalizeStructural.structuralTail prepared }
+  (raw, base, normalizeUnit.unitTail prepared, normalizeStructural.structuralTail prepared)
 
 /-- `normalizeUnit cardName n.raw`, where `keys` is `nameKeys cardName`. -/
-def NormLine.unitFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+def _root_.Prod.unitFor (n : NormLine) (cardName : String) (keys : List String) : String :=
   if mentionsNameKey keys n.base then normalizeUnit cardName n.raw else n.unit
 
 /-- `normalizeStructural cardName n.raw`, where `keys` is `nameKeys cardName`. -/
-def NormLine.structuralFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+def _root_.Prod.structuralFor (n : NormLine) (cardName : String) (keys : List String) : String :=
   if mentionsNameKey keys n.base then normalizeStructural cardName n.raw else n.structural
+
+namespace NormLine
+export _root_.Prod (unitFor structuralFor)
+end NormLine
 
 /-- True when `line` is a Gatherer Adventure type line. -/
 def isAdventureTypeLine (s : String) : Bool :=

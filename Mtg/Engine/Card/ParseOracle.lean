@@ -971,50 +971,63 @@ private def indexName : String := "CARDNAME"
 /-- A chapter or one-line spell effect with its printed line, normal forms, and
 argument holes, prepared once for every card that does not name it, a spell
 effect candidate (`SpellProto`), or an indexed multi-line ability (`IndexedAbility`). -/
-structure EffectProto where
-  line : NormLine := {}
-  effect : Effect := default
-  args : Array SlotVal := #[]
-  unitPats : List Pat := []
-  unitStructPats : List Pat := []
-  namesCard : Bool := false
-  hasFixed : Bool := true
-  ability : ParsedAbility := .spell default
-  raw : List String := []
-  norm : List String := []
-  light : List String := []
-  priority : Nat := 0
-  /-- Position in the catalog. On a score tie, the earlier entry wins. -/
-  order : Nat := 0
-  /-- Holes learned from `normalizeUnit`. -/
-  pats : List (List Pat) := []
-  /-- Holes learned before phrase equivalences, so open subtypes stay words. -/
-  structPats : List (List Pat) := []
-  /-- `raw` is `abilityLines` of `ability` and does not include `indexName`, so
-  those are the ability's lines on every card and `light` is their light form. -/
-  ownLines : Bool := false
-  /-- `raw` joined and lowercased, to look for the card's name. -/
-  rawLower : String := ""
+abbrev EffectProto :=
+  NormLine × Effect × Array SlotVal × List Pat × List Pat × Bool × Bool ×
+    ParsedAbility × List String × List String × List String × Nat × Nat ×
+    List (List Pat) × List (List Pat) × Bool × String
+
+abbrev _root_.Prod.line (p : EffectProto) : NormLine := p.1
+abbrev _root_.Prod.effect (p : EffectProto) : Effect := p.2.1
+abbrev _root_.Prod.args (p : EffectProto) : Array SlotVal := p.2.2.1
+abbrev _root_.Prod.unitPats (p : EffectProto) : List Pat := p.2.2.2.1
+abbrev _root_.Prod.unitStructPats (p : EffectProto) : List Pat := p.2.2.2.2.1
+abbrev _root_.Prod.namesCard (p : EffectProto) : Bool := p.2.2.2.2.2.1
+abbrev _root_.Prod.hasFixed (p : EffectProto) : Bool := p.2.2.2.2.2.2.1
+abbrev _root_.Prod.ability (p : EffectProto) : ParsedAbility := p.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.rawLines (p : EffectProto) : List String := p.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.norm (p : EffectProto) : List String := p.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.light (p : EffectProto) : List String := p.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.priority (p : EffectProto) : Nat := p.2.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.order (p : EffectProto) : Nat := p.2.2.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.pats (p : EffectProto) : List (List Pat) := p.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.structPats (p : EffectProto) : List (List Pat) := p.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.ownLines (p : EffectProto) : Bool := p.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+abbrev _root_.Prod.rawLower (p : EffectProto) : String := p.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+def EffectProto.mkProto (line : NormLine := ("", "", "", "")) (effect : Effect := default)
+    (args : Array SlotVal := #[]) (unitPats : List Pat := [])
+    (unitStructPats : List Pat := []) (namesCard : Bool := false)
+    (hasFixed : Bool := true) (ability : ParsedAbility := .spell default)
+    (rawLines : List String := []) (norm : List String := [])
+    (light : List String := []) (priority : Nat := 0) (order : Nat := 0)
+    (pats : List (List Pat) := []) (structPats : List (List Pat) := [])
+    (ownLines : Bool := false) (rawLower : String := "") : EffectProto :=
+  (line, effect, args, unitPats, unitStructPats, namesCard, hasFixed, ability,
+    rawLines, norm, light, priority, order, pats, structPats, ownLines, rawLower)
 
 def EffectProto.of (line : String) (e : Effect) : EffectProto :=
   let line := NormLine.of line
   let args := collectEffect e
-  { line, effect := e, args
-    unitPats := patsOf line.unit args
-    unitStructPats := patsOf line.structural args }
+  EffectProto.mkProto (line := line) (effect := e) (args := args)
+    (unitPats := patsOf line.unit args)
+    (unitStructPats := patsOf line.structural args)
 
 /-- One Oracle line normalized for the card being parsed. -/
-abbrev EffectQuery := NormLine
+abbrev EffectQuery := String × List String × String × List String × List String
+
+abbrev _root_.Prod.cardName (q : EffectQuery) : String := q.1
+abbrev _root_.Prod.keys (q : EffectQuery) : List String := q.2.1
+abbrev _root_.Prod.qUnit (q : EffectQuery) : String := q.2.2.1
+abbrev _root_.Prod.unitToks (q : EffectQuery) : List String := q.2.2.2.1
+abbrev _root_.Prod.structToks (q : EffectQuery) : List String := q.2.2.2.2
 
 def EffectQuery.of (cardName text : String) : EffectQuery :=
   let unit := normalizeUnit cardName text
-  { cardName, keys := nameKeys cardName, unit
-    unitToks := tokenize unit
-    structToks := tokenize (normalizeStructural cardName text) }
+  (cardName, nameKeys cardName, unit, tokenize unit, tokenize (normalizeStructural cardName text))
 
 /-- `normalizeUnit` of the prototype line equals `normalizeUnit` of the query. -/
 def EffectProto.sameText (p : EffectProto) (q : EffectQuery) : Bool :=
-  p.line.unitFor q.cardName q.keys == q.unit
+  p.line.unitFor q.cardName q.keys == q.qUnit
 
 /-- Parse `Nat` / `Int` / `String` holes in the prototype line from the query
 and rebuild the effect. -/
@@ -1042,9 +1055,9 @@ abbrev SpellProto := EffectProto
     let namesCard := lines.any (·.contains indexName)
     match lines with
     | [line] =>
-      if namesCard then { effect := e, namesCard := true, hasFixed := false }
+      if namesCard then EffectProto.mkProto (effect := e) (namesCard := true) (hasFixed := false)
       else EffectProto.of line e
-    | _ => { effect := e, namesCard, hasFixed := false }
+    | _ => EffectProto.mkProto (effect := e) (namesCard := namesCard) (hasFixed := false)
 
 /-- The one-line prototype of a spell effect on this card, if it has one line. -/
 def EffectProto.forCard (p : SpellProto) (cardName : String) : Option EffectProto :=
@@ -1240,17 +1253,18 @@ def indexItem (priority order : Nat) (ability : ParsedAbility) (lines : List Str
   let args := collectParsed ability
   let norm := lines.map (normalizeUnit indexName)
   let structNorm := lines.map (normalizeStructural indexName)
-  { ability
-    raw := lines
-    norm
-    light := lines.map lightLine
-    priority
-    order
-    args
-    pats := patsOfLines norm args
-    structPats := patsOfLines structNorm args
-    ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability
-    rawLower := lowerAscii (String.intercalate "\n" lines) }
+  EffectProto.mkProto
+    (ability := ability)
+    (rawLines := lines)
+    (norm := norm)
+    (light := lines.map lightLine)
+    (priority := priority)
+    (order := order)
+    (args := args)
+    (pats := patsOfLines norm args)
+    (structPats := patsOfLines structNorm args)
+    (ownLines := !lines.any (·.contains indexName) && lines == abilityLines indexName ability)
+    (rawLower := lowerAscii (String.intercalate "\n" lines))
 
 def refillParsed (ab : ParsedAbility) (vals : Array SlotVal) : ParsedAbility :=
   match ab with
@@ -1339,7 +1353,7 @@ def abstractSubtypeLine (s : String) : Option String :=
 `keys` is `nameKeys cardName`. -/
 def candidateNorm (cardName : String) (keys : List String) (item : IndexedAbility) :
     List String :=
-  if mentionsNameKey keys item.rawLower then item.raw.map (normalizeUnit cardName) else item.norm
+  if mentionsNameKey keys item.rawLower then item.rawLines.map (normalizeUnit cardName) else item.norm
 
 /-- One prototype per shape. Later entries that differ only by `Nat`, `Int`,
 `String`, or target-kind arguments are dropped. -/
@@ -1405,7 +1419,7 @@ def pushBucket (m : Std.HashMap String (Array Nat)) (key : String) (i : Nat) :
     match item.norm.head? with
     | some k => m := addKeys m k i
     | none => pure ()
-    match item.raw.head?.map (normalizeStructural indexName) with
+    match item.rawLines.head?.map (normalizeStructural indexName) with
     | some k => m := addKeys m k i
     | none => pure ()
     i := i + 1
