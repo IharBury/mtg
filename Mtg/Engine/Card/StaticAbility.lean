@@ -670,123 +670,6 @@ def hostGetsPhrase (host : String) (p t : Int) : String :=
 def joinedSubtypes (subtypes : Array String) (each : String → String := fun s => s) : String :=
   String.intercalate " and " (subtypes.toList.map each)
 
-/-- Projections Game reads from a static ability (CR 508 / 509 / 613.1d / 613.1f / 613.4). -/
-structure StaticMeta where
-  lordPump : Option (Array String × Int × Int) := none
-  trampleSubtypes : Option (Array String) := none
-  hostBonus : Int × Int := (0, 0)
-  landsYouControlPT : Bool := false
-  enchantedOnlySubtype : Option String := none
-  cardsInHandPower : Bool := false
-  hostKeywords : Keywords := Keywords.none
-  /-- Lord pump includes the source (not only other creatures). -/
-  lordIncludesSelf : Bool := false
-  /-- Lord pump applies only to legendary creatures. -/
-  lordLegendaryOnly : Bool := false
-  /-- Lord pump applies only to nonlegendary creatures. -/
-  lordNonlegendaryOnly : Bool := false
-  /-- Ward cost this ability grants matching creatures. -/
-  grantedWard : Option Nat := none
-  /-- Threshold +P/+T if seven or more cards in graveyard. -/
-  thresholdGets : Option (Int × Int) := none
-  /-- During your turn, equipped creatures you control have these keywords. -/
-  equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
-  cantBlockUnless : Option (Array String) := none
-  cantBeBlockedExcept : Option Nat := none
-  /-- Maximum number of creatures that may block this creature. -/
-  cantBeBlockedByMoreThan : Option Nat := none
-  cantBeBlockedByTokens : Bool := false
-  /-- Can't attack unless you control this many other permanents of the subtype. -/
-  cantAttackUnlessNOther : Option (Nat × String) := none
-  /-- Can't be blocked by creatures with power at most this. -/
-  cantBeBlockedByPowerAtMost : Option Int := none
-  /-- This creature can't be blocked if its own power is at most this. -/
-  cantBeBlockedIfPowerAtMost : Option Int := none
-  /-- Can't be blocked by creatures with power at least this. -/
-  cantBeBlockedByPowerAtLeast : Option Int := none
-  /-- Equipped creature also can't be blocked. -/
-  equippedCantBeBlocked : Bool := false
-  /-- Enduring-story self pump. -/
-  selfIfEnduringStory : Option (Int × Int × Keywords) := none
-  /-- Enduring-story team pump. -/
-  teamIfEnduringStory : Option (Int × Int) := none
-  /-- Doesn't untap unless enduring story. -/
-  doesntUntapUnlessEnduringStory : Bool := false
-  /-- Team ward if enduring story. -/
-  teamWardIfEnduringStory : Option Nat := none
-  /-- Attack tax `{n}` if enduring story. -/
-  attackTaxIfEnduringStory : Option Nat := none
-deriving Repr, Inhabited, BEq
-
-def specAbility : AbilityStatic → StaticMeta
-  | .creaturesYouControlHave k subtypes _ =>
-    if k == Keyword.trample && !subtypes.isEmpty then { trampleSubtypes := some subtypes }
-    else {}
-  | .equippedCreaturesHaveKeywordsDuringYourTurn k =>
-    { equippedTeamKeywordsDuringYourTurn := k }
-  | .artifactsAndCreaturesHaveWardIfEnduringStory w =>
-    { teamWardIfEnduringStory := some w }
-  | .equippedHuntersAxe => { hostBonus := (2, 0) }
-  | .equippedMedicsKitesail => { hostBonus := (1, 0), hostKeywords := Keyword.flying }
-  | _ => {}
-
-def specPt : PtStatic → StaticMeta
-  | .creaturesYouControlGet p t subtypes otherOnly =>
-    { lordPump := some (subtypes, p, t), lordIncludesSelf := !otherOnly }
-  | .hostGets _ p t => { hostBonus := (p, t) }
-  | .powerToughnessEqualLandsYouControl => { landsYouControlPT := true }
-  | .enchantedIsOnlySubtypeCantAttackOrBlock subtype =>
-    { enchantedOnlySubtype := some subtype }
-  | .powerEqualCardsInHand => { cardsInHandPower := true }
-  | .attachedCreatureGetsAndHas _ p t k w =>
-    { hostBonus := (p, t), hostKeywords := k, grantedWard := if w == 0 then none else some w }
-  | .legendaryOrNonlegendaryCreaturesGet p t legendary w =>
-    { lordPump := some (#[], p, t), lordIncludesSelf := true,
-      lordLegendaryOnly := legendary, lordNonlegendaryOnly := !legendary,
-      grantedWard := if w == 0 then none else some w }
-  | .thresholdGets p t _ =>
-    { thresholdGets := some (p, t) }
-  | .getsIfEnduringStory p t k team =>
-    if team then { teamIfEnduringStory := some (p, t) }
-    else { selfIfEnduringStory := some (p, t, k) }
-  | .equippedFirstStrikePlusPerInstantSorcery =>
-    { hostKeywords := Keyword.firstStrike }
-  | .equippedGetsTrampleAndCombatTreasures p t =>
-    { hostBonus := (p, t), hostKeywords := Keyword.trample }
-  | .enchantedCreatureGetsHasAndTypes p t k _ =>
-    { hostBonus := (p, t), hostKeywords := k }
-  | _ => {}
-
-def specCombat : CombatStatic → StaticMeta
-  | .cantBlockUnlessYouControl subtypes => { cantBlockUnless := some subtypes }
-  | .cantBeBlockedCount n maxBlockers =>
-    if maxBlockers then { cantBeBlockedByMoreThan := some n }
-    else { cantBeBlockedExcept := some n }
-  | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
-  | .cantAttackUnlessYouControlNOther n subtype => { cantAttackUnlessNOther := some (n, subtype) }
-  | .cantBeBlockedByPower n atLeast =>
-    if atLeast then { cantBeBlockedByPowerAtLeast := some n }
-    else { cantBeBlockedByPowerAtMost := some n }
-  | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
-    { attackTaxIfEnduringStory := some n }
-  | .equippedCreatureHasKeywordsAndCantBeBlocked k =>
-    { hostKeywords := k, equippedCantBeBlocked := true }
-  | .cantBeBlockedIfPowerAtMost n =>
-    { cantBeBlockedIfPowerAtMost := some n }
-  | _ => {}
-
-def specRule : RuleStatic → StaticMeta
-  | .doesntUntap true =>
-    { doesntUntapUnlessEnduringStory := true }
-  | _ => {}
-
-/-- Classification of a static ability for Game accessors. -/
-def spec : StaticAbility → StaticMeta
-  | .ability which => specAbility which
-  | .pt which => specPt which
-  | .combat which => specCombat which
-  | .rule which => specRule which
-  | _ => {}
 @[match_pattern] abbrev lordPump (subtypes : Array String) (power toughness : Int) : StaticAbility := StaticAbility.otherCreaturesGet subtypes power toughness
 @[match_pattern] abbrev lordTrample (subtypes : Array String) : StaticAbility := StaticAbility.otherCreaturesHaveTrample subtypes
 @[match_pattern] abbrev landsYouControlPT : StaticAbility := StaticAbility.powerToughnessEqualLandsYouControl
@@ -797,7 +680,6 @@ abbrev StaticShape := StaticAbility
 
 namespace StaticShape
 export StaticAbility (hostGets lordPump lordTrample landsYouControlPT cantBlockUnless)
-abbrev spec := StaticAbility.spec
 end StaticShape
 
 /-- Identity projection kept for backward compatibility with `StaticAbility.shape`. -/
@@ -1155,105 +1037,142 @@ instance : ToString StaticAbility where
   toString := toNotation
 
 /-- Lord +P/+T this ability grants other matching creatures, if any. -/
-def lordPump? (ab : StaticAbility) : Option (Array String × Int × Int) :=
-  ab.spec.lordPump
+def lordPump? : StaticAbility → Option (Array String × Int × Int)
+  | .pt (.creaturesYouControlGet p t subtypes _) => some (subtypes, p, t)
+  | .pt (.legendaryOrNonlegendaryCreaturesGet p t _ _) => some (#[], p, t)
+  | _ => none
 
 /-- Subtypes this ability grants trample to, if any. -/
-def trampleSubtypes? (ab : StaticAbility) : Option (Array String) :=
-  ab.spec.trampleSubtypes
+def trampleSubtypes? : StaticAbility → Option (Array String)
+  | .ability (.creaturesYouControlHave k subtypes _) =>
+    if k == Keyword.trample && !subtypes.isEmpty then some subtypes else none
+  | _ => none
 
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
 (CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
-def hostStatBonus (ab : StaticAbility) : Int × Int :=
-  ab.spec.hostBonus
+def hostStatBonus : StaticAbility → Int × Int
+  | .ability .equippedHuntersAxe => (2, 0)
+  | .ability .equippedMedicsKitesail => (1, 0)
+  | .pt (.hostGets _ p t) | .pt (.attachedCreatureGetsAndHas _ p t _ _)
+  | .pt (.equippedGetsTrampleAndCombatTreasures p t)
+  | .pt (.enchantedCreatureGetsHasAndTypes p t _ _) => (p, t)
+  | _ => (0, 0)
 
 /-- True for the lands-you-control P/T characteristic-defining ability. -/
 def isLandsYouControlPT (ab : StaticAbility) : Bool :=
-  ab.spec.landsYouControlPT
+  ab == .powerToughnessEqualLandsYouControl
 
 /-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
-def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
-  ab.spec.cantBlockUnless
+def cantBlockUnless? : StaticAbility → Option (Array String)
+  | .cantBlockUnlessYouControl subtypes => some subtypes
+  | _ => none
 
 /-- Minimum number of blockers required, if this ability restricts blocking. -/
-def cantBeBlockedExcept? (ab : StaticAbility) : Option Nat :=
-  ab.spec.cantBeBlockedExcept
+def cantBeBlockedExcept? : StaticAbility → Option Nat
+  | .cantBeBlockedExceptBy n => some n
+  | _ => none
 
 /-- Maximum number of blockers, if this ability caps how many may block. -/
-def cantBeBlockedByMoreThan? (ab : StaticAbility) : Option Nat :=
-  ab.spec.cantBeBlockedByMoreThan
+def cantBeBlockedByMoreThan? : StaticAbility → Option Nat
+  | .cantBeBlockedByMoreThan n => some n
+  | _ => none
 
 /-- Enchanted-only subtype that also prevents attacking and blocking. -/
-def enchantedOnlySubtype? (ab : StaticAbility) : Option String :=
-  ab.spec.enchantedOnlySubtype
+def enchantedOnlySubtype? : StaticAbility → Option String
+  | .enchantedIsOnlySubtypeCantAttackOrBlock subtype => some subtype
+  | _ => none
 
 /-- True for the cards-in-hand power characteristic-defining ability. -/
 def isCardsInHandPower (ab : StaticAbility) : Bool :=
-  ab.spec.cardsInHandPower
+  ab == .powerEqualCardsInHand
 
 /-- Keywords this ability grants its enchanted or equipped host. -/
-def hostKeywords (ab : StaticAbility) : Keywords :=
-  ab.spec.hostKeywords
+def hostKeywords : StaticAbility → Keywords
+  | .ability .equippedMedicsKitesail => Keyword.flying
+  | .pt (.attachedCreatureGetsAndHas _ _ _ k _)
+  | .pt (.enchantedCreatureGetsHasAndTypes _ _ k _)
+  | .combat (.equippedCreatureHasKeywordsAndCantBeBlocked k) => k
+  | .pt .equippedFirstStrikePlusPerInstantSorcery => Keyword.firstStrike
+  | .pt (.equippedGetsTrampleAndCombatTreasures _ _) => Keyword.trample
+  | _ => Keywords.none
 
 /-- True when this creature can't be blocked by tokens. -/
 def blocksTokens (ab : StaticAbility) : Bool :=
-  ab.spec.cantBeBlockedByTokens
+  ab == .cantBeBlockedByTokens
 
 /-- True when this lord pump also applies to the source. -/
-def lordIncludesSelf (ab : StaticAbility) : Bool :=
-  ab.spec.lordIncludesSelf
+def lordIncludesSelf : StaticAbility → Bool
+  | .pt (.creaturesYouControlGet _ _ _ otherOnly) => !otherOnly
+  | .pt (.legendaryOrNonlegendaryCreaturesGet _ _ _ _) => true
+  | _ => false
 
 /-- True when this lord pump applies only to legendary creatures. -/
-def lordLegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.spec.lordLegendaryOnly
+def lordLegendaryOnly : StaticAbility → Bool
+  | .pt (.legendaryOrNonlegendaryCreaturesGet _ _ legendary _) => legendary
+  | _ => false
 
 /-- True when this lord pump applies only to nonlegendary creatures. -/
-def lordNonlegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.spec.lordNonlegendaryOnly
+def lordNonlegendaryOnly : StaticAbility → Bool
+  | .pt (.legendaryOrNonlegendaryCreaturesGet _ _ legendary _) => !legendary
+  | _ => false
 
 /-- Ward cost this ability grants matching creatures, if any. -/
-def grantedWard? (ab : StaticAbility) : Option Nat :=
-  ab.spec.grantedWard
+def grantedWard? : StaticAbility → Option Nat
+  | .pt (.attachedCreatureGetsAndHas _ _ _ _ w)
+  | .pt (.legendaryOrNonlegendaryCreaturesGet _ _ _ w) =>
+    if w == 0 then none else some w
+  | _ => none
 
 /-- Attack restriction: need `n` other permanents of this subtype. -/
-def cantAttackUnlessNOther? (ab : StaticAbility) : Option (Nat × String) :=
-  ab.spec.cantAttackUnlessNOther
+def cantAttackUnlessNOther? : StaticAbility → Option (Nat × String)
+  | .cantAttackUnlessYouControlNOther n subtype => some (n, subtype)
+  | _ => none
 
-def thresholdGets? (ab : StaticAbility) : Option (Int × Int) :=
-  ab.spec.thresholdGets
+def thresholdGets? : StaticAbility → Option (Int × Int)
+  | .pt (.thresholdGets p t _) => some (p, t)
+  | _ => none
 
-def cantBeBlockedByPowerAtMost? (ab : StaticAbility) : Option Int :=
-  ab.spec.cantBeBlockedByPowerAtMost
+def cantBeBlockedByPowerAtMost? : StaticAbility → Option Int
+  | .cantBeBlockedByPowerAtMost n => some n
+  | _ => none
 
 /-- Can't be blocked by creatures with power at least this. -/
-def cantBeBlockedByPowerAtLeast? (ab : StaticAbility) : Option Int :=
-  ab.spec.cantBeBlockedByPowerAtLeast
+def cantBeBlockedByPowerAtLeast? : StaticAbility → Option Int
+  | .cantBeBlockedByPowerAtLeast n => some n
+  | _ => none
 
 /-- This creature can't be blocked if its power is at most this. -/
-def cantBeBlockedIfPowerAtMost? (ab : StaticAbility) : Option Int :=
-  ab.spec.cantBeBlockedIfPowerAtMost
+def cantBeBlockedIfPowerAtMost? : StaticAbility → Option Int
+  | .cantBeBlockedIfPowerAtMost n => some n
+  | _ => none
 
 /-- True when this Equipment also makes its host unblockable. -/
-def equippedCantBeBlocked (ab : StaticAbility) : Bool :=
-  ab.spec.equippedCantBeBlocked
+def equippedCantBeBlocked : StaticAbility → Bool
+  | .equippedCreatureHasKeywordsAndCantBeBlocked _ => true
+  | _ => false
 
-def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Keywords :=
-  ab.spec.equippedTeamKeywordsDuringYourTurn
+def equippedTeamKeywordsDuringYourTurn : StaticAbility → Keywords
+  | .equippedCreaturesHaveKeywordsDuringYourTurn k => k
+  | _ => Keywords.none
 
-def selfIfEnduringStory? (ab : StaticAbility) : Option (Int × Int × Keywords) :=
-  ab.spec.selfIfEnduringStory
+def selfIfEnduringStory? : StaticAbility → Option (Int × Int × Keywords)
+  | .pt (.getsIfEnduringStory p t k false) => some (p, t, k)
+  | _ => none
 
-def teamIfEnduringStory? (ab : StaticAbility) : Option (Int × Int) :=
-  ab.spec.teamIfEnduringStory
+def teamIfEnduringStory? : StaticAbility → Option (Int × Int)
+  | .pt (.getsIfEnduringStory p t _ true) => some (p, t)
+  | _ => none
 
 def doesntUntapUnlessEnduringStory? (ab : StaticAbility) : Bool :=
-  ab.spec.doesntUntapUnlessEnduringStory
+  ab == .doesntUntapUnlessEnduringStory
 
-def teamWardIfEnduringStory? (ab : StaticAbility) : Option Nat :=
-  ab.spec.teamWardIfEnduringStory
+def teamWardIfEnduringStory? : StaticAbility → Option Nat
+  | .artifactsAndCreaturesHaveWardIfEnduringStory w => some w
+  | _ => none
 
-def attackTaxIfEnduringStory? (ab : StaticAbility) : Option Nat :=
-  ab.spec.attackTaxIfEnduringStory
+def attackTaxIfEnduringStory? : StaticAbility → Option Nat
+  | .creaturesCantAttackYouUnlessPayIfEnduringStory n => some n
+  | _ => none
 
 end StaticAbility
 

@@ -1242,14 +1242,14 @@ namespace CardDef
   .hostGets "Enchanted creature" 3 3
 #guard StaticAbility.shape (.equippedCreatureGets 2 0) ==
   .hostGets "Equipped creature" 2 0
-#guard (StaticAbility.StaticShape.spec (.hostGets "Enchanted creature" 3 3)).hostBonus ==
+#guard StaticAbility.hostStatBonus (.hostGets "Enchanted creature" 3 3) ==
   (3, 3)
-#guard (StaticAbility.StaticShape.spec (.lordPump #["Elf"] 1 1)).lordPump ==
+#guard StaticAbility.lordPump? (.lordPump #["Elf"] 1 1) ==
   some (#["Elf"], 1, 1)
-#guard (StaticAbility.StaticShape.spec (.lordTrample #["Orc"])).trampleSubtypes ==
+#guard StaticAbility.trampleSubtypes? (.lordTrample #["Orc"]) ==
   some #["Orc"]
-#guard (StaticAbility.StaticShape.spec .landsYouControlPT).landsYouControlPT
-#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #["Goblin"])).cantBlockUnless ==
+#guard StaticAbility.isLandsYouControlPT .landsYouControlPT
+#guard StaticAbility.cantBlockUnless? (.cantBlockUnless #["Goblin"]) ==
   some #["Goblin"]
 #guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
 #guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]

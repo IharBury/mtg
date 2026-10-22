@@ -23,83 +23,11 @@ namespace Target
 export GameResult (won draw)
 end Target
 
-set_option maxHeartbeats 800000 in
 /-- Per-turn player tracking state, reset as the turn ends (CR 119 / CR 504 / CR 508 / CR 514.3 / CR 601.2f / CR 603.2 / CR 701). -/
-structure PlayerTurnState where
-  /-- Spells cast this turn (for “second spell each turn” triggers). -/
-  spellsCastThisTurn : Nat := 0
-  /-- Noncreature spells cast this turn. -/
-  noncreatureSpellsCastThisTurn : Nat := 0
-  /-- Mana value of each spell this player has cast this turn. -/
-  castManaValuesThisTurn : Array Nat := #[]
-  /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
-  creatureSpellsCastThisTurn : Nat := 0
-  /-- Players can't cast spells this turn (Bilbo's Gambit). -/
-  cantCastSpellsThisTurn : Bool := false
-  /-- Generic mana less to cast spells of each of these types or supertypes this turn
-  (CR 601.2f, Armor Wars II). -/
-  spellsCostLessThisTurn : Array (SpellCostLess × Nat) := #[]
-  /-- Instant or sorcery spells this player casts this turn that are copied
-  (Way of the Cryomancer). -/
-  copyNextInstantSorceryThisTurn : Nat := 0
-  /-- The next spell this player casts this turn can't be countered
-  (Theorist's Proxy). -/
-  nextSpellCantBeCountered : Bool := false
-  /-- Cards drawn this turn (for “second card each turn” triggers). -/
-  cardsDrawnThisTurn : Nat := 0
-  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
-  cardsDrawnThisDrawStep : Nat := 0
-  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
-  equipActivationsThisTurn : Nat := 0
-  /-- Times `noteResolveThisTurn` has counted for this player this turn
-  (Belladonna Took). -/
-  belladonnaResolvesThisTurn : Nat := 0
-  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
-  cardsDiscardedThisTurn : Nat := 0
-  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
-  controls may be activated any time they could cast an instant (Jace's
-  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
-  jaceLoyaltyAtInstantSpeed : Bool := false
-  /-- This player scried this turn (Desperate Futurescribe).
-  Scry 0 does not count. -/
-  scriedThisTurn : Bool := false
-  /-- This player surveilled this turn (Desperate Futurescribe).
-  Surveil 0 does not count. -/
-  surveilledThisTurn : Bool := false
-  /-- This player activated a loyalty ability this turn. -/
-  activatedLoyaltyThisTurn : Bool := false
-  /-- Cards put into this player's graveyard from their library this turn
-  (Cruel Calculations). -/
-  cardsMilledThisTurn : Nat := 0
-  /-- Until end of turn, each Mountain this player taps for mana adds this
-  many additional {R} (Molten Tide). -/
-  mountainExtraRedThisTurn : Nat := 0
-  /-- A Hero you control entered this turn (Avengers Assemble). -/
-  heroEnteredThisTurn : Bool := false
-  /-- You attacked with a Hero this turn (Avengers Assemble). -/
-  attackedWithHeroThisTurn : Bool := false
-  /-- Creatures this player attacked with this turn (Minas Tirith). -/
-  creaturesAttackedWithThisTurn : Nat := 0
-  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
-  lifeGainedThisTurn : Nat := 0
-  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
-  still waiting to fire (Roads Go Ever, Ever On). -/
-  attackPumpPerPlainsThisTurn : Nat := 0
-  /-- An artifact entered under this player's control this turn (Iron Man;
-  MSH 242 / 323). Still true if that artifact later left or changed types. -/
-  artifactEnteredThisTurn : Bool := false
-  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
-  dealtNoncombatDamageThisTurn : Bool := false
-  /-- This player was dealt noncombat damage during the previous turn. -/
-  dealtNoncombatDamageLastTurn : Bool := false
-  /-- Life lost this turn, including from damage (CR 119.3). -/
-  lifeLostThisTurn : Nat := 0
-  /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
-  cantAttackJaces : Bool := false
-deriving Repr, Inhabited, BEq
+abbrev PlayerTurnState := PermanentTurnState
 
 set_option maxHeartbeats 800000 in
-structure Player extends PlayerTurnState where
+structure Player extends PermanentTurnState where
   /-- True when this player has a commander (Commander / Oathbreaker). -/
   hasCommander : Bool := false
   /-- Combined color identity of this player's commander(s). Empty when they
@@ -178,11 +106,11 @@ def supertypeSpellCostLessThisTurn (pl : Player) : Array (Supertype × Nat) :=
 
 /-- True when this player has per-turn tracking state to reset at the end of a turn. -/
 def hasTurnStateToClear (pl : Player) : Bool :=
-  pl.toPlayerTurnState != {}
+  pl.toPermanentTurnState != {}
 
 /-- Player with per-turn tracking fields reset as the turn ends. -/
 def clearedAtEndOfTurn (pl : Player) : Player :=
-  { pl with toPlayerTurnState := { dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn } }
+  { pl with toPermanentTurnState := { dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn } }
 
 end Player
 

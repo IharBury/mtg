@@ -17,51 +17,6 @@ clear them (CR 514.3).
 
 namespace Mtg.Engine
 
-/-- Counters on a permanent (CR 122.1 / CR 306.5 / CR 714 / CR 702.176). -/
-structure PermanentCounters where
-  /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
-  plusOnePlusOne : Nat := 0
-  /-- Minus-one counters (CR 122.1a). -/
-  minusOneMinusOne : Nat := 0
-  /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
-  loyaltyCounters : Nat := 0
-  /-- Charge counters (Gardenize). -/
-  charge : Nat := 0
-  /-- Stun counters (CR 122.1d). -/
-  stun : Nat := 0
-  /-- Shield counters. A shield counter is removed instead of taking damage
-  or being destroyed (CR 122.1b / Marvel Super Heroes). -/
-  shield : Nat := 0
-  /-- Finality counters. A permanent with a finality counter that would go
-  to a graveyard from the battlefield is exiled instead (MSH release notes). -/
-  finality : Nat := 0
-  /-- Lore counters on a Saga (CR 714). -/
-  lore : Nat := 0
-  /-- Time counters (impending, CR 702.176). -/
-  time : Nat := 0
-  /-- Keyword counters on this permanent (CR 122.1b). -/
-  keywordCounters : KeywordCounters := {}
-  /-- Hope counters (e.g. Dawn of a New Age). -/
-  hope : Nat := 0
-  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
-  Equipment is attached (judge rulings on Dwalin / Sting). -/
-  hone : Nat := 0
-  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
-  shadow : Nat := 0
-  /-- Plan counters on a Plan enchantment. -/
-  plan : Nat := 0
-  /-- Influence counters (Palantír of Orthanc). -/
-  influence : Nat := 0
-  /-- Burden counters (The One Ring). -/
-  burden : Nat := 0
-  /-- Quest counters (Last Light of Durin's Day). -/
-  quest : Nat := 0
-  /-- Invasion counters (Alien Invasion). -/
-  invasion : Nat := 0
-  /-- Story counters (Staff of the Storyteller). -/
-  story : Nat := 0
-deriving Repr, Inhabited, BEq
-
 /-- Until-end-of-turn continuous effects on a permanent, cleared during the cleanup step (CR 514.3 / CR 611.2a). -/
 structure UntilEotStatus where
   /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
@@ -113,7 +68,9 @@ structure UntilEotStatus where
   dealtDamageThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Per-turn activation and event tracking state on a permanent, reset as a turn ends (CR 602.5b / CR 603.2 / CR 606.3 / CR 702.111). -/
+set_option maxHeartbeats 800000 in
+/-- Per-turn activation, spell, action, and event tracking state on a permanent
+or player (`PlayerTurnState`), reset as a turn ends (CR 119 / CR 504 / CR 508 / CR 514.3 / CR 601.2f / CR 602.5b / CR 603.2 / CR 606.3 / CR 701 / CR 702.111). -/
 structure PermanentTurnState where
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
@@ -144,14 +101,124 @@ structure PermanentTurnState where
   enteredThisTurn : Bool := false
   /-- Players this creature dealt combat damage to this turn (Witch-king of Angmar). -/
   combatDamageToPlayers : Array PlayerId := #[]
+  /-- Spells cast this turn (for “second spell each turn” triggers). -/
+  spellsCastThisTurn : Nat := 0
+  /-- Noncreature spells cast this turn. -/
+  noncreatureSpellsCastThisTurn : Nat := 0
+  /-- Mana value of each spell this player has cast this turn. -/
+  castManaValuesThisTurn : Array Nat := #[]
+  /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
+  creatureSpellsCastThisTurn : Nat := 0
+  /-- Players can't cast spells this turn (Bilbo's Gambit). -/
+  cantCastSpellsThisTurn : Bool := false
+  /-- Generic mana less to cast spells of each of these types or supertypes this turn
+  (CR 601.2f, Armor Wars II). -/
+  spellsCostLessThisTurn : Array (SpellCostLess × Nat) := #[]
+  /-- Instant or sorcery spells this player casts this turn that are copied
+  (Way of the Cryomancer). -/
+  copyNextInstantSorceryThisTurn : Nat := 0
+  /-- The next spell this player casts this turn can't be countered
+  (Theorist's Proxy). -/
+  nextSpellCantBeCountered : Bool := false
+  /-- Cards drawn this turn (for “second card each turn” triggers). -/
+  cardsDrawnThisTurn : Nat := 0
+  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
+  cardsDrawnThisDrawStep : Nat := 0
+  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
+  equipActivationsThisTurn : Nat := 0
+  /-- Times `noteResolveThisTurn` has counted for this player this turn
+  (Belladonna Took). -/
+  belladonnaResolvesThisTurn : Nat := 0
+  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
+  cardsDiscardedThisTurn : Nat := 0
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
+  controls may be activated any time they could cast an instant (Jace's
+  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
+  jaceLoyaltyAtInstantSpeed : Bool := false
+  /-- This player scried this turn (Desperate Futurescribe).
+  Scry 0 does not count. -/
+  scriedThisTurn : Bool := false
+  /-- This player surveilled this turn (Desperate Futurescribe).
+  Surveil 0 does not count. -/
+  surveilledThisTurn : Bool := false
+  /-- This player activated a loyalty ability this turn. -/
+  activatedLoyaltyThisTurn : Bool := false
+  /-- Cards put into this player's graveyard from their library this turn
+  (Cruel Calculations). -/
+  cardsMilledThisTurn : Nat := 0
+  /-- Until end of turn, each Mountain this player taps for mana adds this
+  many additional {R} (Molten Tide). -/
+  mountainExtraRedThisTurn : Nat := 0
+  /-- A Hero you control entered this turn (Avengers Assemble). -/
+  heroEnteredThisTurn : Bool := false
+  /-- You attacked with a Hero this turn (Avengers Assemble). -/
+  attackedWithHeroThisTurn : Bool := false
+  /-- Creatures this player attacked with this turn (Minas Tirith). -/
+  creaturesAttackedWithThisTurn : Nat := 0
+  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
+  lifeGainedThisTurn : Nat := 0
+  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
+  still waiting to fire (Roads Go Ever, Ever On). -/
+  attackPumpPerPlainsThisTurn : Nat := 0
+  /-- An artifact entered under this player's control this turn (Iron Man;
+  MSH 242 / 323). Still true if that artifact later left or changed types. -/
+  artifactEnteredThisTurn : Bool := false
+  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
+  dealtNoncombatDamageThisTurn : Bool := false
+  /-- This player was dealt noncombat damage during the previous turn. -/
+  dealtNoncombatDamageLastTurn : Bool := false
+  /-- Life lost this turn, including from damage (CR 119.3). -/
+  lifeLostThisTurn : Nat := 0
+  /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
+  cantAttackJaces : Bool := false
 deriving Repr, Inhabited, BEq
 
 set_option maxHeartbeats 800000 in
 /-- Permanent status (CR 110.5), composed of combat state, counters, until-EOT effects, per-turn tracking, as-enters choices, and lasting effects. -/
 structure Status extends
-    PermanentCounters,
     UntilEotStatus,
     PermanentTurnState where
+  /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
+  plusOnePlusOne : Nat := 0
+  /-- Minus-one counters (CR 122.1a). -/
+  minusOneMinusOne : Nat := 0
+  /-- Loyalty counters on a planeswalker (CR 122.1 / 306.5). -/
+  loyaltyCounters : Nat := 0
+  /-- Charge counters (Gardenize). -/
+  charge : Nat := 0
+  /-- Stun counters (CR 122.1d). -/
+  stun : Nat := 0
+  /-- Shield counters. A shield counter is removed instead of taking damage
+  or being destroyed (CR 122.1b / Marvel Super Heroes). -/
+  shield : Nat := 0
+  /-- Finality counters. A permanent with a finality counter that would go
+  to a graveyard from the battlefield is exiled instead (MSH release notes). -/
+  finality : Nat := 0
+  /-- Lore counters on a Saga (CR 714). -/
+  lore : Nat := 0
+  /-- Time counters (impending, CR 702.176). -/
+  time : Nat := 0
+  /-- Keyword counters on this permanent (CR 122.1b). -/
+  keywordCounters : KeywordCounters := {}
+  /-- Hope counters (e.g. Dawn of a New Age). -/
+  hope : Nat := 0
+  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
+  Equipment is attached (judge rulings on Dwalin / Sting). -/
+  hone : Nat := 0
+  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
+  shadow : Nat := 0
+  /-- Plan counters on a Plan enchantment. -/
+  plan : Nat := 0
+  /-- Influence counters (Palantír of Orthanc). -/
+  influence : Nat := 0
+  /-- Burden counters (The One Ring). -/
+  burden : Nat := 0
+  /-- Quest counters (Last Light of Durin's Day). -/
+  quest : Nat := 0
+  /-- Invasion counters (Alien Invasion). -/
+  invasion : Nat := 0
+  /-- Story counters (Staff of the Storyteller). -/
+  story : Nat := 0
   attacking : Bool := false
   /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
   attackingWhom : Option PlayerId := none
@@ -362,11 +429,11 @@ def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
 
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
-  s.toPermanentCounters != {}
+  CounterKind.all.any (fun k => s.counter k > 0)
 
 /-- This permanent with every counter removed. -/
 def withoutCounters (s : Status) : Status :=
-  { s with toPermanentCounters := {} }
+  CounterKind.all.foldl (fun acc k => acc.setCounter k 0) s
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/
