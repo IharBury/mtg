@@ -15,6 +15,7 @@ def attachSourceTo (g : Game) (src host : GameObject) : Game :=
   let (g, ts) := g.bumpTime
   let src := g.object! src.id
   let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
+  let g := g.record ⟨g.turnNumber, .attached src.id host.id⟩
   g.logMsg s!"{src.name} attaches to {host.name}"
 
 /-- Remove an id from a zone list. -/

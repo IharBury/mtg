@@ -122,8 +122,6 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
             g := g.setObject { ab with lastKnownPower := some pw }
       else
         g := (g.move id (.graveyard o.owner) none).1.logMsg s!"{name} discards {o.name}"
-        g := g.modifyPlayer p (fun pl =>
-          { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
   return g
 
 /-- Pay `{T}`, life, discard, and/or sacrifice the source, and the source's

@@ -380,7 +380,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.destroyIds ids
     g.gainLife controller ids.size
   | .obAngel =>
-    if (g.player controller).lifeGainedThisTurn > 0 then g.makeFrc controller .angel
+    if g.loggedLifeGained controller > 0 then g.makeFrc controller .angel
     else g
   | .omnathCc =>
     g.modifyPlayer controller (fun pl =>
@@ -550,7 +550,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           |>.logMsg s!"{art.name} has haste until end of turn"
   | .despair =>
     g.forEachOpponent controller fun g pid =>
-      g.loseLife pid (g.player pid).lifeLostThisTurn
+      g.loseLife pid (g.loggedLifeLost pid)
   | .dreadUpkeep =>
     (g.loseLife controller 1).amassZombies controller 1
   | .dreadLink =>

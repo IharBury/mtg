@@ -145,7 +145,7 @@ def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectI
     | none =>
       let cands :=
         (g.permanentsOf controller).filter (fun x =>
-          x.id != sourceId && g.hasSubtype x "Villain" && x.status.enteredThisTurn)
+          x.id != sourceId && g.hasSubtype x "Villain" && g.loggedEntered x.id)
       if cands.isEmpty then none
       else
         some (cands.foldl (fun acc x =>

@@ -55,14 +55,26 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let g := if healsOther && n > 0 then g.setObject o else g
   if n > 0 && o.status.shield > 0 && !unpreventable then
     let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
     g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
   else if n > 0 && o.status.shield > 0 && unpreventable then
     let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
-    let g := (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
-    g.queueCreatureYouControlDealtDamage (g.object! o.id) n
+    let marked := g.object! o.id
+    let happened := GameEvent.damaged g.turnNumber none marked.asEvent n.toNat combat
+    let g := g.record happened
+    let g := (g.mapObjectStatus marked (fun s => s.addDamage n deathtouch)).logMsg msg
+    if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
+      g.queueCreatureYouControlDealtDamage (g.object! o.id) n
+    else g
   else
   -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
+  let happened :=
+    if n > 0 then some (GameEvent.damaged g.turnNumber none o.asEvent n.toNat combat) else none
+  let g :=
+    match happened with
+    | some e => g.record e
+    | none => g
   let g := (g.mapObjectStatus o (fun s =>
     let s := s.addDamage n deathtouch
     if o.printed.isPlaneswalker && n > 0 then
@@ -82,7 +94,10 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
                 if t.source.id == o.id && t.event == .sourceDealtDamage then
                   { t with lastKnownPower := some ((t.lastKnownPower.getD 0) + n) }
                 else t) }
-          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
+          else if (happened.getD (GameEvent.damaged g.turnNumber none o.asEvent n.toNat combat)).matchesTrigger
+              p o.id .sourceDealtDamage then
+            g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
+          else g
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab.shared with
@@ -96,11 +111,13 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let g := g.queueCreatureYouControlDealtDamage o n
   if n > 0 && !combat then
     match o.controller with
-    | none => { g with lastNoncombatDamage := some (o.id, n.toNat) }
     | some p =>
-      let g := { g with lastNoncombatDamage := some (o.id, n.toNat) }
-      g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
-        (some n)
+      let happened := GameEvent.damaged g.turnNumber none o.asEvent n.toNat false
+      if happened.matchesTrigger p o.id .sourceDealtNoncombatDamage then
+        g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
+          (some n)
+      else g
+    | none => g
   else g
 
 /-- Extra noncombat damage from Hawkeye, Young Avenger. X is his power at
@@ -130,7 +147,11 @@ controls. If all damage is prevented, neither replacement applies
 already-divided amounts (MSH 179). -/
 def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
     (combat := false) (recipient : Option PlayerId := none) : Int :=
-  if g.sourceDamagePrevented src then 0
+  let proposed :=
+    match recipient with
+    | some pid => GameEvent.damagedPlayer g.turnNumber (some src.id) pid n.toNat combat
+    | none => GameEvent.damaged g.turnNumber (some src.id) src.asEvent n.toNat combat
+  if !proposed.watches .wouldDealDamage || g.sourceDamagePrevented src then 0
   else
     let extra :=
       if combat || n ≤ 0 then (0 : Int)
@@ -156,7 +177,8 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
 
 /-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if n == 0 then g
+  let proposed := GameEvent.life g.turnNumber p n true
+  if n == 0 || !proposed.watches .wouldGainLife then g
   else if (g.livingOpponents p).any (fun opp =>
       (g.permanentsOf opp.id).any (·.printed.opponentsCantGainLife)) then
     g.logMsg s!"{(g.player p).name} can't gain life"
@@ -168,9 +190,11 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let gained := ((g.player p).life - before).toNat
     if gained == 0 then g
     else
-      let g := g.modifyPlayer p (fun pl =>
-        { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + gained })
-      g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
+      let happened := GameEvent.life g.turnNumber p gained true
+      let g := g.record happened
+      if happened.matchesTrigger p ⟨0⟩ .youGainLife then
+        g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
+      else g
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
@@ -217,7 +241,10 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
-    let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
+    let g :=
+      if n > 0 then
+        g.record (GameEvent.damagedPlayer g.turnNumber (source.map (·.id)) pid n.toNat false)
+      else g
     let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
     let g := g.afterLifeLost pid (pl.life - (g.player pid).life).toNat
     -- CR 702.15b: damage dealt by a source with lifelink.

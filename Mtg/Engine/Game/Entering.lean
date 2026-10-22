@@ -39,21 +39,17 @@ def putSubtypeEnterTriggers (g : Game) (entered : GameObject) : Game :=
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
-  let pl := g.player caster
-  let spells := pl.spellsCastThisTurn + 1
-  let nonc :=
-    if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
-    else pl.noncreatureSpellsCastThisTurn + 1
-  let creat :=
-    if spell.printed.isCreature then pl.creatureSpellsCastThisTurn + 1
-    else pl.creatureSpellsCastThisTurn
-  let g := g.modifyPlayer caster (fun p =>
-    { p with
-      spellsCastThisTurn := spells
-      noncreatureSpellsCastThisTurn := nonc
-      creatureSpellsCastThisTurn := creat
-      castManaValuesThisTurn :=
-        p.castManaValuesThisTurn.push (g.objectManaValue spell) })
+  let fromZone :=
+    if spell.castFromGraveyard then Zone.graveyard spell.owner
+    else if spell.castFromHand then Zone.hand spell.owner
+    else Zone.exile
+  let happened :=
+    GameEvent.cast g.turnNumber caster spell.asEvent fromZone
+      (g.objectManaValue spell) spell.status.manaSpentToCast
+      spell.castFromGraveyard spell.teamworkPaid spell.giftPromisedTo.isSome
+  let g := g.record happened
+  let spells := g.loggedSpellsCast caster
+  let nonc := g.loggedNoncreatureSpells caster
   let g :=
     Id.run do
       let mut g := g
@@ -73,11 +69,14 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         "cast trigger"
     else g
   let g :=
-    if spell.printed.isInstantOrSorcery then
+    if happened.matchesTrigger caster spell.id .youCastInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery
     else g
   -- Reality Fracture cast triggers.
-  let g := g.putMatchingSourceTriggers caster spell (.fra .castThis)
+  let g :=
+    if happened.matchesTrigger caster spell.id (.fra .castThis) then
+      g.putMatchingSourceTriggers caster spell (.fra .castThis)
+    else g
   let mvCast := g.objectManaValue spell
   let g := (g.livingOpponents caster).foldl (fun g pl =>
     g.putFraEventTriggersWhere pl.id (fun
@@ -318,7 +317,13 @@ def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
-  let n := g.extraPlusOneOnCreature o n
+  let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
+  let proposed :=
+    GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n
+  let n :=
+    if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
+  let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
+  let g := if n > 0 then g.record happened else g
   let g := g.mapObjectStatus o (fun s =>
     { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
   let phrase :=
@@ -331,7 +336,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let g :=
     match putter with
     | some q =>
-      if n > 0 then
+      if n > 0 && happened.matchesTrigger q o.id .youPutPlusOne then
         g.foldControlledPermanents q none fun g src =>
           -- Invisible Woman: one or more counters at once trigger once.
           let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
@@ -436,8 +441,12 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let g := g.enterWithShield (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
   let o := g.object! id
-  let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
-  let o := g.object! id
+  -- A zone change already recorded this arrival. Inserts that skip `move`
+  -- still have to leave an enters event, or “entered this turn” is invisible.
+  let g :=
+    if g.loggedEntered o.id then g
+    else
+      g.record (GameEvent.moved g.turnNumber o.asEvent .stack .battlefield)
   let g := if o.printed.entersPrepared then g.becomePrepared o else g
   g.enterWithHope (g.object! id)
 
@@ -530,8 +539,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if entered.printed.isArtifact then
-        let g := g.modifyPlayer p (fun pl =>
-          { pl with artifactEnteredThisTurn := true })
         g.putControlledTriggersWithPrompt p .artifactYouControlEnters
       else g
     let g :=
@@ -541,10 +548,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     let g :=
       entered.subtypes.foldl (fun acc sub =>
         acc.putControlledTriggers p (.subtypeYouControlEnters sub)) g
-    let g :=
-      if entered.isCreature && g.hasSubtype entered "Hero" then
-        g.modifyPlayer p (fun pl => { pl with heroEnteredThisTurn := true })
-      else g
     let g :=
       if entered.printed.isEquipment then
         g.putControlledTriggers p .equipmentYouControlEnters

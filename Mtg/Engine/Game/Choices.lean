@@ -117,6 +117,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
   if hasPerm || hasHand then
     let g := g.modifyPlayer p (fun pl =>
       { pl with beheldQualities := pl.beheldQualities.push quality })
+    let g := g.record ⟨g.turnNumber, .beheld p quality⟩
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"

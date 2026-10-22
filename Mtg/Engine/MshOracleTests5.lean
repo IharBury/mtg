@@ -44,7 +44,7 @@ def ironManArtifactEnteredOk : Bool :=
      let stone := namedPermanent g "The Mind Stone"
      let g := g.afterPermanentEnters stone
      let (g, _) := g.move stone.id (.graveyard ⟨0⟩) none
-     (g.player ⟨0⟩).artifactEnteredThisTurn &&
+     g.loggedArtifactEntered ⟨0⟩ &&
        (let iron := namedPermanent g "Iron Man, Master of Machines"
         let g := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
         g.waitingTriggers.any (fun (t : WaitingTrigger) =>

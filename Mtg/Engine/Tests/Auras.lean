@@ -78,7 +78,7 @@ def proposedDecree : Game :=
 
 /-- Empty `p`'s hand and mark a land already played this turn. -/
 def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  (g.modifyPlayer p (fun pl => { pl with hand := #[] })).recordLandPlayed p
 
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
@@ -890,8 +890,8 @@ def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 #guard woodElvesResolved.battlefield.any (fun o => o.name == "Forest")
 #guard !(namedPermanent woodElvesResolved "Forest").status.tapped
 #guard !(namedPermanent woodElvesResolved "Forest").status.summoningSick
-#guard (woodElvesResolved.player ⟨0⟩).landsPlayedThisTurn ==
-  (woodElvesKnownLib.player ⟨0⟩).landsPlayedThisTurn
+#guard woodElvesResolved.loggedLandsPlayed ⟨0⟩ ==
+  woodElvesKnownLib.loggedLandsPlayed ⟨0⟩
 #guard woodElvesResolved.log.any (fun s =>
   mentions s "puts Forest onto the battlefield" && !mentions s "tapped")
 #guard woodElvesResolved.log.any (fun s => mentions s "shuffles their library")
@@ -914,10 +914,10 @@ def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 -- Direct resolution of an enters-search trigger puts a Forest onto the battlefield.
 #guard
   let g := addToLibraryTop afterDraw forest ⟨0⟩
-  let beforeLands := (g.player ⟨0⟩).landsPlayedThisTurn
+  let beforeLands := g.loggedLandsPlayed ⟨0⟩
   let g := applyIdle (g.applyTriggeredAbility ⟨0⟩ .onEnterSearchForest none)
   g.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped) &&
-    (g.player ⟨0⟩).landsPlayedThisTurn == beforeLands &&
+    g.loggedLandsPlayed ⟨0⟩ == beforeLands &&
     g.log.any (fun s => mentions s "puts Forest onto the battlefield") &&
     g.log.any (fun s => mentions s "shuffles their library")
 

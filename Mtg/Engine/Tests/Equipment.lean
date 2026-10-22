@@ -129,7 +129,7 @@ def spearEmptyHand : Game :=
 def spearReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withRedMana g ⟨0⟩ 3
 
 def spearEquipAbility : ActivatedAbility :=
@@ -516,7 +516,7 @@ def bladeSacrificesFireleaper : Game :=
 def bladeReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g crudeBentBlade ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withBlackMana g ⟨0⟩ 2
 
 def bladeEquipAbility : ActivatedAbility :=
@@ -668,7 +668,7 @@ def dunedainReady : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g esquireOfTheKing ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 3
 
 #guard dunedainBlade.activatedAbilities.size == 2
@@ -717,7 +717,7 @@ def dunedainEquippedHuman : Game :=
 def dunedainBearOnly : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 3
 
 #guard !(dunedainBearOnly.canActivate ⟨0⟩
@@ -745,7 +745,7 @@ def dunedainAgentChoosesEquip : Bool :=
 def dunedainHumanCheap : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g esquireOfTheKing ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 1
 
 def dunedainAgentChoosesEquipHuman : Bool :=
@@ -892,10 +892,8 @@ def hospitalityTargetGone : Game :=
 def hospitalityAnimateSetup : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
-  g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with
-      manaPool := pl.manaPool.add (.colored .green) 7
-      landsPlayedThisTurn := 1 })
+  (g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := pl.manaPool.add (.colored .green) 7 })).recordLandPlayed ⟨0⟩
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")

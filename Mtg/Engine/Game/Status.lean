@@ -134,8 +134,6 @@ structure Status where
   /-- This permanent is a creature in addition to its other types until EOT
   (I Am Iron Man). -/
   additionalCreatureUntilEot : Bool := false
-  /-- This permanent entered the battlefield this turn. -/
-  enteredThisTurn : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
   harnessed : Bool := false
   /-- This permanent is currently showing its back face (MSH modal DFC). -/

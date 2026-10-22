@@ -122,7 +122,7 @@ creature. -/
   let g := addPermanent afterDraw solariumSentry me me
   let g := mustApply g me .pass
   let g := resolved (castFra g shock [.target (.player me)] opp)
-  (g.player me).lifeGainedThisTurn == 2 && life g me == 20
+  g.loggedLifeGained me == 2 && life g me == 20
 
 /- Flickering Hound blinks another creature you control when you cast a
 creature spell; it returns untapped with no counters. -/
@@ -725,7 +725,12 @@ Master of Barbs pumps your team. -/
   counters g "Grizzly Bears" == 1 && counters g "Guiding Hydra" == 1
 #guard
   let g := addToGraveyard afterDraw darklightPhoenix me
-  let g := { g with creatureDeathsThisTurn := 2 }
+  let g := (g.record (GameEvent.moved g.turnNumber
+      { id := ⟨51⟩, controller := some me, owner := me, creature := true }
+      .battlefield (.graveyard me))).record
+    (GameEvent.moved g.turnNumber
+      { id := ⟨52⟩, controller := some me, owner := me, creature := true }
+      .battlefield (.graveyard me))
   let g := settle (skipTo g .beginningOfCombat 80)
   onBattlefield g "Darklight Phoenix"
 #guard

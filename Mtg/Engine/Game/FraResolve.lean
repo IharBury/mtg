@@ -106,7 +106,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | none => g) g
   | .drawMilledThisTurn =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
-      g.draw controller (g.player pid).cardsMilledThisTurn) sourceId illegal
+      g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
     let creatures := g.battlefield.filter (·.isCreature)
     let g := creatures.foldl (fun g o =>
@@ -115,9 +115,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.empowerJace controller creatures.size
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
-    let before := (g.player controller).cardsDrawnThisTurn
+    let before := g.loggedDraws controller
     let g := g.draw controller n
-    let drawn := (g.player controller).cardsDrawnThisTurn - before
+    let drawn := g.loggedDraws controller - before
     g.loseLife controller drawn
   | .revealHandDiscardNonland permanentOnly =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
@@ -539,7 +539,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         s!"{(g.player controller).name} discards a card"
   | .drawThenCountersPerDiscard =>
     let g := g.draw controller 1
-    let n := (g.player controller).cardsDiscardedThisTurn
+    let n := g.loggedDiscards controller
     match g.fraCause? with
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g

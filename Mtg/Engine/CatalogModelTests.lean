@@ -163,7 +163,6 @@ control returns to hand. -/
 /- King T'Challa: when any player draws their second card each turn, you draw. -/
 #guard
   let g := addPermanent afterDraw kingTChalla me me
-  let g := g.modifyPlayer opp (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let before := handSize g me
   let g := settle (g.draw opp 2)
   handSize g me == before + 1
@@ -844,13 +843,13 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- Lake-town Toymaker doesn't trigger unless you've drawn two cards. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let g := g.putControlledTriggers me .yourBeginCombat
   !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
 /- After two draws, another creature gets +3/+0 and first strike. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 2 })
+  let g := (g.record (GameEvent.drew g.turnNumber me ⟨61⟩ 1)).record
+    (GameEvent.drew g.turnNumber me ⟨62⟩ 2)
   let g := settle (passBoth (skipTo g .beginningOfCombat 80))
   power g "Grizzly Bears" == 5 &&
     g.hasFirstStrike (namedPermanent g "Grizzly Bears") &&
@@ -1191,7 +1190,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let offered :=
@@ -1208,7 +1207,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let g := mustApply g me .accept
@@ -1510,7 +1509,7 @@ ability may cast up to two of the exiled cards. -/
   let g := g.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 1)
     (some (idOf g "Doom Reigns Supreme"))
   life g opp == 19 && life g me == 21 &&
-    (g.player me).lifeGainedThisTurn == 1 &&
+    g.loggedLifeGained me == 1 &&
     (namedPermanent g "Doom Reigns Supreme").status.plan == 1 &&
     g.log.any (fun s => mentions s "gains 1 life")
 #guard
@@ -1758,7 +1757,7 @@ four; the rest go to the bottom. -/
 #guard
   let g := fireTrigger (addPermanent afterDraw gandalfGoblinsBane me me) "Gandalf, Goblins' Bane"
   let g := passBoth g
-  life g opp == 19 && (g.player opp).dealtNoncombatDamageThisTurn
+  life g opp == 19 && g.loggedNoncombatDamage opp
 
 /- The Black Arrow destroys a Dragon it damaged, but not another creature. -/
 #guard

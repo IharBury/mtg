@@ -214,7 +214,12 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     else
       let g := g.mapObjectStatus o (fun s => s.addCounters kind n)
       let g := g.logMsg s!"{o.name} gets {kind.countersPhrase n}"
-      g.queueGoblinOrcArmyCounterTriggers o
+      let putter := byPlayer.orElse (fun _ => o.controller)
+      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
+      let g := g.record happened
+      if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
+        g.queueGoblinOrcArmyCounterTriggers o
+      else g
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)

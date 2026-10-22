@@ -315,7 +315,10 @@ def mistyKnightDiscardCountOk : Bool :=
   let growth := namedGraveyardCard g ⟨0⟩ "Giant Growth"
   let (g, _) := g.move bolt.id .exile none
   let (g, _) := g.move growth.id .exile none
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDiscardedThisTurn := 2 })
+  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨81⟩, owner := ⟨0⟩ }
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
+  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨82⟩, owner := ⟨0⟩ }
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.drawPerDiscardedThisTurn) #[] (some misty.id)
@@ -392,8 +395,8 @@ attacking. -/
 def avengersAssembleHeroLeftOk : Bool :=
   let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
   let g := addPermanent g mistyKnightHeroForHire ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with attackedWithHeroThisTurn := true })
   let hero := namedPermanent g "Misty Knight, Hero for Hire"
+  let g := g.record (GameEvent.attacked g.turnNumber ⟨0⟩ hero.asEvent ⟨1⟩)
   let (g, _) := g.move hero.id (.graveyard ⟨0⟩) none
   let assem := namedPermanent g "Avengers Assemble!"
   let hand0 := (g.player ⟨0⟩).hand.size
@@ -475,13 +478,13 @@ def captainMarVellFlashOk : Bool :=
   let bears := handCardNamed gCombat ⟨0⟩ "Grizzly Bears"
   !gCombat.asSorcery? ⟨0⟩ &&
     !gCombat.canCast ⟨0⟩ bears &&
-    (let gOpp := gCombat.modifyPlayer ⟨1⟩ (fun pl =>
-      { pl with spellsCastThisTurn := 1 })
+    (let gOpp := gCombat.record (GameEvent.cast gCombat.turnNumber ⟨1⟩
+      { id := ⟨41⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      gOpp.canCast ⟨0⟩ (handCardNamed gOpp ⟨0⟩ "Grizzly Bears")) &&
     (let gLate := addToHand afterDraw grizzlyBears ⟨0⟩
      let gLate := { gLate with step := .beginningOfCombat }
-     let gLate := gLate.modifyPlayer ⟨1⟩ (fun pl =>
-       { pl with spellsCastThisTurn := 1 })
+     let gLate := gLate.record (GameEvent.cast gLate.turnNumber ⟨1⟩
+       { id := ⟨42⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&
        (let gLate := addPermanent gLate captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
         gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears"))) &&

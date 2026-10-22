@@ -24,7 +24,7 @@ def emptyHand (g : Game) (p : PlayerId) : Game :=
   g.modifyPlayer p (fun pl => { pl with hand := #[] })
 
 def readyMain (g : Game) : Game :=
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 /-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
 def sentriesDied : Game :=
@@ -69,7 +69,7 @@ def beeOtherDied : Game :=
 #guard beeOtherDied.stack.size == 1
 #guard (beeOtherDied.object! beeOtherDied.stack.back!.objectId).triggeredAbility ==
   some (.onOneOrMoreOtherCreaturesDieScry 1)
-#guard beeOtherDied.creatureDiedThisTurn
+#guard beeOtherDied.loggedCreatureDeaths > 0
 
 def beeScrying : Game := passBoth beeOtherDied
 
@@ -83,7 +83,7 @@ def beeScrying : Game := passBoth beeOtherDied
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
-  g.stack.isEmpty && g.creatureDiedThisTurn
+  g.stack.isEmpty && g.loggedCreatureDeaths > 0
 
 #guard
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
@@ -294,7 +294,9 @@ def batCloudFull : Game :=
   withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
 
 def batCloudReduced : Game :=
-  { batCloudFull with creatureDiedThisTurn := true }
+  batCloudFull.record (GameEvent.moved batCloudFull.turnNumber
+    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, creature := true }
+    .battlefield (.graveyard ⟨1⟩))
 
 #guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")
 #guard
@@ -316,13 +318,13 @@ def batCloudReduced : Game :=
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  g.creatureDiedThisTurn
+  g.loggedCreatureDeaths > 0
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Hill Giant"
   let g := g.setObject { o with status := { o.status with untilEotExileIfDies := true } }
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  !g.creatureDiedThisTurn
+  g.loggedCreatureDeaths == 0
 
 
 /-- Languish: all creatures get -4 / -4. -/

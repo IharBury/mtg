@@ -217,12 +217,15 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         let o := g.object! id
         g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
         if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
+        g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
         g := g.setPlayer { pl with poison := pl.poison + 1 }
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1)
+        g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
     if loyaltyPut then
@@ -239,10 +242,10 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
 
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
 `q` and `id` must be in `p`'s hand; the discard is logged (with `logSuffix`)
-and the card moves to its owner's graveyard. `countDiscard` bumps
-`cardsDiscardedThisTurn`. Returns the discarded card. -/
+and the card moves to its owner's graveyard. The move records the discard.
+Returns the discarded card. -/
 def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
-    (logSuffix : String := "") (countDiscard := true) :
+    (logSuffix : String := "") :
     Except String (Game × GameObject) := do
   if p != q then
     throw s!"Only {(g.player q).name} may discard"
@@ -251,11 +254,6 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
   let some card := g.findObject? id | throw "no such object"
   let g := g.logMsg s!"{(g.player p).name} discards {card.name}{logSuffix}"
   let (g, _) := g.move id (.graveyard card.owner) none
-  let g :=
-    if countDiscard then
-      g.modifyPlayer p (fun pl =>
-        { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
-    else g
   return (g, card)
 
 /-- Run trigger-sequence steps that waited on this discard, then give
@@ -345,7 +343,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     else
       g.continueAfterDiscard remaining
   | .recruitDiscard q =>
-    let (g, card) ← g.discardPendingCard p q id (countDiscard := false)
+    let (g, card) ← g.discardPendingCard p q id
     let g := { g with pending := .none }
     let g :=
       if card.printed.isLand then g

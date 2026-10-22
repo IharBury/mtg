@@ -159,7 +159,7 @@ mana value 4 sorcery is not. Declining leaves both in hand. -/
 instant and bottoms only the cards that were not cast. -/
 #guard
   let g := putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim
-  let g := { g with lastCombatDamagePlayer := some victim }
+  let g := g.noteCombatDamageTo victim
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let offered :=
     match g.pending with
@@ -175,7 +175,7 @@ instant and bottoms only the cards that were not cast. -/
 
 #guard
   let g := putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim
-  let g := { g with lastCombatDamagePlayer := some victim }
+  let g := g.noteCombatDamageTo victim
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let g := mustApply g caster .accept
   onStack g "Lightning Bolt" &&

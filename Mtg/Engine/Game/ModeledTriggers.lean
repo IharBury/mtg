@@ -462,7 +462,7 @@ def diedCardId? (g : Game) (targets : Array Target) : Option ObjectId :=
     | _ => none
   let fromCause :=
     ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).map g.followMoved
-  let fromAttacker := g.lastDiedAttacker.map g.followMoved
+  let fromAttacker := g.loggedLastDiedAttacker.map g.followMoved
   (fromTarget.orElse (fun _ => fromCause)).orElse (fun _ => fromAttacker)
 
 /-- Return the card that caused this trigger to its owner's hand.
@@ -525,7 +525,7 @@ def castSpellManaValue (g : Game) (controller : PlayerId)
       match g.lastStackSpell? with
       | some o => o.printed.manaValue + o.chosenX.getD 0
       | none =>
-        match (g.player controller).castManaValuesThisTurn.back? with
+        match (g.loggedCastManaValues controller).back? with
         | some mv => mv
         | none => 0
 

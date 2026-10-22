@@ -129,7 +129,7 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
     | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
   let (g, _) := g.move id (.graveyard card.owner) none
-  g.modifyPlayer p (fun pl => { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+  g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=

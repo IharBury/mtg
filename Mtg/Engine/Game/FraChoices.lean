@@ -228,7 +228,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g := g.draw p 1
-    let n := (g.player p).cardsDiscardedThisTurn
+    let n := g.loggedDiscards p
     let g :=
       match causeId.bind (fun c => g.findObject? (g.followMoved c)) with
       | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
@@ -951,7 +951,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
   | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
-    let g := { g with sheHulkDamageUsedThisTurn := true }
+    let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
         (fun g tgt => g.dealDamageToTarget tgt amount) sourceId none

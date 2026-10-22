@@ -258,15 +258,22 @@ def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
   let g := g.setObject { o with status := { o.status with
     loyaltyCounters := n
     loyaltyActivatedThisTurn := true } }
+  let g :=
+    if k != 0 then
+      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0))
+    else g
   let g := match o.controller with
     | some p =>
-      let g := g.modifyPlayer p (fun pl => { pl with activatedLoyaltyThisTurn := true })
+      let happened := GameEvent.activated g.turnNumber p o.asEvent true
+      let g := g.record happened
       let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
       -- Gideon, the Oathless: an opponent activating a loyalty ability.
       (g.livingOpponents p).foldl (fun g opp =>
         g.foldControlledPermanents opp.id none fun g src =>
-          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
-            (cause := some o)) g
+          if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
+            g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
+              (cause := some o)
+          else g) g
     | none => g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
@@ -280,6 +287,10 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
   let removed := match sym.counters with
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
+  let happened := GameEvent.activated g.turnNumber p
+    { id := ⟨0⟩, controller := some p, owner := p } true
+  if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
+  else
   g.foldControlledPermanents p none fun g o =>
     let waiting :=
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>

@@ -20,7 +20,7 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
     o.staticAbilities.any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
-    (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
+    (g.livingOpponents p).any (fun pl => g.loggedSpellsCast pl.id > 0)
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
@@ -29,7 +29,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     | some t => g.controlsAnySubtype p #[t]
     | none => false
   let radagastFlash :=
-    face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
+    face.isCreature && g.loggedCreatureSpells p == 0 &&
       (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
@@ -363,7 +363,9 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
       allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
-    return g.setPlayer { pl with manaPool := pool }
+    let spent := cost.manaValue
+    return (g.setPlayer { pl with manaPool := pool }).record
+      (GameEvent.spentMana g.turnNumber p spent)
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=
@@ -684,7 +686,11 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let activation := activation <|> g.proposedSpell.bind (·.activation)
   let g :=
     if activation.any (·.isEquip) then
-      g.modifyPlayer p (fun pl => { pl with equipActivationsThisTurn := pl.equipActivationsThisTurn + 1 })
+      let source :=
+        match sourceId.bind g.findObject? with
+        | some src => src.asEvent
+        | none => { id := ⟨0⟩, controller := some p, owner := p, equipment := true }
+      g.record (GameEvent.activated g.turnNumber p source false true)
     else g
   let g :=
     match sourceId with

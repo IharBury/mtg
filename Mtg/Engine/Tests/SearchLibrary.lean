@@ -146,14 +146,14 @@ spending a land play. A Mountain stays in the library. The library is
 shuffled. An empty library finds nothing and still shuffles. -/
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain, forest]
-  let played := (g0.player caster).landsPlayedThisTurn
+  let played := g0.loggedLandsPlayed caster
   let before := g0.log.size
   let g := takeSearch (step g0 (.searchLibrary (.put .forest)))
   onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
     inLibrary g caster "Search Mountain" && !inLibrary g caster "Search Forest" &&
     !(permanent g "Search Forest").status.tapped &&
     !(permanent g "Search Forest").status.summoningSick &&
-    (g.player caster).landsPlayedThisTurn == played &&
+    g.loggedLandsPlayed caster == played &&
     shuffledSince before g &&
     logContains g "searches for a Forest card" &&
     logContains g "puts Search Forest onto the battlefield" &&

@@ -346,19 +346,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else ({ g with permanentDealtDamageThisWay := none }, false)
       | none => ({ g with permanentDealtDamageThisWay := none }, false)
   | .attackedWithSubtype subtype =>
-    let pl := g.player controller
-    let holds :=
-      (subtype == "Hero" && pl.attackedWithHeroThisTurn) ||
-        (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.attacking))
-    (g, holds)
+    (g, g.loggedAttackedWithSubtype controller subtype)
   | .subtypeEntered subtype =>
-    let pl := g.player controller
-    let holds :=
-      (subtype == "Hero" && pl.heroEnteredThisTurn) ||
-        (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
-    (g, holds)
+    (g, g.loggedSubtypeEntered controller subtype)
   | (.atLeast (.count .landsYouControl) (.fixed n)) =>
     let n := n.toNat
     let lands := ((g.permanentsOf controller).filter (·.printed.isLand)).size
@@ -480,8 +470,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | none => false
       | _ => false
     (g, holds)
-  | .scriedThisTurn => (g, (g.player controller).scriedThisTurn)
-  | .surveilledThisTurn => (g, (g.player controller).surveilledThisTurn)
+  | .scriedThisTurn => (g, g.loggedScried controller)
+  | .surveilledThisTurn => (g, g.loggedSurveilled controller)
   | (.atLeast (.count .putEquipment) (.fixed 1)) =>
     match g.putArtifactThisWay with
     | none => (g, false)
@@ -502,7 +492,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       if src.status.harnessed then (g, true)
       else (g.logMsg "The Mind Stone is not harnessed", false)
   | .artifactEnteredThisTurn =>
-    if (g.player controller).artifactEnteredThisTurn then (g, true)
+    if g.loggedArtifactEntered controller then (g, true)
     else
       (g.logMsg
         "No artifact entered under your control this turn. Iron Man's ability doesn't trigger.",
@@ -535,7 +525,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => (g, false)
   | .manaSpent =>
     let spent :=
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
     (g, spent > 0)
   | .atLeast (.count what) amount =>
     -- Printed counts above keep their logs and notes. Every other counted
@@ -635,9 +627,18 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         (g, mv ≤ n)
       | none => (g, false)
     | _ => (g, false)
-  | .teamwork => (g, g.resolvingTeamworkPaid)
-  | .castFromGraveyard => (g, false)
-  | .giftPromised => (g, false)
+  | .teamwork =>
+    (g, match g.resolvingSpell with
+      | some id => GameEvent.teamwork g.events id
+      | none => false)
+  | .castFromGraveyard =>
+    (g, match g.resolvingSpell with
+      | some id => GameEvent.castFromGraveyard g.events id
+      | none => false)
+  | .giftPromised =>
+    (g, match g.resolvingSpell with
+      | some id => GameEvent.giftPromised g.events id
+      | none => false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
@@ -1472,7 +1473,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
   | .kind, .you, .damagedPlayerArtifacts, _ =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let pid := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
     let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
@@ -2421,7 +2422,9 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     | none => g
   | .you, .equalToManaSpent =>
     let spent :=
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
     if spent == 0 then
       { g with skipTriggerSequenceRest := true }.logMsg
         "No mana was spent to cast that spell"
@@ -3051,7 +3054,7 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none =>
       { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
   | .firstThisTurn =>
-    let id := g.resolvingCauseId.orElse (fun _ => g.lastBecameTapped)
+    let id := g.resolvingCauseId.orElse (fun _ => g.loggedLastBecameTapped)
     match id.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
@@ -3408,7 +3411,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
   | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer => some <|
-    let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let victim := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
     let (g, found, others) := g.exileUntilInstantOrSorcery victim
     { g with
       grimaImpulseReady := true
@@ -4001,9 +4004,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => 0
     g.resolveCascade controller maxMv
   | .noteResolveThisTurn limit =>
-    let n := (g.player controller).belladonnaResolvesThisTurn + 1
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with belladonnaResolvesThisTurn := n })
+    let n := g.loggedResolutions controller + 1
+    let g := g.record (GameEvent.resolved g.turnNumber controller n)
     let g := { g with nthResolveThisWay := some n }
     if n > limit then
       let name :=
@@ -4156,7 +4158,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
     -- X is the mana spent to cast the triggering spell.
-    let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    let spent :=
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
     else
       let disc := if n == 2 then "two" else toString n
@@ -4255,7 +4260,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | none => g
     | some n =>
       let armed := g.armSurveilReturn
-      let life := (g.player controller).lifeGainedThisTurn
+      let life := g.loggedLifeGained controller
       let g := { g with armSurveilReturn := false }
       let g := g.beginSurveil controller n
       if armed then
@@ -4281,7 +4286,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
     { g with armSurveilReturn := true }
   | .prepareSource .ifThreeCreaturesDied =>
-    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+    if g.loggedCreaturesToGraveyard.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"
     else
       match sourceId.bind g.findObject? with
@@ -4333,7 +4338,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
-    if g.sheHulkDamageUsedThisTurn then
+    if g.loggedSheHulkDealtDamage then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
       let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
@@ -4741,11 +4746,16 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     let mut g := g
     for id in attackerIds do
       let o := g.object! id
-      g := g.putMatchingSourceTriggers p o .attacking
-        (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      let whom := o.status.attackingWhom.getD g.defendingPlayer
+      let happened := GameEvent.attacked g.turnNumber p o.asEvent whom
+      g := g.record happened
+      if happened.matchesTrigger p o.id .attacking then
+        g := g.putMatchingSourceTriggers p o .attacking
+          (some (g.snapshotPower o)) (some (g.snapshotToughness o))
       -- Reality Fracture: each attacking creature, and one attacking a player
       -- alone (no other creature attacks that player; ruling 861).
-      g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
+      if happened.matchesTrigger p o.id (.fra .creatureYouControlAttacks) then
+        g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
       let whom := o.status.attackingWhom.getD g.defendingPlayer
       let alone := !attackerIds.any (fun id' =>
         id' != id && (g.object! id').status.attackingWhom.getD g.defendingPlayer == whom &&
@@ -4781,7 +4791,10 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
             g := g.putFraEventTriggers q.id .creaturesAttackYourOpponent
               (cause := some { g.object! id with controller := some d })
       | none => pure ()
-    let attackedWithElves := attackerIds.any (fun id => g.hasSubtype (g.object! id) "Elf")
+    let attackedWithElves := attackerIds.any (fun id =>
+      let o := g.object! id
+      (GameEvent.attacked g.turnNumber p o.asEvent
+        (o.status.attackingWhom.getD g.defendingPlayer)).matchesTrigger p o.id .youAttackWithElves)
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
     let attacksSamePlayer :=
@@ -4794,10 +4807,6 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
-      g := g.modifyPlayer p (fun pl => { pl with
-        creaturesAttackedWithThisTurn := pl.creaturesAttackedWithThisTurn + attackerIds.size })
-      if attackerIds.any (fun id => g.hasSubtype (g.object! id) "Hero") then
-        g := g.modifyPlayer p (fun pl => { pl with attackedWithHeroThisTurn := true })
       let merfolkDefenders :=
         attackerIds.foldl (fun acc id =>
           let o := g.object! id

@@ -426,8 +426,7 @@ Jace, Reality Sculptor has 5, so 1 is excess. -/
 -/
 
 def playLandNamed (g : Game) (card : CardDef) : Game :=
-  let g := addToHand (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 0 }))
-    card ⟨0⟩
+  let g := addToHand g card ⟨0⟩
   mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ card.name).id)
 
 /- Dedicated Commons enters tapped unless you control a planeswalker. -/
@@ -552,8 +551,7 @@ def crescendoResolved : Game := passBoth crescendoCast
   match mtn with
   | some m =>
     let g := crescendoResolved
-    (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 0 })).apply ⟨0⟩
-      (.playLand m.id) |>.isOk
+    g.apply ⟨0⟩ (.playLand m.id) |>.isOk
   | none => false
 #guard
   let g := skipTo crescendoResolved .beginningOfCombat 80

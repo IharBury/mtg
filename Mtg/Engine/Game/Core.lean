@@ -1,3 +1,4 @@
+import Mtg.Engine.Game.Event
 import Mtg.Engine.Game.Player
 
 /-!
@@ -88,9 +89,6 @@ structure Game where
   /-- Until-end-of-turn continuous effect: creatures without flying can't
   block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
   creaturesWithoutFlyingCantBlock : Bool := false
-  /-- A creature went to a graveyard from the battlefield this turn
-  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
-  creatureDiedThisTurn : Bool := false
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
@@ -145,8 +143,6 @@ structure Game where
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
-  /-- Creatures that died this turn, tokens included. -/
-  creatureDeathsThisTurn : Nat := 0
   /-- Work left after the pending scry or surveil finishes (Eye of Jace):
   its controller, source, and what to do. -/
   fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
@@ -310,19 +306,9 @@ structure Game where
   per-object “creature cards to graveyard” triggers so “one or more”
   fires once (Robot Domination; MSH 138). -/
   suppressCreatureCardsToGy : Bool := false
-  /-- Player most recently dealt combat damage by a creature whose
-  combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
-  lastCombatDamagePlayer : Option PlayerId := none
   /-- True while a spell is being cast from the top of a library
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
-  /-- Creature cards that went from the battlefield to a graveyard this turn
-  (Supper for Spiders). Cleared as the turn ends. -/
-  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
-  /-- Most recent life loss amount, for “mills that many” triggers. -/
-  lastLifeLost : Option (PlayerId × Nat) := none
-  /-- Most recent noncombat damage marked on a permanent. -/
-  lastNoncombatDamage : Option (ObjectId × Nat) := none
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
@@ -338,14 +324,10 @@ structure Game where
   /-- Put a +1/+1 counter on this permanent after the current discard choices
   finish (Ninja of the Hand). -/
   plusOneAfterDiscards : Option ObjectId := none
-  /-- Most recent creature that became tapped (Captain America, Living Legend). -/
-  lastBecameTapped : Option ObjectId := none
   /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
   additionalCombatPhases : Nat := 0
   /-- Enrage triggers that will grant an additional combat when they resolve. -/
   enrageGrantsAdditionalCombat : Nat := 0
-  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
-  sheHulkDamageUsedThisTurn : Bool := false
   /-- Damage assigned to each target of the resolving divided-damage ability
 (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
@@ -363,8 +345,6 @@ structure Game where
   /-- Until EOT, this player's creatures with toughness greater than power
   assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
   assignCombatDamageEqualToughness : Option PlayerId := none
-  /-- Most recent attacking creature that died (new GY object id; Ares). -/
-  lastDiedAttacker : Option ObjectId := none
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
@@ -394,12 +374,22 @@ structure Game where
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
   ancestryLandsTapped : Array ObjectId := #[]
+  /-- State changes that happened this game, oldest first (CR 603.2 / 614.1).
+  Conditions ask this log whether an action happened. Triggers and
+  replacement effects match the same events. A replaced change is not
+  recorded (CR 614.6). -/
+  events : Array GameEvent := #[]
 deriving Repr, Inhabited
 
 namespace Game
 
 def logMsg (g : Game) (msg : String) : Game :=
   { g with log := g.log.push msg }
+
+/-- Record a change that happened. Replacements consult an event before
+this, and do not record a change they replace (CR 614.6). -/
+def record (g : Game) (e : GameEvent) : Game :=
+  { g with events := g.events.push e }
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
@@ -418,6 +408,122 @@ def over (g : Game) : Bool := g.result.isSome
 
 def player (g : Game) (p : PlayerId) : Player :=
   g.players[p.idx]!
+
+/-- Cards `p` has drawn this turn. Opening hands are not recorded. -/
+def loggedDraws (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.draws g.events g.turnNumber p
+
+/-- Life `p` has gained this turn. -/
+def loggedLifeGained (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.lifeGained g.events g.turnNumber p
+
+/-- Creatures that have died this turn. -/
+def loggedCreatureDeaths (g : Game) : Nat :=
+  GameEvent.creatureDeaths g.events g.turnNumber
+
+/-- Spells `p` has cast this turn. -/
+def loggedSpellsCast (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.spellsCast g.events g.turnNumber p
+
+/-- Creature spells `p` has cast this turn. -/
+def loggedCreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.creatureSpells g.events g.turnNumber p
+
+/-- Noncreature spells `p` has cast this turn. -/
+def loggedNoncreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.noncreatureSpells g.events g.turnNumber p
+
+/-- Creatures `p` has attacked with this turn. -/
+def loggedAttacks (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.attacks g.events g.turnNumber p
+
+/-- Cards milled from `p`'s library this turn. -/
+def loggedMilled (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.milled g.events g.turnNumber p
+
+/-- `p` has scried at least one card this turn. Scry 0 does not count. -/
+def loggedScried (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.scried g.events g.turnNumber p
+
+/-- `p` has surveilled this turn. Surveil 0 does not count. -/
+def loggedSurveilled (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.surveilled g.events g.turnNumber p
+
+/-- An artifact has entered under `p`'s control this turn. -/
+def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.artifactEntered g.events g.turnNumber p
+
+/-- `p` has attacked with a permanent of `subtype` this turn. -/
+def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+  GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
+
+/-- A permanent of `subtype` has entered under `p`'s control this turn. -/
+def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+  GameEvent.subtypeEntered g.events g.turnNumber p subtype
+
+/-- `p` has activated a loyalty ability this turn. -/
+def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.activatedLoyalty g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage this turn. -/
+def loggedNoncombatDamage (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.dealtNoncombat g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage last turn. -/
+def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
+  g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p
+
+/-- `id` entered the battlefield this turn. -/
+def loggedEntered (g : Game) (id : ObjectId) : Bool :=
+  GameEvent.objectEntered g.events g.turnNumber id
+
+/-- Equip abilities `p` has completed this turn. -/
+def loggedEquipActivations (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.equipActivations g.events g.turnNumber p
+
+/-- Mana values of spells `p` has cast this turn, oldest first. -/
+def loggedCastManaValues (g : Game) (p : PlayerId) : Array Nat :=
+  GameEvent.castManaValues g.events g.turnNumber p
+
+/-- Cards `p` has discarded this turn. -/
+def loggedDiscards (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.discards g.events g.turnNumber p
+
+/-- Life `p` has lost this turn. -/
+def loggedLifeLost (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.lifeLost g.events g.turnNumber p
+
+/-- Resolutions `p`'s counting ability has recorded this turn. -/
+def loggedResolutions (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.resolutions g.events g.turnNumber p
+
+/-- Lands `p` has played this turn. -/
+def loggedLandsPlayed (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.landsPlayed g.events g.turnNumber p
+
+/-- Graveyard ids of creatures that died this turn. -/
+def loggedCreaturesToGraveyard (g : Game) : Array ObjectId :=
+  GameEvent.creaturesToGraveyard g.events g.turnNumber
+
+/-- Graveyard id of the most recent attacking creature that died. -/
+def loggedLastDiedAttacker (g : Game) : Option ObjectId :=
+  GameEvent.lastDiedAttacker g.events
+
+/-- Permanent that most recently became tapped. -/
+def loggedLastBecameTapped (g : Game) : Option ObjectId :=
+  GameEvent.lastBecameTapped g.events
+
+/-- Player most recently dealt combat damage. -/
+def loggedLastCombatDamagePlayer (g : Game) : Option PlayerId :=
+  GameEvent.lastCombatDamagePlayer g.events
+
+/-- The Sensational She-Hulk has dealt damage this turn. -/
+def loggedSheHulkDealtDamage (g : Game) : Bool :=
+  GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
+
+/-- Record that combat damage was dealt to `p`. -/
+def noteCombatDamageTo (g : Game) (p : PlayerId) : Game :=
+  g.record (GameEvent.damagedPlayer g.turnNumber none p 1 true)
 
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }

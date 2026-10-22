@@ -14,7 +14,7 @@ namespace Game
 /-- Mana value of other spells `p` has cast this turn. Copies that were not
 cast are not recorded. -/
 def otherCastManaValueThisTurn (g : Game) (p : PlayerId) : Nat :=
-  (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
+  (g.loggedCastManaValues p).foldl (· + ·) 0
 
 /-- Lands `p` currently controls (CR 305.1). -/
 def landsYouControl (g : Game) (p : PlayerId) : Nat :=

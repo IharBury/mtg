@@ -246,7 +246,7 @@ open Mtg.Demo.Render
   | some land =>
     match applyPlay g ⟨0⟩ [toString land.id] with
     | .ok g' =>
-      (g'.player ⟨0⟩).landsPlayedThisTurn == 1 &&
+      g'.loggedLandsPlayed ⟨0⟩ == 1 &&
       g'.battlefield.any (fun o => o.name == land.name)
     | .error _ => false
 
