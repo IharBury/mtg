@@ -266,7 +266,6 @@ def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
     | some p =>
       let happened := GameEvent.activated g.turnNumber p o.asEvent true
       let g := g.record happened
-      let g := g.modifyPlayer p (fun pl => { pl with activatedLoyaltyThisTurn := true })
       let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
       -- Gideon, the Oathless: an opponent activating a loyalty ability.
       (g.livingOpponents p).foldl (fun g opp =>

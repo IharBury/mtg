@@ -2036,18 +2036,15 @@ def knotsAfterScry : Except String Game :=
 def knotsOk : Bool :=
   hithlainKnots.spellEffect == some (Effect.tapScryDraw 1 1) &&
     knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
-    (knotsIllegal.player ⟨0⟩).cardsDrawnThisTurn ==
-      (afterDraw.player ⟨0⟩).cardsDrawnThisTurn &&
+    knotsIllegal.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ &&
     (match knotsIllegal.pending with | .scry _ _ => false | _ => true) &&
-    (knotsAlreadyTapped.player ⟨0⟩).cardsDrawnThisTurn ==
-      (afterDraw.player ⟨0⟩).cardsDrawnThisTurn &&
+    knotsAlreadyTapped.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ &&
     (match knotsAlreadyTapped.pending with
      | .scry _ _ => true
      | _ => knotsAlreadyTapped.log.any (fun s => mentions s "scries")) &&
     (match knotsAfterScry with
      | .ok g =>
-       (g.player ⟨0⟩).cardsDrawnThisTurn ==
-         (afterDraw.player ⟨0⟩).cardsDrawnThisTurn + 1 &&
+       g.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ + 1 &&
          match g.pending with | .scry _ _ => false | _ => true
      | .error _ => false) &&
     (ruling 188).comment.contains "spell doesn't resolve"
@@ -2796,8 +2793,7 @@ def mountDoomChooseKeepOk : Bool :=
 -/
 
 def gleamingReady : Game :=
-  let g := addPermanent afterDraw gleamingSplendor ⟨0⟩ ⟨0⟩
-  g.modifyPlayer ⟨1⟩ (fun pl => { pl with cardsDrawnThisTurn := 0 })
+  addPermanent afterDraw gleamingSplendor ⟨0⟩ ⟨0⟩
 
 def gleamingSecondDraw : Game :=
   (gleamingReady.draw ⟨1⟩ 1).draw ⟨1⟩ 1
@@ -2821,10 +2817,8 @@ def gleamingTwoDifferentPlayersOk : Bool :=
    | .ok _ => false) &&
     (match afterDraw.twoPlayersEachDraw ⟨0⟩ ⟨1⟩ with
      | .ok g =>
-       (g.player ⟨0⟩).cardsDrawnThisTurn ==
-         (afterDraw.player ⟨0⟩).cardsDrawnThisTurn + 1 &&
-         (g.player ⟨1⟩).cardsDrawnThisTurn ==
-           (afterDraw.player ⟨1⟩).cardsDrawnThisTurn + 1
+       g.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ + 1 &&
+         g.loggedDraws ⟨1⟩ == afterDraw.loggedDraws ⟨1⟩ + 1
      | .error _ => false) &&
     (ruling 130).comment.contains "two different target players"
 
@@ -3588,7 +3582,7 @@ def headOfHuntExilesOk : Bool :=
       o.name == "Grizzly Bears" && o.zone == .exile) &&
     countWaitingAbility headExilesPreyBeeSilent
       (.onOneOrMoreOtherCreaturesDieScry 1) == 0 &&
-    !headExilesPreyBeeSilent.creatureDiedThisTurn &&
+    headExilesPreyBeeSilent.loggedCreatureDeaths == 0 &&
     (ruling 325).comment.contains "exiled instead of dying" &&
     (ruling 325).comment.contains "won't trigger"
 
@@ -3951,7 +3945,6 @@ def thranduilCompanyExtraLandOk : Bool :=
 
 def secondCardOnceEachTurnOk : Bool :=
   let g := addPermanent afterDraw lakeshoreApothecary ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let g := g.draw ⟨0⟩ 1
   let afterFirst :=
     !g.waitingTriggers.any (fun wt => wt.ability == .onDrawSecondPlusOne)
@@ -3989,8 +3982,9 @@ def mirkwoodElkZeroPowerOk : Bool :=
 -/
 
 def spellsBeforeLothoCountOk : Bool :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with spellsCastThisTurn := 1 })
-  (g.player ⟨0⟩).spellsCastThisTurn == 1 &&
+  let g := afterDraw.record (GameEvent.cast afterDraw.turnNumber ⟨0⟩
+    { id := ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
+  g.loggedSpellsCast ⟨0⟩ == 1 &&
     (ruling 267).comment.contains "Spells that were cast before Lotho"
 
 #guard spellsBeforeLothoCountOk
@@ -4499,7 +4493,6 @@ def sarumanReflexiveAfterMillOk : Bool :=
 def bardTargetsRecruitSoldierOk : Bool :=
   let g := addPermanent afterDraw bardTheBowman ⟨0⟩ ⟨0⟩
   let g := addToHand g lightningBolt ⟨0⟩
-  let g := g.setPlayer { (g.player ⟨0⟩) with cardsDrawnThisTurn := 1 }
   let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
   let g := g.beginRecruit ⟨0⟩
   let g :=
@@ -4530,7 +4523,7 @@ def batCloudReductionIfPlayerLostOk : Bool :=
   let g := addToHand g dreadedBatCloud ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Dreaded Bat-Cloud"
   let cost := g.playManaCost card dreadedBatCloud
-  g.creatureDiedThisTurn &&
+  g.loggedCreatureDeaths > 0 &&
     (g.player ⟨1⟩).lost &&
     cost == ManaCost.ofGenericAndColor 1 .black &&
     (ruling 226).comment.contains "Dreaded Bat-Cloud's cost reduction applies"
@@ -4694,7 +4687,7 @@ def supperForSpidersFoodOnlyOk : Bool :=
   let g := g.supperForSpidersReturn ⟨0⟩ #[card.id]
   let food := namedPermanent g "Dáin, Lord of the Iron Hills"
   food.status.onlyFoodArtifact &&
-    food.status.enteredThisTurn &&
+    g.loggedEntered food.id &&
     !food.isCreature &&
     food.types == #[.artifact] &&
     food.subtypes == #["Food"] &&

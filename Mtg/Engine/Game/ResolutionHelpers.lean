@@ -219,8 +219,6 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let g :=
     if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
     else g.queueScryOrSurveilTriggers p
-  let g := if n == 0 then g else
-    g.modifyPlayer p (fun pl => { pl with surveilledThisTurn := true })
   if count == 0 then
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else

@@ -55,8 +55,6 @@ def discardToMaxHandSize (g : Game) : Game :=
 def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with
-      creatureDiedThisTurn := false
-      creatureDeathsThisTurn := 0
       battlefieldCreaturesToGyThisTurn := #[]
       lastLifeLost := none
       lastNoncombatDamage := none
@@ -73,44 +71,25 @@ def clearTurnActivations (g : Game) : Game :=
         -- Keep last-known this-turn info until that turn would have begun
         -- (CR 800.4i).
         pure ()
-      else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
-          pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
-          pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
+      else if pl.belladonnaResolvesThisTurn != 0 ||
+          pl.attackPumpPerPlainsThisTurn != 0 ||
           pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
-          pl.scriedThisTurn || pl.surveilledThisTurn ||
           pl.copyNextInstantSorceryThisTurn != 0 ||
-          pl.dealtNoncombatDamageThisTurn || pl.cardsMilledThisTurn != 0 ||
-          pl.mountainExtraRedThisTurn != 0 || pl.dealtNoncombatDamageLastTurn ||
+          pl.mountainExtraRedThisTurn != 0 ||
           pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
-          pl.activatedLoyaltyThisTurn || pl.nextSpellCantBeCountered ||
-          pl.creaturesAttackedWithThisTurn != 0 || pl.equipActivationsThisTurn != 0 ||
+          pl.nextSpellCantBeCountered || pl.equipActivationsThisTurn != 0 ||
+          !pl.castManaValuesThisTurn.isEmpty ||
           !pl.typeSpellCostLessThisTurn.isEmpty ||
           !pl.supertypeSpellCostLessThisTurn.isEmpty then
         g := g.setPlayer { pl with
-          cardsDrawnThisTurn := 0
-          cardsDrawnThisDrawStep := 0
-          spellsCastThisTurn := 0
-          noncreatureSpellsCastThisTurn := 0
-          creatureSpellsCastThisTurn := 0
           castManaValuesThisTurn := #[]
           belladonnaResolvesThisTurn := 0
-          lifeGainedThisTurn := 0
           cantCastSpellsThisTurn := false
           attackPumpPerPlainsThisTurn := 0
-          heroEnteredThisTurn := false
-          attackedWithHeroThisTurn := false
-          creaturesAttackedWithThisTurn := 0
           equipActivationsThisTurn := 0
           cardsDiscardedThisTurn := 0
-          artifactEnteredThisTurn := false
           jaceLoyaltyAtInstantSpeed := false
-          scriedThisTurn := false
-          surveilledThisTurn := false
           copyNextInstantSorceryThisTurn := 0
-          dealtNoncombatDamageThisTurn := false
-          dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn
-          activatedLoyaltyThisTurn := false
-          cardsMilledThisTurn := 0
           mountainExtraRedThisTurn := 0
           nextSpellCantBeCountered := false
           lifeLostThisTurn := 0
@@ -120,7 +99,7 @@ def clearTurnActivations (g : Game) : Game :=
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
-          !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
+          !o.status.allianceModesChosen.isEmpty ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
           o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn ||
           o.status.loyaltyActivatedThisTurn ||
@@ -133,7 +112,6 @@ def clearTurnActivations (g : Game) : Game :=
           firedOnceEachTurn := false
           optionalOnceUsed := false
           allianceModesChosen := #[]
-          enteredThisTurn := false
           declaredAsAttackerThisTurn := false
           boastUsedThisTurn := false
           becameTappedThisTurn := false
@@ -190,14 +168,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.restoreCopiesUntilNextTurn p
   let g := g.expirePlayPermissions p
   g.setPlayer { (g.player p) with
-    cardsDrawnThisTurn := 0
-    cardsDrawnThisDrawStep := 0
-    spellsCastThisTurn := 0
-    noncreatureSpellsCastThisTurn := 0
-    creatureSpellsCastThisTurn := 0
     castManaValuesThisTurn := #[]
     belladonnaResolvesThisTurn := 0
-    lifeGainedThisTurn := 0
     cantCastSpellsThisTurn := false
     attackPumpPerPlainsThisTurn := 0 }
 

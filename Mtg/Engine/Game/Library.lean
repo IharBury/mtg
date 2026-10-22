@@ -28,13 +28,6 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
     let firstOfTheirDrawStep :=
       g.step == .draw && g.activePlayer == p &&
         !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
-    let drawStepDrawn :=
-      if g.step == .draw && g.activePlayer == p then
-        pl.cardsDrawnThisDrawStep + 1
-      else pl.cardsDrawnThisDrawStep
-    let g := g.setPlayer { pl with
-      cardsDrawnThisTurn := pl.cardsDrawnThisTurn + 1
-      cardsDrawnThisDrawStep := drawStepDrawn }
     let g := g.logMsg s!"{pl.name} draws {cardName}"
     let happened := GameEvent.drew g.turnNumber p top nth firstOfTheirDrawStep
     -- Opening hands are drawn before anyone keeps (CR 103.4). They are not

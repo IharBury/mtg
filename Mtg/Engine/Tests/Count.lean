@@ -252,7 +252,7 @@ power. A number that cannot be read does not hold. -/
   let (_, same) := holds afterDraw (.atLeast (.fixed 2) (.fixed 2))
   let (_, negative) := holds afterDraw (.atLeast (.fixed (-1)) (.fixed (-3)))
   let (_, unread) := holds afterDraw (.atLeast .double (.fixed 0))
-  let g := afterDraw.modifyPlayer caster (fun pl => { pl with cardsDrawnThisTurn := 4 })
+  let g := afterDraw
   let (g, drawnNone) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 1))
   let g := (g.record (GameEvent.drew g.turnNumber caster ⟨11⟩ 1)).record
     (GameEvent.drew g.turnNumber caster ⟨12⟩ 2)

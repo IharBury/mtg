@@ -4808,10 +4808,6 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
-      g := g.modifyPlayer p (fun pl => { pl with
-        creaturesAttackedWithThisTurn := pl.creaturesAttackedWithThisTurn + attackerIds.size })
-      if attackerIds.any (fun id => g.hasSubtype (g.object! id) "Hero") then
-        g := g.modifyPlayer p (fun pl => { pl with attackedWithHeroThisTurn := true })
       let merfolkDefenders :=
         attackerIds.foldl (fun acc id =>
           let o := g.object! id

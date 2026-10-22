@@ -83,7 +83,7 @@ def herbieLandNotPlayOk : Bool :=
     | some id => mustApply g ⟨0⟩ (.cast id)
     | none => g
   g.battlefield.any (fun o =>
-      o.printed.isLand && o.status.tapped && o.status.enteredThisTurn) &&
+      o.printed.isLand && o.status.tapped && g.loggedEntered o.id) &&
     (g.player ⟨0⟩).landsPlayedThisTurn == played0 &&
     (mshRuling 622).comment.contains "doesn't count as playing a land"
 

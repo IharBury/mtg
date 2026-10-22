@@ -231,8 +231,6 @@ def vraskaEnters (lands : Nat) : Game :=
 
 def futurescribeCombat (scried surveilled : Bool) : Game :=
   let g := addPermanent (addPermanent afterDraw desperateFuturescribe ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with scriedThisTurn := scried, surveilledThisTurn := surveilled })
   let g := if scried then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1) else g
   let g := if surveilled then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1 true) else g
   resolveStack (skipTo g .beginningOfCombat 80) 20
@@ -246,13 +244,13 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
   o.status.plusOnePlusOne == 0 && o.status.pump == (1, 1)
 #guard (fraRuling 804).comment.contains "only one +1/+1 counter"
 
-/- Scrying sets only the scry flag. Surveilling sets only the surveil flag. Scry 0 sets neither. -/
-#guard (afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩ |>.surveilledThisTurn
-#guard !((afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩).scriedThisTurn
-#guard (afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩ |>.scriedThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩).surveilledThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).scriedThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).surveilledThisTurn
+/- Scrying records only a scry. Surveilling records only a surveil. Scry 0 records neither. -/
+#guard (afterDraw.beginSurveil ⟨0⟩ 1).loggedSurveilled ⟨0⟩
+#guard !((afterDraw.beginSurveil ⟨0⟩ 1).loggedScried ⟨0⟩)
+#guard (afterDraw.beginScry ⟨0⟩ 1).loggedScried ⟨0⟩
+#guard !((afterDraw.beginScry ⟨0⟩ 1).loggedSurveilled ⟨0⟩)
+#guard !((afterDraw.beginScry ⟨0⟩ 0).loggedScried ⟨0⟩)
+#guard !((afterDraw.beginScry ⟨0⟩ 0).loggedSurveilled ⟨0⟩)
 
 /-!
 ## The Theorist, Jace Beleren (ruling 770)

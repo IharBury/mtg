@@ -193,8 +193,6 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     else
       let happened := GameEvent.life g.turnNumber p gained true
       let g := g.record happened
-      let g := g.modifyPlayer p (fun pl =>
-        { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + gained })
       if happened.matchesTrigger p ⟨0⟩ .youGainLife then
         g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
       else g
@@ -244,7 +242,6 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
-    let g := if n > 0 then g.modifyPlayer pid (fun pl => { pl with dealtNoncombatDamageThisTurn := true }) else g
     let g :=
       if n > 0 then
         g.record (GameEvent.damagedPlayer g.turnNumber (source.map (·.id)) pid n.toNat false)

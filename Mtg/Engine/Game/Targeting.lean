@@ -135,7 +135,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (!f.attacking || o.status.attacking) &&
     (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
     (!f.attackedThisTurn || o.status.declaredAsAttackerThisTurn) &&
-    (!f.enteredThisTurn || o.status.enteredThisTurn) &&
+    (!f.enteredThisTurn || g.loggedEntered o.id) &&
     (!f.untapped || !o.status.tapped) &&
     (!f.nonattacking || !o.status.attacking) &&
     (!f.withHaste || g.hasHaste o) &&

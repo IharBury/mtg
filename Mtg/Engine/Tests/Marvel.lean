@@ -31,7 +31,7 @@ open Mtg.Engine.Catalog
 (CR 702.193b). `{4}{W}` minus Brave Brawler's `{1}{W}` is `{3}`. -/
 def brawlerEntered : Game := mshEnter afterDraw braveBrawler
 
-#guard (namedPermanent brawlerEntered "Brave Brawler").status.enteredThisTurn
+#guard brawlerEntered.loggedEntered (namedPermanent brawlerEntered "Brave Brawler").id
 #guard
   let o := namedPermanent brawlerEntered "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
@@ -42,7 +42,7 @@ def brawlerEntered : Game := mshEnter afterDraw braveBrawler
 /-- Without the enters-this-turn flag the power-up cost is printed. -/
 def brawlerNoEnterFlag : Game := addPermanent afterDraw braveBrawler ⟨0⟩ ⟨0⟩
 
-#guard !(namedPermanent brawlerNoEnterFlag "Brave Brawler").status.enteredThisTurn
+#guard !brawlerNoEnterFlag.loggedEntered (namedPermanent brawlerNoEnterFlag "Brave Brawler").id
 #guard
   let o := namedPermanent brawlerNoEnterFlag "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
@@ -181,7 +181,7 @@ def pantherCombatDraw : Game :=
 
 def hiddenLairEntered : Game := mshEnter afterDraw hiddenLair
 
-#guard (namedPermanent hiddenLairEntered "Hidden Lair").status.enteredThisTurn
+#guard hiddenLairEntered.loggedEntered (namedPermanent hiddenLairEntered "Hidden Lair").id
 #guard
   hiddenLairEntered.manaAbilitiesOf (namedPermanent hiddenLairEntered "Hidden Lair") ==
     #[.colorless, .colored .blue, .colored .black]
@@ -197,7 +197,7 @@ def hiddenLairTappedBlue : Game :=
 /-- Without entering this turn or a basic, Hidden Lair taps only for `{C}`. -/
 def hiddenLairStuck : Game := addPermanent afterDraw hiddenLair ⟨0⟩ ⟨0⟩
 
-#guard !(namedPermanent hiddenLairStuck "Hidden Lair").status.enteredThisTurn
+#guard !hiddenLairStuck.loggedEntered (namedPermanent hiddenLairStuck "Hidden Lair").id
 #guard
   hiddenLairStuck.manaAbilitiesOf (namedPermanent hiddenLairStuck "Hidden Lair") ==
     #[.colorless]
@@ -394,7 +394,7 @@ def staturePowerUpResolved : Game := passBoth paidStature
 /-- Entered this turn, `{X}{U}{U}` minus `{U}` is `{X}{U}`. -/
 def statureEntered : Game := mshEnter afterDraw statureSizeShifter
 
-#guard (namedPermanent statureEntered "Stature, Size Shifter").status.enteredThisTurn
+#guard statureEntered.loggedEntered (namedPermanent statureEntered "Stature, Size Shifter").id
 #guard
   let o := namedPermanent statureEntered "Stature, Size Shifter"
   let ab := o.printed.activatedAbilities[0]!

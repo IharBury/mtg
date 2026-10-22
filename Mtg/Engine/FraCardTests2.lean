@@ -122,7 +122,7 @@ creature. -/
   let g := addPermanent afterDraw solariumSentry me me
   let g := mustApply g me .pass
   let g := resolved (castFra g shock [.target (.player me)] opp)
-  (g.player me).lifeGainedThisTurn == 2 && life g me == 20
+  g.loggedLifeGained me == 2 && life g me == 20
 
 /- Flickering Hound blinks another creature you control when you cast a
 creature spell; it returns untapped with no counters. -/

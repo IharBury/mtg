@@ -89,9 +89,6 @@ structure Game where
   /-- Until-end-of-turn continuous effect: creatures without flying can't
   block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
   creaturesWithoutFlyingCantBlock : Bool := false
-  /-- A creature went to a graveyard from the battlefield this turn
-  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
-  creatureDiedThisTurn : Bool := false
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
@@ -146,8 +143,6 @@ structure Game where
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
-  /-- Creatures that died this turn, tokens included. -/
-  creatureDeathsThisTurn : Nat := 0
   /-- Work left after the pending scry or surveil finishes (Eye of Jace):
   its controller, source, and what to do. -/
   fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none

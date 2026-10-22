@@ -1613,7 +1613,7 @@ def plusOneCreatureAndLife : Game :=
 #guard
   (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.plusOnePlusOne == 1 &&
     (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.gotPlusOneThisTurn &&
-    (plusOneCreatureAndLife.player ⟨0⟩).lifeGainedThisTurn == 2
+    plusOneCreatureAndLife.loggedLifeGained ⟨0⟩ == 2
 
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
@@ -1621,7 +1621,7 @@ def plusOneCreatureAndLife : Game :=
     (Effect.plusOneUpToOneAndPlayerGainsLife 1 .minusOneMinusOne)
     #[Target.player ⟨0⟩]
   (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
-    (g.player ⟨0⟩).lifeGainedThisTurn == 1
+    g.loggedLifeGained ⟨0⟩ == 1
 
 /-- `.firstYouControl` puts counters only on the first creature you control.
 A later opposing creature is left alone. +1/+1 still uses the counter triggers. -/

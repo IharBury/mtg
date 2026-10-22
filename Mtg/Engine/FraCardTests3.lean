@@ -293,7 +293,7 @@ artifact or creature each opponent controls; −6 draws three, then puts a
   let before := !g.canAttack (namedPermanent g "Surveillance Phantasm")
   let g := activateNamed g "Surveillance Phantasm" "Surveil"
   let g := resolved g
-  before && (g.player me).surveilledThisTurn && !((g.player me).scriedThisTurn) &&
+  before && g.loggedSurveilled me && !g.loggedScried me &&
     g.canAttack (namedPermanent g "Surveillance Phantasm")
 
 /- Paradox Shaper puts a card from your graveyard on the bottom of your

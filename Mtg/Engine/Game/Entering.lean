@@ -50,12 +50,8 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g := g.record happened
   let spells := g.loggedSpellsCast caster
   let nonc := g.loggedNoncreatureSpells caster
-  let creat := g.loggedCreatureSpells caster
   let g := g.modifyPlayer caster (fun p =>
     { p with
-      spellsCastThisTurn := spells
-      noncreatureSpellsCastThisTurn := nonc
-      creatureSpellsCastThisTurn := creat
       castManaValuesThisTurn :=
         p.castManaValuesThisTurn.push (g.objectManaValue spell) })
   let g :=
@@ -449,8 +445,6 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let g := g.enterWithShield (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
   let o := g.object! id
-  let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
-  let o := g.object! id
   -- A zone change already recorded this arrival. Inserts that skip `move`
   -- still have to leave an enters event, or “entered this turn” is invisible.
   let g :=
@@ -549,8 +543,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if entered.printed.isArtifact then
-        let g := g.modifyPlayer p (fun pl =>
-          { pl with artifactEnteredThisTurn := true })
         g.putControlledTriggersWithPrompt p .artifactYouControlEnters
       else g
     let g :=
@@ -560,10 +552,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     let g :=
       entered.subtypes.foldl (fun acc sub =>
         acc.putControlledTriggers p (.subtypeYouControlEnters sub)) g
-    let g :=
-      if entered.isCreature && g.hasSubtype entered "Hero" then
-        g.modifyPlayer p (fun pl => { pl with heroEnteredThisTurn := true })
-      else g
     let g :=
       if entered.printed.isEquipment then
         g.putControlledTriggers p .equipmentYouControlEnters

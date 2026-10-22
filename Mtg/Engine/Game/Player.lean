@@ -40,22 +40,8 @@ structure Player where
   library : Array ObjectId := #[]
   hand : Array ObjectId := #[]
   graveyard : Array ObjectId := #[]
-  /-- Cards drawn this turn (for “second card each turn” triggers). -/
-  cardsDrawnThisTurn : Nat := 0
-  /-- A Hero you control entered this turn (Avengers Assemble). -/
-  heroEnteredThisTurn : Bool := false
-  /-- You attacked with a Hero this turn (Avengers Assemble). -/
-  attackedWithHeroThisTurn : Bool := false
-  /-- Creatures this player attacked with this turn (Minas Tirith). -/
-  creaturesAttackedWithThisTurn : Nat := 0
   /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
   equipActivationsThisTurn : Nat := 0
-  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
-  cardsDrawnThisDrawStep : Nat := 0
-  /-- Spells cast this turn (for “second spell each turn” triggers). -/
-  spellsCastThisTurn : Nat := 0
-  /-- Noncreature spells cast this turn. -/
-  noncreatureSpellsCastThisTurn : Nat := 0
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
   /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
@@ -80,10 +66,6 @@ structure Player where
   /-- Bird Soldier tokens to create at the beginning of the next upkeep
   (The Eagles Are Coming!). -/
   eaglesBirdsNextUpkeep : Nat := 0
-  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
-  lifeGainedThisTurn : Nat := 0
-  /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
-  creatureSpellsCastThisTurn : Nat := 0
   /-- Qualities beheld this game (Elven Passage and similar). A later zone
   change of the revealed card or chosen permanent does not un-behold. -/
   beheldQualities : Array String := #[]
@@ -101,9 +83,6 @@ structure Player where
   typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
   /-- Generic mana less to cast spells of each of these supertypes this turn. -/
   supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
-  /-- An artifact entered under this player's control this turn (Iron Man;
-  MSH 242 / 323). Still true if that artifact later left or changed types. -/
-  artifactEnteredThisTurn : Bool := false
   /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
   controls may be activated any time they could cast an instant (Jace's
   Machinations). Each permanent is still limited to one per turn (ruling 766). -/
@@ -114,24 +93,9 @@ structure Player where
   /-- Instant or sorcery spells this player casts this turn that are copied
   (Way of the Cryomancer). -/
   copyNextInstantSorceryThisTurn : Nat := 0
-  /-- This player was dealt noncombat damage this turn (Grim Repriser). -/
-  dealtNoncombatDamageThisTurn : Bool := false
-  /-- This player scried this turn (Desperate Futurescribe).
-  Scry 0 does not count. -/
-  scriedThisTurn : Bool := false
-  /-- This player surveilled this turn (Desperate Futurescribe).
-  Surveil 0 does not count. -/
-  surveilledThisTurn : Bool := false
   /-- Sideboard cards not yet brought into play as objects outside the game
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
-  /-- This player was dealt noncombat damage during the previous turn. -/
-  dealtNoncombatDamageLastTurn : Bool := false
-  /-- This player activated a loyalty ability this turn. -/
-  activatedLoyaltyThisTurn : Bool := false
-  /-- Cards put into this player's graveyard from their library this turn
-  (Cruel Calculations). -/
-  cardsMilledThisTurn : Nat := 0
   /-- Until end of turn, each Mountain this player taps for mana adds this
   many additional {R} (Molten Tide). -/
   mountainExtraRedThisTurn : Nat := 0

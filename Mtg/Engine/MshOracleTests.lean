@@ -92,7 +92,7 @@ def aerialPowerUpEntered : Game := mshEnter afterDraw aerialDoombot
 def powerUpReductionOk : Bool :=
   let o := namedPermanent aerialPowerUpEntered "Aerial Doombot"
   let ab := o.printed.activatedAbilities[0]!
-  ab.powerUp && o.status.enteredThisTurn &&
+  ab.powerUp && aerialPowerUpEntered.loggedEntered o.id &&
     aerialPowerUpEntered.activationManaCost ⟨0⟩ ab (some o) ==
       ({ symbols := #[.generic 5] } : ManaCost) &&
     (mshRuling 360).comment.contains "Activate only once" &&
@@ -2149,7 +2149,7 @@ def worldsWithinWorldsOk : Bool :=
            ogres.any (fun id => (g1.object! id).name == "Gray Ogre") &&
            (let g2 := mustApply g1 ⟨1⟩ .decline
             g2.pending == .none &&
-              (namedPermanent g2 "Aerial Doombot").status.enteredThisTurn &&
+              g2.loggedEntered (namedPermanent g2 "Aerial Doombot").id &&
               !g2.battlefield.any (fun o => o.name == "Gray Ogre") &&
               !g2.battlefield.any (fun o => o.name == "Grizzly Bears") &&
               !g2.battlefield.any (fun o => o.name == "Hill Giant") &&
@@ -3573,13 +3573,13 @@ def tooEvilTeamworkEntersOk : Bool :=
     (let gBear := g.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
         #[Target.card bear.id]
      let returned := namedPermanent gBear "Grizzly Bears"
-     returned.status.enteredThisTurn) &&
+     gBear.loggedEntered returned.id) &&
     (let paid := g.setObject { (namedGraveyardCard g ⟨0⟩ "Grizzly Bears") with
         teamworkPaid := true }
      let paid := { paid with resolvingSpell := some bear.id }
      let paid := paid.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
        #[Target.card dino.id]
-     (namedPermanent paid "Savage Land Dinosaur").status.enteredThisTurn)
+     paid.loggedEntered (namedPermanent paid "Savage Land Dinosaur").id)
 
 #guard tooEvilTeamworkEntersOk
 
@@ -3597,7 +3597,7 @@ def cruelAllianceTeamworkOk : Bool :=
     (let gExile := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
         #[Target.permanent bears.id]
      !gExile.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-       (gExile.player ⟨0⟩).lifeGainedThisTurn == 0) &&
+       gExile.loggedLifeGained ⟨0⟩ == 0) &&
     (let gMiss := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
         #[Target.permanent giant.id]
      gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
@@ -3609,7 +3609,7 @@ def cruelAllianceTeamworkOk : Bool :=
            #[Target.permanent giant.id]
         !paid.battlefield.any (fun o => o.name == "Hill Giant") &&
           (paid.player ⟨0⟩).life == 23 &&
-          (paid.player ⟨0⟩).lifeGainedThisTurn == 3))
+          paid.loggedLifeGained ⟨0⟩ == 3))
 
 #guard cruelAllianceTeamworkOk
 
@@ -3621,7 +3621,7 @@ def meagerMealGainLifeOk : Bool :=
   let g := g.applyEffect ⟨0⟩ (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     #[Target.permanent bears.id, Target.player ⟨0⟩]
   (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
-    (g.player ⟨0⟩).lifeGainedThisTurn == 2 &&
+    g.loggedLifeGained ⟨0⟩ == 2 &&
     g.waitingTriggers.any (fun w => w.event == .youGainLife)
 
 #guard meagerMealGainLifeOk
@@ -3751,7 +3751,7 @@ def earthsMightiestChoosesOk : Bool :=
   | .fraChoice ⟨0⟩ (.revealPutCreatures _ creatures false) =>
     creatures.size == 1 && logContains g "reveals" &&
       (let gPut := mustApply g ⟨0⟩ (.choosePermanents creatures)
-       (namedPermanent gPut "Grizzly Bears").status.enteredThisTurn &&
+       gPut.loggedEntered (namedPermanent gPut "Grizzly Bears").id &&
          gPut.objects.any (fun o => o.name == "Mountain" && o.zone == .graveyard ⟨0⟩)) &&
       (let gNo := mustApply g ⟨0⟩ .decline
        !gNo.battlefield.any (fun o => o.name == "Grizzly Bears") &&
@@ -3774,8 +3774,8 @@ def earthsMightiestChoosesOk : Bool :=
        | .fraChoice ⟨0⟩ (.revealPutCreatures _ both true) =>
          both.size == 2 &&
            (let gPut := mustApply gTeam ⟨0⟩ (.choosePermanents both)
-            (namedPermanent gPut "Grizzly Bears").status.enteredThisTurn &&
-              (namedPermanent gPut "Hill Giant").status.enteredThisTurn &&
+            gPut.loggedEntered (namedPermanent gPut "Grizzly Bears").id &&
+              gPut.loggedEntered (namedPermanent gPut "Hill Giant").id &&
               gPut.objects.any (fun o => o.name == "Mountain" && o.zone == .graveyard ⟨0⟩))
        | _ => false)
   | _ => false
@@ -3883,7 +3883,7 @@ def elrondReturnsAtEndStepOk : Bool :=
     g.delayedEndStepReturns.size == 1 &&
     g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
     (let gEnd := g.beginStep .end
-     (namedPermanent gEnd "Grizzly Bears").status.enteredThisTurn &&
+     gEnd.loggedEntered (namedPermanent gEnd "Grizzly Bears").id &&
        gEnd.delayedEndStepReturns.isEmpty)
 
 #guard elrondReturnsAtEndStepOk
@@ -4133,7 +4133,7 @@ def lastMarchChoosesCreaturesOk : Bool :=
   | .fraChoice ⟨0⟩ (.chooseCards ids _ .creaturesToBattlefield) =>
     ids.contains tiger.id &&
       (let gPut := mustApply g ⟨0⟩ (.choosePermanents #[tiger.id])
-       (namedPermanent gPut "White Tiger, Ava Ayala").status.enteredThisTurn) &&
+       gPut.loggedEntered (namedPermanent gPut "White Tiger, Ava Ayala").id) &&
       (let gNo := mustApply g ⟨0⟩ .decline
        (gNo.player ⟨0⟩).hand.any (fun id => (gNo.object! id).name == "White Tiger, Ava Ayala") &&
          !gNo.battlefield.any (fun o => o.name == "White Tiger, Ava Ayala"))

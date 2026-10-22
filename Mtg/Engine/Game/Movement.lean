@@ -264,7 +264,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let g :=
     let m := g.movedTo.push (id, newId)
     { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }
-  let g := if died then { g with creatureDeathsThisTurn := g.creatureDeathsThisTurn + 1 } else g
   let (g, ts) := g.bumpTime
   let leavingPlay :=
     (old.zone == .battlefield || old.zone == .stack) &&
@@ -304,11 +303,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.push newId })
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
-  let g :=
-    match old.zone, dest with
-    | .library _, .graveyard p =>
-      g.modifyPlayer p (fun pl => { pl with cardsMilledThisTurn := pl.cardsMilledThisTurn + 1 })
-    | _, _ => g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -427,8 +421,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
         nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
         fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
-        frcNontokenDies ++ discardTriggers
-    creatureDiedThisTurn := g.creatureDiedThisTurn || died }
+        frcNontokenDies ++ discardTriggers }
   let g :=
     if died then
       { g with battlefieldCreaturesToGyThisTurn :=

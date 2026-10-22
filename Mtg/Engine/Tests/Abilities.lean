@@ -69,7 +69,7 @@ def beeOtherDied : Game :=
 #guard beeOtherDied.stack.size == 1
 #guard (beeOtherDied.object! beeOtherDied.stack.back!.objectId).triggeredAbility ==
   some (.onOneOrMoreOtherCreaturesDieScry 1)
-#guard beeOtherDied.creatureDiedThisTurn
+#guard beeOtherDied.loggedCreatureDeaths > 0
 
 def beeScrying : Game := passBoth beeOtherDied
 
@@ -83,7 +83,7 @@ def beeScrying : Game := passBoth beeOtherDied
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
-  g.stack.isEmpty && g.creatureDiedThisTurn
+  g.stack.isEmpty && g.loggedCreatureDeaths > 0
 
 #guard
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
@@ -318,13 +318,13 @@ def batCloudReduced : Game :=
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  g.creatureDiedThisTurn
+  g.loggedCreatureDeaths > 0
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Hill Giant"
   let g := g.setObject { o with status := { o.status with untilEotExileIfDies := true } }
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  !g.creatureDiedThisTurn
+  g.loggedCreatureDeaths == 0
 
 
 /-- Languish: all creatures get -4 / -4. -/

@@ -541,7 +541,7 @@ modified event are ignored.
 -/
 
 /-- Head of the Hunt replaces an opposing death: the die event never happens,
-so Great Fierce Bee does not trigger, and `creatureDiedThisTurn` stays false. -/
+so Great Fierce Bee does not trigger, and no creature death is recorded. -/
 def headExilesPreyBeeSilent : Game :=
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
@@ -556,13 +556,13 @@ def headExilesPreyBeeSilent : Game :=
 #guard headExilesPreyBeeSilent.battlefield.any (fun o => o.name == "Great Fierce Bee")
 #guard countWaitingAbility headExilesPreyBeeSilent
   (.onOneOrMoreOtherCreaturesDieScry 1) == 0
-#guard !headExilesPreyBeeSilent.creatureDiedThisTurn
+#guard headExilesPreyBeeSilent.loggedCreatureDeaths == 0
 #guard wolfCount headExilesPreyBeeSilent == 0
 #guard wolvesAfterReflexive headExilesPreyBeeSilent == 1
 #guard headExilesPreyBeeSilent.log.any (fun s => mentions s "CR 614.6")
 
 /-- Bee itself dying does not see an opposing creature that was exiled instead
-of dying. The Bee did die, so `creatureDiedThisTurn` is true. -/
+of dying. The Bee did die, so a creature death is recorded. -/
 def beeDiesWhileHeadExilesPrey : Game :=
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
@@ -577,7 +577,7 @@ def beeDiesWhileHeadExilesPrey : Game :=
     match o.zone with | .graveyard _ => true | _ => false)
 #guard countWaitingAbility beeDiesWhileHeadExilesPrey
   (.onOneOrMoreOtherCreaturesDieScry 1) == 0
-#guard beeDiesWhileHeadExilesPrey.creatureDiedThisTurn
+#guard beeDiesWhileHeadExilesPrey.loggedCreatureDeaths > 0
 #guard wolfCount beeDiesWhileHeadExilesPrey == 0
 #guard wolvesAfterReflexive beeDiesWhileHeadExilesPrey == 1
 
@@ -615,7 +615,7 @@ def hunterExiledInsteadLeaves : Game :=
 #guard hunterExiledInsteadLeaves.objects.any (fun o =>
   o.name == "Grizzly Bears" && o.zone == .exile)
 #guard countWaitingAbility hunterExiledInsteadLeaves .onLeaveReturnExiled == 1
-#guard !hunterExiledInsteadLeaves.creatureDiedThisTurn
+#guard hunterExiledInsteadLeaves.loggedCreatureDeaths == 0
 
 /-- CR 614.6: an impossible instruction of a modified event is ignored. An
 Aura that cannot attach legally stays in exile. -/
