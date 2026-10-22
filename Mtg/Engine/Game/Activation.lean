@@ -208,7 +208,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
-  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome)
+  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
   let g := g.record happened
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if ab.cost.fra == .zemoBoast then

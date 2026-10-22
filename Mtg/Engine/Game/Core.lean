@@ -493,6 +493,30 @@ def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
 def loggedEntered (g : Game) (id : ObjectId) : Bool :=
   GameEvent.objectEntered g.events g.turnNumber id
 
+/-- Equip abilities `p` has completed this turn. -/
+def loggedEquipActivations (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.equipActivations g.events g.turnNumber p
+
+/-- Mana values of spells `p` has cast this turn, oldest first. -/
+def loggedCastManaValues (g : Game) (p : PlayerId) : Array Nat :=
+  GameEvent.castManaValues g.events g.turnNumber p
+
+/-- Cards `p` has discarded this turn. -/
+def loggedDiscards (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.discards g.events g.turnNumber p
+
+/-- Life `p` has lost this turn. -/
+def loggedLifeLost (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.lifeLost g.events g.turnNumber p
+
+/-- Resolutions `p`'s counting ability has recorded this turn. -/
+def loggedResolutions (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.resolutions g.events g.turnNumber p
+
+/-- Lands `p` has played this turn. -/
+def loggedLandsPlayed (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.landsPlayed g.events g.turnNumber p
+
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }
 

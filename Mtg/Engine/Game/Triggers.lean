@@ -473,8 +473,6 @@ def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else
     let happened := GameEvent.life g.turnNumber p n false true
     let g := g.record happened
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with lifeLostThisTurn := pl.lifeLostThisTurn + n })
     let g := { g with lastLifeLost := some (p, n) }
     if !happened.matchesTrigger p ⟨0⟩ .playerLosesLife then g
     else

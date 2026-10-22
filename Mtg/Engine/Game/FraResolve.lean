@@ -539,7 +539,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         s!"{(g.player controller).name} discards a card"
   | .drawThenCountersPerDiscard =>
     let g := g.draw controller 1
-    let n := (g.player controller).cardsDiscardedThisTurn
+    let n := g.loggedDiscards controller
     match g.fraCause? with
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g

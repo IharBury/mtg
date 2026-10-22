@@ -117,11 +117,16 @@ inductive GameChange where
   /-- The game entered `step` on `active`'s turn. A skipped step is not recorded
   (CR 614.10). -/
   | stepped (step : Step) (active : PlayerId)
-  /-- `player` activated an ability of `source`. `loyalty` is a loyalty ability. -/
-  | activated (player : PlayerId) (source : EventObject) (loyalty : Bool)
+  /-- `player` activated an ability of `source`. `loyalty` is a loyalty ability.
+  `equip` is an equip ability, recorded when the activation is completed. -/
+  | activated (player : PlayerId) (source : EventObject) (loyalty equip : Bool)
   /-- `player` spent `amount` mana. -/
   | spentMana (player : PlayerId) (amount : Nat)
-  /-- The `nth` spell or ability `player` resolved this turn finished. -/
+  /-- `player` played `land` as a land drop (CR 305.1). Putting a land onto
+  the battlefield another way is not a play. -/
+  | playedLand (player : PlayerId) (land : EventObject)
+  /-- The `nth` time `player` resolved the ability that counts its own
+  resolutions this turn. -/
   | resolved (player : PlayerId) (nth : Nat)
   /-- `object` became attached to `host`. -/
   | attached (object host : ObjectId)
@@ -208,10 +213,19 @@ def created (turn : Nat) (player : PlayerId) (object : EventObject) : GameEvent 
 def stepped (turn : Nat) (step : Step) (active : PlayerId) : GameEvent :=
   ⟨turn, .stepped step active⟩
 
-/-- `player` activated an ability of `source`. -/
+/-- `player` activated an ability of `source`. `equip` is set when the
+activation has been completed, so a proposal still being paid does not count. -/
 def activated (turn : Nat) (player : PlayerId) (source : EventObject)
-    (loyalty : Bool := false) : GameEvent :=
-  ⟨turn, .activated player source loyalty⟩
+    (loyalty : Bool := false) (equip : Bool := false) : GameEvent :=
+  ⟨turn, .activated player source loyalty equip⟩
+
+/-- `player` played `land`. -/
+def playedLand (turn : Nat) (player : PlayerId) (land : EventObject) : GameEvent :=
+  ⟨turn, .playedLand player land⟩
+
+/-- The `nth` counted resolution for `player` this turn. -/
+def resolved (turn : Nat) (player : PlayerId) (nth : Nat) : GameEvent :=
+  ⟨turn, .resolved player nth⟩
 
 /-- `player` spent mana. -/
 def spentMana (turn : Nat) (player : PlayerId) (amount : Nat) : GameEvent :=
@@ -480,10 +494,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
   | .stepped .upkeep _, .eaglesCreateBirds => true
   | .stepped .upkeep active, .enchantedControllerUpkeep => you active
   | .sacrificed p object, .youSacrificeToken => you p && object.token
-  | .activated p _ true, .youActivateLoyaltyAbility => you p
-  | .activated p source false, .youActivateCreatureAbility =>
+  | .activated p _ true _, .youActivateLoyaltyAbility => you p
+  | .activated p source false _, .youActivateCreatureAbility =>
     you p && source.creature
-  | .activated p _ true, .fra .opponentActivatesLoyaltyAbility => !you p
+  | .activated p _ true _, .fra .opponentActivatesLoyaltyAbility => !you p
   | .created p object, .fra .youCreateCreatureTokens => you p && object.creature
   | _, _ => false
 
@@ -570,7 +584,7 @@ def activatedLoyalty (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .activated q _ true => q == p
+      | .activated q _ true _ => q == p
       | _ => false
 
 /-- `p` was dealt noncombat damage on `turn`. -/
@@ -642,6 +656,61 @@ def drewFirstOfDrawStep (events : Array GameEvent) (turn : Nat) (p : PlayerId) :
       match e.change with
       | .drew q _ _ true => q == p
       | _ => false
+
+/-- Equip abilities `p` completed on `turn`. -/
+def equipActivations (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .activated q _ _ true => if q == p then n + 1 else n
+      | _ => n) 0
+
+/-- Mana values of spells `p` cast on `turn`, oldest first. Copies are absent. -/
+def castManaValues (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Array Nat :=
+  events.foldl (fun acc e =>
+    if e.turn != turn then acc
+    else
+      match e.change with
+      | .cast q _ _ mv _ _ _ _ => if q == p then acc.push mv else acc
+      | _ => acc) #[]
+
+/-- Cards `p` discarded on `turn`. A discard is a card moving from that
+player's hand to their graveyard. -/
+def discards (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .moved _ (.hand q) (.graveyard r) _ true => if q == p && q == r then n + 1 else n
+      | _ => n) 0
+
+/-- Life `p` lost on `turn`, including life lost to damage. -/
+def lifeLost (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .life q amount false _ _ => if q == p then n + amount else n
+      | _ => n) 0
+
+/-- Counted resolutions for `p` on `turn`. -/
+def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .resolved q _ => if q == p then n + 1 else n
+      | _ => n) 0
+
+/-- Lands `p` played on `turn`. -/
+def landsPlayed (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .playedLand q _ => if q == p then n + 1 else n
+      | _ => n) 0
 
 /-- `id` entered the battlefield on `turn`. -/
 def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool :=

@@ -525,7 +525,7 @@ def castSpellManaValue (g : Game) (controller : PlayerId)
       match g.lastStackSpell? with
       | some o => o.printed.manaValue + o.chosenX.getD 0
       | none =>
-        match (g.player controller).castManaValuesThisTurn.back? with
+        match (g.loggedCastManaValues controller).back? with
         | some mv => mv
         | none => 0
 

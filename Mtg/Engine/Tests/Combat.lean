@@ -25,7 +25,7 @@ def cratermakerReady : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def cratermakerSource (g : Game) : GameObject :=
   namedPermanent g "Goblin Cratermaker"
@@ -201,7 +201,7 @@ def cratermakerDestroyReady : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
   let g := addPermanent g wayfarersBauble ⟨1⟩ ⟨1⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 #guard (namedPermanent cratermakerDestroyReady "Wayfarer's Bauble").isColorlessNonland
 #guard !(namedPermanent cratermakerDestroyReady "Goblin Cratermaker").isColorlessNonland

@@ -598,7 +598,7 @@ def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option Obje
 now (ruling 110). Cascade spells that were actually cast are included. A
 resolving copy was not cast, so its mana value is not subtracted. -/
 def otherSpellsManaValue (g : Game) (p : PlayerId) : Nat :=
-  let total := (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
+  let total := (g.loggedCastManaValues p).foldl (· + ·) 0
   let own :=
     match g.resolvingSpell.bind g.findObject? with
     | some spell =>
@@ -1839,7 +1839,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           { pl with manaPool :=
             pl.manaPool.add (.colored .white) 2 })
       | .drawPerDiscardedThisTurn =>
-        g.draw controller (g.player controller).cardsDiscardedThisTurn
+        g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>
         g.createKindTokens controller kind chosenX
       | .exileTopXPlayThisTurn =>

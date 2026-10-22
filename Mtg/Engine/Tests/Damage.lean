@@ -273,7 +273,7 @@ def fireleaperAbility : ActivatedAbility :=
 def fireleaperReady : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 2
+  withRedMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 2
 
 def fireleaperSource (g : Game) : GameObject :=
   namedPermanent g "Goblin Fireleaper"
@@ -373,7 +373,7 @@ def prowlerAbility : ActivatedAbility :=
 /-- Prowler in play; a land drop is already used so the heuristic can activate. -/
 def prowlerReady : Game :=
   let g := addPermanent afterDraw desolationProwler ⟨0⟩ ⟨0⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def prowlerSource (g : Game) : GameObject :=
   namedPermanent g "Desolation Prowler"
@@ -632,7 +632,7 @@ def hunterSacrificesFireleaper : Game :=
   let g := addPermanent g goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addUntappedLand g mountain
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Snowslope Hunter").id 0)
   let g := mustApply g ⟨0⟩ .pay
   mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Goblin Fireleaper").id)

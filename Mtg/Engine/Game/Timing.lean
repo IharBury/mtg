@@ -85,7 +85,7 @@ def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
 
 /-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
-  g.asSorcery? p && (g.player p).landsPlayedThisTurn < g.landPlaysAllowed p
+  g.asSorcery? p && g.loggedLandsPlayed p < g.landPlaysAllowed p
 
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=

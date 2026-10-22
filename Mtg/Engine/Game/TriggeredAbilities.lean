@@ -4004,9 +4004,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | none => 0
     g.resolveCascade controller maxMv
   | .noteResolveThisTurn limit =>
-    let n := (g.player controller).belladonnaResolvesThisTurn + 1
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with belladonnaResolvesThisTurn := n })
+    let n := g.loggedResolutions controller + 1
+    let g := g.record (GameEvent.resolved g.turnNumber controller n)
     let g := { g with nthResolveThisWay := some n }
     if n > limit then
       let name :=

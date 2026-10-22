@@ -962,7 +962,7 @@ def thranduilSource (g : Game) : GameObject :=
 
 def thranduilReady : Game :=
   withGreenMana
-    (thranduilWithGuardianGy.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 }))
+    (thranduilWithGuardianGy.recordLandPlayed ⟨0⟩)
     ⟨0⟩ 7
 
 #guard thranduilReady.canActivate ⟨0⟩ (thranduilSource thranduilReady)

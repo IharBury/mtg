@@ -686,7 +686,11 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let activation := activation <|> g.proposedSpell.bind (·.activation)
   let g :=
     if activation.any (·.isEquip) then
-      g.modifyPlayer p (fun pl => { pl with equipActivationsThisTurn := pl.equipActivationsThisTurn + 1 })
+      let source :=
+        match sourceId.bind g.findObject? with
+        | some src => src.asEvent
+        | none => { id := ⟨0⟩, controller := some p, owner := p, equipment := true }
+      g.record (GameEvent.activated g.turnNumber p source false true)
     else g
   let g :=
     match sourceId with

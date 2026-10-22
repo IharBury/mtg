@@ -315,7 +315,10 @@ def mistyKnightDiscardCountOk : Bool :=
   let growth := namedGraveyardCard g ⟨0⟩ "Giant Growth"
   let (g, _) := g.move bolt.id .exile none
   let (g, _) := g.move growth.id .exile none
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDiscardedThisTurn := 2 })
+  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨81⟩, owner := ⟨0⟩ }
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
+  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨82⟩, owner := ⟨0⟩ }
+    (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.drawPerDiscardedThisTurn) #[] (some misty.id)

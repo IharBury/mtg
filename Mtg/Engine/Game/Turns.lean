@@ -71,28 +71,21 @@ def clearTurnActivations (g : Game) : Game :=
         -- Keep last-known this-turn info until that turn would have begun
         -- (CR 800.4i).
         pure ()
-      else if pl.belladonnaResolvesThisTurn != 0 ||
-          pl.attackPumpPerPlainsThisTurn != 0 ||
-          pl.cardsDiscardedThisTurn != 0 || pl.jaceLoyaltyAtInstantSpeed ||
+      else if pl.attackPumpPerPlainsThisTurn != 0 ||
+          pl.jaceLoyaltyAtInstantSpeed ||
           pl.copyNextInstantSorceryThisTurn != 0 ||
           pl.mountainExtraRedThisTurn != 0 ||
-          pl.lifeLostThisTurn != 0 || pl.cantAttackJaces ||
-          pl.nextSpellCantBeCountered || pl.equipActivationsThisTurn != 0 ||
-          !pl.castManaValuesThisTurn.isEmpty ||
+          pl.cantAttackJaces || pl.cantCastSpellsThisTurn ||
+          pl.nextSpellCantBeCountered ||
           !pl.typeSpellCostLessThisTurn.isEmpty ||
           !pl.supertypeSpellCostLessThisTurn.isEmpty then
         g := g.setPlayer { pl with
-          castManaValuesThisTurn := #[]
-          belladonnaResolvesThisTurn := 0
           cantCastSpellsThisTurn := false
           attackPumpPerPlainsThisTurn := 0
-          equipActivationsThisTurn := 0
-          cardsDiscardedThisTurn := 0
           jaceLoyaltyAtInstantSpeed := false
           copyNextInstantSorceryThisTurn := 0
           mountainExtraRedThisTurn := 0
           nextSpellCantBeCountered := false
-          lifeLostThisTurn := 0
           cantAttackJaces := false
           typeSpellCostLessThisTurn := #[]
           supertypeSpellCostLessThisTurn := #[] }
@@ -168,8 +161,6 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
   let g := g.restoreCopiesUntilNextTurn p
   let g := g.expirePlayPermissions p
   g.setPlayer { (g.player p) with
-    castManaValuesThisTurn := #[]
-    belladonnaResolvesThisTurn := 0
     cantCastSpellsThisTurn := false
     attackPumpPerPlainsThisTurn := 0 }
 
@@ -236,8 +227,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.expireFraUntilTurnEffects ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
-      g := g.modifyPlayer ap (fun pl =>
-        { pl with landsPlayedThisTurn := 0, additionalLandsThisTurn := 0 })
+      g := g.modifyPlayer ap (fun pl => { pl with additionalLandsThisTurn := 0 })
       for o in g.permanentsOf ap do
         -- CR 502.2: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change

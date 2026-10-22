@@ -24,7 +24,6 @@ structure Player where
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
   manaPool : ManaPool := {}
-  landsPlayedThisTurn : Nat := 0
   /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
   additionalLandsThisTurn : Nat := 0
   poison : Nat := 0
@@ -40,8 +39,6 @@ structure Player where
   library : Array ObjectId := #[]
   hand : Array ObjectId := #[]
   graveyard : Array ObjectId := #[]
-  /-- Equip abilities this player activated this turn (Kíli the Resourceful). -/
-  equipActivationsThisTurn : Nat := 0
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
   /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
@@ -50,16 +47,11 @@ structure Player where
   ringBearerId : Option ObjectId := none
   /-- Ascend: the city's blessing for the rest of the game. -/
   citysBlessing : Bool := false
-  /-- Mana value of each spell this player has cast this turn. -/
-  castManaValuesThisTurn : Array Nat := #[]
   /-- True when this player has a commander (Commander / Oathbreaker). -/
   hasCommander : Bool := false
   /-- Combined color identity of this player's commander(s). Empty when they
   have no commander or the commander is colorless (CR 903.4). -/
   commanderColorIdentity : ColorSet := {}
-  /-- Times `noteResolveThisTurn` has counted for this player this turn
-  (Belladonna Took). -/
-  belladonnaResolvesThisTurn : Nat := 0
   /-- Protection from everything until this player's next turn
   (e.g. The One Ring). -/
   protectionFromEverything : Bool := false
@@ -76,8 +68,6 @@ structure Player where
   attackPumpPerPlainsThisTurn : Nat := 0
   /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
   lifeLocked : Bool := false
-  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
-  cardsDiscardedThisTurn : Nat := 0
   /-- Generic mana less to cast spells of each of these types this turn
   (Armor Wars II). -/
   typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
@@ -108,8 +98,6 @@ structure Player where
   isMonarch : Bool := false
   /-- This player's life total can't change until their next turn. -/
   lifeCantChange : Bool := false
-  /-- Life lost this turn, including from damage (CR 119.3). -/
-  lifeLostThisTurn : Nat := 0
   /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
   cantAttackJaces : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/

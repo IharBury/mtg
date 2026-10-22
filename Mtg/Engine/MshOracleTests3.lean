@@ -70,7 +70,7 @@ def lokiLastKnownPowerOk : Bool :=
 playing a land. -/
 def herbieLandNotPlayOk : Bool :=
   let g := addToHand afterDraw forest ⟨0⟩
-  let played0 := (g.player ⟨0⟩).landsPlayedThisTurn
+  let played0 := g.loggedLandsPlayed ⟨0⟩
   let g := addPermanent g hERBIEScoutUnit ⟨0⟩ ⟨0⟩
   let herbie := namedPermanent g "H.E.R.B.I.E. Scout Unit"
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterDrawMayPutLandTapped (some herbie.id)
@@ -84,7 +84,7 @@ def herbieLandNotPlayOk : Bool :=
     | none => g
   g.battlefield.any (fun o =>
       o.printed.isLand && o.status.tapped && g.loggedEntered o.id) &&
-    (g.player ⟨0⟩).landsPlayedThisTurn == played0 &&
+    g.loggedLandsPlayed ⟨0⟩ == played0 &&
     (mshRuling 622).comment.contains "doesn't count as playing a land"
 
 #guard herbieLandNotPlayOk

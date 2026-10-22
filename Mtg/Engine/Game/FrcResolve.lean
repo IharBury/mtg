@@ -550,7 +550,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           |>.logMsg s!"{art.name} has haste until end of turn"
   | .despair =>
     g.forEachOpponent controller fun g pid =>
-      g.loseLife pid (g.player pid).lifeLostThisTurn
+      g.loseLife pid (g.loggedLifeLost pid)
   | .dreadUpkeep =>
     (g.loseLife controller 1).amassZombies controller 1
   | .dreadLink =>

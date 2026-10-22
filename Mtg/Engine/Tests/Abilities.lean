@@ -24,7 +24,7 @@ def emptyHand (g : Game) (p : PlayerId) : Game :=
   g.modifyPlayer p (fun pl => { pl with hand := #[] })
 
 def readyMain (g : Game) : Game :=
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 /-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
 def sentriesDied : Game :=

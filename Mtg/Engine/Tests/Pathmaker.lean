@@ -139,7 +139,7 @@ def mountainThenPassageBauble : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
   let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   mustApply g ⟨0⟩ (.activate (namedPermanent g "Wayfarer's Bauble").id 0)
 
 #guard

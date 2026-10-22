@@ -27,7 +27,7 @@ def passageReady : Game :=
   let g := addPermanent afterDraw roguesPassage ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 4
+  withRedMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 4
 
 def passageSource (g : Game) : GameObject :=
   namedPermanent g "Rogue's Passage"
@@ -915,7 +915,7 @@ def resolvedQuarrelWarg : Game :=
 
 /-- Night's Whisper in hand with enough black mana. -/
 def nightsWhisperSetup : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := afterDraw.recordLandPlayed ⟨0⟩
   withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
 
 #guard nightsWhisperSetup.canCast ⟨0⟩
@@ -924,7 +924,7 @@ def nightsWhisperSetup : Game :=
 
 -- Sorcery speed: illegal in the end step.
 #guard
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := afterDraw.recordLandPlayed ⟨0⟩
   let g := withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
   let g := skipTo g .end 80
   g.step == .end && !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Night's Whisper")

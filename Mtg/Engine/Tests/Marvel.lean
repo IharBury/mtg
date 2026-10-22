@@ -346,7 +346,7 @@ def staturePumpedInCombat : Game :=
 /-- Stature in play with enough blue to activate `{X}{U}{U}` at X = 3. -/
 def statureReady : Game :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
-  withBlueMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 5
+  withBlueMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 5
 
 def proposedStature : Game :=
   mustApply statureReady ⟨0⟩ (.activate (namedPermanent statureReady "Stature, Size Shifter").id 0)
@@ -1023,7 +1023,7 @@ def hawkeyeBowManaTap : Game :=
 def hawkeyeBowReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withRedMana g ⟨0⟩ 1
 
 def hawkeyeBowEquippedViaEquip : Game :=

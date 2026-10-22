@@ -1088,7 +1088,7 @@ def cascadeOnCastOk : Bool :=
   cascades.size == 2 &&
     cascadeOnCast.stack.any (fun e =>
       (cascadeOnCast.object! e.objectId).name == "Call Forth the Tempest") &&
-    (cascadeOnCast.player ⟨0⟩).castManaValuesThisTurn == #[8]
+    cascadeOnCast.loggedCastManaValues ⟨0⟩ == #[8]
 
 #guard cascadeOnCastOk
 
@@ -2341,7 +2341,7 @@ def belladonnaFourResolvesOk : Bool :=
   (g.player ⟨0⟩).life == 21 &&
     (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
     (namedPermanent g "Belladonna Took").status.plusOnePlusOne == 1 &&
-    (g.player ⟨0⟩).belladonnaResolvesThisTurn == 4 &&
+    g.loggedResolutions ⟨0⟩ == 4 &&
     g.log.any (fun s => mentions s "no effect") &&
     (ruling 96).comment.contains "no effect each time beyond the third"
 

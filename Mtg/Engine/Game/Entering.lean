@@ -50,10 +50,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g := g.record happened
   let spells := g.loggedSpellsCast caster
   let nonc := g.loggedNoncreatureSpells caster
-  let g := g.modifyPlayer caster (fun p =>
-    { p with
-      castManaValuesThisTurn :=
-        p.castManaValuesThisTurn.push (g.objectManaValue spell) })
   let g :=
     Id.run do
       let mut g := g
