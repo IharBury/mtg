@@ -322,8 +322,8 @@ inductive PlayerSelector where
   last-known toughness. A missing seat mills nothing.
   `.mill .thatManyLost .thatPlayer`. -/
   | thatPlayer
-  /-- The player who was dealt combat damage. That seat is
-  `lastCombatDamagePlayer`. A missing seat is the controller's opponent.
+  /-- The player who was dealt combat damage. That seat is the latest
+  combat-damage event. A missing event is the controller's opponent.
   `.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`. -/
   | damagedPlayer
   /-- The announced player. When none was announced, the resolving ability's

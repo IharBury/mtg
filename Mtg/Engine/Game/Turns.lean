@@ -54,12 +54,7 @@ def discardToMaxHandSize (g : Game) : Game :=
 /-- Clear “once each turn” activation counts as a turn ends. -/
 def clearTurnActivations (g : Game) : Game :=
   Id.run do
-    let mut g := { g with
-      battlefieldCreaturesToGyThisTurn := #[]
-      lastLifeLost := none
-      lastNoncombatDamage := none
-      sheHulkDamageUsedThisTurn := false
-      pendingFreeRGCreature := none }
+    let mut g := { g with pendingFreeRGCreature := none }
     -- Stingcaster Mage: flashback granted until end of turn ends.
     for o in g.objects do
       if o.flashbackUntilEot || o.status.freeCastFromGraveyard then

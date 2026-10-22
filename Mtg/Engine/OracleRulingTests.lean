@@ -2686,7 +2686,7 @@ def cavernHoardResolveCount : Game :=
   let g := addPermanent afterDraw cavernHoardDragon ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
-  let g := { g with lastCombatDamagePlayer := some ⟨1⟩ }
+  let g := g.noteCombatDamageTo ⟨1⟩
   let t := namedPermanent g "Treasure"
   let g := (g.move t.id (.graveyard ⟨1⟩) none).1
   g.applyTriggeredAbility ⟨0⟩

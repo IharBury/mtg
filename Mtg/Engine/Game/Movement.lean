@@ -423,15 +423,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
         frcNontokenDies ++ discardTriggers }
   let g :=
-    if died then
-      { g with battlefieldCreaturesToGyThisTurn :=
-        g.battlefieldCreaturesToGyThisTurn.push newId }
-    else g
-  let g :=
-    if died && old.status.attacking then
-      { g with lastDiedAttacker := some newId }
-    else g
-  let g :=
     if exileInstead then
       g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
     else g

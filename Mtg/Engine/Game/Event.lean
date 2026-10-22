@@ -136,6 +136,8 @@ inductive GameChange where
   | poisoned (player : PlayerId) (n : Nat)
   /-- `player` proliferated. -/
   | proliferated (player : PlayerId)
+  /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
+  | sheHulkDealtDamage (player : PlayerId)
   /-- `object` untapped. `replacedByStun` means a stun counter was removed
   instead, so the untap did not happen (CR 122.1d). -/
   | untapped (object : EventObject) (replacedByStun : Bool := false)
@@ -238,6 +240,10 @@ def poisoned (turn : Nat) (player : PlayerId) (n : Nat) : GameEvent :=
 /-- `player` proliferated. -/
 def proliferated (turn : Nat) (player : PlayerId) : GameEvent :=
   ⟨turn, .proliferated player⟩
+
+/-- `player` chose to have The Sensational She-Hulk deal damage. -/
+def sheHulkDealtDamage (turn : Nat) (player : PlayerId) : GameEvent :=
+  ⟨turn, .sheHulkDealtDamage player⟩
 
 /-- `object` untapped, or a stun counter replaced that untap. -/
 def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false) : GameEvent :=
@@ -711,6 +717,47 @@ def landsPlayed (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
       match e.change with
       | .playedLand q _ => if q == p then n + 1 else n
       | _ => n) 0
+
+/-- Graveyard ids of creatures that moved from the battlefield to a graveyard
+on `turn`. The id is the one the card has after it arrives (CR 400.7). -/
+def creaturesToGraveyard (events : Array GameEvent) (turn : Nat) : Array ObjectId :=
+  events.foldl (fun acc e =>
+    if e.turn != turn then acc
+    else
+      match e.change with
+      | .moved object .battlefield (.graveyard _) _ _ =>
+        if object.creature then acc.push object.id else acc
+      | _ => acc) #[]
+
+/-- Graveyard id of the most recent attacking creature that died. -/
+def lastDiedAttacker (events : Array GameEvent) : Option ObjectId :=
+  events.foldl (fun acc e =>
+    match e.change with
+    | .moved object .battlefield (.graveyard _) _ _ =>
+      if object.creature && object.attacking then some object.id else acc
+    | _ => acc) none
+
+/-- Id of the permanent that most recently became tapped. -/
+def lastBecameTapped (events : Array GameEvent) : Option ObjectId :=
+  events.foldl (fun acc e =>
+    match e.change with
+    | .tapped object true _ => some object.id
+    | _ => acc) none
+
+/-- Player most recently dealt combat damage. -/
+def lastCombatDamagePlayer (events : Array GameEvent) : Option PlayerId :=
+  events.foldl (fun acc e =>
+    match e.change with
+    | .damagedPlayer _ p _ true => some p
+    | _ => acc) none
+
+/-- Someone chose to have The Sensational She-Hulk deal damage on `turn`. -/
+def sheHulkDealtDamageThisTurn (events : Array GameEvent) (turn : Nat) : Bool :=
+  events.any fun e =>
+    e.turn == turn &&
+      match e.change with
+      | .sheHulkDealtDamage _ => true
+      | _ => false
 
 /-- `id` entered the battlefield on `turn`. -/
 def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool :=

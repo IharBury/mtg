@@ -111,14 +111,13 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let g := g.queueCreatureYouControlDealtDamage o n
   if n > 0 && !combat then
     match o.controller with
-    | none => { g with lastNoncombatDamage := some (o.id, n.toNat) }
     | some p =>
-      let g := { g with lastNoncombatDamage := some (o.id, n.toNat) }
       let happened := GameEvent.damaged g.turnNumber none o.asEvent n.toNat false
       if happened.matchesTrigger p o.id .sourceDealtNoncombatDamage then
         g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
           (some n)
       else g
+    | none => g
   else g
 
 /-- Extra noncombat damage from Hawkeye, Young Avenger. X is his power at

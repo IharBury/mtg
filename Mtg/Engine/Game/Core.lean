@@ -306,19 +306,9 @@ structure Game where
   per-object “creature cards to graveyard” triggers so “one or more”
   fires once (Robot Domination; MSH 138). -/
   suppressCreatureCardsToGy : Bool := false
-  /-- Player most recently dealt combat damage by a creature whose
-  combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
-  lastCombatDamagePlayer : Option PlayerId := none
   /-- True while a spell is being cast from the top of a library
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
-  /-- Creature cards that went from the battlefield to a graveyard this turn
-  (Supper for Spiders). Cleared as the turn ends. -/
-  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
-  /-- Most recent life loss amount, for “mills that many” triggers. -/
-  lastLifeLost : Option (PlayerId × Nat) := none
-  /-- Most recent noncombat damage marked on a permanent. -/
-  lastNoncombatDamage : Option (ObjectId × Nat) := none
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
@@ -334,14 +324,10 @@ structure Game where
   /-- Put a +1/+1 counter on this permanent after the current discard choices
   finish (Ninja of the Hand). -/
   plusOneAfterDiscards : Option ObjectId := none
-  /-- Most recent creature that became tapped (Captain America, Living Legend). -/
-  lastBecameTapped : Option ObjectId := none
   /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
   additionalCombatPhases : Nat := 0
   /-- Enrage triggers that will grant an additional combat when they resolve. -/
   enrageGrantsAdditionalCombat : Nat := 0
-  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
-  sheHulkDamageUsedThisTurn : Bool := false
   /-- Damage assigned to each target of the resolving divided-damage ability
 (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
@@ -359,8 +345,6 @@ structure Game where
   /-- Until EOT, this player's creatures with toughness greater than power
   assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
   assignCombatDamageEqualToughness : Option PlayerId := none
-  /-- Most recent attacking creature that died (new GY object id; Ares). -/
-  lastDiedAttacker : Option ObjectId := none
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
@@ -516,6 +500,30 @@ def loggedResolutions (g : Game) (p : PlayerId) : Nat :=
 /-- Lands `p` has played this turn. -/
 def loggedLandsPlayed (g : Game) (p : PlayerId) : Nat :=
   GameEvent.landsPlayed g.events g.turnNumber p
+
+/-- Graveyard ids of creatures that died this turn. -/
+def loggedCreaturesToGraveyard (g : Game) : Array ObjectId :=
+  GameEvent.creaturesToGraveyard g.events g.turnNumber
+
+/-- Graveyard id of the most recent attacking creature that died. -/
+def loggedLastDiedAttacker (g : Game) : Option ObjectId :=
+  GameEvent.lastDiedAttacker g.events
+
+/-- Permanent that most recently became tapped. -/
+def loggedLastBecameTapped (g : Game) : Option ObjectId :=
+  GameEvent.lastBecameTapped g.events
+
+/-- Player most recently dealt combat damage. -/
+def loggedLastCombatDamagePlayer (g : Game) : Option PlayerId :=
+  GameEvent.lastCombatDamagePlayer g.events
+
+/-- The Sensational She-Hulk has dealt damage this turn. -/
+def loggedSheHulkDealtDamage (g : Game) : Bool :=
+  GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
+
+/-- Record that combat damage was dealt to `p`. -/
+def noteCombatDamageTo (g : Game) (p : PlayerId) : Game :=
+  g.record (GameEvent.damagedPlayer g.turnNumber none p 1 true)
 
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }

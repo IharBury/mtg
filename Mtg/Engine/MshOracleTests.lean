@@ -2088,7 +2088,7 @@ def sheHulkDamageOnceOk : Bool :=
        let g := mustApply g ⟨0⟩ .accept
        let giant := namedPermanent g "Hill Giant"
        giant.status.damage == 3 &&
-         g.sheHulkDamageUsedThisTurn &&
+         g.loggedSheHulkDealtDamage &&
          (let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchSheHulkRedirectOnce)
             (some she.id) #[Target.permanent giant.id]
             #[] (some 5)
@@ -2451,7 +2451,7 @@ def sheHulkMayDeclineOk : Bool :=
     let again := declined.markDamageOn (namedPermanent declined "Grizzly Bears") 1
       "Bears are dealt 1 damage"
     (namedPermanent declined "Hill Giant").status.damage == 0 &&
-      !declined.sheHulkDamageUsedThisTurn &&
+      !declined.loggedSheHulkDealtDamage &&
       queued == 1 &&
       (again.waitingTriggers.filter (fun t =>
         t.source.name == "The Sensational She-Hulk")).size == n + 1 &&
@@ -2460,7 +2460,7 @@ def sheHulkMayDeclineOk : Bool :=
          t.source.name == "The Sensational She-Hulk")).size
        let later := accepted.markDamageOn (namedPermanent accepted "Grizzly Bears") 1
          "Bears are dealt 1 damage"
-       accepted.sheHulkDamageUsedThisTurn &&
+       accepted.loggedSheHulkDealtDamage &&
          (namedPermanent accepted "Hill Giant").status.damage == 1 &&
          (later.waitingTriggers.filter (fun t =>
            t.source.name == "The Sensational She-Hulk")).size == nAcc)
@@ -2622,7 +2622,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   before == afterEarly &&
     !(namedPermanent g "Grizzly Bears").status.tapped &&
     (namedPermanent g "Hill Giant").status.tapped &&
-    g.lastBecameTapped == some giant.id
+    g.loggedLastBecameTapped == some giant.id
 
 #guard capUntapsTriggeringCreatureOk
 

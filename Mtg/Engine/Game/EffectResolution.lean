@@ -1212,7 +1212,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{(g.player controller).name} separates {looked.size} cards into a face-up pile and a face-down pile"
   | .supperForSpiders =>
     let ids :=
-      g.battlefieldCreaturesToGyThisTurn.filter (fun id =>
+      g.loggedCreaturesToGraveyard.filter (fun id =>
         match g.findObject? id with
         | some o =>
           o.zone == .graveyard o.owner && o.owner != controller

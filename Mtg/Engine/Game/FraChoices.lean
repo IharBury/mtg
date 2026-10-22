@@ -951,7 +951,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
   | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
-    let g := { g with sheHulkDamageUsedThisTurn := true }
+    let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
         (fun g tgt => g.dealDamageToTarget tgt amount) sourceId none

@@ -358,7 +358,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if asgn.toPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
         match src.controller with
         | some pid =>
-          g := { g with lastCombatDamagePlayer := some defn }
           let happened :=
             GameEvent.damagedPlayer g.turnNumber (some src.id) defn asgn.toPlayer.toNat true
           g :=

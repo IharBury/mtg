@@ -1190,7 +1190,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let offered :=
@@ -1207,7 +1207,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let g := mustApply g me .accept

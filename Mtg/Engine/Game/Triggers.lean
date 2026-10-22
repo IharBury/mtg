@@ -149,7 +149,7 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
     match source.bind (fun o => g.findObject? o.id) with
     | some o => !o.status.prepared
     | none => true
-  | .prepareSource .ifThreeCreaturesDied => g.battlefieldCreaturesToGyThisTurn.size ≥ 3
+  | .prepareSource .ifThreeCreaturesDied => g.loggedCreaturesToGraveyard.size ≥ 3
   | .sacrificeSourceIfNoPlaneswalker =>
     !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
   | .surveilReturnIfGainedLife => g.loggedLifeGained controller > 0
@@ -204,7 +204,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .resource .plusOneOnHeroesCreateWall =>
       cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
         g.hasSubtype c "Hero")
-    | .watch .sheHulkRedirectOnce => !g.sheHulkDamageUsedThisTurn
+    | .watch .sheHulkRedirectOnce => !g.loggedSheHulkDealtDamage
     | _ => true
   powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
     g.fraInterveningHolds controller ab source cause &&
@@ -420,7 +420,6 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
       | none => false
     let happened := GameEvent.tapped g.turnNumber (g.object! o.id).asEvent true during
     let g := g.record happened
-    let g := { g with lastBecameTapped := some o.id }
     match o.controller with
     | some p =>
       let g :=
@@ -473,7 +472,6 @@ def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
   else
     let happened := GameEvent.life g.turnNumber p n false true
     let g := g.record happened
-    let g := { g with lastLifeLost := some (p, n) }
     if !happened.matchesTrigger p ⟨0⟩ .playerLosesLife then g
     else
       g.livingPlayers.foldl (fun acc pl =>

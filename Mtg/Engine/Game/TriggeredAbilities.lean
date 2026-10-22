@@ -1473,7 +1473,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
   | .kind, .you, .damagedPlayerArtifacts, _ =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let pid := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
     let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
@@ -3054,7 +3054,7 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none =>
       { g with skipTriggerSequenceRest := true }.logMsg "The equipped creature has left"
   | .firstThisTurn =>
-    let id := g.resolvingCauseId.orElse (fun _ => g.lastBecameTapped)
+    let id := g.resolvingCauseId.orElse (fun _ => g.loggedLastBecameTapped)
     match id.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
@@ -3411,7 +3411,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
         g := g.afterPermanentEnters (g.object! newId)
         return g.putRestOnBottomRandom controller rest
   | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer => some <|
-    let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let victim := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
     let (g, found, others) := g.exileUntilInstantOrSorcery victim
     { g with
       grimaImpulseReady := true
@@ -4286,7 +4286,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     -- Ruling 750: the following surveil reads life gained as this ability resolves.
     { g with armSurveilReturn := true }
   | .prepareSource .ifThreeCreaturesDied =>
-    if g.battlefieldCreaturesToGyThisTurn.size < 3 then
+    if g.loggedCreaturesToGraveyard.size < 3 then
       g.logMsg "Fewer than three creatures died this turn"
     else
       match sourceId.bind g.findObject? with
@@ -4338,7 +4338,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.ifPaid (lastKnownPower.getD 1).toNat "The optional draw was declined"
       fun g => g.draw controller 1
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
-    if g.sheHulkDamageUsedThisTurn then
+    if g.loggedSheHulkDealtDamage then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
       let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
