@@ -23,8 +23,9 @@ namespace Target
 export GameResult (won draw)
 end Target
 
-/-- Per-turn spell casting and cost modification state on a player (CR 601.2f / CR 603.2). -/
-structure PlayerSpellTurnState where
+set_option maxHeartbeats 800000 in
+/-- Per-turn player tracking state, reset as the turn ends (CR 119 / CR 504 / CR 508 / CR 514.3 / CR 601.2f / CR 603.2 / CR 701). -/
+structure PlayerTurnState where
   /-- Spells cast this turn (for “second spell each turn” triggers). -/
   spellsCastThisTurn : Nat := 0
   /-- Noncreature spells cast this turn. -/
@@ -44,10 +45,6 @@ structure PlayerSpellTurnState where
   /-- The next spell this player casts this turn can't be countered
   (Theorist's Proxy). -/
   nextSpellCantBeCountered : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Per-turn draw, discard, mill, scry/surveil, and activation state on a player (CR 504 / CR 603.2 / CR 701). -/
-structure PlayerActionAndEventTurnState where
   /-- Cards drawn this turn (for “second card each turn” triggers). -/
   cardsDrawnThisTurn : Nat := 0
   /-- Cards drawn during your current draw step (Bard, King of Dale). -/
@@ -77,10 +74,6 @@ structure PlayerActionAndEventTurnState where
   /-- Until end of turn, each Mountain this player taps for mana adds this
   many additional {R} (Molten Tide). -/
   mountainExtraRedThisTurn : Nat := 0
-deriving Repr, Inhabited, BEq
-
-/-- Per-turn life, damage, combat, and permanent-entering state on a player (CR 119 / CR 508). -/
-structure PlayerCombatAndLifeTurnState where
   /-- A Hero you control entered this turn (Avengers Assemble). -/
   heroEnteredThisTurn : Bool := false
   /-- You attacked with a Hero this turn (Avengers Assemble). -/
@@ -105,15 +98,8 @@ structure PlayerCombatAndLifeTurnState where
   cantAttackJaces : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Per-turn player tracking state, reset as the turn ends (CR 514.3 / CR 603.2). -/
-structure PlayerTurnState extends
-    PlayerSpellTurnState,
-    PlayerActionAndEventTurnState,
-    PlayerCombatAndLifeTurnState where
-deriving Repr, Inhabited, BEq
-
-/-- Commander identity, multiplayer teammate, and beheld qualities on a player (CR 810 / CR 903). -/
-structure PlayerCommanderAndTeamState where
+set_option maxHeartbeats 800000 in
+structure Player extends PlayerTurnState where
   /-- True when this player has a commander (Commander / Oathbreaker). -/
   hasCommander : Bool := false
   /-- Combined color identity of this player's commander(s). Empty when they
@@ -126,10 +112,6 @@ structure PlayerCommanderAndTeamState where
   teammate : Option PlayerId := none
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array String := #[]
-deriving Repr, Inhabited, BEq
-
-/-- Game-long designations, emblems, and multi-turn player locks (CR 701.54 / CR 702.131 / CR 722). -/
-structure PlayerEmblemsAndLocks where
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
   /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
@@ -153,24 +135,12 @@ structure PlayerEmblemsAndLocks where
   isMonarch : Bool := false
   /-- This player's life total can't change until their next turn. -/
   lifeCantChange : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Player designations, emblems, commander identity, and multi-turn permissions/locks (CR 701.54 / CR 702.131 / CR 722 / CR 903). -/
-structure PlayerDesignations extends PlayerCommanderAndTeamState, PlayerEmblemsAndLocks where
-deriving Repr, Inhabited, BEq
-
-/-- Player-owned zones and sideboard (CR 400). -/
-structure PlayerZones where
   library : Array ObjectId := #[]
   hand : Array ObjectId := #[]
   graveyard : Array ObjectId := #[]
   /-- Sideboard cards not yet brought into play as objects outside the game
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
-deriving Repr, Inhabited
-
-/-- Opening hand/mulligan setup and game-loss tracking on a player (CR 103.5 / CR 104.3 / CR 800.4a). -/
-structure PlayerSetupAndLossState where
   startingLife : Int := 20
   maxHandSize : Nat := 7
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
@@ -184,13 +154,6 @@ structure PlayerSetupAndLossState where
   mulligansTaken : Nat := 0
   /-- Set once this player declines further mulligans (CR 103.5). -/
   keptOpeningHand : Bool := false
-deriving Repr, Inhabited, BEq
-
-structure Player extends
-    PlayerTurnState,
-    PlayerDesignations,
-    PlayerZones,
-    PlayerSetupAndLossState where
   id : PlayerId
   name : String
   life : Int := 20

@@ -377,9 +377,10 @@ namespace CardKeywordRule
 
 end CardKeywordRule
 
-/-- Printed power, toughness, loyalty, defense, and vanguard modifiers on a card
-(CR 208–212). -/
-structure PrintedCombatStats where
+set_option maxRecDepth 1024 in
+set_option maxHeartbeats 800000 in
+/-- Printed (Oracle) characteristics of a card (CR 108 / 208–212 / 601–605 / 614 / 700 / 702 / 714 / 715). -/
+structure CardDef where
   power : Option Int := none
   toughness : Option Int := none
   /-- Printed power includes a star added to `power` (CR 208.2).
@@ -406,11 +407,6 @@ structure PrintedCombatStats where
   a number preceded by a plus sign, a number preceded by a minus sign, or
   zero. It modifies its owner's starting life total. -/
   lifeModifier : Option Int := none
-deriving Repr, Inhabited, BEq
-
-/-- Printed spell-resolution, casting, modal, and alternate-face rules on a card
-(CR 601 / 700 / 702 / 715). -/
-structure PrintedSpellRules where
   spellEffect : Option Effect := none
   /-- Additional cost to cast this spell (CR 601.2b / 118.8). -/
   additionalCost : SpellAdditionalCost := .none
@@ -433,11 +429,6 @@ structure PrintedSpellRules where
   empowerJace : Option Nat := none
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-deriving Repr, Inhabited
-
-/-- Printed permanent abilities, enters-the-battlefield replacements, and Saga
-chapters on a card (CR 602–605 / 614 / 714). -/
-structure PrintedPermanentRules where
   /-- Modes of this card's modal triggered ability (“When this creature
   enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
   fraTriggerModes : Array Effect := #[]
@@ -465,11 +456,6 @@ structure PrintedPermanentRules where
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- Continuous or replacement static rule on this card (CR 604 / 613 / 614). -/
   staticRule : CardStaticRule := .none
-deriving Repr, Inhabited
-
-set_option maxRecDepth 1024 in
-/-- Printed (Oracle) characteristics of a card. -/
-structure CardDef extends PrintedCombatStats, PrintedSpellRules, PrintedPermanentRules where
   name : String
   manaCost : ManaCost := ManaCost.empty
   types : Array CardType

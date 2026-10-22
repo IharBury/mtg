@@ -15,10 +15,11 @@ namespace Mtg.Engine
 
 
 
-/-- Target announcement metadata for a one-shot effect (CR 115.1 / 601.2c / 601.2d)
-and shared trigger condition, frequency, subtype filter, and wording filter
-metadata (`SharedTriggerOpts`, CR 603.2 / 603.4). -/
-structure TriggerConditionMeta where
+/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
+and triggered abilities, including target announcement and shared trigger
+condition, frequency, subtype filter, and wording filter metadata
+(`TriggerConditionMeta`, `SharedTriggerOpts`, CR 115.1 / 601.2c / 601.2d / 603.2 / 603.4 / 608). -/
+structure Effect where
   targeting : EffectTargeting := .of .none
   allowsZeroTargets : Bool := false
   maxTargets : Nat := 0
@@ -38,37 +39,6 @@ structure TriggerConditionMeta where
   printed : String := ""
   /-- The other permanent must be legendary (“another legendary Elf”). -/
   anotherLegendary : Bool := false
-deriving Repr, Inhabited, BEq
-
-abbrev EffectTargetingMeta := TriggerConditionMeta
-
-namespace TriggerConditionMeta
-
-def youControlCreatureWithPower (t : TriggerConditionMeta) : Option Int :=
-  match t.condition with
-  | .youControlCreatureWithPower n => some n
-  | _ => none
-
-def gainedLifeAtLeast (t : TriggerConditionMeta) : Option Nat :=
-  match t.condition with
-  | .gainedLifeAtLeast n => some n
-  | _ => none
-
-def anotherCreaturePowerAtMost (t : TriggerConditionMeta) : Option Int :=
-  match t.condition with
-  | .anotherCreaturePowerAtMost n => some n
-  | _ => none
-
-def thisOrNontokenSubtype (t : TriggerConditionMeta) : Option String := t.subtype
-def thisOrAnotherSubtype (t : TriggerConditionMeta) : Option String := t.subtype
-def anotherSubtypeOrEquipment (t : TriggerConditionMeta) : Option String := t.subtype
-
-end TriggerConditionMeta
-
-/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
-and triggered abilities. Targeting, printed wording, and resolution live
-here so Game has one apply path. -/
-structure Effect extends TriggerConditionMeta where
   events : Array TriggerEvent := #[]
   spellCastKind : SpellCastKind := .extraLand
   abilityCastKind : AbilityCastKind := .other
@@ -77,7 +47,29 @@ structure Effect extends TriggerConditionMeta where
   phrase : String := ""
 deriving Repr, Inhabited, BEq
 
+abbrev TriggerConditionMeta := Effect
+abbrev EffectTargetingMeta := Effect
+
 namespace Effect
+
+def youControlCreatureWithPower (t : Effect) : Option Int :=
+  match t.condition with
+  | .youControlCreatureWithPower n => some n
+  | _ => none
+
+def gainedLifeAtLeast (t : Effect) : Option Nat :=
+  match t.condition with
+  | .gainedLifeAtLeast n => some n
+  | _ => none
+
+def anotherCreaturePowerAtMost (t : Effect) : Option Int :=
+  match t.condition with
+  | .anotherCreaturePowerAtMost n => some n
+  | _ => none
+
+def thisOrNontokenSubtype (t : Effect) : Option String := t.subtype
+def thisOrAnotherSubtype (t : Effect) : Option String := t.subtype
+def anotherSubtypeOrEquipment (t : Effect) : Option String := t.subtype
 
 /-- Whom this effect may target (CR 115.1 / 601.2c). -/
 def targetKind (e : Effect) : EffectTargetKind :=

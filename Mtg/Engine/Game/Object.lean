@@ -160,7 +160,19 @@ structure PlayPermission where
   onceEachTurn : Bool := false
   /-- Damage this ability deals to its controller as it resolves. -/
   damageYou : Nat := 0
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited
+
+instance : BEq PlayPermission where
+  beq a b :=
+    a.source == b.source && a.toCreatures == b.toCreatures && a.toPlayer == b.toPlayer &&
+    a.player == b.player && a.turnEndsRemaining == b.turnEndsRemaining &&
+    a.fromAdventure == b.fromAdventure && a.whileExiled == b.whileExiled &&
+    a.anyMana == b.anyMana && a.withoutManaCost == b.withoutManaCost &&
+    a.requireSubtype == b.requireSubtype && a.ignoreTiming == b.ignoreTiming &&
+    a.faceDown == b.faceDown && a.prepareSource == b.prepareSource &&
+    a.payLifeEqualManaValue == b.payLifeEqualManaValue &&
+    a.ids == b.ids && a.boardTitle == b.boardTitle && a.label == b.label &&
+    a.detail == b.detail && a.hiddenActivity == b.hiddenActivity
 
 /-- Snapshot of the object whose event caused a triggered ability to trigger
 (CR 603.2 / CR 603.7c / CR 608.2c). -/
@@ -183,8 +195,9 @@ abbrev AdditionalCostPaidState := CastOriginState
 /-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
 abbrev LinkedExileState := CastOriginState
 
-/-- Object control and control-changing effect tracking (CR 110.2 / CR 608.2c / CR 800.4a). -/
-structure ControlState where
+set_option maxHeartbeats 800000 in
+/-- An object currently in the game (CR 109). -/
+structure GameObject where
   controller : Option PlayerId := none
   /-- Controller as this object last existed on the battlefield (CR 608.2c).
   Zone changes clear `controller`; this keeps “its controller” readable. -/
@@ -197,10 +210,6 @@ structure ControlState where
   /-- A control-changing effect lasts until this source leaves (Super Hero
   Civil War; MSH 143). -/
   controlUntilSourceLeaves : Option ObjectId := none
-deriving Repr, Inhabited, BEq
-
-/-- Stack ability and last-known source characteristics (CR 113.7 / CR 602.2a / CR 603.3). -/
-structure StackAbilityState where
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
   abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
@@ -214,10 +223,6 @@ structure StackAbilityState where
   lastKnownPower : Option Int := none
   /-- Last known toughness of a trigger source (CR 113.7a / 608.2g). -/
   lastKnownToughness : Option Int := none
-deriving Repr, Inhabited
-
-/-- Exile permissions, temporary copy effects, and stack/adventure metadata on a game object (CR 406 / CR 707 / CR 715). -/
-structure ObjectCastAndExileMeta where
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
   /-- Normal characteristics of an adventurer card, set while the spell is on
@@ -246,10 +251,6 @@ structure ObjectCastAndExileMeta where
   chosenX : Option Nat := none
   /-- Active temporary copy effect on this permanent (CR 707 / CR 613.2). -/
   copyEffect : Option CopyEffect := none
-deriving Repr, Inhabited
-
-/-- An object currently in the game (CR 109). -/
-structure GameObject extends ControlState, StackAbilityState, ObjectCastAndExileMeta where
   id : ObjectId
   printed : CardDef
   owner : PlayerId

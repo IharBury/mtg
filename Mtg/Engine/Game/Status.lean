@@ -17,29 +17,8 @@ clear them (CR 514.3).
 
 namespace Mtg.Engine
 
-/-- Combat state of a permanent on the battlefield (CR 508–510). -/
-structure PermanentCombatState where
-  attacking : Bool := false
-  /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
-  attackingWhom : Option PlayerId := none
-  /-- The planeswalker this creature is attacking, if it attacks one rather
-  than a player (CR 506.3). `attackingWhom` is that planeswalker's
-  controller. -/
-  attackingPlaneswalker : Option ObjectId := none
-  /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
-  blocking : Array ObjectId := #[]
-  /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
-  every blocking creature leaves combat. -/
-  blocked : Bool := false
-  /-- Dealt damage by a source with deathtouch since the last time
-  state-based actions were checked (CR 704.5h). Cleared after that check. -/
-  dealtDeathtouch : Bool := false
-  /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
-  dealtCombatDamage : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Core rulebook counters on a permanent (CR 122.1 / CR 306.5 / CR 714 / CR 702.176). -/
-structure CorePermanentCounters where
+/-- Counters on a permanent (CR 122.1 / CR 306.5 / CR 714 / CR 702.176). -/
+structure PermanentCounters where
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
   /-- Minus-one counters (CR 122.1a). -/
@@ -62,10 +41,6 @@ structure CorePermanentCounters where
   time : Nat := 0
   /-- Keyword counters on this permanent (CR 122.1b). -/
   keywordCounters : KeywordCounters := {}
-deriving Repr, Inhabited, BEq
-
-/-- Named mechanic and card-specific counters on a permanent (CR 122.1). -/
-structure NamedAbilityCounters where
   /-- Hope counters (e.g. Dawn of a New Age). -/
   hope : Nat := 0
   /-- Hone counters. Each grants +1/+0 to the equipped creature while this
@@ -87,12 +62,8 @@ structure NamedAbilityCounters where
   story : Nat := 0
 deriving Repr, Inhabited, BEq
 
-/-- Counters on a permanent (CR 122.1). -/
-structure PermanentCounters extends CorePermanentCounters, NamedAbilityCounters where
-deriving Repr, Inhabited, BEq
-
-/-- Until-end-of-turn Layer 4 and Layer 7 P/T and type effects (CR 514.3 / CR 613.1d / CR 613.4). -/
-structure UntilEotPtAndTypeStatus where
+/-- Until-end-of-turn continuous effects on a permanent, cleared during the cleanup step (CR 514.3 / CR 611.2a). -/
+structure UntilEotStatus where
   /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
   pump : Int × Int := (0, 0)
   /-- Until-end-of-turn layer-7b setting of base P/T (e.g. Galion). -/
@@ -112,10 +83,6 @@ structure UntilEotPtAndTypeStatus where
   /-- Until end of turn, this creature gets +1/+1 for each artifact you
   control (Iron Man Armor). -/
   pumpPerArtifactUntilEot : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Until-end-of-turn Layer 6 ability-adding and ability-removing effects (CR 514.3 / CR 613.1f). -/
-structure UntilEotAbilityStatus where
   /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
   Printed keywords stay on `GameObject.printed`; this field is merged in
   `GameObject.printedOrUntilEot`. -/
@@ -131,10 +98,6 @@ structure UntilEotAbilityStatus where
   grantedTriggersUntilEot : Array TriggeredAbility := #[]
   /-- First strike only during its controller's turn, until end of turn. -/
   firstStrikeOnYourTurn : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Until-end-of-turn combat restrictions, replacement effects, and damage tracking (CR 509.1b / CR 614.1). -/
-structure UntilEotCombatAndRuleStatus where
   /-- If this creature would die this turn, exile it instead
   (CR 614.1 / 614.6). -/
   untilEotExileIfDies : Bool := false
@@ -150,15 +113,8 @@ structure UntilEotCombatAndRuleStatus where
   dealtDamageThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Until-end-of-turn continuous effects on a permanent, cleared during the cleanup step (CR 514.3 / CR 611.2a). -/
-structure UntilEotStatus extends
-    UntilEotPtAndTypeStatus,
-    UntilEotAbilityStatus,
-    UntilEotCombatAndRuleStatus where
-deriving Repr, Inhabited, BEq
-
-/-- Per-turn activation and mode-choice tracking on a permanent (CR 602.5b / CR 606.3 / CR 702.111). -/
-structure PermanentActivationTurnState where
+/-- Per-turn activation and event tracking state on a permanent, reset as a turn ends (CR 602.5b / CR 603.2 / CR 606.3 / CR 702.111). -/
+structure PermanentTurnState where
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
   /-- Indices of activated abilities of this object activated this turn
@@ -178,10 +134,6 @@ structure PermanentActivationTurnState where
   boastUsedThisTurn : Bool := false
   /-- Modes of The Vision chosen this turn. Cleared as the turn ends. -/
   modesChosenThisTurn : Array Nat := #[]
-deriving Repr, Inhabited, BEq
-
-/-- Per-turn event and combat tracking on a permanent (CR 603.2). -/
-structure PermanentEventTurnState where
   /-- This creature was declared as an attacker this turn (boast, CR 702.111). -/
   declaredAsAttackerThisTurn : Bool := false
   /-- This permanent became tapped this turn (Captain America, Living Legend). -/
@@ -194,12 +146,29 @@ structure PermanentEventTurnState where
   combatDamageToPlayers : Array PlayerId := #[]
 deriving Repr, Inhabited, BEq
 
-/-- Per-turn activation and event tracking state on a permanent, reset as a turn ends (CR 602.5b / CR 603.2 / CR 606.3). -/
-structure PermanentTurnState extends PermanentActivationTurnState, PermanentEventTurnState where
-deriving Repr, Inhabited, BEq
-
-/-- Choices recorded as a permanent enters the battlefield (CR 614.12). -/
-structure AsEntersState where
+set_option maxHeartbeats 800000 in
+/-- Permanent status (CR 110.5), composed of combat state, counters, until-EOT effects, per-turn tracking, as-enters choices, and lasting effects. -/
+structure Status extends
+    PermanentCounters,
+    UntilEotStatus,
+    PermanentTurnState where
+  attacking : Bool := false
+  /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
+  attackingWhom : Option PlayerId := none
+  /-- The planeswalker this creature is attacking, if it attacks one rather
+  than a player (CR 506.3). `attackingWhom` is that planeswalker's
+  controller. -/
+  attackingPlaneswalker : Option ObjectId := none
+  /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
+  blocking : Array ObjectId := #[]
+  /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
+  every blocking creature leaves combat. -/
+  blocked : Bool := false
+  /-- Dealt damage by a source with deathtouch since the last time
+  state-based actions were checked (CR 704.5h). Cleared after that check. -/
+  dealtDeathtouch : Bool := false
+  /-- This permanent has dealt combat damage since it entered (Ruric Thar). -/
+  dealtCombatDamage : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -214,10 +183,6 @@ structure AsEntersState where
   windcragMardu : Bool := true
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
   chosenCardType : Option String := none
-deriving Repr, Inhabited, BEq
-
-/-- Lasting Layer 4, Layer 6, and Layer 7 characteristic effects on a permanent (CR 611.2a / CR 613). -/
-structure LastingCharacteristicState where
   /-- This permanent is a creature in addition to its other types (CR 205.1a).
   Lasting effects such as Beorn's Hospitality's activation do not end. -/
   additionalCreature : Bool := false
@@ -248,10 +213,6 @@ structure LastingCharacteristicState where
   animatedConstruct55 : Bool := false
   /-- This permanent is not a creature (impending, until the last time counter). -/
   notACreature : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Lasting control-changing and multi-turn duration effects on a permanent (CR 611.2b / CR 800.4a). -/
-structure LastingControlAndDurationState where
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
   combatDamageCreatesTreasure : Bool := false
   /-- A control-changing effect lasts until end of turn (Act of Treason,
@@ -271,10 +232,6 @@ structure LastingControlAndDurationState where
   /-- This card may be cast from its owner's graveyard without paying its
   mana cost, ignoring timing, until end of turn. -/
   freeCastFromGraveyard : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Phasing, face/transform status, and lifetime ability state on a permanent (CR 702.26 / CR 702.37 / CR 702.177 / CR 702.193 / CR 712). -/
-structure LastingPhaseAndAbilityState where
   /-- Phased out (CR 702.26). Treated as though it does not exist. -/
   phasedOut : Bool := false
   /-- Host this Aura or Equipment phased out with. -/
@@ -299,23 +256,6 @@ structure LastingPhaseAndAbilityState where
   exhaustUsed : Bool := false
   /-- Face down (morph, CR 702.37). A 2/2 creature with no abilities. -/
   faceDown : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Lasting continuous effects, lifetime ability activations, and phase/face state on a permanent (CR 611.2a / CR 613 / CR 702). -/
-structure LastingEffectState extends
-    LastingCharacteristicState,
-    LastingControlAndDurationState,
-    LastingPhaseAndAbilityState where
-deriving Repr, Inhabited, BEq
-
-/-- Permanent status (CR 110.5), composed of combat state, counters, until-EOT effects, per-turn tracking, as-enters choices, and lasting effects. -/
-structure Status extends
-    PermanentCombatState,
-    PermanentCounters,
-    UntilEotStatus,
-    PermanentTurnState,
-    AsEntersState,
-    LastingEffectState where
   tapped : Bool := false
   damage : Int := 0
   summoningSick : Bool := true
@@ -323,7 +263,7 @@ structure Status extends
   prepared : Bool := false
   /-- This permanent is a commander. -/
   isCommander : Bool := false
-deriving Repr, Inhabited, BEq
+deriving Repr, Inhabited
 
 namespace Status
 
@@ -422,11 +362,11 @@ def setCounter (s : Status) (kind : CounterKind) (n : Nat) : Status :=
 
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
-  CounterKind.all.any (fun k => s.counter k > 0)
+  s.toPermanentCounters != {}
 
 /-- This permanent with every counter removed. -/
 def withoutCounters (s : Status) : Status :=
-  CounterKind.all.foldl (fun acc k => acc.setCounter k 0) s
+  { s with toPermanentCounters := {} }
 
 /-- Another counter of each kind already on this permanent (CR 701.34a).
 +1/+1 counters are added by the caller so their triggers apply. -/

@@ -258,8 +258,9 @@ abbrev LastTriggerEvent := TriggerMayBranch
 /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
 abbrev TurnControlState := MulliganState
 
-/-- Numeric counts recorded across sequential resolution steps (CR 608.2c). -/
-structure ResolutionCountNotes where
+set_option maxHeartbeats 800000 in
+/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
+structure ResolutionNotes where
   /-- Humans chosen for the current “tap any number of Humans” step.
   `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
   humansTappedThisWay : Nat := 0
@@ -280,10 +281,6 @@ structure ResolutionCountNotes where
   /-- Power of the creature sacrificed for
   `putCounters .plusOneSacrificedPower`. -/
   sacrificedPowerThisWay : Option Nat := none
-deriving Repr, Inhabited, BEq
-
-/-- Boolean step-outcome flags recorded across sequential resolution steps (CR 608.2c). -/
-structure ResolutionFlagNotes where
   /-- A hope counter was removed by the current `removeCounters .hope .source` step.
   `«if» .removedHope` draws a card when this is set. -/
   removedHopeThisWay : Bool := false
@@ -300,10 +297,6 @@ structure ResolutionFlagNotes where
   planWasSacrificed : Bool := false
   /-- `sacrifice .you .source .noted` sacrificed the source. -/
   sourceWasSacrificed : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Amass, Palantír, and impulse-cast cross-step resolution notes (CR 608.2c / CR 701.47). -/
-structure ResolutionAmassAndImpulseNotes where
   /-- `.destroy .target (note := .forAmass)` chose a legal target. The controller,
   amount, and whether you controlled it feed the following amass and draw steps. -/
   destroyedForAmassThisWay : Bool := false
@@ -319,10 +312,6 @@ structure ResolutionAmassAndImpulseNotes where
   grimaImpulseVictim : Option PlayerId := none
   grimaImpulseFound : Option ObjectId := none
   grimaImpulseOthers : Array ObjectId := #[]
-deriving Repr, Inhabited, BEq
-
-/-- Objects and card lists noted across sequential resolution steps ("that card", "those cards", CR 608.2c / CR 608.2h). -/
-structure ResolutionObjectNotes where
   /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
   may put that land onto the battlefield tapped (Silvan Reveler). The
   player who discarded it, and the card. -/
@@ -356,17 +345,19 @@ structure ResolutionObjectNotes where
   playExiledThisWay : Option ObjectId := none
 deriving Repr, Inhabited
 
-/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
-structure ResolutionNotes extends
-    ResolutionCountNotes,
-    ResolutionFlagNotes,
-    ResolutionAmassAndImpulseNotes,
-    ResolutionObjectNotes where
-deriving Repr, Inhabited
-
-/-- Game-wide per-turn and until-end-of-turn state cleared during cleanup or
-as the turn ends (CR 514.2 / CR 514.3). -/
-structure GameTurnState where
+set_option maxHeartbeats 800000 in
+structure Game where
+  activePlayer : PlayerId := ⟨0⟩
+  priority : PlayerId := ⟨0⟩
+  step : Step := .untap
+  turnNumber : Nat := 1
+  startingPlayer : PlayerId := ⟨0⟩
+  isFirstTurn : Bool := true
+  consecutivePasses : Nat := 0
+  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
+  cleanupGivesPriority : Bool := false
+  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  isNight : Bool := false
   /-- Until-end-of-turn continuous effect: creatures without flying can't
   block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
   creaturesWithoutFlyingCantBlock : Bool := false
@@ -386,27 +377,6 @@ structure GameTurnState where
   /-- World War Hulk chapter I: the next red or green creature spell this
   player casts this turn may be cast without paying its mana cost (MSH 343). -/
   pendingFreeRGCreature : Option PlayerId := none
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Turn-order, active-player, priority, step, and day/night state
-(CR 103.2 / CR 117 / CR 500–514 / CR 702.145). -/
-structure GameTurnOrderState where
-  activePlayer : PlayerId := ⟨0⟩
-  priority : PlayerId := ⟨0⟩
-  step : Step := .untap
-  turnNumber : Nat := 1
-  startingPlayer : PlayerId := ⟨0⟩
-  isFirstTurn : Bool := true
-  consecutivePasses : Nat := 0
-  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
-  cleanupGivesPriority : Bool := false
-  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
-  isNight : Bool := false
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Active resolution and pending-choice continuation state for spells and
-abilities (CR 603.3 / CR 608.2). -/
-structure GameContinuationState where
   /-- Continuation after a `--norandom` result is applied. -/
   afterRandom : AfterRandom := .none
   /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
@@ -454,11 +424,6 @@ structure GameContinuationState where
   afterLibrarySearch : AfterLibrarySearch := .none
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
-deriving Repr, Inhabited
-
-/-- Zone-change tracking, waiting/delayed triggers, and cross-step resolution
-notes (CR 113.7a / CR 400.7 / CR 603.2 / CR 603.3 / CR 603.7 / CR 608.2h). -/
-structure GameZoneBatchState where
   /-- Triggered abilities waiting to be put onto the stack the next time a
   player would receive priority (CR 603.3 / 603.3b). Distinguished by
   `WaitingTrigger.event`. -/
@@ -492,9 +457,6 @@ structure GameZoneBatchState where
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
   ancestryLandsTapped : Array ObjectId := #[]
-deriving Repr, Inhabited
-
-structure Game extends GameTurnOrderState, GameTurnState, GameContinuationState, GameZoneBatchState where
   players : Array Player
   objects : Array GameObject
   stack : Array StackEntry := #[]
