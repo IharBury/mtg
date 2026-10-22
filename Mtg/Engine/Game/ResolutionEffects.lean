@@ -209,16 +209,7 @@ def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
     s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
   let g :=
     if rest.isEmpty then g
-    else if g.pending != .none then
-      -- Keep a pending target choice (CR 601.2c). `requestOrderInto` would
-      -- overwrite it when `--norandom` asks for an order.
-      if rest.size ≤ 1 || g.norandom then
-        g.moveIdsInOrder rest (.library p) |>.logMsg msg
-      else
-        let (rng, ordered) := g.rng.shuffle rest
-        (g.change (.rng rng)).moveIdsInOrder ordered (.library p) |>.logMsg msg
-    else
-      g.requestOrderInto rest (.library p) msg
+    else g.requestOrderInto rest (.library p) msg
   if g.pending != .none then g
   else g.receivePriority g.activePlayer
 

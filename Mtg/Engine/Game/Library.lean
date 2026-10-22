@@ -114,19 +114,14 @@ def pendingRandom? (g : Game) : Option RandomRequest :=
   | .resolveRandom req => some req
   | _ => none
 
-/-- Shuffle `p`'s library (CR 103.3 / 701.19). With `norandom`, a library
-of two or more cards becomes `Pending.resolveRandom` instead of using `rng`. -/
+/-- Shuffle `p`'s library (CR 103.3 / 701.19). A library of two or more cards
+becomes `Pending.resolveRandom` unless a choice is already pending. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
-  if g.norandom then
-    if pl.library.size ≤ 1 then
-      g.logMsg s!"{pl.name} shuffles their library"
-    else
-      g.change (.pending (.resolveRandom (.shuffleLibrary p)))
-        |>.logMsg s!"{pl.name} shuffles their library"
+  if pl.library.size ≤ 1 || g.pending != .none then
+    g.logMsg s!"{pl.name} shuffles their library"
   else
-    let (rng, lib) := g.rng.shuffle pl.library
-    g.changes #[.rng rng, .player p (.library lib)]
+    g.change (.pending (.resolveRandom (.shuffleLibrary p)))
       |>.logMsg s!"{pl.name} shuffles their library"
 
 /-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
@@ -168,17 +163,14 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
       | none => pure ()
     return g
 
-/-- Put `ids` into `dest` in a random order. With `norandom` and two or more
-cards, becomes `Pending.resolveRandom`. -/
+/-- Put `ids` into `dest` in a random order. With two or more cards and no
+other pending choice, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
     (log : String) : Game :=
-  if ids.size ≤ 1 then
+  if ids.size ≤ 1 || g.pending != .none then
     g.moveIdsInOrder ids dest |>.logMsg log
-  else if g.norandom then
-    (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
   else
-    let (rng, ordered) := g.rng.shuffle ids
-    (g.change (.rng rng)).moveIdsInOrder ordered dest |>.logMsg log
+    (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
 
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/

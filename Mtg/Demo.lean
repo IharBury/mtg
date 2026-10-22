@@ -408,15 +408,21 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
         seats := seats.push { name := p.name, deck := cards, sideboard }
   return .ok seats
 
-/-- Create the demo game after the starting player is known (CR 103.1). -/
-def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
+/-- Create the demo game and RNG after the starting player is known (CR 103.1). -/
+def startGameWithRng (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (seats : Array Seat := demoSeats) (norandom : Bool := false)
-    (constructed : Bool := false) : IO Game := do
-  match Start.start { seats, format := demoFormat constructed, seed, startingPlayer, norandom } with
+    (constructed : Bool := false) : IO (Game × Rng) := do
+  match Start.startWithRng { seats, format := demoFormat constructed, seed, startingPlayer, norandom } with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
-  | .ok g => return g
+  | .ok (g, rng) => return (g, rng)
+
+/-- Create the demo game after the starting player is known (CR 103.1). -/
+def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO Game :=
+  (·.1) <$> startGameWithRng seed startingPlayer seats norandom constructed
 
 /-- Print the opening log and board after the game has started. -/
 def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
@@ -424,16 +430,23 @@ def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   printState g viewer
   printPendingPrompt g
 
+/-- Start a demo game, print the opening snapshot, and return the game and RNG. -/
+def startDemoWithRng (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (viewer : Option PlayerId := none)
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO (Game × Rng) := do
+  let (g, rng) ← startGameWithRng seed startingPlayer seats norandom constructed
+  printOpening g viewer
+  return (g, rng)
+
 /-- Start a demo game and print the opening snapshot. The starting player is
 the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
     (seats : Array Seat := demoSeats) (norandom : Bool := false)
-    (constructed : Bool := false) : IO Game := do
-  let g ← startGame seed startingPlayer seats norandom constructed
-  printOpening g viewer
-  return g
+    (constructed : Bool := false) : IO Game :=
+  (·.1) <$> startDemoWithRng seed startingPlayer viewer seats norandom constructed
 
 def helpInteractive (controlAll : Bool := false)
     (you : String := "the first player") : String :=
@@ -1871,17 +1884,19 @@ commands after the game ends, `quit`, or an unfinished game. Pass-until
 shortcuts stay active: other players' pass sequences do not cancel them,
 and `ignore` is never cancelled. -/
 def replayCompleteGameGo (g : Game) (commands : List String)
-    (goals : Array PassUntilGoal) (fuel : Nat) : Except String Game :=
+    (goals : Array PassUntilGoal) (fuel : Nat)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : Except String Game :=
   match fuel with
   | 0 => .error "Could not finish replay"
   | n + 1 =>
+    let (rng, g) := if norandom then (rng, g) else g.resolvePendingRandom rng
     let goals := activePassUntilGoals g goals
     if g.over then
       match commands with
       | [] => .ok g
       | line :: rest =>
         if isCheckSkipCommand ((line.splitOn " ").headD "") then
-          replayCompleteGameGo g rest goals n
+          replayCompleteGameGo g rest goals n norandom rng
         else
           .error s!"Unused command after the game ended: {line}"
     else
@@ -1893,7 +1908,9 @@ def replayCompleteGameGo (g : Game) (commands : List String)
       | some line =>
         match applyPassUntilLine g line with
         | .error e => .error s!"Invalid command `{line}`: {e}"
-        | .ok g' => replayCompleteGameGo g' commands goals n
+        | .ok g' =>
+          let (rng, g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          replayCompleteGameGo g' commands goals n norandom rng
       | none =>
         match commands with
         | [] => .error "Game is not complete"
@@ -1901,7 +1918,7 @@ def replayCompleteGameGo (g : Game) (commands : List String)
           let cmd := (line.splitOn " ").headD ""
           let args := (line.splitOn " ").drop 1
           if isCheckSkipCommand cmd then
-            replayCompleteGameGo g rest goals n
+            replayCompleteGameGo g rest goals n norandom rng
           else if cmd == "quit" || cmd == "exit" then
             .error "Game is not complete"
           else if cmd == "first" then
@@ -1914,13 +1931,15 @@ def replayCompleteGameGo (g : Game) (commands : List String)
               match applyLoggedAction g cmd args line accept with
               | .error e => .error s!"Invalid command `{line}`: {e}"
               | .ok (g', _) =>
+                let (rng, g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
                 replayCompleteGameGo g' rest
-                  (goalsAfterCommand g g' actor cmd args goals) n
+                  (goalsAfterCommand g g' actor cmd args goals) n norandom rng
 
 /-- Replay scripted game-state commands. Fails on an illegal command, leftover
 commands after the game ends, `quit`, or an unfinished game. -/
-def replayCompleteGame (g : Game) (commands : List String) : Except String Game :=
-  replayCompleteGameGo g commands #[] (commands.length * 8 + passUntilFuel)
+def replayCompleteGame (g : Game) (commands : List String)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : Except String Game :=
+  replayCompleteGameGo g commands #[] (commands.length * 8 + passUntilFuel) norandom rng
 
 /-- One-line result used by `--check`. -/
 def describeCheckResult (g : Game) : String :=
@@ -2286,9 +2305,11 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
 
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     (controlAll : Bool := false) (pending : List String := [])
-    (output : Option IO.FS.Handle := none) (sameFile : Bool := false) :
+    (output : Option IO.FS.Handle := none) (sameFile : Bool := false)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) :
     IO Unit := do
   let mut g := g
+  let mut rng := rng
   let mut seen := g.log.size
   let mut playerView := startVisible
   let mut lastActor : Option PlayerId := g.actor
@@ -2298,6 +2319,12 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   let youName := (g.player you).name
   IO.println (helpInteractive controlAll youName)
   while !g.over do
+    if !norandom && g.pendingRandom?.isSome then
+      let (rng', g') := g.resolvePendingRandom rng
+      rng := rng'
+      seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+      g := g'
+      continue
     -- Interactive: let the heuristic play every other seat until you must act.
     if !controlAll then
       while !g.over && g.pendingRandom?.isNone &&
@@ -2324,6 +2351,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           IO.println s!"{actorName} could not act: {e}"
           break
         | .ok g' =>
+          let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          rng := rng'
           seen ← refreshAfterStep g g' seen (humanView playerView)
           g := g'
     if g.over then break
@@ -2340,6 +2369,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       | .error e =>
         IO.println s!"{actorDisplayName g} could not automatically target: {e}"
       | .ok (g', line) =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #[line]
         g := g'
       continue
@@ -2348,6 +2379,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       | .error e =>
         IO.println s!"{actorDisplayName g} could not automatically pay: {e}"
       | .ok (g', cmds) =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll cmds
         g := g'
       continue
@@ -2356,6 +2389,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p (.declareAttackers #[]) "declare no attackers" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noattack"]
         g := g'
       continue
@@ -2364,6 +2399,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p (.declareBlockers #[]) "declare no blockers" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noblock"]
         g := g'
       continue
@@ -2376,8 +2413,10 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         passUntilGoals := passUntilGoals.filter (fun existing => existing != goal)
       | .ok r =>
         if !r.commands.isEmpty then
-          seen ← recordAndRefresh output sameFile g r.game seen playerView controlAll r.commands
-          g := r.game
+          let (rng', g') := if norandom then (rng, r.game) else r.game.resolvePendingRandom rng
+          rng := rng'
+          seen ← recordAndRefresh output sameFile g g' seen playerView controlAll r.commands
+          g := g'
           continue
     | none => pure ()
     if shouldAutoPass g pending then
@@ -2385,6 +2424,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p .pass "pass" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["pass"]
         g := g'
       continue
@@ -2438,6 +2479,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         match applyLoggedAction g cmd args line accept with
         | .error e => IO.println s!"! {e}"
         | .ok (g', recorded) =>
+          let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          rng := rng'
           for rec in recorded do
             recordAcceptedCommand output sameFile fromInput rec
           seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
@@ -2452,12 +2495,20 @@ supplies the result from `--input` or the console. -/
 partial def runAuto (g : Game) (fuel : Nat)
     (pending : List String := [])
     (output : Option IO.FS.Handle := none)
-    (sameFile : Bool := false) : IO Unit := do
+    (sameFile : Bool := false)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : IO Unit := do
   let mut g := g
+  let mut rng := rng
   let mut seen := g.log.size
   let mut remaining := fuel
   let mut pending := pending
   while remaining > 0 && !g.over do
+    if !norandom && g.pendingRandom?.isSome then
+      let (rng', g') := g.resolvePendingRandom rng
+      rng := rng'
+      seen ← refreshAfterStep g g' seen
+      g := g'
+      continue
     if g.pendingRandom?.isSome then
       IO.print "mtg> "
       (← IO.getStdout).flush
@@ -2489,6 +2540,8 @@ partial def runAuto (g : Game) (fuel : Nat)
       IO.println s!"Agent stopped: {e}"
       break
     | .ok g' =>
+      let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+      rng := rng'
       seen ← refreshAfterStep g g' seen
       g := g'
   printState g
@@ -2782,13 +2835,13 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   let decider := assignDecider opt.players opt.seed opt.decides
   let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
   let (startIdx, rest) ← takeStartingPlayer seats humanChooses decider commands
-  let g ← Start.start {
+  let (g, rng) ← Start.startWithRng {
     seats
     format := demoFormat opt.constructed
     seed := opt.seed
     startingPlayer := some startIdx
     norandom := opt.norandom }
-  replayCompleteGame g rest
+  replayCompleteGame g rest opt.norandom rng
 
 /-- Usage for reporting who was chosen at random to decide (CR 103.1). -/
 def decidesUsage (players : Array DemoPlayer) : String :=
@@ -2896,15 +2949,16 @@ def main (args : List String) : IO UInt32 := do
                       pure (some (decider, pending))) with
                   | none => return 0
                   | some (startIdx, pending) =>
-                    let g ← startGame opt.seed (some startIdx) seats opt.norandom
+                    let (g, rng) ← startGameWithRng opt.seed (some startIdx) seats opt.norandom
                       opt.constructed
                     printOpening g (currentView g opt.playerView opt.multiplayer)
                     interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                      opt.norandom rng
                     return 0
                 else
-                  let g ←
-                    startDemo opt.seed (some decider) (seats := seats)
+                  let (g, rng) ←
+                    startDemoWithRng opt.seed (some decider) (seats := seats)
                       (norandom := opt.norandom)
                       (constructed := opt.constructed)
-                  runAuto g opt.fuel pending output sameFile
+                  runAuto g opt.fuel pending output sameFile opt.norandom rng
                   return 0

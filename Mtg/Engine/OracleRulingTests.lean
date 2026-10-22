@@ -4398,7 +4398,7 @@ def grimaEmptyLibraryBecomesLibraryOk : Bool :=
   let g := addToLibraryTop g mountain ⟨1⟩
   let g := addToLibraryTop g mountain ⟨1⟩
   let before := (g.player ⟨1⟩).library.size
-  let g := g.grimaExileUntilInstantOrSorcery ⟨0⟩ ⟨1⟩ false
+  let g := (g.grimaExileUntilInstantOrSorcery ⟨0⟩ ⟨1⟩ false).resolveRandom
   (g.player ⟨1⟩).library.size == before &&
     !(g.objects.any (fun o => o.zone == .exile && o.name == "Mountain")) &&
     g.log.any (fun s => mentions s "become that player's library") &&

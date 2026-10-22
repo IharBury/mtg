@@ -149,8 +149,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         | none => g.logMsg "No creature or planeswalker card is revealed"
       if revealed.isEmpty then g
       else
-        let (rng, ordered) := if g.norandom then (g.rng, revealed) else g.rng.shuffle revealed
-        ((g.change (.rng rng)).moveIdsInOrder ordered (.library controller)).logMsg
+        g.requestOrderInto revealed (.library controller)
           s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order")
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>

@@ -81,6 +81,7 @@ def parsedTwoAmountsSameSource : Bool :=
         match g.apply ⟨2⟩ .keep with
         | .error _ => false
         | .ok g =>
+          let g := g.resolveRandom
           g.pending == .declareMulligan ⟨0⟩ &&
           (g.player ⟨0⟩).hand.size == 7 &&
           (g.player ⟨0⟩).mulligansTaken == 1 &&

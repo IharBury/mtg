@@ -276,5 +276,20 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     return g.finishSacArtifactOrDiscardDraw p n
   | _ => throw "Not time to sacrifice a permanent"
 
+/-- `p` discards `id` from their hand (CR 701.9). -/
+def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none) :
+    Game :=
+  let card := g.object! id
+  let g :=
+    match chooser with
+    | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
+    | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
+  let (g, _) := g.move id (.graveyard card.owner) none
+  g
+
+/-- `p` discards `id`, chosen at random (CR 701.9). -/
+def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
+  (g.logMsg s!"{(g.player p).name} discards a card at random").discardFromHand p id
+
 end Game
 end Mtg.Engine

@@ -313,8 +313,8 @@ def ownerShuffleSourceSetup : Game :=
   addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨0⟩
 
 def ownerShuffleSourceResolved : Game :=
-  ownerShuffleSourceSetup.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
-    (some (namedPermanent ownerShuffleSourceSetup "Gandalf, Wandering Wizard").id)
+  (ownerShuffleSourceSetup.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent ownerShuffleSourceSetup "Gandalf, Wandering Wizard").id)).resolveRandom
 
 #guard
   !ownerShuffleSourceResolved.battlefield.any (fun o =>
@@ -329,8 +329,8 @@ def ownerShuffleSourceResolved : Game :=
 /-- The printed owner draws even when another player controls the source. -/
 def ownerShuffleSourceStolen : Game :=
   let g := addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨1⟩
-  g.applyAbilityEffect ⟨1⟩ (Effect.ownerShuffleSourceDraw 3) #[]
-    (some (namedPermanent g "Gandalf, Wandering Wizard").id)
+  (g.applyAbilityEffect ⟨1⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent g "Gandalf, Wandering Wizard").id)).resolveRandom
 
 #guard
   (ownerShuffleSourceStolen.player ⟨0⟩).hand.size ==
@@ -350,9 +350,9 @@ def ownerShuffleSourceGone : Game :=
     (ownerShuffleSourceGone.player ⟨0⟩).hand.size ==
       (afterDraw.player ⟨0⟩).hand.size
 
-/-- `--norandom` shuffles first; the draw waits for the supplied order. -/
+/-- Shuffling pauses for a random order; the draw waits for the supplied order. -/
 def ownerShuffleSourceNorandomPending : Game :=
-  let g := addPermanent (afterDraw.change (.norandom true)) gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨0⟩
   g.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
     (some (namedPermanent g "Gandalf, Wandering Wizard").id)
 

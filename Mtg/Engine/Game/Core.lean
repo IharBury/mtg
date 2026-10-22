@@ -25,11 +25,7 @@ structure Game where
   pending : Pending := .none
   nextObjectId : Nat := 0
   timestamp : Nat := 0
-  rng : Rng := Rng.ofSeed 1
-  /-- When true, random events become `Pending.resolveRandom` instead of
-  using `rng`. -/
-  norandom : Bool := false
-  /-- Continuation after a `--norandom` result is applied. -/
+  /-- Continuation after a random result is applied. -/
   afterRandom : AfterRandom := .none
   result : Option GameResult := none
   log : Array String := #[]
@@ -976,8 +972,6 @@ def applyChange (g : Game) (c : GameChange) : Game :=
   | .pending v => { g with pending := v }
   | .nextObjectId v => { g with nextObjectId := v }
   | .timestamp v => { g with timestamp := v }
-  | .rng v => { g with rng := v }
-  | .norandom v => { g with norandom := v }
   | .afterRandom v => { g with afterRandom := v }
   | .result v => { g with result := v }
   | .log v => { g with log := v }

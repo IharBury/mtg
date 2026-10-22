@@ -186,7 +186,7 @@ def resolveDeclaredMulligans (g : Game) : Game :=
     if order.isEmpty then
       g.beginMulliganRound
     else
-      let g := g.changes #[.willMulligan #[], .mulliganToBottom order]
+      let g := g.changes #[.pending .none, .willMulligan #[], .mulliganToBottom order]
       executeMulliganQueue g order
 
 /-- Remove `who` from a sequential CR 103.5 queue, then finish or prompt the

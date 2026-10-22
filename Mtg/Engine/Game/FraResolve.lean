@@ -341,13 +341,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o => g.addPlusOnePlusOneTo o x
         | none => g) g
   | .searchCardThenDiscardRandom =>
-    let g := g.resolveLibrarySearchToHand controller (fun _ => true) "card"
-    let hand := (g.player controller).hand
-    if hand.isEmpty then g
-    else
-      let (rng, r) := g.rng.next
-      let g := g.change (.rng rng)
-      g.discardFromHandRandomly controller hand[(r.toNat % hand.size)]!
+    g.beginLibrarySearch controller (fun _ => true) "card" .handThenDiscardRandom
   | .grantFlashbackUntilEot =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with

@@ -51,6 +51,8 @@ inductive AfterRandom where
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
   | plusOne (id : ObjectId)
+  /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
+  | discardRandom (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Payment a player may make to stop ward from countering their spell
@@ -136,6 +138,8 @@ inductive SearchDest where
   /-- Onto the battlefield from the hand or library; shuffle only if the
   library was searched (Last Light of Durin's Day). -/
   | battlefieldFromHandOrLibrary
+  /-- Into the hand, then shuffle, then discard a card at random (Curse-Marred Demon). -/
+  | handThenDiscardRandom
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a “you may sacrifice …” choice accepts. -/

@@ -695,12 +695,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayCastCascade cardId others, .accept =>
     let g := g.castAsPartOfResolution p cardId
     let msg := s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
-    let g :=
-      if g.pending == .none then g.requestOrderInto others (.library p) msg
-      else if g.norandom then g.moveIdsInOrder others (.library p) |>.logMsg msg
-      else
-        let (rng, ordered) := g.rng.shuffle others
-        (g.change (.rng rng)).moveIdsInOrder ordered (.library p) |>.logMsg msg
+    let g := g.requestOrderInto others (.library p) msg
     return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
     return (g.requestOrderInto (others.push cardId) (.library p)
@@ -718,12 +713,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let pile := others ++ uncast
     let msg :=
       s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-    let g :=
-      if g.pending == .none then g.requestOrderInto pile (.library victim) msg
-      else if g.norandom then g.moveIdsInOrder pile (.library victim) |>.logMsg msg
-      else
-        let (rng, ordered) := g.rng.shuffle pile
-        (g.change (.rng rng)).moveIdsInOrder ordered (.library victim) |>.logMsg msg
+    let g := g.requestOrderInto pile (.library victim) msg
     return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
     return (g.requestOrderInto (others.push cardId) (.library victim)

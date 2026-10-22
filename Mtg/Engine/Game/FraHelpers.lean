@@ -119,22 +119,6 @@ def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
   let g := g.logMsg s!"{name} returns to the battlefield"
   (g, newId)
 
-
-/-- `p` discards `id` from their hand (CR 701.9). -/
-def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none) :
-    Game :=
-  let card := g.object! id
-  let g :=
-    match chooser with
-    | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
-    | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none
-  g
-
-/-- `p` discards `id`, chosen at random (CR 701.9). -/
-def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
-  (g.logMsg s!"{(g.player p).name} discards a card at random").discardFromHand p id
-
 /-- Remove up to `n` counters from `o` (Mabel, Bitter Recluse). The controller
 of the ability removes counters that help an opponent's permanent (loyalty,
 then +1/+1, then other kinds) or hurt their own (stun, then minus-one counters). -/

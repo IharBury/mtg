@@ -899,10 +899,18 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .putOnTop p ids => g.putIdsOnTop p ids
     | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
     | .plusOne id => g.addPlusOneIfStillCreature id
+    | .discardRandom p =>
+      let hand := (g.player p).hand
+      if hand.isEmpty then g
+      else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
+      else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     let g := g.resumeTriggerSequence
-    if g.pending != .none || g.over then g else g.receivePriority g.activePlayer
+    if g.pending != .none || g.over then g
+    else
+      let g := g.promptTriggerTargetsIfNeeded
+      if g.pending != .none || g.over then g else g.receivePriority g.activePlayer
   else g
 
 /-- Apply a `--norandom` permutation or chosen object. -/
@@ -937,6 +945,10 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
           match g.pendingRandom? with
           | some _ => return g
           | none => return g.finishAfterRandom true
+        | .discardRandom controller =>
+          let g := g.changes #[.pending .none, .afterRandom .none]
+          let g := g.discardFromHandRandomly controller id
+          return g.finishAfterRandom true
         | _ =>
           let g := g.change (.pending .none)
           return g.finishAfterRandom true
@@ -960,6 +972,51 @@ def supplyIndex (g : Game) (i : Nat) : Except String Game := do
   | .resolveRandom _ =>
     throw "This random event needs an order or a chosen object, not an index"
   | _ => throw "No random event is waiting for a result"
+
+/-- Supply one random answer from `rng` when `g` is waiting on
+`Pending.resolveRandom`. -/
+def resolveOneRandom (g : Game) (rng : Rng) : Rng × Game :=
+  match g.pending with
+  | .resolveRandom (.shuffleLibrary p) =>
+    let (rng, ordered) := rng.shuffle (g.player p).library
+    match g.supplyOrder ordered with
+    | .ok g' => (rng, g')
+    | .error _ => (rng, g)
+  | .resolveRandom (.orderInto ids _) =>
+    let (rng, ordered) := rng.shuffle ids
+    match g.supplyOrder ordered with
+    | .ok g' => (rng, g')
+    | .error _ => (rng, g)
+  | .resolveRandom (.chooseObject choices) =>
+    if choices.isEmpty then (rng, g)
+    else
+      let (rng, r) := rng.next
+      let chosen := choices[(r.toNat % choices.size)]!
+      match g.supplyOrder #[chosen] with
+      | .ok g' => (rng, g')
+      | .error _ => (rng, g)
+  | .resolveRandom (.chooseIndex n) =>
+    if n == 0 then (rng, g)
+    else
+      let (rng, r) := rng.next
+      match g.supplyIndex (r.toNat % n) with
+      | .ok g' => (rng, g')
+      | .error _ => (rng, g)
+  | _ => (rng, g)
+
+/-- Resolve all chained `Pending.resolveRandom` requests using `rng`. -/
+partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
+  match g.pending with
+  | .resolveRandom _ =>
+    let (rng', g') := g.resolveOneRandom rng
+    if g'.pending == g.pending then (rng', g')
+    else g'.resolvePendingRandom rng'
+  | _ => (rng, g)
+
+/-- Resolve all chained `Pending.resolveRandom` requests using `rng`
+(defaulting to seed 1). -/
+def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
+  (g.resolvePendingRandom rng).2
 
 end Game
 end Mtg.Engine

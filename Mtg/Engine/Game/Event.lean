@@ -558,8 +558,6 @@ inductive GameChange where
   | pending (v : Pending)
   | nextObjectId (v : Nat)
   | timestamp (v : Nat)
-  | rng (v : Rng)
-  | norandom (v : Bool)
   | afterRandom (v : AfterRandom)
   | result (v : Option GameResult)
   | log (v : Array String)

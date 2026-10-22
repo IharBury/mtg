@@ -959,8 +959,7 @@ the other revealed cards on the bottom. The rest of the library stays. -/
     g.log.any (fun s => mentions s "No creature card was revealed")
 #guard
   let g := onlyLib (addPermanent afterDraw getawayBarrel me me) #[grizzlyBears, hillGiant, forest]
-  let g := g.change (.norandom true)
-  let g := passBoth (fireTrigger g "Getaway Barrel")
+  let g := (fireTrigger g "Getaway Barrel").resolveTop
   let choosing :=
     match g.pending with
     | .resolveRandom (.chooseObject ids) => ids.size == 2

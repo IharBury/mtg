@@ -456,17 +456,20 @@ def step (g : Game) : Except String Game := do
     | some a => g.apply p a
 
 /-- Run the heuristic until the game ends or `fuel` actions have been taken. -/
-def play (g : Game) (fuel : Nat := 400) : Game :=
+def play (g : Game) (fuel : Nat := 400) (rng : Rng := Rng.ofSeed 1) : Game :=
+  let (rng, g) := g.resolvePendingRandom rng
   match fuel with
   | 0 => g.logMsg "Stopped: action limit reached"
   | n + 1 =>
     if g.over then g
     else if !g.playersReceivePriority && g.pending == .none then
       -- Untap, or a cleanup with no CR 514.3a exception: recover by advancing.
-      play (g.advanceStep) n
+      play (g.advanceStep) n rng
     else
       match step g with
-      | .ok g' => play g' n
+      | .ok g' =>
+        let (rng', g') := g'.resolvePendingRandom rng
+        play g' n rng'
       | .error e => g.logMsg s!"Agent error: {e}"
 
 end Mtg.Engine.Agent

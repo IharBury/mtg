@@ -118,20 +118,26 @@ def applySearchAfter (g : Game) : Game :=
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
   | .plusOne id => g.addPlusOneIfStillCreature id
+  | .discardRandom p =>
+    let hand := (g.player p).hand
+    if hand.isEmpty then g
+    else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
+    else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
   | other => g.change (.afterRandom other)
 
-/-- Shuffle, then run `onDone`. A `--norandom` pause keeps `onDone` until the
-host supplies the order. An as-enters choice already waiting is restored when
-the shuffle does not pause. -/
+/-- Shuffle, then run `onDone`. A random pause keeps `onDone` until the
+host supplies the order. An as-enters choice already waiting is preserved. -/
 def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
-  let saved := g.pending
-  let g := g.change (.pending .none)
-  let g := g.requestShuffle p onDone
-  if g.pendingRandom?.isSome then g
-  else
+  if g.pending != .none then
+    let g := (g.change (.afterRandom onDone)).shuffleLibrary p
     let g := g.continueIfShuffled
-    let g := g.applySearchAfter
-    if g.pending == .none then g.change (.pending saved) else g
+    g.applySearchAfter
+  else
+    let g := g.requestShuffle p onDone
+    if g.pendingRandom?.isSome then g
+    else
+      let g := g.continueIfShuffled
+      g.applySearchAfter
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
 def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
@@ -159,7 +165,9 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
   let noun := searchNoun kind
   if ids.isEmpty then
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
-    if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
+    match dest with
+    | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
+    | _ => if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
   else
     match dest with
     | .battlefield tapped =>
@@ -168,6 +176,9 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | .hand =>
       let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
       g.shuffleSearch p after
+    | .handThenDiscardRandom =>
+      let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
+      g.shuffleThen p (.discardRandom p)
     | .graveyard =>
       let g := ids.foldl (fun g id => g.placeSearchedGraveyard id) g
       g.shuffleSearch p after
@@ -214,7 +225,10 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     (g.change (.pending (.fraChoice p (.maySearchLibrary eligible count dest after kind)))).logMsg
       s!"{pl.name} may search for {kind}"
   else if eligible.isEmpty then
-    (g.logMsg s!"{pl.name} finds no {searchNoun kind}").shuffleSearch p after
+    let g := g.logMsg s!"{pl.name} finds no {searchNoun kind}"
+    match dest with
+    | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
+    | _ => g.shuffleSearch p after
   else
     (g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))).logMsg
       s!"{pl.name} searches for {kind}"

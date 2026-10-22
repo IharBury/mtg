@@ -78,8 +78,11 @@ def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
 def withLands (g : Game) (n : Nat) : Game :=
   (List.range n).foldl (fun g _ => addPermanent g plot caster caster) g
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
+def stepRaw (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
   g.applyTriggeredAbility caster (.onEnterDraw 1) none (resolutionOverride := some r)
+
+def step (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
+  (stepRaw g r).resolveRandom
 
 def libNames (g : Game) (p : PlayerId) : List String :=
   (g.player p).library.toList.map fun id =>
@@ -135,8 +138,8 @@ def spy : CardDef := {
 
 def stepAt (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
-    (resolutionOverride := some r)
+  (g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
+    (resolutionOverride := some r)).resolveRandom
 
 def spyId (g : Game) : ObjectId :=
   match g.battlefield.find? (·.name == "Widow Source") with
@@ -183,17 +186,17 @@ reveals only the cards it has. -/
     logContains g "Chandra reveals Reveal Bear" &&
     logContains g "Chandra reveals Reveal Plot"
 
-/- With `norandom` and one creature, that creature enters. With two, the
+/- With one creature, that creature enters. With two, the
 choice waits, and the chosen creature then enters. -/
 #guard
-  let g0 := (onlyLibrary afterDraw caster [plot, bear]).change (.norandom true)
-  let g := step g0 (randomCreature 2)
+  let g0 := onlyLibrary afterDraw caster [plot, bear]
+  let g := stepRaw g0 (randomCreature 2)
   onBattlefield g "Reveal Bear" && g.pending == .none &&
     libNames g caster == ["Reveal Plot"]
 
 #guard
-  let g0 := (onlyLibrary afterDraw caster [plot, bear, elf]).change (.norandom true)
-  let g := step g0 (randomCreature 3)
+  let g0 := onlyLibrary afterDraw caster [plot, bear, elf]
+  let g := stepRaw g0 (randomCreature 3)
   let bearId := libId g caster "Reveal Bear"
   let elfId := libId g caster "Reveal Elf"
   let waiting :=
@@ -267,8 +270,8 @@ library changes nothing. -/
   (g.player caster).library.isEmpty && g.log.size == g0.log.size
 
 #guard
-  let g0 := (onlyLibrary afterDraw caster [bolt, plot]).change (.norandom true)
-  let g := step g0 untilCreature
+  let g0 := onlyLibrary afterDraw caster [bolt, plot]
+  let g := stepRaw g0 untilCreature
   (g.player caster).library.isEmpty && inExile g "Reveal Bolt" && inExile g "Reveal Plot" &&
     (match g.pending with
       | .resolveRandom (.orderInto ids (.library p)) => p == caster && ids.size == 2

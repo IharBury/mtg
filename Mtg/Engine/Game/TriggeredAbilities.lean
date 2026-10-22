@@ -216,13 +216,6 @@ def applyChooseModeStep (g : Game) (targets : Array Target)
   | .sacrifice .eachPlayersCreature _ => g.sacrificeChosenOrGone targets
   | other => generic g other
 
-/-- One of `ids`, chosen with the game's RNG. An empty list yields none. -/
-def chooseRandomId (g : Game) (ids : Array ObjectId) : Game × Option ObjectId :=
-  if ids.size ≤ 1 then (g, ids[0]?)
-  else
-    let (rng, shuffled) := g.rng.shuffle ids
-    (g.change (.rng rng), shuffled[0]?)
-
 /-- Put `chosen` from the revealed cards onto the battlefield, then the other
 revealed cards on the bottom of their owner's library in a random order. -/
 def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array ObjectId)
@@ -2606,11 +2599,14 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => controller
       if creatures.isEmpty then
         (g.logMsg "No creature card was revealed").putRestOnBottomRandom libraryOwner ids
+      else if creatures.size > 1 then
+        g.changes #[
+          .pending (.resolveRandom (.chooseObject creatures)),
+          .afterRandom (.revealRandomCreatureThenBottom controller ids)]
+          |>.logMsg
+            s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
       else
-        let (g, chosen) := g.chooseRandomId creatures
-        match chosen with
-        | some id => g.resolveRandomCreatureReveal controller ids id
-        | none => g.putRestOnBottomRandom controller ids
+        g.resolveRandomCreatureReveal controller ids creatures[0]!
   | what, how, note =>
     let inGraveyard (o : GameObject) : Bool :=
       match o.zone with
@@ -3220,18 +3216,20 @@ def revealUntil (g : Game) (pid : PlayerId) (fuel : Nat)
         revealUntil g pid fuel stop (rest.push newId)
 
 /-- Look through the libraries `who` names, as `how` says, and remember the
-cards that were found. -/
+cards that were found. Returns any remaining revealed cards to put on the
+bottom of their owner's library after `thenDo` resolves. -/
 def noteRevealedLibraries (g : Game) (controller : PlayerId)
     (targets : Array Target) (sourceId : Option ObjectId)
     (how : TriggeredAbility.TriggerLibraryHow)
-    (who : TriggeredAbility.PlayerSelector) : Game :=
+    (who : TriggeredAbility.PlayerSelector) : Game × Array (PlayerId × Array ObjectId) :=
   let ctx : TriggerRead := { controller, sourceId, targets }
   match g.collectPlayers ctx who with
-  | none => g
+  | none => (g, #[])
   | some pids =>
     Id.run do
       let mut g := g
       let mut found : Array ObjectId := #[]
+      let mut rests : Array (PlayerId × Array ObjectId) := #[]
       for pid in pids do
         match how with
         | .top n =>
@@ -3244,32 +3242,36 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
         | .untilCreature =>
           let (g', hit, rest) :=
             revealUntil g pid (g.player pid).library.size (·.printed.isCreature) #[]
-          g := g'.putRestOnBottomRandom pid rest
+          g := g'
+          if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
           | some id => found := found.push id
           | none => pure ()
         | .untilSaga =>
           let (g', hit, rest) :=
             revealUntil g pid (g.player pid).library.size (fun o => o.printed.saga.isSome) #[]
-          g := g'.putRestOnBottomRandom pid rest
+          g := g'
+          if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
           | some id => found := found.push id
           | none => pure ()
         | .untilInstantOrSorcery =>
           let (g', hit, rest) :=
             revealUntil g pid (g.player pid).library.size (·.printed.isInstantOrSorcery) #[]
-          g := g'.putRestOnBottomRandom pid rest
+          g := g'
+          if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
           | some id => found := found.push id
           | none => pure ()
         | .untilNonland =>
           let (g', hit, rest) :=
             revealUntil g pid (g.player pid).library.size (fun o => !o.printed.isLand) #[]
-          g := g'.putRestOnBottomRandom pid rest
+          g := g'
+          if !rest.isEmpty then rests := rests.push (pid, rest)
           match hit with
           | some id => found := found.push id
           | none => pure ()
-      return g.change (.revealedIdsThisWay found)
+      return (g.change (.revealedIdsThisWay found), rests)
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
 keeps the behavior of the constructor it replaced. Any other selector
@@ -3289,17 +3291,14 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     let creatures := ids.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
     if creatures.isEmpty then
       (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
-    else if g.norandom && creatures.size > 1 then
+    else if creatures.size > 1 then
       g.changes #[
         .pending (.resolveRandom (.chooseObject creatures)),
         .afterRandom (.revealRandomCreatureThenBottom controller ids)]
         |>.logMsg
           s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
     else
-      let (g, chosen) := g.chooseRandomId creatures
-      match chosen with
-      | some id => g.resolveRandomCreatureReveal controller ids id
-      | none => g.putRestOnBottomRandom controller ids
+      g.resolveRandomCreatureReveal controller ids creatures[0]!
   | .untilCreature,
     .ifElse .revealedManaValueAtMostLands
       (.put .revealed .asPrinted .none)       (.returnToHand .revealed .none),
@@ -4076,9 +4075,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match g.applyRevealLibrary controller sourceId targets how thenDo who with
     | some g => g
     | none =>
-      let g := g.noteRevealedLibraries controller targets sourceId how who
-      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      let (g, rests) := g.noteRevealedLibraries controller targets sourceId how who
+      let g := g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName (some thenDo) sequencedCardPower
+      rests.foldl (fun g (pid, rest) => g.putRestOnBottomRandom pid rest) g
   | .fight who how =>
     g.applyFight controller sourceId targets who how
   | .copySelfNonlegendary =>

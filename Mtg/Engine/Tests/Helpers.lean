@@ -46,7 +46,6 @@ open Mtg.Engine.Catalog
 #guard nissaStarts.actor == some ⟨1⟩
 #guard nissaStarts.log.any (· == "Starting player: Nissa")
 
-#guard norandomOpening.norandom
 #guard (norandomOpening.player ⟨0⟩).hand.isEmpty
 #guard (norandomOpening.player ⟨1⟩).hand.isEmpty
 #guard
@@ -72,7 +71,6 @@ open Mtg.Engine.Catalog
 #guard (norandomDrawnHands.player ⟨0⟩).library.size == 53
 
 /- Without `--norandom`, `Start.start` still shuffles from the seed. -/
-#guard !drawnHands.norandom
 #guard drawnHands.pendingRandom?.isNone
 
 #guard

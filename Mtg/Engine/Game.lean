@@ -195,12 +195,17 @@ namespace Mtg.Engine
 /-- Apply one legal action, or panic with the rules error. -/
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   match g.apply p a with
-  | .ok g' => g'
+  | .ok g' =>
+    match a with
+    | .supplyOrder _ | .supplyIndex _ => g'
+    | _ => g'.resolveRandom
   | .error e => panic! e
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 @[noinline] def applyIdle (g : Game) : Game :=
   match g.pending, g.actor with
+  | .resolveRandom _, _ =>
+    g.resolveRandom
   | .declareAttackers, some p =>
     mustApply g p (.declareAttackers #[])
   | .declareBlockers, some p =>
