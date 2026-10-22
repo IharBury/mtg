@@ -709,7 +709,7 @@ only if you've scried or surveilled this turn. -/
   activationRejected g (graveyardObj g me "Proctor of Potential") "Return"
 #guard
   let g := addToGraveyard afterDraw proctorOfPotential me
-  let g := g.modifyPlayer me (fun pl => { pl with scriedThisTurn := true })
+  let g := g.record (GameEvent.looked g.turnNumber me 1)
   let card := graveyardObj g me "Proctor of Potential"
   let g := resolved (activateId g card.id (abIdx g card "Return"))
   (namedPermanent g "Proctor of Potential").status.finality == 1

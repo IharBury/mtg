@@ -106,7 +106,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | none => g) g
   | .drawMilledThisTurn =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
-      g.draw controller (g.player pid).cardsMilledThisTurn) sourceId illegal
+      g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
     let creatures := g.battlefield.filter (·.isCreature)
     let g := creatures.foldl (fun g o =>
@@ -115,9 +115,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.empowerJace controller creatures.size
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
-    let before := (g.player controller).cardsDrawnThisTurn
+    let before := g.loggedDraws controller
     let g := g.draw controller n
-    let drawn := (g.player controller).cardsDrawnThisTurn - before
+    let drawn := g.loggedDraws controller - before
     g.loseLife controller drawn
   | .revealHandDiscardNonland permanentOnly =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>

@@ -31,7 +31,13 @@ def withSpent (spent : Nat) : Game :=
   let g := addPermanent afterDraw pebble caster caster
   let src := pebbleOf g
   let (g, ab) := g.allocStackAbility src caster
-  let g := g.setObject { ab with fraCauseStatus := some { manaSpentToCast := spent } }
+  let causeId : ObjectId := ⟨911⟩
+  let g := g.record (GameEvent.cast g.turnNumber caster
+    { id := causeId, controller := some caster, owner := caster } (.hand caster)
+    (manaSpent := spent))
+  let g := g.setObject { ab with
+    fraCauseId := some causeId
+    fraCauseStatus := some { manaSpentToCast := spent } }
   { g with resolvingAbility := some ab.id }
 
 def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=

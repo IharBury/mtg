@@ -589,6 +589,69 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
     | .cast _ s _ _ spent _ _ _ => if s.id == spell then max n spent else n
     | _ => n) 0
 
+/-- Same event, naming the object id it has after the zone change (CR 400.7). -/
+def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
+  match e.change with
+  | .moved object fromZone toZone sacrificed discarded =>
+    { e with change := .moved { object with id := id } fromZone toZone sacrificed discarded }
+  | .created player object =>
+    { e with change := .created player { object with id := id } }
+  | _ => e
+
+/-- Creature spells `p` cast on `turn`. -/
+def creatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .cast q spell _ _ _ _ _ _ => if q == p && spell.creature then n + 1 else n
+      | _ => n) 0
+
+/-- Noncreature spells `p` cast on `turn`. -/
+def noncreatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .cast q spell _ _ _ _ _ _ => if q == p && !spell.creature then n + 1 else n
+      | _ => n) 0
+
+/-- Creatures `p` attacked with on `turn`. -/
+def attacks (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .attacked q _ _ => if q == p then n + 1 else n
+      | _ => n) 0
+
+/-- Cards that moved from `p`'s library to `p`'s graveyard on `turn`. -/
+def milled (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .moved _ (.library owner) (.graveyard q) _ _ =>
+        if owner == p && q == p then n + 1 else n
+      | _ => n) 0
+
+/-- `p` has already drawn the first card of their draw step on `turn`. -/
+def drewFirstOfDrawStep (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool :=
+  events.any fun e =>
+    e.turn == turn &&
+      match e.change with
+      | .drew q _ _ true => q == p
+      | _ => false
+
+/-- `id` entered the battlefield on `turn`. -/
+def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool :=
+  events.any fun e =>
+    e.turn == turn &&
+      match e.change with
+      | .moved object _ .battlefield _ _ => object.id == id
+      | .created _ object => object.id == id
+      | _ => false
+
 /-- The cast of `spell` was from a graveyard. -/
 def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>

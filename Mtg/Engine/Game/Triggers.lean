@@ -605,7 +605,7 @@ def controlsBasicLand (g : Game) (p : PlayerId) : Bool :=
 /-- Hidden Lair's colored add ability: this land entered this turn, or you
 control a basic land. -/
 def canUseEnteredOrBasicAdd (g : Game) (o : GameObject) : Bool :=
-  o.status.enteredThisTurn ||
+  g.loggedEntered o.id ||
     match o.controller with
     | some p => g.controlsBasicLand p
     | none => false

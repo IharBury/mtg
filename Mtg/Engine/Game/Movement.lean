@@ -157,7 +157,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     proposed.withDestination dest (match old.zone, dest with
       | .hand p, .graveyard q => p == q
       | _, _ => false)
-  let g := g.record happened
   let died :=
     happened.matchesTrigger (old.controller.getD old.owner) old.id .dying
   let dying := g.dyingTriggers old dest
@@ -259,6 +258,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
+  -- The object that arrives has a new id (CR 400.7). Trigger matching above
+  -- still uses the id the permanent had when it left.
+  let g := g.record (happened.withObjectId newId)
   let g :=
     let m := g.movedTo.push (id, newId)
     { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }

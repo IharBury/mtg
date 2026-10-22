@@ -1865,7 +1865,7 @@ def hawkeyeBowBecomesTappedOk : Bool :=
 /-- Rulings 98 / 110 / 244–246 / 249 / 255 / 277: second-card triggers fire
 even if the permanent entered after the first draw. -/
 def secondCardDrawnAfterEnterOk : Bool :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 1 })
+  let g := afterDraw.record (GameEvent.drew afterDraw.turnNumber ⟨0⟩ ⟨70⟩ 1)
   let g := addPermanent g kangTemporalTyrant ⟨0⟩ ⟨0⟩
   let g := addPermanent g kidLoki ⟨0⟩ ⟨0⟩
   let g := g.draw ⟨0⟩ 1

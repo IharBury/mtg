@@ -430,57 +430,73 @@ def over (g : Game) : Bool := g.result.isSome
 def player (g : Game) (p : PlayerId) : Player :=
   g.players[p.idx]!
 
-/-- Cards `p` has drawn this turn, from the event log and the turn counter. -/
+/-- Cards `p` has drawn this turn. Opening hands are not recorded. -/
 def loggedDraws (g : Game) (p : PlayerId) : Nat :=
-  max (g.player p).cardsDrawnThisTurn (GameEvent.draws g.events g.turnNumber p)
+  GameEvent.draws g.events g.turnNumber p
 
-/-- Life `p` has gained this turn, from the event log and the turn counter. -/
+/-- Life `p` has gained this turn. -/
 def loggedLifeGained (g : Game) (p : PlayerId) : Nat :=
-  max (g.player p).lifeGainedThisTurn (GameEvent.lifeGained g.events g.turnNumber p)
+  GameEvent.lifeGained g.events g.turnNumber p
 
-/-- Creatures that have died this turn, from the event log and the turn counter. -/
+/-- Creatures that have died this turn. -/
 def loggedCreatureDeaths (g : Game) : Nat :=
-  max g.creatureDeathsThisTurn (GameEvent.creatureDeaths g.events g.turnNumber)
+  GameEvent.creatureDeaths g.events g.turnNumber
 
-/-- Spells `p` has cast this turn, from the event log and the turn counter. -/
+/-- Spells `p` has cast this turn. -/
 def loggedSpellsCast (g : Game) (p : PlayerId) : Nat :=
-  max (g.player p).spellsCastThisTurn (GameEvent.spellsCast g.events g.turnNumber p)
+  GameEvent.spellsCast g.events g.turnNumber p
 
-/-- `p` has scried at least one card this turn. -/
+/-- Creature spells `p` has cast this turn. -/
+def loggedCreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.creatureSpells g.events g.turnNumber p
+
+/-- Noncreature spells `p` has cast this turn. -/
+def loggedNoncreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.noncreatureSpells g.events g.turnNumber p
+
+/-- Creatures `p` has attacked with this turn. -/
+def loggedAttacks (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.attacks g.events g.turnNumber p
+
+/-- Cards milled from `p`'s library this turn. -/
+def loggedMilled (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.milled g.events g.turnNumber p
+
+/-- `p` has scried at least one card this turn. Scry 0 does not count. -/
 def loggedScried (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).scriedThisTurn || GameEvent.scried g.events g.turnNumber p
+  GameEvent.scried g.events g.turnNumber p
 
-/-- `p` has surveilled at least one card this turn. -/
+/-- `p` has surveilled this turn. Surveil 0 does not count. -/
 def loggedSurveilled (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).surveilledThisTurn || GameEvent.surveilled g.events g.turnNumber p
+  GameEvent.surveilled g.events g.turnNumber p
 
 /-- An artifact has entered under `p`'s control this turn. -/
 def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).artifactEnteredThisTurn || GameEvent.artifactEntered g.events g.turnNumber p
+  GameEvent.artifactEntered g.events g.turnNumber p
 
 /-- `p` has attacked with a permanent of `subtype` this turn. -/
 def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : String) : Bool :=
-  (subtype == "Hero" && (g.player p).attackedWithHeroThisTurn) ||
-    GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
+  GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
 
 /-- A permanent of `subtype` has entered under `p`'s control this turn. -/
 def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : String) : Bool :=
-  (subtype == "Hero" && (g.player p).heroEnteredThisTurn) ||
-    GameEvent.subtypeEntered g.events g.turnNumber p subtype
+  GameEvent.subtypeEntered g.events g.turnNumber p subtype
 
 /-- `p` has activated a loyalty ability this turn. -/
 def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).activatedLoyaltyThisTurn || GameEvent.activatedLoyalty g.events g.turnNumber p
+  GameEvent.activatedLoyalty g.events g.turnNumber p
 
 /-- `p` was dealt noncombat damage this turn. -/
 def loggedNoncombatDamage (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).dealtNoncombatDamageThisTurn ||
-    GameEvent.dealtNoncombat g.events g.turnNumber p
+  GameEvent.dealtNoncombat g.events g.turnNumber p
 
 /-- `p` was dealt noncombat damage last turn. -/
 def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).dealtNoncombatDamageLastTurn ||
-    (g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p)
+  g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p
+
+/-- `id` entered the battlefield this turn. -/
+def loggedEntered (g : Game) (id : ObjectId) : Bool :=
+  GameEvent.objectEntered g.events g.turnNumber id
 
 def setPlayer (g : Game) (pl : Player) : Game :=
   { g with players := g.players.set! pl.id.idx pl }

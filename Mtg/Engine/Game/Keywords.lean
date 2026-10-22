@@ -43,7 +43,7 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         | .fra .powerAndFlyingIfSevenInGraveyard =>
           if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
         | .fra .flyingHasteIfOpponentDealtNoncombat =>
-          if (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
+          if (g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
             Keywords.merge acc (Keyword.flying.merge Keyword.haste)
           else acc
         | .fra .hexproofUntilCombatDamage =>

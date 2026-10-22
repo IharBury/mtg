@@ -24,18 +24,19 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
     let g := g.setPlayer { pl with library := rest }
     let (g, _) := g.move top (.hand p) none
     let pl := g.player p
-    let drawn := pl.cardsDrawnThisTurn + 1
+    let nth := GameEvent.draws g.events g.turnNumber p + 1
+    let firstOfTheirDrawStep :=
+      g.step == .draw && g.activePlayer == p &&
+        !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
     let drawStepDrawn :=
       if g.step == .draw && g.activePlayer == p then
         pl.cardsDrawnThisDrawStep + 1
       else pl.cardsDrawnThisDrawStep
     let g := g.setPlayer { pl with
-      cardsDrawnThisTurn := drawn
+      cardsDrawnThisTurn := pl.cardsDrawnThisTurn + 1
       cardsDrawnThisDrawStep := drawStepDrawn }
     let g := g.logMsg s!"{pl.name} draws {cardName}"
-    let firstOfTheirDrawStep :=
-      g.step == .draw && g.activePlayer == p && drawStepDrawn == 1
-    let happened := GameEvent.drew g.turnNumber p top drawn firstOfTheirDrawStep
+    let happened := GameEvent.drew g.turnNumber p top nth firstOfTheirDrawStep
     -- Opening hands are drawn before anyone keeps (CR 103.4). They are not
     -- “cards drawn this turn” once that counter is cleared for the first turn.
     let g := if pl.keptOpeningHand then g.record happened else g
@@ -69,11 +70,12 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
 card of your draw step). The replacement matches the draw that would happen. -/
 def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
-  let pl := g.player p
   let firstOfYourDrawStep :=
-    g.step == .draw && g.activePlayer == p && pl.cardsDrawnThisDrawStep == 0
+    g.step == .draw && g.activePlayer == p &&
+      !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
   let proposed :=
-    GameEvent.drew g.turnNumber p ⟨0⟩ (pl.cardsDrawnThisTurn + 1) firstOfYourDrawStep
+    GameEvent.drew g.turnNumber p ⟨0⟩ (GameEvent.draws g.events g.turnNumber p + 1)
+      firstOfYourDrawStep
   if !proposed.watches .wouldDraw || firstOfYourDrawStep then 1
   else
     let n := (g.permanentsOf p).filter (fun o =>

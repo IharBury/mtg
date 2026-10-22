@@ -121,7 +121,9 @@ def ironQuiet : Bool :=
 
 def ironDraws : Bool :=
   let g := addPermanent afterDraw ironManMasterOfMachines me me
-  let g := g.modifyPlayer me (fun pl => { pl with artifactEnteredThisTurn := true })
+  let g := g.record (GameEvent.moved g.turnNumber
+    { id := ⟨40⟩, controller := some me, owner := me, artifact := true }
+    (.hand me) .battlefield)
   let iron := named g "Iron Man, Master of Machines"
   let ab := TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw
   let hand0 := hand g

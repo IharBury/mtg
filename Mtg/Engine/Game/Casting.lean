@@ -20,7 +20,7 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
     o.staticAbilities.any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
-    (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
+    (g.livingOpponents p).any (fun pl => g.loggedSpellsCast pl.id > 0)
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
@@ -29,7 +29,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     | some t => g.controlsAnySubtype p #[t]
     | none => false
   let radagastFlash :=
-    face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
+    face.isCreature && g.loggedCreatureSpells p == 0 &&
       (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&

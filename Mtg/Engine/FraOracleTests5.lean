@@ -233,6 +233,8 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
   let g := addPermanent (addPermanent afterDraw desperateFuturescribe ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl =>
     { pl with scriedThisTurn := scried, surveilledThisTurn := surveilled })
+  let g := if scried then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1) else g
+  let g := if surveilled then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1 true) else g
   resolveStack (skipTo g .beginningOfCombat 80) 20
 
 /- Having scried and surveilled still gives only one counter. -/

@@ -294,7 +294,9 @@ def batCloudFull : Game :=
   withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
 
 def batCloudReduced : Game :=
-  { batCloudFull with creatureDiedThisTurn := true }
+  batCloudFull.record (GameEvent.moved batCloudFull.turnNumber
+    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, creature := true }
+    .battlefield (.graveyard ⟨1⟩))
 
 #guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")
 #guard

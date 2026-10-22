@@ -388,7 +388,9 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
   | .equalToManaSpent =>
     some <|
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
   | .perControlled ty =>
     some ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
   | .upToHandSize n =>

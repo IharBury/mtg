@@ -46,7 +46,9 @@ turn counter is cleared. -/
     (GameEvent.drew g.turnNumber me ⟨8⟩ 2)
   let (_, two) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 2))
   let (_, three) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 3))
-  !noDraw && two && !three && g.loggedDraws me == 2
+  let flagged := quiet afterDraw |>.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 5 })
+  let (_, ignored) := holds flagged (.atLeast .cardsDrawnThisTurn (.fixed 1))
+  !noDraw && two && !three && g.loggedDraws me == 2 && !ignored
 
 /- Scrying and surveilling are the look events. Scry 0 does not count. -/
 #guard

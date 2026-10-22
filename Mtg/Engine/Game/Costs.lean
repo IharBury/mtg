@@ -123,7 +123,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (start : ManaCost) : ManaCost :=
   let caster := card.controller.getD card.owner
   let afterDied :=
-    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+    if face.costReductionIfCreatureDied > 0 && g.loggedCreatureDeaths > 0 then
       start.reduceGeneric face.costReductionIfCreatureDied
     else start
   let afterControl :=
@@ -199,7 +199,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       afterOpp.reduceGeneric n
     else afterOpp
   let afterFirst :=
-    if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
+    if face.isCreature && g.loggedCreatureSpells caster == 0 then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           acc + o.printed.firstCreatureCostsLess) 0
@@ -249,7 +249,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
         | _ => acc) acc) 0
   let selfLess :=
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
-        (g.player caster).noncreatureSpellsCastThisTurn > 0 then 2
+        g.loggedNoncreatureSpells caster > 0 then 2
     else 0
   let pl := g.player caster
   let thisTurnLess :=
@@ -379,7 +379,7 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
       match source with
       | some o =>
         let afterEnter :=
-          if o.status.enteredThisTurn then
+          if g.loggedEntered o.id then
             ab.cost.mana.reduceByCost o.printed.manaCost
           else ab.cost.mana
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)

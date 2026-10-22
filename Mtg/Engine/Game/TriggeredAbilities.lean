@@ -346,17 +346,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         else ({ g with permanentDealtDamageThisWay := none }, false)
       | none => ({ g with permanentDealtDamageThisWay := none }, false)
   | .attackedWithSubtype subtype =>
-    let holds :=
-      g.loggedAttackedWithSubtype controller subtype ||
-        (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.attacking))
-    (g, holds)
+    (g, g.loggedAttackedWithSubtype controller subtype)
   | .subtypeEntered subtype =>
-    let holds :=
-      g.loggedSubtypeEntered controller subtype ||
-        (g.battlefield.any (fun o =>
-          o.controlledBy controller && g.hasSubtype o subtype && o.status.enteredThisTurn))
-    (g, holds)
+    (g, g.loggedSubtypeEntered controller subtype)
   | (.atLeast (.count .landsYouControl) (.fixed n)) =>
     let n := n.toNat
     let lands := ((g.permanentsOf controller).filter (·.printed.isLand)).size
@@ -533,12 +525,10 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | none => (g, false)
   | .manaSpent =>
     let spent :=
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
-    let fromLog :=
       match g.resolvingAbilityObject?.bind (·.fraCauseId) with
       | some id => GameEvent.manaSpentOn g.events id
       | none => 0
-    (g, spent > 0 || fromLog > 0)
+    (g, spent > 0)
   | .atLeast (.count what) amount =>
     -- Printed counts above keep their logs and notes. Every other counted
     -- selector is the number of objects `what` names, compared with `amount`.
@@ -638,11 +628,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => (g, false)
     | _ => (g, false)
   | .teamwork =>
-    let fromLog :=
-      match g.resolvingSpell with
+    (g, match g.resolvingSpell with
       | some id => GameEvent.teamwork g.events id
-      | none => false
-    (g, g.resolvingTeamworkPaid || fromLog)
+      | none => false)
   | .castFromGraveyard =>
     (g, match g.resolvingSpell with
       | some id => GameEvent.castFromGraveyard g.events id
@@ -2434,7 +2422,9 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     | none => g
   | .you, .equalToManaSpent =>
     let spent :=
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
     if spent == 0 then
       { g with skipTriggerSequenceRest := true }.logMsg
         "No mana was spent to cast that spell"
@@ -4169,7 +4159,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyTriggerDraw controller sourceId (.fixed 1) .opponentHasYou
   | .may (.sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))]) _ =>
     -- X is the mana spent to cast the triggering spell.
-    let spent := ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+    let spent :=
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
     if spent == 0 then g.logMsg "No mana was spent to cast that spell"
     else
       let disc := if n == 2 then "two" else toString n

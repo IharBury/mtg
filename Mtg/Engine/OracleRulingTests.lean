@@ -2892,8 +2892,9 @@ def andurilOnOwnLegendOk : Bool :=
 
 def queenAfterFirstNoncreature : Game :=
   let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨1⟩ (fun pl =>
-    { pl with noncreatureSpellsCastThisTurn := 1 })
+  let g := g.record (GameEvent.cast g.turnNumber ⟨1⟩
+    { id := ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, instantOrSorcery := true }
+    (.hand ⟨1⟩))
   let g := addToHand g lightningBolt ⟨1⟩
   let bolt :=
     match (g.player ⟨1⟩).hand.back?.bind g.findObject? with
@@ -3239,7 +3240,9 @@ def radagastXChosenBeforeReductionOk : Bool :=
 def radagastCastIsFirstOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with creatureSpellsCastThisTurn := 1 })
+  let g := g.record (GameEvent.cast g.turnNumber ⟨0⟩
+    { id := ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, creature := true }
+    (.hand ⟨0⟩))
   let cost := g.playManaCost card grizzlyBears
   cost == ManaCost.ofGenericAndColor 1 .green &&
     (ruling 258).comment.contains "no other creature spell you cast that turn can be your first"

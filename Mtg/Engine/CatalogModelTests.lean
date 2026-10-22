@@ -850,7 +850,8 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- After two draws, another creature gets +3/+0 and first strike. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 2 })
+  let g := (g.record (GameEvent.drew g.turnNumber me ⟨61⟩ 1)).record
+    (GameEvent.drew g.turnNumber me ⟨62⟩ 2)
   let g := settle (passBoth (skipTo g .beginningOfCombat 80))
   power g "Grizzly Bears" == 5 &&
     g.hasFirstStrike (namedPermanent g "Grizzly Bears") &&

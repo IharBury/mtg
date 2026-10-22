@@ -39,14 +39,6 @@ def putSubtypeEnterTriggers (g : Game) (entered : GameObject) : Game :=
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
-  let pl := g.player caster
-  let spells := pl.spellsCastThisTurn + 1
-  let nonc :=
-    if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
-    else pl.noncreatureSpellsCastThisTurn + 1
-  let creat :=
-    if spell.printed.isCreature then pl.creatureSpellsCastThisTurn + 1
-    else pl.creatureSpellsCastThisTurn
   let fromZone :=
     if spell.castFromGraveyard then Zone.graveyard spell.owner
     else if spell.castFromHand then Zone.hand spell.owner
@@ -56,6 +48,9 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       (g.objectManaValue spell) spell.status.manaSpentToCast
       spell.castFromGraveyard spell.teamworkPaid spell.giftPromisedTo.isSome
   let g := g.record happened
+  let spells := g.loggedSpellsCast caster
+  let nonc := g.loggedNoncreatureSpells caster
+  let creat := g.loggedCreatureSpells caster
   let g := g.modifyPlayer caster (fun p =>
     { p with
       spellsCastThisTurn := spells
@@ -456,6 +451,12 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let o := g.object! id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
   let o := g.object! id
+  -- A zone change already recorded this arrival. Inserts that skip `move`
+  -- still have to leave an enters event, or “entered this turn” is invisible.
+  let g :=
+    if g.loggedEntered o.id then g
+    else
+      g.record (GameEvent.moved g.turnNumber o.asEvent .stack .battlefield)
   let g := if o.printed.entersPrepared then g.becomePrepared o else g
   g.enterWithHope (g.object! id)
 

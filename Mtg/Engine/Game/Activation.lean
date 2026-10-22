@@ -81,10 +81,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw "You don't control that permanent"
   if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
     throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
-  if ab.onlyIfYouAttackedWithTwoOrMore && (g.player p).creaturesAttackedWithThisTurn < 2 then
+  if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
     throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyIfOpponentDealtNoncombatDamage &&
-      !(g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
+      !(g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
     throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
