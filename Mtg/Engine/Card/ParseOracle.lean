@@ -317,15 +317,15 @@ def keywordTokens (cardName line : String) : Option (List String) :=
   let prepared := prepareLine cardName line
   let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
   let parts := cleaned.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
-  let names := Keywords.fields.map (·.name)
+  let names := Keywords.fields.map (·.2.2)
   if parts.isEmpty then none
   else if parts.all (fun p => names.any (· == p)) then some parts
   else none
 
 def keywordsFromTokens (toks : List String) : Keywords :=
   toks.foldl (fun acc name =>
-    match Keywords.fields.find? (fun f => f.name == name) with
-    | some f => f.set acc true
+    match Keywords.fields.find? (fun f => f.2.2 == name) with
+    | some f => f.2.1 acc true
     | none => acc) Keywords.none
 
 def nonEmptyLines (text : String) : List String :=

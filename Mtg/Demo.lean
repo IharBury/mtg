@@ -144,34 +144,13 @@ namespace DemoDeck
 
 end DemoDeck
 
+@[match_pattern] abbrev _root_.Prod.welcome := DemoDeck.welcome
+@[match_pattern] abbrev _root_.Prod.file := DemoDeck.file
+
 /-- A named player and the deck they sit with, a pass-until shortcut goal
 (`PassUntilGoal`), an `--input` script (`InputScript`), or raw CLI flag values
 (`DemoFlagValues`). -/
-structure DemoPlayer where
-  name : String := ""
-  deck : DemoDeck := .welcome .white
-  issuer : PlayerId := ⟨0⟩
-  startTurn : Nat := 0
-  startStep : Step := .untap
-  kind : DemoDeck := .welcome .white
-  flags : List String := []
-  commands : List String := []
-  interactive : Bool := false
-  multiplayer : Bool := false
-  playerView : Bool := false
-  norandom : Bool := false
-  constructed : Bool := false
-  seed : Option UInt64 := none
-  fuel : Option Nat := none
-  inputFile : Option String := none
-  outputFile : Option String := none
-  check : Bool := false
-  names : Array String := #[]
-  decks : Array DemoDeck := #[]
-  decidesName : Option String := none
-  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
-  modeSet : Bool := false
-deriving Repr, Inhabited, DecidableEq
+abbrev DemoPlayer := MulliganState
 
 /-- Default table: Chandra (red) and Nissa (green). -/
 def defaultDemoPlayers : Array DemoPlayer := #[
@@ -1523,6 +1502,9 @@ end PassUntilKind
 namespace DemoDeck
 export PassUntilKind (ignore named)
 end DemoDeck
+
+@[match_pattern] abbrev _root_.Prod.ignore : PassUntilKind := PassUntilKind.ignore
+@[match_pattern] abbrev _root_.Prod.named := PassUntilKind.named
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/

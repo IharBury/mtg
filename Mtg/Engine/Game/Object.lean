@@ -119,7 +119,9 @@ structure CopyEffect where
 deriving Repr, Inhabited
 
 /-- Spell cast-origin, additional-cost-paid (`AdditionalCostPaidState`), and
-linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706). -/
+linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706),
+how one attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
+CR 510.1), or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
 structure CastOriginState where
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
@@ -161,6 +163,15 @@ structure CastOriginState where
   leaveTriggerExile : Array ObjectId := #[]
   /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
   boastExiled : Array ObjectId := #[]
+  source : ObjectId := ⟨0⟩
+  /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
+  blocking (CR 510.1d). -/
+  toCreatures : Array (ObjectId × Int) := #[]
+  /-- Leftover assigned to the defending player (unblocked or trample). -/
+  toPlayer : Int := 0
+  player : PlayerId := ⟨0⟩
+  spellId : ObjectId := ⟨0⟩
+  cost : CopyDuration := .permanent
 deriving Repr, Inhabited, BEq
 
 abbrev AdditionalCostPaidState := CastOriginState
@@ -247,17 +258,7 @@ deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1),
 or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
-structure CreatureCombatAssignment where
-  source : ObjectId := ⟨0⟩
-  /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
-  blocking (CR 510.1d). -/
-  toCreatures : Array (ObjectId × Int) := #[]
-  /-- Leftover assigned to the defending player (unblocked or trample). -/
-  toPlayer : Int := 0
-  player : PlayerId := ⟨0⟩
-  spellId : ObjectId := ⟨0⟩
-  cost : CopyDuration := .permanent
-deriving Repr, Inhabited, BEq
+abbrev CreatureCombatAssignment := CastOriginState
 
 namespace GameObject
 

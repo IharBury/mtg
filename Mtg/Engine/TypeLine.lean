@@ -297,8 +297,8 @@ def battleTypes : List String := [
   "Siege"
 ]
 
-/-- One known subtype from CR 205.3g–q, or one unique official Oracle ruling
-(`OracleRuling`). -/
+/-- One known subtype from CR 205.3g–q, one unique official Oracle ruling
+(`OracleRuling`), or keyword counters on a permanent (`KeywordCounters`, CR 122.1b). -/
 structure KnownSubtype where
   name : String := ""
   plural : String := ""
@@ -313,6 +313,17 @@ structure KnownSubtype where
   cards : Array String := #[]
   /-- Distinct set codes among those cards (`hob` / `hoc` / `msh` / `fra`). -/
   sets : Array String := #[]
+  haste : Nat := 0
+  vigilance : Nat := 0
+  flying : Nat := 0
+  menace : Nat := 0
+  reach : Nat := 0
+  deathtouch : Nat := 0
+  firstStrike : Nat := 0
+  doubleStrike : Nat := 0
+  trample : Nat := 0
+  indestructible : Nat := 0
+  lifelink : Nat := 0
 deriving Repr, Inhabited, BEq
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`

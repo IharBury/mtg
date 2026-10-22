@@ -31,8 +31,11 @@ namespace Target
 
 end Target
 
-/-- A spell or ability on the stack (CR 405), or shared spell-resolution context
-(`SpellResolutionContext`, CR 608.2c). Last array element is the top. -/
+/-- A spell or ability on the stack (CR 405), shared spell-resolution context
+(`SpellResolutionContext`, CR 608.2c), or shared ability/choice resolution context
+(`TriggerResolutionContext`, `TriggerSequenceRest`, `TriggerOrRest`, `ChooseModesRest`,
+`TriggerRead`, `UnlessPaysRest`, `MayEffectRest`, `SpellOrRest`, CR 118.12 / 603.3 / 608.2).
+Last array element is the top. -/
 structure StackEntry where
   objectId : ObjectId := ⟨0⟩
   controller : PlayerId := ⟨0⟩
@@ -51,6 +54,22 @@ structure StackEntry where
   (CR 115.1c / 601.2c). The current instance index is
   `targets.size + skippedOptionalSlots`. -/
   skippedOptionalSlots : Nat := 0
+  ability : TriggeredAbility := default
+  sourceId : Option ObjectId := none
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  sequencedCardPower : Option Nat := none
+  steps : List TriggeredAbility.TriggerResolution := []
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
+  effect : Option Effect := none
+  /-- The payer left without paying (CR 800.4f). -/
+  due : Bool := false
+  effects : Array Effect := #[]
+  isLibrary : Bool := false
 deriving Repr, Inhabited
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/

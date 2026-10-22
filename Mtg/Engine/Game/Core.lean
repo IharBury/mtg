@@ -22,24 +22,7 @@ a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2),
 context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`), or
 stashed spell effect/alternatives (`UnlessPaysRest`, `MayEffectRest`, `SpellOrRest`,
 CR 118.12 / 608.2c). -/
-structure TriggerResolutionContext extends SpellResolutionContext where
-  ability : TriggeredAbility := default
-  sourceId : Option ObjectId := none
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  sequencedCardPower : Option Nat := none
-  steps : List TriggeredAbility.TriggerResolution := []
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-  effect : Option Effect := none
-  /-- The payer left without paying (CR 800.4f). -/
-  due : Bool := false
-  effects : Array Effect := #[]
-  isLibrary : Bool := false
-deriving Repr, Inhabited
+abbrev TriggerResolutionContext := StackEntry
 
 /-- Continuation state for a triggered ability whose resolution is paused on
 a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
@@ -81,8 +64,10 @@ export DelayedEndStepTrigger (delayedEndStepKind returnExiled exilePermanent sac
 end CopyDuration
 
 /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6), multi-card
-or conditional discard requirement (`DiscardRequirement`, CR 701.8), or extra
-turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720). -/
+or conditional discard requirement (`DiscardRequirement`, CR 701.8), extra
+turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720), or
+demo player/script/flag state (`DemoPlayer`, `PassUntilGoal`, `InputScript`,
+`DemoFlagValues`). -/
 structure MulliganState where
   /-- Opening hands are kept and a “may begin on the battlefield” choice is
   still unfinished (CR 103.6). -/
@@ -116,6 +101,29 @@ structure MulliganState where
   /-- If the controlled player skips their next turn, control applies to the
   next turn they actually take (MSH 221). -/
   controlOnNextTakenTurn : Bool := false
+  name : String := ""
+  deck : (Color ⊕ String) × Bool × Bool × Bool := (.inl .white, false, false, false)
+  issuer : PlayerId := ⟨0⟩
+  startTurn : Nat := 0
+  startStep : Step := .untap
+  kind : (Color ⊕ String) × Bool × Bool × Bool := (.inl .white, false, false, false)
+  flags : List String := []
+  commands : List String := []
+  interactive : Bool := false
+  multiplayer : Bool := false
+  playerView : Bool := false
+  norandom : Bool := false
+  constructed : Bool := false
+  seed : Option UInt64 := none
+  fuel : Option Nat := none
+  inputFile : Option String := none
+  outputFile : Option String := none
+  check : Bool := false
+  names : Array String := #[]
+  decks : Array ((Color ⊕ String) × Bool × Bool × Bool) := #[]
+  decidesName : Option String := none
+  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
+  modeSet : Bool := false
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/

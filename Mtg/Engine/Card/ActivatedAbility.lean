@@ -310,8 +310,12 @@ instance : ToString ActivationCost where
 
 end ActivationCost
 
-/-- Timing, zone, condition, and frequency restrictions on an activated ability (CR 602.5 / 117.1a / 112.6 / 702.6 / 702.177 / 702.193). -/
-structure ActivationRestrictions where
+/-- An activated ability printed on a card (CR 602.1), or timing, zone, condition,
+and frequency restrictions on an activated ability (`ActivationRestrictions`,
+CR 602.5 / 117.1a / 112.6 / 702.6 / 702.177 / 702.193). Mana abilities that
+are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
+`CardDef.tapAddManaForEach` / basic land types. -/
+structure ActivatedAbility where
   /-- Exhaust: activate this ability only once (CR 702.177). -/
   exhaust : Bool := false
   /-- An “Activate only if …” restriction (CR 602.5b). -/
@@ -335,22 +339,18 @@ structure ActivationRestrictions where
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- An activated ability printed on a card (CR 602.1). Mana abilities that
-are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
-`CardDef.tapAddManaForEach` / basic land types. -/
-structure ActivatedAbility extends ActivationRestrictions where
-  cost : ActivationCost
+  cost : ActivationCost := {}
   /-- The ability's printed line, when its wording isn't built from the cost
   and effect (Reality Fracture). -/
   printed : String := ""
   /-- First (or only) mode of this ability. -/
-  effect : Effect
+  effect : Effect := default
   /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
   is not modal; the player otherwise chooses one mode at CR 601.2b. -/
   otherModes : Array Effect := #[]
 deriving Repr, Inhabited, BEq
+
+abbrev ActivationRestrictions := ActivatedAbility
 
 /-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
 def costPicksOf (ab : ActivatedAbility) : Array CostPick :=

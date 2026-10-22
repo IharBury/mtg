@@ -1,3 +1,5 @@
+import Mtg.Engine.TypeLine
+
 /-!
 # Keyword abilities (CR 702)
 
@@ -67,40 +69,37 @@ def none : Keywords := {}
 /-- One modeled keyword: how to read it, write it, and print its Oracle name.
 `merge` and `toList` fold this table so a new keyword is one row here plus a
 field on `Keywords` and a `Keyword.*` value. -/
-structure Field where
-  get : Keywords → Bool
-  set : Keywords → Bool → Keywords
-  name : String
+abbrev Field := (Keywords → Bool) × (Keywords → Bool → Keywords) × String
 
 def fields : List Field := [
-  ⟨(·.flash), fun k b => { k with flash := b }, "flash"⟩,
-  ⟨(·.haste), fun k b => { k with haste := b }, "haste"⟩,
-  ⟨(·.vigilance), fun k b => { k with vigilance := b }, "vigilance"⟩,
-  ⟨(·.flying), fun k b => { k with flying := b }, "flying"⟩,
-  ⟨(·.cantBeBlocked), fun k b => { k with cantBeBlocked := b }, "can't be blocked"⟩,
-  ⟨(·.menace), fun k b => { k with menace := b }, "menace"⟩,
-  ⟨(·.hexproof), fun k b => { k with hexproof := b }, "hexproof"⟩,
-  ⟨(·.indestructible), fun k b => { k with indestructible := b }, "indestructible"⟩,
-  ⟨(·.reach), fun k b => { k with reach := b }, "reach"⟩,
-  ⟨(·.trample), fun k b => { k with trample := b }, "trample"⟩,
-  ⟨(·.deathtouch), fun k b => { k with deathtouch := b }, "deathtouch"⟩,
-  ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩,
-  ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩,
-  ⟨(·.firstStrike), fun k b => { k with firstStrike := b }, "first strike"⟩,
-  ⟨(·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"⟩,
-  ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
-  ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
-  ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
-  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
-  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩,
-  ⟨(·.changeling), fun k b => { k with changeling := b }, "changeling"⟩,
-  ⟨(·.convoke), fun k b => { k with convoke := b }, "convoke"⟩
+  ((·.flash), fun k b => { k with flash := b }, "flash"),
+  ((·.haste), fun k b => { k with haste := b }, "haste"),
+  ((·.vigilance), fun k b => { k with vigilance := b }, "vigilance"),
+  ((·.flying), fun k b => { k with flying := b }, "flying"),
+  ((·.cantBeBlocked), fun k b => { k with cantBeBlocked := b }, "can't be blocked"),
+  ((·.menace), fun k b => { k with menace := b }, "menace"),
+  ((·.hexproof), fun k b => { k with hexproof := b }, "hexproof"),
+  ((·.indestructible), fun k b => { k with indestructible := b }, "indestructible"),
+  ((·.reach), fun k b => { k with reach := b }, "reach"),
+  ((·.trample), fun k b => { k with trample := b }, "trample"),
+  ((·.deathtouch), fun k b => { k with deathtouch := b }, "deathtouch"),
+  ((·.defender), fun k b => { k with defender := b }, "defender"),
+  ((·.lifelink), fun k b => { k with lifelink := b }, "lifelink"),
+  ((·.firstStrike), fun k b => { k with firstStrike := b }, "first strike"),
+  ((·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"),
+  ((·.storied), fun k b => { k with storied := b }, "storied"),
+  ((·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"),
+  ((·.prowess), fun k b => { k with prowess := b }, "prowess"),
+  ((·.ascend), fun k b => { k with ascend := b }, "ascend"),
+  ((·.shadow), fun k b => { k with shadow := b }, "shadow"),
+  ((·.changeling), fun k b => { k with changeling := b }, "changeling"),
+  ((·.convoke), fun k b => { k with convoke := b }, "convoke")
 ]
 
 /-- The keyword set named by Oracle text (`trample`, `flying`), if modeled. -/
 def ofName? (s : String) : Option Keywords :=
   let key := s.map Char.toLower
-  fields.find? (fun f => f.name.map Char.toLower == key) |>.map (fun f => f.set none true)
+  fields.find? (fun f => f.2.2.map Char.toLower == key) |>.map (fun f => f.2.1 none true)
 
 #guard ofName? "trample" == some { trample := true }
 #guard ofName? "Flying" == some { flying := true }
@@ -108,7 +107,7 @@ def ofName? (s : String) : Option Keywords :=
 
 /-- Union of two keyword sets (printed or granted). -/
 def merge (a b : Keywords) : Keywords :=
-  fields.foldl (fun acc f => f.set acc (f.get a || f.get b)) none
+  fields.foldl (fun acc f => f.2.1 acc (f.1 a || f.1 b)) none
 
 /-- Union of every keyword set in `ks`. -/
 def mergeAll (ks : Array Keywords) : Keywords :=
@@ -119,7 +118,7 @@ def flag (b : Bool) (name : String) : List String :=
   if b then [name] else []
 
 def toList (k : Keywords) : List String :=
-  fields.foldl (fun acc f => acc ++ flag (f.get k) f.name) []
+  fields.foldl (fun acc f => acc ++ flag (f.1 k) f.2.2) []
 
 /-- Oracle-style keyword list for ability sentences: one keyword prints as
 itself, two join with `and`, more join with commas. Sites whose printed
@@ -164,19 +163,7 @@ def convoke : Keywords := { Keywords.none with convoke := true }
 end Keyword
 
 /-- Keyword counters (CR 122.1b). A counter grants that keyword. -/
-structure KeywordCounters where
-  haste : Nat := 0
-  vigilance : Nat := 0
-  flying : Nat := 0
-  menace : Nat := 0
-  reach : Nat := 0
-  deathtouch : Nat := 0
-  firstStrike : Nat := 0
-  doubleStrike : Nat := 0
-  trample : Nat := 0
-  indestructible : Nat := 0
-  lifelink : Nat := 0
-deriving Repr, Inhabited, BEq
+abbrev KeywordCounters := KnownSubtype
 
 namespace KeywordCounters
 

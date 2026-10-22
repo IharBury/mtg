@@ -413,9 +413,10 @@ def ManaUse.isFra : ManaUse → Bool
   | .elf | .instantOrSorcery | .hero | .villain | .cantNonartifact | .creatureSource | .manaUseKind _ _ _ _ _ _ false => false
   | _ => true
 
-/-- What a payment is for, as far as `ManaUse` restrictions care, and restricted
-mana allowances (`ManaAllowances`, CR 106.10). The default is an activated
-ability or another non-spell payment. -/
+/-- What a payment is for, as far as `ManaUse` restrictions care, restricted
+mana allowances (`ManaAllowances`, CR 106.10), or unspent mana a player currently
+has (`ManaPool`, CR 106.4). The default is an activated ability or another
+non-spell payment. -/
 structure ManaSpend where
   spell : Bool := false
   fromHand : Bool := false
@@ -433,6 +434,15 @@ structure ManaSpend where
   villain : Bool := false
   cantNonartifact : Bool := false
   creature : Bool := false
+  white : Nat := 0
+  blue : Nat := 0
+  black : Nat := 0
+  red : Nat := 0
+  green : Nat := 0
+  colorless : Nat := 0
+  /-- One entry per mana with a spending restriction (CR 106.6 / 106.10). These
+  are included in the totals above. -/
+  restricted : Array (ManaType × ManaUse) := #[]
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def ManaSpend.spend (s : ManaSpend) : ManaSpend := s
@@ -490,17 +500,7 @@ abbrev FraManaUse.forSubtype := ManaUse.forSubtype
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the totals. -/
-structure ManaPool where
-  white : Nat := 0
-  blue : Nat := 0
-  black : Nat := 0
-  red : Nat := 0
-  green : Nat := 0
-  colorless : Nat := 0
-  /-- One entry per mana with a spending restriction (CR 106.6 / 106.10). These
-  are included in the totals above. -/
-  restricted : Array (ManaType × ManaUse) := #[]
-deriving BEq, DecidableEq, Repr, Inhabited
+abbrev ManaPool := ManaSpend
 
 namespace ManaPool
 

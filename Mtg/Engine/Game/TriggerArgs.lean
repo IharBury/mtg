@@ -60,26 +60,11 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
     match g.findObject? id with
     | some o => if o.isOnBattlefield then some o else none
     | none => none
-  let permanentTargets :=
-    ctx.targets.filterMap fun
-      | Target.permanent id => onBf id
-      | _ => none
   let someEmpty : Option (Array GameObject) := some #[]
   match b with
-  | .sourceOrTappedState false false =>
-    match sourceId.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
-  | .groupOrTargetPlayerCreatures false false =>
-    some permanentTargets
-  | .enchantedOrOppCreatures false _ =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        match src.attachedTo.bind onBf with
-        | some host => some #[host]
-        | none => someEmpty
-      else someEmpty
+  | .enchantedOrOppCreatures false _ | .groupOrTargetPlayerCreatures false true =>
+    match g.attachedHost? sourceId with
+    | some host => if host.isOnBattlefield then some #[host] else someEmpty
     | none => someEmpty
   | .cause subtype =>
     match g.recordedCauseId.bind onBf with
@@ -123,10 +108,6 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
       o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
   | .attackersFilter false false =>
     some (g.battlefield.filter (·.status.attacking))
-  | .groupOrTargetPlayerCreatures false true =>
-    match g.attachedHost? sourceId with
-    | some host => if host.isOnBattlefield then some #[host] else someEmpty
-    | none => someEmpty
   | .sourceOrTappedState true true =>
     let id := g.recordedCauseId.orElse (fun _ => g.lastBecameTapped)
     match id.bind onBf with
@@ -152,10 +133,6 @@ private def permanentsNamedBattlefield (g : Game) (ctx : TriggerRead)
     | none => someEmpty
   | .stepNotedPermanent false true =>
     match g.equipmentAttachedHost.bind onBf with
-    | some o => some #[o]
-    | none => someEmpty
-  | .stepNotedPermanent true true =>
-    match g.notedHostId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
   | .filteredCreaturesYouControl true false =>
@@ -228,11 +205,11 @@ private def permanentsNamedSingle (g : Game) (ctx : TriggerRead)
       | _ => none
   let someEmpty : Option (Array GameObject) := some #[]
   match who with
-  | .source | .sacrificedSource (.sacrificeSourceKind _ _) | .plan =>
+  | .source | .sourceIfPresent | .sacrificedSource (.sacrificeSourceKind _ _) | .plan =>
     match sourceId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
-  | .any | .ifPresent | .eachPermanent | .eachEquipment | .laterCreature
+  | .any | .ifPresent | .eachPermanent | .eachEquipment | .laterCreature | .eachUpToLastKnown
     | .target .any | .target .ifPresent | .target .eachPermanent | .target .eachEquipment
     | .target .laterCreature
     | .permanent _ | .announced | .announcedEquipment | .announcedCreature
@@ -242,8 +219,6 @@ private def permanentsNamedSingle (g : Game) (ctx : TriggerRead)
     match sourceId.bind onBf with
     | some _ => some permanentTargets
     | none => someEmpty
-  | .battlefield b =>
-    g.permanentsNamedBattlefield ctx b
   | .spellTargets =>
     let ids :=
       match g.castTriggerSpell? with
@@ -259,10 +234,12 @@ private def permanentsNamedSingle (g : Game) (ctx : TriggerRead)
       match onBf id with
       | some o => if o.isCreature then some o else none
       | none => none)
-  | .noted =>
+  | .noted | .notedHost =>
     match g.notedHostId.bind onBf with
     | some o => some #[o]
     | none => someEmpty
+  | .battlefield b =>
+    g.permanentsNamedBattlefield ctx b
   | .targetObj (.ofCardType ty) | .target (.targetObj (.ofCardType ty)) =>
     some (permanentTargets.filter fun o =>
       match ty with
