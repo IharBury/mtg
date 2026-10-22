@@ -15,16 +15,14 @@ namespace Mtg.Engine
 
 
 
-/-- Target announcement metadata for a one-shot effect (CR 115.1 / 601.2c / 601.2d). -/
-structure EffectTargetingMeta where
+/-- Target announcement metadata for a one-shot effect (CR 115.1 / 601.2c / 601.2d)
+and shared trigger condition, frequency, subtype filter, and wording filter
+metadata (`SharedTriggerOpts`, CR 603.2 / 603.4). -/
+structure TriggerConditionMeta where
   targeting : EffectTargeting := .of .none
   allowsZeroTargets : Bool := false
   maxTargets : Nat := 0
   dividedDamage : Option (Nat × Nat) := none
-deriving Repr, Inhabited, BEq
-
-/-- Shared trigger condition, frequency, and subtype filter metadata (CR 603.2 / 603.4). -/
-structure TriggerConditionMeta where
   onceEachTurn : Bool := false
   /-- “Do this only once each turn”: the ability keeps triggering until the
   controller chooses to do the optional action (MSH 69). -/
@@ -33,7 +31,16 @@ structure TriggerConditionMeta where
   condition : ConditionSelector := .none
   /-- Subtype filter watched by the trigger event. -/
   subtype : Option String := none
+  /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
+  untargeted : Bool := false
+  /-- The ability's printed sentence, when its wording isn't built from the
+  event and resolution (Reality Fracture). -/
+  printed : String := ""
+  /-- The other permanent must be legendary (“another legendary Elf”). -/
+  anotherLegendary : Bool := false
 deriving Repr, Inhabited, BEq
+
+abbrev EffectTargetingMeta := TriggerConditionMeta
 
 namespace TriggerConditionMeta
 
@@ -61,7 +68,7 @@ end TriggerConditionMeta
 /-- Unified one-shot effect for spells, activated abilities, Saga chapters,
 and triggered abilities. Targeting, printed wording, and resolution live
 here so Game has one apply path. -/
-structure Effect extends EffectTargetingMeta, TriggerConditionMeta where
+structure Effect extends TriggerConditionMeta where
   events : Array TriggerEvent := #[]
   spellCastKind : SpellCastKind := .extraLand
   abilityCastKind : AbilityCastKind := .other

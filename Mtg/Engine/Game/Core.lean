@@ -18,8 +18,10 @@ pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
 abbrev SpellResolutionContext := StackEntry
 
 /-- Shared ability context for a triggered ability whose resolution is paused on
-a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2), or
-context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`). -/
+a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2),
+context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`), or
+stashed spell effect/alternatives (`UnlessPaysRest`, `MayEffectRest`, `SpellOrRest`,
+CR 118.12 / 608.2c). -/
 structure TriggerResolutionContext extends SpellResolutionContext where
   ability : TriggeredAbility := default
   sourceId : Option ObjectId := none
@@ -28,24 +30,28 @@ structure TriggerResolutionContext extends SpellResolutionContext where
   sourceName : String := "This creature"
   cardPower : Option Nat := none
   sequencedCardPower : Option Nat := none
-deriving Repr, Inhabited
-
-/-- Continuation state for a triggered ability whose resolution is paused on
-a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
-structure TriggerSequenceRest extends TriggerResolutionContext where
   steps : List TriggeredAbility.TriggerResolution := []
   alternatives : Array TriggeredAbility.TriggerResolution := #[]
   modes : List TriggeredAbility.TriggerResolution := []
   how : TriggeredAbility.TriggerModeHow := .oneUnused
+  effect : Option Effect := none
+  /-- The payer left without paying (CR 800.4f). -/
+  due : Bool := false
+  effects : Array Effect := #[]
+  isLibrary : Bool := false
 deriving Repr, Inhabited
+
+/-- Continuation state for a triggered ability whose resolution is paused on
+a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
+abbrev TriggerSequenceRest := TriggerResolutionContext
 
 /-- A pending `TriggerResolution.or`. The controller chooses one alternative,
 then that step resolves with this ability context. -/
-abbrev TriggerOrRest := TriggerSequenceRest
+abbrev TriggerOrRest := TriggerResolutionContext
 
 /-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
 The chosen index resolves with this ability context. -/
-abbrev ChooseModesRest := TriggerSequenceRest
+abbrev ChooseModesRest := TriggerResolutionContext
 
 /-- Delayed triggered ability waiting to fire at the beginning of the next end
 step (CR 603.7). -/
@@ -113,22 +119,19 @@ structure MulliganState where
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
-structure UnlessPaysRest extends SpellResolutionContext where
-  effect : Option Effect := none
-  /-- The payer left without paying (CR 800.4f). -/
-  due : Bool := false
-  effects : Array Effect := #[]
-  isLibrary : Bool := false
-deriving Repr, Inhabited
+abbrev UnlessPaysRest := TriggerResolutionContext
 
 /-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-abbrev MayEffectRest := UnlessPaysRest
+abbrev MayEffectRest := TriggerResolutionContext
 
 /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-abbrev SpellOrRest := UnlessPaysRest
+abbrev SpellOrRest := TriggerResolutionContext
 
 /-- Pending `TriggerResolution.may` or `mayThen` branch choice (CR 603.3 / 608.2c),
-or follow-up actions after a pending scry or surveil completes (`AfterScrySurveil`, CR 701.18 / CR 701.42). -/
+follow-up actions after a pending scry or surveil completes (`AfterScrySurveil`, CR 701.18 / CR 701.42),
+combat phase state (`CombatPhaseState`, CR 508–510 / CR 702.7b), or simultaneous
+zone-change batch and last-event state (`BatchMoveState`, `LastTriggerEvent`,
+CR 603.2 / CR 608.2c / CR 614.6). -/
 structure TriggerMayBranch where
   onAccept : Option TriggeredAbility.TriggerResolution := none
   onDecline : Option TriggeredAbility.TriggerResolution := none
@@ -162,31 +165,6 @@ structure TriggerMayBranch where
   /-- A noncreature, nonland card put into the graveyard by the pending
   surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
   surveilReturnNoncreatureNonland : Bool := false
-deriving Repr, Inhabited
-
-/-- Follow-up action after a library search completes (CR 701.23). -/
-abbrev AfterLibrarySearch := CopyDuration
-
-namespace AfterLibrarySearch
-
-@[match_pattern] abbrev afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false) : AfterLibrarySearch :=
-  .copyDurationKind id ⟨0⟩ minLands 0 #[] plusOne untapLands false false false
-@[match_pattern] abbrev none : AfterLibrarySearch :=
-  .afterSearchKind ⟨0⟩ 0 false false
-@[match_pattern] abbrev plusOneOn (id : ObjectId) : AfterLibrarySearch :=
-  .afterSearchKind id 0 true false
-@[match_pattern] abbrev untapSearchedIfLands (minLands : Nat) : AfterLibrarySearch :=
-  .afterSearchKind ⟨0⟩ minLands false true
-
-end AfterLibrarySearch
-
-namespace CopyDuration
-export AfterLibrarySearch (afterSearchKind none plusOneOn untapSearchedIfLands)
-end CopyDuration
-
-/-- Combat phase state: damage assignment, blockers queue, first-strike tracking,
-and additional combat phases (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
-structure CombatPhaseState where
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Defending players who still must declare blockers, in APNAP order
@@ -205,22 +183,6 @@ structure CombatPhaseState where
   additionalCombatPhases : Nat := 0
   /-- Enrage triggers that will grant an additional combat when they resolve. -/
   enrageGrantsAdditionalCombat : Nat := 0
-deriving Repr, Inhabited, BEq
-
-/-- State for a pending `TriggerResolution.mayThen` ("you may ... If you do, ...")
-branch in a trigger sequence (CR 603.3 / CR 608.2c). -/
-abbrev MayThenState := TriggerMayBranch
-
-/-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
-abbrev AfterScrySurveil := TriggerMayBranch
-
-/-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
-abbrev DiscardRequirement := MulliganState
-
-/-- Simultaneous zone-change batch state for replacement effects and batch triggers
-(CR 614.6 / CR 603.2c) and most recent event parameters read by triggered abilities
-(`LastTriggerEvent`, CR 603.2 / CR 608.2c). -/
-structure BatchMoveState where
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/
@@ -246,9 +208,47 @@ structure BatchMoveState where
   lastDiedAttacker : Option ObjectId := none
 deriving Repr, Inhabited
 
+/-- Follow-up action after a library search completes (CR 701.23). -/
+abbrev AfterLibrarySearch := CopyDuration
+
+namespace AfterLibrarySearch
+
+@[match_pattern] abbrev afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false) : AfterLibrarySearch :=
+  .copyDurationKind id ⟨0⟩ minLands 0 #[] plusOne untapLands false false false
+@[match_pattern] abbrev none : AfterLibrarySearch :=
+  .afterSearchKind ⟨0⟩ 0 false false
+@[match_pattern] abbrev plusOneOn (id : ObjectId) : AfterLibrarySearch :=
+  .afterSearchKind id 0 true false
+@[match_pattern] abbrev untapSearchedIfLands (minLands : Nat) : AfterLibrarySearch :=
+  .afterSearchKind ⟨0⟩ minLands false true
+
+end AfterLibrarySearch
+
+namespace CopyDuration
+export AfterLibrarySearch (afterSearchKind none plusOneOn untapSearchedIfLands)
+end CopyDuration
+
+/-- Combat phase state: damage assignment, blockers queue, first-strike tracking,
+and additional combat phases (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
+abbrev CombatPhaseState := TriggerMayBranch
+
+/-- State for a pending `TriggerResolution.mayThen` ("you may ... If you do, ...")
+branch in a trigger sequence (CR 603.3 / CR 608.2c). -/
+abbrev MayThenState := TriggerMayBranch
+
+/-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
+abbrev AfterScrySurveil := TriggerMayBranch
+
+/-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
+abbrev DiscardRequirement := MulliganState
+
+/-- Simultaneous zone-change batch state for replacement effects and batch triggers
+(CR 614.6 / CR 603.2c). -/
+abbrev BatchMoveState := TriggerMayBranch
+
 /-- Most recent event parameters read by triggered abilities ("that player",
 "that much", "that creature", CR 603.2 / CR 608.2c). -/
-abbrev LastTriggerEvent := BatchMoveState
+abbrev LastTriggerEvent := TriggerMayBranch
 
 /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
 abbrev TurnControlState := MulliganState

@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.Trigger
 
@@ -176,14 +177,7 @@ def parseChapterNumbers (roman : String) : Array Nat :=
   (roman.splitOn ",").toArray |>.map parseRomanNumeral |>.filter (· != 0)
 
 /-- One printed Saga chapter line (`I — …`, `III, IV — …`). -/
-structure SagaChapter where
-  roman : String
-  effect : String
-  /-- Chapter numbers this line triggers on. Empty means parse `roman`. -/
-  numbers : Array Nat := #[]
-  /-- Structured resolution. `none` is reminder-only (tests). -/
-  chapterEffect : Option Effect := none
-deriving Repr, Inhabited, BEq
+abbrev SagaChapter := ActivationCost
 
 namespace SagaChapter
 

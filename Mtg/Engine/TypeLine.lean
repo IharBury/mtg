@@ -297,12 +297,23 @@ def battleTypes : List String := [
   "Siege"
 ]
 
-/-- One known subtype from CR 205.3g–q. -/
+/-- One known subtype from CR 205.3g–q, or one unique official Oracle ruling
+(`OracleRuling`). -/
 structure KnownSubtype where
-  name : String
-  plural : String
-  kind : SubtypeClass
-deriving Repr
+  name : String := ""
+  plural : String := ""
+  kind : SubtypeClass := .creature
+  /-- 1-based index in `uniqueOracleRulings`. -/
+  id : Nat := 0
+  /-- Official Wizards judge ruling (Gatherer / Scryfall `wotc`), not
+  printed Oracle text. -/
+  comment : String := ""
+  /-- Cards this comment applies to. Rulings are issued by judges; they
+  are not printed on the cards. -/
+  cards : Array String := #[]
+  /-- Distinct set codes among those cards (`hob` / `hoc` / `msh` / `fra`). -/
+  sets : Array String := #[]
+deriving Repr, Inhabited, BEq
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
 and `Urza's` remain different subtypes. -/

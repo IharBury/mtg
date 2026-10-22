@@ -87,9 +87,13 @@ namespace CopyDuration
 
 end CopyDuration
 
+/-- The mana a mana ability adds (CR 106.1). -/
+abbrev Game.ManaOutput := CopyDuration
+
 /-- Active temporary copy effect on a permanent, storing the original printed
-characteristics to restore when `duration` expires (CR 707 / CR 613.2), or a
-seat at the table before objects are created (`Seat`, CR 103). -/
+characteristics to restore when `duration` expires (CR 707 / CR 613.2), a
+seat at the table before objects are created (`Seat`, CR 103), or a mana
+ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
 structure CopyEffect where
   restore : CardDef := default
   duration : CopyDuration := .permanent
@@ -98,10 +102,25 @@ structure CopyEffect where
   /-- Cards outside the game the player may use, such as a sideboard
   (CR 400.11b). -/
   sideboard : Array CardDef := #[]
+  output : Game.ManaOutput := .permanent
+  tap : Bool := true
+  cost : ManaCost := ManaCost.empty
+  payLife : Nat := 0
+  sacrificeSelf : Bool := false
+  /-- Costs paid with objects the player chooses (Bolg's Company). -/
+  picks : Array CostPick := #[]
+  restriction : ManaRestriction := .none
+  /-- Index among `activatedAbilitiesOf` when this is an activated ability
+  printed with a full cost. -/
+  activatedIdx : Option Nat := none
+  onceEachTurn : Bool := false
+  /-- Damage this ability deals to its controller as it resolves. -/
+  damageYou : Nat := 0
 deriving Repr, Inhabited
 
-/-- Additional and alternative costs paid when casting a spell (CR 601.2b / CR 702.32 / CR 702.194). -/
-structure AdditionalCostPaidState where
+/-- Spell cast-origin, additional-cost-paid (`AdditionalCostPaidState`), and
+linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706). -/
+structure CastOriginState where
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/
@@ -117,10 +136,6 @@ structure AdditionalCostPaidState where
   uncounterableThisCast : Bool := false
   /-- Mana from a Treasure was spent to cast this spell. -/
   treasureManaSpent : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Spell cast-origin and additional-cost-paid metadata (CR 601.2 / CR 702 / CR 706). -/
-structure CastOriginState extends AdditionalCostPaidState where
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
   /-- An instant or sorcery cast this way is exiled instead of being put into
@@ -136,10 +151,6 @@ structure CastOriginState extends AdditionalCostPaidState where
   isPreparedSpell : Bool := false
   /-- This object is a copy (CR 706). Copies of spells are not cast. -/
   isCopy : Bool := false
-deriving Repr, Inhabited, BEq
-
-/-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
-structure LinkedExileState where
   /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
   linkedExile : Array ObjectId := #[]
   /-- Zone a linked-exiled card returns to when the source leaves
@@ -151,6 +162,11 @@ structure LinkedExileState where
   /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
   boastExiled : Array ObjectId := #[]
 deriving Repr, Inhabited, BEq
+
+abbrev AdditionalCostPaidState := CastOriginState
+
+/-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
+abbrev LinkedExileState := CastOriginState
 
 /-- Object control and control-changing effect tracking (CR 110.2 / CR 608.2c / CR 800.4a). -/
 structure ControlState where

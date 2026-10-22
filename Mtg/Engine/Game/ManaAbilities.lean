@@ -13,9 +13,6 @@ namespace Game
 
 abbrev ManaRestriction := Mtg.Engine.ManaRestriction
 
-/-- The mana a mana ability adds (CR 106.1). -/
-abbrev ManaOutput := CopyDuration
-
 /-- One mana of each color. -/
 def anyColorMana : Array ManaType := (Color.all.map ManaType.colored).toArray
 
@@ -87,22 +84,7 @@ export ManaOutput (manaOutputKind fixed oneOf combination colorAmong types withT
 end _root_.Mtg.Engine.CopyDuration
 
 /-- A mana ability of a permanent (CR 605.1a). -/
-structure ManaAbilityDef where
-  output : ManaOutput
-  tap : Bool := true
-  cost : ManaCost := ManaCost.empty
-  payLife : Nat := 0
-  sacrificeSelf : Bool := false
-  /-- Costs paid with objects the player chooses (Bolg's Company). -/
-  picks : Array CostPick := #[]
-  restriction : ManaRestriction := .none
-  /-- Index among `activatedAbilitiesOf` when this is an activated ability
-  printed with a full cost. -/
-  activatedIdx : Option Nat := none
-  onceEachTurn : Bool := false
-  /-- Damage this ability deals to its controller as it resolves. -/
-  damageYou : Nat := 0
-deriving Inhabited
+abbrev ManaAbilityDef := CopyEffect
 
 /-- How `.fra u` and the older restricted pool fields read a restriction
 spelled out on a card. -/

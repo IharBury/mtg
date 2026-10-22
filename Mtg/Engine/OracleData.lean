@@ -1,3 +1,5 @@
+import Mtg.Engine.TypeLine
+
 /-!
 # Unique Oracle rulings
 
@@ -29,18 +31,7 @@ namespace Mtg.Engine
 catalog card. `cards` uses Scryfall names (`Face // Adventure`).
 The same comment is stored once and may list cards from more than
 one set. -/
-structure OracleRuling where
-  /-- 1-based index in `uniqueOracleRulings`. -/
-  id : Nat
-  /-- Official Wizards judge ruling (Gatherer / Scryfall `wotc`), not
-  printed Oracle text. -/
-  comment : String
-  /-- Cards this comment applies to. Rulings are issued by judges; they
-  are not printed on the cards. -/
-  cards : Array String
-  /-- Distinct set codes among those cards (`hob` / `hoc` / `msh` / `fra`). -/
-  sets : Array String
-deriving Repr, Inhabited, BEq
+abbrev OracleRuling := KnownSubtype
 
 set_option maxRecDepth 16384
 

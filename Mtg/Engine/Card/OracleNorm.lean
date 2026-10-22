@@ -480,6 +480,11 @@ structure NormLine where
   keys : List String := []
   unitToks : List String := []
   structToks : List String := []
+  width : Nat := 0
+  used : List Nat := []
+  pat : Option String × Option Nat × Option Nat × Option (Nat × Option Bool × Bool × Bool) × Bool × Bool × Bool := (none, none, none, none, false, false, false)
+  needle : String := ""
+  repl : String := ""
 deriving Inhabited
 
 def NormLine.of (raw : String) : NormLine :=

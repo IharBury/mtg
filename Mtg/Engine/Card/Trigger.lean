@@ -20,16 +20,7 @@ abbrev InterveningCondition := ConditionSelector
 abbrev FraCondition := ConditionSelector
 
 /-- Optional intervening conditions and wording filters for `triggered` (CR 603). -/
-structure SharedTriggerOpts extends TriggerConditionMeta where
-  allowsZeroTargets : Bool := false
-  /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
-  untargeted : Bool := false
-  /-- The ability's printed sentence, when its wording isn't built from the
-  event and resolution (Reality Fracture). -/
-  printed : String := ""
-  /-- The other permanent must be legendary (“another legendary Elf”). -/
-  anotherLegendary : Bool := false
-deriving Repr, Inhabited, BEq
+abbrev SharedTriggerOpts := TriggerConditionMeta
 
 namespace SharedTriggerOpts
 
@@ -561,9 +552,9 @@ def mayTo (can thenDo : SharedTrigger) : SharedTrigger :=
     maxTargets :=
       if can.targeting.kind == .none then thenDo.maxTargets else can.maxTargets
     dividedDamage :=
-      match can.toEffectTargetingMeta.dividedDamage with
+      match can.dividedDamage with
       | some d => some d
-      | none => thenDo.toEffectTargetingMeta.dividedDamage
+      | none => thenDo.dividedDamage
     resolution := .may can.resolution thenDo.resolution .ifYouDo }
 
 def may (action : SharedTrigger) : SharedTrigger :=

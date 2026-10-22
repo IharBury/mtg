@@ -996,12 +996,7 @@ def renderStr (fmt : StrFmt) (s : String) : String :=
 def renderPt (signed : Bool) (p t : Int) : String :=
   if signed then s!"{signedStat p}/{signedStat t}" else s!"{p}/{t}"
 
-structure Hit where
-  width : Nat
-  used : List Nat
-  pat : Pat
-  needle : String
-  repl : String
+abbrev Hit := NormLine
 
 def prefixTokens (pre toks : List String) : Bool :=
   pre.isPrefixOf toks
@@ -1030,7 +1025,7 @@ def natHit (i : Nat) (fmt : NatFmt) (n : Nat) (toks : List String) (fresh : Bool
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .nat i fmt
+    pat := Pat.nat i fmt
     needle := String.intercalate " " needle
     repl := renderNat fmt n
   }
@@ -1041,7 +1036,7 @@ def intHit (i : Nat) (fmt : IntFmt) (v : Int) (toks : List String) (fresh : Bool
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .int i fmt
+    pat := Pat.int i fmt
     needle := String.intercalate " " needle
     repl := renderInt fmt v
   }
@@ -1064,7 +1059,7 @@ def subHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
       some {
         width := n
         used := if fresh then [i] else []
-        pat := .str i fmt
+        pat := Pat.str i fmt
         needle := String.intercalate " " (toks.take n)
         repl := renderStr fmt s
       }
@@ -1090,7 +1085,7 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .str i fmt
+    pat := Pat.str i fmt
     needle := String.intercalate " " needle
     repl := renderStr fmt s
   }
@@ -1101,7 +1096,7 @@ def tyHit (i : Nat) (t : CardType) (toks : List String) (fresh : Bool) : Option 
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .ty i
+    pat := Pat.ty i
     needle := String.intercalate " " needle
     repl := t.englishName
   }
@@ -1112,7 +1107,7 @@ def kindHit (i : Nat) (k : EffectTargetKind) (toks : List String) (fresh : Bool)
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .kind i
+    pat := Pat.kind i
     needle := String.intercalate " " needle
     repl := EffectTargetKind.noun k
   }
@@ -1123,7 +1118,7 @@ def supHit (i : Nat) (s : Supertype) (toks : List String) (fresh : Bool) : Optio
   else some {
     width := needle.length
     used := if fresh then [i] else []
-    pat := .sup i
+    pat := Pat.sup i
     needle := String.intercalate " " needle
     repl := s.englishName
   }
@@ -1136,7 +1131,7 @@ def ptHit (i j : Nat) (signed : Bool) (p t : Int) (toks : List String) (fresh : 
       some {
         width := 1
         used := if fresh then [i, j] else []
-        pat := .pt i j signed
+        pat := Pat.pt i j signed
         needle
         repl := needle
       }
@@ -1150,7 +1145,7 @@ def counterPhraseHit (ni ki : Nat) (n : Nat) (k : CounterKind) (toks : List Stri
   else some {
     width := needle.length
     used := if fresh then [ni, ki] else []
-    pat := .counterPhrase ni ki
+    pat := Pat.counterPhrase ni ki
     needle := String.intercalate " " needle
     repl := k.countersPhrase n
   }
@@ -1535,15 +1530,15 @@ def patKey (pats : List (List Pat)) : String :=
 
 def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   match h.pat with
-  | .nat i fmt => renderNat fmt (slotNat vals i)
-  | .int i fmt => renderInt fmt (slotInt vals i)
-  | .str i fmt => renderStr fmt (slotStr vals i)
-  | .ty i => (slotTy vals i).englishName
-  | .sup i => (slotSup vals i).englishName
-  | .kind i => EffectTargetKind.noun (slotTarget vals i)
-  | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
-  | .counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
-  | .lit s => s
+  | Pat.nat i fmt => renderNat fmt (slotNat vals i)
+  | Pat.int i fmt => renderInt fmt (slotInt vals i)
+  | Pat.str i fmt => renderStr fmt (slotStr vals i)
+  | Pat.ty i => (slotTy vals i).englishName
+  | Pat.sup i => (slotSup vals i).englishName
+  | Pat.kind i => EffectTargetKind.noun (slotTarget vals i)
+  | Pat.pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
+  | Pat.counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
+  | Pat.lit s => s
   | _ => ""
 
 /-- Every way an argument can be spelled, independent of the surrounding line. -/
@@ -1559,20 +1554,20 @@ def allNeedles (args : Array SlotVal) : List Hit :=
             isCounterCount args i && (fmt == .digits || fmt == .english)
           if !skipDigit then
             let needle := renderNat fmt n
-            hs := { width := needle.length, used := [i], pat := .nat i fmt, needle, repl := needle } :: hs
+            hs := { width := needle.length, used := [i], pat := Pat.nat i fmt, needle, repl := needle } :: hs
         if isCounterCount args i then
           match args[i - 1]! with
           | .ctr k =>
             let needle := k.countersPhrase n
             hs := {
-              width := needle.length, used := [i, i - 1], pat := .counterPhrase i (i - 1),
+              width := needle.length, used := [i, i - 1], pat := Pat.counterPhrase i (i - 1),
               needle, repl := needle
             } :: hs
           | _ => pure ()
       | .int v =>
         for fmt in [IntFmt.signed, .digits] do
           let needle := renderInt fmt v
-          hs := { width := needle.length, used := [i], pat := .int i fmt, needle, repl := needle } :: hs
+          hs := { width := needle.length, used := [i], pat := Pat.int i fmt, needle, repl := needle } :: hs
         for j in [:args.size] do
           if i < j then
             match args[j]! with
@@ -1580,7 +1575,7 @@ def allNeedles (args : Array SlotVal) : List Hit :=
               for signed in [true, false] do
                 let needle := renderPt signed v t
                 hs := {
-                  width := needle.length, used := [i, j], pat := .pt i j signed, needle, repl := needle
+                  width := needle.length, used := [i, j], pat := Pat.pt i j signed, needle, repl := needle
                 } :: hs
             | _ => pure ()
       | .str s =>
@@ -1594,18 +1589,18 @@ def allNeedles (args : Array SlotVal) : List Hit :=
                 .cycling (strWords s).length, StrFmt.non]
           for fmt in fmts do
             let needle := renderStr fmt s
-            hs := { width := needle.length, used := [i], pat := .str i fmt, needle, repl := needle } :: hs
+            hs := { width := needle.length, used := [i], pat := Pat.str i fmt, needle, repl := needle } :: hs
       | .ty t =>
         let needle := lowerAscii t.englishName
-        hs := { width := needle.length, used := [i], pat := .ty i, needle, repl := t.englishName } :: hs
+        hs := { width := needle.length, used := [i], pat := Pat.ty i, needle, repl := t.englishName } :: hs
       | .sup s =>
         let needle := lowerAscii s.englishName
-        hs := { width := needle.length, used := [i], pat := .sup i, needle, repl := s.englishName } :: hs
+        hs := { width := needle.length, used := [i], pat := Pat.sup i, needle, repl := s.englishName } :: hs
       | .kind k =>
         let needle := lowerAscii (EffectTargetKind.noun k)
         if !needle.isEmpty then
           hs := {
-            width := needle.length, used := [i], pat := .kind i, needle,
+            width := needle.length, used := [i], pat := Pat.kind i, needle,
             repl := EffectTargetKind.noun k
           } :: hs
       | .ctr _ => pure ()

@@ -447,6 +447,7 @@ error here rather than silently using `targetCount` 1, an empty noun, or
 `.opponent`. Multiple instances of the word “target” list each slot so Game
 does not restate them; those slots are announced sequentially. -/
 structure Spec where
+  kind : EffectTargetKind := .none
   count : Nat := 1
   noun : String := ""
   prefer : TargetPreference := .opponent
@@ -848,10 +849,7 @@ def spell : TargetFilter :=
 end TargetFilter
 
 /-- Targeting shape plus a default-choice hint used by the demonstration agent. -/
-structure EffectTargeting where
-  kind : EffectTargetKind := .none
-  prefer : TargetPreference := .own
-deriving Repr, Inhabited, BEq
+abbrev EffectTargeting := EffectTargetKind.Spec
 
 namespace EffectTargeting
 

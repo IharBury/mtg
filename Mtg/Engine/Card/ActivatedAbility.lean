@@ -179,7 +179,8 @@ namespace EquipRestriction
 @[match_pattern] abbrev worthy : EquipRestriction := .equipRestrictionKind Option.none false true
 end EquipRestriction
 
-/-- Costs of an activated ability besides announcements (CR 602.1). -/
+/-- Costs of an activated ability besides announcements (CR 602.1), or one
+printed Saga chapter line (`SagaChapter`, CR 714). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
@@ -195,6 +196,12 @@ structure ActivationCost where
   picks : Array CostPick := #[]
   /-- Additional activation cost (CR 602.1). -/
   extra : ExtraActivationCost := .none
+  roman : String := ""
+  effect : String := ""
+  /-- Chapter numbers this line triggers on. Empty means parse `roman`. -/
+  numbers : Array Nat := #[]
+  /-- Structured resolution. `none` is reminder-only (tests). -/
+  chapterEffect : Option Effect := none
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
