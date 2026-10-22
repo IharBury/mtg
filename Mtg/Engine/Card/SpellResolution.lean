@@ -18,25 +18,6 @@ namespace Mtg.Engine
 
 set_option synthInstance.maxSize 1024
 
-/-- How the demonstration agent classifies a spell when choosing what to cast, or unified object/number/condition selector leaf kind.
-Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
-silently skipping the new effect. -/
-inductive SpellCastKind where
-  /-- Spell classification for agent heuristics, ability/trigger note, reflexive trigger classification, or object selector leaf kind. -/
-  | spellCastKind (nOpt : Option Nat := Option.none) (timesOpt : Option Nat := Option.none)
-      (subtypeOpt : Option String := Option.none)
-      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-      (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
-      (k0Opt : Option Bool := Option.none)
-      (tyOpt : Option CardType := Option.none)
-      (subtypesOpt : Option (Array String) := Option.none)
-      (powerOpt : Option Int := Option.none)
-      (b7 : Bool := false) (b8 : Bool := false) (b9 : Bool := false)
-      (b10 : Bool := false)
-      (ty2Opt : Option CardType := Option.none)
-      (kOpt : Option Keywords := Option.none)
-deriving Repr, Inhabited, BEq
-
 namespace SpellCastKind
 
 @[match_pattern] abbrev damageOrFight (creatureOnly : Bool := false) (fight : Bool := false) : SpellCastKind :=
@@ -480,18 +461,23 @@ which permanents `TriggerResolution.destroy` destroys, who
 which card `TriggerResolution.putOnLibrary` puts on a library,
 which cards `TriggerResolution.exile` exiles, and
 which cards `TriggerResolution.put` puts onto the battlefield. -/
-inductive ObjectSelector where
-  /-- Leaf or player-relative object selector across source/any, target, battlefield, graveyard/exile, library/hand, sacrifice/stack, player-relative objects, and player selectors (`isPlayer = true`). -/
-  | leafObject (objOpt : Option TargetObject := none)
-      (whoOpt : Option ObjectSelector)
-      (nOpt : Option Nat := none) (ty : Option CardType := none)
-      (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false)
-      (isAny : Bool := false)
-      (objCat0 : Bool := false) (objCat1 : Bool := false) (objCat2 : Bool := false)
-      (isPlayer : Bool := false)
-  /-- Objects every selector (`isUnion = false, isTarget = false`) or any selector (`isUnion = true, isTarget = false`) in `what` names, or the announced target (`isTarget = true, what = [which]`). -/
-  | combineOrTarget (what : List ObjectSelector) (isUnion : Bool := false) (isTarget : Bool := false)
-deriving Repr, Inhabited, BEq
+abbrev ObjectSelector := EffectTargetKind
+
+namespace ObjectSelector
+
+/-- Leaf or player-relative object selector across source/any, target, battlefield, graveyard/exile, library/hand, sacrifice/stack, player-relative objects, and player selectors (`isPlayer = true`). -/
+@[match_pattern] abbrev leafObject (objOpt : Option TargetObject := Option.none)
+    (whoOpt : Option ObjectSelector := Option.none)
+    (nOpt : Option Nat := Option.none) (ty : Option CardType := Option.none)
+    (creatures : Bool := false) (cardsFlag : Bool := false) (wheel : Bool := false)
+    (isAny : Bool := false)
+    (objCat0 : Bool := false) (objCat1 : Bool := false) (objCat2 : Bool := false)
+    (isPlayer : Bool := false) : ObjectSelector :=
+  .atomicTargetKind objOpt ty Option.none Option.none creatures cardsFlag wheel isAny objCat0 objCat1 whoOpt nOpt objCat2 isPlayer
+
+export EffectTargetKind (combineOrTarget)
+
+end ObjectSelector
 
 /-- Which player `ObjectSelector.player` names, who
 `TriggerResolution.draw` draws for, who
@@ -509,9 +495,9 @@ namespace PlayerSelector
 /-- Seat, target-player (`isTargetPlayer = true, whoOpt = some which`), event/drain, indexed-target (`index = some idx`), or controller (`isTargetPlayer = false, whoOpt = some what`) player selector. -/
 @[match_pattern] abbrev playerKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (eachOrHas : Bool := false) (targetKind : Bool := false) (eventOrDrain : Bool := false)
-    (index : Option Nat := none) (whoOpt : Option ObjectSelector := none)
+    (index : Option Nat := Option.none) (whoOpt : Option ObjectSelector := Option.none)
     (isTargetPlayer : Bool := false) : PlayerSelector :=
-  .leafObject none whoOpt index none alt1 alt2 alt3 eachOrHas targetKind eventOrDrain isTargetPlayer true
+  ObjectSelector.leafObject Option.none whoOpt index Option.none alt1 alt2 alt3 eachOrHas targetKind eventOrDrain isTargetPlayer true
 
 @[match_pattern] abbrev target (which : PlayerSelector) : PlayerSelector :=
   .playerKind false false false false false false none (some which) true
@@ -772,7 +758,7 @@ namespace StatNumber
     (cat1 : Bool := false) (cat2 : Bool := false) (greatestToughnessFlag : Bool := false)
     (subtype : Option String := Option.none) (tyOpt : Option CardType := Option.none)
     (handSize : Option Nat := Option.none) (isParam : Bool := false) : StatNumber :=
-  SpellCastKind.spellCastKind handSize Option.none subtype alt1 alt2 alt3 cat1 cat2 greatestToughnessFlag (some isParam) tyOpt
+  SpellCastKind.spellCastKind handSize Option.none subtype alt1 alt2 alt3 cat1 cat2 greatestToughnessFlag Option.none tyOpt Option.none Option.none isParam
 
 @[match_pattern] abbrev sourceStatOrPlusOnes (alt : Bool := false) (plusOnes : Bool := false) : StatNumber :=
   statNumberKind alt plusOnes false false false false

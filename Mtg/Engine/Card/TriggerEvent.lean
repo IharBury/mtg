@@ -23,7 +23,7 @@ namespace EntersEvent
     (colorOpt : Option Color := none) (nOpt : Option Int := none) (mOpt : Option Nat := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
     (flag1 : Bool := false) (flag2 : Bool := false) (flag3 : Bool := false) (paramKind : Bool := false) : EntersEvent :=
-  .battlefieldTargetKind subtypeOpt subtypesOpt colorOpt nOpt mOpt none alt1 alt2 alt3 alt4 flag1 flag2 flag3 paramKind false false false
+  .battlefieldTargetKind subtypeOpt subtypesOpt colorOpt nOpt mOpt none alt1 alt2 alt3 alt4 flag1 flag2 flag3 paramKind false false
 @[match_pattern] abbrev entersEventKind (subtypeOpt : Option String := none) (nOpt : Option Int := none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (artifactOrSubtype : Bool := false) (creatureGroup : Bool := false)
@@ -327,7 +327,7 @@ namespace TriggerEvent
 /-- Atomic trigger event (CR 603). -/
 @[match_pattern] abbrev atomicTriggerEvent (whatOpt : Option BattlefieldTarget := none)
     (ev0 : Bool := false) (ev1 : Bool := false) (ev2 : Bool := false) (ev3 : Bool := false) : TriggerEvent :=
-  .atomicTargetKind whatOpt Option.none Option.none Option.none false false ev0 ev1 ev2 ev3
+  .atomicTargetKind whatOpt Option.none Option.none Option.none false false ev0 ev1 ev2 ev3 Option.none
 
 /-- Disjunction of two trigger events ("Whenever A or B"). -/
 @[match_pattern] abbrev «or» (a b : TriggerEvent) : TriggerEvent :=

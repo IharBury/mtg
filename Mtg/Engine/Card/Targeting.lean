@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.TypeLine
 
@@ -109,33 +110,49 @@ structure TargetFilter extends TargetTypeFilter, TargetStatFilter, TargetCombatS
   controller : TargetController := .any
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- A permanent target on the battlefield (CR 115.1 / 110.1). -/
-abbrev BattlefieldTarget :=
-  Option String × Option (Array String) × Option Color × Option Int × Option Nat ×
-    Option TargetController × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool × Bool
+/-- How the demonstration agent classifies a spell when choosing what to cast, or unified target/event/object/number/condition selector leaf kind.
+Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
+silently skipping the new effect. -/
+inductive SpellCastKind where
+  /-- Spell classification for agent heuristics, ability/trigger note, reflexive trigger classification, battlefield target, trigger event filter, or object selector leaf kind. -/
+  | spellCastKind (nOpt : Option Nat := Option.none) (timesOpt : Option Nat := Option.none)
+      (subtypeOpt : Option String := Option.none)
+      (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
+      (cat1 : Bool := false) (cat2 : Bool := false) (cat3 : Bool := false)
+      (k0Opt : Option Color := Option.none)
+      (tyOpt : Option CardType := Option.none)
+      (subtypesOpt : Option (Array String) := Option.none)
+      (powerOpt : Option Int := Option.none)
+      (b7 : Bool := false) (b8 : Bool := false) (b9 : Bool := false)
+      (b10 : Bool := false)
+      (ty2Opt : Option CardType := Option.none)
+      (kOpt : Option Keywords := Option.none)
+deriving Repr, Inhabited, BEq
+
+/-- A permanent target on the battlefield (CR 115.1 / 110.1), unified with `SpellCastKind`. -/
+abbrev BattlefieldTarget := SpellCastKind
 
 namespace BattlefieldTarget
-@[match_pattern] abbrev battlefieldTargetKind (subtypeOpt : Option String := none) (subtypesOpt : Option (Array String) := none)
-    (colorOpt : Option Color := none) (nOpt : Option Int := none) (mOpt : Option Nat := none)
-    (controllerOpt : Option TargetController := none)
+@[match_pattern] abbrev battlefieldTargetKind (subtypeOpt : Option String := Option.none) (subtypesOpt : Option (Array String) := Option.none)
+    (colorOpt : Option Color := Option.none) (nOpt : Option Int := Option.none) (mOpt : Option Nat := Option.none)
+    (controllerOpt : Option TargetController := Option.none)
     (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false)
     (flag3 : Bool := false) (paramKind : Bool := false)
-    (controlledKind : Bool := false) (boundKind : Bool := false) (subtypeKind : Bool := false) : BattlefieldTarget :=
-  (subtypeOpt, subtypesOpt, colorOpt, nOpt, mOpt, controllerOpt,
-    alt1, alt2, alt3, alt4, g1, g2, flag3, paramKind, controlledKind, boundKind, subtypeKind)
+    (controlledKind : Bool := false) (boundKind : Bool := false) : BattlefieldTarget :=
+  SpellCastKind.spellCastKind mOpt Option.none subtypeOpt alt1 alt2 alt3 alt4 g1 g2 colorOpt controllerOpt subtypesOpt nOpt flag3 paramKind controlledKind boundKind Option.none Option.none
 @[match_pattern] abbrev booleanBattlefieldTarget (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
     (alt4 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind none none none none none none alt1 alt2 alt3 alt4 g1 g2 false false false false false
+  .battlefieldTargetKind Option.none Option.none Option.none Option.none Option.none Option.none alt1 alt2 alt3 alt4 g1 g2 false false false false
 @[match_pattern] abbrev controlledPermanentTarget (controller : TargetController := .any) (alt1 : Bool := false)
     (alt2 : Bool := false) (artifactTarget : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind none none none none none (some controller) alt1 alt2 artifactTarget false false false false false true false false
+  .battlefieldTargetKind Option.none Option.none Option.none Option.none Option.none (some controller) alt1 alt2 artifactTarget false false false false false true false
 @[match_pattern] abbrev boundPermanentTarget (n : Int := 0) (mv : Nat := 0) (controller : TargetController := .any)
     (alt1 : Bool := false) (alt2 : Bool := false) (mvBound : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind none none none (some n) (some mv) (some controller) alt1 alt2 mvBound false false false false false false true false
+  .battlefieldTargetKind Option.none Option.none Option.none (some n) (some mv) (some controller) alt1 alt2 mvBound false false false false false false true
 /-- Target creature you control with `subtype` (`multi = false`) or any of `subtypes` (`multi = true`). -/
 @[match_pattern] abbrev creatureYouControlSubtypes (subtype : String := "") (subtypes : Array String := #[]) (multi : Bool := false) : BattlefieldTarget :=
-  .battlefieldTargetKind (some subtype) (some subtypes) none none none none multi false false false false false false false false false true
+  .battlefieldTargetKind (some subtype) (some subtypes) Option.none Option.none Option.none Option.none multi false false false false false false false false false
 @[match_pattern] abbrev creatureTarget (youControl : Bool := false) (another : Bool := false) (legendaryOrFlying : Bool := false) : BattlefieldTarget :=
   .booleanBattlefieldTarget youControl another legendaryOrFlying false false false
 @[match_pattern] abbrev oppOrEquipmentTarget (alt1 : Bool := false) (alt2 : Bool := false) (defendingOrEquip : Bool := false) : BattlefieldTarget :=
@@ -265,16 +282,18 @@ silently offering no targets. Multiple instances of the word “target” list
 each slot in `spec` and are announced sequentially. Multiple targets of one
 instance are chosen together. -/
 inductive EffectTargetKind where
-  /-- Atomic, filtered, or multi-target/sequential-slot targeting shape (CR 115.1 / 601.2c): `none` (all `none`), battlefield (`battlefieldOpt = some t`), graveyard (`multiTargetOpt = some t, false, false`), stack (`multiTargetOpt = some t, true, false`), player (`multiTargetOpt = some t, false, true`), sequence (`multiTargetOpt = some t, true, true`), filtered (`filteredOpt = some f`), or multi-filtered (`multiOpt = some (fs, optional)`). -/
+  /-- Atomic, filtered, or multi-target/sequential-slot targeting shape (CR 115.1 / 601.2c), trigger event (CR 603), or object/player selector (CR 109 / 608): `none` (all `none`), battlefield (`battlefieldOpt = some t`), graveyard (`multiTargetOpt = some t, false, false`), stack (`multiTargetOpt = some t, true, false`), player (`multiTargetOpt = some t, false, true`), sequence (`multiTargetOpt = some t, true, true`), filtered (`filteredOpt = some f`), or multi-filtered (`multiOpt = some (fs, optional)`). -/
   | atomicTargetKind (battlefieldOpt : Option BattlefieldTarget := Option.none)
       (multiTargetOpt : Option MultiTarget := Option.none)
       (filteredOpt : Option TargetFilter := Option.none)
       (multiOpt : Option (Array TargetFilter × Array Nat) := Option.none)
       (mtCat0 : Bool := false) (mtCat1 : Bool := false)
       (ev0 : Bool := false) (ev1 : Bool := false) (ev2 : Bool := false) (ev3 : Bool := false)
-  /-- The instances of “target” of `a`, then those of `b`: two modes of one
-  modal spell chosen together (CR 700.2). -/
-  | pair (a b : EffectTargetKind)
+      (whoOpt : Option EffectTargetKind)
+      (nOpt : Option Nat := Option.none)
+      (objCat2 : Bool := false) (isPlayer : Bool := false)
+  /-- Composite target (`isUnion = true, isTarget = true, what = [a, b]`), trigger event disjunction (`«or»`), object selector intersection (`isUnion = false, isTarget = false`) or union (`isUnion = true, isTarget = false`), or announced target (`isUnion = false, isTarget = true, what = [which]`). -/
+  | combineOrTarget (what : List EffectTargetKind) (isUnion : Bool := false) (isTarget : Bool := false)
 deriving Repr, Inhabited, BEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c), unified with `TargetZone`. -/
@@ -298,22 +317,27 @@ end TargetZone
 
 namespace EffectTargetKind
 
+/-- The instances of “target” of `a`, then those of `b`: two modes of one
+modal spell chosen together (CR 700.2). -/
+@[match_pattern] abbrev pair (a b : EffectTargetKind) : EffectTargetKind :=
+  .combineOrTarget [a, b] true true
+
 @[match_pattern] abbrev none : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none Option.none false false
+  .atomicTargetKind Option.none Option.none Option.none Option.none false false false false false false Option.none
 @[match_pattern] abbrev battlefield (t : BattlefieldTarget) : EffectTargetKind :=
-  .atomicTargetKind (some t) Option.none Option.none Option.none false false
+  .atomicTargetKind (some t) Option.none Option.none Option.none false false false false false false Option.none
 @[match_pattern] abbrev graveyard (t : GraveyardTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none (some t) Option.none Option.none false false
+  .atomicTargetKind Option.none (some t) Option.none Option.none false false false false false false Option.none
 @[match_pattern] abbrev stack (t : StackTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none (some t) Option.none Option.none true false
+  .atomicTargetKind Option.none (some t) Option.none Option.none true false false false false false Option.none
 @[match_pattern] abbrev playerTarget (t : PlayerTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none (some t) Option.none Option.none false true
+  .atomicTargetKind Option.none (some t) Option.none Option.none false true false false false false Option.none
 @[match_pattern] abbrev filtered (f : TargetFilter) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none (some f) Option.none false false
+  .atomicTargetKind Option.none Option.none (some f) Option.none false false false false false false Option.none
 @[match_pattern] abbrev multi (fs : Array TargetFilter) (optional : Array Nat) : EffectTargetKind :=
-  .atomicTargetKind Option.none Option.none Option.none (some (fs, optional)) false false
+  .atomicTargetKind Option.none Option.none Option.none (some (fs, optional)) false false false false false false Option.none
 @[match_pattern] abbrev sequence (t : MultiTarget) : EffectTargetKind :=
-  .atomicTargetKind Option.none (some t) Option.none Option.none true true
+  .atomicTargetKind Option.none (some t) Option.none Option.none true true false false false false Option.none
 
 -- Battlefield permanent target aliases (CR 115.1 / 110.1)
 @[match_pattern] abbrev creatureYouControl : EffectTargetKind := .battlefield (.creatureYouControl false false)

@@ -3059,32 +3059,43 @@ is not a library find; the caller resolves that follow-up itself. -/
 def applySearchLibrary (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (thenDo : TriggeredAbility.TriggerResolution) : Option Game :=
   match thenDo with
-  | .put .forest .asPrinted .none => some (g.resolveSearchForest controller)
-  | .put .forest how _ =>
-    some (g.resolveSearchLibrary controller isForestCard (how == .tapped) "a Forest card")
-  | .put .basicLand how _ =>
-    some (g.resolveSearchLibrary controller isBasicLandCard (how == .tapped) "a basic land card")
-  | .returnToHand .basicLand _ => some (g.resolveSearchBasicLandToHand controller)
-  | .returnToHand .forest _ =>
-    some (g.resolveLibrarySearchToHand controller isForestCard "a Forest card")
-  | .returnToHand .dragon _ =>
-    some (g.resolveLibrarySearchToHand controller (fun c => c.hasSubtype "Dragon") "a Dragon card")
-  | .put .basicLandOnTop .tapped _ =>
-    some (g.beginLibrarySearch controller isBasicLandCard "a basic land card"
-      (.battlefield true) (optional := true))
-  | .put .basicLandOnTop _ _ =>
-    some (g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
-      (optional := true))
-  | .put .dragon .asPrinted .none =>
-    some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
-      .battlefieldFromHandOrLibrary (alsoHand := true))
-  | .put .dragon how _ =>
-    some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
-      (if how == .tapped then .battlefield true else .battlefieldFromHandOrLibrary)
-      (alsoHand := true))
-  | .put .creatureCard how _ =>
-    some (g.beginLibrarySearch controller (fun c => c.isCreature) "a creature card"
-      (.battlefield (how == .tapped)))
+  | .put what how note =>
+    if what == .forest then
+      if how == .asPrinted && note == .none then
+        some (g.resolveSearchForest controller)
+      else
+        some (g.resolveSearchLibrary controller isForestCard (how == .tapped) "a Forest card")
+    else if what == .basicLand then
+      some (g.resolveSearchLibrary controller isBasicLandCard (how == .tapped) "a basic land card")
+    else if what == .basicLandOnTop then
+      if how == .tapped then
+        some (g.beginLibrarySearch controller isBasicLandCard "a basic land card"
+          (.battlefield true) (optional := true))
+      else
+        some (g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
+          (optional := true))
+    else if what == .dragon then
+      if how == .asPrinted && note == .none then
+        some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+          .battlefieldFromHandOrLibrary (alsoHand := true))
+      else
+        some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+          (if how == .tapped then .battlefield true else .battlefieldFromHandOrLibrary)
+          (alsoHand := true))
+    else if what == .creatureCard then
+      some (g.beginLibrarySearch controller (fun c => c.isCreature) "a creature card"
+        (.battlefield (how == .tapped)))
+    else
+      none
+  | .returnToHand what _ =>
+    if what == .basicLand then
+      some (g.resolveSearchBasicLandToHand controller)
+    else if what == .forest then
+      some (g.resolveLibrarySearchToHand controller isForestCard "a Forest card")
+    else if what == .dragon then
+      some (g.resolveLibrarySearchToHand controller (fun c => c.hasSubtype "Dragon") "a Dragon card")
+    else
+      none
   | .exile (.basicUpTo subtype max) .forLater .linked =>
     some (g.beginLibrarySearch controller
       (fun c => isBasicLandCard c && c.hasSubtype subtype)
