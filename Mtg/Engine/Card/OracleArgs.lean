@@ -131,9 +131,7 @@ namespace Mode
 
 end Mode
 
-structure St where
-  mode : Mode
-  vals : List SlotVal
+abbrev St := Mode × List SlotVal
 
 abbrev ArgM := StateM St
 
@@ -148,83 +146,39 @@ def capFirst (s : String) : String :=
 def tokenChar (c : Char) : Bool :=
   c.isAlphanum || c == '+' || c == '/' || c == '-' || c == '{' || c == '}' || c == '\''
 
-def takeNat (n : Nat) : ArgM Nat := do
-  let s ← get
-  match s.mode with
+def takeSlot {α} (wrap : α → SlotVal) (unwrap : SlotVal → Option α) (x : α) : ArgM α := do
+  let (mode, vals) ← get
+  match mode with
   | .collect =>
-    set { s with vals := SlotVal.nat n :: s.vals }
-    return n
+    set (mode, wrap x :: vals)
+    return x
   | _ =>
-    match s.vals with
-    | SlotVal.nat v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return n
+    match vals with
+    | v :: rest =>
+      match unwrap v with
+      | some v =>
+        set (mode, rest)
+        return v
+      | none => return x
+    | [] => return x
 
-def takeInt (i : Int) : ArgM Int := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.int i :: s.vals }
-    return i
-  | _ =>
-    match s.vals with
-    | SlotVal.int v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return i
+def takeNat (n : Nat) : ArgM Nat :=
+  takeSlot SlotVal.nat (fun | .nat v => some v | _ => none) n
 
-def takeCardType (t : CardType) : ArgM CardType := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.ty t :: s.vals }
-    return t
-  | _ =>
-    match s.vals with
-    | SlotVal.ty v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return t
+def takeInt (i : Int) : ArgM Int :=
+  takeSlot SlotVal.int (fun | .int v => some v | _ => none) i
 
-def takeCounter (k : CounterKind) : ArgM CounterKind := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.ctr k :: s.vals }
-    return k
-  | _ =>
-    match s.vals with
-    | SlotVal.ctr v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return k
+def takeCardType (t : CardType) : ArgM CardType :=
+  takeSlot SlotVal.ty (fun | .ty v => some v | _ => none) t
 
-def takeSupertype (sup : Supertype) : ArgM Supertype := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.sup sup :: s.vals }
-    return sup
-  | _ =>
-    match s.vals with
-    | SlotVal.sup v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return sup
+def takeCounter (k : CounterKind) : ArgM CounterKind :=
+  takeSlot SlotVal.ctr (fun | .ctr v => some v | _ => none) k
 
-def takeStr (str : String) : ArgM String := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.str str :: s.vals }
-    return str
-  | _ =>
-    match s.vals with
-    | SlotVal.str v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return str
+def takeSupertype (sup : Supertype) : ArgM Supertype :=
+  takeSlot SlotVal.sup (fun | .sup v => some v | _ => none) sup
+
+def takeStr (str : String) : ArgM String :=
+  takeSlot SlotVal.str (fun | .str v => some v | _ => none) str
 
 def takeOptNat (o : Option Nat) : ArgM (Option Nat) :=
   match o with
@@ -254,18 +208,8 @@ def takeCost (c : ManaCost) : ArgM ManaCost := do
 
 /-- One slot for the whole target kind, noun included.
 Nested numbers stay inside the kind instead of becoming their own holes. -/
-def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
-  let s ← get
-  match s.mode with
-  | .collect =>
-    set { s with vals := SlotVal.kind k :: s.vals }
-    return k
-  | _ =>
-    match s.vals with
-    | SlotVal.kind v :: rest =>
-      set { s with vals := rest }
-      return v
-    | _ => return k
+def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind :=
+  takeSlot SlotVal.kind (fun | .kind v => some v | _ => none) k
 
 def takeKind (k : @& EffectTargetKind) : ArgM EffectTargetKind := do
   match k with
@@ -802,11 +746,11 @@ def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
     return .triggered (← takeWhen w) (← takeEffect e) (← takeOpts o)
 
 def runCollect {α} (m : ArgM α) : Array SlotVal :=
-  let (_, s) := m.run { mode := .collect, vals := [] }
-  s.vals.reverse.toArray
+  let (_, (_, vals)) := m.run (.collect, [])
+  vals.reverse.toArray
 
 def runFill {α} (m : ArgM α) (vals : Array SlotVal) : α :=
-  (m.run { mode := .fill, vals := vals.toList }).1
+  (m.run (.fill, vals.toList)).1
 
 def collectEffect (e : Effect) : Array SlotVal := runCollect (takeEffect e)
 def collectStatic (ab : StaticAbility) : Array SlotVal := runCollect (takeStatic ab)

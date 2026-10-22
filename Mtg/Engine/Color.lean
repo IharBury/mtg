@@ -45,13 +45,15 @@ instance : ToString Color where
 
 end Color
 
-/-- A (possibly empty) combination of the five colors (CR 105.2). -/
+/-- A (possibly empty) combination of the five colors (CR 105.2), or deterministic
+xorshift64 RNG state (`Rng`, CR 103.3). -/
 structure ColorSet where
   white : Bool := false
   blue : Bool := false
   black : Bool := false
   red : Bool := false
   green : Bool := false
+  state : UInt64 := 0
 deriving BEq, DecidableEq, Repr, Inhabited
 
 namespace ColorSet

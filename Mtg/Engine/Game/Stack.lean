@@ -36,41 +36,7 @@ end Target
 (`TriggerResolutionContext`, `TriggerSequenceRest`, `TriggerOrRest`, `ChooseModesRest`,
 `TriggerRead`, `UnlessPaysRest`, `MayEffectRest`, `SpellOrRest`, CR 118.12 / 603.3 / 608.2).
 Last array element is the top. -/
-structure StackEntry where
-  objectId : ObjectId := ⟨0⟩
-  controller : PlayerId := ⟨0⟩
-  targets : Array Target := #[]
-  /-- Damage assigned to each target of a “divided as you choose” effect
-  (CR 601.2d). Parallel to `targets`. -/
-  dividedDamage : Array Nat := #[]
-  /-- Set once targets (including choosing zero) have been announced
-  (CR 603.3d / 601.2c). -/
-  targetsAnnounced : Bool := false
-  /-- Chosen mode index for a modal spell (CR 700.2). -/
-  chosenMode : Option Nat := none
-  /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
-  extraModes : Array Nat := #[]
-  /-- Optional “up to one” slots that were skipped while announcing
-  (CR 115.1c / 601.2c). The current instance index is
-  `targets.size + skippedOptionalSlots`. -/
-  skippedOptionalSlots : Nat := 0
-  ability : TriggeredAbility := default
-  sourceId : Option ObjectId := none
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  sequencedCardPower : Option Nat := none
-  steps : List TriggeredAbility.TriggerResolution := []
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-  effect : Option Effect := none
-  /-- The payer left without paying (CR 800.4f). -/
-  due : Bool := false
-  effects : Array Effect := #[]
-  isLibrary : Bool := false
-deriving Repr, Inhabited
+abbrev StackEntry := WaitingTrigger
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
 abbrev ProposalKind := Target

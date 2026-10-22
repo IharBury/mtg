@@ -298,7 +298,9 @@ def battleTypes : List String := [
 ]
 
 /-- One known subtype from CR 205.3g–q, one unique official Oracle ruling
-(`OracleRuling`), or keyword counters on a permanent (`KeywordCounters`, CR 122.1b). -/
+(`OracleRuling`), keyword counters on a permanent (`KeywordCounters`, CR 122.1b),
+what a payment is for and restricted mana allowances (`ManaSpend`, `ManaAllowances`,
+CR 106.10), or unspent mana a player currently has (`ManaPool`, CR 106.4). -/
 structure KnownSubtype where
   name : String := ""
   plural : String := ""
@@ -324,7 +326,32 @@ structure KnownSubtype where
   trample : Nat := 0
   indestructible : Nat := 0
   lifelink : Nat := 0
-deriving Repr, Inhabited, BEq
+  spell : Bool := false
+  fromHand : Bool := false
+  planeswalker : Bool := false
+  noncreature : Bool := false
+  legendary : Bool := false
+  artifact : Bool := false
+  /-- Subtypes of the spell being cast. -/
+  subtypes : Array String := #[]
+  /-- Subtypes of the spell or ability source. -/
+  sourceSubtypes : Array String := #[]
+  /-- Activating an equip ability. -/
+  equip : Bool := false
+  hero : Bool := false
+  villain : Bool := false
+  cantNonartifact : Bool := false
+  creature : Bool := false
+  white : Nat := 0
+  blue : Nat := 0
+  black : Nat := 0
+  red : Nat := 0
+  green : Nat := 0
+  colorless : Nat := 0
+  /-- One entry per mana with a spending restriction (CR 106.6 / 106.10). These
+  are included in the totals above. -/
+  restricted : Array (Option Color × CardType) := #[]
+deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
 and `Urza's` remain different subtypes. -/

@@ -12,9 +12,50 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
-/-- Permission to play a card from exile (CR 701.14 / 715.3d), or snapshot of
+/-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
+abbrev CopyDuration :=
+  ObjectId × PlayerId × Nat × Nat × Array ManaType ×
+    Bool × Bool × Bool × Bool × Bool ×
+    Option ObjectId × String × Array PlayerId × Array ObjectId × Option Zone
+
+namespace CopyDuration
+
+@[match_pattern] abbrev copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
+    (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
+    (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
+    (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
+    (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
+    (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
+    (destOpt : Option Zone := Option.none) : CopyDuration :=
+  (source, player, n, paid, types, untilEotFlag, untilNextTurnFlag, untilSourceFlag, b4, b5,
+    sourceIdOpt, subtype, rest, ids, destOpt)
+
+@[match_pattern] abbrev permanent : CopyDuration :=
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false false false false false
+@[match_pattern] abbrev untilEot : CopyDuration :=
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] true false false false false
+@[match_pattern] abbrev untilNextTurn : CopyDuration :=
+  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false true false false false
+@[match_pattern] abbrev untilSourceLeaves (source : ObjectId) : CopyDuration :=
+  .copyDurationKind source ⟨0⟩ 0 0 #[] false false true false false
+
+end CopyDuration
+
+/-- The mana a mana ability adds (CR 106.1). -/
+abbrev Game.ManaOutput := CopyDuration
+
+instance : BEq CardDef where
+  beq a b := a.name == b.name
+
+/-- Permission to play a card from exile (CR 701.14 / 715.3d), snapshot of
 the object whose event caused a triggered ability to trigger (`TriggerCause`,
-CR 603.2 / CR 603.7c / CR 608.2c). -/
+CR 603.2 / CR 603.7c / CR 608.2c), spell cast-origin, additional-cost-paid,
+and linked-exile metadata (`CastOriginState`, `AdditionalCostPaidState`,
+`LinkedExileState`, CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706), how one
+attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
+CR 510.1), an active temporary copy effect on a permanent (`CopyEffect`,
+CR 707 / CR 613.2), a seat at the table before objects are created (`Seat`,
+CR 103), or a mana ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
 structure PlayPermission where
   /-- The player who may play the card. -/
   player : PlayerId := ⟨0⟩
@@ -52,77 +93,6 @@ structure PlayPermission where
   label : String := ""
   detail : Option String := none
   hiddenActivity : String := ""
-deriving Repr, Inhabited, BEq
-
-/-- Snapshot of the object whose event caused a triggered ability to trigger
-(CR 603.2 / CR 603.7c / CR 608.2c). -/
-abbrev TriggerCause := PlayPermission
-
-/-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
-abbrev CopyDuration :=
-  ObjectId × PlayerId × Nat × Nat × Array ManaType ×
-    Bool × Bool × Bool × Bool × Bool ×
-    Option ObjectId × String × Array PlayerId × Array ObjectId × Option Zone
-
-namespace CopyDuration
-
-@[match_pattern] abbrev copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
-    (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
-    (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
-    (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
-    (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
-    (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
-    (destOpt : Option Zone := Option.none) : CopyDuration :=
-  (source, player, n, paid, types, untilEotFlag, untilNextTurnFlag, untilSourceFlag, b4, b5,
-    sourceIdOpt, subtype, rest, ids, destOpt)
-
-@[match_pattern] abbrev permanent : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false false false false false
-@[match_pattern] abbrev untilEot : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] true false false false false
-@[match_pattern] abbrev untilNextTurn : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false true false false false
-@[match_pattern] abbrev untilSourceLeaves (source : ObjectId) : CopyDuration :=
-  .copyDurationKind source ⟨0⟩ 0 0 #[] false false true false false
-
-end CopyDuration
-
-/-- The mana a mana ability adds (CR 106.1). -/
-abbrev Game.ManaOutput := CopyDuration
-
-/-- Active temporary copy effect on a permanent, storing the original printed
-characteristics to restore when `duration` expires (CR 707 / CR 613.2), a
-seat at the table before objects are created (`Seat`, CR 103), or a mana
-ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
-structure CopyEffect where
-  restore : CardDef := default
-  duration : CopyDuration := .permanent
-  name : String := ""
-  deck : Array CardDef := #[]
-  /-- Cards outside the game the player may use, such as a sideboard
-  (CR 400.11b). -/
-  sideboard : Array CardDef := #[]
-  output : Game.ManaOutput := .permanent
-  tap : Bool := true
-  cost : ManaCost := ManaCost.empty
-  payLife : Nat := 0
-  sacrificeSelf : Bool := false
-  /-- Costs paid with objects the player chooses (Bolg's Company). -/
-  picks : Array CostPick := #[]
-  restriction : ManaRestriction := .none
-  /-- Index among `activatedAbilitiesOf` when this is an activated ability
-  printed with a full cost. -/
-  activatedIdx : Option Nat := none
-  onceEachTurn : Bool := false
-  /-- Damage this ability deals to its controller as it resolves. -/
-  damageYou : Nat := 0
-deriving Repr, Inhabited
-
-/-- Spell cast-origin, additional-cost-paid (`AdditionalCostPaidState`), and
-linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706),
-how one attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
-CR 510.1), or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
-structure CastOriginState where
   /-- This spell's kicker cost was paid (CR 702.32). -/
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/
@@ -169,10 +139,44 @@ structure CastOriginState where
   toCreatures : Array (ObjectId × Int) := #[]
   /-- Leftover assigned to the defending player (unblocked or trample). -/
   toPlayer : Int := 0
-  player : PlayerId := ⟨0⟩
-  spellId : ObjectId := ⟨0⟩
-  cost : CopyDuration := .permanent
+  restore : CardDef := default
+  duration : CopyDuration := .permanent
+  name : String := ""
+  deck : Array CardDef := #[]
+  /-- Cards outside the game the player may use, such as a sideboard
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+  output : Game.ManaOutput := .permanent
+  tap : Bool := true
+  cost : ManaCost := ManaCost.empty
+  payLife : Nat := 0
+  sacrificeSelf : Bool := false
+  /-- Costs paid with objects the player chooses (Bolg's Company). -/
+  picks : Array CostPick := #[]
+  restriction : ManaRestriction := .none
+  /-- Index among `activatedAbilitiesOf` when this is an activated ability
+  printed with a full cost. -/
+  activatedIdx : Option Nat := none
+  onceEachTurn : Bool := false
+  /-- Damage this ability deals to its controller as it resolves. -/
+  damageYou : Nat := 0
 deriving Repr, Inhabited, BEq
+
+/-- Snapshot of the object whose event caused a triggered ability to trigger
+(CR 603.2 / CR 603.7c / CR 608.2c). -/
+abbrev TriggerCause := PlayPermission
+
+/-- Active temporary copy effect on a permanent, storing the original printed
+characteristics to restore when `duration` expires (CR 707 / CR 613.2), a
+seat at the table before objects are created (`Seat`, CR 103), or a mana
+ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
+abbrev CopyEffect := PlayPermission
+
+/-- Spell cast-origin, additional-cost-paid (`AdditionalCostPaidState`), and
+linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706),
+how one attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
+CR 510.1), or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
+abbrev CastOriginState := PlayPermission
 
 abbrev AdditionalCostPaidState := CastOriginState
 
@@ -452,8 +456,12 @@ def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a
-player would receive priority (CR 603.3 / 603.3b), or game start configuration
-(`StartConfig`, CR 103). `source` is a snapshot of
+player would receive priority (CR 603.3 / 603.3b), game start configuration
+(`StartConfig`, CR 103), a spell or ability on the stack (`StackEntry`, CR 405),
+or shared spell/ability/choice resolution context (`SpellResolutionContext`,
+`TriggerResolutionContext`, `TriggerSequenceRest`, `TriggerOrRest`,
+`ChooseModesRest`, `TriggerRead`, `UnlessPaysRest`, `MayEffectRest`,
+`SpellOrRest`, CR 118.12 / 603.3 / 608.2). `source` is a snapshot of
 the permanent as it existed when the trigger event occurred. `lastKnownPower`
 is last-known power for dies triggers (CR 113.7a) and the number of cards
 looked at for “whenever you scry” (CR 701.20). `lastKnownToughness` is
@@ -483,6 +491,38 @@ structure WaitingTrigger where
   startingPlayer : Option Nat := none
   /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
   norandom : Bool := false
+  objectId : ObjectId := ⟨0⟩
+  targets : Array (PlayerId ⊕ (ObjectId × Bool)) := #[]
+  /-- Damage assigned to each target of a “divided as you choose” effect
+  (CR 601.2d). Parallel to `targets`. -/
+  dividedDamage : Array Nat := #[]
+  /-- Set once targets (including choosing zero) have been announced
+  (CR 603.3d / 601.2c). -/
+  targetsAnnounced : Bool := false
+  /-- Chosen mode index for a modal spell (CR 700.2). -/
+  chosenMode : Option Nat := none
+  /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
+  extraModes : Array Nat := #[]
+  /-- Optional “up to one” slots that were skipped while announcing
+  (CR 115.1c / 601.2c). The current instance index is
+  `targets.size + skippedOptionalSlots`. -/
+  skippedOptionalSlots : Nat := 0
+  sourceId : Option ObjectId := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  sequencedCardPower : Option Nat := none
+  steps : List TriggeredAbility.TriggerResolution := []
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
+  effect : Option Effect := none
+  /-- The payer left without paying (CR 800.4f). -/
+  due : Bool := false
+  effects : Array Effect := #[]
+  isLibrary : Bool := false
+  player : PlayerId := ⟨0⟩
+  spellId : ObjectId := ⟨0⟩
+  cost : CopyDuration := .permanent
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
