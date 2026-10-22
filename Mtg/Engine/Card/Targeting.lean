@@ -458,6 +458,15 @@ structure Spec where
   optionalSlots : Array Nat := #[]
   /-- True when this shape targets a spell on the stack. -/
   stackSpell : Bool := false
+  /-- Oracle trigger-event clause (CR 603). -/
+  clause : String := ""
+  isWhenever : Bool := true
+  /-- Log label when this event is put on the stack. -/
+  label : String := ""
+  /-- Remove the ability when it requires a target and has none (CR 603.3d). -/
+  checkTargets : Bool := true
+  /-- Trigger condition is another ability triggering (CR 603.3b part 2). -/
+  isAnotherAbilityTriggering : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a battlefield permanent targeting shape (CR 115.1 / 110.1). -/

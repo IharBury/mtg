@@ -18,17 +18,14 @@ namespace TriggeredAbility
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .triggered w e opts =>
-    { events :=
+    { e with
+      events :=
         match w with
         | .fromEffect => e.events
         | _ => w.events
       targeting := if opts.untargeted then {} else e.targeting
       allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets
-      maxTargets := e.maxTargets
-      dividedDamage := e.dividedDamage
-      resolution := e.resolution
       onceEachTurn := e.onceEachTurn || opts.onceEachTurn
-      optionalOnceEachTurn := e.optionalOnceEachTurn
       condition := opts.condition
       subtype := opts.subtype }
 
@@ -462,7 +459,7 @@ def onFinalSagaChapterRevealSaga : TriggeredAbility :=
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
 def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
-  .triggered (.sagaChapter n) { e with resolution := TriggerResolution.ofSpell e.resolution }
+  .triggered (.sagaChapter n) e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=

@@ -558,20 +558,8 @@ def events : TriggerEvent → Array TriggerEvent
   | .cascade | .fromEffect => #[]
   | e => #[e]
 
-/-- Oracle wording plus how Game queues this event. Exhaustive so a new event
-is a compile error here rather than silently matching `When this occurs` with
-`Whenever`, or restating the stack label and CR 603.3d check at every queue
-site. -/
-structure Spec where
-  clause : String
-  isWhenever : Bool := true
-  /-- Log label when this event is put on the stack. -/
-  label : String
-  /-- Remove the ability when it requires a target and has none (CR 603.3d). -/
-  checkTargets : Bool := true
-  /-- Trigger condition is another ability triggering (CR 603.3b part 2). -/
-  isAnotherAbilityTriggering : Bool := false
-deriving Repr, Inhabited, BEq
+/-- Oracle wording plus how Game queues this event, unified with `EffectTargetKind.Spec`. -/
+abbrev Spec := EffectTargetKind.Spec
 
 /-- Classification of this event. `clause`, `isWhenever`, `label`, and
 `checkTargets` read this table. -/

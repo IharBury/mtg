@@ -11,14 +11,8 @@ combination so a constructor argument is applied instead of dropped.
 namespace Mtg.Engine
 namespace Game
 
-/-- Context a `NumberSelector` or `PlayerSelector` is read in. -/
-structure TriggerRead where
-  controller : PlayerId
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sequencedCardPower : Option Nat := none
+/-- Context a `NumberSelector` or `PlayerSelector` is read in, unified with `TriggerResolutionContext`. -/
+abbrev TriggerRead := TriggerResolutionContext
 
 /-- Object id recorded as the cause of the ability now resolving. -/
 private def recordedCauseId (g : Game) : Option ObjectId :=

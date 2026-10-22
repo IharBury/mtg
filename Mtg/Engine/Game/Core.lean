@@ -13,39 +13,43 @@ namespace Mtg.Engine
 
 set_option synthInstance.maxSize 1024
 
-/-- Shared ability context for a triggered ability whose resolution is paused on
-a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
-structure TriggerResolutionContext where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
+/-- Shared spell-resolution context (controller and announced targets) for a
+pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
+structure SpellResolutionContext where
+  controller : PlayerId := ⟨0⟩
   targets : Array Target := #[]
+deriving Repr, Inhabited
+
+/-- Shared ability context for a triggered ability whose resolution is paused on
+a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2), or
+context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`). -/
+structure TriggerResolutionContext extends SpellResolutionContext where
+  ability : TriggeredAbility := default
+  sourceId : Option ObjectId := none
   dividedDamage : Array Nat := #[]
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
   sourceName : String := "This creature"
   cardPower : Option Nat := none
+  sequencedCardPower : Option Nat := none
 deriving Repr, Inhabited
 
-/-- Later steps of a trigger `sequence`, waiting until the pending choice
-opened by an earlier step finishes. They run before any player receives
-priority, so they stay part of that resolution. -/
+/-- Continuation state for a triggered ability whose resolution is paused on
+a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
 structure TriggerSequenceRest extends TriggerResolutionContext where
   steps : List TriggeredAbility.TriggerResolution := []
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited
 
 /-- A pending `TriggerResolution.or`. The controller chooses one alternative,
 then that step resolves with this ability context. -/
-structure TriggerOrRest extends TriggerResolutionContext where
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-deriving Repr, Inhabited
+abbrev TriggerOrRest := TriggerSequenceRest
 
 /-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
 The chosen index resolves with this ability context. -/
-structure ChooseModesRest extends TriggerResolutionContext where
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-deriving Repr, Inhabited
+abbrev ChooseModesRest := TriggerSequenceRest
 
 /-- Delayed triggered ability waiting to fire at the beginning of the next end
 step (CR 603.7). -/
@@ -88,30 +92,20 @@ structure MulliganState where
   toBottom : Array PlayerId := #[]
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Shared spell-resolution context (controller and announced targets) for a
-pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
-structure SpellResolutionContext where
-  controller : PlayerId := ⟨0⟩
-  targets : Array Target := #[]
-deriving Repr, Inhabited
-
-/-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
+/-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
 structure UnlessPaysRest extends SpellResolutionContext where
   effect : Option Effect := none
   /-- The payer left without paying (CR 800.4f). -/
   due : Bool := false
-deriving Repr, Inhabited
-
-/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-structure MayEffectRest extends SpellResolutionContext where
-  effect : Option Effect := none
-deriving Repr, Inhabited
-
-/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-structure SpellOrRest extends SpellResolutionContext where
   effects : Array Effect := #[]
   isLibrary : Bool := false
 deriving Repr, Inhabited
+
+/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
+abbrev MayEffectRest := UnlessPaysRest
+
+/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
+abbrev SpellOrRest := UnlessPaysRest
 
 /-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
 structure TriggerMayBranch where

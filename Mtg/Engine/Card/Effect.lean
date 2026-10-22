@@ -23,13 +23,46 @@ structure EffectTargetingMeta where
   dividedDamage : Option (Nat × Nat) := none
 deriving Repr, Inhabited, BEq
 
+/-- Shared trigger condition, frequency, and subtype filter metadata (CR 603.2 / 603.4). -/
+structure TriggerConditionMeta where
+  onceEachTurn : Bool := false
+  /-- “Do this only once each turn”: the ability keeps triggering until the
+  controller chooses to do the optional action (MSH 69). -/
+  optionalOnceEachTurn : Bool := false
+  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
+  condition : ConditionSelector := .none
+  /-- Subtype filter watched by the trigger event. -/
+  subtype : Option String := none
+deriving Repr, Inhabited, BEq
+
+namespace TriggerConditionMeta
+
+def youControlCreatureWithPower (t : TriggerConditionMeta) : Option Int :=
+  match t.condition with
+  | .youControlCreatureWithPower n => some n
+  | _ => none
+
+def gainedLifeAtLeast (t : TriggerConditionMeta) : Option Nat :=
+  match t.condition with
+  | .gainedLifeAtLeast n => some n
+  | _ => none
+
+def anotherCreaturePowerAtMost (t : TriggerConditionMeta) : Option Int :=
+  match t.condition with
+  | .anotherCreaturePowerAtMost n => some n
+  | _ => none
+
+def thisOrNontokenSubtype (t : TriggerConditionMeta) : Option String := t.subtype
+def thisOrAnotherSubtype (t : TriggerConditionMeta) : Option String := t.subtype
+def anotherSubtypeOrEquipment (t : TriggerConditionMeta) : Option String := t.subtype
+
+end TriggerConditionMeta
+
 /-- Unified one-shot effect for spells, activated abilities, Saga chapters,
 and triggered abilities. Targeting, printed wording, and resolution live
 here so Game has one apply path. -/
-structure Effect extends EffectTargetingMeta where
+structure Effect extends EffectTargetingMeta, TriggerConditionMeta where
   events : Array TriggerEvent := #[]
-  onceEachTurn : Bool := false
-  optionalOnceEachTurn : Bool := false
   spellCastKind : SpellCastKind := .extraLand
   abilityCastKind : AbilityCastKind := .other
   preferAsDefaultMode : Bool := false

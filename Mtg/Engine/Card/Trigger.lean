@@ -20,12 +20,7 @@ abbrev InterveningCondition := ConditionSelector
 abbrev FraCondition := ConditionSelector
 
 /-- Optional intervening conditions and wording filters for `triggered` (CR 603). -/
-structure SharedTriggerOpts where
-  onceEachTurn : Bool := false
-  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
-  condition : InterveningCondition := .none
-  /-- Subtype filter watched by the trigger event. -/
-  subtype : Option String := none
+structure SharedTriggerOpts extends TriggerConditionMeta where
   allowsZeroTargets : Bool := false
   /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
   untargeted : Bool := false
@@ -38,29 +33,11 @@ deriving Repr, Inhabited, BEq
 
 namespace SharedTriggerOpts
 
-def youControlCreatureWithPower (o : SharedTriggerOpts) : Option Int :=
-  match o.condition with
-  | .youControlCreatureWithPower n => some n
-  | _ => none
-
-def gainedLifeAtLeast (o : SharedTriggerOpts) : Option Nat :=
-  match o.condition with
-  | .gainedLifeAtLeast n => some n
-  | _ => none
-
-def anotherCreaturePowerAtMost (o : SharedTriggerOpts) : Option Int :=
-  match o.condition with
-  | .anotherCreaturePowerAtMost n => some n
-  | _ => none
-
 def fraCondition (o : SharedTriggerOpts) : InterveningCondition :=
   match o.condition with
   | .youControlCreatureWithPower _ | .gainedLifeAtLeast _ | .anotherCreaturePowerAtMost _ => .none
   | c => c
 
-def thisOrNontokenSubtype (o : SharedTriggerOpts) : Option String := o.subtype
-def thisOrAnotherSubtype (o : SharedTriggerOpts) : Option String := o.subtype
-def anotherSubtypeOrEquipment (o : SharedTriggerOpts) : Option String := o.subtype
 def watchedSubtype (o : SharedTriggerOpts) : Option String := o.subtype
 
 /-- Ferocious intervening condition (power 4 or greater). -/
@@ -102,53 +79,8 @@ def dividedAmong (maxTargets : Nat) : String :=
 abbrev TriggerTargetKind := EffectTargetKind
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
-parameters, and how it resolves (CR 603 / 601.2d / 608). -/
-structure TriggerTiming where
-  events : Array TriggerEvent := #[]
-  targeting : EffectTargeting := .of .none
-  /-- Zero targets is a legal announcement (CR 115.1c / 601.2c), e.g. “up to one”. -/
-  allowsZeroTargets : Bool := false
-  /-- Most targets one instance of “target” may take (“any number of target
-  …”); 0 means the targeting's own count. -/
-  maxTargets : Nat := 0
-  /-- Damage amount and maximum number of targets when this ability divides
-  damage as the controller chooses (CR 601.2d). -/
-  dividedDamage : Option (Nat × Nat) := none
-  /-- What happens when this ability resolves. -/
-  resolution : TriggerResolution := .pump .greatestPower (.fixed 0) .source
-  /-- This trigger fires only once each turn. -/
-  onceEachTurn : Bool := false
-  /-- “Do this only once each turn”: the ability keeps triggering until the
-  controller chooses to do the optional action (MSH 69). -/
-  optionalOnceEachTurn : Bool := false
-  /-- Intervening or event-threshold condition (CR 603.2 / 603.4). -/
-  condition : InterveningCondition := .none
-  /-- Subtype filter watched by the trigger event. -/
-  subtype : Option String := none
-deriving Repr, Inhabited, BEq
-
-namespace TriggerTiming
-
-def youControlCreatureWithPower (t : TriggerTiming) : Option Int :=
-  match t.condition with
-  | .youControlCreatureWithPower n => some n
-  | _ => none
-
-def gainedLifeAtLeast (t : TriggerTiming) : Option Nat :=
-  match t.condition with
-  | .gainedLifeAtLeast n => some n
-  | _ => none
-
-def anotherCreaturePowerAtMost (t : TriggerTiming) : Option Int :=
-  match t.condition with
-  | .anotherCreaturePowerAtMost n => some n
-  | _ => none
-
-def thisOrNontokenSubtype (t : TriggerTiming) : Option String := t.subtype
-def thisOrAnotherSubtype (t : TriggerTiming) : Option String := t.subtype
-def anotherSubtypeOrEquipment (t : TriggerTiming) : Option String := t.subtype
-
-end TriggerTiming
+parameters, and how it resolves (CR 603 / 601.2d / 608), unified with `Effect`. -/
+abbrev TriggerTiming := Effect
 
 end TriggeredAbility
 
@@ -158,16 +90,7 @@ def SharedTrigger : Type := Effect
 namespace SharedTrigger
 
 /-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
-def timing (e : SharedTrigger) : TriggeredAbility.TriggerTiming :=
-  let e : Effect := e
-  { events := e.events
-    targeting := e.targeting
-    allowsZeroTargets := e.allowsZeroTargets
-    maxTargets := e.maxTargets
-    dividedDamage := e.dividedDamage
-    resolution := e.resolution
-    onceEachTurn := e.onceEachTurn
-    optionalOnceEachTurn := e.optionalOnceEachTurn }
+def timing (e : SharedTrigger) : TriggeredAbility.TriggerTiming := e
 
 -- Library triggers (CR 121 / CR 701.13 / CR 701.18 / CR 701.20 / CR 701.25 / CR 701.48)
 def scry (n : Nat) : Effect := { resolution := .scry (.fixed n) }
