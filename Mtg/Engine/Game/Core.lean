@@ -655,6 +655,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .goaded v => { s with goaded := v }
   | .story v => { s with story := v }
   | .time v => { s with time := v }
+  | .impendingPaid v => { s with impendingPaid := v }
   | .notACreature v => { s with notACreature := v }
   | .windcragMardu v => { s with windcragMardu := v }
   | .chosenCardType v => { s with chosenCardType := v }
@@ -1109,10 +1110,7 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .returnedAsArtifact id =>
     g.modifyStatus id (fun s => { s with returnedAsArtifact := true })
   | .notACreature id =>
-    g.modifyObject id (fun o =>
-      { o with
-        kicked := o.kicked || o.printed.impending.isSome
-        status := { o.status with notACreature := true } })
+    g.modifyStatus id (fun s => { s with impendingPaid := true, notACreature := true })
   | .grantedStatic id ab =>
     g.modifyStatus id (fun s => { s with grantedStaticAbilities := s.grantedStaticAbilities.push ab })
   | .grantedTriggered id ab untilEot =>
@@ -1891,7 +1889,7 @@ def syncImpendingNotACreature (g : Game) (id : ObjectId) : Game :=
       if o.status.notACreature || g.hasActiveEffect (.notACreature id) then
         g.expireAll (.notACreature id)
       else g
-    else if o.kicked && !o.status.notACreature then
+    else if o.status.impendingPaid && !o.status.notACreature then
       g.createEffect (.notACreature id)
     else g
 

@@ -295,6 +295,7 @@ inductive StatusChange where
   | goaded (v : Bool)
   | story (v : Nat)
   | time (v : Nat)
+  | impendingPaid (v : Bool)
   | notACreature (v : Bool)
   | windcragMardu (v : Bool)
   | chosenCardType (v : Option CardType)

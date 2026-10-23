@@ -554,6 +554,8 @@ time counters are later moved onto it (CR 702.176, ruling 970). -/
         let created4 := GameEvent.createdEffectsWithId g4.events
         (GameEvent.createdEffectsWithId g1.events).isEmpty &&
           (g1.object! spellId).isCreature &&
+          !(g2.object! permId).kicked &&
+          (g2.object! permId).status.impendingPaid &&
           g2.activeEffect? eid1 == some (.notACreature permId) &&
           !(g2.object! permId).isCreature &&
           (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[eid1] &&

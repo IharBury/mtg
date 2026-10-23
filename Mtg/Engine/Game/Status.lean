@@ -239,6 +239,8 @@ structure Status where
   story : Nat := 0
   /-- Time counters (impending, CR 702.176). -/
   time : Nat := 0
+  /-- This spell or permanent was cast for its impending cost (CR 702.176). -/
+  impendingPaid : Bool := false
   /-- This permanent is not a creature (impending, until the last time counter). -/
   notACreature : Bool := false
   /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
