@@ -41,6 +41,7 @@ inductive CounterKind where
   | deathtouch
   | firstStrike
   | doubleStrike
+  | poison
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CounterKind
@@ -77,13 +78,15 @@ def oracleName : CounterKind → String
   | .deathtouch => "deathtouch"
   | .firstStrike => "first strike"
   | .doubleStrike => "double strike"
+  | .poison => "poison"
 
 /-- Every counter kind, in constructor order. -/
 def all : List CounterKind := [
   .plusOnePlusOne, .minusOneMinusOne, .loyalty, .hope, .charge, .stun, .shield,
   .finality, .plan, .burden, .quest, .invasion, .influence, .trample,
   .indestructible, .lifelink, .hone, .shadow, .lore, .story, .time, .haste,
-  .vigilance, .flying, .menace, .reach, .deathtouch, .firstStrike, .doubleStrike
+  .vigilance, .flying, .menace, .reach, .deathtouch, .firstStrike, .doubleStrike,
+  .poison
 ]
 
 private def words (s : String) : List String :=

@@ -176,8 +176,10 @@ def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
-  let g := g.changeStatus o.id (.indestructibleCounters (s.indestructibleCounters + n))
+  let putter := byPlayer.orElse (fun _ => o.controller)
+  let g :=
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .indestructible n)
+    else g
   let g := g.logMsg s!"{o.name} gets an indestructible counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
@@ -185,8 +187,10 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
-  let g := g.changeStatus o.id (.lifelinkCounters (s.lifelinkCounters + n))
+  let putter := byPlayer.orElse (fun _ => o.controller)
+  let g :=
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .lifelink n)
+    else g
   let g := g.logMsg s!"{o.name} gets a lifelink counter"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
 
@@ -194,8 +198,10 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
-  let g := g.changeStatus o.id (.burden (s.burden + n))
+  let putter := byPlayer.orElse (fun _ => o.controller)
+  let g :=
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n)
+    else g
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
   if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
@@ -213,11 +219,9 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
     if n == 0 then g
     else
-      let g := g.changeStatus o.id (.addCounters kind n)
-      let g := g.logMsg s!"{o.name} gets {kind.countersPhrase n}"
       let putter := byPlayer.orElse (fun _ => o.controller)
       let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
-      let g := g.record happened
+      let g := (g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
       if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
         g.queueGoblinOrcArmyCounterTriggers o
       else g
@@ -284,7 +288,7 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
-  let g := g.changeStatus o.id (.addDamage n false)
+  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n false)
   let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"

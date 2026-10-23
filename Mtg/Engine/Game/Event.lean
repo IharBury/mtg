@@ -606,7 +606,216 @@ inductive ContinuousEffect where
   | powerUpsForbiddenThisTurn
 deriving Repr, Inhabited, BEq
 
-/-- A one-shot effect (CR 610) that does something just once and has no duration. -/
+/-- A game rule that causes an event directly (CR 103.5, 304.2, 307.2, 701.3d, 800.4a). -/
+inductive GameRuleKind where
+  | openingHandDraw
+  | mulligan
+  | instantOrSorceryFinishedResolving
+  | unattachOnHostLeave
+  | playerLeftGame
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A turn-based action (CR 703.4). -/
+inductive TurnBasedAction where
+  | phaseInOut          -- 502.1 / 703.4a
+  | dayNightCheck       -- 502.2 / 703.4b
+  | untapAll            -- 502.3 / 703.4c
+  | drawStepDraw        -- 504.1 / 703.4d
+  | sagaLoreOnMain      -- 714.3b / 703.4f
+  | declareAttackers    -- 508.1 / 703.4h
+  | declareBlockers     -- 509.1 / 703.4i
+  | assignCombatDamage (firstStrike : Bool)  -- 510.1 / 510.4 / 703.4j
+  | dealCombatDamage   (firstStrike : Bool)  -- 510.2 / 510.4 / 703.4k
+  | removeFromCombatAtEndOfCombat            -- 511.3 / 703.4m
+  | cleanupDiscard      -- 514.1 / 703.4n
+  | cleanupClear        -- 514.2 / 703.4p (damage + until-EOT effects)
+  | emptyManaPools      -- 500.4 / 703.4q
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A state-based action (CR 704.5 / 704.6). -/
+inductive StateBasedAction where
+  | lifeZeroOrLess      -- 704.5a
+  | drewFromEmpty       -- 704.5b
+  | tenPoison           -- 704.5c
+  | tokenOutsideBattlefield  -- 704.5d
+  | copyOutsideStackOrBf     -- 704.5e
+  | zeroOrLessToughness -- 704.5f
+  | lethalDamage        -- 704.5g
+  | deathtouchDamage    -- 704.5h
+  | zeroLoyalty         -- 704.5i
+  | legendRule          -- 704.5j
+  | worldRule           -- 704.5k
+  | illegalAura         -- 704.5m
+  | illegalEquipmentOrFortification  -- 704.5n
+  | illegalCreatureAttachment        -- 704.5p
+  | counterAnnihilation -- 704.5q (+1/+1 and -1/-1)
+  | counterLimit        -- 704.5r
+  | sagaFinalChapter    -- 704.5s / 714.4
+  | dungeonCompleted    -- 704.5t
+  | spaceSculptor       -- 704.5u
+  | zeroDefenseBattle   -- 704.5v
+  | illegalBattleProtector -- 704.5w
+  | siegeCompleted      -- 704.5x
+  | roleLimit           -- 704.5y
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A special action (CR 116.2). -/
+inductive SpecialActionKind where
+  | playLand            -- 116.2a / 305.1
+  | turnFaceUp          -- 116.2b / 702.37e
+  | suspend             -- 116.2f / 702.62a
+  | companionToHand     -- 116.2g / 702.139a
+  | foretell            -- 116.2h / 702.143a
+  | plot                -- 116.2k / 702.170a
+  | unlockDoor          -- 116.2m / 709.5
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A cost payment kind (CR 118, 601.2h, 602.2b). -/
+inductive CostKind where
+  | mana                -- 118.3
+  | tap                 -- 118.3 / 602.2b ({T} symbol or "Tap an untapped …")
+  | untap               -- 118.3 ({Q} symbol)
+  | life                -- 118.3 / 119.4 ("Pay N life")
+  | sacrifice           -- 118.3 / 701.21
+  | discard             -- 118.3 / 701.9
+  | exile               -- 118.3 / 406
+  | removeCounters      -- 118.3 / 122.1
+  | loyalty             -- 606.4 (+N, -N, 0 on a planeswalker)
+  | collectEvidence     -- 701.59
+  | behold              -- 701.62
+  | waterbend           -- 701.67
+  | convoke             -- 702.51
+  | delve               -- 702.66
+  | emerge              -- 702.119
+  | casualty            -- 702.153
+  | bargain             -- 702.166
+  | ward                -- 702.21
+  | teamwork            -- set mechanic (tap two untapped teammates)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Identifier for a replacement or prevention effect (CR 614 / 615). -/
+structure ReplacementId where
+  raw : Nat
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Every rules event carries the CR mechanism that caused it (CR 603.2, 610.1,
+703.1, 704.1, 116.1, 118.1, 614.1, 615.1). -/
+inductive EventCause where
+  /-- A rule of the game (e.g., 103.5 draw, 307.2 sorcery goes to graveyard). -/
+  | gameRule (rule : GameRuleKind)
+  /-- A turn-based action (703.4). -/
+  | turnBased (action : TurnBasedAction)
+  /-- A state-based action (704.5). -/
+  | stateBased (sba : StateBasedAction)
+  /-- A special action (116.2). -/
+  | specialAction (kind : SpecialActionKind) (player : PlayerId)
+  /-- Payment of a cost (118, 601.2h, 602.2b). -/
+  | costPayment (kind : CostKind) (payer : PlayerId) (forObject : Option ObjectId := none)
+  /-- Resolution of a one-shot effect (610.1) from a spell or ability. -/
+  | oneShotEffect (id : EffectId) (source : Option ObjectId := none)
+      (controller : Option PlayerId := none)
+  /-- A replacement effect (614) or prevention effect (615) modified a prior
+  proposed event. `replacedBatch` links to the batch being replaced. -/
+  | replaced (byEffect : ReplacementId) (replacedBatch : BatchId)
+  /-- Migration escape hatch while call sites are being converted.
+  Removed in Phase 9. -/
+  | unclassified
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Who or what receives or loses counters (CR 122.1). -/
+inductive CounterTarget where
+  | object (o : EventObject)
+  | player (p : PlayerId)
+deriving Repr, Inhabited, BEq
+
+/-- Whether counters are put on or removed from a target (CR 122.1). -/
+inductive CounterDelta where
+  | put (count : Nat)
+  | removed (count : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Designations a permanent can have on the battlefield (CR 110.6 / 701.15b / 701.49c). -/
+inductive PermanentDesignation where
+  | monstrous                     -- 701.37b
+  | renowned                      -- 701.38b
+  | suspected                     -- 701.60b
+  | saddled                       -- 702.171a
+  | ringBearer                    -- 701.54a
+  | commander                     -- 903.3
+  | goaded (byPlayer : PlayerId)  -- 701.15b
+  | prepared                      -- set mechanic
+  | harnessed                     -- set mechanic
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Permanent status, counter, attachment, control, and designation events
+(CR 110.5, 122, 701.3, 701.26, 702.26, 708, 712). -/
+inductive PermanentEvent where
+  | tapped (object : EventObject) (duringControllersTurn : Bool := false)    -- 701.26a
+  | untapped (object : EventObject)                                          -- 701.26b
+  | phasedOut (object : EventObject) (indirectly : Bool := false)            -- 702.26b / 702.26g
+  | phasedIn (object : EventObject) (indirectly : Bool := false)             -- 702.26c / 702.26g
+  | transformed (object : EventObject) (nowBackFace : Bool)                  -- 701.27a / 712.18
+  | turnedFaceUp (object : EventObject)                                      -- 701.40b / 708.8
+  | turnedFaceDown (object : EventObject)                                    -- 701.40f / 708.2
+  | counters
+      (target : CounterTarget)
+      (kind : CounterKind)
+      (delta : CounterDelta)
+      (actor : Option PlayerId := none)                                      -- 122.1
+  | attached (attachment : EventObject) (host : ObjectId)
+      (previous : Option ObjectId := none)                                   -- 701.3a / 303.4 / 301.5
+  | unattached (attachment : EventObject) (fromHost : ObjectId)              -- 701.3d / 704.5n / 704.5p
+  | controlChanged (object : EventObject) (fromPlayer toPlayer : PlayerId)   -- 110.2 / 613.1b
+  | designation (object : EventObject) (d : PermanentDesignation) (gained : Bool)
+deriving Repr, Inhabited, BEq
+
+/-- Who or what receives damage (CR 120.1 / 120.2). -/
+inductive DamageRecipient where
+  | player (p : PlayerId)
+  | creature (id : ObjectId)
+  | planeswalker (id : ObjectId)
+  | battle (id : ObjectId)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- One packet of damage dealt by a source to a recipient (CR 120.3 / 120.4b). -/
+structure DamagePacket where
+  source : EventObject
+  recipient : DamageRecipient
+  amount : Nat
+  combat : Bool := false
+  deathtouch : Bool := false
+  lifelink : Bool := false
+  unpreventable : Bool := false
+  recipientObject : Option EventObject := none
+deriving Repr, Inhabited, BEq
+
+/-- Damage facts and damage results (CR 120.3 / 120.4b). -/
+inductive DamageEvent where
+  /-- The fact that damage was dealt (120.4b). State changes are in the
+  accompanying result events in the same batch. -/
+  | dealt (packets : Array DamagePacket)
+  /-- Result of damage to a creature (120.3e): only writer of `status.damage`. -/
+  | marked (object : ObjectId) (amount : Nat) (deathtouch : Bool := false)
+  /-- Result of cleanup (514.2) or regeneration (701.19a): clears marked damage. -/
+  | markedCleared (objects : Array ObjectId)
+  /-- Damage that was prevented (615.1 / 615.6). -/
+  | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)
+deriving Repr, Inhabited, BEq
+
+/-- Life gain and life loss events (CR 119.2 / 119.3). -/
+inductive LifeEvent where
+  /-- Result of lifelink (120.3f) or a "gain N life" instruction (119.2):
+  only writer that increases `Player.life`. -/
+  | gained (player : PlayerId) (amount : Nat)
+  /-- Result of damage to a player (120.3a), "lose N life" (119.3), or
+  "pay N life" (119.4): only writer that decreases `Player.life`. -/
+  | lost (player : PlayerId) (amount : Nat)
+      (fromDamage : Bool := false) (combat : Bool := false)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A one-shot effect (CR 610) that does something just once and has no duration.
+Kept during migration as a temporary constructor that lowers to the durable
+`RulesEvent` constructors. -/
 inductive OneShotEffect where
   /-- `object` moved from `fromZone` to `toZone` (CR 610.1 / 610.3).
   A creature moving from the battlefield to a graveyard died (CR 700.4).
@@ -626,23 +835,23 @@ inductive OneShotEffect where
   | damaged (source : Option ObjectId) (object : EventObject) (amount : Nat) (combat : Bool)
   /-- `amount` damage was dealt to `player` (CR 120 / 610.1). -/
   | damagedPlayer (source : Option ObjectId) (player : PlayerId) (amount : Nat) (combat : Bool)
-  /-- `object` became tapped (`nowTapped`) or the tap was the change (CR 701.21 / 610.1).
+  /-- `object` became tapped (`nowTapped`) or the tap was the change (CR 701.26a / 610.1).
   `duringControllersTurn` is true on that object's controller's turn. -/
   | tapped (object : EventObject) (nowTapped duringControllersTurn : Bool)
-  /-- `object` untapped (CR 701.21b / 610.1). `replacedByStun` means a stun
+  /-- `object` untapped (CR 701.26b / 610.1). `replacedByStun` means a stun
   counter was removed instead, so the untap did not happen (CR 122.1d). -/
   | untapped (object : EventObject) (replacedByStun : Bool := false)
   /-- `n` counters of `kind` were put on or removed from `object` (CR 122 / 610.1).
   `removed` is a removal. -/
   | counters (player : Option PlayerId) (object : EventObject) (kind : CounterKind)
       (n : Nat) (removed : Bool := false)
-  /-- `player` looked at `n` cards by scrying, or by surveilling when `surveil` (CR 701.20 / 701.42 / 610.1).
+  /-- `player` looked at `n` cards by scrying, or by surveilling when `surveil` (CR 701.22 / 701.25 / 610.1).
   `asked` is the printed number. Scry 0 is not recorded. Scrying a positive
-  number still happens when the library has fewer cards (CR 701.20). -/
+  number still happens when the library has fewer cards (CR 701.22). -/
   | looked (player : PlayerId) (n : Nat) (surveil : Bool := false) (asked : Nat := n)
-  /-- `player` sacrificed `object`, and the sacrifice was not replaced (CR 701.17 / 610.1). -/
+  /-- `player` sacrificed `object`, and the sacrifice was not replaced (CR 701.21 / 610.1). -/
   | sacrificed (player : PlayerId) (object : EventObject)
-  /-- `player` created `object` (CR 111 / 701.6 / 610.1). -/
+  /-- `player` created `object` (CR 111 / 701.7 / 610.1). -/
   | created (player : PlayerId) (object : EventObject)
   /-- `object` changed controller from `fromPlayer` to `toPlayer`. -/
   | control (object : ObjectId) (fromPlayer toPlayer : PlayerId)
@@ -651,18 +860,24 @@ inductive OneShotEffect where
   | resolved (player : PlayerId) (nth : Nat)
   /-- `object` became attached to `host` (CR 701.3 / 610.1). -/
   | attached (object host : ObjectId)
-  /-- `player` beheld `quality` (CR 610.1). Later zone changes do not undo it. -/
+  /-- `player` beheld `quality` (CR 701.62 / 610.1). Later zone changes do not undo it. -/
   | beheld (player : PlayerId) (quality : CardSubtype)
   /-- `player` got `n` poison counters (CR 122.1c / 610.1). -/
   | poisoned (player : PlayerId) (n : Nat)
-  /-- `player` proliferated (CR 701.27 / 610.1). -/
+  /-- `player` proliferated (CR 701.34 / 610.1). -/
   | proliferated (player : PlayerId)
   /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
   | sheHulkDealtDamage (player : PlayerId)
 deriving Repr, Inhabited, BEq
 
-/-- One change to the game, without the turn number. `GameEvent` stores the turn. -/
-inductive GameChange where
+/-- A rules-level occurrence in the game (CR 603.2 / 610 / 611 / 614). -/
+inductive RulesEvent where
+  /-- Permanent status, counter, attachment, control, and designation events. -/
+  | permanent (e : PermanentEvent)
+  /-- Damage facts and damage results. -/
+  | damage (e : DamageEvent)
+  /-- Life gain and life loss events. -/
+  | life (e : LifeEvent)
   /-- `player` cast `spell` from `fromZone`. `manaSpent` is the mana paid. -/
   | cast (player : PlayerId) (spell : EventObject) (fromZone : Zone)
       (manaValue manaSpent : Nat) (fromGraveyard teamwork gift : Bool := false)
@@ -679,7 +894,8 @@ inductive GameChange where
   /-- `player` played `land` as a land drop (CR 305.1). Putting a land onto
   the battlefield another way is not a play. -/
   | playedLand (player : PlayerId) (land : EventObject)
-  /-- A one-shot effect is applied (CR 610). -/
+  /-- A one-shot effect is applied (CR 610). Kept only for variants not yet
+  migrated to durable `RulesEvent` constructors. -/
   | effectApplied (id : EffectId) (effect : OneShotEffect)
   /-- A continuous effect begins (CR 611). -/
   | effectCreated (id : EffectId) (effect : ContinuousEffect)
@@ -689,6 +905,88 @@ inductive GameChange where
   counter, or last-known information after its source left), keeping the same
   `EffectId`. This neither creates nor ends an effect (CR 611). -/
   | effectUpdated (id : EffectId) (effect : ContinuousEffect)
+deriving Repr, Inhabited, BEq
+
+namespace OneShotEffect
+
+/-- Lower a `OneShotEffect` to its durable `RulesEvent` constructor. -/
+def toRulesEvent (id : EffectId) : OneShotEffect → RulesEvent
+  | .tapped object true during => .permanent (.tapped object during)
+  | .tapped object false _ => .permanent (.untapped object)
+  | .untapped object false => .permanent (.untapped object)
+  | .untapped object true => .permanent (.counters (.object object) .stun (.removed 1) none)
+  | .counters actor object kind n false =>
+    .permanent (.counters (.object object) kind (.put n) actor)
+  | .counters actor object kind n true =>
+    .permanent (.counters (.object object) kind (.removed n) actor)
+  | .poisoned player n =>
+    .permanent (.counters (.player player) .poison (.put n) none)
+  | .attached object host =>
+    .permanent (.attached { id := object } host none)
+  | .control object fromP toP =>
+    .permanent (.controlChanged { id := object } fromP toP)
+  | .life player amount true _ _ =>
+    .life (.gained player amount)
+  | .life player amount false fromDamage combat =>
+    .life (.lost player amount fromDamage combat)
+  | .damaged source object amount combat =>
+    let recp :=
+      if object.planeswalker then DamageRecipient.planeswalker object.id
+      else .creature object.id
+    .damage (.dealt #[{
+      source := { id := source.getD ⟨0⟩ }
+      recipient := recp
+      amount := amount
+      combat := combat
+      recipientObject := some object }])
+  | .damagedPlayer source player amount combat =>
+    .damage (.dealt #[{
+      source := { id := source.getD ⟨0⟩ }
+      recipient := .player player
+      amount := amount
+      combat := combat }])
+  | eff => .effectApplied id eff
+
+end OneShotEffect
+
+namespace RulesEvent
+
+/-- Reconstruct a `OneShotEffect` view of a `RulesEvent` for legacy callers of
+`appliedEffectsWithId` / `appliedEffects` until `OneShotEffect` is removed in
+Phase 3. -/
+def toOneShotEffect? : RulesEvent → Option OneShotEffect
+  | .effectApplied _ eff => some eff
+  | .permanent (.tapped object during) => some (.tapped object true during)
+  | .permanent (.untapped object) => some (.untapped object false)
+  | .permanent (.counters (.object object) kind (.put n) actor) =>
+    some (.counters actor object kind n false)
+  | .permanent (.counters (.object object) kind (.removed n) actor) =>
+    some (.counters actor object kind n true)
+  | .permanent (.counters (.player p) .poison (.put n) _) =>
+    some (.poisoned p n)
+  | .permanent (.attached attachment host _) =>
+    some (.attached attachment.id host)
+  | .permanent (.controlChanged object fromP toP) =>
+    some (.control object.id fromP toP)
+  | .life (.gained p amount) =>
+    some (.life p amount true false false)
+  | .life (.lost p amount fromDamage combat) =>
+    some (.life p amount false fromDamage combat)
+  | .damage (.dealt pkts) =>
+    match pkts[0]? with
+    | some pkt =>
+      let src := if pkt.source.id == ⟨0⟩ then none else some pkt.source.id
+      match pkt.recipient, pkt.recipientObject with
+      | .player p, _ => some (.damagedPlayer src p pkt.amount pkt.combat)
+      | _, some obj => some (.damaged src obj pkt.amount pkt.combat)
+      | _, none => none
+    | none => none
+  | _ => none
+
+end RulesEvent
+
+/-- Internal engine state mutations that are not rules-level occurrences. -/
+inductive EngineChange where
   /-- Update a player's state. -/
   | player (p : PlayerId) (c : PlayerChange)
   | playerChanges (p : PlayerId) (cs : Array PlayerChange)
@@ -873,184 +1171,262 @@ inductive GameChange where
   | clearEvents
 deriving Repr, Inhabited, BEq
 
+/-- One change to the game, without the turn number. `GameEvent` stores the turn,
+batch, and cause. -/
+inductive GameChange where
+  | rules (e : RulesEvent)
+  | engine (c : EngineChange)
+deriving Repr, Inhabited, BEq
+
 /-- A game state change on a given turn (CR 500). `Game.events` records each
 one that happens. -/
 structure GameEvent where
   turn : Nat
+  batch : BatchId := ⟨0⟩
+  cause : EventCause
   change : GameChange
 deriving Repr, Inhabited, BEq
 
 namespace GameEvent
 
-/-- A one-shot effect is applied (CR 610). -/
+/-- Migration helper for sites that have not yet classified their `EventCause`. -/
+def unclassified (turn : Nat) (change : GameChange) (batch : BatchId := ⟨0⟩) : GameEvent :=
+  { turn, batch, cause := .unclassified, change }
+
+/-- Construct a `GameEvent` from a `RulesEvent` with an explicit `EventCause`. -/
+def rules (turn : Nat) (e : RulesEvent) (cause : EventCause)
+    (batch : BatchId := ⟨0⟩) : GameEvent :=
+  { turn, batch, cause, change := .rules e }
+
+/-- Construct an internal `EngineChange` event. -/
+def engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩) : GameEvent :=
+  unclassified turn (.engine c) batch
+
+/-- A one-shot effect is applied (CR 610). Lowers to the durable `RulesEvent`
+constructors. -/
 def effectApplied (turn : Nat) (id : EffectId) (effect : OneShotEffect) : GameEvent :=
-  ⟨turn, .effectApplied id effect⟩
+  rules turn (effect.toRulesEvent id) (.oneShotEffect id)
 
 /-- `object` moved from `fromZone` to `toZone` (CR 610.1 / 610.3). -/
 def moved (turn : Nat) (object : EventObject) (fromZone toZone : Zone)
     (sacrificed : Bool := false) (discarded : Bool := false)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.moved object fromZone toZone sacrificed discarded)⟩
+  effectApplied turn id (.moved object fromZone toZone sacrificed discarded)
 
 /-- `player` drew `card` as the `nth` card this turn (CR 610.1). -/
 def drew (turn : Nat) (player : PlayerId) (card : ObjectId) (nth : Nat)
     (firstOfOwnDrawStep : Bool := false) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.drew player card nth firstOfOwnDrawStep)⟩
+  effectApplied turn id (.drew player card nth firstOfOwnDrawStep)
 
-/-- `player` gained or lost life (CR 610.1). -/
+/-- `player` gained or lost life (CR 119.2 / 119.3). -/
 def life (turn : Nat) (player : PlayerId) (amount : Nat)
     (gained : Bool := false) (fromDamage : Bool := false) (combat : Bool := false)
-    (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.life player amount gained fromDamage combat)⟩
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  let ev :=
+    if gained then LifeEvent.gained player amount
+    else .lost player amount fromDamage combat
+  rules turn (.life ev) cause
 
-/-- Damage was dealt to an object (CR 610.1). -/
+/-- Damage was dealt to an object (CR 120.3 / 120.4b). -/
 def damaged (turn : Nat) (source : Option ObjectId) (object : EventObject)
-    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.damaged source object amount combat)⟩
+    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩)
+    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  let recp :=
+    if object.planeswalker then DamageRecipient.planeswalker object.id
+    else .creature object.id
+  rules turn (.damage (.dealt #[{
+    source := { id := source.getD ⟨0⟩ }
+    recipient := recp
+    amount := amount
+    combat := combat
+    recipientObject := some object }])) cause
 
-/-- Damage was dealt to a player (CR 610.1). -/
+/-- Damage was dealt to a player (CR 120.3a / 120.4b). -/
 def damagedPlayer (turn : Nat) (source : Option ObjectId) (player : PlayerId)
-    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.damagedPlayer source player amount combat)⟩
+    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩)
+    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.damage (.dealt #[{
+    source := { id := source.getD ⟨0⟩ }
+    recipient := .player player
+    amount := amount
+    combat := combat }])) cause
+
+/-- Result of damage to a creature (CR 120.3e): marks `amount` damage on `object`. -/
+def damageMarked (turn : Nat) (object : ObjectId) (amount : Nat)
+    (deathtouch : Bool := false) (id : EffectId := ⟨0⟩)
+    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.damage (.marked object amount deathtouch)) cause
+
+/-- Result of cleanup (CR 514.2) or regeneration (CR 701.19a): clears marked damage. -/
+def damageMarkedCleared (turn : Nat) (objects : Array ObjectId)
+    (cause : EventCause := .turnBased .cleanupClear) : GameEvent :=
+  rules turn (.damage (.markedCleared objects)) cause
+
+/-- Damage that was prevented (CR 615.1 / 615.6). -/
+def damagePrevented (turn : Nat) (source : EventObject)
+    (recipient : DamageRecipient) (amount : Nat)
+    (cause : EventCause := .replaced ⟨0⟩ ⟨0⟩) : GameEvent :=
+  rules turn (.damage (.prevented source recipient amount)) cause
 
 /-- `player` cast `spell`. -/
 def cast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)
     (manaValue : Nat := 0) (manaSpent : Nat := 0)
     (fromGraveyard : Bool := false) (teamwork : Bool := false) (gift : Bool := false) : GameEvent :=
-  ⟨turn, .cast player spell fromZone manaValue manaSpent fromGraveyard teamwork gift⟩
+  unclassified turn (.rules (.cast player spell fromZone manaValue manaSpent fromGraveyard teamwork gift))
 
 /-- `player` attacked `whom` with `attacker`. -/
 def attacked (turn : Nat) (player : PlayerId) (attacker : EventObject) (whom : PlayerId) : GameEvent :=
-  ⟨turn, .attacked player attacker whom⟩
+  rules turn (.attacked player attacker whom) (.turnBased .declareAttackers)
 
-/-- `object` became tapped or untapped by a tap action (CR 610.1). `nowTapped` is the result. -/
-def tapped (turn : Nat) (object : EventObject) (nowTapped : Bool)
-    (duringControllersTurn : Bool := false) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.tapped object nowTapped duringControllersTurn)⟩
+/-- `object` became tapped or untapped by a tap action (CR 701.26a). `nowTapped` is the result. -/
+def tapped (turn : Nat) (object : EventObject) (nowTapped : Bool := true)
+    (duringControllersTurn : Bool := false) (id : EffectId := ⟨0⟩)
+    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  if nowTapped then
+    rules turn (.permanent (.tapped object duringControllersTurn)) cause
+  else
+    rules turn (.permanent (.untapped object)) cause
 
-/-- Counters were put on or removed from `object` (CR 610.1). -/
+/-- Counters were put on or removed from `object` (CR 122.1). -/
 def counters (turn : Nat) (player : Option PlayerId) (object : EventObject)
     (kind : CounterKind) (n : Nat) (removed : Bool := false)
-    (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.counters player object kind n removed)⟩
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  let delta := if removed then CounterDelta.removed n else .put n
+  rules turn (.permanent (.counters (.object object) kind delta player)) cause
 
-/-- `player` scried or surveilled (CR 610.1). `n` cards were looked at. `asked` is the
+/-- `player` scried or surveilled (CR 701.22 / 701.25 / 610.1). `n` cards were looked at. `asked` is the
 printed number; it defaults to `n`. -/
 def looked (turn : Nat) (player : PlayerId) (n : Nat) (surveil : Bool := false)
     (asked : Nat := n) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.looked player n surveil asked)⟩
+  effectApplied turn id (.looked player n surveil asked)
 
-/-- `player` sacrificed `object` (CR 610.1). -/
+/-- `player` sacrificed `object` (CR 701.21 / 610.1). -/
 def sacrificed (turn : Nat) (player : PlayerId) (object : EventObject)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.sacrificed player object)⟩
+  effectApplied turn id (.sacrificed player object)
 
-/-- `player` created `object` (CR 610.1). -/
+/-- `player` created `object` (CR 111 / 701.7 / 610.1). -/
 def created (turn : Nat) (player : PlayerId) (object : EventObject)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.created player object)⟩
+  effectApplied turn id (.created player object)
 
-/-- `object` changed controller from `fromPlayer` to `toPlayer`. -/
+/-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
 def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
-    (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.control object fromPlayer toPlayer)⟩
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.permanent (.controlChanged { id := object } fromPlayer toPlayer)) cause
 
 /-- The step or phase changed. -/
 def stepped (turn : Nat) (step : Step) (active : PlayerId) : GameEvent :=
-  ⟨turn, .stepped step active⟩
+  unclassified turn (.rules (.stepped step active))
 
 /-- `player` activated an ability of `source`. `equip` is set when the
 activation has been completed, so a proposal still being paid does not count. -/
 def activated (turn : Nat) (player : PlayerId) (source : EventObject)
     (loyalty : Bool := false) (equip : Bool := false) : GameEvent :=
-  ⟨turn, .activated player source loyalty equip⟩
+  unclassified turn (.rules (.activated player source loyalty equip))
 
-/-- `player` played `land`. -/
+/-- `player` played `land` (CR 116.2a / 305.1). -/
 def playedLand (turn : Nat) (player : PlayerId) (land : EventObject) : GameEvent :=
-  ⟨turn, .playedLand player land⟩
+  rules turn (.playedLand player land) (.specialAction .playLand player)
 
 /-- The `nth` counted resolution for `player` this turn (CR 610.1). -/
 def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.resolved player nth)⟩
+  effectApplied turn id (.resolved player nth)
 
-/-- `object` became attached to `host` (CR 610.1). -/
-def attached (turn : Nat) (object host : ObjectId) (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.attached object host)⟩
+/-- `object` became attached to `host` (CR 701.3a / 303.4 / 301.5). -/
+def attached (turn : Nat) (object host : ObjectId)
+    (previous : Option ObjectId := none) (id : EffectId := ⟨0⟩)
+    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.permanent (.attached { id := object } host previous)) cause
 
-/-- `player` beheld `quality` (CR 610.1). -/
+/-- `attachment` became unattached from `fromHost` (CR 701.3d / 704.5n / 704.5p). -/
+def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.permanent (.unattached attachment fromHost)) cause
+
+/-- `player` beheld `quality` (CR 701.62 / 610.1). -/
 def beheld (turn : Nat) (player : PlayerId) (quality : CardSubtype)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.beheld player quality)⟩
+  effectApplied turn id (.beheld player quality)
 
-/-- `player` spent mana. -/
+/-- `player` spent mana (CR 118.3). -/
 def spentMana (turn : Nat) (player : PlayerId) (amount : Nat) : GameEvent :=
-  ⟨turn, .spentMana player amount⟩
+  rules turn (.spentMana player amount) (.costPayment .mana player)
 
-/-- `player` got poison counters (CR 610.1). -/
+/-- `player` got poison counters (CR 122.1c). -/
 def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
-    (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.poisoned player n)⟩
+    (byPlayer : Option PlayerId := none)
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  rules turn (.permanent (.counters (.player player) .poison (.put n) byPlayer)) cause
 
-/-- `player` proliferated (CR 610.1). -/
+/-- `player` proliferated (CR 701.34 / 610.1). -/
 def proliferated (turn : Nat) (player : PlayerId)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.proliferated player)⟩
+  effectApplied turn id (.proliferated player)
 
 /-- `player` chose to have The Sensational She-Hulk deal damage (CR 610.1). -/
 def sheHulkDealtDamage (turn : Nat) (player : PlayerId)
     (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.sheHulkDealtDamage player)⟩
+  effectApplied turn id (.sheHulkDealtDamage player)
 
-/-- `object` untapped, or a stun counter replaced that untap (CR 610.1). -/
+/-- `object` untapped, or a stun counter replaced that untap (CR 701.26b / 122.1d). -/
 def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false)
-    (id : EffectId := ⟨0⟩) : GameEvent :=
-  ⟨turn, .effectApplied id (.untapped object replacedByStun)⟩
+    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+  if replacedByStun then
+    rules turn (.permanent (.counters (.object object) .stun (.removed 1) none))
+      (.replaced ⟨0⟩ ⟨0⟩)
+  else
+    rules turn (.permanent (.untapped object)) cause
 
 /-- A continuous effect begins (CR 611). -/
 def effectCreated (turn : Nat) (id : EffectId) (effect : ContinuousEffect) : GameEvent :=
-  ⟨turn, .effectCreated id effect⟩
+  unclassified turn (.rules (.effectCreated id effect))
 
 /-- A continuous effect ends (CR 611). -/
 def effectExpired (turn : Nat) (id : EffectId) (effect : ContinuousEffect) : GameEvent :=
-  ⟨turn, .effectExpired id effect⟩
+  unclassified turn (.rules (.effectExpired id effect))
+
+/-- Bookkeeping on an existing continuous effect `id` (CR 611). -/
+def effectUpdated (turn : Nat) (id : EffectId) (effect : ContinuousEffect) : GameEvent :=
+  unclassified turn (.rules (.effectUpdated id effect))
 
 /-- Same event, sent to `toZone` instead. Used after a zone replacement. -/
 def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEvent :=
   match e.change with
-  | .effectApplied id (.moved object fromZone _ sacrificed _) =>
-    ⟨e.turn, .effectApplied id (.moved object fromZone toZone sacrificed discarded)⟩
+  | .rules (.effectApplied id (.moved object fromZone _ sacrificed _)) =>
+    { e with change := .rules (.effectApplied id (.moved object fromZone toZone sacrificed discarded)) }
   | _ => e
 
 /-- A creature moved from the battlefield to a graveyard (CR 700.4). -/
 def isCreatureToGraveyard (e : GameEvent) : Bool :=
   match e.change with
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) => object.creature
+  | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) => object.creature
   | _ => false
 
 /-- A permanent moved from the battlefield to a graveyard. -/
 def isPermanentToGraveyard (e : GameEvent) : Bool :=
   match e.change with
-  | .effectApplied _ (.moved _ .battlefield (.graveyard _) _ _) => true
+  | .rules (.effectApplied _ (.moved _ .battlefield (.graveyard _) _ _)) => true
   | _ => false
 
 /-- An object left the stack for another zone. -/
 def leavesStack (e : GameEvent) : Bool :=
   match e.change with
-  | .effectApplied _ (.moved _ .stack toZone _ _) => toZone != .stack
+  | .rules (.effectApplied _ (.moved _ .stack toZone _ _)) => toZone != .stack
   | _ => false
 
 /-- An instant or sorcery moved from the stack to its owner's graveyard. -/
 def entersOwnGraveyardFromStack (e : GameEvent) : Bool :=
   match e.change with
-  | .effectApplied _ (.moved object .stack (.graveyard owner) _ _) =>
+  | .rules (.effectApplied _ (.moved object .stack (.graveyard owner) _ _)) =>
     object.instantOrSorcery && owner == object.owner
   | _ => false
 
 /-- A permanent entered the battlefield. -/
 def enteredBattlefield (e : GameEvent) : Bool :=
   match e.change with
-  | .effectApplied _ (.moved _ _ .battlefield _ _) => true
+  | .rules (.effectApplied _ (.moved _ _ .battlefield _ _)) => true
   | _ => false
 
 /-- The kind of event a replacement effect watches (CR 614.1). -/
@@ -1088,28 +1464,28 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
   | .wouldEnterGraveyardFromStack => e.entersOwnGraveyardFromStack
   | .wouldDraw =>
     match e.change with
-    | .effectApplied _ (.drew _ _ _ _) => true
+    | .rules (.effectApplied _ (.drew _ _ _ _)) => true
     | _ => false
   | .wouldGainLife =>
     match e.change with
-    | .effectApplied _ (.life _ _ true _ _) => true
+    | .rules (.life (.gained _ _)) => true
     | _ => false
   | .wouldDealDamage =>
     match e.change with
-    | .effectApplied _ (.damaged _ _ _ _) | .effectApplied _ (.damagedPlayer _ _ _ _) => true
+    | .rules (.damage (.dealt _)) => true
     | _ => false
   | .wouldEnterBattlefield => e.enteredBattlefield
   | .wouldCreateToken =>
     match e.change with
-    | .effectApplied _ (.created _ _) => true
+    | .rules (.effectApplied _ (.created _ _)) => true
     | _ => false
   | .wouldPutCounter =>
     match e.change with
-    | .effectApplied _ (.counters _ _ _ n false) => n > 0
+    | .rules (.permanent (.counters _ _ (.put n) _)) => n > 0
     | _ => false
   | .wouldUntap =>
     match e.change with
-    | .effectApplied _ (.untapped _ false) => true
+    | .rules (.permanent (.untapped _)) => true
     | _ => false
 
 /-- `listener`'s ability on `sourceId` triggers from this change.
@@ -1122,156 +1498,167 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
   let this (o : EventObject) : Bool := o.id == sourceId
   let yours (o : EventObject) : Bool := o.controller == some listener
   let other (o : EventObject) : Bool := o.id != sourceId
-  match e.change, te with
-  | .effectApplied _ (.drew p _ _ _), .youDraw => you p
-  | .effectApplied _ (.drew p _ nth _), .youDrawSecondCard => you p && nth == 2
-  | .effectApplied _ (.drew _ _ nth _), .anyPlayerDrawsSecond => nth == 2
-  | .effectApplied _ (.drew p _ _ first), .opponentDrawsExceptFirstDrawStep => !you p && !first
-  | .effectApplied _ (.drew p _ nth _), .opponentDrawsSecondCard => !you p && nth == 2
-  | .effectApplied _ (.life p _ true _ _), .youGainLife => you p
-  | .effectApplied _ (.life _ _ false _ _), .playerLosesLife => true
-  | .effectApplied _ (.damaged _ object _ _), .sourceDealtDamage => this object
-  | .effectApplied _ (.damaged _ object _ false), .sourceDealtNoncombatDamage => this object
-  | .effectApplied _ (.damaged _ object _ _), .creatureYouControlDealtDamage =>
-    yours object && object.creature
-  | .effectApplied _ (.damagedPlayer _ _ _ true), .dealsCombatDamageToPlayer => true
-  | .effectApplied _ (.damagedPlayer _ _ _ true), .dealsCombatDamageToPlayerOrBattle => true
-  | .effectApplied _ (.damagedPlayer _ p _ true), .combatDamageToYou => you p
-  | .effectApplied _ (.damaged _ object _ _), .heroesDealDamageToPlayer =>
-    yours object && object.hero
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .dying =>
-    this object && object.creature
-  | .effectApplied _ (.moved object .battlefield _ _ _), .leaving => this object
-  | .effectApplied _ (.moved object _ .battlefield _ _), .entering => this object
-  | .effectApplied _ (.moved object _ .battlefield _ _), .landYouControlEnters =>
-    yours object && object.land
-  | .effectApplied _ (.moved object _ .battlefield _ _), .forestYouControlEnters =>
-    yours object && object.forest
-  | .effectApplied _ (.moved object _ .battlefield _ _), .mountainYouControlEnters =>
-    yours object && object.mountain
-  | .effectApplied _ (.moved object _ .battlefield _ _), .artifactYouControlEnters =>
-    yours object && object.artifact
-  | .effectApplied _ (.moved object _ .battlefield _ _), .creatureYouControlEnters =>
-    yours object && object.creature
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherCreatureYouControlEnters =>
-    yours object && other object && object.creature
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherElfYouControlEnters =>
-    yours object && other object && object.elf
-  | .effectApplied _ (.moved object _ .battlefield _ _), .tokenYouControlEnters =>
-    yours object && object.token
-  | .effectApplied _ (.moved object _ .battlefield _ _), .equipmentYouControlEnters =>
-    yours object && object.equipment
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherArtifactEnters =>
-    yours object && other object && object.artifact
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherVillainEnters =>
-    yours object && other object && object.villain
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherVillainOrArtifactEnters =>
-    yours object && other object && (object.villain || object.artifact)
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherNontokenHeroEnters =>
-    yours object && other object && !object.token && object.hero
-  | .effectApplied _ (.moved object _ .battlefield _ _), .anotherNontokenArtifactEnters =>
-    yours object && other object && !object.token && object.artifact
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .creatureYouControlDies =>
-    yours object && object.creature
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .nontokenYouControlDies =>
-    yours object && object.creature && !object.token
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .anotherGoblinOrcArmyDies =>
-    yours object && other object && object.creature && object.goblinOrcArmy
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .villainYouControlDies =>
-    yours object && other object && object.creature && object.villain
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .attackingCreatureYouControlDies =>
-    yours object && object.creature && object.attacking
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .oneOrMoreOtherCreaturesDie =>
-    other object && object.creature
-  | .effectApplied _ (.moved object .battlefield (.hand _) _ _), .anotherNonlandReturned =>
-    yours object && other object && !object.land
-  | .effectApplied _ (.moved object (.graveyard owner) _ _ _), .creatureCardLeavesYourGy =>
-    you owner && object.creature
-  | .effectApplied _ (.moved object _ (.graveyard owner) _ _), .creatureCardsPutIntoYourGy =>
-    you owner && object.creature && !object.token
-  | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .youDiscard =>
-    you p && p == q
-  | .effectApplied _ (.moved object (.hand p) (.graveyard q) _ true), .fra .youDiscardThis =>
-    you p && p == q && this object
-  | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .fra .youDiscardOne =>
-    you p && p == q
-  | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .fra .playerDiscards =>
-    p == q
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .enchantedDies =>
-    object.creature
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .nontokenCreatureYouControlDies =>
-    yours object && object.creature && !object.token
-  | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .anotherCreatureOrPlaneswalkerYouControlDies =>
-    yours object && other object && (object.creature || object.planeswalker)
-  | .effectApplied _ (.moved object .battlefield _ _ _), .fra .creatureYouControlLeaves =>
-    yours object && other object && object.creature
-  | .effectApplied _ (.moved object _ .battlefield _ _), .subtypeYouControlEnters sub =>
-    yours object && object.hasSubtype sub
-  | .cast p spell _ _ _ _ _ _, .youCastInstantOrSorcery =>
-    you p && spell.instantOrSorcery
-  | .cast p spell _ _ _ _ _ _, .youCastNoncreature =>
-    you p && !spell.creature
-  | .cast p spell _ _ _ _ _ _, .youCastCreature =>
-    you p && spell.creature
-  | .cast p _ _ _ _ _ _ _, .youCastSpell => you p
-  | .cast p _ _ _ _ _ _ _, .youCastColor _ => you p
-  | .cast p _ (.hand _) _ _ _ _ _, .youCastColorFromHand _ => you p
-  | .cast p _ _ _ _ _ _ _, .youCastGreen => you p
-  | .cast p spell _ _ _ _ _ _, .youCastVillain => you p && spell.villain
-  | .cast p _ _ _ _ _ _ _, .opponentCastsSpell => !you p
-  | .cast p spell _ _ _ _ _ _, .youCastFirstNoncreature => you p && !spell.creature
-  | .cast p _ _ _ _ _ _ _, .youCastSecondSpell => you p
-  | .cast _ _ _ _ _ _ _ _, .anyPlayerCastsSecondSpell => true
-  | .cast p _ _ _ _ _ _ _, .opponentCastsFirstNoncreature => !you p
-  | .cast p spell _ _ _ _ _ _, .fra .castThis => you p && this spell
-  | .attacked p attacker _, .attacking => you p && this attacker
-  | .attacked p _ _, .youAttack => you p
-  | .attacked p attacker _, .youAttackWithElves => you p && attacker.elf
-  | .attacked p _ _, .youAttackWithTwoOrMore => you p
-  | .attacked p attacker _, .creatureYouControlAttacksAlone =>
-    you p && attacker.creature
-  | .attacked p _ _, .equippedAttacks => you p
-  | .attacked p attacker _, .equippedCreatureYouControlAttacks =>
-    you p && attacker.creature
-  | .attacked p attacker _, .merfolkAttackPlayer => you p && attacker.merfolk
-  | .attacked p attacker _, .fra .creatureYouControlAttacks =>
-    you p && attacker.creature
-  | .effectApplied _ (.tapped object true _), .sourceBecomesTapped => this object
-  | .effectApplied _ (.tapped object true _), .creaturesYouControlBecomeTapped =>
-    yours object && object.creature
-  | .effectApplied _ (.tapped object true _), .equippedBecomesTapped => object.creature
-  | .effectApplied _ (.tapped object true during), .creatureYouControlTapped =>
-    yours object && object.creature && during
-  | .effectApplied _ (.looked p _ false asked), .youScry => you p && asked > 0
-  | .effectApplied _ (.looked p _ _ asked), .youScryOrSurveil => you p && asked > 0
-  | .effectApplied _ (.counters (some p) _ .plusOnePlusOne n false), .youPutPlusOne =>
-    you p && n > 0
-  | .effectApplied _ (.counters (some p) object _ n false), .youPutCountersOnGoblinOrcArmy =>
-    you p && n > 0 && object.goblinOrcArmy
-  | .effectApplied _ (.counters _ object .plan n false), .nthPlanCounter _ =>
-    this object && n > 0
-  | .effectApplied _ (.counters _ object .lore n false), .sagaChapter =>
-    this object && n > 0
-  | .stepped .upkeep active, .yourUpkeep => you active
-  | .stepped .upkeep _, .eachUpkeep => true
-  | .stepped .upkeep _, .fra .eachUpkeepFromGraveyard => true
-  | .stepped .end active, .yourEndStep => you active
-  | .stepped .end _, .eachEndStep => true
-  | .stepped .beginningOfCombat active, .yourBeginCombat => you active
-  | .stepped .beginningOfCombat active, .fra .yourBeginCombatFromGraveyard => you active
-  | .stepped .beginningOfCombat _, .eachBeginCombat => true
-  | .stepped .beginningOfCombat active, .fra .opponentBeginCombat => !you active
-  | .stepped .precombatMain active, .yourFirstMain => you active
-  | .stepped .draw active, .eachOpponentDrawStep => !you active
-  | .stepped .upkeep _, .eaglesCreateBirds => true
-  | .stepped .upkeep active, .enchantedControllerUpkeep => you active
-  | .effectApplied _ (.sacrificed p object), .youSacrificeToken => you p && object.token
-  | .activated p _ true _, .youActivateLoyaltyAbility => you p
-  | .activated p source false _, .youActivateCreatureAbility =>
-    you p && source.creature
-  | .activated p _ true _, .fra .opponentActivatesLoyaltyAbility => !you p
-  | .effectApplied _ (.created p object), .fra .youCreateCreatureTokens => you p && object.creature
-  | _, _ => false
+  match e.change with
+  | .engine _ => false
+  | .rules r =>
+    match r, te with
+    | .effectApplied _ (.drew p _ _ _), .youDraw => you p
+    | .effectApplied _ (.drew p _ nth _), .youDrawSecondCard => you p && nth == 2
+    | .effectApplied _ (.drew _ _ nth _), .anyPlayerDrawsSecond => nth == 2
+    | .effectApplied _ (.drew p _ _ first), .opponentDrawsExceptFirstDrawStep => !you p && !first
+    | .effectApplied _ (.drew p _ nth _), .opponentDrawsSecondCard => !you p && nth == 2
+    | .life (.gained p _), .youGainLife => you p
+    | .life (.lost _ _ _ _), .playerLosesLife => true
+    | .damage (.dealt pkts), .sourceDealtDamage =>
+      pkts.any (fun pkt => match pkt.recipientObject with | some o => this o | none => false)
+    | .damage (.dealt pkts), .sourceDealtNoncombatDamage =>
+      pkts.any (fun pkt => !pkt.combat && match pkt.recipientObject with | some o => this o | none => false)
+    | .damage (.dealt pkts), .creatureYouControlDealtDamage =>
+      pkts.any (fun pkt => match pkt.recipientObject with | some o => yours o && o.creature | none => false)
+    | .damage (.dealt pkts), .dealsCombatDamageToPlayer =>
+      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ => true | _ => false)
+    | .damage (.dealt pkts), .dealsCombatDamageToPlayerOrBattle =>
+      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ | .battle _ => true | _ => false)
+    | .damage (.dealt pkts), .combatDamageToYou =>
+      pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player p => you p | _ => false)
+    | .damage (.dealt pkts), .heroesDealDamageToPlayer =>
+      pkts.any (fun pkt =>
+        match pkt.recipientObject with
+        | some o => yours o && o.hero
+        | none => yours pkt.source && pkt.source.hero)
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .dying =>
+      this object && object.creature
+    | .effectApplied _ (.moved object .battlefield _ _ _), .leaving => this object
+    | .effectApplied _ (.moved object _ .battlefield _ _), .entering => this object
+    | .effectApplied _ (.moved object _ .battlefield _ _), .landYouControlEnters =>
+      yours object && object.land
+    | .effectApplied _ (.moved object _ .battlefield _ _), .forestYouControlEnters =>
+      yours object && object.forest
+    | .effectApplied _ (.moved object _ .battlefield _ _), .mountainYouControlEnters =>
+      yours object && object.mountain
+    | .effectApplied _ (.moved object _ .battlefield _ _), .artifactYouControlEnters =>
+      yours object && object.artifact
+    | .effectApplied _ (.moved object _ .battlefield _ _), .creatureYouControlEnters =>
+      yours object && object.creature
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherCreatureYouControlEnters =>
+      yours object && other object && object.creature
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherElfYouControlEnters =>
+      yours object && other object && object.elf
+    | .effectApplied _ (.moved object _ .battlefield _ _), .tokenYouControlEnters =>
+      yours object && object.token
+    | .effectApplied _ (.moved object _ .battlefield _ _), .equipmentYouControlEnters =>
+      yours object && object.equipment
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherArtifactEnters =>
+      yours object && other object && object.artifact
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherVillainEnters =>
+      yours object && other object && object.villain
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherVillainOrArtifactEnters =>
+      yours object && other object && (object.villain || object.artifact)
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherNontokenHeroEnters =>
+      yours object && other object && !object.token && object.hero
+    | .effectApplied _ (.moved object _ .battlefield _ _), .anotherNontokenArtifactEnters =>
+      yours object && other object && !object.token && object.artifact
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .creatureYouControlDies =>
+      yours object && object.creature
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .nontokenYouControlDies =>
+      yours object && object.creature && !object.token
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .anotherGoblinOrcArmyDies =>
+      yours object && other object && object.creature && object.goblinOrcArmy
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .villainYouControlDies =>
+      yours object && other object && object.creature && object.villain
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .attackingCreatureYouControlDies =>
+      yours object && object.creature && object.attacking
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .oneOrMoreOtherCreaturesDie =>
+      other object && object.creature
+    | .effectApplied _ (.moved object .battlefield (.hand _) _ _), .anotherNonlandReturned =>
+      yours object && other object && !object.land
+    | .effectApplied _ (.moved object (.graveyard owner) _ _ _), .creatureCardLeavesYourGy =>
+      you owner && object.creature
+    | .effectApplied _ (.moved object _ (.graveyard owner) _ _), .creatureCardsPutIntoYourGy =>
+      you owner && object.creature && !object.token
+    | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .youDiscard =>
+      you p && p == q
+    | .effectApplied _ (.moved object (.hand p) (.graveyard q) _ true), .fra .youDiscardThis =>
+      you p && p == q && this object
+    | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .fra .youDiscardOne =>
+      you p && p == q
+    | .effectApplied _ (.moved _ (.hand p) (.graveyard q) _ true), .fra .playerDiscards =>
+      p == q
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .enchantedDies =>
+      object.creature
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .nontokenCreatureYouControlDies =>
+      yours object && object.creature && !object.token
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .fra .anotherCreatureOrPlaneswalkerYouControlDies =>
+      yours object && other object && (object.creature || object.planeswalker)
+    | .effectApplied _ (.moved object .battlefield _ _ _), .fra .creatureYouControlLeaves =>
+      yours object && other object && object.creature
+    | .effectApplied _ (.moved object _ .battlefield _ _), .subtypeYouControlEnters sub =>
+      yours object && object.hasSubtype sub
+    | .cast p spell _ _ _ _ _ _, .youCastInstantOrSorcery =>
+      you p && spell.instantOrSorcery
+    | .cast p spell _ _ _ _ _ _, .youCastNoncreature =>
+      you p && !spell.creature
+    | .cast p spell _ _ _ _ _ _, .youCastCreature =>
+      you p && spell.creature
+    | .cast p _ _ _ _ _ _ _, .youCastSpell => you p
+    | .cast p _ _ _ _ _ _ _, .youCastColor _ => you p
+    | .cast p _ (.hand _) _ _ _ _ _, .youCastColorFromHand _ => you p
+    | .cast p _ _ _ _ _ _ _, .youCastGreen => you p
+    | .cast p spell _ _ _ _ _ _, .youCastVillain => you p && spell.villain
+    | .cast p _ _ _ _ _ _ _, .opponentCastsSpell => !you p
+    | .cast p spell _ _ _ _ _ _, .youCastFirstNoncreature => you p && !spell.creature
+    | .cast p _ _ _ _ _ _ _, .youCastSecondSpell => you p
+    | .cast _ _ _ _ _ _ _ _, .anyPlayerCastsSecondSpell => true
+    | .cast p _ _ _ _ _ _ _, .opponentCastsFirstNoncreature => !you p
+    | .cast p spell _ _ _ _ _ _, .fra .castThis => you p && this spell
+    | .attacked p attacker _, .attacking => you p && this attacker
+    | .attacked p _ _, .youAttack => you p
+    | .attacked p attacker _, .youAttackWithElves => you p && attacker.elf
+    | .attacked p _ _, .youAttackWithTwoOrMore => you p
+    | .attacked p attacker _, .creatureYouControlAttacksAlone =>
+      you p && attacker.creature
+    | .attacked p _ _, .equippedAttacks => you p
+    | .attacked p attacker _, .equippedCreatureYouControlAttacks =>
+      you p && attacker.creature
+    | .attacked p attacker _, .merfolkAttackPlayer => you p && attacker.merfolk
+    | .attacked p attacker _, .fra .creatureYouControlAttacks =>
+      you p && attacker.creature
+    | .permanent (.tapped object _), .sourceBecomesTapped => this object
+    | .permanent (.tapped object _), .creaturesYouControlBecomeTapped =>
+      yours object && object.creature
+    | .permanent (.tapped object _), .equippedBecomesTapped => object.creature
+    | .permanent (.tapped object during), .creatureYouControlTapped =>
+      yours object && object.creature && during
+    | .effectApplied _ (.looked p _ false asked), .youScry => you p && asked > 0
+    | .effectApplied _ (.looked p _ _ asked), .youScryOrSurveil => you p && asked > 0
+    | .permanent (.counters (.object _) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
+      you p && n > 0
+    | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
+      you p && n > 0 && object.goblinOrcArmy
+    | .permanent (.counters (.object object) .plan (.put n) _), .nthPlanCounter _ =>
+      this object && n > 0
+    | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
+      this object && n > 0
+    | .stepped .upkeep active, .yourUpkeep => you active
+    | .stepped .upkeep _, .eachUpkeep => true
+    | .stepped .upkeep _, .fra .eachUpkeepFromGraveyard => true
+    | .stepped .end active, .yourEndStep => you active
+    | .stepped .end _, .eachEndStep => true
+    | .stepped .beginningOfCombat active, .yourBeginCombat => you active
+    | .stepped .beginningOfCombat active, .fra .yourBeginCombatFromGraveyard => you active
+    | .stepped .beginningOfCombat _, .eachBeginCombat => true
+    | .stepped .beginningOfCombat active, .fra .opponentBeginCombat => !you active
+    | .stepped .precombatMain active, .yourFirstMain => you active
+    | .stepped .draw active, .eachOpponentDrawStep => !you active
+    | .stepped .upkeep _, .eaglesCreateBirds => true
+    | .stepped .upkeep active, .enchantedControllerUpkeep => you active
+    | .effectApplied _ (.sacrificed p object), .youSacrificeToken => you p && object.token
+    | .activated p _ true _, .youActivateLoyaltyAbility => you p
+    | .activated p source false _, .youActivateCreatureAbility =>
+      you p && source.creature
+    | .activated p _ true _, .fra .opponentActivatesLoyaltyAbility => !you p
+    | .effectApplied _ (.created p object), .fra .youCreateCreatureTokens => you p && object.creature
+    | _, _ => false
 
 /-- Cards `p` drew on `turn` in `events`. -/
 def draws (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
@@ -1279,7 +1666,7 @@ def draws (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.drew q _ _ _) => if q == p then n + 1 else n
+      | .rules (.effectApplied _ (.drew q _ _ _)) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Life `p` gained on `turn`. -/
@@ -1288,7 +1675,7 @@ def lifeGained (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.life q amount true _ _) => if q == p then n + amount else n
+      | .rules (.life (.gained q amount)) => if q == p then n + amount else n
       | _ => n) 0
 
 /-- Creatures that died on `turn`. -/
@@ -1302,7 +1689,7 @@ def spellsCast (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .cast q _ _ _ _ _ _ _ => if q == p then n + 1 else n
+      | .rules (.cast q _ _ _ _ _ _ _) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- `p` scried at least one card on `turn`. -/
@@ -1310,7 +1697,7 @@ def scried (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool :=
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.looked q _ false asked) => q == p && asked > 0
+      | .rules (.effectApplied _ (.looked q _ false asked)) => q == p && asked > 0
       | _ => false
 
 /-- `p` surveilled on `turn`. Surveil 0 does not count. -/
@@ -1318,7 +1705,7 @@ def surveilled (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool :=
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.looked q _ true asked) => q == p && asked > 0
+      | .rules (.effectApplied _ (.looked q _ true asked)) => q == p && asked > 0
       | _ => false
 
 /-- An artifact entered under `p`'s control on `turn`. -/
@@ -1326,9 +1713,9 @@ def artifactEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Boo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.moved object _ .battlefield _ _) =>
+      | .rules (.effectApplied _ (.moved object _ .battlefield _ _)) =>
         object.controller == some p && object.artifact
-      | .effectApplied _ (.created q object) => q == p && object.artifact
+      | .rules (.effectApplied _ (.created q object)) => q == p && object.artifact
       | _ => false
 
 /-- `p` attacked with a permanent of `subtype` on `turn`. -/
@@ -1337,7 +1724,7 @@ def attackedWithSubtype (events : Array GameEvent) (turn : Nat) (p : PlayerId)
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .attacked q attacker _ => q == p && attacker.hasSubtype subtype
+      | .rules (.attacked q attacker _) => q == p && attacker.hasSubtype subtype
       | _ => false
 
 /-- A permanent of `subtype` entered under `p`'s control on `turn`. -/
@@ -1346,9 +1733,9 @@ def subtypeEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId)
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.moved object _ .battlefield _ _) =>
+      | .rules (.effectApplied _ (.moved object _ .battlefield _ _)) =>
         object.controller == some p && object.hasSubtype subtype
-      | .effectApplied _ (.created q object) => q == p && object.hasSubtype subtype
+      | .rules (.effectApplied _ (.created q object)) => q == p && object.hasSubtype subtype
       | _ => false
 
 /-- `p` activated a loyalty ability on `turn`. -/
@@ -1356,7 +1743,7 @@ def activatedLoyalty (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .activated q _ true _ => q == p
+      | .rules (.activated q _ true _) => q == p
       | _ => false
 
 /-- `p` was dealt noncombat damage on `turn`. -/
@@ -1364,24 +1751,25 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.damagedPlayer _ q _ false) => q == p
-      | .effectApplied _ (.life q _ false true false) => q == p
+      | .rules (.damage (.dealt pkts)) =>
+        pkts.any (fun pkt => !pkt.combat && pkt.recipient == .player p)
+      | .rules (.life (.lost q _ true false)) => q == p
       | _ => false
 
 /-- Mana recorded for `spell` when it was cast, if the log has that cast. -/
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
     match e.change with
-    | .cast _ s _ _ spent _ _ _ => if s.id == spell then max n spent else n
+    | .rules (.cast _ s _ _ spent _ _ _) => if s.id == spell then max n spent else n
     | _ => n) 0
 
 /-- Same event, naming the object id it has after the zone change (CR 400.7). -/
 def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
   match e.change with
-  | .effectApplied eid (.moved object fromZone toZone sacrificed discarded) =>
-    { e with change := .effectApplied eid (.moved { object with id := id } fromZone toZone sacrificed discarded) }
-  | .effectApplied eid (.created player object) =>
-    { e with change := .effectApplied eid (.created player { object with id := id }) }
+  | .rules (.effectApplied eid (.moved object fromZone toZone sacrificed discarded)) =>
+    { e with change := .rules (.effectApplied eid (.moved { object with id := id } fromZone toZone sacrificed discarded)) }
+  | .rules (.effectApplied eid (.created player object)) =>
+    { e with change := .rules (.effectApplied eid (.created player { object with id := id })) }
   | _ => e
 
 /-- Creature spells `p` cast on `turn`. -/
@@ -1390,7 +1778,7 @@ def creatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat 
     if e.turn != turn then n
     else
       match e.change with
-      | .cast q spell _ _ _ _ _ _ => if q == p && spell.creature then n + 1 else n
+      | .rules (.cast q spell _ _ _ _ _ _) => if q == p && spell.creature then n + 1 else n
       | _ => n) 0
 
 /-- Noncreature spells `p` cast on `turn`. -/
@@ -1399,7 +1787,7 @@ def noncreatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : N
     if e.turn != turn then n
     else
       match e.change with
-      | .cast q spell _ _ _ _ _ _ => if q == p && !spell.creature then n + 1 else n
+      | .rules (.cast q spell _ _ _ _ _ _) => if q == p && !spell.creature then n + 1 else n
       | _ => n) 0
 
 /-- Creatures `p` attacked with on `turn`. -/
@@ -1408,7 +1796,7 @@ def attacks (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .attacked q _ _ => if q == p then n + 1 else n
+      | .rules (.attacked q _ _) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Cards that moved from `p`'s library to `p`'s graveyard on `turn`. -/
@@ -1417,7 +1805,7 @@ def milled (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.moved _ (.library owner) (.graveyard q) _ _) =>
+      | .rules (.effectApplied _ (.moved _ (.library owner) (.graveyard q) _ _)) =>
         if owner == p && q == p then n + 1 else n
       | _ => n) 0
 
@@ -1426,7 +1814,7 @@ def drewFirstOfDrawStep (events : Array GameEvent) (turn : Nat) (p : PlayerId) :
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.drew q _ _ true) => q == p
+      | .rules (.effectApplied _ (.drew q _ _ true)) => q == p
       | _ => false
 
 /-- Equip abilities `p` completed on `turn`. -/
@@ -1435,7 +1823,7 @@ def equipActivations (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Na
     if e.turn != turn then n
     else
       match e.change with
-      | .activated q _ _ true => if q == p then n + 1 else n
+      | .rules (.activated q _ _ true) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Mana values of spells `p` cast on `turn`, oldest first. Copies are absent. -/
@@ -1444,7 +1832,7 @@ def castManaValues (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Arra
     if e.turn != turn then acc
     else
       match e.change with
-      | .cast q _ _ mv _ _ _ _ => if q == p then acc.push mv else acc
+      | .rules (.cast q _ _ mv _ _ _ _) => if q == p then acc.push mv else acc
       | _ => acc) #[]
 
 /-- Cards `p` discarded on `turn`. A discard is a card moving from that
@@ -1454,7 +1842,7 @@ def discards (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.moved _ (.hand q) (.graveyard r) _ true) => if q == p && q == r then n + 1 else n
+      | .rules (.effectApplied _ (.moved _ (.hand q) (.graveyard r) _ true)) => if q == p && q == r then n + 1 else n
       | _ => n) 0
 
 /-- Life `p` lost on `turn`, including life lost to damage. -/
@@ -1463,7 +1851,7 @@ def lifeLost (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.life q amount false _ _) => if q == p then n + amount else n
+      | .rules (.life (.lost q amount _ _)) => if q == p then n + amount else n
       | _ => n) 0
 
 /-- Counted resolutions for `p` on `turn`. -/
@@ -1472,7 +1860,7 @@ def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .effectApplied _ (.resolved q _) => if q == p then n + 1 else n
+      | .rules (.effectApplied _ (.resolved q _)) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Lands `p` played on `turn`. -/
@@ -1481,7 +1869,7 @@ def landsPlayed (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .playedLand q _ => if q == p then n + 1 else n
+      | .rules (.playedLand q _) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Graveyard ids of creatures that moved from the battlefield to a graveyard
@@ -1491,7 +1879,7 @@ def creaturesToGraveyard (events : Array GameEvent) (turn : Nat) : Array ObjectI
     if e.turn != turn then acc
     else
       match e.change with
-      | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) =>
+      | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) =>
         if object.creature then acc.push object.id else acc
       | _ => acc) #[]
 
@@ -1499,7 +1887,7 @@ def creaturesToGraveyard (events : Array GameEvent) (turn : Nat) : Array ObjectI
 def lastDiedAttacker (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) =>
+    | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) =>
       if object.creature && object.attacking then some object.id else acc
     | _ => acc) none
 
@@ -1507,14 +1895,18 @@ def lastDiedAttacker (events : Array GameEvent) : Option ObjectId :=
 def lastBecameTapped (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectApplied _ (.tapped object true _) => some object.id
+    | .rules (.permanent (.tapped object _)) => some object.id
     | _ => acc) none
 
 /-- Player most recently dealt combat damage. -/
 def lastCombatDamagePlayer (events : Array GameEvent) : Option PlayerId :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectApplied _ (.damagedPlayer _ p _ true) => some p
+    | .rules (.damage (.dealt pkts)) =>
+      pkts.foldl (fun acc pkt =>
+        match pkt.combat, pkt.recipient with
+        | true, .player p => some p
+        | _, _ => acc) acc
     | _ => acc) none
 
 /-- Someone chose to have The Sensational She-Hulk deal damage on `turn`. -/
@@ -1522,7 +1914,7 @@ def sheHulkDealtDamageThisTurn (events : Array GameEvent) (turn : Nat) : Bool :=
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.sheHulkDealtDamage _) => true
+      | .rules (.effectApplied _ (.sheHulkDealtDamage _)) => true
       | _ => false
 
 /-- `id` entered the battlefield on `turn`. -/
@@ -1530,29 +1922,29 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .effectApplied _ (.moved object _ .battlefield _ _) => object.id == id
-      | .effectApplied _ (.created _ object) => object.id == id
+      | .rules (.effectApplied _ (.moved object _ .battlefield _ _)) => object.id == id
+      | .rules (.effectApplied _ (.created _ object)) => object.id == id
       | _ => false
 
 /-- The cast of `spell` was from a graveyard. -/
 def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .cast _ s _ _ _ true _ _ => s.id == spell
+    | .rules (.cast _ s _ _ _ true _ _) => s.id == spell
     | _ => false
 
 /-- A gift was promised as `spell` was cast. -/
 def giftPromised (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .cast _ s _ _ _ _ _ true => s.id == spell
+    | .rules (.cast _ s _ _ _ _ _ true) => s.id == spell
     | _ => false
 
 /-- `spell` was cast using teamwork. -/
 def teamwork (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .cast _ s _ _ _ _ true _ => s.id == spell
+    | .rules (.cast _ s _ _ _ _ true _) => s.id == spell
     | _ => false
 
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,
@@ -1560,49 +1952,50 @@ ruling 970). -/
 def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .effectCreated _ (.notACreature oid) => oid == id
+    | .rules (.effectCreated _ (.notACreature oid)) => oid == id
     | _ => false
 
 /-- All one-shot effects applied in `events` with their `EffectId`s, in chronological order (CR 610). -/
 def appliedEffectsWithId (events : Array GameEvent) : Array (EffectId × OneShotEffect) :=
   events.foldl (fun acc e =>
-    match e.change with
-    | .effectApplied id eff => acc.push (id, eff)
-    | _ => acc) #[]
+    match e.cause, e.change with
+    | .oneShotEffect id _ _, .rules r =>
+      match r.toOneShotEffect? with
+      | some eff => acc.push (id, eff)
+      | none => acc
+    | _, .rules (.effectApplied id eff) => acc.push (id, eff)
+    | _, _ => acc) #[]
 
 /-- All one-shot effects applied in `events`, in chronological order (CR 610). -/
 def appliedEffects (events : Array GameEvent) : Array OneShotEffect :=
-  events.foldl (fun acc e =>
-    match e.change with
-    | .effectApplied _ eff => acc.push eff
-    | _ => acc) #[]
+  (appliedEffectsWithId events).map Prod.snd
 
 /-- All continuous effects created in `events` with their `EffectId`s, in chronological order (CR 611). -/
 def createdEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffect) :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectCreated id eff => acc.push (id, eff)
+    | .rules (.effectCreated id eff) => acc.push (id, eff)
     | _ => acc) #[]
 
 /-- All continuous effects created in `events`, in chronological order (CR 611). -/
 def createdEffects (events : Array GameEvent) : Array ContinuousEffect :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectCreated _ eff => acc.push eff
+    | .rules (.effectCreated _ eff) => acc.push eff
     | _ => acc) #[]
 
 /-- All continuous effects that expired in `events` with their `EffectId`s, in chronological order (CR 611). -/
 def expiredEffectsWithId (events : Array GameEvent) : Array (EffectId × ContinuousEffect) :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectExpired id eff => acc.push (id, eff)
+    | .rules (.effectExpired id eff) => acc.push (id, eff)
     | _ => acc) #[]
 
 /-- All continuous effects that expired in `events`, in chronological order (CR 611). -/
 def expiredEffects (events : Array GameEvent) : Array ContinuousEffect :=
   events.foldl (fun acc e =>
     match e.change with
-    | .effectExpired _ eff => acc.push eff
+    | .rules (.effectExpired _ eff) => acc.push eff
     | _ => acc) #[]
 
 end GameEvent

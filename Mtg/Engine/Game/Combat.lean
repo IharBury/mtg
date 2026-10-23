@@ -329,13 +329,17 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         else if pl.lifeLocked || pl.lifeCantChange then
           g := g.logMsg s!"{pl.name}'s life total can't change"
         else
-          g := g.changePlayer defn (.life (pl.life - toPlayer))
           if toPlayer > 0 then
-            g := g.record (GameEvent.damagedPlayer g.turnNumber (some src.id) defn toPlayer.toNat true)
+            let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
+            g := g.record (GameEvent.damagedPlayer g.turnNumber (some src.id) defn toPlayer.toNat true
+              (cause := .turnBased (.dealCombatDamage fs)))
+            g := g.record (GameEvent.life g.turnNumber defn toPlayer.toNat false true true
+              (cause := .turnBased (.dealCombatDamage fs)))
           totalDealt := totalDealt + toPlayer
           if toPlayer > 0 && src.printed.toxic > 0 then
-            g := g.changePlayer defn (.addPoison src.printed.toxic)
-            g := g.record (GameEvent.poisoned g.turnNumber defn src.printed.toxic)
+            let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
+            g := g.record (GameEvent.poisoned g.turnNumber defn src.printed.toxic
+              (cause := .turnBased (.dealCombatDamage fs)))
             g := g.logMsg s!"{pl.name} gets {src.printed.toxic} poison counter(s) (toxic)"
           if toPlayer > 0 then
             let s := (g.object! src.id).status

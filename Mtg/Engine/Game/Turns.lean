@@ -31,8 +31,8 @@ def clearEOT (g : Game) : Game :=
           if turnEndsLeft - 1 == 0 then
             g := g.endControlEffect oid eid
           else
-            g := g.change
-              (.effectUpdated eid (.control oid c untilEot (turnEndsLeft - 1) untilSourceLeaves))
+            g := g.record
+              (GameEvent.effectUpdated g.turnNumber eid (.control oid c untilEot (turnEndsLeft - 1) untilSourceLeaves))
       | _ => pure ()
     for o in g.battlefield do
       -- Ending a control effect can exile the permanent (CR 800.4c).
@@ -127,7 +127,7 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
           else g
         | none => g
       else
-        g.change (.effectUpdated eid
+        g.record (GameEvent.effectUpdated g.turnNumber eid
           (.playPermission oid { perm with turnEndsRemaining := perm.turnEndsRemaining - 1 }))
     | _ => g) g
 
@@ -224,7 +224,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .additionalLandsThisTurn p _ => p == ap | _ => false)
       for o in g.permanentsOf ap do
-        -- CR 502.2: the active player untaps their permanents. Logging each
+        -- CR 502.3: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
         let skipUntap :=
@@ -233,23 +233,19 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           o.staticAbilities.any (· == .fra .doesntUntap) ||
           g.hostCantBecomeUntapped o ||
           g.hostSkipsUntapStep o
+        let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := .turnBased .untapAll)
         -- CR 122.1d: a stun counter is removed instead of untapping.
-        let stunned := o.status.tapped && !skipUntap && o.status.stun > 0
+        let stunned := o.status.tapped && !skipUntap && o.status.stun > 0 && untap.watches .wouldUntap
         if o.status.tapped && !skipUntap && !stunned then do
           g := g.logMsg s!"{apName} untaps {o.name}"
-          let untap := GameEvent.untapped g.turnNumber o.asEvent false
           if untap.watches .wouldUntap then
             g := g.record untap
         if stunned then do
           g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-          g := g.record (GameEvent.untapped g.turnNumber o.asEvent true)
-          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true)
-        let tapped := if skipUntap || stunned then o.status.tapped else false
-        let stun := if stunned then o.status.stun - 1 else o.status.stun
-        g := g.changeStatuses o.id #[
-          .tapped tapped,
-          .stun stun,
-          .summoningSick false ]
+          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+            (cause := .replaced ⟨0⟩ ⟨0⟩))
+        if o.status.summoningSick then
+          g := g.changeStatus o.id (.summoningSick false)
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>

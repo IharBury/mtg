@@ -233,7 +233,7 @@ structure Status where
   chosenName : Option String := none
   /-- Face down (morph, CR 702.37). A 2/2 creature with no abilities. -/
   faceDown : Bool := false
-  /-- Goaded for as long as this flag remains (CR 701.38). -/
+  /-- Goaded for as long as this flag remains (CR 701.15b). -/
   goaded : Bool := false
   /-- Story counters (Staff of the Storyteller). -/
   story : Nat := 0

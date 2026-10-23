@@ -14,7 +14,7 @@ namespace Game
 def attachSourceTo (g : Game) (src host : GameObject) : Game :=
   let (g, ts) := g.bumpTime
   let src := g.object! src.id
-  let g := g.changeObjects src.id #[.attachedTo (some host.id), .timestamp ts]
+  let g := g.changeObject src.id (.timestamp ts)
   let g := g.record (GameEvent.attached g.turnNumber src.id host.id)
   g.logMsg s!"{src.name} attaches to {host.name}"
 
@@ -54,7 +54,8 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
     let mut g := g
     for o in g.battlefield do
       if o.attachedTo == some hostId then
-        g := g.changeObject o.id (.attachedTo none)
+        g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+          (cause := .gameRule .unattachOnHostLeave))
         g := g.logMsg s!"{o.name} becomes unattached"
     return g
 

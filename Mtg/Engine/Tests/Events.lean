@@ -105,7 +105,7 @@ records the exile instead of the death. -/
   let g := g0.draw me 1
   let drew := g.events.any fun e =>
     match e.change with
-    | .effectApplied _ (.drew p _ _ _) => p == me
+    | .rules (.effectApplied _ (.drew p _ _ _)) => p == me
     | _ => false
   let g := addPermanent g bear me me
   let b := (g.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -123,7 +123,7 @@ records the exile instead of the death. -/
       match g.events.back? with
       | some e => !e.isCreatureToGraveyard &&
           match e.change with
-          | .effectApplied _ (.moved _ _ .exile _ _) => true
+          | .rules (.effectApplied _ (.moved _ _ .exile _ _)) => true
           | _ => false
       | none => false
   g.events.size > before && drew && died && replaced
@@ -135,11 +135,11 @@ records the exile instead of the death. -/
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let pump := ContinuousEffect.pump b.id 3 3
   let kw := ContinuousEffect.keywordsUntilEot b.id Keyword.trample
-  let g1 := (g0.applyChange (.effectCreated ⟨100⟩ pump)).applyChange (.effectCreated ⟨101⟩ kw)
+  let g1 := (g0.applyChange (.rules (.effectCreated ⟨100⟩ pump))).applyChange (.rules (.effectCreated ⟨101⟩ kw))
   let applied :=
     (g1.object! b.id).status.pump == (3, 3) &&
       (g1.object! b.id).status.untilEotKeywords == Keyword.trample
-  let g2 := (g1.applyChange (.effectExpired ⟨100⟩ pump)).applyChange (.effectExpired ⟨101⟩ kw)
+  let g2 := (g1.applyChange (.rules (.effectExpired ⟨100⟩ pump))).applyChange (.rules (.effectExpired ⟨101⟩ kw))
   let reverted :=
     (g2.object! b.id).status.pump == (0, 0) &&
       (g2.object! b.id).status.untilEotKeywords == Keywords.none
@@ -316,9 +316,9 @@ def controlEffectsOn (g : Game) (id : ObjectId) : Array (EffectId × ContinuousE
   let g0 := addPermanent (quiet afterDraw) bear me me
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let pump := ContinuousEffect.pump b.id 3 3
-  let g1 := (g0.applyChange (.effectCreated ⟨100⟩ pump)).applyChange (.effectCreated ⟨101⟩ pump)
-  let g2 := g1.applyChange (.effectExpired ⟨101⟩ pump)
-  let g3 := g2.applyChange (.effectExpired ⟨999⟩ pump)
+  let g1 := (g0.applyChange (.rules (.effectCreated ⟨100⟩ pump))).applyChange (.rules (.effectCreated ⟨101⟩ pump))
+  let g2 := g1.applyChange (.rules (.effectExpired ⟨101⟩ pump))
+  let g3 := g2.applyChange (.rules (.effectExpired ⟨999⟩ pump))
   (g1.object! b.id).status.pump == (6, 6) &&
     (g2.object! b.id).status.pump == (3, 3) &&
     g2.activeEffects.map Prod.fst == #[⟨100⟩] &&
@@ -574,5 +574,64 @@ step (CR 702.176, ruling 970). -/
           (g5.object! permId).status.time == 1 &&
           (g5.object! copyId).isCreature &&
           (g5.object! copyId).status.time == 2
+
+/- Phase 1 isolation: applying a single `PermanentEvent.tapped` or
+`PermanentEvent.untapped` event yields the exact tapped state without separate
+status setters (CR 701.26a / 701.26b). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.tapped b.asEvent true)))
+  let g2 := g1.applyChange (.rules (.permanent (.untapped b.asEvent)))
+  (g1.object! b.id).status == { b.status with tapped := true, becameTappedThisTurn := true } &&
+    (g2.object! b.id).status == { b.status with tapped := false, becameTappedThisTurn := true }
+
+/- Phase 1 isolation: applying a single `PermanentEvent.counters` event puts or
+removes counters on a permanent or poison counters on a player (CR 122.1). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.counters (.object b.asEvent) .plusOnePlusOne (.put 3) (some me))))
+  let g2 := g1.applyChange (.rules (.permanent (.counters (.object b.asEvent) .plusOnePlusOne (.removed 1) none)))
+  let g3 := g2.applyChange (.rules (.permanent (.counters (.player me) .poison (.put 4) (some opp))))
+  let g4 := g3.applyChange (.rules (.permanent (.counters (.player me) .poison (.removed 1) none)))
+  (g1.object! b.id).status == { b.status with plusOnePlusOne := 3, gotPlusOneThisTurn := true } &&
+    (g2.object! b.id).status == { b.status with plusOnePlusOne := 2, gotPlusOneThisTurn := true } &&
+    (g3.player me) == { (g0.player me) with poison := 4 } &&
+    (g4.player me) == { (g0.player me) with poison := 3 }
+
+/- Phase 1 isolation: applying a single `LifeEvent.gained` or `LifeEvent.lost`
+event updates `Player.life` in isolation (CR 119.2 / 119.3). -/
+#guard
+  let g0 := quiet afterDraw
+  let p0 := g0.player me
+  let g1 := g0.applyChange (.rules (.life (.gained me 5)))
+  let g2 := g1.applyChange (.rules (.life (.lost me 8 true true)))
+  (g1.player me) == { p0 with life := p0.life + 5 } &&
+    (g2.player me) == { p0 with life := p0.life - 3 }
+
+/- Phase 1 isolation: applying `DamageEvent.marked` and `DamageEvent.markedCleared`
+updates and clears `Status.damage` in isolation (CR 120.3e / 514.2). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.applyChange (.rules (.damage (.marked b.id 2 true)))
+  let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
+  (g1.object! b.id).status == { b.status with damage := 2, dealtDeathtouch := true } &&
+    (g2.object! b.id).status == { b.status with damage := 0, dealtDeathtouch := true }
+
+/- Phase 1 isolation: applying `PermanentEvent.attached`, `PermanentEvent.unattached`,
+and `PermanentEvent.controlChanged` updates `attachedTo` and `controller` in
+isolation (CR 701.3 / 110.2). -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.attached h.asEvent b.id none)))
+  let g2 := g1.applyChange (.rules (.permanent (.unattached h.asEvent b.id)))
+  let g3 := g2.applyChange (.rules (.permanent (.controlChanged b.asEvent me opp)))
+  (g1.object! h.id) == { h with attachedTo := some b.id } &&
+    (g2.object! h.id) == { h with attachedTo := none } &&
+    (g3.object! b.id) == { b with controller := some opp }
 
 end Mtg.Engine.EventTests

@@ -405,9 +405,14 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   | none => pure ()
   g := g.changePlayer p (.manaPool (addRestrictedMana (g.player p).manaPool mana d.restriction))
   if d.damageYou > 0 then
-    let before := (g.player p).life
-    g := g.setLife p (before - (d.damageYou : Int))
-      s!"{o.name} deals {d.damageYou} damage to {(g.player p).name}"
+    let pl := g.player p
+    let before := pl.life
+    g :=
+      if pl.lifeLocked || pl.lifeCantChange then
+        g.logMsg s!"{pl.name}'s life total can't change"
+      else
+        (g.record (GameEvent.life g.turnNumber p d.damageYou false true false)).logMsg
+          s!"{o.name} deals {d.damageYou} damage to {pl.name}"
     let lost := (before - (g.player p).life).toNat
     g := g.afterLifeLost p lost
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).

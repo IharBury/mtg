@@ -225,8 +225,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
-        g := g.changePlayer pid (.addPoison 1)
-        g := g.record (GameEvent.poisoned g.turnNumber pid 1)
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p))
         g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
@@ -497,9 +496,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     let some host := g.findObject? hostId | throw "The creature is no longer in play"
     if !host.isOnBattlefield then
       throw s!"{host.name} is no longer on the battlefield"
-    let (g, ts) := g.bumpTime
-    let g := g.changeObjects eq.id #[.attachedTo (some host.id), .timestamp ts]
-    let g := g.logMsg s!"{eq.name} attaches to {host.name}"
+    let g := g.attachSourceTo eq host
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .tapHumans q =>

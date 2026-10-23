@@ -10,7 +10,7 @@ including create-multipliers and Food/Treasure replacement effects.
 namespace Mtg.Engine
 namespace Game
 
-/-- A Treasure token (CR 111 / 701.42). -/
+/-- A Treasure token (CR 111.10a). -/
 def treasureToken : CardDef := {
   name := "Treasure"
   types := #[.artifact]
@@ -135,7 +135,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let extraTreasure :=
       if proposed.watches .wouldCreateToken &&
           match proposed.change with
-          | .effectApplied _ (.created _ object) => object.hasSubtype .food
+          | .rules (.effectApplied _ (.created _ object)) => object.hasSubtype .food
           | _ => false then
         g.foodTreasureReplacements controller
       else 0
@@ -433,8 +433,11 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
     let k := g.countersYouPut o n (putter := some controller)
-    let g := g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters + k))
-    let g := if k > 0 then g.queueLoyaltyPutTriggers controller else g
+    let g :=
+      if k > 0 then
+        (g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)).queueLoyaltyPutTriggers
+          controller
+      else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
 /-- Printed characteristics for a `TokenKind`. -/

@@ -55,7 +55,8 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
           if o.printed.isLand then acc + 1 else acc) 0
         if tapped && entered.printed.isLand && landCount >= n then
           let g := g.change (.untapSearchedIfLands none)
-          (g.changeStatus newId (.tapped false)).logMsg s!"{(g.object! newId).name} is untapped"
+          (g.record (GameEvent.untapped g.turnNumber entered.asEvent false)).logMsg
+            s!"{(g.object! newId).name} is untapped"
         else g
       | none => g
     let entered := g.object! newId
@@ -105,7 +106,7 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
     | some o =>
       if o.isOnBattlefield && o.status.tapped && o.status.stun == 0 &&
           !g.hostCantBecomeUntapped o then
-        let g := g.changeStatus o.id (.tapped false)
+        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
         g.logMsg s!"{o.name} untaps"
       else g
     | none => g

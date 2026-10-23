@@ -161,7 +161,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let dying := g.dyingTriggers old dest
   let pwDied :=
     match happened.change with
-    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) => object.planeswalker
+    | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) => object.planeswalker
     | _ => false
   -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
   -- while it is still attached.
@@ -519,7 +519,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       match e with
       | .pendingLokiCopy p (some id) _ =>
         if id == old.id then
-          g.change (.effectUpdated eid
+          g.record (GameEvent.effectUpdated g.turnNumber eid
             (.pendingLokiCopy p none (old.lastKnownPower.getD old.power)))
         else g
       | _ => g) g

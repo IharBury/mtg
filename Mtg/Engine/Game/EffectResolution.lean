@@ -522,8 +522,7 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
     | Target.player pid =>
       let pl := g.player pid
       if pl.poison > 0 then
-        (g.changePlayer pid (.addPoison 1)).record
-            (GameEvent.poisoned g.turnNumber pid 1)
+        g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller))
           |>.logMsg s!"{pl.name} gets a poison counter"
       else g.logMsg s!"{pl.name} has no counters"
     | Target.card _ => g.logMsg "The target is no longer legal") none
@@ -1850,12 +1849,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           else if o.isCreature then
             g.logMsg s!"{o.name} is already a creature"
           else
-            let wasAttached := o.attachedTo.isSome
             let g :=
-              if wasAttached then
-                g.changeObject o.id (.attachedTo none)
+              match o.attachedTo with
+              | some hostId =>
+                g.record (GameEvent.unattached g.turnNumber o.asEvent hostId)
                   |>.logMsg s!"{o.name} becomes unattached"
-              else g
+              | none => g
             let o := g.object! o.id
             g.setUntilEotForm o (0, 0) Keyword.flying
               s!"{o.name} becomes a 0/0 Construct Hero artifact creature"

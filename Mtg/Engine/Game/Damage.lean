@@ -48,19 +48,23 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     o.printed.staticAbilities.any (fun
       | .healOtherDamageWhenDealt => true
       | _ => false)
-  let g := if healsOther && n > 0 then g.changeStatus o.id (.damage 0) else g
+  let g :=
+    if healsOther && n > 0 then
+      g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := .oneShotEffect ⟨0⟩))
+    else g
   let o := g.findObject? o.id |>.getD o
   if n > 0 && o.status.shield > 0 && !unpreventable then
-    let g := g.changeStatus o.id (.shield (o.status.shield - 1))
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true
+      (cause := .replaced ⟨0⟩ ⟨0⟩))
     g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
   else if n > 0 && o.status.shield > 0 && unpreventable then
-    let g := g.changeStatus o.id (.shield (o.status.shield - 1))
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true
+      (cause := .replaced ⟨0⟩ ⟨0⟩))
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
     let marked := g.object! o.id
     let happened := GameEvent.damaged g.turnNumber none marked.asEvent n.toNat combat
     let g := g.record happened
-    let g := (g.changeStatus marked.id (.addDamage n deathtouch)).logMsg msg
+    let g := (g.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat deathtouch)).logMsg msg
     if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
       g.queueCreatureYouControlDealtDamage (g.object! o.id) n
     else g
@@ -73,10 +77,13 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     | some e => g.record e
     | none => g
   let g :=
-    let g := g.changeStatus o.id (.addDamage n deathtouch)
+    let g :=
+      if n > 0 then
+        g.record (GameEvent.damageMarked g.turnNumber o.id n.toNat deathtouch)
+      else g
     let g :=
       if o.printed.isPlaneswalker && n > 0 then
-        g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters - n.toNat))
+        g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true)
       else g
     g.logMsg msg
   let g :=
@@ -171,7 +178,7 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
 
-/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+/-- Increase `p`'s life total (CR 119.2). Gaining 0 life does nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let proposed := GameEvent.life g.turnNumber p n true
   if n == 0 || !proposed.watches .wouldGainLife then g
@@ -180,15 +187,16 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p
-    let before := pl.life
-    let g := g.setLife p (before + (n : Int))
-      s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
-    let gained := ((g.player p).life - before).toNat
-    if gained == 0 then g
+    if pl.lifeLocked || pl.lifeCantChange then
+      g.logMsg s!"{pl.name}'s life total can't change"
     else
-      let happened := GameEvent.life g.turnNumber p gained true
-      let g := g.record happened
-      if happened.matchesTrigger p ⟨0⟩ .youGainLife then
+      let before := pl.life
+      let happened := GameEvent.life g.turnNumber p n true
+      let g := (g.record happened).logMsg
+        s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
+      let gained := ((g.player p).life - before).toNat
+      if gained == 0 then g
+      else if happened.matchesTrigger p ⟨0⟩ .youGainLife then
         g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
       else g
 
@@ -240,7 +248,14 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       if n > 0 then
         g.record (GameEvent.damagedPlayer g.turnNumber (source.map (·.id)) pid n.toNat false)
       else g
-    let g := g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+    let g :=
+      if (pl.lifeLocked || pl.lifeCantChange) && n != 0 then
+        g.logMsg s!"{pl.name}'s life total can't change"
+      else if n > 0 then
+        (g.record (GameEvent.life g.turnNumber pid n.toNat false true false)).logMsg
+          s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+      else
+        g.logMsg s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
     let g := g.afterLifeLost pid (pl.life - (g.player pid).life).toNat
     -- CR 702.15b: damage dealt by a source with lifelink.
     let g :=
@@ -284,15 +299,19 @@ def fightCreatures (g : Game) (src dest : GameObject) : Game :=
   | some dest, some src => g.dealFightDamage dest src
   | _, _ => g
 
-/-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
-(CR 118.9). Loss of life is not damage (CR 120.3). -/
+/-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
+(CR 119.9). Loss of life is not damage (CR 119.3 / 120.3). -/
 def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
-    let g := g.setLife p (pl.life - (n : Int)) s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
-    let lost := (pl.life - (g.player p).life).toNat
-    g.afterLifeLost p lost
+    if pl.lifeLocked || pl.lifeCantChange then
+      g.logMsg s!"{pl.name}'s life total can't change"
+    else
+      let g := (g.record (GameEvent.life g.turnNumber p n false)).logMsg
+        s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
+      let lost := (pl.life - (g.player p).life).toNat
+      g.afterLifeLost p lost
 
 /-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
