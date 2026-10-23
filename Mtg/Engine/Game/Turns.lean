@@ -45,6 +45,11 @@ def clearEOT (g : Game) : Game :=
           if cur.status.clearsAtCleanup then
             g := g.changeStatus o.id .clearedAtCleanup
         | none => pure ()
+    let damagedIds :=
+      (g.battlefield.filter (fun o => o.status.damage != 0 || o.status.dealtDeathtouch)).map (·.id)
+    if !damagedIds.isEmpty then
+      g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
+        (cause := .turnBased .cleanupClear))
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
@@ -242,8 +247,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
             g := g.record untap
         if stunned then do
           g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
-            (cause := .replaced ⟨0⟩ ⟨0⟩))
+          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true)
         if o.status.summoningSick then
           g := g.changeStatus o.id (.summoningSick false)
       -- No priority (CR 502.4). Immediately continue.

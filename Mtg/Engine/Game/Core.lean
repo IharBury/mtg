@@ -352,7 +352,8 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
       stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
       influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-      hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
+      hone := 0, shadow := 0, lore := 0, story := 0, time := 0, poison := 0
+      keywordCounters := {} }
   | .proliferatedExceptPlusOne extra =>
     let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
     { s with
@@ -365,7 +366,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       trampleCounters := inc s.trampleCounters
       indestructibleCounters := inc s.indestructibleCounters
       lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-      lore := inc s.lore, story := inc s.story, time := inc s.time
+      lore := inc s.lore, story := inc s.story, time := inc s.time, poison := inc s.poison
       keywordCounters := s.keywordCounters.incPresent extra }
   | .addCountersExceptPlusOne «from» extra =>
     let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
@@ -384,6 +385,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
       lore := s.lore + bump «from».lore
       story := s.story + bump «from».story, time := s.time + bump «from».time
+      poison := s.poison + bump «from».poison
       keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
   | .addPump p t =>
     { s with pump := (s.pump.1 + p, s.pump.2 + t) }
@@ -423,7 +425,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
     | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
     | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
     | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
-    | .poison => s
+    | .poison => { s with poison := s.poison + n }
   | .removeCounters kind n =>
     match kind with
     | .plusOnePlusOne => { s with plusOnePlusOne := s.plusOnePlusOne - n }
@@ -455,12 +457,11 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
     | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch - n }
     | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike - n }
     | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike - n }
-    | .poison => s
+    | .poison => { s with poison := s.poison - n }
   | .grantUntilEot k =>
     { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
   | .clearedAtCleanup =>
     { s with
-      damage := 0
       pump := (0, 0)
       untilEotKeywords := Keywords.none
       untilEotLosesIndestructible := false
@@ -955,10 +956,21 @@ def effectIsFlag : ContinuousEffect → Bool
   | .powerUpsForbiddenThisTurn => true
   | _ => false
 
-/-- Recompute `id`'s controller and control durations from every active
-control-changing effect on it (CR 613.1b / 613.7): the most recent one sets the
-controller. With none left, control returns to the default controller unless
-that player has left the game (CR 800.4a). -/
+/-- Effective controller of `o` under `g.activeEffects` (CR 613.1b / 613.7 /
+800.4a). -/
+def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
+  let ctrl? := g.lastActive? (fun
+    | .control oid c _ _ _ => if oid == o.id then some c else none
+    | _ => none)
+  match ctrl? with
+  | some c => some c
+  | none =>
+    let p := o.defaultController.getD o.owner
+    if !(g.players[p.idx]!).lost then some p else o.controller
+
+/-- Recompute `id`'s control duration flags from every active control-changing
+effect on it (CR 613.1b / 613.7). `o.controller` and `o.controlChanged` are
+written only by `PermanentEvent.controlChanged`. -/
 def recomputeControl (g : Game) (id : ObjectId) : Game :=
   let effs := g.activeEffects.filterMap (fun (_, e) =>
     match e with
@@ -967,10 +979,8 @@ def recomputeControl (g : Game) (id : ObjectId) : Game :=
     | _ => none)
   g.modifyObject id (fun o =>
     match effs.back? with
-    | some (c, _, _, _) =>
+    | some _ =>
       { o with
-        controller := some c
-        controlChanged := o.controlChanged || o.controller != some c
         controlUntilSourceLeaves :=
           effs.foldl (fun acc (_, _, _, usl) => usl.orElse (fun _ => acc)) none
         status :=
@@ -978,11 +988,7 @@ def recomputeControl (g : Game) (id : ObjectId) : Game :=
             controlUntilEot := effs.any (fun (_, ue, _, _) => ue)
             controlTurnEndsLeft := effs.foldl (fun acc (_, _, tel, _) => max acc tel) 0 } }
     | none =>
-      let p := o.defaultController.getD o.owner
-      let restoreCtrl := !(g.players[p.idx]!).lost
       { o with
-        controller := if restoreCtrl then some p else o.controller
-        controlChanged := if restoreCtrl then false else o.controlChanged
         controlUntilSourceLeaves := none
         status :=
           { o.status with
@@ -1463,11 +1469,25 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with attachedTo := none } }
     | none => g
-  | .controlChanged object _ toPlayer =>
+  | .controlChanged object fromPlayer toPlayer =>
     match g.objects.findIdx? (·.id == object.id) with
     | some i =>
       let o := g.objects[i]!
-      { g with objects := g.objects.set! i { o with controller := some toPlayer } }
+      let defaultCtrl := o.defaultController.getD o.owner
+      let hasActiveCtrl := g.activeEffects.any (fun (_, e) =>
+        match e with
+        | .control oid _ _ _ _ => oid == object.id
+        | _ => false)
+      let changed :=
+        if hasActiveCtrl || toPlayer != defaultCtrl then
+          o.controlChanged || o.controller != some toPlayer || fromPlayer != toPlayer
+        else false
+      { g with
+        objects :=
+          g.objects.set! i
+            { o with
+              controller := some toPlayer
+              controlChanged := changed } }
     | none => g
   | .designation object d gained =>
     match g.objects.findIdx? (·.id == object.id) with
@@ -1477,22 +1497,33 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
         match d with
         | .ringBearer => { o.status with ringBearer := gained }
         | .commander => { o.status with isCommander := gained }
+        | .goaded => { o.status with goaded := gained }
         | .prepared => { o.status with prepared := gained }
         | .harnessed => { o.status with harnessed := gained }
-        | .goaded _ => { o.status with goaded := gained }
-        | _ => o.status
       { g with objects := g.objects.set! i { o with status := s } }
     | none => g
 
 /-- Apply one `DamageEvent` in isolation (CR 120.3 / 120.4b). -/
 def applyDamageEvent (g : Game) (e : DamageEvent) : Game :=
   match e with
-  | .dealt _ | .prevented _ _ _ => g
-  | .marked objectId amount deathtouch =>
+  | .dealt pkts =>
+    pkts.foldl (fun acc pkt =>
+      if pkt.amount > 0 && pkt.source.keywords.deathtouch then
+        match pkt.recipient with
+        | .permanent target =>
+          match acc.objects.findIdx? (·.id == target.id) with
+          | some i =>
+            let o := acc.objects[i]!
+            { acc with objects := acc.objects.set! i { o with status := { o.status with dealtDeathtouch := true } } }
+          | none => acc
+        | _ => acc
+      else acc) g
+  | .prevented _ _ _ => g
+  | .marked objectId amount =>
     match g.objects.findIdx? (·.id == objectId) with
     | some i =>
       let o := g.objects[i]!
-      let s := o.status.applyChange (.addDamage (amount : Int) deathtouch)
+      let s := o.status.applyChange (.addDamage (amount : Int) false)
       { g with objects := g.objects.set! i { o with status := s } }
     | none => g
   | .markedCleared objectIds =>
@@ -1500,7 +1531,14 @@ def applyDamageEvent (g : Game) (e : DamageEvent) : Game :=
       match acc.objects.findIdx? (·.id == id) with
       | some i =>
         let o := acc.objects[i]!
-        { acc with objects := acc.objects.set! i { o with status := { o.status with damage := 0 } } }
+        { acc with
+          objects :=
+            acc.objects.set! i
+              { o with
+                status :=
+                  { o.status with
+                    damage := 0
+                    dealtDeathtouch := false } } }
       | none => acc) g
 
 /-- Apply one `LifeEvent` in isolation (CR 119.2 / 119.3). -/
@@ -1977,6 +2015,19 @@ def createEffect (g : Game) (eff : ContinuousEffect) : Game :=
           acc.record (GameEvent.effectCreated acc.turnNumber sid (.staticAbility id sa))) g
       else g
     | none => g
+  | .control id _ _ _ _ =>
+    let prevCtrl? := (g.findObject? id).bind (·.controller)
+    let eid : EffectId := ⟨g.nextEffectId⟩
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    match g.findObject? id with
+    | some o =>
+      let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
+      match g.effectiveController? o with
+      | some toP =>
+        if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+        else g
+      | none => g
+    | none => g
   | _ =>
     let eid : EffectId := ⟨g.nextEffectId⟩
     g.record (GameEvent.effectCreated g.turnNumber eid eff)
@@ -2012,6 +2063,18 @@ def expireEffectById (g : Game) (eid : EffectId) : Game :=
       let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
       match g.findObject? id with
       | some cur => g.createPrintedStaticEffects cur
+      | none => g
+    | .control id _ _ _ _ =>
+      let prevCtrl? := (g.findObject? id).bind (·.controller)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
+      match g.findObject? id with
+      | some o =>
+        let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
+        match g.effectiveController? o with
+        | some toP =>
+          if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+          else g
+        | none => g
       | none => g
     | _ => g.record (GameEvent.effectExpired g.turnNumber eid eff)
 

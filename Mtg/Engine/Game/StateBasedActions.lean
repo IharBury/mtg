@@ -249,7 +249,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.moveToOwnerGraveyard o
               s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
             changed := true
-      -- Illegally attached Equipment (CR 704.5p). Unattached Equipment stays.
+      -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
       for o in g.battlefield do
         if o.printed.isEquipment then
           let legal :=

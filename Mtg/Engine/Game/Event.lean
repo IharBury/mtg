@@ -29,6 +29,7 @@ structure EventObject where
   supertypes : Array Supertype := #[]
   types : Array CardType := #[]
   subtypes : Array CardSubtype := #[]
+  keywords : Keywords := {}
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
@@ -110,7 +111,8 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     changeling := o.printed.keywords.changeling
     supertypes := o.supertypes
     types := o.types
-    subtypes := o.subtypes }
+    subtypes := o.subtypes
+    keywords := o.printedOrUntilEot }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives
@@ -715,14 +717,16 @@ inductive EventCause where
   | oneShotEffect (id : EffectId) (source : Option ObjectId := none)
       (controller : Option PlayerId := none)
   /-- A replacement effect (614) or prevention effect (615) modified a prior
-  proposed event. `replacedBatch` links to the batch being replaced. -/
-  | replaced (byEffect : ReplacementId) (replacedBatch : BatchId)
-  /-- Migration escape hatch while call sites are being converted.
-  Removed in Phase 9. -/
+  proposed event. `original` is the cause of the event that was replaced. -/
+  | replaced (replacement : ReplacementId) (original : EventCause)
+  /-- Migration-only: a call site not yet classified. Excluded from trigger
+  matching that depends on cause; must reach zero uses for rules events by the
+  end of Phase 3. -/
   | unclassified
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Who or what receives or loses counters (CR 122.1). -/
+/-- Who or what receives or loses counters (CR 122.1). Players in `Mtg.Engine`
+only carry poison counters (`Player.poison`, CR 122.1f). -/
 inductive CounterTarget where
   | object (o : EventObject)
   | player (p : PlayerId)
@@ -734,17 +738,13 @@ inductive CounterDelta where
   | removed (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Designations a permanent can have on the battlefield (CR 110.6 / 701.15b / 701.49c). -/
+/-- Designations a permanent can have on the battlefield (CR 110.6 / 701.15b / 701.54a / 903.3). -/
 inductive PermanentDesignation where
-  | monstrous                     -- 701.37b
-  | renowned                      -- 701.38b
-  | suspected                     -- 701.60b
-  | saddled                       -- 702.171a
-  | ringBearer                    -- 701.54a
-  | commander                     -- 903.3
-  | goaded (byPlayer : PlayerId)  -- 701.15b
-  | prepared                      -- set mechanic
-  | harnessed                     -- set mechanic
+  | ringBearer  -- 701.54a
+  | commander   -- 903.3
+  | goaded      -- 701.15b
+  | prepared    -- set mechanic
+  | harnessed   -- set mechanic
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Permanent status, counter, attachment, control, and designation events
@@ -771,44 +771,42 @@ deriving Repr, Inhabited, BEq
 
 /-- Who or what receives damage (CR 120.1 / 120.2). -/
 inductive DamageRecipient where
-  | player (p : PlayerId)
-  | creature (id : ObjectId)
-  | planeswalker (id : ObjectId)
-  | battle (id : ObjectId)
-deriving DecidableEq, Repr, Inhabited, BEq
+  | permanent (object : EventObject)
+  | player (player : PlayerId)
+  | battle (object : EventObject)
+deriving Repr, Inhabited, BEq
 
-/-- One packet of damage dealt by a source to a recipient (CR 120.3 / 120.4b). -/
+/-- One packet of damage dealt by a source to a recipient (CR 120.3 / 120.4b).
+Keywords such as deathtouch and lifelink are read from `source`. -/
 structure DamagePacket where
   source : EventObject
   recipient : DamageRecipient
   amount : Nat
   combat : Bool := false
-  deathtouch : Bool := false
-  lifelink : Bool := false
-  unpreventable : Bool := false
-  recipientObject : Option EventObject := none
 deriving Repr, Inhabited, BEq
 
 /-- Damage facts and damage results (CR 120.3 / 120.4b). -/
 inductive DamageEvent where
-  /-- The fact that damage was dealt (120.4b). State changes are in the
-  accompanying result events in the same batch. -/
+  /-- The fact that damage was dealt (CR 120.2 / 120.4b). Marked damage, life
+  loss, loyalty removal, and poison are recorded in the accompanying result
+  events. -/
   | dealt (packets : Array DamagePacket)
-  /-- Result of damage to a creature (120.3e): only writer of `status.damage`. -/
-  | marked (object : ObjectId) (amount : Nat) (deathtouch : Bool := false)
-  /-- Result of cleanup (514.2) or regeneration (701.19a): clears marked damage. -/
+  /-- Result of damage to a creature (CR 120.3e): damage marked on `object`. -/
+  | marked (object : ObjectId) (amount : Nat)
+  /-- Result of cleanup (CR 514.2 / 703.4p) or regeneration (CR 701.19a): clears
+  marked damage on `objects`. -/
   | markedCleared (objects : Array ObjectId)
-  /-- Damage that was prevented (615.1 / 615.6). -/
+  /-- Damage that was prevented (CR 615.1 / 615.6). -/
   | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Life gain and life loss events (CR 119.2 / 119.3). -/
 inductive LifeEvent where
-  /-- Result of lifelink (120.3f) or a "gain N life" instruction (119.2):
-  only writer that increases `Player.life`. -/
+  /-- Result of lifelink (CR 120.3f) or a "gain N life" instruction (CR 119.2):
+  increases `Player.life`. -/
   | gained (player : PlayerId) (amount : Nat)
-  /-- Result of damage to a player (120.3a), "lose N life" (119.3), or
-  "pay N life" (119.4): only writer that decreases `Player.life`. -/
+  /-- Result of damage to a player (CR 120.3a), "lose N life" (CR 119.3), or
+  "pay N life" (CR 119.4): decreases `Player.life`. -/
   | lost (player : PlayerId) (amount : Nat)
       (fromDamage : Bool := false) (combat : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -930,15 +928,11 @@ def toRulesEvent (id : EffectId) : OneShotEffect → RulesEvent
   | .life player amount false fromDamage combat =>
     .life (.lost player amount fromDamage combat)
   | .damaged source object amount combat =>
-    let recp :=
-      if object.planeswalker then DamageRecipient.planeswalker object.id
-      else .creature object.id
     .damage (.dealt #[{
       source := { id := source.getD ⟨0⟩ }
-      recipient := recp
+      recipient := .permanent object
       amount := amount
-      combat := combat
-      recipientObject := some object }])
+      combat := combat }])
   | .damagedPlayer source player amount combat =>
     .damage (.dealt #[{
       source := { id := source.getD ⟨0⟩ }
@@ -976,10 +970,9 @@ def toOneShotEffect? : RulesEvent → Option OneShotEffect
     match pkts[0]? with
     | some pkt =>
       let src := if pkt.source.id == ⟨0⟩ then none else some pkt.source.id
-      match pkt.recipient, pkt.recipientObject with
-      | .player p, _ => some (.damagedPlayer src p pkt.amount pkt.combat)
-      | _, some obj => some (.damaged src obj pkt.amount pkt.combat)
-      | _, none => none
+      match pkt.recipient with
+      | .player p => some (.damagedPlayer src p pkt.amount pkt.combat)
+      | .permanent obj | .battle obj => some (.damaged src obj pkt.amount pkt.combat)
     | none => none
   | _ => none
 
@@ -1221,51 +1214,46 @@ def drew (turn : Nat) (player : PlayerId) (card : ObjectId) (nth : Nat)
 /-- `player` gained or lost life (CR 119.2 / 119.3). -/
 def life (turn : Nat) (player : PlayerId) (amount : Nat)
     (gained : Bool := false) (fromDamage : Bool := false) (combat : Bool := false)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   let ev :=
     if gained then LifeEvent.gained player amount
     else .lost player amount fromDamage combat
   rules turn (.life ev) cause
 
 /-- Damage was dealt to an object (CR 120.3 / 120.4b). -/
-def damaged (turn : Nat) (source : Option ObjectId) (object : EventObject)
-    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩)
-    (cause : EventCause := .oneShotEffect id) : GameEvent :=
-  let recp :=
-    if object.planeswalker then DamageRecipient.planeswalker object.id
-    else .creature object.id
+def damaged (turn : Nat) (source : Option EventObject) (object : EventObject)
+    (amount : Nat) (combat : Bool := false)
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.damage (.dealt #[{
-    source := { id := source.getD ⟨0⟩ }
-    recipient := recp
+    source := source.getD { id := ⟨0⟩ }
+    recipient := .permanent object
     amount := amount
-    combat := combat
-    recipientObject := some object }])) cause
+    combat := combat }])) cause
 
 /-- Damage was dealt to a player (CR 120.3a / 120.4b). -/
-def damagedPlayer (turn : Nat) (source : Option ObjectId) (player : PlayerId)
-    (amount : Nat) (combat : Bool := false) (id : EffectId := ⟨0⟩)
-    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+def damagedPlayer (turn : Nat) (source : Option EventObject) (player : PlayerId)
+    (amount : Nat) (combat : Bool := false)
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.damage (.dealt #[{
-    source := { id := source.getD ⟨0⟩ }
+    source := source.getD { id := ⟨0⟩ }
     recipient := .player player
     amount := amount
     combat := combat }])) cause
 
 /-- Result of damage to a creature (CR 120.3e): marks `amount` damage on `object`. -/
 def damageMarked (turn : Nat) (object : ObjectId) (amount : Nat)
-    (deathtouch : Bool := false) (id : EffectId := ⟨0⟩)
-    (cause : EventCause := .oneShotEffect id) : GameEvent :=
-  rules turn (.damage (.marked object amount deathtouch)) cause
+    (cause : EventCause := .unclassified) : GameEvent :=
+  rules turn (.damage (.marked object amount)) cause
 
 /-- Result of cleanup (CR 514.2) or regeneration (CR 701.19a): clears marked damage. -/
 def damageMarkedCleared (turn : Nat) (objects : Array ObjectId)
-    (cause : EventCause := .turnBased .cleanupClear) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.damage (.markedCleared objects)) cause
 
 /-- Damage that was prevented (CR 615.1 / 615.6). -/
 def damagePrevented (turn : Nat) (source : EventObject)
     (recipient : DamageRecipient) (amount : Nat)
-    (cause : EventCause := .replaced ⟨0⟩ ⟨0⟩) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.damage (.prevented source recipient amount)) cause
 
 /-- `player` cast `spell`. -/
@@ -1275,13 +1263,14 @@ def cast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone
   unclassified turn (.rules (.cast player spell fromZone manaValue manaSpent fromGraveyard teamwork gift))
 
 /-- `player` attacked `whom` with `attacker`. -/
-def attacked (turn : Nat) (player : PlayerId) (attacker : EventObject) (whom : PlayerId) : GameEvent :=
-  rules turn (.attacked player attacker whom) (.turnBased .declareAttackers)
+def attacked (turn : Nat) (player : PlayerId) (attacker : EventObject) (whom : PlayerId)
+    (cause : EventCause := .unclassified) : GameEvent :=
+  rules turn (.attacked player attacker whom) cause
 
 /-- `object` became tapped or untapped by a tap action (CR 701.26a). `nowTapped` is the result. -/
 def tapped (turn : Nat) (object : EventObject) (nowTapped : Bool := true)
-    (duringControllersTurn : Bool := false) (id : EffectId := ⟨0⟩)
-    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (duringControllersTurn : Bool := false)
+    (cause : EventCause := .unclassified) : GameEvent :=
   if nowTapped then
     rules turn (.permanent (.tapped object duringControllersTurn)) cause
   else
@@ -1290,7 +1279,7 @@ def tapped (turn : Nat) (object : EventObject) (nowTapped : Bool := true)
 /-- Counters were put on or removed from `object` (CR 122.1). -/
 def counters (turn : Nat) (player : Option PlayerId) (object : EventObject)
     (kind : CounterKind) (n : Nat) (removed : Bool := false)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   let delta := if removed then CounterDelta.removed n else .put n
   rules turn (.permanent (.counters (.object object) kind delta player)) cause
 
@@ -1312,7 +1301,7 @@ def created (turn : Nat) (player : PlayerId) (object : EventObject)
 
 /-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
 def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.permanent (.controlChanged { id := object } fromPlayer toPlayer)) cause
 
 /-- The step or phase changed. -/
@@ -1336,13 +1325,13 @@ def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
 
 /-- `object` became attached to `host` (CR 701.3a / 303.4 / 301.5). -/
 def attached (turn : Nat) (object host : ObjectId)
-    (previous : Option ObjectId := none) (id : EffectId := ⟨0⟩)
-    (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (previous : Option ObjectId := none)
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.permanent (.attached { id := object } host previous)) cause
 
 /-- `attachment` became unattached from `fromHost` (CR 701.3d / 704.5n / 704.5p). -/
 def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.permanent (.unattached attachment fromHost)) cause
 
 /-- `player` beheld `quality` (CR 701.62 / 610.1). -/
@@ -1357,7 +1346,7 @@ def spentMana (turn : Nat) (player : PlayerId) (amount : Nat) : GameEvent :=
 /-- `player` got poison counters (CR 122.1c). -/
 def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
     (byPlayer : Option PlayerId := none)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   rules turn (.permanent (.counters (.player player) .poison (.put n) byPlayer)) cause
 
 /-- `player` proliferated (CR 701.34 / 610.1). -/
@@ -1372,10 +1361,9 @@ def sheHulkDealtDamage (turn : Nat) (player : PlayerId)
 
 /-- `object` untapped, or a stun counter replaced that untap (CR 701.26b / 122.1d). -/
 def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false)
-    (id : EffectId := ⟨0⟩) (cause : EventCause := .oneShotEffect id) : GameEvent :=
+    (cause : EventCause := .unclassified) : GameEvent :=
   if replacedByStun then
-    rules turn (.permanent (.counters (.object object) .stun (.removed 1) none))
-      (.replaced ⟨0⟩ ⟨0⟩)
+    rules turn (.permanent (.counters (.object object) .stun (.removed 1) none)) cause
   else
     rules turn (.permanent (.untapped object)) cause
 
@@ -1510,11 +1498,11 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .life (.gained p _), .youGainLife => you p
     | .life (.lost _ _ _ _), .playerLosesLife => true
     | .damage (.dealt pkts), .sourceDealtDamage =>
-      pkts.any (fun pkt => match pkt.recipientObject with | some o => this o | none => false)
+      pkts.any (fun pkt => match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
     | .damage (.dealt pkts), .sourceDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && match pkt.recipientObject with | some o => this o | none => false)
+      pkts.any (fun pkt => !pkt.combat && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
     | .damage (.dealt pkts), .creatureYouControlDealtDamage =>
-      pkts.any (fun pkt => match pkt.recipientObject with | some o => yours o && o.creature | none => false)
+      pkts.any (fun pkt => match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayer =>
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ => true | _ => false)
     | .damage (.dealt pkts), .dealsCombatDamageToPlayerOrBattle =>
@@ -1523,9 +1511,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player p => you p | _ => false)
     | .damage (.dealt pkts), .heroesDealDamageToPlayer =>
       pkts.any (fun pkt =>
-        match pkt.recipientObject with
-        | some o => yours o && o.hero
-        | none => yours pkt.source && pkt.source.hero)
+        match pkt.recipient with
+        | .player _ => yours pkt.source && pkt.source.hero
+        | _ => false)
     | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _), .dying =>
       this object && object.creature
     | .effectApplied _ (.moved object .battlefield _ _ _), .leaving => this object

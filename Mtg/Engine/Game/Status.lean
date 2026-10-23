@@ -239,6 +239,8 @@ structure Status where
   story : Nat := 0
   /-- Time counters (impending, CR 702.176). -/
   time : Nat := 0
+  /-- Poison counters on a permanent (CR 122.1). -/
+  poison : Nat := 0
   /-- This permanent is not a creature (impending, until the last time counter). -/
   notACreature : Bool := false
   /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
@@ -276,13 +278,14 @@ def hasCounters (s : Status) : Bool :=
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
     s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
-    s.story > 0 || s.time > 0 ||
+    s.story > 0 || s.time > 0 || s.poison > 0 ||
     s.keywordCounters.any
 
-/-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
-base P/T setting (CR 514.3). -/
+/-- True when cleanup must clear until-EOT pumps, keyword grants, or
+base P/T setting (CR 514.2 / 514.3). Marked damage is cleared separately via
+`DamageEvent.markedCleared`. -/
 def clearsAtCleanup (s : Status) : Bool :=
-  s.damage != 0 || s.pump != (0, 0) || s.untilEotKeywords != Keywords.none ||
+  s.pump != (0, 0) || s.untilEotKeywords != Keywords.none ||
   s.untilEotLosesIndestructible || s.untilEotExileIfDies || s.setBasePT.isSome ||
   s.additionalArtifactUntilEot || s.additionalCreatureUntilEot ||
   s.cantBeBlockedByPlayer.isSome || s.cantBeBlockedExceptByHasteUntilEot ||

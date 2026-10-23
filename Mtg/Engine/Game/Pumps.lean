@@ -65,8 +65,10 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
-  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
-  let g := g.changeStatus o.id (.finality (s.finality + n))
+  let putter := byPlayer.orElse (fun _ => o.controller)
+  let g :=
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n)
+    else g
   g.logMsg s!"{o.name} gets a finality counter"
 
 /-- Frozen in Ice, or a granted “can't become untapped”, blocks every untap.
@@ -288,7 +290,7 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
-  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n false)
+  let g := g.record (GameEvent.damageMarked g.turnNumber o.id n)
   let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"

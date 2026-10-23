@@ -40,9 +40,7 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
       g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
     else g
   else
-    let fromP := o.controller.getD o.owner
-    (g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)).record
-      (GameEvent.control g.turnNumber o.id fromP p)
+    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End the control-changing effect recorded under `eid` on `oid`. Any other
