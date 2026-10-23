@@ -290,7 +290,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let g := g.setUntilEotForm o (Int.ofNat p, Int.ofNat t) kws
         s!"{o.name} becomes a {p}/{t} until end of turn"
         (additionalCreature := true)
-      if first then g.changeStatus o.id (.firstStrikeOnYourTurn true)
+      if first then g.createEffect (.firstStrikeOnYourTurn o.id)
       else g
   | .mapToken => g.makeFrc controller .map
   | .archon =>
@@ -322,7 +322,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.putHits controller hits
     let g := hits.foldl (fun g id =>
       match g.followMoved id |> g.findObject? with
-      | some o => g.changeStatus o.id (.goaded true)
+      | some o => g.createEffect (.goaded o.id)
       | none => g) g
     let opps := g.livingOpponents controller
     let g := Id.run do
@@ -408,7 +408,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .jaceTax =>
     if g.activePlayer == controller then g
     else
-      g.changePlayer g.activePlayer (.cantAttackJaces true)
+      g.createEffect (.cantAttackJacesThisTurn g.activePlayer)
         |>.logMsg s!"{(g.player g.activePlayer).name}'s creatures can't attack Jaces this turn"
   | .monarch =>
     let g := g.players.foldl (fun g q =>
@@ -435,8 +435,8 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .teferi =>
     match targets[0]? with
     | some (Target.player pid) =>
-      let g := g.changePlayers pid
-        #[.protectionFromEverything true, .lifeCantChange true]
+      let g := g.createEffects
+        #[.protectionFromEverything pid, .lifeCantChange pid]
       let g := g.logMsg s!"{(g.player pid).name} has protection from everything and their life total can't change"
       let ids := (g.permanentsOf pid).filter (fun o => !o.printed.isLand) |>.map (·.id)
       let g := ids.foldl (fun g id =>
@@ -445,7 +445,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         | none => g) g
       match g.resolvingSpell.bind g.findObject? with
       | some spell =>
-        g.changeObject spell.id (.exileInstantSorceryInstead true)
+        g.createEffect (.exileInstantSorceryInstead spell.id)
           |>.logMsg s!"{spell.name} will be exiled"
       | none => g
     | _ => g
@@ -465,7 +465,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
             g := g'.logMsg s!"{q.name} mills {name}"
             match g.findObject? newId with
             | some card =>
-              g := g.changeStatus card.id (.freeCastFromGraveyard true)
+              g := g.createEffect (.freeCastFromGraveyardUntilEot card.id)
             | none => pure ()
         return g) g
   | .venserSpell =>
@@ -485,7 +485,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           for _ in [0:2] do
             let (g', tok) := g.copyBattlefieldPermanent src controller
             g := g'
-            g := g.changeStatus tok.id (.grantUntilEot Keyword.haste)
+            g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste)
             g := g.change (.pushDelayedEndStepSacrifice tok.id)
           return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
       | none => g
@@ -498,7 +498,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         let g := g.makeFrc controller .goblin
         match (g.permanentsOf controller).reverse.find? (fun o => o.name == "Goblin" && o.printed.isToken) with
         | some tok =>
-          g.changeStatus tok.id (.grantUntilEot (Keywords.merge Keyword.lifelink Keyword.haste))
+          g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
             |>.logMsg s!"{tok.name} gains lifelink and haste until end of turn"
         | none => g
     | none => g
@@ -543,7 +543,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       | none => g.logMsg s!"{art.name} does not become a copy"
       | some src =>
         let g := g.becomeCopyOf art src (untilEot := true)
-        g.changeStatus art.id (.grantUntilEot Keyword.haste)
+        g.createEffect (.keywordsUntilEot art.id Keyword.haste)
           |>.logMsg s!"{art.name} has haste until end of turn"
   | .despair =>
     g.forEachOpponent controller fun g pid =>
@@ -623,9 +623,11 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | some o =>
       let counters := o.status.plusOnePlusOne
-      g.changeObject o.id (.printed
+      let g := g.expirePrintedStaticEffects o
+      let g := g.changeObject o.id (.printed
         { creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
           name := "Phyrexian" })
+      g.createPrintedStaticEffects (g.object! o.id)
         |>.logMsg s!"{o.name} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
     | none => g
   | .turnFaceUp =>
@@ -637,7 +639,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .gingerDash =>
     match g.srcObj? sourceId with
     | some o =>
-      g.changeStatus o.id (.cantBeBlockedExceptByHasteUntilEot true)
+      g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
         |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
     | none => g
 where

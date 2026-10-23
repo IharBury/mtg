@@ -1689,15 +1689,15 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .playUntilNextTurn =>
           let name := o.name
           let (g, newId) := g.move o.id .exile none
-          let g := g.changeObject newId
-            (.playPermission (some { player := controller, turnEndsRemaining := 2 }))
+          let g := g.createEffect
+            (.playPermission newId { player := controller, turnEndsRemaining := 2 })
           g.logMsg
             s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
         | .playThisTurn =>
           let name := o.name
           let (g, newId) := g.move o.id .exile none
-          let g := g.changeObject newId
-            (.playPermission (some { player := controller, turnEndsRemaining := 1 }))
+          let g := g.createEffect
+            (.playPermission newId { player := controller, turnEndsRemaining := 1 })
           g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
         | .forLater =>
           let name := o.name
@@ -2010,7 +2010,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
   | .hand, .lastKnown, .withoutPaying, .none =>
     g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
   | .nextRedOrGreenCreature, .unlimited, .withoutPaying, .none =>
-    g.change (.pendingFreeRGCreature (some controller))
+    g.createEffect (.pendingFreeRGCreatureThisTurn controller)
       |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   | .impulse, .unlimited, .withoutPaying, .none =>
     if !g.grimaImpulseReady then g
@@ -2056,7 +2056,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
     match origin with
     | .nextRedOrGreenCreature =>
       if withoutPaying then
-        g.change (.pendingFreeRGCreature (some controller))
+        g.createEffect (.pendingFreeRGCreatureThisTurn controller)
           |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
       else g.logMsg "That creature spell is cast for its mana cost"
     | .hand =>
@@ -2518,8 +2518,8 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let (g, newId) := g.putOntoBattlefield src.id controller
         let g := g.changeStatuses newId #[
           .additionalCreature false,
-          .onlyFoodArtifact false,
-          .returnedAsArtifact true]
+          .onlyFoodArtifact false]
+        let g := g.createEffect (.returnedAsArtifact newId)
         let o := g.object! newId
         g.logMsg s!"{o.name} returns as an artifact"
   | .notedLands, .tapped, _ =>
@@ -2581,7 +2581,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let (g, newId) := g.putOntoBattlefield id owner (tapped := tapped)
         let g :=
           if how == .asArtifact then
-            g.changeStatus newId (.returnedAsArtifact true)
+            g.createEffect (.returnedAsArtifact newId)
           else g
         let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
@@ -2653,7 +2653,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let (g, newId) := g.putOntoBattlefield o.id owner (tapped := tapped)
         let g :=
           if how == .asArtifact then
-            g.changeStatus newId (.returnedAsArtifact true)
+            g.createEffect (.returnedAsArtifact newId)
           else g
         let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
@@ -2681,7 +2681,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     if !(sourceId.bind g.findObject?).any (·.wasCast) then
       g.logMsg "It wasn't cast. The ability does nothing."
     else
-      g.changePlayer controller (.protectionFromEverything true)
+      g.createEffect (.protectionFromEverything controller)
         |>.logMsg s!"{(g.player controller).name} gains protection from everything"
   | .keywords k, .target =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -2710,7 +2710,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .preventDamageWhileSource, .target =>
     g.preventDamageWhileSource controller sourceId targets ab.targetKind
   | .assignCombatDamageEqualToughness, .creaturesYouControl =>
-    g.change (.assignCombatDamageEqualToughness (some controller))
+    g.createEffect (.assignCombatDamageEqualToughnessUntilEot controller)
       |>.logMsg "Creatures you control assign combat damage equal to their toughness"
   | .basePowerEqualHand, .source =>
     g.grantHandSizePower sourceId
@@ -2728,7 +2728,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some pid => if acc.contains pid then acc else acc.push pid
         | none => acc) #[]
       pids.foldl (fun g pid =>
-        g.changePlayer pid (.protectionFromEverything true)
+        g.createEffect (.protectionFromEverything pid)
           |>.logMsg s!"{(g.player pid).name} gains protection from everything") g
   | .assignCombatDamageEqualToughness, who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
@@ -2736,7 +2736,7 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some objs =>
       match objs.findSome? (·.controller) with
       | some pid =>
-        g.change (.assignCombatDamageEqualToughness (some pid))
+        g.createEffect (.assignCombatDamageEqualToughnessUntilEot pid)
           |>.logMsg "Creatures you control assign combat damage equal to their toughness"
       | none => g
     | none => g
@@ -2758,23 +2758,23 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | .hexproofWhileSource =>
         match sourceId with
         | some sid =>
-          let g := g.changeStatus o.id (.pushHexproofGrantedBy sid)
+          let g := g.createEffect (.hexproofWhileSource o.id sid)
           g.logMsg s!"{o.name} gains hexproof for as long as the source remains"
         | none => g
       | .preventDamageWhileSource =>
         match sourceId with
         | some sid =>
-          let g := g.changeStatus o.id (.pushPreventDamageGrantedBy sid)
+          let g := g.createEffect (.preventDamageWhileSource o.id sid)
           g.logMsg
             s!"damage that would be dealt by {o.name} is prevented while the source remains"
         | none => g
       | .landfallCreateElf => g.gainLandfallCreateElf (some o.id)
       | .basePowerEqualHand =>
-        g.changeStatus o.id (.cardsInHandPowerUntilEot true)
+        g.createEffect (.cardsInHandPowerUntilEot o.id)
           |>.logMsg
             s!"{o.name}'s base power is the number of cards in your hand until end of turn"
       | .ironFistTap =>
-        g.changeStatus o.id (.ironFistTapGrants ((g.object! o.id).status.ironFistTapGrants + 1))
+        g.createEffect (.ironFistTapUntilEot o.id)
           |>.logMsg s!"{o.name} gains a tap ability until end of turn"
       | .doubleStrike | .keywords _ | .protectionEverything
         | .assignCombatDamageEqualToughness => g
@@ -3512,7 +3512,7 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match sourceId.bind g.findObject? with
           | some src =>
             if src.isOnBattlefield then
-              g.changeStatus id (.pushLosesAbilitiesGrantedBy src.id)
+              g.createEffect (.losesAbilitiesWhileSource id src.id)
             else
               g.logMsg s!"The source has left. {tgt.name} is tapped but keeps its abilities."
           | none =>
@@ -3534,7 +3534,7 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | some src =>
         if src.isOnBattlefield then
           objs.foldl (fun g o =>
-            g.changeStatus o.id (.pushLosesAbilitiesGrantedBy src.id)) g
+            g.createEffect (.losesAbilitiesWhileSource o.id src.id)) g
         else
           objs.foldl (fun g o =>
             g.logMsg s!"The source has left. {o.name} is tapped but keeps its abilities.") g
@@ -3567,20 +3567,20 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match asAffected who with
     | some affected =>
       g.withAffected controller ab sourceId targets affected fun g o =>
-        g.changeStatus o.id (.cantBeBlockedExceptByHasteUntilEot true)
+        g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
           |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
     | none =>
       let ctx : TriggerRead := { controller, sourceId, targets }
       match g.permanentsNamed ctx who with
       | some objs =>
         objs.foldl (fun g o =>
-          g.changeStatus o.id (.cantBeBlockedExceptByHasteUntilEot true)
+          g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
             |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste") g
       | none => g
   | .untapWhileYouControl .target =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       let sid := sourceId.getD ⟨0⟩
-      g.changeStatus o.id (.pushCantUntapGrantedBy sid))
+      g.createEffect (.cantUntapWhileSource o.id sid))
       sourceId (some "The target is no longer legal")
   | .untapWhileYouControl who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
@@ -3591,7 +3591,7 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if o.controlledBy controller then g
         else
           let sid := sourceId.getD ⟨0⟩
-          g.changeStatus o.id (.pushCantUntapGrantedBy sid)) g
+          g.createEffect (.cantUntapWhileSource o.id sid)) g
 where
   asAffected : TriggeredAbility.ObjectSelector → Option TriggeredAbility.TriggerAffected
     | .any | .target .any => some .target
@@ -3617,13 +3617,13 @@ def applyBecomeArtifact (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
     match g.permanentsNamed ctx who with
     | some objs =>
       objs.foldl (fun g o =>
-        let g := g.changeStatus o.id (.additionalArtifactUntilEot true)
+        let g := g.createEffect (.additionalArtifactUntilEot o.id)
         g.logMsg s!"{o.name} becomes an artifact until end of turn") g
     | none => g
 where
   become (affected : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
-      let g := g.changeStatus o.id (.additionalArtifactUntilEot true)
+      let g := g.createEffect (.additionalArtifactUntilEot o.id)
       g.logMsg s!"{o.name} becomes an artifact until end of turn"
 
 /-- Resolve `TriggerResolution.becomePrepared`. Each printed recipient keeps
@@ -3703,7 +3703,7 @@ def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .equalSourcePower, .equalSourceToughness, .target =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
-      let g := g.changeStatus o.id (.setBasePT (some (pw, tw)))
+      let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
@@ -3921,13 +3921,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
         let g := g.giveControlUntilEot o controller
         let g := g.applyPermanentAction (g.object! o.id) .untap
-        g.changeStatus o.id (.grantUntilEot Keyword.haste))
+        g.createEffect (.keywordsUntilEot o.id Keyword.haste))
     | .whileSourceRemains =>
       g.gainControlWhileSource controller sourceId targets
     | .duringNextTurn =>
       g.withLegalKindPlayer controller .opponent targets (fun g pid =>
-        let g := g.setPlayerControl controller pid
-        g.change (.controlOnNextTakenTurn true))
+        g.setPlayerControl controller pid)
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
     let eqs :=
@@ -4060,7 +4059,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some o =>
         if g.hasSubtype o .bear then g
         else
-          let g := g.changeStatus o.id (.pushAdditionalSubtype .bear)
+          let g := g.createEffect (.additionalSubtype o.id .bear)
           g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
@@ -4162,8 +4161,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match g.findObject? newId with
       | some o =>
         let name := o.name
-        let g := g.changeObject o.id
-          (.playPermission (some { player := controller, turnEndsRemaining := 2 }))
+        let g := g.createEffect
+          (.playPermission o.id { player := controller, turnEndsRemaining := 2 })
         g.logMsg
           s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
       | none => g

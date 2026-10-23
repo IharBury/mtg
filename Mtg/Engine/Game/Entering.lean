@@ -159,7 +159,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       if p == caster && spell.printed.isCreature &&
           (spell.printed.colors.contains .red ||
             spell.printed.colors.contains .green) then
-        g.change (.pendingFreeRGCreature none)
+        g.expireEffect (.pendingFreeRGCreatureThisTurn p)
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
     | none => g
@@ -232,7 +232,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- no costs are paid for it (rulings 843–846).
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
-      let g := g.changePlayer caster .decCopyNextInstantSorceryThisTurn
+      let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.changeObjects copy.id #[
         .kicked spell.kicked,
@@ -276,8 +276,11 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         .chosenX spell.chosenX,
         .isCopy true]
       let g := g.putStackEntry caster copy.id
-      g.change (.pendingLokiCopy none)
-        |>.logMsg s!"A copy of {spell.name} is created (Loki)"
+      let g :=
+        match g.pendingLokiCopy with
+        | some (p, src, fallback) => g.expireEffect (.pendingLokiCopy p src fallback)
+        | none => g
+      g.logMsg s!"A copy of {spell.name} is created (Loki)"
     else g
   | none => g
 
@@ -645,10 +648,12 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game 
         match o.printed.otherFace with
         | some back =>
           let shown := { back with otherFace := some { o.printed with otherFace := none } }
+          let g := g.expirePrintedStaticEffects o
           let g := g.changeObjects o.id #[
             .printed shown,
             .status (.transformed true),
             .status (.cantTransform true)]
+          let g := g.createPrintedStaticEffects (g.object! o.id)
           g.logMsg s!"{shown.name} enters back face up (night / daybound)"
         | none => g
       else g

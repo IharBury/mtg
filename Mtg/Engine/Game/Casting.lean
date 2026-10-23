@@ -566,14 +566,15 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
   -- is cast from exile, so it can help pay for that spell (ruling 729).
   let g := g.battlefield.foldl (fun g land =>
-    let kept := land.status.colorlessGrantUntilCast.filter (fun cid => g.followMoved cid != spell.id)
-    if kept.size == land.status.colorlessGrantUntilCast.size then g
-    else g.changeStatus land.id (.colorlessGrantUntilCast kept)) g
+    land.status.colorlessGrantUntilCast.foldl (fun g cid =>
+      if g.followMoved cid == spell.id then
+        g.expireEffect (.colorlessGrantUntilCast land.id cid)
+      else g) g) g
   -- Theorist's Proxy: the next spell this player casts this turn.
   let g :=
     if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
-      let g := g.changePlayer p (.nextSpellCantBeCountered false)
-      (g.changeObject spell.id (.uncounterableThisCast true)).logMsg
+      let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
+      (g.createEffect (.uncounterableThisCast spell.id)).logMsg
         s!"{spell.name} can't be countered"
     else g
   let g :=

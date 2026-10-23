@@ -41,7 +41,9 @@ def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Arra
 def createCommandObject (g : Game) (p : PlayerId) (card : CardDef)
     (untilTurnOf : Option PlayerId := none) : Game :=
   let (g, obj) := g.allocObject card p .command (some p)
-  g.changeObject obj.id (.fraEffectUntilTurnOf untilTurnOf)
+  match untilTurnOf with
+  | some q => g.createEffect (.fraEmblemUntilTurnOf obj.id q)
+  | none => g
 
 /-- Each player in APNAP order who controls a creature. -/
 def playersWithCreaturesApnap (g : Game) : Array PlayerId :=
@@ -114,15 +116,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         if card.zone == .exile then
           let perm : PlayPermission :=
             { player := controller, turnEndsRemaining := 0, whileExiled := true }
-          (g.changeObject card.id (.playPermission (some perm))).logMsg
+          (g.createEffect (.playPermission card.id perm)).logMsg
             s!"{(g.player controller).name} may cast {card.name} for as long as it remains exiled"
         else g
       g.withLegalKindPermanent controller kind targets (fun g land =>
-        let g := g.changeStatus land.id (.pushColorlessGrantUntilCast card.id)
+        let g := g.createEffect (.colorlessGrantUntilCast land.id card.id)
         g.logMsg s!"{land.name} gains \"\{T}: Add \{C}\{C}\" until {card.name} is cast from exile")
         sourceId illegal
   | .nextSpellCantBeCountered =>
-    (g.changePlayer controller (.nextSpellCantBeCountered true)).logMsg
+    (g.createEffect (.nextSpellCantBeCounteredThisTurn controller)).logMsg
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
   | .identityEcho =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -181,7 +183,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     onSource (fun g o =>
       let ab := TriggeredAbility.fra .combatDamageToPlayer
         "Whenever this creature deals combat damage to a player, draw two cards." (.draw 2)
-      (g.changeStatus o.id (.pushGrantedTriggerUntilEot ab)).logMsg
+      (g.createEffect (.grantedTriggered o.id ab true)).logMsg
         s!"Until end of turn, whenever {o.name} deals combat damage to a player, {(g.player controller).name} draws two cards")
   | .sourceGetsPowerPerArtifact =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
@@ -252,7 +254,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     if targets.isEmpty then g
     else
       g.withLegalKindPermanent controller kind targets (fun g o =>
-        (g.changeStatus o.id (.pushUntilTurnOfPump controller (-4) (-1))).logMsg
+        (g.createEffect (.untilTurnOfPump o.id controller (-4) (-1))).logMsg
           s!"{o.name} gets -4/-1 until {(g.player controller).name}'s next turn") sourceId illegal
   | .eachPlayerSacrificesThenBeast =>
     g.continueSacrificeEach controller g.apnapOrder #[]
@@ -334,7 +336,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       s!"{(g.player controller).name} may pay \{{pay}}"
   | .becomeArtifactCreatureUntilEot =>
     onSource (fun g o =>
-      (g.changeStatus o.id (.additionalCreatureUntilEot true)).logMsg
+      (g.createEffect (.additionalCreature o.id true)).logMsg
         s!"{o.name} becomes an artifact creature until end of turn")
   | .queueMshReflexive kind paid =>
     if kind == 2 then
@@ -352,7 +354,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       match m with
       | 0 =>
         (g.withLegalKindPermanent controller .creature slice (fun g o =>
-          (g.changeStatus o.id (.cantBlockUntilEot true)).logMsg
+          (g.createEffect (.cantBlockUntilEot o.id)).logMsg
             s!"{o.name} can't block this turn") sourceId illegal, i + 1)
       | 1 =>
         (g.withLegalKindPlayer controller .player slice
@@ -423,11 +425,10 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         else
           let (g, copy) := g.allocObject { card.printed with isToken := card.printed.isPermanentCard }
             controller .exile (some controller)
-          let g := g.changeObjects copy.id #[
-            .isCopy true,
-            .playPermission (some {
-              player := controller, turnEndsRemaining := 0,
-              whileExiled := true, withoutManaCost := true, ignoreTiming := true })]
+          let g := g.changeObject copy.id (.isCopy true)
+          let g := g.createEffect (.playPermission copy.id {
+            player := controller, turnEndsRemaining := 0,
+            whileExiled := true, withoutManaCost := true, ignoreTiming := true })
           (g, cs.push copy.id)
       | none => (g, cs)) (g, #[])
     if copies.isEmpty then g.logMsg "No exiled card is left to copy"

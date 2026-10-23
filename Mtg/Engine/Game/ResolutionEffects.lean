@@ -134,8 +134,11 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let (g, newId) := g.move id .stack (some p)
       let g := g.changeObjects newId #[
         .castFromGraveyard fromGy,
-        .exileInstantSorceryInstead (exileInstantSorceryInstead && fromGy),
         .isCopy wasCopy]
+      let g :=
+        if exileInstantSorceryInstead && fromGy then
+          g.createEffect (.exileInstantSorceryInstead newId)
+        else g
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
@@ -272,7 +275,7 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
       g.logMsg "The target is no longer legal"
     else
       let g := g.addPlusOnePlusOneTo o 1
-      let g := g.changeStatus o.id (.grantUntilEot Keyword.lifelink)
+      let g := g.createEffect (.keywordsUntilEot o.id Keyword.lifelink)
       g.logMsg s!"{o.name} gains lifelink until end of turn"
 
 /-- Counter a spell on the stack. `exile` puts a permanent spell into exile
@@ -298,11 +301,11 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       let (g, newId) := g.move spellId dest none
       let g :=
         if dest == .exile && grantFreeCast then
-          g.changeObject newId (.playPermission (some {
+          g.createEffect (.playPermission newId {
             player := controller
             turnEndsRemaining := 0
             whileExiled := true
-            withoutManaCost := true }))
+            withoutManaCost := true })
         else g
       let destNote := if dest == .exile then "exiled" else "countered"
       g.logMsg s!"{name} is {destNote}"
@@ -523,7 +526,7 @@ def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
         let cardName := (g.object! top).name
         let (g', newId) := g.move top .exile none
         g := g'
-        g := g.changeObject newId (.playPermission (some { player := caster, turnEndsRemaining := 1 }))
+        g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
         g := g.logMsg (logAfter pl.name cardName)
     return g
 
@@ -779,7 +782,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
   | 9 =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o =>
-        g.changeStatus o.id (.cantBeBlockedExceptByHasteUntilEot true)
+        g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
           |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste")
       sourceId illegal
   | 10 =>
@@ -884,12 +887,7 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       keywords :=
         if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
         else printed0.keywords }
-  let g := g.changeObjects o.id #[
-    .printed printed,
-    .copyRestore (some restore),
-    .copyUntilEot untilEot,
-    .copyUntilNextTurn untilNextTurn,
-    .copyUntilSourceLeaves untilSourceLeaves]
+  let g := g.createEffect (.copy o.id printed (some restore) untilEot untilNextTurn untilSourceLeaves)
   g.logMsg s!"{restore.name} becomes a copy of {printed0.name}"
 
 /-- Copy an activated or triggered ability on the stack. The copy is not

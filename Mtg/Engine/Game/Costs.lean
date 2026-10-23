@@ -77,10 +77,9 @@ def finishProposedSpell (g : Game) : Except String Game := do
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>
       if spent .legendarySpell then
-        (paid.changeObjects o.id #[
-          .treasureManaSpent (o.treasureManaSpent || spent .fromTreasure),
-          .uncounterableThisCast true
-        ]).logMsg s!"{o.name} can't be countered (Delighted Halfling)"
+        ((paid.changeObject o.id (.treasureManaSpent (o.treasureManaSpent || spent .fromTreasure)))
+          |>.createEffect (.uncounterableThisCast o.id))
+          |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
       else paid.changeObject o.id (.treasureManaSpent (spent .fromTreasure))
     | _, _ => paid
   if prop.kind == .activatedAbility then

@@ -121,11 +121,11 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
         let name := o.name
         let (g', newId) := g.move id .exile none
         g := g'
-        g := g.changeObject newId (.playPermission (some {
+        g := g.createEffect (.playPermission newId {
           player := controller
           turnEndsRemaining := 0
           whileExiled := true
-          anyMana := true }))
+          anyMana := true })
         g := g.logMsg
           s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
     return g
@@ -150,7 +150,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .plusOne n => g.addPlusOnePlusOneTo o n
   | .dealDamage n => g.dealDamageToPermanent o n
   | .loseIndestructible =>
-    let g := g.changeStatus o.id (.untilEotLosesIndestructible true)
+    let g := g.createEffect (.loseIndestructibleUntilEot o.id)
     g.logMsg s!"{o.name} loses indestructible until end of turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
   | .grantKeywords k =>
@@ -173,8 +173,9 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
       let g := g.changeStatus o.id (.tapped false)
       g.logMsg s!"{o.name} untaps"
   | .becomeArtifactIndestructible =>
-    let g := g.changeStatuses o.id
-      #[.additionalArtifactUntilEot true, .grantUntilEot Keyword.indestructible]
+    let g := g.createEffects #[
+      .additionalArtifactUntilEot o.id,
+      .keywordsUntilEot o.id Keyword.indestructible]
     g.logMsg
       s!"{o.name} becomes an artifact and gains indestructible until end of turn"
   | .becomePrepared => g.becomePrepared o
@@ -185,7 +186,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     let g := g.changeStatus o.id (.addCounters .stun n)
     g.logMsg s!"A stun counter is put on {o.name}"
   | .setBasePT pw tw =>
-    let g := g.changeStatus o.id (.setBasePT (some (pw, tw)))
+    let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
     g.logMsg s!"{o.name} has base power and toughness {pw}/{tw} until end of turn"
   | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
   | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false

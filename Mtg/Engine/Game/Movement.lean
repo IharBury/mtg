@@ -35,11 +35,11 @@ def becomePrepared (g : Game) (o : GameObject) : Game :=
     else
       let p := o.controller.getD o.owner
       let (g, copy) := g.allocObject face.toCardDef p .exile
-      let g := g.changeObject copy.id (.playPermission (some {
+      let g := g.createEffect (.playPermission copy.id {
         player := p
         turnEndsRemaining := 0
         whileExiled := true
-        prepareSource := some o.id }))
+        prepareSource := some o.id })
       let g := g.changeStatus o.id (.prepared true)
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
@@ -161,7 +161,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let dying := g.dyingTriggers old dest
   let pwDied :=
     match happened.change with
-    | .moved object .battlefield (.graveyard _) _ _ => object.planeswalker
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) => object.planeswalker
     | _ => false
   -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
   -- while it is still attached.
@@ -494,11 +494,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       else g
     | none => g
+  let g := g.expireEffectsOnLeavingObject old
   let g :=
     if old.zone == .battlefield then
-      let g := g.restoreCopiesUntilSourceLeaves old.id
-      g.restoreControlUntilSourceLeaves old.id
+      g.expireWhileSourceEffects old.id
     else g
+  let g :=
+    match g.findObject? newId with
+    | some cur =>
+      let g := if cur.status.notACreature then g.createEffect (.notACreature newId) else g
+      g.createPrintedStaticEffects cur
+    | none => g
   let g :=
     match g.pendingLokiCopy with
     | some (p, some id, _) =>

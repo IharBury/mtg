@@ -161,7 +161,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
     | some o =>
-      let g := g.changeStatus o.id (.losesAbilitiesUntilEot true)
+      let g := g.createEffect (.losesAbilitiesUntilEot o.id)
       g.logMsg s!"{o.name} loses all abilities until end of turn"
   | .powerDamageFromTo fromIdx toIdx =>
     match g.legalPermanentAt? controller kind targets toIdx sourceId with
@@ -229,8 +229,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginFraChoice p (.mayWheel n rest.toArray)
         s!"{(g.player p).name} may discard their hand and draw {n} cards"
   | .mountainsAddExtraRed =>
-    let g := g.changePlayer controller
-      (.mountainExtraRedThisTurn ((g.player controller).mountainExtraRedThisTurn + 1))
+    let g := g.createEffect (.mountainExtraRedThisTurn controller)
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLandToGraveyard =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
@@ -247,7 +246,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       sourceId illegal
   | .damageExileIfDies n =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.changeStatus o.id (.untilEotExileIfDies true)
+      let g := g.createEffect (.exileIfDiesUntilEot o.id)
       g.dealDamageFrom srcName (g.object! o.id) n (source := src?)) sourceId illegal
   | .millMayPutPermanentGainLife n life =>
     let before := (g.player controller).graveyard.size
@@ -348,7 +347,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.card id =>
         match g.findObject? id with
         | some o =>
-          (g.changeObject o.id (.flashbackUntilEot true)).logMsg
+          (g.createEffect (.flashbackUntilEot o.id)).logMsg
             s!"{o.name} gains flashback until end of turn"
         | none => g
       | _ => g) sourceId illegal
@@ -428,11 +427,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- Permanent spells cast this way become tokens.
       let (g, copy) := g.allocObject { printed with isToken := printed.isPermanentCard }
         controller .exile (some controller)
-      let g := g.changeObjects copy.id #[
-        .isCopy true,
-        .playPermission (some {
-          player := controller, turnEndsRemaining := 0,
-          whileExiled := true, withoutManaCost := true, ignoreTiming := true })]
+      let g := g.changeObject copy.id (.isCopy true)
+      let g := g.createEffect (.playPermission copy.id {
+        player := controller, turnEndsRemaining := 0,
+        whileExiled := true, withoutManaCost := true, ignoreTiming := true })
       (g, cs.push copy.id)) (g, #[])
     if copies.isEmpty then g
     else

@@ -563,7 +563,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        let g := g.changeStatus o.id (.setBasePT (some (pw, tw)))
+        let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
         return (g.logMsg s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn").finishFraChoice
       else return g.finishFraChoice
     | none => return g.finishFraChoice
@@ -848,7 +848,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
       let name := o.name
       let (g, newId) := g.move o.id .exile none
-      return (g.changeObject newId (.playPermission (some { player := p, turnEndsRemaining := 2 }))
+      return (g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
         |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
     | none => return g.finishFraChoice
   | .moonstoneMayExile _, .decline =>
@@ -916,7 +916,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .visionQuestPick .., _ => throw "Choose an artifact creature, or decline to find nothing"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2
-    return ((g.change (.assignCombatDamageEqualToughness (some p)))
+    return ((g.createEffect (.assignCombatDamageEqualToughnessUntilEot p))
       |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishFraChoice
   | .kingpinMayPay2Life, .decline =>
     return (g.logMsg "The Kingpin's cost wasn't paid").finishFraChoice

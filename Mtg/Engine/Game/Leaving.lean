@@ -30,14 +30,19 @@ def representedByCard (o : GameObject) : Bool :=
   o.abilityEffect.isNone && o.triggeredAbility.isNone && !o.isCopy
 
 /-- Change `o`'s controller unless that player has left (CR 800.4b). -/
-def changeControl (g : Game) (o : GameObject) (p : PlayerId) : Game :=
+def changeControl (g : Game) (o : GameObject) (p : PlayerId)
+    (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
+    (untilSourceLeaves : Option ObjectId := none) : Game :=
   if (g.player p).lost then
     g.logMsg s!"{o.name} does not change control (CR 800.4b)"
-  else if o.controlledBy p then g
+  else if o.controlledBy p then
+    if untilEot || turnEndsLeft > 0 || untilSourceLeaves.isSome then
+      g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
+    else g
   else
     let fromP := o.controller.getD o.owner
-    (g.changeObjects o.id #[.controller (some p), .controlChanged true]).record
-      ⟨g.turnNumber, .control o.id fromP p⟩
+    (g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)).record
+      (GameEvent.control g.turnNumber o.id fromP p)
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End a control-changing effect on `o` (CR 800.4a / 800.4c). -/
@@ -45,22 +50,18 @@ def endControlChangingEffect (g : Game) (o : GameObject) : Game :=
   match g.findObject? o.id with
   | none => g
   | some o =>
+    let curCtrl := o.controller.getD o.owner
+    let fallback := ContinuousEffect.control o.id curCtrl o.status.controlUntilEot o.status.controlTurnEndsLeft o.controlUntilSourceLeaves
     if !o.controlChanged then
-      g.changeStatuses o.id #[
-        .controlUntilEot false,
-        .controlTurnEndsLeft 0]
+      g.expireMatchingOr (fun | .control id _ _ _ _ => id == o.id | _ => false) (some fallback)
     else
       let dest := o.defaultController.getD o.owner
+      let g := g.expireMatchingOr (fun | .control id _ _ _ _ => id == o.id | _ => false) (some fallback)
       if (g.player dest).lost then
         let name := o.name
         let (g, _) := g.move o.id .exile none
         g.logMsg s!"{name} is exiled (CR 800.4c)"
       else
-        let g := g.changeObjects o.id #[
-          .controller (some dest),
-          .controlChanged false,
-          .status (.controlUntilEot false),
-          .status (.controlTurnEndsLeft 0)]
         g.logMsg s!"{o.name} reverts to {(g.player dest).name}'s control"
 
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
@@ -68,11 +69,7 @@ def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
   if (g.player p).lost then
     g.logMsg s!"{o.name} does not change control (CR 800.4b)"
   else
-    let g := g.changeControl o p
-    match g.findObject? o.id with
-    | none => g
-    | some o =>
-      g.changeStatus o.id (.controlUntilEot true)
+    g.changeControl o p (untilEot := true)
 
 /-- Remove `o` from the game. Battlefield permanents use `move` so
 until-leaves one-shots return (CR 610.3 / 800.4a). Ante stays (CR 800.4n). -/
