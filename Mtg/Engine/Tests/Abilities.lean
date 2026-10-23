@@ -295,7 +295,7 @@ def batCloudFull : Game :=
 
 def batCloudReduced : Game :=
   batCloudFull.record (GameEvent.moved batCloudFull.turnNumber
-    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, creature := true }
+    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.creature] }
     .battlefield (.graveyard ⟨1⟩))
 
 #guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")

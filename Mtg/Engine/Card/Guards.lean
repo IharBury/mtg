@@ -1005,7 +1005,7 @@ namespace CardDef
   "Other Orcs and Goblins you control have trample."
 #guard StaticAbility.toNotation (.otherCreaturesGet #[.elf] 1 1) ==
   "Other Elf creatures you control get +1/+1."
-#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #[.wolf] true) ==
+#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #[.wolf] #[.battle]) ==
   "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
 #guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype .dwarf) ==
   "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."

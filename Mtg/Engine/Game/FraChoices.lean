@@ -252,14 +252,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
-  | .maySacrificeThen kind next sourceId, .objects #[id] =>
+  | .maySacrificeThen types next sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
-    let ok :=
-      o.isOnBattlefield && o.controlledBy p &&
-        match kind with
-        | .land => o.printed.isLand
-        | .creatureOrPlaneswalker => o.isCreature || o.printed.isPlaneswalker
-        | .creature => o.isCreature
+    let ok := o.isOnBattlefield && o.controlledBy p && types.any o.hasType
     if !ok then throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice

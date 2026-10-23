@@ -399,7 +399,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
   | .maySacrificeLandForHeartwoods =>
     if (g.permanentsOf controller).any (·.printed.isLand) then
-      g.beginFraChoice controller (.maySacrificeThen .land (.tappedHeartwoods 2) sourceId)
+      g.beginFraChoice controller (.maySacrificeThen #[.land] (.tappedHeartwoods 2) sourceId)
         s!"{(g.player controller).name} may sacrifice a land"
     else g
   | .uldarosCopies =>
@@ -514,7 +514,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .maySacrificeThenEdict =>
     if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
       g.beginFraChoice controller
-        (.maySacrificeThen .creatureOrPlaneswalker .eachOpponentSacrificesCreature sourceId)
+        (.maySacrificeThen #[.creature, .planeswalker] .eachOpponentSacrificesCreature sourceId)
         s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
     else g
   | .sourceGetsCausePower =>

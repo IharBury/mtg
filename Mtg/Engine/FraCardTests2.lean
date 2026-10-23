@@ -724,10 +724,10 @@ Master of Barbs pumps your team. -/
 #guard
   let g := addToGraveyard afterDraw darklightPhoenix me
   let g := (g.record (GameEvent.moved g.turnNumber
-      { id := ⟨51⟩, controller := some me, owner := me, creature := true }
+      { id := ⟨51⟩, controller := some me, owner := me, types := #[.creature] }
       .battlefield (.graveyard me))).record
     (GameEvent.moved g.turnNumber
-      { id := ⟨52⟩, controller := some me, owner := me, creature := true }
+      { id := ⟨52⟩, controller := some me, owner := me, types := #[.creature] }
       .battlefield (.graveyard me))
   let g := settle (skipTo g .beginningOfCombat 80)
   onBattlefield g "Darklight Phoenix"

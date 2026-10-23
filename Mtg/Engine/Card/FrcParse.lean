@@ -155,7 +155,7 @@ private def effectText (raw : String) : Option Effect :=
     else if l.contains "exile target creature. its controller gains life" then
       some (frc .swords raw (creature "target creature"))
     else if l.contains "destroy target nonland" then
-      some (frc .stroke raw (.filtered { noun := "target nonland permanent", nonland := true }))
+      some (frc .stroke raw (.filtered { noun := "target nonland permanent", nonTypes := #[.land] }))
     else if l.contains "create x 1/1 green and white citizen" then
       some (frc .grandCrescendo raw)
     else if l.contains "create x 1/1 white soldier" && l.contains "if x is 5" then

@@ -142,13 +142,6 @@ inductive SearchDest where
   | handThenDiscardRandom
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- What a “you may sacrifice …” choice accepts. -/
-inductive FraSacrifice where
-  | land
-  | creatureOrPlaneswalker
-  | creature
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Part of an activation cost that needs the player to choose what to pay
 with (CR 601.2h / 602.2b). -/
 inductive CostPick where
@@ -282,9 +275,9 @@ inductive FraChoice where
   /-- Discard `n` cards, then tap and stun up to as many target creatures as
   nonland cards were discarded (Seasoned Cryomancer). -/
   | discardThenStun (n : Nat) (sourceId : Option ObjectId)
-  /-- You may sacrifice a permanent of `kind` (land, creature or planeswalker);
+  /-- You may sacrifice a permanent with one of `types` (land, creature or planeswalker);
   if you do, do `next`. -/
-  | maySacrificeThen (kind : FraSacrifice) (next : FraNext)
+  | maySacrificeThen (types : Array CardType) (next : FraNext)
     (sourceId : Option ObjectId)
   /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
   | mayMovePlusOne (sourceId : ObjectId)

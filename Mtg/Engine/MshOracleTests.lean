@@ -1096,9 +1096,9 @@ def creatureAndArtifactSourceOk : Bool :=
   let (g, stoneAb) := g.putStackAbility stone ⟨0⟩
     (abilityEffect := some (Effect.abilityDraw 1))
   let creatureLegal :=
-    g.legalTargetsForKind ⟨0⟩ .stackAbilityFromCreatureSource
+    g.legalTargetsForKind ⟨0⟩ (.stackAbilityFromSource .creature)
   let artifactLegal :=
-    g.legalTargetsForKind ⟨0⟩ .stackAbilityFromArtifactSource
+    g.legalTargetsForKind ⟨0⟩ (.stackAbilityFromSource .artifact)
   let gMana :=
     g.applyAbilityEffect ⟨0⟩ (Effect.addTwoAnyColorCreatureSources) #[] (some shang.id)
   let pool := (gMana.player ⟨0⟩).manaPool
@@ -1107,7 +1107,7 @@ def creatureAndArtifactSourceOk : Bool :=
     artifactLegal.contains (Target.card stoneAb.id) &&
     !artifactLegal.contains (Target.card bearAb.id) &&
     echoPerceptiveProdigy.activatedAbilities[0]!.effect.targetKind ==
-      .stackAbilityFromCreatureSource &&
+      .stackAbilityFromSource .creature &&
     pool.creatureGreen == 2 &&
     !pool.canPay (ManaCost.ofGeneric 2) &&
     pool.canPay (ManaCost.ofGeneric 2) false false false false false true &&
@@ -4018,7 +4018,7 @@ def echoCopyNewTargetOk : Bool :=
   let (g, ab) := g.allocStackAbility echo ⟨0⟩ (abilityEffect := some (Effect.dealDamage 2))
   let g := g.putStackEntry ⟨0⟩ ab.id
   let g := g.setStackEntryTargets ab.id #[Target.permanent bears.id]
-  let g := g.applyAbilityEffect ⟨0⟩ (Effect.copyControlledAbility true)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.copyControlledAbility .creature)
     #[Target.card ab.id] (some echo.id)
   match g.pending with
   | .fraChoice ⟨0⟩ (.newTargetsForCopies #[copyId]) =>

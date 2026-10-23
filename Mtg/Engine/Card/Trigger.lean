@@ -431,7 +431,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .putNonlandMvAtMostFromGy mv =>
     { targeting := .of (.filtered
         { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
-          zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
+          zone := .anyGraveyard, permanentCard := true, nonTypes := #[.land], mvAtMost := some mv })
       allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
@@ -451,7 +451,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
-          nonland := true, controller := .eachOpponent })
+          nonTypes := #[.land], controller := .eachOpponent })
       allowsZeroTargets := true
       resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
   | .plusOneEqualLastKnownMv =>
@@ -822,7 +822,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourEndStep]
       targeting := .of (.filtered {
         noun := "up to one other target nonland permanent you control"
-        nonland := true, controller := .you, another := true })
+        nonTypes := #[.land], controller := .you, another := true })
       allowsZeroTargets := true, maxTargets := 1
       resolution := .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
@@ -999,7 +999,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.youCastNoncreature]
       targeting := .of (.filtered {
         noun := "another target nonland, nontoken permanent"
-        nonland := true, nontoken := true, another := true })
+        nonTypes := #[.land], nontoken := true, another := true })
       resolution := .exile .target .nextEndStep }
   | .casting .visionModes =>
     { events := #[.youCastNoncreature],

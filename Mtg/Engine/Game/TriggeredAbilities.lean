@@ -3910,7 +3910,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | some o =>
           types.any (fun t =>
             (t.toLower == "permanent" && o.printed.isPermanentCard) ||
-              (t.toLower == "creature" && o.printed.isCreature) ||
+              (CardType.ofOracle? t).any o.printed.hasType ||
               (CardSubtype.ofOracle? t).any o.printed.hasSubtype)
         | none => false)
       g.beginFraChoice controller (.mayRevealToHand ids eligible false)

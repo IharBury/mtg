@@ -255,7 +255,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.returnOneOrTwoNonlands,
   Effect.watchMerfolkAttackDraw,
   Effect.drawX,
-  Effect.copyControlledAbility true,
+  Effect.copyControlledAbility .creature,
   Effect.enterCreateRedwing,
   Effect.revealTopDrawIfArtifact,
   Effect.watchJusticeBounce,
@@ -340,7 +340,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.watchAnyPlayerSecondDraw,
   Effect.castingVillainToken,
   Effect.thisAttackBlinkNontoken,
-  Effect.copyControlledAbility false,
+  Effect.copyControlledAbility .artifact,
   Effect.deathDeathtouchOppSac,
   Effect.castingTargetsGainFlying,
   Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance,
@@ -700,7 +700,7 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .otherSubtypeGetPowerPerArtifactToken .dwarf,
   .cantBeBlockedByPowerAtLeast 3,
   .equippedHexproofUnblockableDuringYourTurn,
-  .extraTriggerAnotherYouControl #[.wolf] true,
+  .extraTriggerAnotherYouControl #[.wolf] #[.battle],
   .equippedFirstStrikePlusPerInstantSorcery,
   .wardDiscardEnchantmentInstantOrSorcery,
   .wardSacrificeLegendary,
@@ -1191,7 +1191,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra .enter
     "When this enchantment enters, the owner of up to one other target nonland permanent puts it on their choice of the top or bottom of their library."
     (.ownerPutsOnTopOrBottom)
-    (.filtered { noun := "up to one other target nonland permanent", nonland := true, another := true })
+    (.filtered { noun := "up to one other target nonland permanent", nonTypes := #[.land], another := true })
     (allowsZeroTargets := true),
   TriggeredAbility.fra .enter
     "When this creature enters, draw two cards, then discard two cards. When you discard one or more nonland cards this way, tap up to that many target creatures and put a stun counter on each of them."
@@ -1287,7 +1287,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   TriggeredAbility.fra .enter
     "When this artifact enters, exile target nonland permanent an opponent controls with mana value 3 or less until this artifact leaves the battlefield."
     (.exileUntilSourceLeaves)
-    (.filtered { noun := "target nonland permanent an opponent controls with mana value 3 or less", nonland := true, controller := .opponent, mvAtMost := some 3 }),
+    (.filtered { noun := "target nonland permanent an opponent controls with mana value 3 or less", nonTypes := #[.land], controller := .opponent, mvAtMost := some 3 }),
   TriggeredAbility.fra .enter
     "When this creature enters, you may sacrifice a land. If you do, create two tapped Heartwood tokens."
     (.maySacrificeLandForHeartwoods),
@@ -1295,7 +1295,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "When this creature enters, if you cast him, exile up to one target nonland card of each card type from your graveyard. Copy those cards. You may cast any number of spells with total mana value 6 or less from among the copies without paying their mana costs."
     (.uldarosCopies)
     (.filtered { noun := "up to one target nonland card of each card type from your graveyard"
-                 zone := .yourGraveyard, nonland := true })
+                 zone := .yourGraveyard, nonTypes := #[.land] })
     (allowsZeroTargets := true) (maxTargets := 8) (cond := .sourceWasCast),
   TriggeredAbility.fra .enter "When this Equipment enters, it deals 3 damage to any target and you gain 3 life."
     (.sequence [.damageAny 3, .gainLife 3]) .playerOrCreature,
@@ -1540,7 +1540,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.plusOneAndDraw 1 2) (ManaCost.ofGenericAndColor 5 .blue) (powerUp := true),
   activated (Effect.drawX) ({ symbols := #[.x, .x] }) (tap := true) (onlyAsSorcery := true),
   activated (Effect.transform) (ManaCost.ofGenericAndColors 2 [.red, .red, .green, .green]) (onlyAsSorcery := true),
-  activated (Effect.copyControlledAbility true) (ManaCost.ofGeneric 1) (tap := true),
+  activated (Effect.copyControlledAbility .creature) (ManaCost.ofGeneric 1) (tap := true),
   equipAbility (ManaCost.ofGenericAndColor 2 .blue),
   activated (Effect.abilityDraw 2) (ManaCost.ofGenericAndColor 3 .blue) (sacrificeSource := true),
   activated (Effect.addBlueCantNonartifact) (ManaCost.empty) (tap := true),
@@ -1602,7 +1602,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
         (tap := true) (sacrificeArtifactOrDiscardNonland := true),
   powerUpAbility (Effect.putPlusOnePlusOneOnSource 5) (ManaCost.ofGenericAndColors 6 [.red, .green]),
   activated (Effect.transform) (ManaCost.ofGenericAndColors 4 [.white, .blue]) (onlyAsSorcery := true),
-  activated (Effect.copyControlledAbility false)
+  activated (Effect.copyControlledAbility .artifact)
         (payLife := 2) (onlyDuringYourTurn := true) (onceEachTurn := true),
   activated (Effect.plusTwoThenOddEvenDestroy) ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true),
   activated (Effect.returnFromGyFinalityAttach) (ManaCost.ofGenericAndColors 3 [.white, .black])

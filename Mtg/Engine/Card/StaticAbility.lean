@@ -302,7 +302,7 @@ inductive StaticAbility where
   | extraTriggerIfEnduringStorySubtype (subtype : CardSubtype)
   /-- If a triggered ability of another matching permanent you control
   triggers, it triggers an additional time (e.g. Chief of the Wilds). -/
-  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (includeBattles : Bool)
+  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (types : Array CardType)
   /-- Enchanted creature loses all abilities and doesn't untap. -/
   | enchantedLosesAbilitiesDoesntUntap
   /-- During your turn, equipped creature has hexproof and can't be blocked. -/
@@ -570,7 +570,7 @@ inductive StaticShape where
   /-- Other matching creatures get +P/+0 per artifact token. -/
   | otherSubtypePowerPerArtifactToken (subtype : CardSubtype)
   | extraTriggerIfEnduringStorySubtype (subtype : CardSubtype)
-  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (includeBattles : Bool)
+  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (types : Array CardType)
   | enchantedLosesAbilitiesDoesntUntap
   | equippedHexproofUnblockableDuringYourTurn
   | equippedTriggersAgain
@@ -903,8 +903,8 @@ def shape : StaticAbility → StaticShape
     .otherSubtypePowerPerArtifactToken subtype
   | .extraTriggerIfEnduringStorySubtype subtype =>
     .extraTriggerIfEnduringStorySubtype subtype
-  | .extraTriggerAnotherYouControl subtypes includeBattles =>
-    .extraTriggerAnotherYouControl subtypes includeBattles
+  | .extraTriggerAnotherYouControl subtypes types =>
+    .extraTriggerAnotherYouControl subtypes types
   | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
   | .equippedHexproofUnblockableDuringYourTurn =>
     .equippedHexproofUnblockableDuringYourTurn
@@ -1087,9 +1087,9 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Other {subtype.pluralName} you control get +1/+0 for each artifact token you control."
   | .extraTriggerIfEnduringStorySubtype subtype =>
     s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
-  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+  | .extraTriggerAnotherYouControl subtypes types =>
     let parts :=
-      (subtypes.map CardSubtype.englishName).toList ++ (if includeBattles then ["battle"] else [])
+      (subtypes.map CardSubtype.englishName).toList ++ (types.map CardType.oracleWord).toList
     let joined :=
       match parts with
       | [a] => a

@@ -107,8 +107,7 @@ checked before the permanent enters, so lands or planeswalkers entering at
 the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
   let proposed := GameEvent.moved g.turnNumber
-    { id := ⟨0⟩, controller := some p, owner := p, land := card.isLand
-      creature := card.isCreature, artifact := card.isArtifact
+    { id := ⟨0⟩, controller := some p, owner := p, types := card.types
       subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
   if !proposed.watches .wouldEnterBattlefield then false
   else
@@ -561,7 +560,7 @@ def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
   let typeMatch (em : GameObject) :=
     em.printed.protectionFromChosenCardType &&
       match em.status.chosenCardType with
-      | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+      | some t => src.printed.hasType t
       | none => false
   colorBlock || typeMatch o ||
     match o.controller with
@@ -577,7 +576,7 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
       (g.permanentsOf target).any (fun em =>
         em.printed.protectionFromChosenCardType &&
           match em.status.chosenCardType with
-          | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+          | some t => src.printed.hasType t
           | none => false)
   (caster == target || !g.playerHasHexproof target) &&
     !(g.player target).protectionFromEverything && !typeBlock

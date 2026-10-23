@@ -224,9 +224,9 @@ private def phraseWith (r : Resolution) (noun : String)
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
   | .targetPlayerDraw n =>
     s!"{noun} draws {cardPhrase n}"
-  | .copyControlledAbility fromCreature =>
-    let src := if fromCreature then "a creature" else "an artifact"
-    s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
+  | .copyControlledAbility ty =>
+    let w := ty.oracleWord
+    s!"Copy target activated or triggered ability you control from {indefinite w} {w} source. You may choose new targets for the copy"
   | .createTokensEqualSubtype kind subtype =>
     s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .proliferateEachKind =>

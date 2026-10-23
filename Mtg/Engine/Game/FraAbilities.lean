@@ -296,7 +296,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .maySacrificeCreatureForBeast =>
     if (g.creaturesControlledBy controller).isEmpty then g
     else
-      g.beginFraChoice controller (.maySacrificeThen .creature .beastToken sourceId)
+      g.beginFraChoice controller (.maySacrificeThen #[.creature] .beastToken sourceId)
         s!"{(g.player controller).name} may sacrifice a creature"
   | .damageUpToOneAndPlayer n =>
     targets.foldl (fun g t =>
