@@ -125,7 +125,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let proposed := GameEvent.created g.turnNumber controller {
       id := ⟨0⟩, controller := some controller, owner := controller, token := true
       creature := printed.isCreature, artifact := printed.isArtifact, land := printed.isLand
-      subtypes := printed.subtypes, changeling := printed.keywords.changeling }
+      subtypes := CardSubtype.ofSubtypes printed.subtypes, changeling := printed.keywords.changeling }
     let printed :=
       if proposed.watches .wouldCreateToken then
         g.replaceArtifactTokenWithDragon controller printed
@@ -135,7 +135,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let extraTreasure :=
       if proposed.watches .wouldCreateToken &&
           match proposed.change with
-          | .created _ object => object.hasSubtype "Food"
+          | .created _ object => object.hasSubtype .food
           | _ => false then
         g.foodTreasureReplacements controller
       else 0

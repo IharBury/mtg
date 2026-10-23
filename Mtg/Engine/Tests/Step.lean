@@ -167,7 +167,7 @@ def notedMissing : Game :=
   (named g "Grizzly Bears").copyRestore.isNone && g.log.size == g0.log.size
 #guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy .source } ==
   "become a copy"
-#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some "Villain")) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some .villain)) } ==
   "become a copy"
 
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/

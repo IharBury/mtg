@@ -115,8 +115,12 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g := g.changePlayer p (.pushBeheldQuality quality)
-    let g := g.record ⟨g.turnNumber, .beheld p quality⟩
+    let g :=
+      match CardSubtype.ofOracle? quality with
+      | some sub =>
+        let g := g.changePlayer p (.pushBeheldQuality sub)
+        g.record ⟨g.turnNumber, .beheld p sub⟩
+      | none => g
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
@@ -132,7 +136,7 @@ def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : 
   match g.findObject? sourceId with
   | none => g
   | some src =>
-    let g := g.changeStatus sourceId (.chosenCreatureType (some creatureType))
+    let g := g.changeStatus sourceId (.chosenCreatureType (CardSubtype.ofOracle? creatureType))
     g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
 
 /-- Draw one card for each graveyard with seven or more cards. -/

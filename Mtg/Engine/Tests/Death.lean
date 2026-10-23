@@ -42,8 +42,8 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
     .loseAllAbilities, .keywords Keyword.haste,
     .counter .plusOnePlusOne (asEnters := true)])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  .put (.cause (some "Villain")) .underOwner (.entering [
-    .additionalSubtype "Hero", .counter .finality])
+  .put (.cause (some .villain)) .underOwner (.entering [
+    .additionalSubtype .hero, .counter .finality])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
   .returnToHand .cause
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==

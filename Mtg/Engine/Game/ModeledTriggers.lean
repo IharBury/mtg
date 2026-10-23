@@ -376,10 +376,10 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         keywords := Keywords.merge o.printed.keywords k })
     | .additionalSubtype subtype =>
       let o := g.object! id
-      if o.printed.subtypes.any (· == subtype) then g
+      if o.printed.subtypes.any (· == subtype.englishName) then g
       else
         g.changeObject id (.printed { o.printed with
-          subtypes := o.printed.subtypes.push subtype })
+          subtypes := o.printed.subtypes.push subtype.englishName })
     | .counter kind n asEnters =>
       let o := g.object! id
       match kind, asEnters with
@@ -682,7 +682,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.returnCauseToOwnerHand targets
   | (.death .villainReturnAsHero) =>
     g.returnCauseUnderOwner controller targets (some "Villain")
-      [.additionalSubtype "Hero", .counter .finality]
+      [.additionalSubtype .hero, .counter .finality]
   | (.casting .villainToken) =>
     g.createKindTokens controller .villain21menace 1
   | (.resource .plusOneCreateInsectOnce) =>

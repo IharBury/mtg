@@ -1036,7 +1036,7 @@ remembered when it phases in. -/
 def phaseRemembersTypes : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus o.id (.additionalSubtypes #["Wraith"])
+  let g := g.changeStatus o.id (.additionalSubtypes #[.wraith])
   let g := g.phaseOut (namedPermanent g "Grizzly Bears")
   g.phaseIn (namedObject g "Grizzly Bears")
 
@@ -4062,7 +4062,7 @@ def announcedCostLocksInOk : Bool :=
 -/
 
 def flameModesStayOk : Bool :=
-  flameOfAnor.chooseTwoIfYouControlSubtype == some "Wizard" &&
+  flameOfAnor.chooseTwoIfYouControlSubtype == some .wizard &&
     (ruling 250).comment.contains "will still have two modes chosen"
 
 #guard flameModesStayOk
@@ -4249,7 +4249,7 @@ def bardsCompanyFlashLockOk : Bool :=
   let without := !(g.timingAllowsCast ⟨0⟩ bardsCompany)
   let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
   let withHuman := g.timingAllowsCast ⟨0⟩ bardsCompany
-  bardsCompany.flashIfYouControlSubtype == some "Human" &&
+  bardsCompany.flashIfYouControlSubtype == some .human &&
     without && withHuman &&
     (ruling 220).comment.contains "only as you begin the casting process"
 

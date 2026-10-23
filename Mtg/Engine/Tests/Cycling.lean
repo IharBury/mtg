@@ -31,7 +31,7 @@ def trollCycleAbility : ActivatedAbility :=
 def stompingGround : CardDef :=
   land "Stomping Ground" "" (subtypes := #["Mountain", "Forest"])
 
-#guard isLandTypeCard stompingGround "Mountain"
+#guard isLandTypeCard stompingGround .mountain
 #guard !isBasicLandCard stompingGround
 
 #guard oliphauntCycleReady.canActivate ⟨0⟩

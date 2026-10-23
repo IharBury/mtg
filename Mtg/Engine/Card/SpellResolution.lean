@@ -79,7 +79,7 @@ inductive EachCreatureDamage where
   /-- Each creature an opponent of the controller controls. -/
   | opponentsControl
   /-- Each creature that does not have this subtype. -/
-  | nonSubtype (subtype : String)
+  | nonSubtype (subtype : CardSubtype)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Where the damage from `SpellResolution.dealDamageToEachCreature` comes from. -/
@@ -162,7 +162,7 @@ inductive YouControlPlusOne where
   /-- Each creature you control. -/
   | eachCreature
   /-- Each permanent of this subtype you control. -/
-  | subtype (subtype : String)
+  | subtype (subtype : CardSubtype)
   /-- Each creature you control, or two counters with the city's blessing. -/
   | citysBlessing
 deriving Repr, Inhabited, BEq
@@ -456,11 +456,11 @@ inductive ObjectSelector where
   | planeswalker
   /-- Another permanent of this subtype. Not the source.
   This is the restriction `.target` uses for that permanent.
-  Another Hero is `.target (.anotherSubtype "Hero")`.
-  `.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)`.
+  Another Hero is `.target (.anotherSubtype .hero)`.
+  `.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)`.
   Read on its own, this is that same permanent. A missing target names
   nothing. -/
-  | anotherSubtype (subtype : String)
+  | anotherSubtype (subtype : CardSubtype)
   /-- Each announced permanent.
   This is the restriction `.target` uses for each of them.
   Each one until the source leaves is
@@ -511,19 +511,19 @@ inductive ObjectSelector where
   `subtype`, when set, requires that subtype.
   The Villain that caused this, under its owner's control, as a Hero with
   a finality counter, is
-  `.put (.cause (some "Villain")) .underOwner (.entering [.additionalSubtype "Hero", .counter .finality])`.
+  `.put (.cause (some .villain)) .underOwner (.entering [.additionalSubtype .hero, .counter .finality])`.
   An announced card or permanent is used when one was chosen; otherwise the
   recorded cause. A missing cause, or the wrong subtype, puts nothing.
   A token copy of that artifact, with no subtype, is `.becomeCopy .cause`.
   A subtype copies nothing that way. -/
-  | cause (subtype : Option String := none)
+  | cause (subtype : Option CardSubtype := none)
   /-- Each creature the controller controls. -/
   | creaturesYouControl
   /-- Each other permanent the controller controls of this subtype.
   The source is not included.
   Each other creature of these subtypes is
   `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`. -/
-  | othersOfSubtype (subtype : String)
+  | othersOfSubtype (subtype : CardSubtype)
   /-- Each creature an opponent controls. -/
   | opponentsCreatures
   /-- Each creature blocking the source. -/
@@ -536,7 +536,7 @@ inductive ObjectSelector where
   `.putCounters (.ofKind .plusOnePlusOne) (.permanent true)`. -/
   | permanent (byYou : Bool := false)
   /-- Each creature that is not this subtype, and each opponent. -/
-  | eachNonSubtypeAndOpponents (subtype : String)
+  | eachNonSubtypeAndOpponents (subtype : CardSubtype)
   /-- The player `who` names.
   The controller is `.player .you`.
   Each opponent is `.player .eachOpponent`.
@@ -568,7 +568,7 @@ inductive ObjectSelector where
   /-- Cards an earlier step milled that have this subtype, put into the
   controller's hand.
   `.returnToHand (.milledSubtype subtype)`. -/
-  | milledSubtype (subtype : String)
+  | milledSubtype (subtype : CardSubtype)
   /-- The card `revealLibrary .untilCreature` revealed, put into the
   controller's hand on the hand branch.
   Outside that resolution, `.returnToHand .revealed` does nothing.
@@ -676,7 +676,7 @@ inductive ObjectSelector where
   /-- Up to `max` basic cards of this subtype from the controller's library.
   Linked to the source is
   `.exile (.basicUpTo subtype max) .forLater .linked`. -/
-  | basicUpTo (subtype : String) (max : Nat)
+  | basicUpTo (subtype : CardSubtype) (max : Nat)
   /-- The card recorded as this trigger's last-known power.
   You may exile it from your graveyard and play it until the end of your
   next turn with
@@ -730,7 +730,7 @@ inductive ObjectSelector where
   | creatureMvAtMost (mv : Nat)
   /-- A creature card of `subtype` with mana value at most `maxMv` from hand.
   `.may (.put (.creatureFromHand subtype maxMv)) (.draw (.fixed 1))`. -/
-  | creatureFromHand (subtype : String) (maxMv : Nat)
+  | creatureFromHand (subtype : CardSubtype) (maxMv : Nat)
   /--   The announced creature card in the controller's graveyard.
   Returned tapped and attacking with a finality counter is
   `.put .creatureCard .tapped (.entering [.attacking, .counter .finality])`.
@@ -976,7 +976,7 @@ inductive NumberSelector where
   A missing power is zero. -/
   | lastKnownPower
   /-- How many permanents of this subtype the controller controls. -/
-  | subtypeCount (subtype : String)
+  | subtypeCount (subtype : CardSubtype)
   /-- How many cards an earlier step discarded from the controller's hand.
   Damage to each opponent is `.dealDamage .discardedHand (.player .eachOpponent)`.
   Drawing that many is `.draw .discardedHand`. -/
@@ -1056,7 +1056,7 @@ inductive NumberSelector where
   | chosenCreatureType
   /-- One token for each permanent of this subtype the controller controls.
   `.createTokens kind (.perSubtype subtype) false`. -/
-  | perSubtype (subtype : String)
+  | perSubtype (subtype : CardSubtype)
   /-- One 1/1 blue Merfolk for each blue mana symbol in the spell that
   caused this. No such spell, or no blue symbol, creates nothing.
   `.createTokens .treasure .blueManaSymbols false .merfolk`. -/
@@ -1231,15 +1231,15 @@ inductive ConditionSelector where
   No hope counters on that permanent is `.not .hopeOnSource`. -/
   | hopeOnSource
   /-- An earlier step dealt damage to a permanent of this subtype. -/
-  | dealtDamageToSubtype (subtype : String)
+  | dealtDamageToSubtype (subtype : CardSubtype)
   /-- You attacked with a permanent of this subtype this turn.
   A Hero that left after attacking still counts.
   Attacking with a Hero, or a Hero entering, is
-  `.or [.attackedWithSubtype "Hero", .subtypeEntered "Hero"]`. -/
-  | attackedWithSubtype (subtype : String)
+  `.or [.attackedWithSubtype .hero, .subtypeEntered .hero]`. -/
+  | attackedWithSubtype (subtype : CardSubtype)
   /-- A permanent of this subtype entered under your control this turn.
   A Hero that left after entering still counts. -/
-  | subtypeEntered (subtype : String)
+  | subtypeEntered (subtype : CardSubtype)
   /-- An earlier step returned a permanent to its owner's hand. -/
   | returnedPermanent
   /-- `noteResolveThisTurn` recorded ordinal `n`. -/
@@ -1294,7 +1294,7 @@ inductive ConditionSelector where
   Spending none does not hold. -/
   | manaSpent
   /-- The targeted permanent has this subtype. -/
-  | subtype (subtype : String)
+  | subtype (subtype : CardSubtype)
   /-- The targeted spell's mana value was this much or less.
   That value includes `{X}` from when the spell was on the stack (CR 202.3e). -/
   | mvAtMost (n : Nat)
@@ -1549,7 +1549,7 @@ inductive TriggerEnterWith where
   /-- The permanent gains these keywords. -/
   | keywords (k : Keywords)
   /-- The permanent gains `subtype` in addition to its other types. -/
-  | additionalSubtype (subtype : String)
+  | additionalSubtype (subtype : CardSubtype)
   /-- Put `n` counters of `kind` on it. `asEnters` reports that it enters
   with them. A finality counter is put by the ability's controller. -/
   | counter (kind : CounterKind) (n : Nat := 1) (asEnters : Bool := false)
@@ -2502,7 +2502,7 @@ inductive Resolution where
   No destruction amasses nothing.
   Any other count is amassed for the players the selector names.
   A count that cannot be read amasses nothing. -/
-  | amass (amount : NumberSelector) (subtype : String := "Goblin")
+  | amass (amount : NumberSelector) (subtype : CardSubtype := .goblin)
       (attachSource : Bool := false) (who : PlayerSelector := .you)
   /-- Create tokens. How many is `amount`. Who receives them is a
   `PlayerSelector`. `token` says which token, and `note` says what a later
@@ -2953,11 +2953,11 @@ inductive Resolution where
   /-- Exile targeted permanents you control, then return them. -/
   | exileThenReturnYouControl
   /-- Add `n` mana in any combination of colors, spendable only on `subtype` spells. -/
-  | addFourManaDragonSpells (n : Nat := 4) (subtype : String := "Dragon")
+  | addFourManaDragonSpells (n : Nat := 4) (subtype : CardSubtype := .dragon)
   /-- Exile attacking creatures; that player may search basics. -/
   | exileAttackersSearchBasics
   /-- Exile the top `n`; play them if you control this subtype. -/
-  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
+  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : CardSubtype)
   /-- Players can't cast spells this turn. A promised gift gates this with
   `.«if» .playersCantCastThisTurn .giftPromised`. -/
   | playersCantCastThisTurn
@@ -3000,7 +3000,7 @@ inductive Resolution where
   | dealDamageToEachCreature (n : Nat) (which : EachCreatureDamage := .each)
       (amount : EachCreatureAmount := .fixed)
   /-- Return a graveyard card of this subtype to hand. -/
-  | returnGySubtypeToHand (subtype : String)
+  | returnGySubtypeToHand (subtype : CardSubtype)
   /-- Become a P/T artifact creature and gain `kw`. -/
   | becomeArtifactCreature44Flying (p : Int := 4) (t : Int := 4) (kw : String := "flying")
   /-- Discard `n` cards unless a card of type `ty` is discarded. -/
@@ -3041,7 +3041,7 @@ inductive Resolution where
   /-- Maybe draw one card for each permanent of type `ty`; opponents draw if you do. -/
   | mayDrawPerArtifactOppsDraw (ty : CardType := .artifact)
   /-- Maybe put a `subtype` creature from hand with mana value `n` or less; otherwise draw. -/
-  | mayPutHeroMvOrDraw (n : Nat) (subtype : String := "Hero")
+  | mayPutHeroMvOrDraw (n : Nat) (subtype : CardSubtype := .hero)
   /-- Maybe sacrifice or discard, then draw. -/
   | maySacArtifactOrDiscardDraw (cards : Nat)
   /-- Return up to two modal graveyard cards. -/
@@ -3063,7 +3063,7 @@ inductive Resolution where
   /-- Exile the top card and grant permission to play it. -/
   | exileTop
   /-- Become this subtype with lands-you-control P/T. -/
-  | becomeSubtypeWithLandsPT (subtype : String)
+  | becomeSubtypeWithLandsPT (subtype : CardSubtype)
   /-- Return the source from the graveyard to the battlefield tapped. -/
   | returnFromGraveyardTapped
   /-- Return the source from the graveyard to its owner's hand. -/
@@ -3081,11 +3081,11 @@ inductive Resolution where
   /-- Search two basics; one tapped, one to hand. -/
   | searchTwoBasicsSplit
   /-- These subtypes you control gain menace. -/
-  | subtypesGainMenace (subtypes : Array String)
+  | subtypesGainMenace (subtypes : Array CardSubtype)
   /-- Exile then return at the next end step. -/
   | exileThenReturnNextEnd
   /-- Search a basic tapped, then behold this subtype to untap it. -/
-  | searchBasicBeholdSubtypeUntap (subtype : String)
+  | searchBasicBeholdSubtypeUntap (subtype : CardSubtype)
   /-- Two players each draw. -/
   | twoPlayersDraw
   /-- Discard a same-name legendary; draw two. -/
@@ -3109,7 +3109,7 @@ inductive Resolution where
   /-- Black Gate unblockable. -/
   | blackGateUnblockable
   /-- +1/+1 on each other permanent of this subtype. -/
-  | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
+  | plusOneOnEachOtherSubtype (subtype : CardSubtype) (n : Nat)
   /-- Take an extra turn after this one. Power-up abilities can't be activated during it. -/
   | extraTurn
   /-- X +1/+1 counters on the source. -/
@@ -3117,7 +3117,7 @@ inductive Resolution where
   /-- Each opponent discards; +1/+1 on the source. -/
   | eachOppDiscardThenPlusOne
   /-- Look at the top `n`; you may put a card of one of these types onto the battlefield. -/
-  | lookAtTopPutTypes (n : Nat) (types : Array String)
+  | lookAtTopPutTypes (n : Nat) (types : Array CardSubtype)
   /-- Transform the source. -/
   | transform
   /-- Draw X cards. -/
@@ -3125,7 +3125,7 @@ inductive Resolution where
   /-- Look at the top `n`; reveal an artifact to hand. -/
   | lookAtTopRevealArtifact (n : Nat)
   /-- Add one mana of any color, spendable only on this subtype's spells or sources. -/
-  | addAnyColorSpendOnlySubtype (subtype : String)
+  | addAnyColorSpendOnlySubtype (subtype : CardSubtype)
   /-- Add one mana of any color, spendable only to cast an artifact spell. -/
   | addAnyColorSpendOnlyArtifactSpell
   /-- Add two mana of any one color, spendable only on creature-source abilities. -/
@@ -3149,15 +3149,15 @@ inductive Resolution where
   /-- Copy target activated or triggered ability you control from this source type. -/
   | copyControlledAbility (fromCreature : Bool)
   /-- Create tokens equal to the number of permanents you control of this subtype. -/
-  | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
+  | createTokensEqualSubtype (kind : TokenKind) (subtype : CardSubtype)
   /-- For each kind of counter on target permanent or player, give another of that kind. -/
   | proliferateEachKind
   /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
   | equipmentBecomesConstructHero
   /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
-  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
+  | lookAtTopRevealSubtype (n : Nat) (subtype : CardSubtype)
   /-- Mill `n`. You may put a card of this subtype or an enchantment into your hand. -/
-  | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
+  | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : CardSubtype)
   /-- Create The Tiger God token. -/
   | createTigerGod
   /-- Choose odd or even. Destroy each other creature with that mana value. -/
@@ -3169,13 +3169,13 @@ inductive Resolution where
   /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
   | copyArtifactYouControlNotLegendary
   /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
-  | becomeTypes (types : Array String) (power toughness : Int) (k : Keywords)
+  | becomeTypes (types : Array CardSubtype) (power toughness : Int) (k : Keywords)
   /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
   | nextInstantSorceryCopyIfMvAtMostSourcePower
   /-- Harness this Infinity Stone. -/
   | harnessInfinityStone
   /-- Target permanent you control of this subtype connives. -/
-  | targetSubtypeConnives (subtype : String)
+  | targetSubtypeConnives (subtype : CardSubtype)
   /-- Mill `n` cards (CR 701.13). -/
   | millSelf (n : Nat)
   /-- You may discard a card. If you do, draw `n` cards. -/

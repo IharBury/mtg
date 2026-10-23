@@ -1,5 +1,6 @@
 import Mtg.Engine.Color
 import Mtg.Engine.Card.Text
+import Mtg.Engine.TypeLine
 
 /-!
 # Trigger events (CR 603)
@@ -225,7 +226,7 @@ inductive TriggerEvent where
   /-- A creature you control enters. -/
   | creatureYouControlEnters
   /-- A permanent you control of this subtype enters. -/
-  | subtypeYouControlEnters (subtype : String)
+  | subtypeYouControlEnters (subtype : CardSubtype)
   /-- One or more creatures you control become tapped. -/
   | creaturesYouControlBecomeTapped
   /-- One or more creature cards are put into your graveyard from anywhere. -/

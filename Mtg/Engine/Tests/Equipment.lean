@@ -964,7 +964,7 @@ def hospitalitySelfLandfall : Game :=
   let o := namedPermanent g "Beorn's Hospitality"
   let g := g.changeStatuses o.id #[
     .additionalCreature true,
-    .additionalSubtypes #["Bear"],
+    .additionalSubtypes #[.bear],
     .grantedStaticAbilities #[.powerToughnessEqualLandsYouControl]]
   let g := addToHand g forest ⟨0⟩
   let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)

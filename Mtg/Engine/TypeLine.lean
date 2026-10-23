@@ -153,7 +153,7 @@ inductive SubtypeClass where
   | planar
   | dungeon
   | battle
-deriving DecidableEq, Repr, BEq
+deriving DecidableEq, Repr, Inhabited, BEq
 
 def artifactTypes : List String := [
   "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",
@@ -277,12 +277,562 @@ def battleTypes : List String := [
   "Siege"
 ]
 
+/-- Card subtypes from CR 205.3g–q, one constructor per subtype. -/
+inductive CardSubtype where
+  | attraction
+  | blood
+  | bobblehead
+  | book
+  | clue
+  | contraption
+  | equipment
+  | food
+  | fortification
+  | gold
+  | heartwood
+  | incubator
+  | infinity
+  | junk
+  | lander
+  | map
+  | mutagen
+  | powerstone
+  | spacecraft
+  | stone
+  | treasure
+  | vehicle
+  | vibranium
+  | aura
+  | background
+  | cartouche
+  | case
+  | «class»
+  | curse
+  | plan
+  | role
+  | room
+  | rune
+  | saga
+  | shard
+  | shrine
+  | cave
+  | desert
+  | forest
+  | gate
+  | island
+  | lair
+  | locus
+  | mine
+  | mountain
+  | plains
+  | planet
+  | powerPlant
+  | sphere
+  | swamp
+  | tower
+  | town
+  | urzas
+  | ajani
+  | aminatou
+  | angrath
+  | arlinn
+  | ashiok
+  | bahamut
+  | basri
+  | bolas
+  | calix
+  | chandra
+  | comet
+  | dack
+  | dakkon
+  | daretti
+  | davriel
+  | dellian
+  | dihada
+  | domri
+  | dovin
+  | ellywick
+  | elminster
+  | elspeth
+  | estrid
+  | freyalise
+  | garruk
+  | gideon
+  | grist
+  | guff
+  | huatli
+  | jace
+  | jared
+  | jaya
+  | jeska
+  | kaito
+  | karn
+  | kasmina
+  | kaya
+  | kiora
+  | koth
+  | liliana
+  | lolth
+  | lukka
+  | minsc
+  | mordenkainen
+  | nahiri
+  | narset
+  | niko
+  | nissa
+  | nixilis
+  | oko
+  | quintorius
+  | ral
+  | rowan
+  | saheeli
+  | samut
+  | sarkhan
+  | serra
+  | sivitri
+  | sorin
+  | szat
+  | tamiyo
+  | tasha
+  | teferi
+  | teyo
+  | tezzeret
+  | tibalt
+  | tyvar
+  | ugin
+  | urza
+  | venser
+  | vivien
+  | vraska
+  | vronos
+  | will
+  | windgrace
+  | wrenn
+  | xenagos
+  | yanggu
+  | yanling
+  | zariel
+  | adventure
+  | arcane
+  | lesson
+  | omen
+  | trap
+  | timeLord
+  | advisor
+  | aetherborn
+  | alien
+  | ally
+  | angel
+  | antelope
+  | ape
+  | archer
+  | archon
+  | armadillo
+  | army
+  | artificer
+  | assassin
+  | assemblyWorker
+  | astartes
+  | atog
+  | aurochs
+  | avatar
+  | azra
+  | badger
+  | balloon
+  | barbarian
+  | bard
+  | basilisk
+  | bat
+  | bear
+  | beast
+  | beaver
+  | beeble
+  | beholder
+  | berserker
+  | bird
+  | bison
+  | blinkmoth
+  | boar
+  | bringer
+  | brushwagg
+  | camarid
+  | camel
+  | capybara
+  | caribou
+  | carrier
+  | cat
+  | centaur
+  | child
+  | chimera
+  | citizen
+  | cleric
+  | clown
+  | cockatrice
+  | construct
+  | coward
+  | coyote
+  | crab
+  | crocodile
+  | ctan
+  | custodes
+  | cyberman
+  | cyclops
+  | dalek
+  | dauthi
+  | demigod
+  | demon
+  | deserter
+  | detective
+  | devil
+  | dinosaur
+  | djinn
+  | doctor
+  | dog
+  | dragon
+  | drake
+  | dreadnought
+  | drix
+  | drone
+  | druid
+  | dryad
+  | dwarf
+  | echidna
+  | efreet
+  | egg
+  | elder
+  | eldrazi
+  | elemental
+  | elephant
+  | elf
+  | elk
+  | employee
+  | eternal
+  | eye
+  | faerie
+  | ferret
+  | fish
+  | flagbearer
+  | fox
+  | fractal
+  | frog
+  | fungus
+  | gamer
+  | gamma
+  | gargoyle
+  | germ
+  | giant
+  | giraffe
+  | gith
+  | glimmer
+  | gnoll
+  | gnome
+  | goat
+  | goblin
+  | god
+  | golem
+  | gorgon
+  | graveborn
+  | gremlin
+  | griffin
+  | guest
+  | hag
+  | halfling
+  | hamster
+  | harpy
+  | hedgehog
+  | hellion
+  | hero
+  | hippo
+  | hippogriff
+  | homarid
+  | homunculus
+  | horror
+  | horse
+  | human
+  | hydra
+  | hyena
+  | illusion
+  | imp
+  | incarnation
+  | inhuman
+  | inkling
+  | inquisitor
+  | insect
+  | jackal
+  | jellyfish
+  | juggernaut
+  | kangaroo
+  | kavu
+  | kirin
+  | kithkin
+  | knight
+  | kobold
+  | kor
+  | kraken
+  | kree
+  | llama
+  | lamia
+  | lammasu
+  | leech
+  | lemur
+  | leviathan
+  | lhurgoyf
+  | licid
+  | lizard
+  | lobster
+  | manticore
+  | masticore
+  | mercenary
+  | merfolk
+  | metathran
+  | minion
+  | minotaur
+  | mite
+  | mole
+  | monger
+  | mongoose
+  | monk
+  | monkey
+  | moogle
+  | moonfolk
+  | mount
+  | mouse
+  | mutant
+  | myr
+  | mystic
+  | nautilus
+  | necron
+  | nephilim
+  | nightmare
+  | nightstalker
+  | ninja
+  | noble
+  | noggle
+  | nomad
+  | nymph
+  | octopus
+  | ogre
+  | ooze
+  | orb
+  | orc
+  | orgg
+  | otter
+  | ouphe
+  | ox
+  | oyster
+  | pangolin
+  | peasant
+  | pegasus
+  | pentavite
+  | performer
+  | pest
+  | phelddagrif
+  | phoenix
+  | phyrexian
+  | pilot
+  | pincher
+  | pirate
+  | plant
+  | platypus
+  | porcupine
+  | possum
+  | praetor
+  | primarch
+  | prism
+  | processor
+  | qu
+  | rabbit
+  | raccoon
+  | ranger
+  | rat
+  | rebel
+  | reflection
+  | rhino
+  | rigger
+  | robot
+  | rogue
+  | sable
+  | salamander
+  | samurai
+  | sand
+  | saproling
+  | satyr
+  | scarecrow
+  | scientist
+  | scion
+  | scorpion
+  | scout
+  | sculpture
+  | seal
+  | serf
+  | serpent
+  | servo
+  | shade
+  | shaman
+  | shapeshifter
+  | shark
+  | sheep
+  | shiar
+  | siren
+  | skeleton
+  | skrull
+  | skunk
+  | slith
+  | sliver
+  | sloth
+  | slug
+  | snail
+  | snake
+  | soldier
+  | soltari
+  | sorcerer
+  | spawn
+  | specter
+  | spellshaper
+  | sphinx
+  | spider
+  | spike
+  | spirit
+  | splinter
+  | sponge
+  | spy
+  | squid
+  | squirrel
+  | starfish
+  | surrakar
+  | survivor
+  | symbiote
+  | synth
+  | tentacle
+  | tetravite
+  | thalakos
+  | thopter
+  | thrull
+  | tiefling
+  | toy
+  | treefolk
+  | trilobite
+  | triskelavite
+  | troll
+  | turtle
+  | tyranid
+  | unicorn
+  | utrom
+  | vampire
+  | varmint
+  | vedalken
+  | villain
+  | volver
+  | wall
+  | walrus
+  | warlock
+  | warrior
+  | weasel
+  | weird
+  | werewolf
+  | whale
+  | wizard
+  | wolf
+  | wolverine
+  | wombat
+  | worm
+  | wraith
+  | wurm
+  | yeti
+  | zombie
+  | zubera
+  | theAbyss
+  | alara
+  | alfavaMetraxis
+  | amonkhet
+  | androzaniMinor
+  | antausia
+  | apalapucia
+  | arcavios
+  | arkhos
+  | avishkar
+  | azgol
+  | belenon
+  | bolassMeditationRealm
+  | capenna
+  | cridhe
+  | theDalekAsylum
+  | darillium
+  | dominaria
+  | earth
+  | echoir
+  | eldraine
+  | equilor
+  | ergamon
+  | fabacin
+  | fiora
+  | gallifrey
+  | gargantikar
+  | gobakhan
+  | horseheadNebula
+  | ikoria
+  | innistrad
+  | iquatana
+  | ir
+  | ixalan
+  | kaldheim
+  | kamigawa
+  | kandoka
+  | karsus
+  | kephalai
+  | kinshala
+  | kolbahan
+  | kylem
+  | kyneth
+  | theLibrary
+  | lorwyn
+  | luvion
+  | mars
+  | mercadia
+  | mirrodin
+  | moag
+  | mongseng
+  | moon
+  | muraganda
+  | necros
+  | newEarth
+  | newPhyrexia
+  | outsideMuttersSpiral
+  | phyrexia
+  | pyrulea
+  | rabiah
+  | rath
+  | ravnica
+  | regatha
+  | segovia
+  | serrasRealm
+  | shadowmoor
+  | shandalar
+  | shenmeng
+  | skaro
+  | tarkir
+  | theros
+  | time
+  | trenzalore
+  | ulgrotha
+  | unknownPlanet
+  | valla
+  | vryn
+  | wildfire
+  | xerex
+  | zendikar
+  | zhalfir
+  | undercity
+  | siege
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- One known subtype from CR 205.3g–q. -/
 structure KnownSubtype where
+  subtype : CardSubtype := .attraction
   name : String
   plural : String
   kind : SubtypeClass
-deriving Repr
+deriving Repr, Inhabited
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
 and `Urza's` remain different subtypes. -/
@@ -362,6 +912,10 @@ def subtypeEntries : List KnownSubtype :=
     subtypesOf .battle battleTypes
   raw.foldl (fun acc e =>
     if acc.any (·.name == e.name) then acc else acc ++ [e]) []
+    |>.zipIdx.map fun (e, i) => { e with subtype := CardSubtype.ofNat i }
+
+def subtypeEntryArray : Array KnownSubtype :=
+  subtypeEntries.toArray
 
 /-- Singular and plural spellings, apostrophes kept. -/
 def subtypeByKey : Thunk (Std.HashMap String KnownSubtype) :=
@@ -382,6 +936,57 @@ def subtypeByStrippedApostrophe : Thunk (Std.HashMap String KnownSubtype) :=
         m.insert (subtypeKeyStripped e.plural) e
       else m)
       ({} : Std.HashMap String KnownSubtype)
+
+namespace CardSubtype
+
+def entry (s : CardSubtype) : KnownSubtype :=
+  subtypeEntryArray[s.ctorIdx]!
+
+def englishName (s : CardSubtype) : String :=
+  s.entry.name
+
+def pluralName (s : CardSubtype) : String :=
+  s.entry.plural
+
+def kind (s : CardSubtype) : SubtypeClass :=
+  s.entry.kind
+
+def isCreatureType (s : CardSubtype) : Bool :=
+  s.kind == .creature
+
+def isNoncreature (s : CardSubtype) : Bool :=
+  s.kind != .creature
+
+instance : ToString CardSubtype where
+  toString := englishName
+
+instance : Coe CardSubtype String where
+  coe := englishName
+
+/-- Every subtype in CR 205.3g–q, in that order. -/
+def all : List CardSubtype :=
+  subtypeEntries.map (·.subtype)
+
+/-- Canonical `CardSubtype` for a printed singular or plural subtype, in any
+case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
+def ofOracle? (s : String) : Option CardSubtype :=
+  let kept := subtypeKey s
+  if !kept.toList.any (· == '\'') then
+    match (subtypeByStrippedApostrophe.get).get? (subtypeKeyStripped s) with
+    | some e => some e.subtype
+    | none => (subtypeByKey.get).get? kept |>.map (·.subtype)
+  else
+    (subtypeByKey.get).get? kept |>.map (·.subtype)
+
+/-- Canonical `CardSubtype` for `s`, or `fallback` when `s` is not a subtype. -/
+def ofOracleD (s : String) (fallback : CardSubtype := .goblin) : CardSubtype :=
+  (ofOracle? s).getD fallback
+
+/-- Known `CardSubtype`s in `subtypes`, in order. -/
+def ofSubtypes (subtypes : Array String) : Array CardSubtype :=
+  subtypes.filterMap ofOracle?
+
+end CardSubtype
 
 /-- Canonical singular name for a printed singular or plural subtype, in any
 case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
@@ -649,5 +1254,28 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard splitPrintedSubtypes #[.land] "Urza\u2019s Power-Plant" == #["Urza's", "Power-Plant"]
 #guard splitPrintedSubtypes #[.creature] "C\u2019tan" == #["C'tan"]
 #guard splitPrintedSubtypes #[.creature] "Shi'ar" == #["Shi'ar"]
+
+#guard CardSubtype.all.length == 545
+#guard CardSubtype.all.all fun s =>
+  let expected := (subtypeKeyStripped s.englishName).replace " " "" |>.replace "-" ""
+  let actual := ((reprStr s).splitOn ".").getLast! |>.replace "«" "" |>.replace "»" "" |>.map Char.toLower
+  expected == actual &&
+    CardSubtype.ofOracle? s.englishName == some s &&
+    (s.englishName == "Urza" || CardSubtype.ofOracle? s.pluralName == some s)
+#guard CardSubtype.ofOracle? "ELVES" == some .elf
+#guard CardSubtype.ofOracle? "time lords" == some .timeLord
+#guard CardSubtype.ofOracle? "URZA'S" == some .urzas
+#guard CardSubtype.ofOracle? "Urza" == some .urza
+#guard CardSubtype.ofOracle? "c'tan" == some .ctan
+#guard CardSubtype.ofOracle? "Shi'ar" == some .shiar
+#guard CardSubtype.ofOracle? "bolass meditation realm" == some .bolassMeditationRealm
+#guard CardSubtype.ofOracle? "power-plant" == some .powerPlant
+#guard CardSubtype.ofOracle? "assembly-workers" == some .assemblyWorker
+#guard CardSubtype.ofOracle? "Class" == some .«class»
+#guard CardSubtype.ofOracle? "siege" == some .siege
+#guard CardSubtype.ofOracle? "undercity" == some .undercity
+#guard CardSubtype.timeLord.isCreatureType
+#guard !CardSubtype.timeLord.isNoncreature
+#guard CardSubtype.equipment.isNoncreature
 
 end Mtg.Engine

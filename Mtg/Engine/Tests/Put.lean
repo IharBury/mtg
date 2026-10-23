@@ -325,7 +325,7 @@ put nothing. The top card of the library enters. -/
     { resolution := .put .source .underOwner (.entering [.loseAllAbilities]) } ==
   "return this from its owner's graveyard to the battlefield under its owner's control"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .put (.cause (some "Villain")) .underOwner } ==
+    { resolution := .put (.cause (some .villain)) .underOwner } ==
   "return it to the battlefield under its owner's control"
 #guard TriggeredAbility.resolutionPhrase { resolution := .put .landFromHand (how := .tapped) } ==
   "put a land card from your hand onto the battlefield tapped"

@@ -279,7 +279,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         else (l.splitOn "control a ").getLastD ""
       let types := ((after.replace " or an " " or a ").splitOn " or a ").map fun p =>
         cap ((p.splitOn " ").headD "" |>.splitOn "." |>.headD "")
-      some { c with entersTappedUnlessAnySubtype := types.toArray.filter (· != "") }
+      some { c with entersTappedUnlessAnySubtype := CardSubtype.ofSubtypes types.toArray }
     else if l == s!"exile {low c.name}." then
       some c
     else if l.contains "choose mardu or jeskai" then

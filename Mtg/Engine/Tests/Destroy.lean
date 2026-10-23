@@ -270,9 +270,9 @@ controller still amasses when the creature is indestructible. -/
 #guard (SharedTrigger.timing .destroyOppArtifactsEnchantmentsGainLife).resolution ==
   .sequence [oppArts, .gainLife .forEachDestroyedThisWay]
 
-#guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 "Dragon")).resolution ==
+#guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 .dragon)).resolution ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
-    .«if» (.dealtDamageToSubtype "Dragon") markedDestroy]
+    .«if» (.dealtDamageToSubtype .dragon) markedDestroy]
 
 #guard (SharedTrigger.timing .destroyOtherAmassControllerPower).resolution ==
   amassSeq

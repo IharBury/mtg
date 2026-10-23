@@ -237,7 +237,7 @@ then cleared. -/
     (g0.player caster).graveyard.any (fun id =>
       (g0.findObject? id).any (·.name == "Mill Elf"))
   let g := step g0
-    (.sequence [.mill (.fixed 2) (note := .milledCards), .returnToHand (.milledSubtype "Elf")])
+    (.sequence [.mill (.fixed 2) (note := .milledCards), .returnToHand (.milledSubtype .elf)])
   oldElf && inHand g caster "Mill Elf" &&
     inGraveyard g caster "Mill Relic" &&
     inGraveyard g caster "Mill Elf" &&
@@ -247,7 +247,7 @@ then cleared. -/
 #guard
   let g0 := onlyLibrary afterDraw caster [relic]
   let g := step g0
-    (.sequence [.mill (.fixed 1) (note := .milledCards), .returnToHand (.milledSubtype "Elf")])
+    (.sequence [.mill (.fixed 1) (note := .milledCards), .returnToHand (.milledSubtype .elf)])
   !inHand g caster "Mill Relic" && inGraveyard g caster "Mill Relic" &&
     g.milledIdsThisWay.isEmpty
 
@@ -348,7 +348,7 @@ ability and clears the note. -/
 #guard TriggeredAbility.resolution .onPlayerLosesLifeMillThatMany ==
   .mill .thatManyLost .thatPlayer
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
+  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype .elf)]
 #guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),

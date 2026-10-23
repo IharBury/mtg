@@ -389,7 +389,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (srcId.bind g.findObject?).any (·.isOnBattlefield)
       if holds then (g, true)
       else (g.changes #[.handDiscardedThisWay none, .notedSourceThisWay none], false)
-  | (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed n)) =>
+  | (.atLeast (.count (.youControl (.subtype .bear))) (.fixed n)) =>
     (g, g.countSubtype controller "Bear" ≥ n.toNat)
   | (.atLeast (.count (.youControl (.subtype subtype))) (.fixed n)) =>
     (g, g.countSubtype controller subtype ≥ n.toNat)
@@ -417,7 +417,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .opponentsMilled =>
     let milled := g.opponentsMilledThisWay
     (g.change (.opponentsMilledThisWay false), milled)
-  | (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) =>
+  | (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) =>
     (g, (g.permanentsOf controller).any (fun o =>
       g.hasSubtype o "Hero" && some o.id != sourceId))
   | (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) =>
@@ -3956,9 +3956,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
-  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
+  | .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1))
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1))
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
@@ -4060,7 +4060,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | some o =>
         if g.hasSubtype o "Bear" then g
         else
-          let g := g.changeStatus o.id (.pushAdditionalSubtype "Bear")
+          let g := g.changeStatus o.id (.pushAdditionalSubtype .bear)
           g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
@@ -4568,7 +4568,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .onSource a => g.applyOnTriggerSource sourceId a
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .recruit _ => g.beginRecruit controller
-  | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
+  | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .addMana types (.fixed 1) =>

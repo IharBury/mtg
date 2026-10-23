@@ -59,8 +59,8 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .gainLandfallCreateElf).resolution == .grant .landfallCreateElf .source
 #guard (timing (.elvesGetVigilance 1)).resolution ==
   .sequence [
-    .pump (.fixed 1) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
-    .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])]
+    .pump (.fixed 1) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
+    .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass (.fixed 1)
@@ -73,7 +73,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.draw 2)).resolution == .draw (.fixed 2)
 #guard (timing (.searchBasicPlainsExileGainLife 2 2)).resolution ==
   .sequence [
-    .searchLibrary (.exile (.basicUpTo "Plains" 2) .forLater .linked),
+    .searchLibrary (.exile (.basicUpTo .plains 2) .forLater .linked),
     .gainLife (.fixed 2)]
 #guard (timing .returnLinkedExileToHand).resolution ==
   .returnToHand .linkedExile
@@ -83,7 +83,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing .treasureThenDragonIfFour).resolution ==
   .sequence [
     .createTokens .treasure (.fixed 1) false,
-    .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
+    .«if» ((.atLeast (.count (.youControl (.subtype .treasure))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
     .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)]
 #guard (timing .recruit).resolution == .recruit
 #guard (timing (.returnCreatureFromGyMvAtMost 3)).resolution ==
@@ -92,16 +92,16 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (timing (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)).resolution ==
   .gainControl .whileSourceRemains
-#guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain")).resolution ==
-  .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents "Villain")
+#guard (timing (.dealDamageToEachNonSubtypeAndOpponents 2 .villain)).resolution ==
+  .dealDamage (.fixed 2) (.eachNonSubtypeAndOpponents .villain)
 #guard (timing .dealXDamageToTargetOpponentGreatestArtifactMv).resolution ==
   .dealDamage .greatestArtifactMv (.player (.target .opponent))
 #guard (timing (.spell { resolution := .draw 1 })).resolution == .draw (.fixed 1)
 #guard (timing (.spell { resolution := .scry 2 })).resolution == .scry (.fixed 2)
 #guard (timing (.spell { resolution := .createTokens .villain21menace 2 })).resolution ==
   .createTokens .villain21menace (.fixed 2) false
-#guard (timing (.spell { resolution := .createTokens .treasure (.perSubtype "Villain") })).resolution ==
-  .createTokens .treasure (.perSubtype "Villain") false
+#guard (timing (.spell { resolution := .createTokens .treasure (.perSubtype .villain) })).resolution ==
+  .createTokens .treasure (.perSubtype .villain) false
 #guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
   .fight .announced .upToOneOther
 #guard (timing (.spell { resolution := .createGalactus })).resolution ==
@@ -119,7 +119,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   .loseLife (.fixed 2) .eachOpponent
 #guard (timing (.spell { resolution := .destroyUpToOneNonland })).resolution == .destroy .target
 #guard (timing (.spell { resolution := .mayPutHeroMvOrDraw 3 })).resolution ==
-  .may (.put (.creatureFromHand "Hero" 3)) (.draw (.fixed 1))
+  .may (.put (.creatureFromHand .hero 3)) (.draw (.fixed 1))
 #guard (timing (.spell { resolution := .mayDrawPerArtifactOppsDraw })).resolution ==
   .may (.draw (.perControlled .artifact)) (.draw (.fixed 1) (who := .eachOpponent)) .ifYouDo
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==

@@ -1286,7 +1286,7 @@ that also appear in other sets. -/
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
-#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
 #guard elvishArchdruid.manaAbilities == #[.colored .green]
 #guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
 #guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1

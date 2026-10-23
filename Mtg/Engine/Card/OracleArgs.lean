@@ -189,6 +189,18 @@ def takeOptStr (o : Option String) : ArgM (Option String) :=
 def takeStrs (xs : Array String) : ArgM (Array String) :=
   xs.mapM takeStr
 
+def takeSubtype (sub : CardSubtype) : ArgM CardSubtype := do
+  let s ← takeStr sub.englishName
+  return CardSubtype.ofOracleD s sub
+
+def takeSubtypes (xs : Array CardSubtype) : ArgM (Array CardSubtype) :=
+  xs.mapM takeSubtype
+
+def takeOptSubtype (o : Option CardSubtype) : ArgM (Option CardSubtype) :=
+  match o with
+  | none => pure none
+  | some sub => return some (← takeSubtype sub)
+
 def takeSymbol (s : ManaSymbol) : ArgM ManaSymbol :=
   match s with
   | .generic n => return .generic (← takeNat n)
@@ -265,7 +277,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .«if» cond r =>
     let r ← takeSpell r
     match cond with
-    | .subtype s => return .«if» (.subtype (← takeStr s)) r
+    | .subtype s => return .«if» (.subtype (← takeSubtype s)) r
     | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
     | .castFromGraveyard => return .«if» .castFromGraveyard r
     | .teamwork => return .«if» .teamwork r
@@ -277,7 +289,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     let whenFalse ← takeSpell whenFalse
     let cond ← match cond with
       | .subtype s => do
-        let s ← takeStr s
+        let s ← takeSubtype s
         pure (.subtype s)
       | .mvAtMost n => do
         let n ← takeNat n
@@ -296,7 +308,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
     return .searchCard (← takeSupertype s) (← takeCardType ty) how
   | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
   | .addFourManaDragonSpells n s =>
-    return .addFourManaDragonSpells (← takeNat n) (← takeStr s)
+    return .addFourManaDragonSpells (← takeNat n) (← takeSubtype s)
   | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
   | .onCreatureAmongTargets a => return .onCreatureAmongTargets (← takeAction a)
   | .becomeArtifactCreature44Flying p t kw =>
@@ -311,9 +323,9 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .dealDamageToControllerOfTarget n =>
     return .dealDamageToControllerOfTarget (← takeNat n)
   | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
-  | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeStr s)
+  | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeSubtype s)
   | .amass (.fixed n) subtype =>
-    return .amass (← takeNat n.toNat) (← takeStr subtype)
+    return .amass (← takeNat n.toNat) (← takeSubtype subtype)
   | .dealDamageToEachCreature n which amount =>
     match amount with
     | .otherSpellsManaValue =>
@@ -324,7 +336,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
       | .opponentsControl =>
         return .dealDamageToEachCreature (← takeNat n) .opponentsControl
       | .nonSubtype subtype =>
-        return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeStr subtype))
+        return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeSubtype subtype))
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -335,7 +347,7 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
       return .millThenPut (← takeNat n) (.allOf (← takeCardType a) (← takeCardType b))
   | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
   | .exileTopPlayIfYouControlSubtype n s =>
-    return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeStr s)
+    return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeSubtype s)
   | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
   | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
     return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
@@ -346,8 +358,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .createTokens k .chosenX tapped token who note =>
     return .createTokens k .chosenX tapped token who note
   | .createTokens k (.perSubtype s) tapped token who note =>
-    return .createTokens k (.perSubtype (← takeStr s)) tapped token who note
-  | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeStr s)
+    return .createTokens k (.perSubtype (← takeSubtype s)) tapped token who note
+  | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeSubtype s)
   | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
   | .millThenPutPermanentGainLife a b =>
     return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
@@ -376,7 +388,7 @@ def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
   | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
     return .gainControlOfUpToTwoCreaturesTotalMvAtMost (← takeNat n)
   | .dealDamageToEachNonSubtypeAndOpponents n s =>
-    return .dealDamageToEachNonSubtypeAndOpponents (← takeNat n) (← takeStr s)
+    return .dealDamageToEachNonSubtypeAndOpponents (← takeNat n) (← takeSubtype s)
   | .spell s =>
     return .spell { s with
       targeting := ← takeTargeting s.targeting
@@ -391,7 +403,7 @@ def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
 
 def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
   match w with
-  | .subtypeYouControlEnters s => return .subtypeYouControlEnters (← takeStr s)
+  | .subtypeYouControlEnters s => return .subtypeYouControlEnters (← takeSubtype s)
   | .nthPlanCounter n => return .nthPlanCounter (← takeNat n)
   | .or a b => return .or (← takeWhen a) (← takeWhen b)
   | w => return w
@@ -405,9 +417,9 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .amass n subtype amount attach =>
     match amount with
     | .fixed =>
-      return .amass (← takeNat n) (← takeStr subtype) amount attach
+      return .amass (← takeNat n) (← takeSubtype subtype) amount attach
     | .sourcePower | .notedExcess | .notedPower =>
-      return .amass n (← takeStr subtype) amount attach
+      return .amass n (← takeSubtype subtype) amount attach
   | .dividedDamage a b => return .dividedDamage (← takeNat a) (← takeNat b)
   | .gainLife n => return .gainLife (← takeNat n)
   | .connive who =>
@@ -440,22 +452,22 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .targetOpponentLosesLife n => return .targetOpponentLosesLife (← takeNat n)
   | .mayPayGenericDraw n plusOne => return .mayPayGenericDraw (← takeNat n) plusOne
   | .damageEqualSubtypeToEachOpponent s =>
-    return .damageEqualSubtypeToEachOpponent (← takeStr s)
+    return .damageEqualSubtypeToEachOpponent (← takeSubtype s)
   | .dealDamageDestroyIfSubtype n s =>
-    return .dealDamageDestroyIfSubtype (← takeNat n) (← takeStr s)
+    return .dealDamageDestroyIfSubtype (← takeNat n) (← takeSubtype s)
   | .lookAtTopRevealTypes n ts => return .lookAtTopRevealTypes (← takeNat n) (← takeStrs ts)
   | .putNonlandMvAtMostFromGy n => return .putNonlandMvAtMostFromGy (← takeNat n)
   | .othersGetAndOppsGet ss p t op ot =>
-    return .othersGetAndOppsGet (← takeStrs ss) (← takeInt p) (← takeInt t)
+    return .othersGetAndOppsGet (← takeSubtypes ss) (← takeInt p) (← takeInt t)
       (← takeInt op) (← takeInt ot)
-  | .millThenSubtypeToHand n s => return .millThenSubtypeToHand (← takeNat n) (← takeStr s)
+  | .millThenSubtypeToHand n s => return .millThenSubtypeToHand (← takeNat n) (← takeSubtype s)
   | .untapAttackersExtraCombat n => return .untapAttackersExtraCombat (← takeInt n)
   | .revealTopPutRandomCreature n => return .revealTopPutRandomCreature (← takeNat n)
   | .damageTargetOpponent n => return .damageTargetOpponent (← takeNat n)
   | .chapter n ce => return .chapter (← takeNat n) (← takeChapter ce)
-  | .drawIfAttackedOrEnteredSubtype s => return .drawIfAttackedOrEnteredSubtype (← takeStr s)
+  | .drawIfAttackedOrEnteredSubtype s => return .drawIfAttackedOrEnteredSubtype (← takeSubtype s)
   | .othersOfSubtypeGetEqualSourceToughness s =>
-    return .othersOfSubtypeGetEqualSourceToughness (← takeStr s)
+    return .othersOfSubtypeGetEqualSourceToughness (← takeSubtype s)
   | .scryAndPlan n => return .scryAndPlan (← takeNat n)
   | .drainAndPlan n => return .drainAndPlan (← takeNat n)
   | .planFinishCreateRobots n => return .planFinishCreateRobots (← takeNat n)
@@ -466,7 +478,7 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .plusOneEachYouControl which =>
     match which with
     | .eachCreature | .citysBlessing => return .plusOneEachYouControl which
-    | .subtype s => return .plusOneEachYouControl (.subtype (← takeStr s))
+    | .subtype s => return .plusOneEachYouControl (.subtype (← takeSubtype s))
   | .onEnchanted a => return .onEnchanted (← takeAction a)
   | .attachThen a => return .attachThen (← takeAction a)
   | .enter e => return .enter (← takeEnter e)
@@ -476,26 +488,26 @@ def takeResolution (r : Resolution) : ArgM Resolution := do
   match r with
   | .onSource a => return .onSource (← takeAction a)
   | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
-  | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeStr s)
+  | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeSubtype s)
   | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
-  | .subtypesGainMenace ss => return .subtypesGainMenace (← takeStrs ss)
-  | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeStr s)
+  | .subtypesGainMenace ss => return .subtypesGainMenace (← takeSubtypes ss)
+  | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeSubtype s)
   | .dealDamageToAny n => return .dealDamageToAny (← takeNat n)
   | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
   | .plusOneOnEachOtherSubtype s n =>
-    return .plusOneOnEachOtherSubtype (← takeStr s) (← takeNat n)
-  | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeStrs ts)
+    return .plusOneOnEachOtherSubtype (← takeSubtype s) (← takeNat n)
+  | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeSubtypes ts)
   | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
-  | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeStr s)
+  | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeSubtype s)
   | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
-  | .createTokensEqualSubtype k s => return .createTokensEqualSubtype k (← takeStr s)
-  | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeStr s)
+  | .createTokensEqualSubtype k s => return .createTokensEqualSubtype k (← takeSubtype s)
+  | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeSubtype s)
   | .millThenPutSubtypeOrEnchantment n s =>
-    return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeStr s)
+    return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeSubtype s)
   | .becomeTypes ts p t k =>
-    return .becomeTypes (← takeStrs ts) (← takeInt p) (← takeInt t) k
-  | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeStr s)
+    return .becomeTypes (← takeSubtypes ts) (← takeInt p) (← takeInt t) k
+  | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeSubtype s)
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
   | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
   | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
@@ -656,12 +668,12 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
 def takeOpts (o : SharedTriggerOpts) : ArgM SharedTriggerOpts := do
   return { o with
     youControlCreatureWithPower := ← takeOptInt o.youControlCreatureWithPower
-    thisOrNontokenSubtype := ← takeOptStr o.thisOrNontokenSubtype
-    thisOrAnotherSubtype := ← takeOptStr o.thisOrAnotherSubtype
-    anotherSubtypeOrEquipment := ← takeOptStr o.anotherSubtypeOrEquipment
+    thisOrNontokenSubtype := ← takeOptSubtype o.thisOrNontokenSubtype
+    thisOrAnotherSubtype := ← takeOptSubtype o.thisOrAnotherSubtype
+    anotherSubtypeOrEquipment := ← takeOptSubtype o.anotherSubtypeOrEquipment
     gainedLifeAtLeast := ← takeOptNat o.gainedLifeAtLeast
     anotherCreaturePowerAtMost := ← takeOptInt o.anotherCreaturePowerAtMost
-    watchedSubtype := ← takeOptStr o.watchedSubtype }
+    watchedSubtype := ← takeOptSubtype o.watchedSubtype }
 
 def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
   match ab with
@@ -1651,7 +1663,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   "draw three cards. Then discard two cards unless you discard an artifact card"
 
 #guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
-  some ((.amass 4 "Zombie"))
+  some ((.amass 4 .zombie))
 
 #guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
   some ((.riddlesInTheDark 6))
@@ -1700,7 +1712,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
-  some ((.dealDamageToEachCreature 5 (.nonSubtype "Elf")))
+  some ((.dealDamageToEachCreature 5 (.nonSubtype .elf)))
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
@@ -1798,7 +1810,7 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
     (refillEffect e vals).resolution ==
-      (.ifElse .castFromGraveyard (.amass 4 "Zombie") (.amass 2 "Zombie"))
+      (.ifElse .castFromGraveyard (.amass 4 .zombie) (.amass 2 .zombie))
   | none => false
 
 #guard

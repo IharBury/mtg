@@ -347,7 +347,7 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g :=
     g.changeStatus (namedPermanent g "Grizzly Bears").id
-      (.additionalSubtypes #["Merfolk"])
+      (.additionalSubtypes #[.merfolk])
   let attuma := namedPermanent g "Attuma, Atlantean Warlord"
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.changeStatuses attuma.id #[.attacking true, .attackingWhom (some ⟨1⟩)]
@@ -366,7 +366,7 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let g :=
        g.changeStatus (namedPermanent g "Grizzly Bears").id
-         (.additionalSubtypes #["Merfolk"])
+         (.additionalSubtypes #[.merfolk])
      let attuma := namedPermanent g "Attuma, Atlantean Warlord"
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.changeStatuses attuma.id #[.attacking true, .attackingWhom (some ⟨1⟩)]
@@ -502,7 +502,7 @@ def ironManArmorTypesOk : Bool :=
      let g := g.changeStatuses ogre.id #[
        .additionalArtifactUntilEot true,
        .additionalCreatureUntilEot true,
-       .replacedCreatureTypesUntilEot (some #["Construct", "Hero"])
+       .replacedCreatureTypesUntilEot (some #[.construct, .hero])
      ]
      let ogre := namedPermanent g "Gray Ogre"
      !ogre.hasSubtype "Ogre" &&

@@ -448,7 +448,7 @@ inductive SharedTriggerWhen where
   /-- Whenever one or more creatures you control become tapped. -/
   | creaturesYouControlBecomeTapped
   /-- Whenever a permanent of this subtype you control enters. -/
-  | subtypeYouControlEnters (subtype : String)
+  | subtypeYouControlEnters (subtype : CardSubtype)
   /-- Whenever one or more creature cards are put into your graveyard. -/
   | creatureCardsPutIntoYourGy
   /-- When the `n`th plan counter is put on this. -/
@@ -508,7 +508,7 @@ inductive SharedTrigger where
   Amass equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
   Amass, then attach this Equipment to the Army, is
   `.amass n (attachSource := true)`. -/
-  | amass (n : Nat) (subtype : String := "Goblin")
+  | amass (n : Nat) (subtype : CardSubtype := .goblin)
       (amount : AmassAmount := .fixed) (attachSource : Bool := false)
   /-- Recruit. “recruit” is `.recruit`. “you recruit” is `.recruit .you`. -/
   | recruit (who : RecruitSubject := .recruit)
@@ -653,13 +653,13 @@ inductive SharedTrigger where
   `.sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), .gainLife .forEachDestroyedThisWay]`. -/
   | destroyOppArtifactsEnchantmentsGainLife
   /-- Damage each opponent equal to permanents of this subtype you control. -/
-  | damageEqualSubtypeToEachOpponent (subtype : String)
+  | damageEqualSubtypeToEachOpponent (subtype : CardSubtype)
   /-- Damage any target equal to Treasures you control. -/
   | damageEqualTreasures
   /-- Deal `n` to any target; destroy it if it has this subtype and was dealt
   damage this way.
   Resolves as `.sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)]`. -/
-  | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
+  | dealDamageDestroyIfSubtype (n : Nat) (subtype : CardSubtype)
   /-- Attach target Equipment to up to one target creature you control. -/
   | attachEquipmentToCreature
   /-- Defending player sacrifices a least-power creature. -/
@@ -677,7 +677,7 @@ inductive SharedTrigger where
   /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT.
   Resolves as
   `.sequence [.pump (.fixed p) (.fixed t) (.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]), .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures]`. -/
-  | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
+  | othersGetAndOppsGet (subtypes : Array CardSubtype) (power toughness oppP oppT : Int)
   /-- +1/+1 on a Wolf or create a Treasure.
   Resolves as `.or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]`. -/
   | wolfPlusOneOrTreasure
@@ -686,7 +686,7 @@ inductive SharedTrigger where
   | trampleCounterBecomeBear
   /-- Mill `n`, then put matching subtype cards into hand. Resolves as
   `.sequence [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)]`. -/
-  | millThenSubtypeToHand (n : Nat) (subtype : String)
+  | millThenSubtypeToHand (n : Nat) (subtype : CardSubtype)
   /-- Exile up to one opposing nonland per opponent until this leaves. -/
   | exileOppNonlandEachUntilLeaves
   /-- +X/+X counters equal to the last-known mana value. -/
@@ -812,9 +812,9 @@ inductive SharedTrigger where
   /-- Draw if you attacked with this subtype or one entered under your control.
   Resolves as
   `.«if» (.or [.attackedWithSubtype subtype, .subtypeEntered subtype]) (.draw (.fixed 1))`. -/
-  | drawIfAttackedOrEnteredSubtype (subtype : String)
+  | drawIfAttackedOrEnteredSubtype (subtype : CardSubtype)
   /-- Other permanents of this subtype get +X/+X equal to this toughness. -/
-  | othersOfSubtypeGetEqualSourceToughness (subtype : String)
+  | othersOfSubtypeGetEqualSourceToughness (subtype : CardSubtype)
   /-- Scry `n` and put a plan counter. Resolves as
   `.sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)]`. -/
   | scryAndPlan (n : Nat)
@@ -1111,15 +1111,15 @@ deriving Repr, Inhabited, BEq, DecidableEq
 structure SharedTriggerOpts where
   onceEachTurn : Bool := false
   youControlCreatureWithPower : Option Int := none
-  thisOrNontokenSubtype : Option String := none
-  thisOrAnotherSubtype : Option String := none
-  anotherSubtypeOrEquipment : Option String := none
+  thisOrNontokenSubtype : Option CardSubtype := none
+  thisOrAnotherSubtype : Option CardSubtype := none
+  anotherSubtypeOrEquipment : Option CardSubtype := none
   gainedLifeAtLeast : Option Nat := none
   /-- Intervening “another creature you control with power ≤ n”. -/
   anotherCreaturePowerAtMost : Option Int := none
   allowsZeroTargets : Bool := false
   /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
-  watchedSubtype : Option String := none
+  watchedSubtype : Option CardSubtype := none
   /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
   untargeted : Bool := false
   /-- The ability's printed sentence, when its wording isn't built from the

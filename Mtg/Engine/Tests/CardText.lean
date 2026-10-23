@@ -101,7 +101,7 @@ open Mtg.Engine.Catalog
 #guard mentions elvishArchdruid.summary "for each Elf"
 #guard elvishArchdruid.staticAbilities.size == 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
-#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
 #guard mentions mirkwoodElk.summary "trample"
 #guard mentions mirkwoodElk.summary "Elf card"
 #guard mirkwoodElk.keywords.trample
@@ -273,7 +273,7 @@ open Mtg.Engine.Catalog
 #guard
   let c := creature "Silent Archdruid" ManaCost.empty #["Elf", "Druid"] 2 2
     (staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1])
-    (tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }])
+    (tapAddManaForEach := #[{ mana := .colored .green, subtype := .elf }])
   mentions c.abilitiesText "Other Elf creatures you control get +1/+1" &&
     mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
     !mentions c.abilitiesText "{T}: Add {G};" &&

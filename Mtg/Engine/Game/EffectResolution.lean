@@ -1605,7 +1605,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
               sourceId lastKnownPower chosenX) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
-  | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
+  | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
   | .mill (.fixed n) .player _ =>
@@ -1648,13 +1648,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.withSourceOnBattlefield sourceId fun g o =>
           let subtypes :=
             if g.hasSubtype o subtype then o.status.additionalSubtypes
-            else o.status.additionalSubtypes.push subtype
+            else o.status.additionalSubtypes.push subtype.englishName
           let granted :=
             if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
             else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
           let g := g.changeStatuses o.id #[
             .additionalCreature true,
-            .additionalSubtypes subtypes,
+            .additionalSubtypes (CardSubtype.ofSubtypes subtypes),
             .grantedStaticAbilities granted]
           g.logMsg
             s!"{o.name} becomes {indefinite subtype} {subtype} creature. Its power and toughness are each equal to the number of lands you control"
@@ -1687,7 +1687,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           .battlefieldTappedThenHand (count := 2)
       | .subtypesGainMenace subtypes =>
         g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
-          (fun g o => subtypes.any (g.hasSubtype o))
+          (fun g o => subtypes.any (fun s => g.hasSubtype o s.englishName))
       | .exileThenReturnNextEnd =>
         g.foldPermanentTargets targets (fun g o =>
           if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand &&
@@ -1764,7 +1764,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           (g.finishPlusOneAfterDiscards).receivePriority g.activePlayer
         else g
       | .lookAtTopPutTypes n types =>
-        g.beginLookPutTypes controller n types
+        g.beginLookPutTypes controller n (types.map CardSubtype.englishName)
       | .transform =>
         g.withSourceOnBattlefield sourceId fun g o =>
           if o.status.cantTransform then
@@ -1784,9 +1784,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.beginLookRevealToHand controller n (fun o => o.printed.isArtifact) false
       | .addAnyColorSpendOnlySubtype subtype =>
         match subtype with
-        | "Hero" =>
+        | .hero =>
           g.changePlayer controller (.addMana (.colored .white) 1 (heroRestricted := true))
-        | "Villain" =>
+        | .villain =>
           g.changePlayer controller (.addMana (.colored .black) 1 (villainRestricted := true))
         | _ =>
           g.changePlayer controller (.addMana (.colored .white) 1)
@@ -1885,11 +1885,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         | _, _ =>
           g.logMsg "The target is no longer legal. The ability has no effect."
       | .becomeTypes types p t k =>
-        let typeWords := String.intercalate " " types.toList
+        let typeNames := types.map CardSubtype.englishName
+        let typeWords := String.intercalate " " typeNames.toList
         g.withSourceOnBattlefield sourceId (fun g o =>
           g.setUntilEotForm o (p, t) k
             s!"{o.name} becomes a {p}/{t} {typeWords}"
-            (types := some types))
+            (types := some typeNames))
           "The source is no longer in play"
       | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
         let pw :=

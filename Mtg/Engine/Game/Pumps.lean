@@ -53,7 +53,8 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
   let s := (g.findObject? o.id).map (·.status) |>.getD o.status
   (g.changeStatuses o.id #[
     .setBasePT (some pt),
-    .replacedCreatureTypesUntilEot (types.orElse fun _ => s.replacedCreatureTypesUntilEot),
+    .replacedCreatureTypesUntilEot
+      ((types.orElse fun _ => s.replacedCreatureTypesUntilEot).map CardSubtype.ofSubtypes),
     .grantUntilEot kws,
     .additionalCreatureUntilEot (additionalCreature || s.additionalCreatureUntilEot),
     .additionalArtifactUntilEot (additionalArtifact || s.additionalArtifactUntilEot),
@@ -232,7 +233,10 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     else
       let g :=
         if g.hasSubtype army subtype then g
-        else g.changeStatus army.id (.pushAdditionalSubtype subtype)
+        else
+          match CardSubtype.ofOracle? subtype with
+          | some sub => g.changeStatus army.id (.pushAdditionalSubtype sub)
+          | none => g
       let army := g.object! army.id
       let g := g.addPlusOnePlusOneTo army n
       let g := g.logMsg

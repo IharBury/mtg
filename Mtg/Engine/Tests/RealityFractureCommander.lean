@@ -39,9 +39,9 @@ def entered (card : CardDef) : Game × ObjectId :=
 #guard realityFractureCommanderCards.size == 87
 #guard realityFractureCommanderCards.all (·.modellingError?.isNone)
 
-#guard glacialFortress.entersTappedUnlessAnySubtype == #["Plains", "Island"]
-#guard drownedCatacomb.entersTappedUnlessAnySubtype == #["Island", "Swamp"]
-#guard sulfurFalls.entersTappedUnlessAnySubtype == #["Island", "Mountain"]
+#guard glacialFortress.entersTappedUnlessAnySubtype == #[.plains, .island]
+#guard drownedCatacomb.entersTappedUnlessAnySubtype == #[.island, .swamp]
+#guard sulfurFalls.entersTappedUnlessAnySubtype == #[.island, .mountain]
 #guard fetidHeath.filterMana.isSome
 #guard reflectingPool.tapAddYouCouldProduce
 #guard fellwarStone.tapAddOppCouldProduce

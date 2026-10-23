@@ -215,7 +215,7 @@ A creature, and an opponent's land, stay. -/
 #guard
   let g0 := insertObject board plains caster (.library caster)
     (updateOwner := fun id _ => #[.pushLibrary id])
-  let g := step g0 (.exile (.basicUpTo "Plains" 2) .forLater .linked)
+  let g := step g0 (.exile (.basicUpTo .plains 2) .forLater .linked)
     (some (pid g0 "Titan"))
   match g.pending with
   | .fraChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true

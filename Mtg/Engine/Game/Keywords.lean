@@ -109,7 +109,7 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
   let proposed := GameEvent.moved g.turnNumber
     { id := ⟨0⟩, controller := some p, owner := p, land := card.isLand
       creature := card.isCreature, artifact := card.isArtifact
-      subtypes := card.subtypes } .stack .battlefield
+      subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
   if !proposed.watches .wouldEnterBattlefield then false
   else
   card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
@@ -120,7 +120,7 @@ def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
     (card.entersTappedUnlessTwoOtherLands &&
       ((g.permanentsOf p).filter (·.printed.isLand)).size < 2) ||
     (!card.entersTappedUnlessAnySubtype.isEmpty &&
-      !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
+      !g.controlsAnySubtype p (card.entersTappedUnlessAnySubtype.map CardSubtype.englishName)) ||
     (match card.entersTappedUnlessNBasics with
      | some n =>
        ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size < n

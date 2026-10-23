@@ -988,7 +988,7 @@ def mountainLine (g : Game) : String :=
   let hosp := namedPermanent g "Beorn's Hospitality"
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
-  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #["Bear"]]
+  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #[.bear]]
   let hosp' := namedPermanent g' "Beorn's Hospitality"
   !hosp.isCreature && hosp'.isCreature &&
     zoneBlock g .battlefield ==

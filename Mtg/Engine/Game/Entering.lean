@@ -545,7 +545,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.putControlledTriggers p .creatureYouControlEnters
       else g
     let g :=
-      entered.subtypes.foldl (fun acc sub =>
+      (CardSubtype.ofSubtypes entered.subtypes).foldl (fun acc sub =>
         acc.putControlledTriggers p (.subtypeYouControlEnters sub)) g
     let g :=
       if entered.printed.isEquipment then
