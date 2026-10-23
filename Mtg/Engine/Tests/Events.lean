@@ -67,11 +67,17 @@ turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
   let attack := GameEvent.attacked g.turnNumber me
-    { id := ⟨5⟩, controller := some me, owner := me, creature := true, subtypes := #["Hero"] } ⟨1⟩
-  let g := g.record attack
-  let (_, yes) := holds g (.attackedWithSubtype "Hero")
-  let (_, no) := holds g (.attackedWithSubtype "Goblin")
-  yes && !no && attack.matchesTrigger me ⟨5⟩ .attacking
+    { id := ⟨5⟩, controller := some me, owner := me, creature := true, subtypes := #[.hero] } ⟨1⟩
+  let entered := GameEvent.moved g.turnNumber
+    { id := ⟨6⟩, controller := some me, owner := me, creature := true, subtypes := #[.villain] } .stack .battlefield
+  let g := (g.record attack).record entered
+  let (_, yes) := holds g (.attackedWithSubtype .hero)
+  let (_, no) := holds g (.attackedWithSubtype .goblin)
+  yes && !no && attack.matchesTrigger me ⟨5⟩ .attacking &&
+    entered.matchesTrigger me ⟨0⟩ (.subtypeYouControlEnters .villain) &&
+    !entered.matchesTrigger me ⟨0⟩ (.subtypeYouControlEnters .hero) &&
+    GameEvent.subtypeEntered g.events g.turnNumber me .villain &&
+    !GameEvent.subtypeEntered g.events g.turnNumber me .goblin
 
 /- A second draw matches the second-card triggers and not a first-card one.
 A creature moving to a graveyard matches dies, and not once it is exiled

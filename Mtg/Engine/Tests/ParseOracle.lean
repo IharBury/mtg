@@ -90,7 +90,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance").toOption.map
     (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
       c.power.getD 0 == 1 && c.toughness.getD 0 == 1 && c.ptString == "1+*/1+*" &&
-      c.keywords.vigilance && c.hasSubtype "Human" && c.hasSubtype "Knight") == some true
+      c.keywords.vigilance && c.hasSubtype .human && c.hasSubtype .knight) == some true
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n*+1/*+1").toOption.map
     (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
       c.ptString == "1+*/1+*") == some true
@@ -117,7 +117,7 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.power.isNone && c.powerStar && c.toughness == some 4 && !c.toughnessStar &&
       c.ptString == "*/4" && c.keywords.flying) == some true
 #guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
-    (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype "Mountain" &&
+    (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype .mountain &&
       c.tapAddMana.isEmpty) == some true
 #guard (parseOracleCard "Shock\n{R}\nInstant\nShock deals 5 damage to any target.").toOption.bind
     (·.spellEffect) == some (Effect.dealDamage 5)
@@ -141,7 +141,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Sword\n{2}\nArtifact — Equipment\nEquip {5}").toOption.bind
     (fun c => c.activatedAbilities[0]?) == some (equipAbility (ManaCost.ofGeneric 5))
 #guard (parseOracleCard "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #["Goblin"] 2 2)
+    (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #[.goblin] 2 2)
 #guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
     (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
     some (Effect.chapterDraw 7)
@@ -200,7 +200,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseTypeLine "Vanguard").toOption == some (#[], #[.vanguard], #[])
 
 #guard (parseOracleCard "Jace\n{2}{U}{U}\nLegendary Planeswalker — Jace\n3").toOption.map
-    (fun c => c.isPlaneswalker && c.hasSubtype "Jace" && c.loyalty == some 3) == some true
+    (fun c => c.isPlaneswalker && c.hasSubtype .jace && c.loyalty == some 3) == some true
 
 -- CR 209.1: the loyalty number is the corner number, labeled or bare, and it
 -- may follow the rules text. It is that planeswalker's loyalty off the
@@ -267,7 +267,7 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
       c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nDefense: 4").toOption.map
-    (fun c => c.isBattle && c.hasSubtype "Siege" && c.defense == some 4 &&
+    (fun c => c.isBattle && c.hasSubtype .siege && c.defense == some 4 &&
       c.loyalty.isNone) == some true
 
 -- CR 210.1: the defense number is the corner number, labeled or bare, and it
@@ -438,7 +438,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   | .ok _ => false
   | .error _ => true
 #guard (parseOracleCard "Undercity\nDungeon — Undercity").toOption.map
-    (fun c => c.hasType .dungeon && c.hasSubtype "Undercity") == some true
+    (fun c => c.hasType .dungeon && c.hasSubtype .undercity) == some true
 #guard (parseOracleCard "Tazeem\nPlane — Zendikar").toOption.map
     (fun c => c.hasType .plane && c.subtypes == #["Zendikar"]) == some true
 #guard (parseOracleCard "Interplanar Tunnel\nPhenomenon").toOption.map
@@ -447,10 +447,10 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.hasType .scheme && c.hasSupertype .ongoing) == some true
 #guard (parseOracleCard "Snow-Covered Island\nBasic Snow Land — Island\n({T}: Add {U}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSupertype .snow &&
-      c.hasSubtype "Island" && c.tapAddMana.isEmpty &&
+      c.hasSubtype .island && c.tapAddMana.isEmpty &&
       c.typeLine == "Basic Snow Land — Island") == some true
 #guard (parseOracleCard "Glacier\n{1}{U}\nSnow Creature — Elemental\n1/1").toOption.map
-    (fun c => c.hasSupertype .snow && c.hasSubtype "Elemental" &&
+    (fun c => c.hasSupertype .snow && c.hasSubtype .elemental &&
       c.power == some 1 && c.toughness == some 1) == some true
 #guard (parseOracleCard "The Abyss\nWorld Enchantment").toOption.map
     (fun c => c.hasSupertype .world && c.isEnchantment && c.subtypes.isEmpty) == some true
@@ -459,7 +459,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Advantageous Proclamation\nConspiracy").toOption.map
     (fun c => c.hasType .conspiracy) == some true
 #guard (parseOracleCard "Bitterblossom\n{1}{B}\nKindred Enchantment — Faerie").toOption.map
-    (fun c => c.hasType .kindred && c.isEnchantment && c.hasSubtype "Faerie") == some true
+    (fun c => c.hasType .kindred && c.isEnchantment && c.hasSubtype .faerie) == some true
 
 #guard CardType.all.all fun t =>
   match parseOracleCard s!"Relic\n\{1}\nArtifact\n{t} spells you cast cost \{{3}} less to cast." with
@@ -481,7 +481,7 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.activatedAbilities[0]?) ==
     some (typecyclingAbility "Basic land" (ManaCost.ofGeneric 2))
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "Villain" 1)
+    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess .villain 1)
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
     (fun c => c.spellEffect.map (·.resolution)) ==
     some (.spellsCostLessThisTurn (.cardType .planeswalker) 2)
@@ -513,10 +513,10 @@ def normLineAgrees (cardName line : String) : Bool :=
 
 #guard (parseOracleCard "Romana\n{2}{U}\nCreature — Time Lord\n1/1\nOther Time Lord creatures you control get +1/+1.").toOption.bind
     (fun c => c.subtypes == #["Time Lord"] &&
-      c.staticAbilities[0]? == some (.otherCreaturesGet #["Time Lord"] 1 1)) == some true
+      c.staticAbilities[0]? == some (.otherCreaturesGet #[.timeLord] 1 1)) == some true
 #guard (parseOracleCard "Pack\n{1}{G}\nCreature — Mouse\n1/1\nOther Mice and Time Lords you control have trample.").toOption.bind
     (fun c => c.staticAbilities[0]?) ==
-    some (.otherCreaturesHaveTrample #["Mouse", "Time Lord"])
+    some (.otherCreaturesHaveTrample #[.mouse, .timeLord])
 #guard (parseOracleCard "Worker\n{3}\nArtifact Creature — Assembly-Worker\n2/2\nAssembly-Workercycling {4}").toOption.bind
     (fun c => c.subtypes == #["Assembly-Worker"] &&
       c.activatedAbilities[0]? ==
@@ -526,7 +526,7 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.activatedAbilities[0]? ==
         some (typecyclingAbility "Time Lord" (ManaCost.ofGeneric 2))) == some true
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nC'tan spells you cast cost {1} less to cast.").toOption.bind
-    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess "C'tan" 1)
+    (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess .ctan 1)
 #guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Power-Plant card, reveal it, put it into your hand, then shuffle.").toOption.bind
     (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Power-Plant")
 #guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Bolas's Meditation Realm card, reveal it, put it into your hand, then shuffle.").toOption.bind

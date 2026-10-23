@@ -918,7 +918,7 @@ def animatedHospitality : Game := passBoth paidHospitalityAnimate
 
 #guard animatedHospitality.stack.isEmpty
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").isCreature
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype "Bear"
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype .bear
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").printed.isEnchantment
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .creature)
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .enchantment)
@@ -964,7 +964,7 @@ def hospitalitySelfLandfall : Game :=
   let o := namedPermanent g "Beorn's Hospitality"
   let g := g.changeStatuses o.id #[
     .additionalCreature true,
-    .additionalSubtypes #["Bear"],
+    .additionalSubtypes #[.bear],
     .grantedStaticAbilities #[.powerToughnessEqualLandsYouControl]]
   let g := addToHand g forest ⟨0⟩
   let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)

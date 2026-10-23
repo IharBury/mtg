@@ -622,7 +622,8 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .cantBlockUntilEot v => { s with cantBlockUntilEot := v }
   | .manaSpentToCast v => { s with manaSpentToCast := v }
   | .dealtDamageThisTurn v => { s with dealtDamageThisTurn := v }
-  | .replacedCreatureTypesUntilEot v => { s with replacedCreatureTypesUntilEot := v }
+  | .replacedCreatureTypesUntilEot v =>
+    { s with replacedCreatureTypesUntilEot := v }
   | .pumpPerArtifactUntilEot v => { s with pumpPerArtifactUntilEot := v }
   | .influence v => { s with influence := v }
   | .onlyFoodArtifact v => { s with onlyFoodArtifact := v }
@@ -1289,11 +1290,11 @@ def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
   GameEvent.artifactEntered g.events g.turnNumber p
 
 /-- `p` has attacked with a permanent of `subtype` this turn. -/
-def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
   GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
 
 /-- A permanent of `subtype` has entered under `p`'s control this turn. -/
-def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : String) : Bool :=
+def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
   GameEvent.subtypeEntered g.events g.turnNumber p subtype
 
 /-- `p` has activated a loyalty ability this turn. -/

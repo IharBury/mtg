@@ -104,7 +104,7 @@ An opponent's creature and an artifact are left alone. -/
     plus g "Counter Foe" == 0
 
 #guard
-  let g := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl (.subtype "Goblin")))
+  let g := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl (.subtype .goblin)))
   plus g "Counter Other" == 1 && plus g "Counter Bear" == 0 &&
     plus g "Counter Elf" == 0 && plus g "Counter Rock" == 0
 

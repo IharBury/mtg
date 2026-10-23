@@ -246,7 +246,7 @@ name both controllers. A hand names no player. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
   let g0 := addPermanent g0 (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents "Dragon")))
+  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents .dragon)))
   lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp - 1
 
 #guard

@@ -150,7 +150,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .tapHumans _ =>
       let humans :=
         (g.permanentsOf p).filter (fun o =>
-          g.hasSubtype o "Human" && !o.status.tapped)
+          g.hasSubtype o .human && !o.status.tapped)
       if humans.isEmpty then some .decline
       else some (.choosePermanents (humans.map (·.id)))
     | .payOrLetCounter _ n _ =>
@@ -304,7 +304,7 @@ where
         g.availableManaExcept p (if ab.cost.tap then some o.id else none)
       let manaCost := g.activationManaCost p ab (some o)
       g.canActivate p o ab &&
-      available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
+      available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype .elf) &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend a once-only X power-up at X = 0.
@@ -317,7 +317,7 @@ where
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&
         (g.availableMana p).canPay o.printed.manaCost
-          (allowElfRestricted := o.hasSubtype "Elf"))
+          (allowElfRestricted := o.hasSubtype .elf))
     let firstAbility (o : GameObject) : Option Nat :=
       (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
@@ -337,7 +337,7 @@ where
       g.canCast p o &&
         (o.playPermission.any (·.withoutManaCost) ||
           available.canPay o.printed.manaCost
-            (allowElfRestricted := o.hasSubtype "Elf")
+            (allowElfRestricted := o.hasSubtype .elf)
             (allowInstRestricted := o.printed.isInstantOrSorcery)) &&
         g.canPayAnnouncedAdditional p o available)
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>

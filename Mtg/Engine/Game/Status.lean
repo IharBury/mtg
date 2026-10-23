@@ -66,7 +66,7 @@ structure Status where
   Lasting effects such as Beorn's Hospitality's activation do not end. -/
   additionalCreature : Bool := false
   /-- Subtypes granted by a lasting type-changing effect. -/
-  additionalSubtypes : Array String := #[]
+  additionalSubtypes : Array CardSubtype := #[]
   /-- Static abilities granted by a lasting effect (CR 611.2a). -/
   grantedStaticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities granted by a lasting effect (e.g. a Saga chapter
@@ -163,7 +163,7 @@ structure Status where
   /-- Lifelink counters (Arwen, Mortal Queen). -/
   lifelinkCounters : Nat := 0
   /-- Creature type chosen as this permanent entered (Unexpected Party). -/
-  chosenCreatureType : Option String := none
+  chosenCreatureType : Option CardSubtype := none
   /-- Creatures this player controls cannot block this attacker this turn
   (The Black Gate). Cleared in cleanup. -/
   cantBeBlockedByPlayer : Option PlayerId := none
@@ -178,7 +178,7 @@ structure Status where
   dealtDamageThisTurn : Bool := false
   /-- Until end of turn, these replace existing creature types and keep
   noncreature subtypes (Iron Man Armor; MSH 88). -/
-  replacedCreatureTypesUntilEot : Option (Array String) := none
+  replacedCreatureTypesUntilEot : Option (Array CardSubtype) := none
   /-- Until end of turn, this creature gets +1/+1 for each artifact you
   control (Iron Man Armor). -/
   pumpPerArtifactUntilEot : Bool := false

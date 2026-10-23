@@ -118,7 +118,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     | .opponent | .eachOpponent => who != caster
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
-  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (g.hasSubtype o)
+  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
   typeOk && colorOk && controllerOk && subtypeOk &&
     (!f.nonland || !objectHasCardType o .land) &&
     (!f.noncreature || !objectHasCardType o .creature) &&
@@ -196,7 +196,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       g.legalPermanentTargets caster (fun o =>
         o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o "Elf")
+    g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o .elf)
   | .oppCreature =>
     g.legalOppCreatureTargets caster
   | .oppTappedCreature =>
@@ -269,7 +269,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => g.power o <= n)
   | .creatureYouControlAnySubtype subtypes =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && subtypes.any (g.hasSubtype o))
+      o.controlledBy caster && subtypes.any (fun s => g.hasSubtype o s))
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
   | .creatureCardInYourGraveyard =>

@@ -47,8 +47,9 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
   let other := o.id != sourceId
   let artifact := o.types.contains .artifact
   match pick with
-  | .sacrificeAnotherSubtype t =>
-    perm && other && (if t == "Creature" then o.isCreature else g.hasSubtype o t)
+  | .sacrificeAnotherCreature => perm && other && o.isCreature
+  | .sacrificeAnotherSubtype t => perm && other && g.hasSubtype o t
+
   | .sacrificeArtifact => perm && artifact
   | .sacrificeLegendaryArtifact => perm && artifact && o.isLegendary
   | .sacrificeArtifactOrCreature => perm && (artifact || o.isCreature)

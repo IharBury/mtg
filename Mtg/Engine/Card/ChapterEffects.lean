@@ -161,7 +161,7 @@ def chapterGainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat) : Effect :=
   ofChapter (.gainControlOfUpToTwoCreaturesTotalMvAtMost n)
 
 def chapterDealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String) : Effect :=
-  ofChapter (.dealDamageToEachNonSubtypeAndOpponents n subtype)
+  ofChapter (.dealDamageToEachNonSubtypeAndOpponents n (CardSubtype.ofOracleD subtype))
 
 def chapterDealXDamageToTargetOpponentGreatestArtifactMv : Effect :=
   ofChapter .dealXDamageToTargetOpponentGreatestArtifactMv

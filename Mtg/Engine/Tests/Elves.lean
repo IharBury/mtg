@@ -40,7 +40,7 @@ def archAlone : Game := addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩
 #guard archAndBears.power (namedPermanent archAndBears "Grizzly Bears") == 2
 #guard archAndOppElves.power (namedPermanent archAndOppElves "Llanowar Elves") == 1
 #guard archAlone.power (namedPermanent archAlone "Elvish Archdruid") == 2
-#guard archAndElves.countSubtype ⟨0⟩ "Elf" == 2
+#guard archAndElves.countSubtype ⟨0⟩ .elf == 2
 #guard archAndElves.countCreaturesControlledBy ⟨0⟩ == 2
 #guard archAndOppElves.countCreaturesControlledBy ⟨0⟩ == 1
 #guard (archAndElves.pickTeamworkCreatures ⟨0⟩ 2).size == 1
@@ -169,7 +169,7 @@ def elkSetup : Game :=
 #guard elkSetup.canCast ⟨0⟩ (handCardNamed elkSetup ⟨0⟩ "Mirkwood Elk")
 #guard elkSetup.asSorcery? ⟨0⟩
 #guard mirkwoodElk.hasSorcerySpeed
-#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype "Elf"
+#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype .elf
 #guard (elkSetup.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).contains
   (Target.card (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").id)
 

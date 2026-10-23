@@ -264,7 +264,7 @@ def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
   { targeting := .of .anotherCreatureYouControl
     resolution := .sequence
       [.onPermanent .untap,
-       .«if» (.subtype subtype) (.onPermanent (.plusOne 1))] }
+       .«if» (.subtype (CardSubtype.ofOracleD subtype)) (.onPermanent (.plusOne 1))] }
 
 /-- You lose 1 life and create a Treasure token. -/
 def seqLoseLifeCreateTreasure : Effect :=

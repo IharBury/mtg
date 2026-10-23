@@ -873,7 +873,7 @@ def nontokenHeroModalPump : Game :=
     #[] (some 1)
 
 #guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
-  o.printed.isToken && o.printed.hasSubtype "Soldier")).size == 1
+  o.printed.isToken && o.printed.hasSubtype .soldier)).size == 1
 #guard (namedPermanent nontokenHeroModalPump "Grizzly Bears").status.pump == (1, 1)
 
 /-- Second-draw drain leftover: each opponent loses 1 and you gain 1. -/

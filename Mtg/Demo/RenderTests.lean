@@ -599,7 +599,7 @@ def mountainLine (g : Game) : String :=
   let c := card "Silent Siege" #[.creature]
     (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
     (keywords := Keyword.trample)
-    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (staticAbilities := #[.otherCreaturesHaveTrample #[.orc, .goblin]])
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower
   textForStackedAbility c t == t &&
@@ -988,7 +988,7 @@ def mountainLine (g : Game) : String :=
   let hosp := namedPermanent g "Beorn's Hospitality"
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
-  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #["Bear"]]
+  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #[.bear]]
   let hosp' := namedPermanent g' "Beorn's Hospitality"
   !hosp.isCreature && hosp'.isCreature &&
     zoneBlock g .battlefield ==

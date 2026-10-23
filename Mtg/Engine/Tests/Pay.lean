@@ -305,7 +305,7 @@ creature queues nothing. -/
   let g0 := addPermanent g0 oppRelic opp opp
   let g := step g0 sacDestroy (some (pid g0 "Bear"))
   match g.pending with
-  | .fraChoice p (.mayPayPickThen (.sacrificeAnotherSubtype "Creature") _ sid) =>
+  | .fraChoice p (.mayPayPickThen .sacrificeAnotherCreature _ sid) =>
     p == caster && sid == pid g0 "Bear"
   | _ => false
 

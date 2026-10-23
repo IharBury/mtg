@@ -71,7 +71,7 @@ inductive ChapterResolution where
   | gainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat)
   /-- This Saga deals `n` damage to each creature that is not this subtype
   and to each opponent. -/
-  | dealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String)
+  | dealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : CardSubtype)
   /-- This Saga deals X damage to target opponent, where X is the greatest
   mana value among artifacts you control. -/
   | dealXDamageToTargetOpponentGreatestArtifactMv

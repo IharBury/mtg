@@ -164,7 +164,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       else g
     | none => g
   let g :=
-    if spell.printed.hasSubtype "Villain" then
+    if spell.printed.hasSubtype .villain then
       g.putControlledTriggers caster .youCastVillain
     else g
   let targetsCreatureYouControl : Bool :=
@@ -284,7 +284,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
 def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
-  if !g.hasSubtype entering "Elf" then g
+  if !g.hasSubtype entering .elf then g
   else
     match entering.controller with
     | none => g
@@ -354,7 +354,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   | none => g
   | some p =>
     if n > 0 &&
-        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
+        (g.hasSubtype o .goblin || g.hasSubtype o .orc || g.hasSubtype o .army) then
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
     else g
 
@@ -552,12 +552,12 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.putControlledTriggers p .equipmentYouControlEnters
       else g
     let g :=
-      if g.hasSubtype entered "Villain" || entered.printed.isArtifact then
+      if g.hasSubtype entered .villain || entered.printed.isArtifact then
         g.putControlledTriggers p .anotherVillainOrArtifactEnters
           (excludeId := some entered.id)
       else g
     let g :=
-      if g.hasSubtype entered "Villain" then
+      if g.hasSubtype entered .villain then
         g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
           g.putMatchingSourceTriggers p o .anotherVillainEnters
             (cause := some entered))
@@ -568,7 +568,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           g.putMatchingSourceTriggers p o .anotherArtifactEnters (cause := some entered))
       else g
     let g :=
-      if !entered.printed.isToken && g.hasSubtype entered "Hero" then
+      if !entered.printed.isToken && g.hasSubtype entered .hero then
         g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
           g.putMatchingSourceTriggers p o .anotherNontokenHeroEnters (cause := some entered))
       else g

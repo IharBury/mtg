@@ -80,16 +80,16 @@ namespace CardDef
   .sequence [
     .onPermanent .untap,
     .onPermanent (.pump 2 2),
-    .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))]
+    .«if» (.subtype .dwarf) (.may .attachEquipment (.sequence []))]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.subtype "Elf") (.draw 1)) "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.subtype .elf) (.draw 1)) "target creature" ==
   "if target creature is an Elf, draw a card"
 #guard SpellResolution.toPhrase (.may (.gainLife 3) (.sequence [])) "target creature" ==
   "you may gain 3 life"
 #guard SpellResolution.toPhrase (.may .attachEquipment (.sequence [])) "target creature" ==
   "you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))) "target creature" ==
+#guard SpellResolution.toPhrase (.«if» (.subtype .dwarf) (.may .attachEquipment (.sequence []))) "target creature" ==
   "if target creature is a Dwarf, you may attach an Equipment you control to it"
 #guard SpellResolution.toPhrase (.«if» (.mvAtMost 2) .recruit) "target spell" ==
   "if that spell's mana value was 2 or less, recruit"
@@ -163,7 +163,7 @@ namespace CardDef
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).resolution ==
-  .subtypesGainMenace #["Goblin", "Orc"]
+  .subtypesGainMenace #[.goblin, .orc]
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).phrase ==
   "Goblins and Orcs you control gain menace until end of turn"
 #guard (Effect.subtypesGainMenace #["Elf"]).phrase ==
@@ -379,7 +379,7 @@ namespace CardDef
 #guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
   "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
 #guard SpellResolution.toPhrase
-    (.ifElse (.subtype "Elf") (.gainLife 3) (.draw 1)) "target creature" ==
+    (.ifElse (.subtype .elf) (.gainLife 3) (.draw 1)) "target creature" ==
   "draw a card. If target creature is an Elf, you gain 3 life instead"
 #guard SpellResolution.toPhrase
     (.ifElse (.mvAtMost 2) .recruit (.draw 1)) "target spell" ==
@@ -507,13 +507,13 @@ namespace CardDef
 #guard (Effect.dealDamageToEachOppCreature 1).spellResolution ==
   .dealDamageToEachCreature 1 .opponentsControl
 #guard (Effect.dealDamageToEachNonDragon 2).spellResolution ==
-  .dealDamageToEachCreature 2 (.nonSubtype "Dragon")
+  .dealDamageToEachCreature 2 (.nonSubtype .dragon)
 #guard SpellResolution.toPhrase (.dealDamageToEachCreature 3 .each) "target creature" ==
   "deals 3 damage to each creature"
 #guard SpellResolution.toPhrase (.dealDamageToEachCreature 1 .opponentsControl) "target creature" ==
   "deals 1 damage to each creature your opponents control"
 #guard SpellResolution.toPhrase
-    (.dealDamageToEachCreature 2 (.nonSubtype "Elf")) "target creature" ==
+    (.dealDamageToEachCreature 2 (.nonSubtype .elf)) "target creature" ==
   "deals 2 damage to each non-Elf creature"
 #guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution ==
   .fight .announced (.timesPower 1)
@@ -522,7 +522,7 @@ namespace CardDef
 #guard (Effect.createTokensX .dwarf).spellResolution ==
   .createTokens .dwarf .chosenX
 #guard (Effect.createTokensPerSubtype .treasure "Villain").spellResolution ==
-  .createTokens .treasure (.perSubtype "Villain")
+  .createTokens .treasure (.perSubtype .villain)
 #guard Effect.damageOppCreaturesEqualOtherSpellsMv.spellResolution ==
   .dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue
 #guard (Effect.counterUnlessPaysTeamwork 2 4).spellResolution ==
@@ -544,7 +544,7 @@ namespace CardDef
 #guard SpellResolution.toPhrase (.createTokens .dwarf .chosenX) "" ==
   "create X 2/2 red Dwarf creature tokens"
 #guard SpellResolution.toPhrase
-    (.createTokens .treasure (.perSubtype "Villain")) "" ==
+    (.createTokens .treasure (.perSubtype .villain)) "" ==
   "Create a Treasure token for each Villain you control"
 #guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
@@ -644,17 +644,17 @@ namespace CardDef
 #guard (Effect.sourceGets 1 0).resolution == .onSource (.pump 1 0)
 #guard (Effect.putPlusOnePlusOneOnSource 3).resolution == .onSource (.plusOne 3)
 #guard Effect.becomeBearCreatureWithLandsPT.resolution ==
-  .becomeSubtypeWithLandsPT "Bear"
+  .becomeSubtypeWithLandsPT .bear
 #guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
   "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
 #guard (Effect.searchBasicBeholdSubtypeUntap "Elf").resolution ==
-  .searchBasicBeholdSubtypeUntap "Elf"
+  .searchBasicBeholdSubtypeUntap .elf
 #guard (Effect.searchBasicBeholdSubtypeUntap "Orc").phrase.endsWith
   "You may behold an Orc. If you do, untap that land"
 #guard Effect.addAnyColorSpendOnlyHero.resolution ==
-  .addAnyColorSpendOnlySubtype "Hero"
+  .addAnyColorSpendOnlySubtype .hero
 #guard Effect.addAnyColorSpendOnlyVillain.resolution ==
-  .addAnyColorSpendOnlySubtype "Villain"
+  .addAnyColorSpendOnlySubtype .villain
 #guard (Effect.teamGain Keyword.doubleStrike).phrase ==
   "Creatures you control gain double strike until end of turn"
 #guard (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5
@@ -681,7 +681,7 @@ namespace CardDef
   "Put 2 +1/+1 counters on target Goblin or Orc you control"
 #guard (Effect.plusOneOnTarget 2).targetKind == .creatureYouControl
 #guard (Effect.plusOneOnTarget 2 #["Elf"]).targetKind ==
-  .creatureYouControlAnySubtype #["Elf"]
+  .creatureYouControlAnySubtype #[.elf]
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
   "When this permanent enters, create a Treasure token."
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1 true) ==
@@ -752,7 +752,7 @@ namespace CardDef
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 #guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass 1 "Orc"))
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass 1 .orc))
 #guard !TriggeredAbility.requiresTarget
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchLibrary)
@@ -846,16 +846,16 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
   "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
-  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent "Dwarf"))
+  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent .dwarf))
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==
   .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 #guard TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
   .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
-  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
+  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 .dragon))
 #guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
-    .«if» (.dealtDamageToSubtype "Dragon") (.destroy .permanentDealtDamage)]
+    .«if» (.dealtDamageToSubtype .dragon) (.destroy .permanentDealtDamage)]
 #guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
@@ -884,10 +884,10 @@ namespace CardDef
   .or .enter .opponentDrawsExceptFirst
 #guard (SharedTriggerWhen.or .enter .attack).events == #[.entering, .attacking]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
-  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
+  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #[.goblin, .orc] 2 2 (-1) (-1)))
 #guard TriggeredAbility.resolution
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
-  .sequence [.pump (.fixed 2) (.fixed 2) (.intersection [.creaturesYouControl, .union (#["Goblin", "Orc"].toList.map .othersOfSubtype)]),
+  .sequence [.pump (.fixed 2) (.fixed 2) (.intersection [.creaturesYouControl, .union ([.goblin, .orc].map .othersOfSubtype)]),
     .pump (.fixed (-1)) (.fixed (-1)) .opponentsCreatures]
 #guard TriggeredAbility.toNotation
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
@@ -903,7 +903,7 @@ namespace CardDef
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
   .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 #guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
-  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand 4 "Elf"))
+  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand 4 .elf))
 #guard TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves ==
   .triggered .enter (Effect.ofTrigger .exileOppNonlandEachUntilLeaves)
 #guard TriggeredAbility.onCastCreaturePlusOneEqualMv ==
@@ -1001,15 +1001,15 @@ namespace CardDef
     (toString ab).startsWith "{1}, Sacrifice: Choose one —" &&
     ((toString ab).splitOn "target creature").length > 1 &&
     ((toString ab).splitOn "colorless nonland").length > 1
-#guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
+#guard StaticAbility.toNotation (.otherCreaturesHaveTrample #[.orc, .goblin]) ==
   "Other Orcs and Goblins you control have trample."
-#guard StaticAbility.toNotation (.otherCreaturesGet #["Elf"] 1 1) ==
+#guard StaticAbility.toNotation (.otherCreaturesGet #[.elf] 1 1) ==
   "Other Elf creatures you control get +1/+1."
-#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #["Wolf"] true) ==
+#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #[.wolf] true) ==
   "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
-#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype "Dwarf") ==
+#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype .dwarf) ==
   "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
-#guard TapAddForEach.toNotation { mana := .colored .green, subtype := "Elf" } ==
+#guard TapAddForEach.toNotation { mana := .colored .green, subtype := .elf } ==
   "{T}: Add {G} for each Elf you control"
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==
   "Enchanted creature gets +3/+3."
@@ -1041,7 +1041,7 @@ namespace CardDef
     powerStar := true, toughness := some 1, toughnessStar := true
   }
   c.ptString == "*/1+*"
-#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
+#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[.goblin, .orc]) ==
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==
   "This creature can't block."
@@ -1244,19 +1244,19 @@ namespace CardDef
   .hostGets "Equipped creature" 2 0
 #guard (StaticAbility.StaticShape.spec (.hostGets "Enchanted creature" 3 3)).hostBonus ==
   (3, 3)
-#guard (StaticAbility.StaticShape.spec (.lordPump #["Elf"] 1 1)).lordPump ==
-  some (#["Elf"], 1, 1)
-#guard (StaticAbility.StaticShape.spec (.lordTrample #["Orc"])).trampleSubtypes ==
-  some #["Orc"]
+#guard (StaticAbility.StaticShape.spec (.lordPump #[.elf] 1 1)).lordPump ==
+  some (#[.elf], 1, 1)
+#guard (StaticAbility.StaticShape.spec (.lordTrample #[.orc])).trampleSubtypes ==
+  some #[.orc]
 #guard (StaticAbility.StaticShape.spec .landsYouControlPT).landsYouControlPT
-#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #["Goblin"])).cantBlockUnless ==
-  some #["Goblin"]
-#guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
-#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]
+#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #[.goblin])).cantBlockUnless ==
+  some #[.goblin]
+#guard (StaticAbility.lordPump? (.otherCreaturesGet #[.elf] 1 1)) == some (#[.elf], 1, 1)
+#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #[.orc])) == some #[.orc]
 #guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl
 #guard !StaticAbility.isLandsYouControlPT (.enchantedCreatureGets 1 1)
-#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #["Goblin"])) ==
-  some #["Goblin"]
+#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #[.goblin])) ==
+  some #[.goblin]
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
@@ -1359,7 +1359,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterPlusOneOrTwoIfAnotherHero ==
   "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
 #guard TriggeredAbility.resolution .onEnterPlusOneOrTwoIfAnotherHero ==
-  .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
+  .ifElse ((.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)))
     (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
     (.putCounters (.ofKind .plusOnePlusOne) .permanent)
 #guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
@@ -1408,7 +1408,7 @@ namespace CardDef
   "You have no maximum hand size."
 #guard StaticAbility.toNotation (.maximumHandSize 10) ==
   "Your maximum hand size is 10."
-#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl "Merfolk") ==
+#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl .merfolk) ==
   "This creature's power is equal to the number of Merfolk you control."
 #guard StaticAbility.toNotation .improvise == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
@@ -1418,7 +1418,7 @@ namespace CardDef
 #guard StaticAbility.toNotation (.supertypeSpellsCostLess .snow 2) ==
   "Snow spells you cast cost {2} less to cast."
 #guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
-    (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]) ==
+    (Keyword.firstStrike.merge Keyword.vigilance) #[.soldier]) ==
   "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
 #guard StaticAbility.toNotation .enchantedLosesAbilitiesCantUntap ==
   "Enchanted creature loses all abilities and can't become untapped."
@@ -1440,7 +1440,7 @@ namespace CardDef
   .searchLibrary (.put .forest)
 #guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
   .searchLibrary (.returnToHand .basicLand)
-#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass (.fixed 1) "Orc"
+#guard TriggeredAbility.resolution (.onOpponentCastsAmassOrcs 1) == .amass (.fixed 1) .orc
 #guard TriggeredAbility.resolution .onDiesAmassGoblinsEqualPower ==
   .amass .lastKnownPower
 #guard TriggeredAbility.resolution (.onEnterAmassThenAttach 1) ==
@@ -1559,7 +1559,7 @@ end CardDef
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
-    c.hasSubtype "Adventure"
+    c.hasSubtype .adventure
 
 #guard
   let adv : AdventureFace := {
@@ -1569,7 +1569,7 @@ end CardDef
   }
   let c := adv.toCardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
-    c.hasSubtype "Adventure"
+    c.hasSubtype .adventure
 
 #guard TriggeredAbility.resolution .onTokenYouControlEntersBelladonna ==
   .sequence [
@@ -1583,7 +1583,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
   .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
-  .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"]
+  .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
   .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 #guard TriggeredAbility.resolution .onEnterDestroyOtherAmassControllerPower ==
@@ -1595,11 +1595,11 @@ end CardDef
     .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))]
 #guard TriggeredAbility.resolution .onYourBeginCombatTrampleCounterBecomeBear ==
   .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear,
-    .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))]
+    .«if» ((.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))) (.draw (.fixed 2))]
 #guard TriggeredAbility.resolution .onEnterLootLandEntersTapped ==
   .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand (how := .tapped)]
 #guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype "Elf")]
+  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype .elf)]
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, .removeCounters .all .enchanted]
 #guard TriggeredAbility.resolution .onYourEndStepPalantir ==
@@ -1623,7 +1623,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawMayPutLandTapped ==
   .sequence [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])]
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
-  .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))]
+  .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
   .sequence [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
     .putCounters .plusOneNoted .createdToken,

@@ -245,7 +245,7 @@ def untapPumpMaybeAttach (power toughness : Int) : Effect :=
     (.sequence [
       .onPermanent .untap,
       .onPermanent (.pump power toughness),
-      .«if» (.subtype "Dwarf") (.may .attachEquipment (.sequence []))])
+      .«if» (.subtype .dwarf) (.may .attachEquipment (.sequence []))])
     (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=
@@ -355,7 +355,7 @@ def addRedPerOppArtifacts : Effect :=
     (castKind := .draw)
 
 def dealDamageToEachNonDragon (n : Nat) : Effect :=
-  mkSpell (.of .none) (.dealDamageToEachCreature n (.nonSubtype "Dragon"))
+  mkSpell (.of .none) (.dealDamageToEachCreature n (.nonSubtype .dragon))
     (castKind := .creatureDamage)
 
 def chooseTypeReturnOthers : Effect :=
@@ -380,7 +380,7 @@ def exileThenReturnYouControl : Effect :=
 
 def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
   mkSpell (.of .none)
-    (.sequence [.dealDamageToEachCreature n (.nonSubtype "Dragon"), .addFourManaDragonSpells])
+    (.sequence [.dealDamageToEachCreature n (.nonSubtype .dragon), .addFourManaDragonSpells])
     (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
@@ -396,7 +396,7 @@ def createTokensX (kind : TokenKind) : Effect :=
     (castKind := .extraLand)
 
 def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
-  mkSpell (.of .none) (.exileTopPlayIfYouControlSubtype n subtype)
+  mkSpell (.of .none) (.exileTopPlayIfYouControlSubtype n (CardSubtype.ofOracleD subtype))
     (castKind := .draw)
 
 def returnSpellCantCastIfGift : Effect :=
@@ -543,8 +543,8 @@ def returnGySubtypeToHand (subtype : String) : Effect :=
       noun := s!"target {subtype} card in your graveyard"
       zone := .yourGraveyard
       controller := .you
-      subtypes := #[subtype] }))
-    (.returnGySubtypeToHand subtype)
+      subtypes := #[CardSubtype.ofOracleD subtype] }))
+    (.returnGySubtypeToHand (CardSubtype.ofOracleD subtype))
     (castKind := .draw)
 
 def grantVigilanceUnblockable : Effect :=
@@ -600,7 +600,7 @@ def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int
     (castKind := .pump)
 
 def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  mkSpell (.of .none) (.createTokens kind (.perSubtype subtype))
+  mkSpell (.of .none) (.createTokens kind (.perSubtype (CardSubtype.ofOracleD subtype)))
     (castKind := .extraLand)
 
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
@@ -712,7 +712,7 @@ def attachToTargetCreatureYouControl : Effect :=
   mkAbility (.of .creatureYouControl) (.attach .source .target)
 
 def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
-  mkAbility ({}) (.becomeSubtypeWithLandsPT subtype)
+  mkAbility ({}) (.becomeSubtypeWithLandsPT (CardSubtype.ofOracleD subtype))
 
 def becomeBearCreatureWithLandsPT : Effect :=
   becomeSubtypeWithLandsPT "Bear"
@@ -746,7 +746,7 @@ def destroyTargetPermanent : Effect :=
 
 def plusOneOnTarget (n : Nat) (subtypes : Array String := #[]) : Effect :=
   mkAbility (.of (if subtypes.isEmpty then .creatureYouControl
-             else .creatureYouControlAnySubtype subtypes)) (.onPermanent (.plusOne n))
+             else .creatureYouControlAnySubtype (CardSubtype.ofSubtypes subtypes))) (.onPermanent (.plusOne n))
 
 def targetCantBeBlockedPowerAtMost (n : Int) : Effect :=
   mkAbility (.of (.creaturePowerAtMost n)) (.onPermanent .cantBeBlocked)
@@ -781,13 +781,13 @@ def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Ef
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
 
 def subtypesGainMenace (subtypes : Array String) : Effect :=
-  mkAbility ({}) (.subtypesGainMenace subtypes)
+  mkAbility ({}) (.subtypesGainMenace (CardSubtype.ofSubtypes subtypes))
 
 def exileThenReturnNextEnd : Effect :=
   mkAbility (.of .twoCreaturesOrLandsYouControl) (.exileThenReturnNextEnd)
 
 def searchBasicBeholdSubtypeUntap (subtype : String) : Effect :=
-  mkAbility ({}) (.searchBasicBeholdSubtypeUntap subtype)
+  mkAbility ({}) (.searchBasicBeholdSubtypeUntap (CardSubtype.ofOracleD subtype))
 
 def searchBasicBeholdElfUntap : Effect :=
   searchBasicBeholdSubtypeUntap "Elf"
@@ -845,7 +845,7 @@ def sourceGainsIndestructibleTap : Effect :=
       "Witch-king of Angmar gains indestructible until end of turn. Tap him")
 
 def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
-  mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)
+  mkAbility ({}) (.plusOneOnEachOtherSubtype (CardSubtype.ofOracleD subtype) n)
 
 def plusOneAndIndestructibleCounter : Effect :=
   mkAbility ({})
@@ -874,7 +874,7 @@ def lookAtTopPutTypes (n : Nat) (types : Array String) : Effect :=
   let listed := orJoin types.toList
   let art := indefinite (types[0]?.getD "")
   mkAbility ({})
-    (.sequence [.onSource (.plusOne 2), .lookAtTopPutTypes n types])
+    (.sequence [.onSource (.plusOne 2), .lookAtTopPutTypes n (CardSubtype.ofSubtypes types)])
     (phraseOverride := some
       s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}")
 
@@ -894,7 +894,7 @@ def connive : Effect :=
   mkAbility ({}) (.connive)
 
 def addAnyColorSpendOnlySubtype (subtype : String) : Effect :=
-  mkAbility ({}) (.addAnyColorSpendOnlySubtype subtype)
+  mkAbility ({}) (.addAnyColorSpendOnlySubtype (CardSubtype.ofOracleD subtype))
 
 def addAnyColorSpendOnlyHero : Effect :=
   addAnyColorSpendOnlySubtype "Hero"
@@ -934,7 +934,7 @@ def copyControlledAbility (fromCreature : Bool) : Effect :=
              else .stackAbilityFromArtifactSource)) (.copyControlledAbility fromCreature)
 
 def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  mkAbility ({}) (.createTokensEqualSubtype kind subtype)
+  mkAbility ({}) (.createTokensEqualSubtype kind (CardSubtype.ofOracleD subtype))
 
 def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
   mkAbility ({}) (.createTokens kind n (tapped := true))
@@ -954,10 +954,10 @@ def equipmentBecomesConstructHero : Effect :=
   mkAbility ({}) (.equipmentBecomesConstructHero)
 
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
-  mkAbility ({}) (.lookAtTopRevealSubtype n subtype)
+  mkAbility ({}) (.lookAtTopRevealSubtype n (CardSubtype.ofOracleD subtype))
 
 def millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String) : Effect :=
-  mkAbility ({}) (.millThenPutSubtypeOrEnchantment n subtype)
+  mkAbility ({}) (.millThenPutSubtypeOrEnchantment n (CardSubtype.ofOracleD subtype))
 
 def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
   millThenPutSubtypeOrEnchantment n "Hero"
@@ -1021,7 +1021,7 @@ def pumpAttackingAloneGainLife : Effect :=
     (.sequence [.onPermanent (.pump 1 0), .gainLife 1])
 
 def becomeTypes (types : Array String) (power toughness : Int) (k : Keywords) : Effect :=
-  mkAbility ({}) (.becomeTypes types power toughness k)
+  mkAbility ({}) (.becomeTypes (CardSubtype.ofSubtypes types) power toughness k)
 
 def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
   becomeTypes #["Dinosaur", "Hero"] power toughness k
@@ -1036,7 +1036,7 @@ def destroyTargetNoncreatureArtOrEnch : Effect :=
   destroyTarget .noncreatureArtifactOrEnchantment
 
 def targetSubtypeConnives (subtype : String) : Effect :=
-  mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives subtype)
+  mkAbility (.of (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype))) (.targetSubtypeConnives (CardSubtype.ofOracleD subtype))
 
 def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
   mkAbility (.of .anotherCreatureYouControl)
@@ -1171,7 +1171,7 @@ def canonicalPlusOne (n : Nat) (kind : EffectTargetKind) : Option Effect :=
     some (mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump))
   | .creatureYouControl => some (plusOneOnTarget n)
   | .creatureYouControlAnySubtype ss =>
-    some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n ss)
+    some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n (ss.map CardSubtype.englishName))
   | _ => none
 
 def becomeCopyLegendRuleOff : Effect :=

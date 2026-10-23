@@ -154,7 +154,7 @@ milled cards stay, and the note is cleared. -/
   let art := namedIn g0 (g0.player caster).graveyard "Grave Relic"
   let g0 := g0.change (.milledIdsThisWay #[elf, art])
   let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
-    (r := some (.returnToHand (.milledSubtype "Elf")))
+    (r := some (.returnToHand (.milledSubtype .elf)))
   inHand g caster "Grave Bear" && inGraveyard g caster "Grave Relic" &&
     !inHand g caster "Grave Relic" && g.milledIdsThisWay.isEmpty &&
     logContains g "Grave Bear is put into Chandra's hand" &&

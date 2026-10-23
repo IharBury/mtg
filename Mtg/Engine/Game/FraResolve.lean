@@ -146,7 +146,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | none => g
   | .plusOneOnWizardTokensExceptRecent =>
     (g.permanentsOf controller).foldl (fun g o =>
-      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o "Wizard" then
+      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o .wizard then
         g.addPlusOnePlusOneTo o 1
       else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
@@ -543,7 +543,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .kothGeomancer =>
     let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
     match g.fraCause? with
-    | some land => if g.hasSubtype land "Mountain" then g.addManaLogged controller #[.colored .red] else g
+    | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
     | none => g
   | .fblthpSearch =>
     let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0

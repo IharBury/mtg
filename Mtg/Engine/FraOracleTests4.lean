@@ -141,7 +141,7 @@ def vraskaShock : Game := castShockAtNissa (addPermanent afterDraw vraskaSoulOfS
   topOfStack g == "Shock" &&
     (let s := namedPermanent g "Sculpture"
      s.printed.isArtifact && s.isCreature && s.printed.tapSacrificeAddAnyColor &&
-       g.hasSubtype s "Treasure")
+       g.hasSubtype s .treasure)
 #guard (fraRuling 887).comment.contains "resolves before the spell that caused it to trigger"
 
 /-- Ruling 848: Danitha's counter arrives before the spell resolves. -/

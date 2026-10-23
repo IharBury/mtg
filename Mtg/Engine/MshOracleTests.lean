@@ -604,13 +604,13 @@ def heroSourceOk : Bool :=
     pool.canPay (ManaCost.ofColor .white) false false true &&
     paidOk g capPay &&
     reversedPay g bearPay &&
-    gCh.hasSubtype chameleon "Hero" &&
+    gCh.hasSubtype chameleon .hero &&
     paidOk gCh (dummyProposal gCh .activatedAbility chameleon (ManaCost.ofColor .white)) &&
     paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofColor .white)) &&
     paidOk gHand (dummyProposal gHand .activatedAbility hand (ManaCost.ofColor .white)
       (discardSource := true)) &&
     paidOk gSp (dummyProposal gSp .spell spell (ManaCost.ofColor .white)) &&
-    captainAmericaSuperSoldier.hasSubtype "Hero" &&
+    captainAmericaSuperSoldier.hasSubtype .hero &&
     (mshRuling 425).comment.contains "Hero source"
 
 #guard heroSourceOk
@@ -638,10 +638,10 @@ def villainSourceOk : Bool :=
     pool.canPay (ManaCost.ofColor .black) false false false true &&
     paidOk g (dummyProposal g .activatedAbility elektra (ManaCost.ofColor .black)) &&
     reversedPay g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .black)) &&
-    gCh.hasSubtype chameleon "Villain" &&
+    gCh.hasSubtype chameleon .villain &&
     paidOk gCh (dummyProposal gCh .activatedAbility chameleon (ManaCost.ofColor .black)) &&
     paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofColor .black)) &&
-    elektraDaughterOfTheHand.hasSubtype "Villain" &&
+    elektraDaughterOfTheHand.hasSubtype .villain &&
     (mshRuling 426).comment.contains "Villain source"
 
 #guard villainSourceOk
@@ -895,7 +895,7 @@ def equipWorthyOk : Bool :=
 def vibraniumTokenOk : Bool :=
   let g := afterDraw.createKindTokens ⟨0⟩ .vibranium 1
   let o := namedPermanent g "Vibranium"
-  o.printed.isToken && o.printed.hasSubtype "Vibranium" &&
+  o.printed.isToken && o.printed.hasSubtype .vibranium &&
     o.printed.keywords.indestructible &&
     g.hasIndestructible o &&
     (mshRuling 672).comment.contains "predefined token" &&
@@ -2743,7 +2743,7 @@ def blackPantherModeOk : Bool :=
   let hero := namedPermanent g "She-Hulk, Jade Defender"
   let g := (g.afterPermanentEnters hero).receivePriority ⟨0⟩
   let soldiers (g : Game) :=
-    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Soldier")).size
+    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .soldier)).size
   match g.pending with
   | .fraChoice _ (.triggerModes _ 1 _) =>
     let soldier := (mustApply g ⟨0⟩ (.chooseMode 0)).resolveTop
@@ -2922,7 +2922,7 @@ def namorTriggeringSpellOk : Bool :=
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let merfolk (g : Game) :=
-    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Merfolk")).size
+    (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype .merfolk)).size
   let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
   let gBlue := gBlue.changeObject ab.id (.fraCauseId (some aura.id))
   let gBlue := gBlue.change (.resolvingAbility (some ab.id))
@@ -3369,7 +3369,7 @@ def powerfulBrokerOk : Bool :=
 /-- Rick Jones may put a Hero or enchantment from among the milled cards into hand. -/
 def rickJonesMillOk : Bool :=
   let g := addToLibraryTop (addToLibraryTop afterDraw lightningBolt ⟨0⟩) reptilDinomorpher ⟨0⟩
-  let g := g.millMayPutSubtypeOrEnchantment ⟨0⟩ 2 "Hero"
+  let g := g.millMayPutSubtypeOrEnchantment ⟨0⟩ 2 .hero
   match g.pending with
   | .fraChoice _ (.mayTakeMilled ids 0) =>
     ids.size == 1 &&
@@ -3383,13 +3383,13 @@ def rickJonesMillOk : Bool :=
 /-- Create X tokens uses the chosen X, including zero. -/
 def createTokensXOk : Bool :=
   let g := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 3)
-  let dwarves := g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o "Dwarf")
+  let dwarves := g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .dwarf)
   dwarves.size == 3 && dwarves.all (fun o => g.power o == 2) &&
     (let gZero := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 0)
      (gZero.battlefield.filter (fun o => o.printed.isToken)).isEmpty) &&
     (let treasures := afterDraw.applyUnifiedAbility ⟨0⟩
         (Effect.abilityCreateTokensX .treasure) #[] (chosenX := 2)
-     (treasures.battlefield.filter (fun o => treasures.hasSubtype o "Treasure")).size == 2)
+     (treasures.battlefield.filter (fun o => treasures.hasSubtype o .treasure)).size == 2)
 
 #guard createTokensXOk
 
@@ -3709,11 +3709,11 @@ def palisadeChoosesCreatureTypeOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.chooseTypeReturnOthers #[]
   match g.pending with
   | .fraChoice ⟨0⟩ (.palisadeCreatureType types) =>
-    types.contains "Bear" && types.contains "Giant" && !types.contains "Elf" &&
+    types.contains .bear && types.contains .giant && !types.contains .elf &&
       (match g.apply ⟨0⟩ (.chooseName "Elf") with
        | .error _ => true
        | .ok _ => false) &&
-      (match types.findIdx? (· == "Bear") with
+      (match types.findIdx? (· == .bear) with
        | some i =>
          let g2 := mustApply g ⟨0⟩ (.chooseMode i)
          g2.battlefield.any (fun o => o.name == "Grizzly Bears") &&
@@ -4186,7 +4186,7 @@ def amassChoosesArmyOk : Bool :=
   let before := first.status.plusOnePlusOne
   let g := g.amassGoblins ⟨0⟩ 1
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.amassArmy "Goblin" 1 _)) =>
+  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.amassArmy .goblin 1 _)) =>
     ids.size == 2 &&
       (let g2 := mustApply g ⟨0⟩ (.choosePermanents #[first.id])
        (g2.battlefield.filter (fun o => o.name == "Goblin Army" &&
@@ -4349,7 +4349,7 @@ def unexpectedPartyChoosesTypeOk : Bool :=
     | .fraChoice ⟨0⟩ (.entersCreatureType id) =>
       id == party.id &&
         (let g := mustApply g ⟨0⟩ (.chooseName "Human")
-         (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some "Human" &&
+         (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some .human &&
            g.power (namedPermanent g "Lakeshore Apothecary") == 3 &&
            g.power (namedPermanent g "Gray Ogre") == 2)
     | _ => false
@@ -4378,10 +4378,10 @@ def undercoverSkrullTypesOk : Bool :=
   let two := addToGraveyard one grayOgre ⟨0⟩
   let shy := namedPermanent one "Undercover Skrull"
   let bold := namedPermanent two "Undercover Skrull"
-  one.power shy == 1 && !one.hasSubtype shy "Goblin" &&
+  one.power shy == 1 && !one.hasSubtype shy .goblin &&
     two.power bold == 3 && two.toughness bold == 3 &&
-    two.hasSubtype bold "Goblin" && two.hasSubtype bold "Elf" &&
-    !two.hasSubtype bold "Equipment"
+    two.hasSubtype bold .goblin && two.hasSubtype bold .elf &&
+    !two.hasSubtype bold .equipment
 
 #guard undercoverSkrullTypesOk
 
@@ -4399,7 +4399,7 @@ def serumLegendarySoldierOk : Bool :=
   let host := g.object! bears[0]!.id
   g.power host == 4 && g.toughness host == 4 &&
     g.hasFirstStrike host && g.hasVigilance host &&
-    g.hasSubtype host "Soldier" && g.hasSubtype host "Bear" &&
+    g.hasSubtype host .soldier && g.hasSubtype host .bear &&
     g.treatedAsLegendary host &&
     match g.firstLegendRuleChoice? with
     | some (_, name, ids) => name == "Grizzly Bears" && ids.size == 2

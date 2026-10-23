@@ -201,11 +201,11 @@ private def effectText (raw : String) : Option Effect :=
     else if l.contains "gets +1/+0 until end of turn" then
       some (frc (.pump 1) raw)
     else if l.contains "search your library for a basic plains, island, or swamp" then
-      some (frc (.searchBasics #["Plains", "Island", "Swamp"] 0) raw)
+      some (frc (.searchBasics #[.plains, .island, .swamp] 0) raw)
     else if l.contains "search your library for a basic island, mountain, or plains" then
-      some (frc (.searchBasics #["Island", "Mountain", "Plains"] 0) raw)
+      some (frc (.searchBasics #[.island, .mountain, .plains] 0) raw)
     else if l.contains "search your library for a basic land card" then
-      some (frc (.searchBasics #["Plains", "Island", "Swamp", "Mountain", "Forest"] 4) raw)
+      some (frc (.searchBasics #[.plains, .island, .swamp, .mountain, .forest] 4) raw)
     else if l.contains "add {c}{c}" || l.contains "add {C}{C}" then
       some (Effect.addMana #[.colorless, .colorless])
     else if l.contains "copy target instant or sorcery" then
@@ -279,7 +279,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         else (l.splitOn "control a ").getLastD ""
       let types := ((after.replace " or an " " or a ").splitOn " or a ").map fun p =>
         cap ((p.splitOn " ").headD "" |>.splitOn "." |>.headD "")
-      some { c with entersTappedUnlessAnySubtype := types.toArray.filter (· != "") }
+      some { c with entersTappedUnlessAnySubtype := CardSubtype.ofSubtypes types.toArray }
     else if l == s!"exile {low c.name}." then
       some c
     else if l.contains "choose mardu or jeskai" then

@@ -68,7 +68,7 @@ succeeds at a higher count. The threshold can be another count. -/
   let g := addPermanent g bear caster caster
   let g := addPermanent g bear caster caster
   let (g, vsBears) :=
-    holds g (.atLeast (.count .legendaryCreaturesYouControl) (.subtypeCount "Bear"))
+    holds g (.atLeast (.count .legendaryCreaturesYouControl) (.subtypeCount .bear))
   let g := addPermanent g hero caster caster
   let (_, twoHeroes) := holds g (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 2))
   !no && one && !two && !vsBears && twoHeroes &&
@@ -108,17 +108,17 @@ four others. The cause's id is the last-known power. -/
   let (g, enough) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 4)) (lastKnownPower := power)
   let g := addPermanent g forest caster caster
   let (_, fiveOthers) :=
-    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount "Forest")) (lastKnownPower := power)
+    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount .forest)) (lastKnownPower := power)
   !four && reported && enough && !fiveOthers
 
 /- Bears and any other subtype use the permanents you control. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let g := addPermanent g bear caster caster
-  let (g, two) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 2))
-  let (g, three) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))
+  let (g, two) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 2))
+  let (g, three) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))
   let g := addPermanent g isle caster caster
-  let (_, isle) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 2))
+  let (_, isle) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 2))
   two && !three && isle
 
 /- Quest counters are counted on the source. A missing source is reported. -/
@@ -137,10 +137,10 @@ four others. The cause's id is the last-known power. -/
   let g := addPermanent afterDraw hero caster caster
   let src := named g "Count Hero"
   let (g, only) :=
-    holds g (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (some src.id)
+    holds g (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (some src.id)
   let g := addPermanent g hero caster caster
   let (_, another) :=
-    holds g (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (some src.id)
+    holds g (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (some src.id)
   !only && another
 
 /- The equipped creature must be a legendary creature you control. -/
@@ -209,11 +209,11 @@ is reported. -/
   let other := (g.battlefield.filter (·.name == "Count Hero"))[1]!
   let bear := named g "Count Bear"
   let ab := TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
-  let (g, heroTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, heroTarget) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent other.id] (ab := ab)
-  let (g, self) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, self) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent src.id] (ab := ab)
-  let (g, bearTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, bearTarget) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
   let (g, creature) := holds g (.atLeast (.count (.target .creature)) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
@@ -238,7 +238,7 @@ is reported. -/
     (some src.id) #[Target.permanent other.id] (ab := ab)
   let (_, otherRestr) := holds g (.atLeast (.count (.target .source)) (.fixed 1))
     (some src.id) #[Target.permanent other.id] (ab := ab)
-  let (_, bareHero) := holds g (.atLeast (.count (.anotherSubtype "Hero")) (.fixed 1))
+  let (_, bareHero) := holds g (.atLeast (.count (.anotherSubtype .hero)) (.fixed 1))
     (some src.id) #[Target.permanent src.id] (ab := ab)
   wrapped && bare && !otherRestr && !bareHero &&
     (.target : TriggeredAbility.ObjectSelector) == .target .any &&
@@ -306,10 +306,10 @@ union. -/
   let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
   let names (what : TriggeredAbility.ObjectSelector) : Option (Array String) :=
     (g.permanentsNamed ctx what).map (·.map (·.name))
-  let heroes := .intersection [.creaturesYouControl, .youControl (.subtype "Hero")]
-  let bearsAndHeroes := .union [.youControl (.subtype "Bear"), .youControl (.subtype "Hero")]
+  let heroes := .intersection [.creaturesYouControl, .youControl (.subtype .hero)]
+  let bearsAndHeroes := .union [.youControl (.subtype .bear), .youControl (.subtype .hero)]
   let others := .intersection
-    [.creaturesYouControl, .union [.othersOfSubtype "Bear", .othersOfSubtype "Hero"]]
+    [.creaturesYouControl, .union [.othersOfSubtype .bear, .othersOfSubtype .hero]]
   let attacking := .intersection [.source, .attackingCreatures]
   names heroes == some #["Count Hero"] &&
     names bearsAndHeroes == some #["Count Bear", "Count Bear", "Count Hero"] &&
@@ -337,7 +337,7 @@ creatures. Pumping creatures of a subtype leaves the other permanents. -/
   let attacking := .intersection [.source, .attackingCreatures]
   let pumped := g.applyTriggeredAbility caster (.onEnterDraw 1) (some src.id)
     (resolutionOverride := some (.pump (.fixed 1) (.fixed 0)
-      (.intersection [.creaturesYouControl, .youControl (.subtype "Hero")])))
+      (.intersection [.creaturesYouControl, .youControl (.subtype .hero)])))
   g.countNamed ctx attacking == some 1 &&
     g.countNamed ctx (.union [.source, .attackingCreatures]) == some 2 &&
     (named pumped "Count Hero").status.pumpPower == 1 &&

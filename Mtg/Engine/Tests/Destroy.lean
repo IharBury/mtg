@@ -227,7 +227,7 @@ controller still amasses when the creature is indestructible. -/
   !g.destroyedForAmassThisWay && g.amassControllerThisWay.isNone &&
     g.amassAmountThisWay == 0 &&
     logContains g "no player amasses" &&
-    !(g.battlefield.any (fun o => g.hasSubtype o "Army")) &&
+    !(g.battlefield.any (fun o => g.hasSubtype o .army)) &&
     (g.log.extract before g.log.size).any (fun s => mentions s "no player amasses")
 
 #guard
@@ -237,7 +237,7 @@ controller still amasses when the creature is indestructible. -/
   let g := step g1 notedDestroy (targets := #[Target.permanent id])
   !g.destroyedForAmassThisWay && g.amassAmountThisWay == 0 &&
     logContains g "no longer legal" &&
-    !(g.battlefield.any (fun o => g.hasSubtype o "Army"))
+    !(g.battlefield.any (fun o => g.hasSubtype o .army))
 
 #guard
   let g := step afterDraw notedDestroy (targets := #[Target.player opp])
@@ -270,9 +270,9 @@ controller still amasses when the creature is indestructible. -/
 #guard (SharedTrigger.timing .destroyOppArtifactsEnchantmentsGainLife).resolution ==
   .sequence [oppArts, .gainLife .forEachDestroyedThisWay]
 
-#guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 "Dragon")).resolution ==
+#guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 .dragon)).resolution ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
-    .«if» (.dealtDamageToSubtype "Dragon") markedDestroy]
+    .«if» (.dealtDamageToSubtype .dragon) markedDestroy]
 
 #guard (SharedTrigger.timing .destroyOtherAmassControllerPower).resolution ==
   amassSeq

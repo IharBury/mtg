@@ -146,13 +146,13 @@ def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
 /-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
 def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
   let p := o.controller.getD o.owner
-  let count (subtype : String) := ((g.permanentsOf p).filter (g.hasSubtype · subtype)).size
+  let count (subtype : CardSubtype) := ((g.permanentsOf p).filter (g.hasSubtype · subtype)).size
   let power := (g.power o).toNat
   let one (out : ManaOutput) (r : ManaRestriction := .none) : Array ManaAbilityDef :=
     #[{ output := out, restriction := r }]
   let simple := c.simpleTapAddMana.map (fun t =>
     ({ output := .fixed #[t]
-       restriction := if t == .colorless && c.hasSubtype "Vibranium" then .cantNonartifact else .none }
+       restriction := if t == .colorless && c.hasSubtype .vibranium then .cantNonartifact else .none }
       : ManaAbilityDef))
   let legendaryColors :=
     (g.permanentsOf p).foldl (fun acc x =>
@@ -228,7 +228,7 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       | .addAnyColor => with_ (.oneOf anyColorMana 1)
       | .addAnyColorSpendOnlySubtype s =>
         with_ (.oneOf anyColorMana 1)
-          (if s == "Hero" then .hero else if s == "Villain" then .villain else .none)
+          (if s == .hero then .hero else if s == .villain then .villain else .none)
       | .addAnyColorSpendOnlyArtifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
       | .addTwoAnyColorCreatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
       | .addBlueCantNonartifact => with_ (.fixed #[.colored .blue]) .cantNonartifact
@@ -282,7 +282,7 @@ def manaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       g.cardManaAbilities o o.printed ++
         (g.copiedFromGy o (fun c => #[c])).foldl (fun acc c => acc ++ g.cardManaAbilities o c) #[]
   let defs := own ++ g.activatedManaAbilities o ++ g.grantedManaAbilityDefs o
-  let treasure := g.hasSubtype o "Treasure"
+  let treasure := g.hasSubtype o .treasure
   defs.map (fun d =>
     if treasure && d.restriction == .none then { d with restriction := .fra .fromTreasure } else d)
 
@@ -382,8 +382,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let pl := g.player p
   let pool ←
     if d.cost.includesManaPayment then
-      match pl.manaPool.pay? d.cost (g.hasSubtype o "Elf") false (g.hasSubtype o "Hero")
-          (g.hasSubtype o "Villain") true o.isCreature with
+      match pl.manaPool.pay? d.cost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
+          (g.hasSubtype o .villain) true o.isCreature with
       | some pool => pure pool
       | none => throw s!"{pl.name} cannot pay {d.cost}"
     else pure pl.manaPool
@@ -412,7 +412,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g := g.afterLifeLost p lost
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=
-    if g.hasSubtype o "Mountain" && d.tap && !mana.isEmpty then
+    if g.hasSubtype o .mountain && d.tap && !mana.isEmpty then
       (g.player p).mountainExtraRedThisTurn
     else 0
   if extraRed > 0 then

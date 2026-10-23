@@ -33,43 +33,43 @@ structure EventObject where
   legendary : Bool := false
   attacking : Bool := false
   changeling : Bool := false
-  subtypes : Array String := #[]
+  subtypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
 
 /-- `s` is one of this object's types, including changeling creature types
 (CR 702.72). -/
-def hasSubtype (o : EventObject) (s : String) : Bool :=
-  o.subtypes.any (· == s) || (o.changeling && !isNoncreatureSubtype s)
+def hasSubtype (o : EventObject) (s : CardSubtype) : Bool :=
+  o.subtypes.any (· == s) || (o.changeling && !s.isNoncreature)
 
 /-- Goblin, Orc, or Army. -/
 def goblinOrcArmy (o : EventObject) : Bool :=
-  o.hasSubtype "Goblin" || o.hasSubtype "Orc" || o.hasSubtype "Army"
+  o.hasSubtype .goblin || o.hasSubtype .orc || o.hasSubtype .army
 
 /-- Villain. -/
 def villain (o : EventObject) : Bool :=
-  o.hasSubtype "Villain"
+  o.hasSubtype .villain
 
 /-- Hero. -/
 def hero (o : EventObject) : Bool :=
-  o.hasSubtype "Hero"
+  o.hasSubtype .hero
 
 /-- Elf. -/
 def elf (o : EventObject) : Bool :=
-  o.hasSubtype "Elf"
+  o.hasSubtype .elf
 
 /-- Merfolk. -/
 def merfolk (o : EventObject) : Bool :=
-  o.hasSubtype "Merfolk"
+  o.hasSubtype .merfolk
 
 /-- Forest. -/
 def forest (o : EventObject) : Bool :=
-  o.hasSubtype "Forest" || (o.land && o.subtypes.any (· == "Forest"))
+  o.hasSubtype .forest || (o.land && o.subtypes.any (· == .forest))
 
 /-- Mountain. -/
 def mountain (o : EventObject) : Bool :=
-  o.hasSubtype "Mountain"
+  o.hasSubtype .mountain
 
 end EventObject
 
@@ -167,8 +167,8 @@ inductive StatusChange where
   | removeCantUntapGrantedBy (id : ObjectId)
   | pushLosesAbilitiesGrantedBy (id : ObjectId)
   | removeLosesAbilitiesGrantedBy (id : ObjectId)
-  | addAdditionalSubtype (sub : String)
-  | pushAdditionalSubtype (sub : String)
+  | addAdditionalSubtype (sub : CardSubtype)
+  | pushAdditionalSubtype (sub : CardSubtype)
   | pushChosenMode (m : Nat)
   | pushModeChosenThisTurn (m : Nat)
   | pushAllianceModeChosen (m : Nat)
@@ -199,7 +199,7 @@ inductive StatusChange where
   | untilEotExileIfDies (v : Bool)
   | setBasePT (v : Option (Int × Int))
   | additionalCreature (v : Bool)
-  | additionalSubtypes (v : Array String)
+  | additionalSubtypes (v : Array CardSubtype)
   | grantedStaticAbilities (v : Array StaticAbility)
   | grantedTriggeredAbilities (v : Array TriggeredAbility)
   | hexproofGrantedBy (v : Array ObjectId)
@@ -240,13 +240,13 @@ inductive StatusChange where
   | lore (v : Nat)
   | indestructibleCounters (v : Nat)
   | lifelinkCounters (v : Nat)
-  | chosenCreatureType (v : Option String)
+  | chosenCreatureType (v : Option CardSubtype)
   | cantBeBlockedByPlayer (v : Option PlayerId)
   | cantBeBlockedExceptByHasteUntilEot (v : Bool)
   | cantBlockUntilEot (v : Bool)
   | manaSpentToCast (v : Nat)
   | dealtDamageThisTurn (v : Bool)
-  | replacedCreatureTypesUntilEot (v : Option (Array String))
+  | replacedCreatureTypesUntilEot (v : Option (Array CardSubtype))
   | pumpPerArtifactUntilEot (v : Bool)
   | influence (v : Nat)
   | onlyFoodArtifact (v : Bool)
@@ -382,8 +382,8 @@ inductive PlayerChange where
   | protectionFromEverything (v : Bool)
   | eaglesBirdsNextUpkeep (v : Nat)
   | addEaglesBirdsNextUpkeep (n : Nat)
-  | beheldQualities (v : Array String)
-  | pushBeheldQuality (q : String)
+  | beheldQualities (v : Array CardSubtype)
+  | pushBeheldQuality (q : CardSubtype)
   | cantCastSpellsThisTurn (v : Bool)
   | attackPumpPerPlainsThisTurn (v : Nat)
   | addAttackPumpPerPlainsThisTurn (n : Nat := 1)
@@ -406,7 +406,7 @@ inductive PlayerChange where
   | isMonarch (v : Bool)
   | lifeCantChange (v : Bool)
   | cantAttackJaces (v : Bool)
-  | commanderCreatureTypes (v : Array String)
+  | commanderCreatureTypes (v : Array CardSubtype)
   | resetPerTurnFlags
 deriving Repr, Inhabited, BEq
 
@@ -514,7 +514,7 @@ inductive GameChange where
   /-- `object` became attached to `host`. -/
   | attached (object host : ObjectId)
   /-- `player` beheld `quality`. Later zone changes do not undo it. -/
-  | beheld (player : PlayerId) (quality : String)
+  | beheld (player : PlayerId) (quality : CardSubtype)
   /-- `player` got `n` poison counters. -/
   | poisoned (player : PlayerId) (n : Nat)
   /-- `player` proliferated. -/
@@ -1002,8 +1002,8 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     yours object && other object && (object.creature || object.planeswalker)
   | .moved object .battlefield _ _ _, .fra .creatureYouControlLeaves =>
     yours object && other object && object.creature
-  | .moved object _ .battlefield _ _, .subtypeYouControlEnters _ =>
-    yours object
+  | .moved object _ .battlefield _ _, .subtypeYouControlEnters sub =>
+    yours object && object.hasSubtype sub
   | .cast p spell _ _ _ _ _ _, .youCastInstantOrSorcery =>
     you p && spell.instantOrSorcery
   | .cast p spell _ _ _ _ _ _, .youCastNoncreature =>
@@ -1130,7 +1130,7 @@ def artifactEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Boo
 
 /-- `p` attacked with a permanent of `subtype` on `turn`. -/
 def attackedWithSubtype (events : Array GameEvent) (turn : Nat) (p : PlayerId)
-    (subtype : String) : Bool :=
+    (subtype : CardSubtype) : Bool :=
   events.any fun e =>
     e.turn == turn &&
       match e.change with
@@ -1139,7 +1139,7 @@ def attackedWithSubtype (events : Array GameEvent) (turn : Nat) (p : PlayerId)
 
 /-- A permanent of `subtype` entered under `p`'s control on `turn`. -/
 def subtypeEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId)
-    (subtype : String) : Bool :=
+    (subtype : CardSubtype) : Bool :=
   events.any fun e =>
     e.turn == turn &&
       match e.change with

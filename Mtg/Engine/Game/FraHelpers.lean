@@ -47,8 +47,8 @@ def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Keywords) : Game :=
 
 /-- The creature type `p` chooses for “choose a creature type”: the type most
 common among creatures they control. -/
-def chooseCreatureTypeFor (g : Game) (p : PlayerId) : String :=
-  let counts : Array (String × Nat) :=
+def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
+  let counts : Array (CardSubtype × Nat) :=
     (g.creaturesControlledBy p).foldl (fun acc o =>
       o.subtypes.foldl (fun acc t =>
         match acc.findIdx? (·.1 == t) with
@@ -57,7 +57,7 @@ def chooseCreatureTypeFor (g : Game) (p : PlayerId) : String :=
   (counts.foldl (fun best c =>
     match best with
     | none => some c
-    | some b => if c.2 > b.2 then some c else best) none).map (·.1) |>.getD "Human"
+    | some b => if c.2 > b.2 then some c else best) none).map (·.1) |>.getD .human
 
 /-- Create one token of `kind` for `controller` and return it. -/
 def createOneKindToken (g : Game) (controller : PlayerId) (kind : TokenKind) :

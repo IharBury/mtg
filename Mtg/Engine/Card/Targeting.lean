@@ -48,7 +48,7 @@ structure TargetFilter where
   permanent, card, or spell. -/
   types : Array CardType := #[]
   /-- The target has at least one of these subtypes. Empty means any subtype. -/
-  subtypes : Array String := #[]
+  subtypes : Array CardSubtype := #[]
   /-- A legendary object also qualifies (“creature or legendary spell”). -/
   orLegendary : Bool := false
   nonland : Bool := false
@@ -139,7 +139,7 @@ inductive EffectTargetKind where
   /-- Target attacking creature without flying. -/
   | attackingCreatureWithoutFlying
   /-- Target creature you control with this subtype (e.g. Equip Human). -/
-  | creatureYouControlSubtype (subtype : String)
+  | creatureYouControlSubtype (subtype : CardSubtype)
   /-- A spell on the stack. -/
   | spell
   /-- A creature spell on the stack. -/
@@ -155,7 +155,7 @@ inductive EffectTargetKind where
   /-- Target creature with power `n` or less. -/
   | creaturePowerAtMost (n : Int)
   /-- Target creature you control with any of these subtypes. -/
-  | creatureYouControlAnySubtype (subtypes : Array String)
+  | creatureYouControlAnySubtype (subtypes : Array CardSubtype)
   /-- Target permanent. -/
   | permanent
   /-- Target creature card in your graveyard. -/
@@ -381,7 +381,7 @@ def spec : EffectTargetKind → Spec
   | .creatureYouControlAnySubtype subtypes =>
     { noun :=
         if subtypes.isEmpty then "target creature you control"
-        else s!"target {orJoin subtypes.toList} you control"
+        else s!"target {orJoin (subtypes.toList.map CardSubtype.englishName)} you control"
       prefer := .own }
   | .permanent =>
     { noun := "target permanent", prefer := .ownThenOpponent }

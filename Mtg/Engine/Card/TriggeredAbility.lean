@@ -118,7 +118,7 @@ def onLandYouControlEntersPlusOnePlusOne : TriggeredAbility :=
 def onCombatPlusOneOnCreatureYouControl : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger (.onPermanent .creatureYouControl (.plusOne 1)))
 def onEnterAttachToSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.attachTo (.creatureYouControlSubtype subtype)))
+  .triggered .enter (Effect.ofTrigger (.attachTo (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype))))
 def onEnterAttachToLegendary : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 def onEnterAttachToCreatureYouControl : TriggeredAbility :=
@@ -184,21 +184,21 @@ def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
   .triggered .youActivateCreatureAbility (Effect.ofTrigger (.draw 1)) .once
 def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
   .triggered .anotherSubtypeOrEquipmentEnters (Effect.ofTrigger (.draw 1))
-    { onceEachTurn := true, anotherSubtypeOrEquipment := some subtype }
+    { onceEachTurn := true, anotherSubtypeOrEquipment := CardSubtype.ofOracle? subtype }
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
   .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { gainedLifeAtLeast := some n }
 def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrNontokenSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { thisOrNontokenSubtype := some subtype }
+    { thisOrNontokenSubtype := CardSubtype.ofOracle? subtype }
 def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { thisOrAnotherSubtype := some subtype }
+    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype }
 def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.createTokens kind n))
-    { watchedSubtype := some subtype }
+    { watchedSubtype := CardSubtype.ofOracle? subtype }
 def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
   .triggered .opponentDrawsSecond (Effect.ofTrigger (.createTokens .treasure 1))
 def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
@@ -227,9 +227,9 @@ def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
 def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
     TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.onSource (.plusOne n)))
-    { thisOrAnotherSubtype := some subtype }
+    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass n "Orc"))
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass n .orc))
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
@@ -268,7 +268,7 @@ def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.seqDrawThenDiscard 2)
-    { thisOrAnotherSubtype := some subtype, anotherLegendary := true }
+    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype, anotherLegendary := true }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
@@ -341,13 +341,13 @@ def onEnterUntapOtherPlusOneIfSubtype (subtype : String) : TriggeredAbility :=
 def onEnterDestroyOppArtifactsEnchantmentsGainLife : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 def onAttackDamageEqualSubtypeToEachOpponent (subtype : String) : TriggeredAbility :=
-  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent subtype))
+  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent (CardSubtype.ofOracleD subtype)))
 def onAttackDamageEqualTreasures : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 def onPlayerCastsSecondSpellLoseLifeCreateTreasure : TriggeredAbility :=
   .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 def onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype n subtype))
+  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype n (CardSubtype.ofOracleD subtype)))
 def onEnterAttachTargetEquipment : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .attachEquipmentToCreature)
 def onAttackDefenderSacsLeastPower : TriggeredAbility :=
@@ -362,13 +362,13 @@ def onCombatDamagePutNonlandMvAtMost (mv : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.putNonlandMvAtMostFromGy mv))
 def onEachCombatOthersGetAndOppsGet (subtypes : Array String)
     (power toughness oppP oppT : Int) : TriggeredAbility :=
-  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet subtypes power toughness oppP oppT))
+  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet (CardSubtype.ofSubtypes subtypes) power toughness oppP oppT))
 def onCombatDamageWolfPlusOneOrTreasure : TriggeredAbility :=
   .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 def onYourBeginCombatTrampleCounterBecomeBear : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 def onEnterMillThenSubtypeToHand (n : Nat) (subtype : String) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand n subtype))
+  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand n (CardSubtype.ofOracleD subtype)))
 def onEnterExileOppNonlandEachUntilLeaves : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .exileOppNonlandEachUntilLeaves)
 def onCastCreaturePlusOneEqualMv : TriggeredAbility :=
@@ -427,7 +427,7 @@ def onOpponentCastsChosenParityModes : TriggeredAbility :=
   .triggered .opponentCastsMatchingParity (Effect.ofTrigger .gollumMode)
 def onThisOrAnotherSubtypeEntersDiscardHand (subtype : String) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger .discardHandDrawDamageIfStory)
-    { thisOrAnotherSubtype := some subtype }
+    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype }
 def onAttackCastFromGyArtifactInstantSorcery : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .castFromGyArtifactInstantSorcery)
 def onAttackEquippedGainDoubleStrike : TriggeredAbility :=
@@ -473,9 +473,9 @@ def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .eachEndStep (Effect.ofTrigger (.drawIfAttackedOrEnteredSubtype subtype))
+  .triggered .eachEndStep (Effect.ofTrigger (.drawIfAttackedOrEnteredSubtype (CardSubtype.ofOracleD subtype .hero)))
 def onAttackOthersOfSubtypeGetEqualToughness (subtype : String) : TriggeredAbility :=
-  .triggered .attack (Effect.ofTrigger (.othersOfSubtypeGetEqualSourceToughness subtype))
+  .triggered .attack (Effect.ofTrigger (.othersOfSubtypeGetEqualSourceToughness (CardSubtype.ofOracleD subtype .hero)))
 def onCreatureYouControlEntersScryAndPlan (n : Nat) : TriggeredAbility :=
   .triggered .creatureYouControlEnters (Effect.ofTrigger (.scryAndPlan n))
 def onCreaturesYouControlBecomeTappedLootAndPlan : TriggeredAbility :=
@@ -483,7 +483,7 @@ def onCreaturesYouControlBecomeTappedLootAndPlan : TriggeredAbility :=
 def onYouDrawSecondCreateVillainAndPlan : TriggeredAbility :=
   .triggered .youDrawSecond (Effect.ofTrigger .createVillainAndPlan)
 def onVillainYouControlEntersDrainAndPlan (n : Nat) : TriggeredAbility :=
-  .triggered (.subtypeYouControlEnters "Villain") (Effect.ofTrigger (.drainAndPlan n))
+  .triggered (.subtypeYouControlEnters .villain) (Effect.ofTrigger (.drainAndPlan n))
 def onCreatureCardsToGyDrawLoseLifeAndPlan : TriggeredAbility :=
   .triggered .creatureCardsPutIntoYourGy (Effect.ofTrigger .drawLoseLifeAndPlan)
 def onCastNoncreatureTreasureAndPlan : TriggeredAbility :=
@@ -696,7 +696,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | _ => none
 
 /-- Subtypes when `parts` is only `.othersOfSubtype`, in that order. -/
-private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array String) :=
+private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array CardSubtype) :=
   parts.foldl (fun acc part =>
     match acc, part with
     | some ss, .othersOfSubtype subtype => some (ss.push subtype)
@@ -729,7 +729,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       match othersOfSubtypeParts parts with
       | some subtypes =>
         let recipients :=
-          if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+          if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
           else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
         s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
       | none =>
@@ -1103,7 +1103,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match othersOfSubtypeParts parts with
     | some subtypes =>
       let who :=
-        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+        if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
         else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
       s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
     | none =>
@@ -1118,7 +1118,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
   | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
+  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
   | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
     "untap all attacking creatures. After this phase, there is an additional combat phase"
@@ -1126,7 +1126,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
     "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
-  | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] =>
+  | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))) (.draw (.fixed 2))] =>
     s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
   | .sequence [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
     s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
@@ -1199,7 +1199,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
   | .sequence [.draw (.fixed 1), .may (.put .landFromHand .tapped _) _] =>
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
-  | .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] =>
+  | .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))] =>
     "draw a card. If you control another Hero, you gain 2 life"
   | .sequence [.createTokens .treasure (.fixed 1) false .alien .you .invasion,
       .putCounters .plusOneNoted .createdToken,
@@ -1243,17 +1243,17 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
-  | .sequence [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
-      .grant (.keywords k) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] =>
+  | .sequence [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
+      .grant (.keywords k) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])] =>
     if k == Keyword.vigilance then
       s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
     else
       "resolve each step"
-  | .sequence [.searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
+  | .sequence [.searchLibrary (.exile (.basicUpTo .plains max) .forLater .linked),
       .gainLife (.fixed life)] =>
     s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
   | .sequence [.createTokens .treasure (.fixed 1) false,
-      .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
+      .«if» ((.atLeast (.count (.youControl (.subtype .treasure))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
       .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] =>
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source] =>
@@ -1645,15 +1645,15 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .connive .enteringVillain => "you may have it connive"
   | .connive _ => "connive"
   | .«if» (.or [.attackedWithSubtype attacked, .subtypeEntered entered]) (.draw (.fixed 1)) =>
-    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
-    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
+    let attackedNoun := if attacked == .hero then "a Hero" else s!"a {attacked}"
+    let enteredNoun := if entered == .hero then "a Hero" else s!"a {entered}"
     s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
   | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
     "create a Food token or a Treasure token"
   | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
       (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
-  | .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
+  | .ifElse ((.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)))
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
@@ -1704,7 +1704,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you have an enduring story, this deals X damage to each opponent"
   | .becomeBear =>
     "it becomes a Bear in addition to its other types"
-  | .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2)) =>
+  | .«if» ((.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))) (.draw (.fixed 2)) =>
     "if you control three or more Bears, draw two cards"
   | .tap .enchanted | .tap .enchantedWhileSource => "tap enchanted creature"
   | .tap .source => "tap this creature"
@@ -1734,7 +1734,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"when you do, it deals {n} damage divided as you choose among one or two targets"
   | .«if» .planWasSacrificed (.queueReflexive _) =>
     "when you do, the reflexive ability triggers"
-  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed n)) =>
+  | .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed n)) =>
     s!"if you control another Hero, you gain {n} life"
   | .grantPlayNotedUntilNextTurn =>
     playThatCardUntilNextTurnPhrase
@@ -2079,13 +2079,13 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Alliance — Whenever another creature you control enters"
     | .enter, some .destroyOtherAmassControllerPower, _ =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some "Dwarf", .. } =>
+    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some .dwarf, .. } =>
       leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
     | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
     | .enter, some .returnCreatureFromGyToHand, _ =>
     "When this enchantment enters, return target creature card from your graveyard to your hand."
-    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some "Dwarf", .. } =>
+    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some .dwarf, .. } =>
     "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
     | .attack, some .castFromGyArtifactInstantSorcery, _ =>
       leadInSentence ab "Whenever Bilbo attacks"
@@ -2105,11 +2105,11 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "When The Notary Hobbits enter"
     | .enter, some .attachEquipmentThenFight, _ =>
       leadInSentence ab "When Thorin enters"
-    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some "Elf", anotherLegendary := true, .. } =>
+    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some .elf, anotherLegendary := true, .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, some .returnAsArtifact, _ =>
       leadInSentence ab "When Tom, Bert, and William die"
-    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
+    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some .wolf, .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
     | .enter, some .exileLandsThenReturnTapped, _ =>
       leadInSentence ab "When Gandalf enters"
@@ -2130,7 +2130,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .enter, some (.connive .source), _ =>
       leadInSentence ab "When this creature enters"
     | .eachEndStep, some (.drawIfAttackedOrEnteredSubtype subtype), _ =>
-    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
+    let a := if subtype == .hero then "a Hero" else s!"a {subtype}"
     s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
     | .attack, some (.othersOfSubtypeGetEqualSourceToughness subtype), _ =>
     s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."

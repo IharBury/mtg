@@ -255,7 +255,7 @@ artifact or creature each opponent controls; −6 draws three, then puts a
 +1/+1 counter on each creature you control per card in hand. -/
 #guard
   let g := resolved (loyaltyAbility (pw theTheoristJaceBeleren 3) "The Theorist, Jace Beleren" (.plus 1))
-  g.battlefield.any (fun o => o.printed.isToken && g.hasSubtype o "Illusion") &&
+  g.battlefield.any (fun o => o.printed.isToken && g.hasSubtype o .illusion) &&
     loyaltyOf g "The Theorist, Jace Beleren" == 4
 #guard
   let g := pw theTheoristJaceBeleren 3 withBears
@@ -601,7 +601,7 @@ creature; it can't enchant a creature that isn't an artifact. -/
   let g := addPermanent afterDraw murmuringVolume me me
   let g := resolved (castFra g puppetCrafting [tgt g "Murmuring Volume"])
   let v := namedPermanent g "Murmuring Volume"
-  v.isCreature && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v "Construct"
+  v.isCreature && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v .construct
 #guard castRejected withBears puppetCrafting [tgt withBears "Grizzly Bears"]
 #guard
   let g := addToGraveyard afterDraw puppetCrafting me

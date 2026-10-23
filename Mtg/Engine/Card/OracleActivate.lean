@@ -18,8 +18,9 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlLegendary : Bool := false)
     (discardSource : Bool := false)
     (costReductionIfYouControlLegendary : Nat := 0)
-    (equipSubtype : Option String := none)
-    (sacrificeAnotherSubtype : Option String := none)
+    (equipSubtype : Option CardSubtype := none)
+    (sacrificeAnotherSubtype : Option CardSubtype := none)
+    (sacrificeAnotherCreature : Bool := false)
     (discardACard : Bool := false)
     (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
@@ -52,6 +53,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     discardSource := discardSource
     exileSourceFromGraveyard := exileSourceFromGraveyard
     sacrificeAnotherSubtype := sacrificeAnotherSubtype
+    sacrificeAnotherCreature := sacrificeAnotherCreature
     discardACard := discardACard
     tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
     removeIndestructibleCounter := removeIndestructibleCounter
@@ -75,7 +77,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
 }
 
 /-- Equip `mana`, only as a sorcery. -/
-def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=
+def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
   activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 

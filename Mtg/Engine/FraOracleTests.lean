@@ -345,7 +345,7 @@ def frogAngel : Game :=
 #guard (exiledCopies frogAngel "Seed Suture").size == 1
 #guard (exiledCopies frogAngel "Seed Suture").all (fun c =>
   c.printed.isSorcery && !c.printed.isCreature && c.printed.power.isNone &&
-    !c.printed.hasSubtype "Frog")
+    !c.printed.hasSubtype .frog)
 #guard (fraRuling 741).comment.contains "ignores copy exceptions"
 
 /- Ruling 742: the copy stays only while its permanent is on the

@@ -342,11 +342,11 @@ def reptilLastResolvesOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
-    r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
+    r.hasSubtype .dinosaur && !r.hasSubtype .human &&
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 6 6 Keyword.trample) #[] (some r.id)
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
-       r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
+       r.hasSubtype .dinosaur && !r.hasSubtype .human) &&
     (mshRuling 587).comment.contains "last one to resolve" &&
     (mshRuling 627).comment.contains "overwrite all previous effects"
 
@@ -366,7 +366,7 @@ def ironManArmorUnattachOk : Bool :=
      let armor := namedPermanent g "Iron Man Armor"
      armor.attachedTo.isNone &&
        armor.isCreature &&
-       armor.hasSubtype "Equipment" &&
+       armor.hasSubtype .equipment &&
        (mshRuling 593).comment.contains "become unattached")
 
 #guard ironManArmorUnattachOk

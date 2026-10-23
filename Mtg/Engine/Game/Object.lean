@@ -34,7 +34,7 @@ structure PlayPermission where
   withoutManaCost : Bool := false
   /-- You may play this only while you control a permanent of this subtype
   (Flameshape). Checked as you begin to cast, not as the spell resolves. -/
-  requireSubtype : Option String := none
+  requireSubtype : Option CardSubtype := none
   /-- Timing restrictions based on card type are ignored (cast-as-it-resolves
   effects such as Glamdring, Gríma, and Gandalf). -/
   ignoreTiming : Bool := false
@@ -207,24 +207,25 @@ def types (o : GameObject) : Array CardType :=
     else ts
 
 /-- Current subtypes, including those granted by a lasting type-changing effect. -/
-def subtypes (o : GameObject) : Array Subtype :=
-  if o.status.onlyFoodArtifact then #["Food"]
+def subtypes (o : GameObject) : Array CardSubtype :=
+  if o.status.onlyFoodArtifact then #[.food]
   else
+    let printed := CardSubtype.ofSubtypes o.printed.subtypes
     let added :=
-      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push "Construct"
+      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push .construct
       else o.status.additionalSubtypes
-    let extra := added.filter (fun s => !o.printed.subtypes.any (· == s))
-    let raw := o.printed.subtypes ++ extra
+    let extra := added.filter (fun s => !printed.any (· == s))
+    let raw := printed ++ extra
     match o.status.replacedCreatureTypesUntilEot with
     | none => raw
     | some types =>
-      let kept := raw.filter isNoncreatureSubtype
+      let kept := raw.filter CardSubtype.isNoncreature
       let added := types.filter (fun t => !kept.any (· == t))
       kept ++ added
 
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
-  formatTypeLine o.printed.supertypes o.types o.subtypes
+  formatTypeLine o.printed.supertypes o.types (o.subtypes.map CardSubtype.englishName)
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
 lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
@@ -265,9 +266,9 @@ def isLegendary (o : GameObject) : Bool :=
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
 
-def hasSubtype (o : GameObject) (s : String) : Bool :=
+def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||
-    (o.printed.keywords.changeling && !isNoncreatureSubtype s)
+    (o.printed.keywords.changeling && !s.isNoncreature)
 
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=

@@ -100,8 +100,8 @@ def flunkiesAmass : Game :=
 
 #guard
   let army := namedPermanent flunkiesAmass "Goblin Army"
-  army.printed.isToken && flunkiesAmass.hasSubtype army "Goblin" &&
-    flunkiesAmass.hasSubtype army "Army" &&
+  army.printed.isToken && flunkiesAmass.hasSubtype army .goblin &&
+    flunkiesAmass.hasSubtype army .army &&
     army.status.plusOnePlusOne == 1
 
 /-- A second amass puts counters on the existing Army. -/
@@ -506,8 +506,8 @@ def becomeWolfWithLandsPT : Game :=
   g.applyAbilityEffect ⟨0⟩ (Effect.becomeSubtypeWithLandsPT "Wolf") #[] (some src.id)
 
 #guard
-  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Wolf" &&
-    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Bear" &&
+  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .wolf &&
+    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .bear &&
     (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").isCreature
 
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
@@ -1380,7 +1380,7 @@ def ifDwarfPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
+      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
@@ -1390,7 +1390,7 @@ def ifScoutPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Scout") (.onPermanent (.pump 3 0))))
+      (.«if» (.subtype .scout) (.onPermanent (.pump 3 0))))
     #[Target.permanent id]
 
 #guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
@@ -1400,7 +1400,7 @@ def ifDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
+      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
@@ -1454,7 +1454,7 @@ def mayIfDwarfAsked : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
+      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1471,7 +1471,7 @@ def mayIfDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
+      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1485,7 +1485,7 @@ def ifElseDwarfGainsLife : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
+      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1497,7 +1497,7 @@ def ifElseBearDraws : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
+      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1847,7 +1847,7 @@ def eachCreatureTakesOne : Game :=
 
 def nonGoblinsTakeThree : Game :=
   bearAndGoblin.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype "Goblin"))) #[]
+    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype .goblin))) #[]
 
 #guard
   (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&

@@ -294,7 +294,7 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
 shuffle, and gain `life`. -/
 def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
     (sourceId : Option ObjectId) (max life : Nat) : Game :=
-  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype "Plains")
+  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype .plains)
     "a basic Plains card" (.exileLinked sourceId) (count := max)
     (after := some (.gainLife life))
 

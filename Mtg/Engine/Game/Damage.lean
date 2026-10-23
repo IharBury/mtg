@@ -255,7 +255,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       | some src =>
         match src.controller with
         | some c =>
-          if n > 0 && g.hasSubtype src "Hero" then g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
+          if n > 0 && g.hasSubtype src .hero then g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
           else g
         | none => g
       | none => g

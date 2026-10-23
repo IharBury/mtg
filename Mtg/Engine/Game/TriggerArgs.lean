@@ -139,7 +139,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .humans =>
     some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
+      o.isCreature && o.controlledBy controller && g.hasSubtype o .human)
   | .attackingCreatures =>
     some (g.battlefield.filter (·.status.attacking))
   | .equipped =>
@@ -192,7 +192,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .enteringVillain =>
     match g.recordedCauseId.bind onBf with
-    | some o => if g.hasSubtype o "Villain" then some #[o] else someEmpty
+    | some o => if g.hasSubtype o .villain then some #[o] else someEmpty
     | none => someEmpty
   | .landsYouControl =>
     some ((g.permanentsOf controller).filter (·.printed.isLand))
@@ -204,7 +204,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     -- The causing Forest's id is this trigger's last-known power.
     let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
     some ((g.permanentsOf controller).filter fun o =>
-      g.hasSubtype o "Forest" && some o.id != cause)
+      g.hasSubtype o .forest && some o.id != cause)
   | .creature | .target .creature =>
     some (permanentTargets.filter (·.isCreature))
   | .planeswalker | .target .planeswalker =>
@@ -366,7 +366,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .perOtherCreature =>
     some (g.battlefield.filter (fun c =>
       c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
-  | .perPlains => some (g.countSubtype controller "Plains")
+  | .perPlains => some (g.countSubtype controller .plains)
   | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
   | .equalSourceToughness =>
     some <|

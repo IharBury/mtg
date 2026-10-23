@@ -26,7 +26,7 @@ def isLordOf (src target : GameObject) : Bool :=
 
 /-- Current subtypes after Aura type-setting (e.g. Fog on the Barrow-Downs
 makes the enchanted creature only a Spirit; CR 205.3m / 613.1d). -/
-def currentSubtypes (g : Game) (o : GameObject) : Array Subtype :=
+def currentSubtypes (g : Game) (o : GameObject) : Array CardSubtype :=
   match g.battlefield.find? (fun a =>
     a.attachedTo == some o.id &&
       a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome)) with
@@ -52,7 +52,7 @@ def hasAllCreatureTypes (g : Game) (o : GameObject) : Bool :=
       | _ => false
 
 /-- Types an attached Aura adds, including the word "legendary". -/
-def auraAddedTypes (g : Game) (o : GameObject) : Array String :=
+def auraAddedTypes (g : Game) (o : GameObject) : Array CardSubtype :=
   if !o.isOnBattlefield then #[]
   else
     g.battlefield.foldl (fun acc a =>
@@ -66,7 +66,7 @@ def auraAddedTypes (g : Game) (o : GameObject) : Array String :=
 /-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
 Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
 type-setting Aura overwrites the subtypes. -/
-def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
+def hasSubtype (g : Game) (o : GameObject) (s : CardSubtype) : Bool :=
   let fogged :=
     g.battlefield.any (fun a =>
       a.attachedTo == some o.id &&
@@ -74,12 +74,12 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
   (g.currentSubtypes o).any (· == s) ||
     (g.auraAddedTypes o).any (· == s) ||
     (!fogged && (o.printedOrUntilEot.changeling || g.hasAllCreatureTypes o) &&
-      !isNoncreatureSubtype s)
+      !s.isNoncreature)
 
 /-- Printed legendary, or an Aura that adds the legendary supertype. -/
 def treatedAsLegendary (g : Game) (o : GameObject) : Bool :=
   o.isLegendary ||
-    (g.auraAddedTypes o).any (fun t => t == "legendary" || t == "Legendary")
+    g.battlefield.any (fun a => a.attachedTo == some o.id && a.staticAbilities.any fun | .enchantedCreatureGetsHasAndTypes _ _ _ _ => true | _ => false)
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
@@ -122,7 +122,7 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
           let subtypeOk :=
             match src.status.chosenCreatureType with
             | some t => g.hasSubtype target t
-            | none => subtypes.isEmpty || subtypes.any (g.hasSubtype target)
+            | none => subtypes.isEmpty || subtypes.any (fun s => g.hasSubtype target s)
           if sameController && otherOk && legendaryOk && subtypeOk then
             addStats acc (p, t)
           else acc)
@@ -226,7 +226,7 @@ def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
   if o.printed.powerPerMountain == 0 then 0
   else
     let n :=
-      (g.permanentsOf o.you).filter (fun p => g.hasSubtype p "Mountain") |>.size
+      (g.permanentsOf o.you).filter (fun p => g.hasSubtype p .mountain) |>.size
     Int.ofNat (o.printed.powerPerMountain * n)
 
 /-- Threshold: +P/+T while seven or more cards are in your graveyard. -/

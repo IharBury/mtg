@@ -828,10 +828,10 @@ def agentVisionaryOnly : Game :=
 #guard isBasicLandCard forest
 #guard !isForestCard mountain
 #guard isBasicLandCard mountain
-#guard isLandTypeCard mountain "Mountain"
-#guard isLandTypeCard swamp "Swamp"
-#guard !isLandTypeCard mountain "Swamp"
-#guard !isLandTypeCard swamp "Mountain"
+#guard isLandTypeCard mountain .mountain
+#guard isLandTypeCard swamp .swamp
+#guard !isLandTypeCard mountain .swamp
+#guard !isLandTypeCard swamp .mountain
 
 /-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
 def tropicalIsland : CardDef :=

@@ -261,7 +261,7 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (fun g o => g.dealDamageToPermanent o n)
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
-def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : String := "Dragon") : Game :=
+def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon) : Game :=
   g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
 
 end Game

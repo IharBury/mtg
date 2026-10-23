@@ -18,7 +18,7 @@ def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
 artifact, and a Saga. -/
 def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
-    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype .saga)
 
 /-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
 def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
@@ -117,13 +117,10 @@ def refreshCitysBlessing (g : Game) : Game :=
 
 /-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
 def putShadowCounter (g : Game) (o : GameObject) : Game :=
-  let extra :=
-    if o.status.additionalSubtypes.any (· == "Wraith") then o.status.additionalSubtypes
-    else o.status.additionalSubtypes.push "Wraith"
   let n := g.countersYouPut o 1
   g.changeStatuses o.id #[
     .shadow (o.status.shadow + n),
-    .additionalSubtypes extra]
+    .addAdditionalSubtype .wraith]
     |>.logMsg s!"{o.name} gets a shadow counter"
 
 end Game

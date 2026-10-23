@@ -358,7 +358,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     -- trigger, whether or not that one is still on the battlefield.
     let cause : Option ObjectId := lastKnownPower.map (fun k => ⟨k.toNat⟩)
     let others := ((g.permanentsOf controller).filter (fun o =>
-      g.hasSubtype o "Forest" && some o.id != cause)).size
+      g.hasSubtype o .forest && some o.id != cause)).size
     let n := n.toNat
     if others < n then
       let g :=
@@ -389,8 +389,8 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (srcId.bind g.findObject?).any (·.isOnBattlefield)
       if holds then (g, true)
       else (g.changes #[.handDiscardedThisWay none, .notedSourceThisWay none], false)
-  | (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed n)) =>
-    (g, g.countSubtype controller "Bear" ≥ n.toNat)
+  | (.atLeast (.count (.youControl (.subtype .bear))) (.fixed n)) =>
+    (g, g.countSubtype controller .bear ≥ n.toNat)
   | (.atLeast (.count (.youControl (.subtype subtype))) (.fixed n)) =>
     (g, g.countSubtype controller subtype ≥ n.toNat)
   | .sourceWasSacrificed =>
@@ -417,9 +417,9 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .opponentsMilled =>
     let milled := g.opponentsMilledThisWay
     (g.change (.opponentsMilledThisWay false), milled)
-  | (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) =>
+  | (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) =>
     (g, (g.permanentsOf controller).any (fun o =>
-      g.hasSubtype o "Hero" && some o.id != sourceId))
+      g.hasSubtype o .hero && some o.id != sourceId))
   | (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) =>
     match sourceId.bind g.findObject? with
     | none => (g.logMsg "The Equipment is no longer in play", false)
@@ -1726,7 +1726,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               g.changeObject src.id (.pushLinkedExile newId)
             | none => g
           | .ifHero =>
-            if g.hasSubtype o "Hero" then
+            if g.hasSubtype o .hero then
               match sourceId.bind g.findObject? with
               | some src =>
                 if src.isOnBattlefield then g.pumpPermanent src 2 1 else g
@@ -2005,7 +2005,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
   | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
-        o.isLegendary && g.hasSubtype o "Wizard") |>.size
+        o.isLegendary && g.hasSubtype o .wizard) |>.size
     g.beginMayCastInstantSorceryFromHand controller (wizards * 2)
   | .hand, .lastKnown, .withoutPaying, .none =>
     g.beginMayCastInstantSorceryFromHand controller (lastKnownPower.getD 0).toNat
@@ -2037,7 +2037,7 @@ def applyMayCast (g : Game) (controller : PlayerId) (lastKnownPower : Option Int
       | .unlimited => none
       | .twiceLegendaryWizards =>
         some (((g.permanentsOf controller).filter (fun o =>
-          o.isLegendary && g.hasSubtype o "Wizard")).size * 2)
+          o.isLegendary && g.hasSubtype o .wizard)).size * 2)
       | .lastKnown => some (lastKnownPower.getD 0).toNat
       | .greatestAttackingPower => some (g.greatestPowerAmongAttacking controller).toNat
       | .causingSpell => some (g.castSpellManaValue controller lastKnownPower)
@@ -2116,7 +2116,7 @@ the behavior of the constructor it replaced. Any other selector amasses
 nothing. -/
 def applyAmass (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int) (amount : TriggeredAbility.NumberSelector)
-    (subtype : String) (attachSource : Bool)
+    (subtype : CardSubtype) (attachSource : Bool)
     (who : TriggeredAbility.PlayerSelector)
     (targets : Array Target := #[])
     (lastKnownToughness : Option Int := none) : Game :=
@@ -3463,7 +3463,7 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
   | .returnToHand .forest _ =>
     some (g.resolveLibrarySearchToHand controller isForestCard "a Forest card")
   | .returnToHand .dragon _ =>
-    some (g.resolveLibrarySearchToHand controller (fun c => c.hasSubtype "Dragon") "a Dragon card")
+    some (g.resolveLibrarySearchToHand controller (fun c => c.hasSubtype .dragon) "a Dragon card")
   | .put .basicLandOnTop .tapped _ =>
     some (g.beginLibrarySearch controller isBasicLandCard "a basic land card"
       (.battlefield true) (optional := true))
@@ -3471,10 +3471,10 @@ def applySearchLibrary (g : Game) (controller : PlayerId)
     some (g.beginLibrarySearch controller isBasicLandCard "a basic land card" .topAfterShuffle
       (optional := true))
   | .put .dragon .asPrinted .none =>
-    some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+    some (g.beginLibrarySearch controller (fun c => c.hasSubtype .dragon) "a Dragon card"
       .battlefieldFromHandOrLibrary (alsoHand := true))
   | .put .dragon how _ =>
-    some (g.beginLibrarySearch controller (fun c => c.hasSubtype "Dragon") "a Dragon card"
+    some (g.beginLibrarySearch controller (fun c => c.hasSubtype .dragon) "a Dragon card"
       (if how == .tapped then .battlefield true else .battlefieldFromHandOrLibrary)
       (alsoHand := true))
   | .put .creatureCard how _ =>
@@ -3911,7 +3911,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           types.any (fun t =>
             (t.toLower == "permanent" && o.printed.isPermanentCard) ||
               (t.toLower == "creature" && o.printed.isCreature) ||
-              o.printed.hasSubtype t)
+              (CardSubtype.ofOracle? t).any o.printed.hasSubtype)
         | none => false)
       g.beginFraChoice controller (.mayRevealToHand ids eligible false)
         s!"{(g.player controller).name} may reveal a card from among them and put it into their hand"
@@ -3956,9 +3956,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none => sourceName
       g.logMsg s!"{name}'s ability has no effect (resolved {n} times this turn)"
     else g
-  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
+  | .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) =>
     let (g, holds) :=
-      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1))
+      g.triggerIfHolds controller ab sourceId targets lastKnownPower (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1))
     if holds then
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
@@ -4058,9 +4058,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     | some (Target.permanent oid) =>
       match g.findObject? oid with
       | some o =>
-        if g.hasSubtype o "Bear" then g
+        if g.hasSubtype o .bear then g
         else
-          let g := g.changeStatus o.id (.pushAdditionalSubtype "Bear")
+          let g := g.changeStatus o.id (.pushAdditionalSubtype .bear)
           g.logMsg s!"{o.name} becomes a Bear in addition to its other types"
       | none => g
     | _ => g
@@ -4377,7 +4377,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       match sourceId with
       | some sid =>
         if reflexive then
-          let pick := CostPick.sacrificeAnotherSubtype "Creature"
+          let pick := CostPick.sacrificeAnotherCreature
           if (g.costPickCandidates controller sid pick).isEmpty then
             (g.logMsg "There is no other creature to sacrifice. The reflexive ability doesn't trigger.").failMayThen
           else
@@ -4568,7 +4568,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .onSource a => g.applyOnTriggerSource sourceId a
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .recruit _ => g.beginRecruit controller
-  | .amass (.fixed n) "Goblin" false .you => g.amassGoblins controller n.toNat
+  | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .addMana types (.fixed 1) =>
@@ -4747,7 +4747,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       let merfolkDefenders :=
         attackerIds.foldl (fun acc id =>
           let o := g.object! id
-          if !g.hasSubtype o "Merfolk" then acc
+          if !g.hasSubtype o .merfolk then acc
           else
             let d := o.status.attackingWhom.getD g.defendingPlayer
             if acc.any (· == d) then acc else acc.push d)

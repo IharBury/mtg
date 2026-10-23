@@ -404,7 +404,7 @@ Jace, Reality Sculptor has 5, so 1 is excess. -/
 #guard
   let g := afterDraw.applyEffect ⟨0⟩ (Effect.createTokens .heartwood 1) #[]
   let o := namedPermanent g "Heartwood"
-  o.printed.isToken && o.printed.isArtifact && g.hasSubtype o "Heartwood" &&
+  o.printed.isToken && o.printed.isArtifact && g.hasSubtype o .heartwood &&
     o.printed.colors == (ColorSet.singleton .red).insert .green &&
     o.printed.tapAddOneOf == #[.colored .red, .colored .green]
 #guard (heartwoodCrafter.prepareFace.bind (·.spellEffect)).map (·.resolution) ==

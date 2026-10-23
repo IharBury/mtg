@@ -126,12 +126,17 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     match face.costReductionIfYouControl with
     | some (n, subtype) =>
       let controls :=
-        if subtype == "legendary creature" then
+        if false then
           (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary)
         else g.countSubtype caster subtype > 0
       if controls then afterDied.reduceGeneric n
       else afterDied
     | none => afterDied
+  let afterControl :=
+    if face.costReductionIfYouControlLegendary > 0 &&
+        (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary) then
+      afterControl.reduceGeneric face.costReductionIfYouControlLegendary
+    else afterControl
   let afterGy :=
     match face.costReductionIfGyCreaturesAtLeast with
     | some (min, n) =>
@@ -162,8 +167,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
-      let st := if t == "Elves" then "Elf" else t
-      let n := g.countSubtype caster st
+      let n := g.countSubtype caster t
       afterGreatest.reduceGeneric n
     | none => afterGreatest
   let afterOpp :=
@@ -254,7 +258,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
   let sphinxLess :=
-    if face.hasSubtype "Sphinx" then
+    if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
         o.id != card.id && o.controlledBy caster &&
           (o.isOnBattlefield || o.zone == .command)
