@@ -338,7 +338,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       Id.run do
         let mut g := g
         for o in g.permanentsOf ap do
-          if o.printed.impending.isSome && o.status.time > 0 then
+          if o.printed.impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
             let left := o.status.time - 1
             g := g.changeStatus o.id (.time left)
             g := g.logMsg s!"{o.name} loses a time counter"

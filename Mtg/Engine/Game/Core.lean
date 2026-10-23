@@ -655,7 +655,6 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .goaded v => { s with goaded := v }
   | .story v => { s with story := v }
   | .time v => { s with time := v }
-  | .impendingPaid v => { s with impendingPaid := v }
   | .notACreature v => { s with notACreature := v }
   | .windcragMardu v => { s with windcragMardu := v }
   | .chosenCardType v => { s with chosenCardType := v }
@@ -1110,7 +1109,7 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .returnedAsArtifact id =>
     g.modifyStatus id (fun s => { s with returnedAsArtifact := true })
   | .notACreature id =>
-    g.modifyStatus id (fun s => { s with impendingPaid := true, notACreature := true })
+    g.modifyStatus id (fun s => { s with notACreature := true })
   | .grantedStatic id ab =>
     g.modifyStatus id (fun s => { s with grantedStaticAbilities := s.grantedStaticAbilities.push ab })
   | .grantedTriggered id ab untilEot =>
@@ -1874,6 +1873,11 @@ def expireAll (g : Game) (eff : ContinuousEffect) : Game :=
 def expireEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
   effs.foldl Game.expireEffect g
 
+/-- `id` is a permanent that was cast for its impending cost (CR 702.176,
+ruling 970). -/
+def loggedCastForImpending (g : Game) (id : ObjectId) : Bool :=
+  GameEvent.castForImpending g.events id
+
 /-- Synchronize an impending permanent's `.notACreature` continuous effect with
 its time counters after an object or status change (CR 702.176, ruling 970c):
 as long as a permanent cast for its impending cost has a time counter on it, it
@@ -1889,7 +1893,7 @@ def syncImpendingNotACreature (g : Game) (id : ObjectId) : Game :=
       if o.status.notACreature || g.hasActiveEffect (.notACreature id) then
         g.expireAll (.notACreature id)
       else g
-    else if o.status.impendingPaid && !o.status.notACreature then
+    else if g.loggedCastForImpending id && !o.status.notACreature then
       g.createEffect (.notACreature id)
     else g
 

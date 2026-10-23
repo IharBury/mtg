@@ -528,13 +528,17 @@ copy at cleanup and restores the original card only when the source leaves. -/
 (ruling 967). The permanent it becomes enters with a `.notACreature`
 continuous effect that has its own `EffectId`, expires when all counters are
 removed (`withoutCounters`), and is created again with a fresh `EffectId` if
-time counters are later moved onto it (CR 702.176, ruling 970). -/
+time counters are later moved onto it. A permanent that was not cast for its
+impending cost stays a creature and does not lose time counters in the end
+step (CR 702.176, ruling 970). -/
 #guard
   let impDef : CardDef :=
     { bear with
       name := "Impending Bear"
       impending := some (1, ManaCost.empty) }
-  let g0 := insertObject afterDraw impDef me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := addPermanent afterDraw impDef me me
+  let copyId := (g0.battlefield.filter (·.name == "Impending Bear"))[0]!.id
+  let g0 := insertObject g0 impDef me (.hand me) none {} (fun id _ => #[.pushHand id])
   let cardId := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Impending Bear"))[0]!
   match g0.apply me (.cast cardId) with
   | .error _ => false
@@ -549,21 +553,26 @@ time counters are later moved onto it (CR 702.176, ruling 970). -/
       match created.find? (fun (_, e) => e == .notACreature permId) with
       | none => false
       | some (eid1, _) =>
-        let g3 := (quiet g2).changeStatus permId .withoutCounters
-        let g4 := (quiet g3).changeStatus permId (.addCountersExceptPlusOne { time := 2 })
-        let created4 := GameEvent.createdEffectsWithId g4.events
+        let g3 := g2.changeStatus permId .withoutCounters
+        let g4 := g3.changeStatus permId (.addCountersExceptPlusOne { time := 2 })
+        let created4 := (GameEvent.createdEffectsWithId g4.events).filter (fun (id, e) =>
+          id != eid1 && e == .notACreature permId)
+        let g5 := (g4.changeStatus copyId (.addCountersExceptPlusOne { time := 2 })).beginStep .end
         (GameEvent.createdEffectsWithId g1.events).isEmpty &&
           (g1.object! spellId).isCreature &&
           !(g2.object! permId).kicked &&
-          (g2.object! permId).status.impendingPaid &&
+          g2.loggedCastForImpending permId &&
+          !g2.loggedCastForImpending copyId &&
           g2.activeEffect? eid1 == some (.notACreature permId) &&
           !(g2.object! permId).isCreature &&
           (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[eid1] &&
           (g3.activeEffect? eid1).isNone &&
           (g3.object! permId).isCreature &&
           created4.size == 1 &&
-          created4[0]!.1 != eid1 &&
           g4.activeEffect? created4[0]!.1 == some (.notACreature permId) &&
-          !(g4.object! permId).isCreature
+          !(g4.object! permId).isCreature &&
+          (g5.object! permId).status.time == 1 &&
+          (g5.object! copyId).isCreature &&
+          (g5.object! copyId).status.time == 2
 
 end Mtg.Engine.EventTests

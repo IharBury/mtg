@@ -286,9 +286,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     status :=
       if old.zone == .stack && dest == .battlefield then
         { faceDown := old.status.faceDown
-          time := old.status.time
-          impendingPaid :=
-            old.status.impendingPaid || (old.printed.impending.isSome && old.status.time > 0) }
+          time := old.status.time }
       else {}
     timestamp := ts
     chosenX := old.chosenX
@@ -509,7 +507,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       -- effect is created only now, on the permanent.
       let g : Game :=
         if old.zone == Zone.stack && dest == Zone.battlefield &&
-            cur.printed.impending.isSome && cur.status.impendingPaid && cur.status.time > 0 then
+            cur.printed.impending.isSome && cur.status.time > 0 then
           g.createEffect (.notACreature newId)
         else g
       g.createPrintedStaticEffects cur

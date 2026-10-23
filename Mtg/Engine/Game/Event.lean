@@ -295,7 +295,6 @@ inductive StatusChange where
   | goaded (v : Bool)
   | story (v : Nat)
   | time (v : Nat)
-  | impendingPaid (v : Bool)
   | notACreature (v : Bool)
   | windcragMardu (v : Bool)
   | chosenCardType (v : Option CardType)
@@ -1554,6 +1553,14 @@ def teamwork (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
     | .cast _ s _ _ _ _ true _ => s.id == spell
+    | _ => false
+
+/-- `id` entered from a spell cast for its impending cost (CR 702.176,
+ruling 970). -/
+def castForImpending (events : Array GameEvent) (id : ObjectId) : Bool :=
+  events.any fun e =>
+    match e.change with
+    | .effectCreated _ (.notACreature oid) => oid == id
     | _ => false
 
 /-- All one-shot effects applied in `events` with their `EffectId`s, in chronological order (CR 610). -/

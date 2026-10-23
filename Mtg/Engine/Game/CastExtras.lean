@@ -131,7 +131,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
-    let g := g.changeStatuses spell.id #[.time n, .impendingPaid true]
+    let g := g.changeStatus spell.id (.time n)
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
