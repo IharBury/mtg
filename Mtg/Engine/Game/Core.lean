@@ -1109,7 +1109,10 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .returnedAsArtifact id =>
     g.modifyStatus id (fun s => { s with returnedAsArtifact := true })
   | .notACreature id =>
-    g.modifyStatus id (fun s => { s with notACreature := true })
+    g.modifyObject id (fun o =>
+      { o with
+        kicked := o.kicked || o.printed.impending.isSome
+        status := { o.status with notACreature := true } })
   | .grantedStatic id ab =>
     g.modifyStatus id (fun s => { s with grantedStaticAbilities := s.grantedStaticAbilities.push ab })
   | .grantedTriggered id ab untilEot =>
@@ -1690,22 +1693,6 @@ def changePlayer (g : Game) (p : PlayerId) (c : PlayerChange) : Game :=
 def changePlayers (g : Game) (p : PlayerId) (cs : Array PlayerChange) : Game :=
   g.change (.playerChanges p cs)
 
-/-- Add and process an `ObjectChange` for `id`. -/
-def changeObject (g : Game) (id : ObjectId) (c : ObjectChange) : Game :=
-  g.change (.object id c)
-
-/-- Add and process multiple `ObjectChange`s for `id`. -/
-def changeObjects (g : Game) (id : ObjectId) (cs : Array ObjectChange) : Game :=
-  g.change (.objectChanges id cs)
-
-/-- Add and process a `StatusChange` for `id`. -/
-def changeStatus (g : Game) (id : ObjectId) (c : StatusChange) : Game :=
-  g.change (.object id (.status c))
-
-/-- Add and process multiple `StatusChange`s for `id`. -/
-def changeStatuses (g : Game) (id : ObjectId) (cs : Array StatusChange) : Game :=
-  g.change (.object id (.statuses cs))
-
 /-- Add and process a `StackEntryChange` at stack index `idx`. -/
 def changeStackEntry (g : Game) (idx : Nat) (c : StackEntryChange) : Game :=
   g.change (.stackEntry idx c)
@@ -1888,6 +1875,41 @@ def expireAll (g : Game) (eff : ContinuousEffect) : Game :=
 /-- Record and apply the expiration of multiple continuous effects in order (CR 611). -/
 def expireEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
   effs.foldl Game.expireEffect g
+
+/-- Synchronize an impending permanent's `.notACreature` continuous effect with
+its time counters after an object or status change (CR 702.176, ruling 970c):
+as long as a permanent cast for its impending cost has a time counter on it, it
+isn't a creature; when it has no time counters, that effect ends, and if time
+counters are later put or moved onto it, a new `.notACreature` effect is
+created. -/
+def syncImpendingNotACreature (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    if o.zone != .battlefield || !o.printed.impending.isSome then g
+    else if o.status.time == 0 then
+      if o.status.notACreature || g.hasActiveEffect (.notACreature id) then
+        g.expireAll (.notACreature id)
+      else g
+    else if o.kicked && !o.status.notACreature then
+      g.createEffect (.notACreature id)
+    else g
+
+/-- Add and process an `ObjectChange` for `id`. -/
+def changeObject (g : Game) (id : ObjectId) (c : ObjectChange) : Game :=
+  (g.change (.object id c)).syncImpendingNotACreature id
+
+/-- Add and process multiple `ObjectChange`s for `id`. -/
+def changeObjects (g : Game) (id : ObjectId) (cs : Array ObjectChange) : Game :=
+  (g.change (.objectChanges id cs)).syncImpendingNotACreature id
+
+/-- Add and process a `StatusChange` for `id`. -/
+def changeStatus (g : Game) (id : ObjectId) (c : StatusChange) : Game :=
+  g.changeObject id (.status c)
+
+/-- Add and process multiple `StatusChange`s for `id`. -/
+def changeStatuses (g : Game) (id : ObjectId) (cs : Array StatusChange) : Game :=
+  g.changeObject id (.statuses cs)
 
 /-- Expire every until-end-of-turn continuous effect on `o`, each under its
 own `EffectId` (CR 514.2). -/

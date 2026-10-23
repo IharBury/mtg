@@ -340,10 +340,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         for o in g.permanentsOf ap do
           if o.printed.impending.isSome && o.status.time > 0 then
             let left := o.status.time - 1
-            let s := (g.object! o.id).status
             g := g.changeStatus o.id (.time left)
-            if left == 0 && s.notACreature then
-              g := g.expireAll (.notACreature o.id)
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
         g := g.change (.delayedEndStepSacrifices #[])

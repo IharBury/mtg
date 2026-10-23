@@ -526,7 +526,9 @@ copy at cleanup and restores the original card only when the source leaves. -/
 
 /- A spell cast for its impending cost is still a creature spell on the stack
 (ruling 967). The permanent it becomes enters with a `.notACreature`
-continuous effect that has its own `EffectId` (CR 702.176, ruling 970). -/
+continuous effect that has its own `EffectId`, expires when all counters are
+removed (`withoutCounters`), and is created again with a fresh `EffectId` if
+time counters are later moved onto it (CR 702.176, ruling 970). -/
 #guard
   let impDef : CardDef :=
     { bear with
@@ -544,11 +546,22 @@ continuous effect that has its own `EffectId` (CR 702.176, ruling 970). -/
     | .ok g1 =>
       let (g2, permId) := (quiet g1).move spellId .battlefield (some me)
       let created := GameEvent.createdEffectsWithId g2.events
-      (GameEvent.createdEffectsWithId g1.events).isEmpty &&
-        (g1.object! spellId).isCreature &&
-        (match created.find? (fun (_, e) => e == .notACreature permId) with
-          | some (eid, _) => g2.activeEffect? eid == some (.notACreature permId)
-          | none => false) &&
-        !(g2.object! permId).isCreature
+      match created.find? (fun (_, e) => e == .notACreature permId) with
+      | none => false
+      | some (eid1, _) =>
+        let g3 := (quiet g2).changeStatus permId .withoutCounters
+        let g4 := (quiet g3).changeStatus permId (.addCountersExceptPlusOne { time := 2 })
+        let created4 := GameEvent.createdEffectsWithId g4.events
+        (GameEvent.createdEffectsWithId g1.events).isEmpty &&
+          (g1.object! spellId).isCreature &&
+          g2.activeEffect? eid1 == some (.notACreature permId) &&
+          !(g2.object! permId).isCreature &&
+          (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[eid1] &&
+          (g3.activeEffect? eid1).isNone &&
+          (g3.object! permId).isCreature &&
+          created4.size == 1 &&
+          created4[0]!.1 != eid1 &&
+          g4.activeEffect? created4[0]!.1 == some (.notACreature permId) &&
+          !(g4.object! permId).isCreature
 
 end Mtg.Engine.EventTests
