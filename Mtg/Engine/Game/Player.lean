@@ -60,7 +60,7 @@ structure Player where
   eaglesBirdsNextUpkeep : Nat := 0
   /-- Qualities beheld this game (Elven Passage and similar). A later zone
   change of the revealed card or chosen permanent does not un-behold. -/
-  beheldQualities : Array String := #[]
+  beheldQualities : Array CardSubtype := #[]
   /-- Players can't cast spells this turn (Bilbo's Gambit). -/
   cantCastSpellsThisTurn : Bool := false
   /-- Delayed “whenever you attack this turn, pump per Plains” chapters
@@ -101,7 +101,7 @@ structure Player where
   /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
   cantAttackJaces : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/
-  commanderCreatureTypes : Array String := #[]
+  commanderCreatureTypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq
 
 /-- A seat at the table before objects are created. -/

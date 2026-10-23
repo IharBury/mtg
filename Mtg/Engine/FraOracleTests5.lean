@@ -128,7 +128,7 @@ def krakenAtNissaUpkeep : Game :=
 #guard
   let g := krakenAtNissaUpkeep
   let t := namedPermanent g "Forest Tentacle"
-  t.controlledBy ⟨0⟩ && t.printed.isLand && t.isCreature && g.hasSubtype t "Forest" &&
+  t.controlledBy ⟨0⟩ && t.printed.isLand && t.isCreature && g.hasSubtype t .forest &&
     !t.printed.hasSupertype .basic && g.power t == 3
 #guard (fraRuling 802).comment.contains "isn't a basic land"
 
@@ -352,7 +352,7 @@ what it is: a Cadet copy is a 2/2 Cadet. -/
 #guard
   let g := faceYourselfAt (afterDraw.createKindTokens ⟨1⟩ .cadet 1)
   (chandraTokens g "Cadet").size == 1 &&
-    (chandraTokens g "Cadet").all (fun o => g.power o == 2 && g.hasSubtype o "Wizard")
+    (chandraTokens g "Cadet").all (fun o => g.power o == 2 && g.hasSubtype o .wizard)
 #guard (fraRuling 786).comment.contains "copies the original characteristics of that token"
 #guard (fraRuling 789).comment.contains "enters the battlefield as whatever that creature copied"
 

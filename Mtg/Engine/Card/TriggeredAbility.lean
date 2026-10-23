@@ -118,7 +118,7 @@ def onLandYouControlEntersPlusOnePlusOne : TriggeredAbility :=
 def onCombatPlusOneOnCreatureYouControl : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger (.onPermanent .creatureYouControl (.plusOne 1)))
 def onEnterAttachToSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.attachTo (.creatureYouControlSubtype subtype)))
+  .triggered .enter (Effect.ofTrigger (.attachTo (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype))))
 def onEnterAttachToLegendary : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 def onEnterAttachToCreatureYouControl : TriggeredAbility :=
@@ -696,10 +696,10 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | _ => none
 
 /-- Subtypes when `parts` is only `.othersOfSubtype`, in that order. -/
-private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array String) :=
+private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array CardSubtype) :=
   parts.foldl (fun acc part =>
     match acc, part with
-    | some ss, .othersOfSubtype subtype => some (ss.push subtype.englishName)
+    | some ss, .othersOfSubtype subtype => some (ss.push subtype)
     | _, _ => none) (some #[])
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
@@ -729,7 +729,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       match othersOfSubtypeParts parts with
       | some subtypes =>
         let recipients :=
-          if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+          if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
           else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
         s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
       | none =>
@@ -1103,7 +1103,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     match othersOfSubtypeParts parts with
     | some subtypes =>
       let who :=
-        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+        if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
         else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
       s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
     | none =>

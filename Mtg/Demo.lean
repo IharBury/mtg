@@ -2029,7 +2029,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
     let canCast := playable.any (fun o =>
       g.canCast p o &&
         available.canPay o.printed.manaCost
-          (allowElfRestricted := o.hasSubtype "Elf") &&
+          (allowElfRestricted := o.hasSubtype .elf) &&
         g.canPayAnnouncedAdditional p o available)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
@@ -2040,7 +2040,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       (g.activatedAbilitiesOf o).any (fun ab =>
         g.canActivate p o ab &&
           (g.availableManaExcept p (if ab.cost.tap then some o.id else none)).canPay
-            ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf")))
+            ab.cost.mana (allowElfRestricted := o.hasSubtype .elf)))
     canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
 
 /-- Whether bit `i` of `mask` is set. -/

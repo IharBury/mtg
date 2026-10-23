@@ -379,17 +379,17 @@ def returnLinkedExile (g : Game) (source : GameObject) : Game :=
 
 /-- Named MSH tokens that carry extra rules text. -/
 def zabuToken : CardDef :=
-  { (creatureToken "Zabu" #["Cat"] 2 2 (some .green)) with
+  { (creatureToken "Zabu" #[.cat] 2 2 (some .green)) with
     supertypes := #[.legendary]
     triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne] }
 
 def redwingToken : CardDef :=
-  { (creatureToken "Redwing" #["Bird", "Scout"] 1 1 (some .blue) Keyword.flying) with
+  { (creatureToken "Redwing" #[.bird, .scout] 1 1 (some .blue) Keyword.flying) with
     supertypes := #[.legendary]
     triggeredAbilities := #[.onAttackScry 1] }
 
 def theVoidToken : CardDef :=
-  { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
+  { (creatureToken "The Void" #[.horror, .villain] 5 5 (some .black)
       ((Keyword.flying).merge Keyword.indestructible)) with
     supertypes := #[.legendary]
     staticAbilities := #[.attacksEachCombatIfAble] }
@@ -401,13 +401,13 @@ def galactusAttackTrigger : Effect := {
 }
 
 def galactusToken : CardDef :=
-  { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
+  { (creatureToken "Galactus" #[.elder, .alien] 16 16 (some .black)
       ((Keyword.flying).merge Keyword.trample)) with
     supertypes := #[.legendary]
     triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
 
 def tigerGodToken : CardDef :=
-  { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
+  { (creatureToken "The Tiger God" #[.cat, .god] 4 4 (some .green)) with
     supertypes := #[.legendary]
     staticAbilities := #[.cantBeBlockedByMoreThan 1] }
 
@@ -835,8 +835,8 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
     else g.resolveModeledReflexive controller sourceId kind paid targets division
 
 /-- Merge subtype names without duplicates. -/
-def mergeSubtypes (xs ys : Array String) : Array String :=
-  ys.foldl (fun acc y => if acc.any (· == y) then acc else acc.push y) xs
+def mergeSubtypes (xs : Array String) (ys : Array CardSubtype) : Array String :=
+  ys.foldl (fun acc y => if acc.any (· == y.englishName) then acc else acc.push y.englishName) xs
 
 /-- `o` becomes a copy of `src`'s copiable values. The permanent does not
 enter or leave the battlefield (MSH 322 / 326 / 329 / 330). Counters,
@@ -847,7 +847,7 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (untilSourceLeaves : Option ObjectId := none)
     (exceptName : Option String := none)
     (forceLegendary := false) (notLegendary := false)
-    (addCreature := false) (addSubtypes : Array String := #[])
+    (addCreature := false) (addSubtypes : Array CardSubtype := #[])
     (setPT : Option (Int × Int) := none)
     (addVigilance := false) (replaceCreatureLine := false) : Game :=
   let restore := o.copyRestore.getD o.printed
@@ -867,7 +867,7 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       name := exceptName.getD printed0.name
       types
       subtypes :=
-        if replaceCreatureLine then addSubtypes
+        if replaceCreatureLine then addSubtypes.map CardSubtype.englishName
         else mergeSubtypes printed0.subtypes addSubtypes
       supertypes
       power :=

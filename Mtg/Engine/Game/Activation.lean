@@ -13,12 +13,12 @@ namespace Game
 /-- Jace's Machinations lets `p` activate loyalty abilities of Jace
 planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype "Jace"
+  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype .jace
 
 /-- Loyalty counters among Jace planeswalkers `p` controls. -/
 def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    if o.printed.isPlaneswalker && g.hasSubtype o "Jace" then acc + o.status.loyaltyCounters
+    if o.printed.isPlaneswalker && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
     else acc) 0
 
 /-- Whether a Reality Fracture “Activate only if …” condition holds. -/

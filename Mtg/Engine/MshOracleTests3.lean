@@ -115,7 +115,7 @@ def thunderboltsHeroTypeOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathVillainReturnAsHero)
     (some (namedPermanent g "Thunderbolts Conspiracy").id) #[Target.card gy.id]
   let o := namedPermanent g "Agents of HYDRA"
-  g.hasSubtype o "Hero" &&
+  g.hasSubtype o .hero &&
     o.status.finality == 1 &&
     g.waitingTriggers.size >= before &&
     (mshRuling 647).comment.contains "Hero in addition to its other types"

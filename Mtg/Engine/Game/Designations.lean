@@ -18,7 +18,7 @@ def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
 artifact, and a Saga. -/
 def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
-    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype .saga)
 
 /-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
 def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=

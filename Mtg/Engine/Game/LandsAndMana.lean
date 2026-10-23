@@ -43,7 +43,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
-def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+def countSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Nat :=
   (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
 
 /-- Greatest mana value among permanents `p` controls matching `pred`. -/

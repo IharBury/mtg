@@ -491,9 +491,9 @@ def ironManArmorTypesOk : Bool :=
     (some armor.id)
   let armor := namedPermanent g "Iron Man Armor"
   armor.isCreature &&
-    armor.hasSubtype "Construct" &&
-    armor.hasSubtype "Hero" &&
-    armor.hasSubtype "Equipment" &&
+    armor.hasSubtype .construct &&
+    armor.hasSubtype .hero &&
+    armor.hasSubtype .equipment &&
     armor.types.any (· == .artifact) &&
     g.power armor == 1 &&
     g.toughness armor == 1 &&
@@ -505,9 +505,9 @@ def ironManArmorTypesOk : Bool :=
        .replacedCreatureTypesUntilEot (some #[.construct, .hero])
      ]
      let ogre := namedPermanent g "Gray Ogre"
-     !ogre.hasSubtype "Ogre" &&
-       ogre.hasSubtype "Construct" &&
-       ogre.hasSubtype "Hero") &&
+     !ogre.hasSubtype .ogre &&
+       ogre.hasSubtype .construct &&
+       ogre.hasSubtype .hero) &&
     (mshRuling 441).comment.contains "replaces any existing creature types"
 
 #guard ironManArmorTypesOk
@@ -736,7 +736,7 @@ resolves. -/
 def squirrelGirlXOnceOk : Bool :=
   let g := addPermanent afterDraw theUnbeatableSquirrelGirl ⟨0⟩ ⟨0⟩
   let squirrels (g : Game) : Nat :=
-    (g.battlefield.filter (fun o => o.hasSubtype "Squirrel")).size
+    (g.battlefield.filter (fun o => o.hasSubtype .squirrel)).size
   let n0 := squirrels g
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
   let n1 := squirrels g

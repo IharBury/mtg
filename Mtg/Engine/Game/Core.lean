@@ -513,13 +513,12 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .removeLosesAbilitiesGrantedBy id =>
     { s with losesAbilitiesGrantedBy := s.losesAbilitiesGrantedBy.filter (· != id) }
   | .addAdditionalSubtype sub =>
-    let sub := sub.englishName
     { s with
       additionalSubtypes :=
         if s.additionalSubtypes.any (· == sub) then s.additionalSubtypes
         else s.additionalSubtypes.push sub }
   | .pushAdditionalSubtype sub =>
-    { s with additionalSubtypes := s.additionalSubtypes.push sub.englishName }
+    { s with additionalSubtypes := s.additionalSubtypes.push sub }
   | .pushChosenMode m =>
     { s with chosenModes := s.chosenModes.push m }
   | .pushModeChosenThisTurn m =>
@@ -576,7 +575,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .untilEotExileIfDies v => { s with untilEotExileIfDies := v }
   | .setBasePT v => { s with setBasePT := v }
   | .additionalCreature v => { s with additionalCreature := v }
-  | .additionalSubtypes v => { s with additionalSubtypes := v.map CardSubtype.englishName }
+  | .additionalSubtypes v => { s with additionalSubtypes := v }
   | .grantedStaticAbilities v => { s with grantedStaticAbilities := v }
   | .grantedTriggeredAbilities v => { s with grantedTriggeredAbilities := v }
   | .hexproofGrantedBy v => { s with hexproofGrantedBy := v }
@@ -617,14 +616,14 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .lore v => { s with lore := v }
   | .indestructibleCounters v => { s with indestructibleCounters := v }
   | .lifelinkCounters v => { s with lifelinkCounters := v }
-  | .chosenCreatureType v => { s with chosenCreatureType := v.map CardSubtype.englishName }
+  | .chosenCreatureType v => { s with chosenCreatureType := v }
   | .cantBeBlockedByPlayer v => { s with cantBeBlockedByPlayer := v }
   | .cantBeBlockedExceptByHasteUntilEot v => { s with cantBeBlockedExceptByHasteUntilEot := v }
   | .cantBlockUntilEot v => { s with cantBlockUntilEot := v }
   | .manaSpentToCast v => { s with manaSpentToCast := v }
   | .dealtDamageThisTurn v => { s with dealtDamageThisTurn := v }
   | .replacedCreatureTypesUntilEot v =>
-    { s with replacedCreatureTypesUntilEot := v.map (·.map CardSubtype.englishName) }
+    { s with replacedCreatureTypesUntilEot := v }
   | .pumpPerArtifactUntilEot v => { s with pumpPerArtifactUntilEot := v }
   | .influence v => { s with influence := v }
   | .onlyFoodArtifact v => { s with onlyFoodArtifact := v }
@@ -796,8 +795,8 @@ def applyChange (pl : Player) (c : PlayerChange) : Player :=
   | .eaglesBirdsNextUpkeep v => { pl with eaglesBirdsNextUpkeep := v }
   | .addEaglesBirdsNextUpkeep n =>
     { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n }
-  | .beheldQualities v => { pl with beheldQualities := v.map CardSubtype.englishName }
-  | .pushBeheldQuality q => { pl with beheldQualities := pl.beheldQualities.push q.englishName }
+  | .beheldQualities v => { pl with beheldQualities := v }
+  | .pushBeheldQuality q => { pl with beheldQualities := pl.beheldQualities.push q }
   | .cantCastSpellsThisTurn v => { pl with cantCastSpellsThisTurn := v }
   | .attackPumpPerPlainsThisTurn v => { pl with attackPumpPerPlainsThisTurn := v }
   | .addAttackPumpPerPlainsThisTurn n =>
@@ -826,7 +825,7 @@ def applyChange (pl : Player) (c : PlayerChange) : Player :=
   | .isMonarch v => { pl with isMonarch := v }
   | .lifeCantChange v => { pl with lifeCantChange := v }
   | .cantAttackJaces v => { pl with cantAttackJaces := v }
-  | .commanderCreatureTypes v => { pl with commanderCreatureTypes := v.map CardSubtype.englishName }
+  | .commanderCreatureTypes v => { pl with commanderCreatureTypes := v }
   | .resetPerTurnFlags =>
     { pl with
       cantCastSpellsThisTurn := false
@@ -1291,16 +1290,12 @@ def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
   GameEvent.artifactEntered g.events g.turnNumber p
 
 /-- `p` has attacked with a permanent of `subtype` this turn. -/
-def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : String) : Bool :=
-  match CardSubtype.ofOracle? subtype with
-  | some s => GameEvent.attackedWithSubtype g.events g.turnNumber p s
-  | none => false
+def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
+  GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
 
 /-- A permanent of `subtype` has entered under `p`'s control this turn. -/
-def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : String) : Bool :=
-  match CardSubtype.ofOracle? subtype with
-  | some s => GameEvent.subtypeEntered g.events g.turnNumber p s
-  | none => false
+def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
+  GameEvent.subtypeEntered g.events g.turnNumber p subtype
 
 /-- `p` has activated a loyalty ability this turn. -/
 def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=

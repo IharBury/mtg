@@ -543,7 +543,7 @@ def returnGySubtypeToHand (subtype : String) : Effect :=
       noun := s!"target {subtype} card in your graveyard"
       zone := .yourGraveyard
       controller := .you
-      subtypes := #[subtype] }))
+      subtypes := #[CardSubtype.ofOracleD subtype] }))
     (.returnGySubtypeToHand (CardSubtype.ofOracleD subtype))
     (castKind := .draw)
 
@@ -746,7 +746,7 @@ def destroyTargetPermanent : Effect :=
 
 def plusOneOnTarget (n : Nat) (subtypes : Array String := #[]) : Effect :=
   mkAbility (.of (if subtypes.isEmpty then .creatureYouControl
-             else .creatureYouControlAnySubtype subtypes)) (.onPermanent (.plusOne n))
+             else .creatureYouControlAnySubtype (CardSubtype.ofSubtypes subtypes))) (.onPermanent (.plusOne n))
 
 def targetCantBeBlockedPowerAtMost (n : Int) : Effect :=
   mkAbility (.of (.creaturePowerAtMost n)) (.onPermanent .cantBeBlocked)
@@ -1036,7 +1036,7 @@ def destroyTargetNoncreatureArtOrEnch : Effect :=
   destroyTarget .noncreatureArtifactOrEnchantment
 
 def targetSubtypeConnives (subtype : String) : Effect :=
-  mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives (CardSubtype.ofOracleD subtype))
+  mkAbility (.of (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype))) (.targetSubtypeConnives (CardSubtype.ofOracleD subtype))
 
 def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
   mkAbility (.of .anotherCreatureYouControl)
@@ -1171,7 +1171,7 @@ def canonicalPlusOne (n : Nat) (kind : EffectTargetKind) : Option Effect :=
     some (mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump))
   | .creatureYouControl => some (plusOneOnTarget n)
   | .creatureYouControlAnySubtype ss =>
-    some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n ss)
+    some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n (ss.map CardSubtype.englishName))
   | _ => none
 
 def becomeCopyLegendRuleOff : Effect :=

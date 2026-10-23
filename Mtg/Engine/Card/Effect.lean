@@ -150,7 +150,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .subtypesGainMenace subtypes =>
-    s!"{StaticAbility.joinedSubtypes (subtypes.map CardSubtype.englishName) StaticAbility.pluralSubtype} you control gain menace until end of turn"
+    s!"{StaticAbility.joinedSubtypes subtypes CardSubtype.pluralName} you control gain menace until end of turn"
   | .exileThenReturnNextEnd =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
   | .searchBasicBeholdSubtypeUntap subtype =>

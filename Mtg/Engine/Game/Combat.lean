@@ -50,7 +50,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     if (g.player p).cantAttackJaces then
       match pw? with
       | some pw =>
-        if pw.name.startsWith "Jace" || g.hasSubtype pw "Jace" then
+        if pw.name.startsWith "Jace" || g.hasSubtype pw .jace then
           throw s!"{o.name} can't attack {pw.name} this turn"
       | none => pure ()
     let dest ←
@@ -94,9 +94,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
   let mut sphinxes := 0
   for id in ids do
     let a := g.object! id
-    if a.printed.isToken && g.hasSubtype a "Zombie" && g.snapshotPower a >= 6 then
+    if a.printed.isToken && g.hasSubtype a .zombie && g.snapshotPower a >= 6 then
       g := g.putFraEventTriggers p .zombieTokenAttacks (cause := some a)
-    if g.hasSubtype a "Sphinx" then
+    if g.hasSubtype a .sphinx then
       sphinxes := sphinxes + 1
   if sphinxes > 0 then
     g := g.putFraEventTriggers p .sphinxesAttack (lastKnownPower := some (Int.ofNat sphinxes))
@@ -363,7 +363,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
                 (lastKnownToughness := some (Int.ofNat defn.idx))
             else g
-          if g.hasSubtype src "Hero" then
+          if g.hasSubtype src .hero then
             g := g.putControlledTriggersOncePerBatch pid .heroesDealDamageToPlayer
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
           if src.isCreature then
@@ -376,7 +376,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
                     if o.id != src.id && g.hasSubtype src subtype then
                       g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
                   | _, _ => pure ()
-          if g.hasSubtype src "Army" then
+          if g.hasSubtype src .army then
             g := g.putControlledTriggers pid .armyYouControlCombatDamage
           for eq in g.battlefield do
             if eq.attachedTo == some src.id then

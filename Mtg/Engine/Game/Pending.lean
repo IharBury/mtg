@@ -48,7 +48,7 @@ inductive AfterRandom where
   /-- Put these cards on top of `p`'s library after shuffling. -/
   | putOnTop (p : PlayerId) (ids : Array ObjectId)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
-  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
+  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
   | plusOne (id : ObjectId)
   /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
@@ -134,7 +134,7 @@ inductive SearchDest where
   | battlefieldTappedThenHand
   /-- Onto the battlefield tapped; you may behold a `subtype`, and if you do,
   untap it (Elven Passage). -/
-  | battlefieldTappedBeholdUntap (subtype : String)
+  | battlefieldTappedBeholdUntap (subtype : CardSubtype)
   /-- Onto the battlefield from the hand or library; shuffle only if the
   library was searched (Last Light of Durin's Day). -/
   | battlefieldFromHandOrLibrary
@@ -154,7 +154,8 @@ with (CR 601.2h / 602.2b). -/
 inductive CostPick where
   /-- Sacrifice another permanent of this subtype, or another creature when
   the subtype is `Creature`. -/
-  | sacrificeAnotherSubtype (subtype : String)
+  | sacrificeAnotherSubtype (subtype : CardSubtype)
+  | sacrificeAnotherCreature
   | sacrificeArtifact
   | sacrificeLegendaryArtifact
   | sacrificeArtifactOrCreature
@@ -183,7 +184,8 @@ def CostPick.count : CostPick → Nat
 
 /-- The cost phrase of `pick`, for prompts and logs. -/
 def CostPick.phrase : CostPick → String
-  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
+  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.englishName.toLower}"
+  | .sacrificeAnotherCreature => "sacrifice another creature"
   | .sacrificeArtifact => "sacrifice an artifact"
   | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
   | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
@@ -223,6 +225,7 @@ def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
   (if c.sacrificeEquipmentAttachedToSource then
     #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
   (if c.tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
+  (if c.sacrificeAnotherCreature then #[CostPick.sacrificeAnotherCreature] else #[]) ++
   (match c.sacrificeAnotherSubtype with
    | some t => #[CostPick.sacrificeAnotherSubtype t]
    | none => #[]) ++ fra
@@ -241,7 +244,7 @@ inductive CardChoice where
   | keepDestroyRest
   /-- Amass `subtype` `n` onto the chosen Army. `attach` is an Equipment to
   attach afterward (Goblin Plate Mail). -/
-  | amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId)
+  | amassArmy (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A choice made while a Reality Fracture effect resolves. The player answers
@@ -336,7 +339,7 @@ inductive FraChoice where
   | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
   /-- Choose a creature type you control. `types` are offered by index
   (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
-  | chooseCreatureType (types : Array String)
+  | chooseCreatureType (types : Array CardSubtype)
   /-- You may sacrifice another creature. If you do, the source gets +1/+1
   counters equal to that creature's power (Rhovanion Rampager). -/
   | maySacrificeAnotherCreatureForPower (sourceId : ObjectId)
@@ -506,7 +509,7 @@ inductive FraChoice where
   | riddlesChoosePile (controller : PlayerId) (faceUp faceDown : Array ObjectId)
   /-- Choose one creature type among `types`, then return every creature that
   isn't that type (Raise the Palisade). -/
-  | palisadeCreatureType (types : Array String)
+  | palisadeCreatureType (types : Array CardSubtype)
   /-- `eligible` are this player's creature cards in hand. `rest` choose next.
   `exiled` return to their owners' hands after `chosen` enter (Worlds Within
   Worlds). -/

@@ -47,14 +47,14 @@ def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
 def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     (kws : Keywords) (msg : String)
-    (types : Option (Array String) := none)
+    (types : Option (Array CardSubtype) := none)
     (additionalCreature := false) (additionalArtifact := false)
     (pumpPerArtifact := false) : Game :=
   let s := (g.findObject? o.id).map (·.status) |>.getD o.status
   (g.changeStatuses o.id #[
     .setBasePT (some pt),
     .replacedCreatureTypesUntilEot
-      ((types.orElse fun _ => s.replacedCreatureTypesUntilEot).map CardSubtype.ofSubtypes),
+      (types.orElse fun _ => s.replacedCreatureTypesUntilEot),
     .grantUntilEot kws,
     .additionalCreatureUntilEot (additionalCreature || s.additionalCreatureUntilEot),
     .additionalArtifactUntilEot (additionalArtifact || s.additionalArtifactUntilEot),
@@ -157,7 +157,7 @@ def addPlusOneIfStillCreature (g : Game) (id : ObjectId) : Game :=
 
 /-- The Army `controller` controls with the latest timestamp, if any. -/
 def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
-  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o .army)
   armies.foldl (fun best o =>
     match best with
     | none => some o
@@ -167,7 +167,7 @@ def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
 def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
   match o.controller with
   | some p =>
-    if g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army" then
+    if g.hasSubtype o .goblin || g.hasSubtype o .orc || g.hasSubtype o .army then
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
     else g
   | none => g
@@ -224,19 +224,16 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
-    (subtype : String) (n : Nat) (attach : Option ObjectId := none) : Game :=
+    (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none) : Game :=
   match g.findObject? armyId with
   | none => g.logMsg "That Army is no longer on the battlefield"
   | some army =>
-    if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army "Army" then
+    if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army .army then
       g.logMsg "That Army is no longer on the battlefield"
     else
       let g :=
         if g.hasSubtype army subtype then g
-        else
-          match CardSubtype.ofOracle? subtype with
-          | some sub => g.changeStatus army.id (.pushAdditionalSubtype sub)
-          | none => g
+        else g.changeStatus army.id (.pushAdditionalSubtype subtype)
       let army := g.object! army.id
       let g := g.addPlusOnePlusOneTo army n
       let g := g.logMsg
@@ -252,9 +249,9 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
 /-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If
 you control more than one Army, you choose which one. -/
-def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat)
+def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
     (attach : Option ObjectId := none) : Game :=
-  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o .army)
   if armies.size > 1 then
     let ids := armies.map (fun (o : GameObject) => o.id)
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
@@ -274,15 +271,15 @@ def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat)
 
 /-- Amass Goblins `n` (CR 701.43). -/
 def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller "Goblin" n
+  g.amass controller .goblin n
 
 /-- Amass Orcs `n` (CR 701.43). -/
 def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller "Orc" n
+  g.amass controller .orc n
 
 /-- Amass Zombies `n` (CR 701.43). -/
 def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller "Zombie" n
+  g.amass controller .zombie n
 
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/

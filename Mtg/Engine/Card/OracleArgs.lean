@@ -226,11 +226,11 @@ def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
 
 def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
   match k with
-  | .creatureYouControlSubtype s => return .creatureYouControlSubtype (← takeStr s)
+  | .creatureYouControlSubtype s => return .creatureYouControlSubtype (← takeSubtype s)
   | .creatureSpellPTAtMost n => return .creatureSpellPTAtMost (← takeNat n)
   | .creaturePowerAtLeast n => return .creaturePowerAtLeast (← takeInt n)
   | .creaturePowerAtMost n => return .creaturePowerAtMost (← takeInt n)
-  | .creatureYouControlAnySubtype ss => return .creatureYouControlAnySubtype (← takeStrs ss)
+  | .creatureYouControlAnySubtype ss => return .creatureYouControlAnySubtype (← takeSubtypes ss)
   | .creatureCardInYourGraveyardMvAtMost n =>
     return .creatureCardInYourGraveyardMvAtMost (← takeNat n)
   | .creatureYouControlPowerAtMost n => return .creatureYouControlPowerAtMost (← takeInt n)
@@ -552,22 +552,22 @@ where
 
 def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   match ab with
-  | .otherCreaturesHaveTrample ss => return .otherCreaturesHaveTrample (← takeStrs ss)
+  | .otherCreaturesHaveTrample ss => return .otherCreaturesHaveTrample (← takeSubtypes ss)
   | .otherCreaturesGet ss p t =>
-    return .otherCreaturesGet (← takeStrs ss) (← takeInt p) (← takeInt t)
+    return .otherCreaturesGet (← takeSubtypes ss) (← takeInt p) (← takeInt t)
   | .enchantedCreatureGets p t => return .enchantedCreatureGets (← takeInt p) (← takeInt t)
   | .equippedCreatureGets p t => return .equippedCreatureGets (← takeInt p) (← takeInt t)
-  | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeStrs ss)
+  | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeSubtypes ss)
   | .cantBeBlockedExceptBy n => return .cantBeBlockedExceptBy (← takeNat n)
   | .cantBeBlockedByMoreThan n => return .cantBeBlockedByMoreThan (← takeNat n)
   | .enchantedIsOnlySubtypeCantAttackOrBlock s =>
-    return .enchantedIsOnlySubtypeCantAttackOrBlock (← takeStr s)
+    return .enchantedIsOnlySubtypeCantAttackOrBlock (← takeSubtype s)
   | .enchantedCreatureGetsAndHas p t k =>
     return .enchantedCreatureGetsAndHas (← takeInt p) (← takeInt t) k
   | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
-  | .hasteIfYouControlOtherSubtype s => return .hasteIfYouControlOtherSubtype (← takeStr s)
+  | .hasteIfYouControlOtherSubtype s => return .hasteIfYouControlOtherSubtype (← takeSubtype s)
   | .cantAttackUnlessYouControlNOther n s =>
-    return .cantAttackUnlessYouControlNOther (← takeNat n) (← takeStr s)
+    return .cantAttackUnlessYouControlNOther (← takeNat n) (← takeSubtype s)
   | .legendaryCreaturesGetAndWard p t w =>
     return .legendaryCreaturesGetAndWard (← takeInt p) (← takeInt t) (← takeNat w)
   | .nonlegendaryCreaturesGet p t => return .nonlegendaryCreaturesGet (← takeInt p) (← takeInt t)
@@ -575,7 +575,7 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
     return .equippedCreatureGetsAndHas (← takeInt p) (← takeInt t) k
   | .equippedCreatureGetsAndWard p t w =>
     return .equippedCreatureGetsAndWard (← takeInt p) (← takeInt t) (← takeNat w)
-  | .lifelinkIfYouControlOtherSubtype s => return .lifelinkIfYouControlOtherSubtype (← takeStr s)
+  | .lifelinkIfYouControlOtherSubtype s => return .lifelinkIfYouControlOtherSubtype (← takeSubtype s)
   | .thresholdGets p t => return .thresholdGets (← takeInt p) (← takeInt t)
   | .cantBeBlockedByPowerAtMost n => return .cantBeBlockedByPowerAtMost (← takeInt n)
   | .getsAndHasIfEnduringStory p t k =>
@@ -587,29 +587,29 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
     return .creaturesCantAttackYouUnlessPayIfEnduringStory (← takeNat n)
   | .otherSubtypeHaveTapAddOneOf ss m =>
-    return .otherSubtypeHaveTapAddOneOf (← takeStrs ss) m
+    return .otherSubtypeHaveTapAddOneOf (← takeSubtypes ss) m
   | .cantBeBlockedByPowerAtLeast n => return .cantBeBlockedByPowerAtLeast (← takeInt n)
   | .equipAbilitiesTargetingThisCostLess n =>
     return .equipAbilitiesTargetingThisCostLess (← takeNat n)
   | .chosenTypeCreaturesGet p t => return .chosenTypeCreaturesGet (← takeInt p) (← takeInt t)
   | .otherSubtypeGetPowerPerArtifactToken s =>
-    return .otherSubtypeGetPowerPerArtifactToken (← takeStr s)
+    return .otherSubtypeGetPowerPerArtifactToken (← takeSubtype s)
   | .extraTriggerIfEnduringStorySubtype s =>
-    return .extraTriggerIfEnduringStorySubtype (← takeStr s)
+    return .extraTriggerIfEnduringStorySubtype (← takeSubtype s)
   | .extraTriggerAnotherYouControl ss b =>
-    return .extraTriggerAnotherYouControl (← takeStrs ss) b
+    return .extraTriggerAnotherYouControl (← takeSubtypes ss) b
   | .powerPerFatGraveyard p => return .powerPerFatGraveyard (← takeInt p)
-  | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeStr s)
+  | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeSubtype s)
   | .equippedGetsTrampleAndCombatTreasures p t =>
     return .equippedGetsTrampleAndCombatTreasures (← takeInt p) (← takeInt t)
   | .creaturesYouControlOfSubtypeGet s p t =>
-    return .creaturesYouControlOfSubtypeGet (← takeStr s) (← takeInt p) (← takeInt t)
+    return .creaturesYouControlOfSubtypeGet (← takeSubtype s) (← takeInt p) (← takeInt t)
   | .youAndOtherSubtypeHaveHexproofIfShield s =>
-    return .youAndOtherSubtypeHaveHexproofIfShield (← takeStr s)
-  | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeStr s) (← takeNat n)
+    return .youAndOtherSubtypeHaveHexproofIfShield (← takeSubtype s)
+  | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeSubtype s) (← takeNat n)
   | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
   | .maximumHandSize n => return .maximumHandSize (← takeNat n)
-  | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeStr s)
+  | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeSubtype s)
   | .typeSpellsCostLess ty n =>
     return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
   | .supertypeSpellsCostLess s n =>
@@ -626,7 +626,7 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .getsIfGyCreatureCards n p t =>
     return .getsIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
   | .enchantedCreatureGetsHasAndTypes p t k ts =>
-    return .enchantedCreatureGetsHasAndTypes (← takeInt p) (← takeInt t) k (← takeStrs ts)
+    return .enchantedCreatureGetsHasAndTypes (← takeInt p) (← takeInt t) k (← takeSubtypes ts)
   | .enchantedCreatureGetsHasAndWard p t k w =>
     return .enchantedCreatureGetsHasAndWard (← takeInt p) (← takeInt t) k (← takeNat w)
   | .getsAndAllTypesIfGyCreatureCards n p t =>
@@ -637,7 +637,7 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
 def takeCostFields (c : ActivationCost) : ArgM ActivationCost := do
   let mana ← takeCost c.mana
   let payLife ← if c.payLife == 0 then pure c.payLife else takeNat c.payLife
-  let sacrificeAnotherSubtype ← takeOptStr c.sacrificeAnotherSubtype
+  let sacrificeAnotherSubtype ← takeOptSubtype c.sacrificeAnotherSubtype
   return { c with mana, payLife, sacrificeAnotherSubtype }
 
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
@@ -647,7 +647,7 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let costReductionIfYouControlLegendary ←
     if ab.costReductionIfYouControlLegendary == 0 then pure 0
     else takeNat ab.costReductionIfYouControlLegendary
-  let equipSubtype ← takeOptStr ab.equipSubtype
+  let equipSubtype ← takeOptSubtype ab.equipSubtype
   let costReductionPerEquipment ←
     if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
   let onlyIfYouControlCreatureToughnessAtLeast ←
@@ -810,7 +810,7 @@ def anySubtypeYouControl (toks : List String) : Option (EffectTargetKind × Nat)
     | some (ss, after) =>
       match afterLits after ["you", "control"] with
       | some left =>
-        some (.creatureYouControlAnySubtype ss, toks.length - left.length)
+        some (.creatureYouControlAnySubtype (CardSubtype.ofSubtypes ss), toks.length - left.length)
       | none => none
     | none => none
 

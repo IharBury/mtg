@@ -167,8 +167,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
-      let st : String := t
-      let n := g.countSubtype caster st
+      let n := g.countSubtype caster t
       afterGreatest.reduceGeneric n
     | none => afterGreatest
   let afterOpp :=
@@ -259,7 +258,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
   let sphinxLess :=
-    if face.hasSubtype "Sphinx" then
+    if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
         o.id != card.id && o.controlledBy caster &&
           (o.isOnBattlefield || o.zone == .command)

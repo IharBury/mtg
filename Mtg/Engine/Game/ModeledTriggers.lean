@@ -34,7 +34,7 @@ def lastStackSpell? (g : Game) : Option GameObject :=
 
 /-- 1/1 blue Merfolk creature token (Namora / similar leftover cast triggers). -/
 def merfolk11blueToken : CardDef :=
-  creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
+  creatureToken "Merfolk" #[.merfolk] 1 1 (some .blue)
 
 /-- Exile from `pid`'s library until a nonland is exiled. -/
 def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option ObjectId :=
@@ -101,7 +101,7 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
             types :=
               if tok.printed.types.any (· == .creature) then tok.printed.types
               else tok.printed.types.push .creature
-            subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
+            subtypes := mergeSubtypes tok.printed.subtypes #[.robot, .villain]
             power := some 2
             toughness := some 2 }
         g.changeObject tok.id (.printed printed)
@@ -113,7 +113,7 @@ def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option Ob
   let top? := (g.player controller).library.back?
   let isHero :=
     match top? with
-    | some top => (g.object! top).hasSubtype "Hero"
+    | some top => (g.object! top).hasSubtype .hero
     | none => false
   let g := g.exileTopPlayThisTurn controller 1
   if isHero then
@@ -273,7 +273,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Absorbing Man")
               (forceLegendary := true) (addCreature := true)
-              (addSubtypes := #["Human", "Villain"])
+              (addSubtypes := #[.human, .villain])
               (setPT := some (4, 4)) (addVigilance := true)
           else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
         | none => g.logMsg "The target is no longer legal"
@@ -291,7 +291,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Taskmaster, Mercenary Mimic")
               (forceLegendary := true) (addCreature := true)
-              (addSubtypes := #["Human", "Mercenary", "Villain"])
+              (addSubtypes := #[.human, .mercenary, .villain])
               (replaceCreatureLine := true)
           else g.logMsg "That isn't a creature or a creature card in a graveyard"
         | none => g.logMsg "The target is no longer legal"
@@ -376,7 +376,7 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         keywords := Keywords.merge o.printed.keywords k })
     | .additionalSubtype subtype =>
       let o := g.object! id
-      if o.printed.subtypes.any (· == subtype.englishName) then g
+      if o.printed.hasSubtype subtype then g
       else
         g.changeObject id (.printed { o.printed with
           subtypes := o.printed.subtypes.push subtype.englishName })
@@ -433,7 +433,7 @@ def announcedOrCauseId? (g : Game) (targets : Array Target) : Option ObjectId :=
 /-- Return the cause from its owner's graveyard under its owner's control.
 `subtype`, when set, requires that subtype. A missing cause puts nothing. -/
 def returnCauseUnderOwner (g : Game) (controller : PlayerId) (targets : Array Target)
-    (subtype : Option String) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+    (subtype : Option CardSubtype) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
   match (g.announcedOrCauseId? targets).bind g.findObject? with
   | some o =>
     let ok :=
@@ -681,7 +681,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.death .attackingReturnHand) =>
     g.returnCauseToOwnerHand targets
   | (.death .villainReturnAsHero) =>
-    g.returnCauseUnderOwner controller targets (some "Villain")
+    g.returnCauseUnderOwner controller targets (some .villain)
       [.additionalSubtype .hero, .counter .finality]
   | (.casting .villainToken) =>
     g.createKindTokens controller .villain21menace 1
@@ -707,7 +707,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     | some mode => g.applyHydeMode controller sourceId mode.toNat targets
   | (.resource .drawIfAnotherHeroDamage) =>
     if (g.permanentsOf controller).any (fun o =>
-        g.hasSubtype o "Hero" && some o.id != sourceId) then
+        g.hasSubtype o .hero && some o.id != sourceId) then
       g.withLegalKindTarget controller .opponent targets (fun g tgt =>
         match tgt with
         | Target.player pid => g.dealDamageToPlayer pid 1
@@ -809,10 +809,10 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
       | _ => g
     g.createNamedToken controller tigerGodToken
   else if text.contains "Squirrel" then
-    let n := g.countSubtype controller "Squirrel"
+    let n := g.countSubtype controller .squirrel
     g.createKindTokens controller .squirrel11green (if n == 0 then 1 else n)
   else if text.contains "Treasure token for each Villain" then
-    let n := g.countSubtype controller "Villain"
+    let n := g.countSubtype controller .villain
     g.createKindTokens controller .treasure n
   else if text.contains "two 2/1 black Villain" then
     g.createKindTokens controller .villain21menace 2

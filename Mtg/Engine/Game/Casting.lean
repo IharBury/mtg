@@ -82,7 +82,7 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
-  let allowElf := o.hasSubtype "Elf"
+  let allowElf := o.hasSubtype .elf
   let free := o.playPermission.any (·.withoutManaCost)
   let payExtra (n : Nat) : Bool :=
     if free then
@@ -141,12 +141,12 @@ def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .spell =>
     match g.findObject? prop.spellId with
-    | some o => g.hasSubtype o "Elf"
+    | some o => g.hasSubtype o .elf
     | none => false
   | .activatedAbility =>
     match prop.sourceId.bind g.findObject? with
-    | some src => g.hasSubtype src "Elf"
-    | none => g.hasSubtype prop.original "Elf"
+    | some src => g.hasSubtype src .elf
+    | none => g.hasSubtype prop.original .elf
 
 /-- Whether paying this proposed spell may spend instant/sorcery-restricted mana. -/
 def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
@@ -171,14 +171,14 @@ mana (MSH 72): Hero spells, and activated abilities of Hero sources
 (including changeling and cards in any zone). -/
 def proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o "Hero"
+  | some o => g.hasSubtype o .hero
   | none => false
 
 /-- Whether paying this proposed spell or ability may spend Villain-restricted
 mana (MSH 73): Villain spells, and activated abilities of Villain sources. -/
 def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o "Villain"
+  | some o => g.hasSubtype o .villain
   | none => false
 
 /-- Whether paying this proposed activation may spend creature-restricted mana
@@ -560,7 +560,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g :=
     if spell.printed.isCreature &&
         ancestry.any (fun id => (g.findObject? id).any (·.printed.commanderIdentityScryCreature)) &&
-        spell.printed.subtypes.any ((g.player p).commanderCreatureTypes.contains) then
+        (CardSubtype.ofSubtypes spell.printed.subtypes).any ((g.player p).commanderCreatureTypes.contains) then
       g.beginScry p 1
     else g
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card

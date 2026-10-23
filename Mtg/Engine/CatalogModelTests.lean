@@ -22,7 +22,7 @@ def creatureTokens (g : Game) (p : PlayerId) : Nat :=
   ((g.permanentsOf p).filter (fun o => o.isCreature && o.printed.isToken)).size
 
 def treasures (g : Game) (p : PlayerId) : Nat :=
-  ((g.permanentsOf p).filter (fun o => g.hasSubtype o "Treasure")).size
+  ((g.permanentsOf p).filter (fun o => g.hasSubtype o .treasure)).size
 
 /-! ## “This or another [subtype] you control enters” -/
 
@@ -151,7 +151,7 @@ a Hero. -/
   let g := addPermanent (addPermanent afterDraw thunderboltsConspiracy me me) aerialDoombot me me
   let g := settle (g.sacrificeToGraveyard (namedPermanent g "Aerial Doombot") "sacrificed")
   let bot := namedPermanent g "Aerial Doombot"
-  bot.status.finality == 1 && g.hasSubtype bot "Hero"
+  bot.status.finality == 1 && g.hasSubtype bot .hero
 
 /- Justice, Vance Astrovik gets a counter when another nonland permanent you
 control returns to hand. -/
@@ -346,7 +346,7 @@ def roninBoard : Game :=
   let g := activateNamed g "The Shire" "Food"
   let g := resolved (pick g #[idOf g "Hill Giant"])
   (namedPermanent g "Hill Giant").status.tapped && !(namedPermanent g "Grizzly Bears").status.tapped &&
-    (g.permanentsOf me).any (fun o => g.hasSubtype o "Food")
+    (g.permanentsOf me).any (fun o => g.hasSubtype o .food)
 
 /- Tom, Bert, and William sacrifice another creature (not themselves) and draw
 cards equal to its power, then discard a card. -/
@@ -1028,7 +1028,7 @@ really scries, and the counters are put by the counter action. -/
     (some (idOf g "Orcrist, Goblin-cleaver"))
   let elf :=
     match g.pending with
-    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == "Elf")
+    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == CardSubtype.elf)
     | _ => none
   let g := mustApply g me (.chooseMode elf.get!)
   elf.isSome && treasures g me == 1
@@ -1096,7 +1096,7 @@ with fewer than three Bears draws nothing. -/
   let g := g.applyTriggeredAbility me .onYourBeginCombatTrampleCounterBecomeBear
     (some (idOf g "Beorn the Fierce")) #[.permanent (idOf g "Llanowar Elves")]
   let elf := namedPermanent g "Llanowar Elves"
-  g.hasSubtype elf "Bear" && elf.status.trampleCounters == 1 &&
+  g.hasSubtype elf .bear && elf.status.trampleCounters == 1 &&
     handSize g me == before + 2
 #guard
   let g := addPermanent afterDraw beornTheFierce me me
@@ -1562,8 +1562,8 @@ line is Human Mercenary Villain. -/
       (some (idOf g "Taskmaster, Mercenary Mimic")) #[Target.card bearId]
     let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
     tm.name == "Taskmaster, Mercenary Mimic" &&
-      tm.subtypes == #["Human", "Mercenary", "Villain"] &&
-      !tm.subtypes.contains "Bear" && g.power tm == 2
+      tm.subtypes == #[.human, .mercenary, .villain] &&
+      !tm.subtypes.contains .bear && g.power tm == 2
   | none => false
 
 /- Mister Hyde's upkeep ability asks which mode to use. -/
@@ -1894,14 +1894,14 @@ shuffles; Old Thrush's optional search does not shuffle when declined. -/
 #guard
   let g0 := addToHand afterDraw smaugWickedWorm me
   let n := g0.log.size
-  let g := g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+  let g := g0.beginLibrarySearch me (fun c => c.hasSubtype .dragon) "a Dragon card"
     .battlefieldFromHandOrLibrary (alsoHand := true)
   let g := mustApply g me (.choosePermanents #[(handObj g me "Smaug, Wicked Worm").id])
   onBattlefield g "Smaug, Wicked Worm" && !shuffledSince n g
 #guard
   let g0 := onlyLib afterDraw #[smaugWickedWorm]
   let n := g0.log.size
-  let g := applyIdle (g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+  let g := applyIdle (g0.beginLibrarySearch me (fun c => c.hasSubtype .dragon) "a Dragon card"
     .battlefieldFromHandOrLibrary (alsoHand := true))
   onBattlefield g "Smaug, Wicked Worm" && shuffledSince n g
 

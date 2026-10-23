@@ -547,7 +547,7 @@ def fogCantAttack : Bool :=
   let fog := namedPermanent g "Fog on the Barrow-Downs"
   let g := g.changeObject fog.id (.attachedTo (some bears.id))
   let host := namedPermanent g "Grizzly Bears"
-  g.hasSubtype host "Spirit" && !g.hasSubtype host "Bear"
+  g.hasSubtype host .spirit && !g.hasSubtype host .bear
 
 -- Gaze in Wonder (Velvetwing adventure) taps one or two creatures.
 def gazeSetup : Game :=

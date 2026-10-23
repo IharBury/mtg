@@ -23,7 +23,7 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
       { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
         phrase := "Untap target creature you control" }]
   | .wolfPlusOneOrTreasure =>
-    #[{ targeting := .of (.creatureYouControlAnySubtype #["Wolf"])
+    #[{ targeting := .of (.creatureYouControlAnySubtype #[.wolf])
         resolution := .onPermanent (.plusOne 1)
         phrase := "Put a +1/+1 counter on target Wolf you control" },
       { resolution := .createTokens .treasure 1
@@ -144,7 +144,7 @@ def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
   match ab.shared with
   | .pumpIfFiveOtherForests =>
     ((g.permanentsOf controller).filter (fun o =>
-      g.hasSubtype o "Forest" && some o.id != cause.map (·.id))).size ≥ 5
+      g.hasSubtype o .forest && some o.id != cause.map (·.id))).size ≥ 5
   | .destroyOppPermanentIfSixLands =>
     ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
   | .prepareSource .ifNotPrepared =>
@@ -198,14 +198,14 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .thisAttack .ifArtifactEnteredDraw =>
       g.loggedArtifactEntered controller
     | .resource .drawIfAnotherHeroDamage =>
-      (g.permanentsOf controller).any (fun o => g.hasSubtype o "Hero" && some o.id != source.map (·.id))
+      (g.permanentsOf controller).any (fun o => g.hasSubtype o .hero && some o.id != source.map (·.id))
     | .step .drawToTen => (g.player controller).hand.size < 10
     | .protectionEverything => source.any (·.wasCast)
     | .death .deathtouchOppSac => cause.any (g.hasDeathtouch ·)
     | .resource .plusOneOnThisOnce => cause.any (fun c => some c.id != source.map (·.id))
     | .resource .plusOneOnHeroesCreateWall =>
       cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
-        g.hasSubtype c "Hero")
+        g.hasSubtype c .hero)
     | .watch .sheHulkRedirectOnce => !g.loggedSheHulkDealtDamage
     | _ => true
   powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
@@ -546,7 +546,7 @@ def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   g.queueYouSacrificeToken o
 
 /-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/
-def graveyardCardsOfSubtype (g : Game) (p : PlayerId) (subtype : String) :
+def graveyardCardsOfSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) :
     Array GameObject :=
   (g.player p).graveyard.filterMap (fun id =>
     match g.findObject? id with
@@ -622,7 +622,7 @@ def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
             src.staticAbilities.foldl (fun acc ab =>
               match ab with
               | .otherSubtypeHaveTapAddOneOf subtypes mana =>
-                if subtypes.any (g.hasSubtype o) then
+                if subtypes.any (fun s => g.hasSubtype o s) then
                   mana.foldl (fun acc t =>
                     if acc.contains t then acc else acc.push t) acc
                 else acc
@@ -664,7 +664,7 @@ def fraManaUseOf (g : Game) (o : GameObject) (mana : ManaType) : Option FraManaU
         | .fra s => s.manaUse?
         | _ => none) with
     | some u => some u
-    | none => if g.hasSubtype o "Treasure" then some .fromTreasure else none
+    | none => if g.hasSubtype o .treasure then some .fromTreasure else none
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
@@ -879,11 +879,11 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
         g.putMatchingSourceTriggers landController o .landYouControlEnters
           (cause := some land) (keep := (!fromGraveyard ·))).promptTriggerTargetsIfNeeded
       let g :=
-        if g.hasSubtype land "Mountain" then
+        if g.hasSubtype land .mountain then
           g.putControlledTriggers landController .mountainYouControlEnters
         else g
       let g :=
-        if g.hasSubtype land "Forest" then
+        if g.hasSubtype land .forest then
           (g.foldControlledPermanents landController none fun g o =>
             g.putMatchingSourceTriggers landController o .forestYouControlEnters
               (cause := some land)).promptTriggerTargetsIfNeeded

@@ -107,7 +107,7 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
 
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
-def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
+def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
   let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
   let hasHand :=
     (g.player p).hand.any (fun id =>
@@ -115,28 +115,24 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g :=
-      match CardSubtype.ofOracle? quality with
-      | some sub =>
-        let g := g.changePlayer p (.pushBeheldQuality sub)
-        g.record ⟨g.turnNumber, .beheld p sub⟩
-      | none => g
+    let g := g.changePlayer p (.pushBeheldQuality quality)
+    let g := g.record ⟨g.turnNumber, .beheld p quality⟩
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
 
 /-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
-def qualityWasBeheld (g : Game) (p : PlayerId) (quality : String) : Bool :=
+def qualityWasBeheld (g : Game) (p : PlayerId) (quality : CardSubtype) : Bool :=
   (g.player p).beheldQualities.contains quality
 
 /-- Choose a creature type as this permanent enters. The static pump applies
 immediately; no player may act between the choice and the bonus. -/
-def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : String) :
+def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : CardSubtype) :
     Game :=
   match g.findObject? sourceId with
   | none => g
   | some src =>
-    let g := g.changeStatus sourceId (.chosenCreatureType (CardSubtype.ofOracle? creatureType))
+    let g := g.changeStatus sourceId (.chosenCreatureType (some creatureType))
     g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
 
 /-- Draw one card for each graveyard with seven or more cards. -/
@@ -222,7 +218,7 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
 /-- Exile the top `n` cards face down. They may be played while exiled if you
 control `subtype`. Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
-    (subtype : String) : Game :=
+    (subtype : CardSubtype) : Game :=
   Id.run do
     let mut g := g
     for _ in List.range n do

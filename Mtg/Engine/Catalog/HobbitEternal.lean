@@ -1262,7 +1262,7 @@ that also appear in other sets. -/
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.keywords.trample
-#guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+#guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #[.orc, .goblin]]
 #guard orcishSiegemaster.triggeredAbilities == #[.onAttackPumpByGreatestPower]
 #guard (orcishSiegemaster.summary.splitOn "Other Orcs and Goblins").length > 1
 #guard battleScarredGoblin.triggeredAbilities == #[.onBecomesBlockedDeal1ToBlockers]
@@ -1275,7 +1275,7 @@ that also appear in other sets. -/
 #guard giftOfStrands.staticAbilities == #[.enchantedCreatureGets 3 3]
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
 #guard dunedainBlade.activatedAbilities.size == 2
-#guard dunedainBlade.activatedAbilities[0]!.equipSubtype == some "Human"
+#guard dunedainBlade.activatedAbilities[0]!.equipSubtype == some .human
 #guard dunedainBlade.activatedAbilities[1]!.equipSubtype == none
 #guard dunedainBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard dunedainBlade.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 3)
@@ -1285,7 +1285,7 @@ that also appear in other sets. -/
 #guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
-#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
+#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
 #guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
 #guard elvishArchdruid.manaAbilities == #[.colored .green]
 #guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
@@ -1325,7 +1325,7 @@ that also appear in other sets. -/
 #guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
 #guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
 #guard ologHaiCrusher.keywords.trample
-#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
+#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #[.goblin, .orc]]
 #guard (ologHaiCrusher.summary.splitOn "trample").length > 1
 #guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
 #guard oliphaunt.keywords.trample

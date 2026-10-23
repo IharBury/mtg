@@ -97,7 +97,7 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
     g.logMsg s!"{(g.player p).name} exiles {name}"
 
 /-- Behold `subtype`. If you do, untap the land this search just found. -/
-def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : String) : Game :=
+def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
   let g := g.beholdQuality p subtype
   if !g.qualityWasBeheld p subtype then g
   else
@@ -269,7 +269,7 @@ def resolveLibrarySearchToHand (g : Game) (p : PlayerId)
 
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
 it into their hand, then shuffle (CR 701.19 / 702.29). -/
-def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
+def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : CardSubtype) : Game :=
   g.resolveLibrarySearchToHand p (fun c => c.hasSubtype landType) s!"{landType} card"
 
 /-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/

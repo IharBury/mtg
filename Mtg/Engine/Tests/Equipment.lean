@@ -918,7 +918,7 @@ def animatedHospitality : Game := passBoth paidHospitalityAnimate
 
 #guard animatedHospitality.stack.isEmpty
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").isCreature
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype "Bear"
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype .bear
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").printed.isEnchantment
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .creature)
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .enchantment)

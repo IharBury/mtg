@@ -97,7 +97,7 @@ def villainReturns : Game :=
 #guard
   let o := named villainReturns "Agents of HYDRA"
   onBoard villainReturns "Agents of HYDRA" &&
-    villainReturns.hasSubtype o "Hero" && o.status.finality == 1 &&
+    villainReturns.hasSubtype o .hero && o.status.finality == 1 &&
     logContains villainReturns "finality counter"
 
 def bearStays : Game :=

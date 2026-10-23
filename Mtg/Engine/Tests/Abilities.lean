@@ -935,8 +935,8 @@ def antManArmyTreasureOk : Bool :=
   let army := namedPermanent g "Ant-Man's Army"
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterCreateFoodOrTreasure (some army.id)
   let g := mustApply g ⟨0⟩ (.chooseMode 1)
-  g.battlefield.any (fun o => o.hasSubtype "Treasure") &&
-    !g.battlefield.any (fun o => o.hasSubtype "Food" && o.printed.isToken)
+  g.battlefield.any (fun o => o.hasSubtype .treasure) &&
+    !g.battlefield.any (fun o => o.hasSubtype .food && o.printed.isToken)
 
 #guard antManArmyTreasureOk
 
@@ -1010,7 +1010,7 @@ def hydraTroopersMillOk : Bool :=
   let lib0 := (g.player ⟨0⟩).library.size
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
   (g.player ⟨0⟩).library.size == lib0 - 2 &&
-    !(g.battlefield.any (fun o => o.printed.isToken && o.hasSubtype "Villain"))
+    !(g.battlefield.any (fun o => o.printed.isToken && o.hasSubtype .villain))
 
 #guard hydraTroopersMillOk
 
@@ -1023,7 +1023,7 @@ def hydraTroopersVillainOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
   (g.player ⟨0⟩).library.size == lib0 &&
     (g.battlefield.any (fun o =>
-      o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped &&
+      o.printed.isToken && o.hasSubtype .villain && o.status.tapped &&
         g.power o == 2 && g.toughness o == 1))
 
 #guard hydraTroopersVillainOk

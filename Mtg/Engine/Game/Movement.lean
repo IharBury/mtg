@@ -213,7 +213,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | none => #[]
     else #[]
   let villainDies :=
-    if died && g.hasSubtype old "Villain" then
+    if died && g.hasSubtype old .villain then
       match old.controller with
       | some p =>
         g.battlefield.foldl (fun acc o =>
@@ -340,8 +340,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if died then
       match old.controller with
       | some p =>
-        if g.hasSubtype old "Goblin" || g.hasSubtype old "Orc" ||
-            g.hasSubtype old "Army" then
+        if g.hasSubtype old .goblin || g.hasSubtype old .orc ||
+            g.hasSubtype old .army then
           g.battlefield.foldl (fun acc o =>
             if o.id == old.id then acc
             else

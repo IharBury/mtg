@@ -635,7 +635,7 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
       | some cost => (none, some cost)
       | none =>
         match splitNameCost costAndType with
-        | (name, some cost) => (some name, some cost)
+        | (name, some cost) => (CardSubtype.ofOracle? name, some cost)
         | _ => (none, none)
     match cost? with
     | none => none

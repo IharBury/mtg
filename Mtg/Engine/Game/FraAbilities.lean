@@ -233,7 +233,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
   | .empowerJacePerIsland =>
-    let n := ((g.permanentsOf controller).filter (fun o => g.hasSubtype o "Island")).size
+    let n := ((g.permanentsOf controller).filter (fun o => g.hasSubtype o .island)).size
     g.empowerJace controller n
   | .attackersGetMinusFiveUntilYourTurn =>
     let effectCard : CardDef := {

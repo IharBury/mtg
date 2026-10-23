@@ -511,7 +511,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     let mut n : Nat := 0
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
-      if !(o.isOnBattlefield && o.controlledBy p && g.hasSubtype o "Human" &&
+      if !(o.isOnBattlefield && o.controlledBy p && g.hasSubtype o .human &&
           !o.status.tapped) then
         throw s!"{o.name} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap

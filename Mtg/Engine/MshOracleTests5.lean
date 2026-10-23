@@ -133,7 +133,7 @@ def arnimActivationLockOk : Bool :=
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.createTappedTokens .villain21menace 1) #[]
        (some arnim.id)
      g.battlefield.any (fun o =>
-       o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
+       o.printed.isToken && o.hasSubtype .villain && o.status.tapped)) &&
     (mshRuling 618).comment.contains "won't stop the ability from resolving"
 
 #guard arnimActivationLockOk

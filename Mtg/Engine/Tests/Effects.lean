@@ -100,8 +100,8 @@ def flunkiesAmass : Game :=
 
 #guard
   let army := namedPermanent flunkiesAmass "Goblin Army"
-  army.printed.isToken && flunkiesAmass.hasSubtype army "Goblin" &&
-    flunkiesAmass.hasSubtype army "Army" &&
+  army.printed.isToken && flunkiesAmass.hasSubtype army .goblin &&
+    flunkiesAmass.hasSubtype army .army &&
     army.status.plusOnePlusOne == 1
 
 /-- A second amass puts counters on the existing Army. -/
@@ -506,8 +506,8 @@ def becomeWolfWithLandsPT : Game :=
   g.applyAbilityEffect ⟨0⟩ (Effect.becomeSubtypeWithLandsPT "Wolf") #[] (some src.id)
 
 #guard
-  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Wolf" &&
-    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Bear" &&
+  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .wolf &&
+    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .bear &&
     (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").isCreature
 
 /-- Chief Warg's Company cannot attack without two other Wolves. -/

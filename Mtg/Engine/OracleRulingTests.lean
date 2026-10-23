@@ -67,8 +67,8 @@ def amassFresh : Game := started.amassGoblins ⟨0⟩ 2
 
 def amassFreshOk : Bool :=
   let army := namedPermanent amassFresh "Goblin Army"
-  army.printed.isToken && amassFresh.hasSubtype army "Goblin" &&
-    amassFresh.hasSubtype army "Army" && army.status.plusOnePlusOne == 2 &&
+  army.printed.isToken && amassFresh.hasSubtype army .goblin &&
+    amassFresh.hasSubtype army .army && army.status.plusOnePlusOne == 2 &&
     amassFresh.power army == 2 && amassFresh.toughness army == 2 &&
     amassFresh.log.any (fun s => mentions s "amassed Army") &&
     amassFresh.log.any (fun s => mentions s "entered as a 0/0 creature")
@@ -90,12 +90,12 @@ def amassOrcThenGoblin : Game :=
 
 def amassOrcThenGoblinOk : Bool :=
   let army := namedPermanent amassOrcThenGoblin "Orc Army"
-  amassOrcThenGoblin.hasSubtype army "Orc" &&
-    amassOrcThenGoblin.hasSubtype army "Goblin" &&
-    amassOrcThenGoblin.hasSubtype army "Army" &&
+  amassOrcThenGoblin.hasSubtype army .orc &&
+    amassOrcThenGoblin.hasSubtype army .goblin &&
+    amassOrcThenGoblin.hasSubtype army .army &&
     army.status.plusOnePlusOne == 2 &&
     (amassOrcThenGoblin.battlefield.filter (fun o =>
-      amassOrcThenGoblin.hasSubtype o "Army")).size == 1
+      amassOrcThenGoblin.hasSubtype o .army)).size == 1
 
 #guard amassOrcThenGoblinOk
 
@@ -105,8 +105,8 @@ def amassZombieThenOrc : Game :=
 
 def amassZombieThenOrcOk : Bool :=
   let army := namedPermanent amassZombieThenOrc "Zombie Army"
-  amassZombieThenOrc.hasSubtype army "Zombie" &&
-    amassZombieThenOrc.hasSubtype army "Orc" &&
+  amassZombieThenOrc.hasSubtype army .zombie &&
+    amassZombieThenOrc.hasSubtype army .orc &&
     army.status.plusOnePlusOne == 2
 
 #guard amassZombieThenOrcOk
@@ -168,7 +168,7 @@ def twoArmiesThenAmass : Game :=
 def twoArmiesThenAmassOk : Bool :=
   let orc := namedPermanent twoArmiesThenAmass "Orc Army"
   let goblin := namedPermanent twoArmiesThenAmass "Goblin Army"
-  orc.status.plusOnePlusOne == 2 && twoArmiesThenAmass.hasSubtype orc "Goblin" &&
+  orc.status.plusOnePlusOne == 2 && twoArmiesThenAmass.hasSubtype orc .goblin &&
     goblin.status.plusOnePlusOne == 1
 
 #guard twoArmiesThenAmassOk
@@ -186,7 +186,7 @@ def twoArmiesThenAmassOrcs : Game :=
 def twoArmiesThenAmassOrcsOk : Bool :=
   let z := namedPermanent twoArmiesThenAmassOrcs "Zombie Army"
   let goblin := namedPermanent twoArmiesThenAmassOrcs "Goblin Army"
-  z.status.plusOnePlusOne == 2 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+  z.status.plusOnePlusOne == 2 && twoArmiesThenAmassOrcs.hasSubtype z .orc &&
     goblin.status.plusOnePlusOne == 1 &&
     (ruling 52).comment.contains "multiple Army creatures"
 
@@ -195,7 +195,7 @@ def twoArmiesThenAmassOrcsOk : Bool :=
 /-- Ruling 18: untargeted amass still creates the Army. -/
 def untargetedAmass : Game := started.applyEffect ⟨0⟩ (Effect.amassGoblins 1) #[]
 
-#guard untargetedAmass.battlefield.any (fun o => untargetedAmass.hasSubtype o "Army")
+#guard untargetedAmass.battlefield.any (fun o => untargetedAmass.hasSubtype o .army)
 
 /-!
 ## 2–13 — Adventure
@@ -644,7 +644,7 @@ def oinActivatedWording : Bool :=
 
 #guard Game.foodToken.isArtifact
 #guard !Game.foodToken.isCreature
-#guard Game.foodToken.hasSubtype "Food"
+#guard Game.foodToken.hasSubtype .food
 
 /-- Find a battlefield-zone object by name, including while phased out. -/
 def namedObject (g : Game) (name : String) : GameObject :=
@@ -923,7 +923,7 @@ def shadowFromCounter : Game :=
 def shadowFromCounterOk : Bool :=
   shadowFromCounter.hasShadow (namedPermanent shadowFromCounter "Grizzly Bears") &&
     shadowFromCounter.hasSubtype
-      (namedPermanent shadowFromCounter "Grizzly Bears") "Wraith"
+      (namedPermanent shadowFromCounter "Grizzly Bears") .wraith
 
 #guard shadowFromCounterOk
 
@@ -1040,7 +1040,7 @@ def phaseRemembersTypes : Game :=
   let g := g.phaseOut (namedPermanent g "Grizzly Bears")
   g.phaseIn (namedObject g "Grizzly Bears")
 
-#guard phaseRemembersTypes.hasSubtype (namedPermanent phaseRemembersTypes "Grizzly Bears") "Wraith"
+#guard phaseRemembersTypes.hasSubtype (namedPermanent phaseRemembersTypes "Grizzly Bears") .wraith
 
 /-- Ruling 77: continuous effects ignore phased-out objects. Hone on a
 phased-out Equipment does not boost the host. -/
@@ -1226,7 +1226,7 @@ def amassIfLegal (g : Game) (p : PlayerId) (targetsLegal : Bool) (n : Nat) : Gam
 
 def amassFailedOk : Bool :=
   let g := amassIfLegal started ⟨0⟩ false 2
-  !(g.battlefield.any (fun o => g.hasSubtype o "Army")) &&
+  !(g.battlefield.any (fun o => g.hasSubtype o .army)) &&
     g.log.any (fun s => mentions s "won't amass") &&
     (ruling 17).comment.contains "won't amass" &&
     (ruling 53).comment.contains "won't amass Orcs"
@@ -2525,7 +2525,7 @@ def garrisonTapAttackerOk : Bool :=
 
 /-- Ruling 170: Elven Chorus is not an Elf card. -/
 def elvenChorusNotElfOk : Bool :=
-  !elvenChorus.hasSubtype "Elf" &&
+  !elvenChorus.hasSubtype .elf &&
     !elvenChorus.isCreature &&
     (ruling 170).comment.contains "Elven Chorus is not an Elf"
 
@@ -2568,7 +2568,7 @@ def eaglesBirdsAfterUpkeep : Game :=
 def eaglesBirdsAfterUpkeepOk : Bool :=
   eaglesBirdsAfterUpkeep.battlefield.any (fun o =>
     o.name == "Bird Soldier" && o.printed.isToken &&
-      eaglesBirdsAfterUpkeep.hasSubtype o "Bird") &&
+      eaglesBirdsAfterUpkeep.hasSubtype o .bird) &&
     !eaglesBirdsAfterUpkeep.objects.any (fun o =>
       o.name == "Human Soldier" && o.zone == .hand ⟨0⟩) &&
     (ruling 78).comment.contains "Bird Soldier token"
@@ -2648,7 +2648,7 @@ def bolgExcessDamage : Game :=
 def bolgExcessOk : Bool :=
   (namedPermanent bolgExcessDamage "Gray Ogre").status.damage == 3 &&
     bolgExcessDamage.battlefield.any (fun o =>
-      bolgExcessDamage.hasSubtype o "Army" && o.status.plusOnePlusOne == 1) &&
+      bolgExcessDamage.hasSubtype o .army && o.status.plusOnePlusOne == 1) &&
     (ruling 121).comment.contains "damage already marked"
 
 #guard bolgExcessOk
@@ -2662,7 +2662,7 @@ def bolgMarkedExcess : Game :=
 
 def bolgMarkedExcessOk : Bool :=
   bolgMarkedExcess.battlefield.any (fun o =>
-    bolgMarkedExcess.hasSubtype o "Army" && o.status.plusOnePlusOne == 2) &&
+    bolgMarkedExcess.hasSubtype o .army && o.status.plusOnePlusOne == 2) &&
     (ruling 121).comment.contains "greater than lethal damage"
 
 #guard bolgMarkedExcessOk
@@ -3109,7 +3109,7 @@ def azogNoTarget : Game :=
     (some (namedPermanent g "Azog, Moria's Ruin").id)
 
 def azogNoTargetOk : Bool :=
-  !azogNoTarget.battlefield.any (fun o => azogNoTarget.hasSubtype o "Army") &&
+  !azogNoTarget.battlefield.any (fun o => azogNoTarget.hasSubtype o .army) &&
     azogNoTarget.log.any (fun s => mentions s "no player amasses") &&
     (ruling 173).comment.contains "no player amasses Goblins"
 
@@ -3125,7 +3125,7 @@ def azogDestroysOpp : Game :=
 
 def azogDestroysOppOk : Bool :=
   !azogDestroysOpp.battlefield.any (fun o => o.name == "Gray Ogre") &&
-    azogDestroysOpp.battlefield.any (fun o => azogDestroysOpp.hasSubtype o "Army") &&
+    azogDestroysOpp.battlefield.any (fun o => azogDestroysOpp.hasSubtype o .army) &&
     (namedPermanent azogDestroysOpp "Goblin Army").status.plusOnePlusOne == 2 &&
     (ruling 317).comment.contains "last existed on the battlefield"
 
@@ -3594,7 +3594,7 @@ def mentorPayOnceOk : Bool :=
 
 def foodPaysOneCostOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ Game.foodToken
-  tok.printed.isToken && g.hasSubtype tok "Food" &&
+  tok.printed.isToken && g.hasSubtype tok .food &&
     (ruling 334).comment.contains "can't sacrifice a Food to pay multiple costs"
 
 #guard foodPaysOneCostOk
@@ -3663,10 +3663,10 @@ def tomSeesFinishedChapterOk : Bool :=
 
 def beholdThenLeavesOk : Bool :=
   let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
-  let g := g.beholdQuality ⟨0⟩ "Elf"
+  let g := g.beholdQuality ⟨0⟩ .elf
   let elf := namedPermanent g "Llanowar Elves"
   let (g, _) := g.move elf.id (.graveyard ⟨0⟩) none
-  g.qualityWasBeheld ⟨0⟩ "Elf" &&
+  g.qualityWasBeheld ⟨0⟩ .elf &&
     !g.battlefield.any (fun o => o.name == "Llanowar Elves") &&
     (ruling 117).comment.contains "it was still beheld"
 
@@ -3674,8 +3674,8 @@ def beholdThenLeavesOk : Bool :=
 
 def beholdAlreadyRevealedOk : Bool :=
   let g := addToHand afterDraw llanowarElves ⟨0⟩
-  let g := g.beholdQuality ⟨0⟩ "Elf"
-  let g := g.beholdQuality ⟨0⟩ "Elf"
+  let g := g.beholdQuality ⟨0⟩ .elf
+  let g := g.beholdQuality ⟨0⟩ .elf
   (g.player ⟨0⟩).beheldQualities.size == 2 &&
     (ruling 146).comment.contains "you may reveal it again"
 
@@ -4104,7 +4104,7 @@ def sixManaTypesOk : Bool :=
 -/
 
 def ologHaiBlockRestrictionOk : Bool :=
-  ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]] &&
+  ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #[.goblin, .orc]] &&
     (ruling 270).comment.contains "doesn't have to block" &&
     (ruling 324).comment.contains "matters only at the time you declare blockers"
 
@@ -4590,10 +4590,10 @@ def unexpectedPartyTypeImmediateOk : Bool :=
   let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
   let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
   let party := namedPermanent g "An Unexpected Party"
-  let g := g.chooseCreatureTypeAsEnters party.id "Human"
+  let g := g.chooseCreatureTypeAsEnters party.id .human
   let human := namedPermanent g "Lakeshore Apothecary"
   g.pending == .none &&
-    (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some "Human" &&
+    (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some .human &&
     g.power human == 3 &&
     (ruling 278).comment.contains "can't take any actions between"
 
@@ -4673,7 +4673,7 @@ def supperForSpidersFoodOnlyOk : Bool :=
     g.loggedEntered food.id &&
     !food.isCreature &&
     food.types == #[.artifact] &&
-    food.subtypes == #["Food"] &&
+    food.subtypes == #[.food] &&
     food.isLegendary &&
     food.printed.manaCost == dainLordOfTheIronHills.manaCost &&
     (ruling 295).comment.contains "only Food artifacts" &&
@@ -4805,7 +4805,7 @@ def riddlesFourZeroFaceDownOk : Bool :=
 def flameshapeWizardToCastNotResolveOk : Bool :=
   let g := addToLibraryTop afterDraw lightningBolt ⟨0⟩
   let g := addToLibraryTop g mountain ⟨0⟩
-  let g := g.exileTopPlayIfYouControlSubtype ⟨0⟩ 2 "Wizard"
+  let g := g.exileTopPlayIfYouControlSubtype ⟨0⟩ 2 .wizard
   let bolt :=
     match g.objects.find? (fun o => o.name == "Lightning Bolt" && o.zone == .exile) with
     | some o => o
@@ -4824,7 +4824,7 @@ def flameshapeWizardToCastNotResolveOk : Bool :=
   without && withWiz && onStack && stillStack &&
     bolt.playPermission.isSome &&
     (match bolt.playPermission with
-     | some perm => perm.requireSubtype == some "Wizard" && !perm.ignoreTiming && !perm.withoutManaCost
+     | some perm => perm.requireSubtype == some .wizard && !perm.ignoreTiming && !perm.withoutManaCost
      | none => false) &&
     (ruling 351).comment.contains "losing control of your last Wizard" &&
     (ruling 356).comment.contains "pay all costs and follow all timing rules"

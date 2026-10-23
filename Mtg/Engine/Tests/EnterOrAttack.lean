@@ -111,7 +111,7 @@ def oneSquirrel : Game :=
   let tok := named oneSquirrel "Squirrel"
   squirrels oneSquirrel == 1 && tok.printed.isToken && tok.controller == some me &&
     tok.printed.power == some 1 && tok.printed.toughness == some 1 &&
-    tok.subtypes.contains "Squirrel"
+    tok.subtypes.contains .squirrel
 
 def squirrelSourceLeft : Game :=
   let g := addPermanent afterDraw theUnbeatableSquirrelGirl me me

@@ -174,7 +174,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let (g, _) := g.move id .exile none
       g) g
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
-    let g := g.resolveSearchLibrary p (fun c => c.isCreature && c.hasSubtype "Sphinx") false
+    let g := g.resolveSearchLibrary p (fun c => c.isCreature && c.hasSubtype .sphinx) false
       "Sphinx creature card"
     return g.finishFraChoice
   | .sphinxsApproach _, .decline => return g.finishFraChoice
@@ -406,13 +406,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
   | .chooseCreatureType types, .mode idx =>
-    let some t := types[idx]? | throw "No such creature type"
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    let some sub := types[idx]? | throw "No such creature type"
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, .name t =>
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    let some sub := CardSubtype.ofOracle? t | throw "Choose a creature type"
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, _ => throw "Choose a creature type"
   | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
@@ -893,7 +894,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
     if !ids.contains id then throw "That card can't be put onto the battlefield"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o "Hero" then
+    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o .hero then
       throw s!"{o.name} is not a Hero creature card in your hand"
     let (g, newId) := g.putOntoBattlefield id p
     return (g.afterPermanentEnters (g.object! newId)).finishFraChoice
@@ -1016,13 +1017,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.applyRiddlesPiles controller faceUp faceDown true).finishFraChoice
   | .riddlesChoosePile .., _ => throw "Choose the face-up pile (accept) or the face-down pile (decline)"
   | .palisadeCreatureType types, .mode idx =>
-    let some t := types[idx]? | throw "No such creature type"
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
-    return (g.returnCreaturesNotOfType t).finishFraChoice
+    let some sub := types[idx]? | throw "No such creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
+    return (g.returnCreaturesNotOfType sub).finishFraChoice
   | .palisadeCreatureType types, .name t =>
-    if !types.contains t then throw "Choose an existing creature type"
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
-    return (g.returnCreaturesNotOfType t).finishFraChoice
+    let some sub := CardSubtype.ofOracle? t | throw "Choose an existing creature type"
+    if !types.contains sub then throw "Choose an existing creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
+    return (g.returnCreaturesNotOfType sub).finishFraChoice
   | .palisadeCreatureType _, _ => throw "Choose a creature type"
   | .worldsPutCreatures eligible rest exiled chosen sourceId, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
@@ -1087,8 +1089,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
   | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
   | .entersCreatureType id, .name t =>
-    if !isCreatureType t then throw s!"{t} is not a creature type"
-    return (g.chooseCreatureTypeAsEnters id t).finishFraChoice
+    let some sub := (CardSubtype.ofOracle? t).filter CardSubtype.isCreatureType
+      | throw s!"{t} is not a creature type"
+    return (g.chooseCreatureTypeAsEnters id sub).finishFraChoice
   | .entersCreatureType _, _ => throw "Name a creature type"
   | .entersOddEven id, .mode 0 =>
     return (g.chooseGollumParity id false).finishFraChoice
@@ -1314,8 +1317,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     let yours :=
       (g.permanentsOf p).foldl (fun acc o =>
         o.subtypes.foldl (fun acc s =>
-          if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
-    .chooseName (yours[0]?.getD "Human")
+          if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
+    .chooseName (yours[0]?.getD CardSubtype.human).englishName
   | .entersOddEven _ => .chooseMode 0
   | .mayBeginOnBattlefield _ => .decline
 

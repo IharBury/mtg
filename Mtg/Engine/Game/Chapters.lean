@@ -25,7 +25,7 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
 /-- Elves the controller controls get +P/+0 and vigilance until end of turn. -/
 def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
   g.forEachControlledCreature controller fun g o =>
-    if g.hasSubtype o "Elf" then
+    if g.hasSubtype o .elf then
       let g := g.pumpPermanent o power 0
       g.changeStatus o.id (.grantUntilEot Keyword.vigilance)
         |>.logMsg s!"{o.name} gets {signedStat power}/+0 and gains vigilance until end of turn"
@@ -89,7 +89,7 @@ def treasureThenDragon (g : Game) (controller : PlayerId)
   | none => g
   | some src =>
     if !src.isOnBattlefield then g
-    else if g.countSubtype controller "Treasure" < 4 then g
+    else if g.countSubtype controller .treasure < 4 then g
     else
       let name := src.name
       let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"

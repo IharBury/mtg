@@ -88,7 +88,7 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     legendary := o.isLegendary
     attacking := o.status.attacking
     changeling := o.printed.keywords.changeling
-    subtypes := CardSubtype.ofSubtypes o.subtypes }
+    subtypes := o.subtypes }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives

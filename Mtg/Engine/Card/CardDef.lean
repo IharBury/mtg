@@ -411,7 +411,7 @@ def colorIdentity (c : CardDef) : ColorSet :=
 def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
 
 /-- True when `s` is among this card's subtypes. -/
-def hasSubtype (c : CardDef) (s : Subtype) : Bool := c.subtypes.any (· == s)
+def hasSubtype (c : CardDef) (s : CardSubtype) : Bool := c.subtypes.any (· == s.englishName)
 
 /-- True when `s` is among this card's supertypes. -/
 def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
@@ -429,10 +429,10 @@ def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
-  c.isEnchantment && c.hasSubtype "Aura"
+  c.isEnchantment && c.hasSubtype .aura
 /-- Equipment subtype on an Artifact (CR 301.5). -/
 def isEquipment (c : CardDef) : Bool :=
-  c.isArtifact && c.hasSubtype "Equipment"
+  c.isArtifact && c.hasSubtype .equipment
 
 /-- Names a player may choose for “choose a card name”, including an
 Adventure face (Gatherer ruling on adventurer cards). -/
@@ -786,7 +786,7 @@ def sneakCost (c : CardDef) : Option ManaCost :=
 /-- Equip worthy: legendary non-Villain creature that's red or white. -/
 def isWorthy (c : CardDef) : Bool :=
   c.hasSupertype .legendary &&
-    !c.hasSubtype "Villain" &&
+    !c.hasSubtype .villain &&
     (c.colors.contains .red || c.colors.contains .white)
 
 /-- Equip worthy keyword on this Equipment (MSH). -/

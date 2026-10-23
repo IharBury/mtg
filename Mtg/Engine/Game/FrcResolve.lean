@@ -46,7 +46,7 @@ private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → 
     | some o => if o.isOnBattlefield && pred o then g.destroyPermanent o else g
     | none => g) g
 
-private def creatureTokenOf (name : String) (subtypes : Array String) (p t : Int)
+private def creatureTokenOf (name : String) (subtypes : Array CardSubtype) (p t : Int)
     (color : Option Color := none) (keywords : Keywords := Keywords.none)
     (types : Array CardType := #[.creature]) (toxic : Nat := 0) (cantBlock : Bool := false) : CardDef :=
   { creatureToken name subtypes p t color keywords types with toxic, cantBlock }
@@ -54,30 +54,30 @@ private def creatureTokenOf (name : String) (subtypes : Array String) (p t : Int
 private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
   match k with
   | .citizen =>
-    { creatureTokenOf "Citizen" #["Citizen"] 1 1 with
+    { creatureTokenOf "Citizen" #[.citizen] 1 1 with
       colorIndicator := some (ColorSet.ofList [.green, .white]) }
-  | .warrior => creatureTokenOf "Warrior" #["Warrior"] 1 1 (some .white)
-  | .insect => creatureTokenOf "Insect" #["Insect"] 2 1 (some .white) Keyword.flying
+  | .warrior => creatureTokenOf "Warrior" #[.warrior] 1 1 (some .white)
+  | .insect => creatureTokenOf "Insect" #[.insect] 2 1 (some .white) Keyword.flying
   | .myr =>
-    creatureTokenOf "Myr" #["Myr"] 1 1 (types := #[.artifact, .creature])
+    creatureTokenOf "Myr" #[.myr] 1 1 (types := #[.artifact, .creature])
   | .kobold =>
-    { creatureTokenOf "Kobolds of Kher Keep" #["Kobold"] 0 1 (some .red) with name := "Kobolds of Kher Keep" }
+    { creatureTokenOf "Kobolds of Kher Keep" #[.kobold] 0 1 (some .red) with name := "Kobolds of Kher Keep" }
   | .mite =>
-    creatureTokenOf "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
+    creatureTokenOf "Phyrexian Mite" #[.phyrexian, .mite] 1 1
       (types := #[.artifact, .creature]) (toxic := 1) (cantBlock := true)
   | .shark =>
-    creatureTokenOf "Shark" #["Shark"] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
+    creatureTokenOf "Shark" #[.shark] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
   | .gingerbrute =>
-    { creatureTokenOf "Gingerbrute" #["Food", "Golem"] 1 1
+    { creatureTokenOf "Gingerbrute" #[.food, .golem] 1 1
         (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
       activatedAbilities := #[
         { effect := { resolution := .frc .gingerDash, phrase := "This token can't be blocked this turn except by creatures with haste." }
           cost := { mana := ManaCost.ofGeneric 1 } },
         { effect := Effect.gainLife 3
           cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
-  | .angel => creatureTokenOf "Angel" #["Angel"] 4 4 (some .white) Keyword.flying
-  | .human => creatureTokenOf "Human" #["Human"] 1 1 (some .white)
-  | .goblin => creatureTokenOf "Goblin" #["Goblin"] 1 1 (some .red)
+  | .angel => creatureTokenOf "Angel" #[.angel] 4 4 (some .white) Keyword.flying
+  | .human => creatureTokenOf "Human" #[.human] 1 1 (some .white)
+  | .goblin => creatureTokenOf "Goblin" #[.goblin] 1 1 (some .red)
   | .map => {
       name := "Map"
       types := #[.artifact]
@@ -86,7 +86,7 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
         { effect := { resolution := .frc .explore, phrase := "You explore." }
           cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
   | .treasure => treasureToken
-  | .rogue => creatureTokenOf "Rogue" #["Rogue"] 2 2 (some .black)
+  | .rogue => creatureTokenOf "Rogue" #[.rogue] 2 2 (some .black)
   | .incubator => {
       name := "Incubator"
       types := #[.artifact]
@@ -148,13 +148,13 @@ private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffl
       s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
 
 private def historicCard (c : CardDef) : Bool :=
-  c.isPermanentCard && (c.isArtifact || c.hasSupertype .legendary || c.hasSubtype "Saga")
+  c.isPermanentCard && (c.isArtifact || c.hasSupertype .legendary || c.hasSubtype .saga)
 
 private def creatureOrWalker (c : CardDef) : Bool :=
   c.isCreature || c.isPlaneswalker
 
-private def basicOf (kinds : Array String) (c : CardDef) : Bool :=
-  isBasicLandCard c && kinds.any c.hasSubtype
+private def basicOf (kinds : Array CardSubtype) (c : CardDef) : Bool :=
+  isBasicLandCard c && kinds.any fun k => c.hasSubtype k
 
 def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
@@ -624,7 +624,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | some o =>
       let counters := o.status.plusOnePlusOne
       g.changeObject o.id (.printed
-        { creatureTokenOf "Phyrexian" #["Phyrexian"] 0 0 (types := #[.artifact, .creature]) with
+        { creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
           name := "Phyrexian" })
         |>.logMsg s!"{o.name} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
     | none => g

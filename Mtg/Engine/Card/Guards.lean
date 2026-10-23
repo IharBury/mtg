@@ -681,7 +681,7 @@ namespace CardDef
   "Put 2 +1/+1 counters on target Goblin or Orc you control"
 #guard (Effect.plusOneOnTarget 2).targetKind == .creatureYouControl
 #guard (Effect.plusOneOnTarget 2 #["Elf"]).targetKind ==
-  .creatureYouControlAnySubtype #["Elf"]
+  .creatureYouControlAnySubtype #[.elf]
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
   "When this permanent enters, create a Treasure token."
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1 true) ==
@@ -1001,13 +1001,13 @@ namespace CardDef
     (toString ab).startsWith "{1}, Sacrifice: Choose one —" &&
     ((toString ab).splitOn "target creature").length > 1 &&
     ((toString ab).splitOn "colorless nonland").length > 1
-#guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
+#guard StaticAbility.toNotation (.otherCreaturesHaveTrample #[.orc, .goblin]) ==
   "Other Orcs and Goblins you control have trample."
-#guard StaticAbility.toNotation (.otherCreaturesGet #["Elf"] 1 1) ==
+#guard StaticAbility.toNotation (.otherCreaturesGet #[.elf] 1 1) ==
   "Other Elf creatures you control get +1/+1."
-#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #["Wolf"] true) ==
+#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #[.wolf] true) ==
   "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
-#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype "Dwarf") ==
+#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype .dwarf) ==
   "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
 #guard TapAddForEach.toNotation { mana := .colored .green, subtype := .elf } ==
   "{T}: Add {G} for each Elf you control"
@@ -1041,7 +1041,7 @@ namespace CardDef
     powerStar := true, toughness := some 1, toughnessStar := true
   }
   c.ptString == "*/1+*"
-#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
+#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[.goblin, .orc]) ==
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==
   "This creature can't block."
@@ -1244,19 +1244,19 @@ namespace CardDef
   .hostGets "Equipped creature" 2 0
 #guard (StaticAbility.StaticShape.spec (.hostGets "Enchanted creature" 3 3)).hostBonus ==
   (3, 3)
-#guard (StaticAbility.StaticShape.spec (.lordPump #["Elf"] 1 1)).lordPump ==
-  some (#["Elf"], 1, 1)
-#guard (StaticAbility.StaticShape.spec (.lordTrample #["Orc"])).trampleSubtypes ==
-  some #["Orc"]
+#guard (StaticAbility.StaticShape.spec (.lordPump #[.elf] 1 1)).lordPump ==
+  some (#[.elf], 1, 1)
+#guard (StaticAbility.StaticShape.spec (.lordTrample #[.orc])).trampleSubtypes ==
+  some #[.orc]
 #guard (StaticAbility.StaticShape.spec .landsYouControlPT).landsYouControlPT
-#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #["Goblin"])).cantBlockUnless ==
-  some #["Goblin"]
-#guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
-#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]
+#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #[.goblin])).cantBlockUnless ==
+  some #[.goblin]
+#guard (StaticAbility.lordPump? (.otherCreaturesGet #[.elf] 1 1)) == some (#[.elf], 1, 1)
+#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #[.orc])) == some #[.orc]
 #guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl
 #guard !StaticAbility.isLandsYouControlPT (.enchantedCreatureGets 1 1)
-#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #["Goblin"])) ==
-  some #["Goblin"]
+#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #[.goblin])) ==
+  some #[.goblin]
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
@@ -1408,7 +1408,7 @@ namespace CardDef
   "You have no maximum hand size."
 #guard StaticAbility.toNotation (.maximumHandSize 10) ==
   "Your maximum hand size is 10."
-#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl "Merfolk") ==
+#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl .merfolk) ==
   "This creature's power is equal to the number of Merfolk you control."
 #guard StaticAbility.toNotation .improvise == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
@@ -1418,7 +1418,7 @@ namespace CardDef
 #guard StaticAbility.toNotation (.supertypeSpellsCostLess .snow 2) ==
   "Snow spells you cast cost {2} less to cast."
 #guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
-    (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]) ==
+    (Keyword.firstStrike.merge Keyword.vigilance) #[.soldier]) ==
   "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
 #guard StaticAbility.toNotation .enchantedLosesAbilitiesCantUntap ==
   "Enchanted creature loses all abilities and can't become untapped."
@@ -1559,7 +1559,7 @@ end CardDef
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
-    c.hasSubtype "Adventure"
+    c.hasSubtype .adventure
 
 #guard
   let adv : AdventureFace := {
@@ -1569,7 +1569,7 @@ end CardDef
   }
   let c := adv.toCardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
-    c.hasSubtype "Adventure"
+    c.hasSubtype .adventure
 
 #guard TriggeredAbility.resolution .onTokenYouControlEntersBelladonna ==
   .sequence [

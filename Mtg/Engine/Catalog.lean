@@ -729,8 +729,9 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlLegendary : Bool := false)
     (discardSource : Bool := false)
     (costReductionIfYouControlLegendary : Nat := 0)
-    (equipSubtype : Option String := none)
-    (sacrificeAnotherSubtype : Option String := none)
+    (equipSubtype : Option CardSubtype := none)
+    (sacrificeAnotherSubtype : Option CardSubtype := none)
+    (sacrificeAnotherCreature : Bool := false)
     (discardACard : Bool := false)
     (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
@@ -758,6 +759,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     payLife := payLife
     discardSource := discardSource
     sacrificeAnotherSubtype := sacrificeAnotherSubtype
+    sacrificeAnotherCreature := sacrificeAnotherCreature
     discardACard := discardACard
     tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
     removeIndestructibleCounter := removeIndestructibleCounter
@@ -782,7 +784,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
-def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=
+def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
   activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 
@@ -797,7 +799,7 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (keywords : Keywords := Keywords.none)
-    (equipSubtype : Option String := none)
+    (equipSubtype : Option CardSubtype := none)
     (moreEquips : Array ActivatedAbility := #[])
     (legendary := false)
     (adventure : Option AdventureFace := none) : CardDef :=
