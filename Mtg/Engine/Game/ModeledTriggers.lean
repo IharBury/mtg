@@ -272,7 +272,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
           if ok then
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Absorbing Man")
-              (forceLegendary := true) (addCreature := true)
+              (addSupertypes := #[.legendary]) (addTypes := #[.creature])
               (addSubtypes := #[.human, .villain])
               (setPT := some (4, 4)) (addVigilance := true)
           else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
@@ -290,7 +290,7 @@ def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option Object
           if onBf || inGy then
             g.becomeCopyOf src tgt (untilNextTurn := true)
               (exceptName := some "Taskmaster, Mercenary Mimic")
-              (forceLegendary := true) (addCreature := true)
+              (addSupertypes := #[.legendary]) (addTypes := #[.creature])
               (addSubtypes := #[.human, .mercenary, .villain])
               (replaceCreatureLine := true)
           else g.logMsg "That isn't a creature or a creature card in a graveyard"

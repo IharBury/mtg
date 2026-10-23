@@ -116,14 +116,14 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
         | none => acc
         | some (subtypes, p, t) =>
           let otherOk := src.id != target.id || ab.lordIncludesSelf
-          let legendaryOk :=
-            (!ab.lordLegendaryOnly || target.isLegendary) &&
-            (!ab.lordNonlegendaryOnly || !target.isLegendary)
+          let supertypeOk :=
+            ab.lordSupertype?.all target.hasSupertype &&
+            ab.lordNonSupertype?.all (fun s => !target.hasSupertype s)
           let subtypeOk :=
             match src.status.chosenCreatureType with
             | some t => g.hasSubtype target t
             | none => subtypes.isEmpty || subtypes.any (fun s => g.hasSubtype target s)
-          if sameController && otherOk && legendaryOk && subtypeOk then
+          if sameController && otherOk && supertypeOk && subtypeOk then
             addStats acc (p, t)
           else acc)
     (0, 0)

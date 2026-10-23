@@ -210,7 +210,7 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
-        legendary := o.isLegendary
+        supertypes := o.supertypes
         types := o.printed.types
         subtypes := CardSubtype.ofSubtypes o.printed.subtypes }
     | none => {}

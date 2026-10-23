@@ -44,13 +44,18 @@ names it. Every listed restriction must hold. -/
 structure TargetFilter where
   noun : String
   zone : TargetZone := .battlefield
+  /-- The target has at least one of these supertypes. Empty means any supertype. -/
+  supertypes : Array Supertype := #[]
   /-- The target has at least one of these card types. Empty means any
   permanent, card, or spell. -/
   types : Array CardType := #[]
   /-- The target has at least one of these subtypes. Empty means any subtype. -/
   subtypes : Array CardSubtype := #[]
-  /-- A legendary object also qualifies (“creature or legendary spell”). -/
-  orLegendary : Bool := false
+  /-- An object with one of these supertypes also qualifies alongside `types`
+  (“creature or legendary spell”). -/
+  orSupertypes : Array Supertype := #[]
+  /-- The target has none of these supertypes (“nonlegendary”). -/
+  nonSupertypes : Array Supertype := #[]
   /-- The target has none of these card types (“nonland”, “noncreature”). -/
   nonTypes : Array CardType := #[]
   /-- Not an Aura (“non-Aura enchantment”). -/
@@ -58,8 +63,6 @@ structure TargetFilter where
   /-- A permanent card (CR 110.4b). -/
   permanentCard : Bool := false
   nontoken : Bool := false
-  legendary : Bool := false
-  nonlegendary : Bool := false
   controller : TargetController := .any
   /-- The target is at least one of these colors. Empty means any color. -/
   colors : Array Color := #[]

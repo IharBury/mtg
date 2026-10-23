@@ -347,8 +347,8 @@ default is an activated ability or another non-spell payment. -/
 structure ManaSpend where
   spell : Bool := false
   fromHand : Bool := false
-  /-- Casting a legendary spell. -/
-  legendary : Bool := false
+  /-- Supertypes of the spell being cast. -/
+  supertypes : Array Supertype := #[]
   /-- Card types of the spell being cast. -/
   types : Array CardType := #[]
   /-- Subtypes of the spell being cast. -/
@@ -359,6 +359,12 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 -- ManaSpend helpers.
 namespace ManaSpend
+
+def hasSupertype (s : ManaSpend) (sup : Supertype) : Bool :=
+  s.supertypes.any (· == sup)
+
+def legendary (s : ManaSpend) : Bool :=
+  s.hasSupertype .legendary
 
 def hasType (s : ManaSpend) (t : CardType) : Bool :=
   s.types.any (· == t)

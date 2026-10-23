@@ -524,7 +524,7 @@ inductive StaticShape where
   /-- Creatures you control of this subtype have trample. -/
   | youControlSubtypeTrample (subtype : CardSubtype)
   /-- Creatures you control get +P/+T (includes the source). -/
-  | teamPump (power toughness : Int) (legendaryOnly nonlegendaryOnly : Bool)
+  | teamPump (power toughness : Int) (supertype nonSupertype : Option Supertype)
   /-- This has haste while you control another of this subtype. -/
   | hasteIfOtherSubtype (subtype : CardSubtype)
   /-- This can't attack unless you control `n` other permanents of this subtype. -/
@@ -664,10 +664,10 @@ structure StaticMeta where
   creaturesYouControlPower : Bool := false
   /-- Lord pump includes the source (not only other creatures). -/
   lordIncludesSelf : Bool := false
-  /-- Lord pump applies only to legendary creatures. -/
-  lordLegendaryOnly : Bool := false
-  /-- Lord pump applies only to nonlegendary creatures. -/
-  lordNonlegendaryOnly : Bool := false
+  /-- Lord pump applies only to creatures of this supertype. -/
+  lordSupertype : Option Supertype := none
+  /-- Lord pump applies only to creatures without this supertype. -/
+  lordNonSupertype : Option Supertype := none
   /-- Ward cost this ability grants matching creatures. -/
   grantedWard : Option Nat := none
   /-- This has haste while you control another of this subtype. -/
@@ -730,13 +730,13 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
   | .creaturesYouControlPower => { creaturesYouControlPower := true }
   | .youControlSubtypeTrample subtype => { trampleSubtypes := some #[subtype] }
-  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+  | .teamPump p t supertype nonSupertype =>
     { lordPump := some (#[], p, t), lordIncludesSelf := true,
-      lordLegendaryOnly := legendaryOnly, lordNonlegendaryOnly := nonlegendaryOnly }
+      lordSupertype := supertype, lordNonSupertype := nonSupertype }
   | .hasteIfOtherSubtype subtype => { hasteIfOtherSubtype := some subtype }
   | .cantAttackUnlessNOther n subtype => { cantAttackUnlessNOther := some (n, subtype) }
   | .legendaryTeamPumpWard p t w =>
-    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordLegendaryOnly := true,
+    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordSupertype := some .legendary,
       grantedWard := some w }
   | .hostGetsAndWard _ p t w =>
     { hostBonus := (p, t), grantedWard := some w }
@@ -871,11 +871,11 @@ def shape : StaticAbility → StaticShape
   | .cantBeBlockedByTokens => .cantBeBlockedByTokens
   | .powerEqualCreaturesYouControl => .creaturesYouControlPower
   | .armiesYouControlHaveTrample => .youControlSubtypeTrample .army
-  | .creaturesYouControlGet p t => .teamPump p t false false
+  | .creaturesYouControlGet p t => .teamPump p t none none
   | .hasteIfYouControlOtherSubtype subtype => .hasteIfOtherSubtype subtype
   | .cantAttackUnlessYouControlNOther n subtype => .cantAttackUnlessNOther n subtype
   | .legendaryCreaturesGetAndWard p t w => .legendaryTeamPumpWard p t w
-  | .nonlegendaryCreaturesGet p t => .teamPump p t false true
+  | .nonlegendaryCreaturesGet p t => .teamPump p t none (some .legendary)
   | .equippedCreatureGetsAndHas p t k => .hostKeywords "Equipped creature" k p t
   | .equippedCreatureGetsAndWard p t w => .hostGetsAndWard "Equipped creature" p t w
   | .creaturesYouControlWithPlusOneHaveMenace => .creaturesWithPlusOneHaveMenace
@@ -1025,11 +1025,12 @@ def toNotation (ab : StaticAbility) : String :=
     "This power is equal to the number of creatures you control."
   | .youControlSubtypeTrample subtype =>
     s!"{subtype.pluralName} you control have trample."
-  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+  | .teamPump p t supertype nonSupertype =>
     let who :=
-      if legendaryOnly then "Legendary creatures you control"
-      else if nonlegendaryOnly then "Nonlegendary creatures you control"
-      else "Creatures you control"
+      match supertype, nonSupertype with
+      | some s, _ => s!"{s} creatures you control"
+      | none, some s => s!"Non{s.oracleWord} creatures you control"
+      | none, none => "Creatures you control"
     s!"{who} get {signedStat p}/{signedStat t}."
   | .hasteIfOtherSubtype subtype =>
     s!"This creature has haste as long as you control another {subtype}."
@@ -1297,13 +1298,21 @@ def isCreaturesYouControlPower (ab : StaticAbility) : Bool :=
 def lordIncludesSelf (ab : StaticAbility) : Bool :=
   ab.shape.spec.lordIncludesSelf
 
+/-- Supertype required by this lord pump, if any. -/
+def lordSupertype? (ab : StaticAbility) : Option Supertype :=
+  ab.shape.spec.lordSupertype
+
+/-- Supertype excluded by this lord pump, if any. -/
+def lordNonSupertype? (ab : StaticAbility) : Option Supertype :=
+  ab.shape.spec.lordNonSupertype
+
 /-- True when this lord pump applies only to legendary creatures. -/
 def lordLegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.shape.spec.lordLegendaryOnly
+  ab.lordSupertype? == some .legendary
 
 /-- True when this lord pump applies only to nonlegendary creatures. -/
 def lordNonlegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.shape.spec.lordNonlegendaryOnly
+  ab.lordNonSupertype? == some .legendary
 
 /-- Ward cost this ability grants matching creatures, if any. -/
 def grantedWard? (ab : StaticAbility) : Option Nat :=

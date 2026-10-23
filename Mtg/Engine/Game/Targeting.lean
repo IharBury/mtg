@@ -108,7 +108,9 @@ Zone and hexproof are checked by the caller. -/
 def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (sourceId : Option ObjectId) (o : GameObject) : Bool :=
   let typeOk :=
-    f.types.isEmpty || f.types.any (objectHasCardType o) || (f.orLegendary && o.isLegendary)
+    (f.types.isEmpty && f.orSupertypes.isEmpty) ||
+      f.types.any (objectHasCardType o) || f.orSupertypes.any o.hasSupertype
+  let supertypeOk := f.supertypes.isEmpty || f.supertypes.any o.hasSupertype
   let colorOk := f.colors.isEmpty || f.colors.any (o.printed.colors.contains ·)
   let who := o.controller.getD o.owner
   let controllerOk :=
@@ -119,13 +121,12 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
   let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
-  typeOk && colorOk && controllerOk && subtypeOk &&
+  typeOk && supertypeOk && colorOk && controllerOk && subtypeOk &&
+    f.nonSupertypes.all (fun s => !o.hasSupertype s) &&
     f.nonTypes.all (fun t => !objectHasCardType o t) &&
     (!f.nonAura || !o.printed.isAura) &&
     (!f.nontoken || !o.printed.isToken) &&
     (!f.permanentCard || o.printed.isPermanentCard) &&
-    (!f.legendary || o.isLegendary) &&
-    (!f.nonlegendary || !o.isLegendary) &&
     (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
     (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&
     (!f.another || some o.id != sourceId) &&

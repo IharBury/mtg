@@ -186,7 +186,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     match cause with
     | some o =>
       (ab.opts.thisOrAnotherSubtype.all (g.hasSubtype o ·)) &&
-        (!ab.opts.anotherLegendary || o.isLegendary)
+        ab.opts.anotherSupertype.all o.hasSupertype
     | none => true
   -- Intervening “if” clauses checked as the ability triggers (CR 603.4);
   -- they are checked again on resolution.

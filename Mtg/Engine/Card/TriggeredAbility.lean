@@ -268,7 +268,7 @@ def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.seqDrawThenDiscard 2)
-    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype, anotherLegendary := true }
+    { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype, anotherSupertype := some .legendary }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
@@ -2105,7 +2105,7 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "When The Notary Hobbits enter"
     | .enter, some .attachEquipmentThenFight, _ =>
       leadInSentence ab "When Thorin enters"
-    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some .elf, anotherLegendary := true, .. } =>
+    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some .elf, anotherSupertype := some .legendary, .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, some .returnAsArtifact, _ =>
       leadInSentence ab "When Tom, Bert, and William die"

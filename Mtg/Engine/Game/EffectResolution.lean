@@ -256,7 +256,7 @@ def copyNontokenCreaturesYouControl (g : Game) (p : PlayerId) : Game :=
         toughness := some 0
         isToken := true }
       let (g, tok) := g.createOneToken p blank
-      let g := g.becomeCopyOf (g.object! tok.id) src (notLegendary := true)
+      let g := g.becomeCopyOf (g.object! tok.id) src (removeSupertypes := #[.legendary])
       let tok := g.object! tok.id
       g.changeObject tok.id (.printed { tok.printed with isToken := true })) g
 
@@ -1883,7 +1883,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             if dest.isOnBattlefield && src.isOnBattlefield &&
                 dest.controlledBy controller && src.controlledBy controller &&
                 dest.printed.isArtifact && src.printed.isArtifact then
-              g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
+              g.becomeCopyOf dest src (untilEot := true) (removeSupertypes := #[.legendary])
             else
               g.logMsg "The target is no longer legal. The ability has no effect."
           | _, _ =>

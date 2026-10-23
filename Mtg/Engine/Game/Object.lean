@@ -226,9 +226,16 @@ def subtypes (o : GameObject) : Array CardSubtype :=
       let added := types.filter (fun t => !kept.any (· == t))
       kept ++ added
 
+/-- Current supertypes of this object (CR 205.4). -/
+def supertypes (o : GameObject) : Array Supertype :=
+  o.printed.supertypes
+
+def hasSupertype (o : GameObject) (s : Supertype) : Bool :=
+  o.supertypes.any (· == s)
+
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
-  formatTypeLine o.printed.supertypes o.types (o.subtypes.map CardSubtype.englishName)
+  formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
 lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
@@ -263,7 +270,7 @@ def isCreature (o : GameObject) : Bool :=
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
-  o.printed.hasSupertype .legendary
+  o.hasSupertype .legendary
 
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=

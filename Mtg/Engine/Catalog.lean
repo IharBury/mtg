@@ -254,10 +254,9 @@ def forest : CardDef :=
     (drawTwoExceptFirstDrawStep : Bool := false)
     (teamwork : Option Nat := none)
     (entersWithShield : Nat := 0)
-    (otherFace : Option CardDef := none)
-    (legendary := false) : CardDef :=
+    (otherFace : Option CardDef := none) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
-    keywords ((if legendary then #[.legendary] else #[]) ++ supertypes)
+    keywords supertypes
     (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
     (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
@@ -317,8 +316,9 @@ def forest : CardDef :=
     (teamwork : Option Nat := none)
     (entersWithShield : Nat := 0)
     (otherFace : Option CardDef := none) : CardDef :=
-  creature name manaCost subtypes power toughness oracleText (legendary := true)
-    (keywords := keywords) (tapAddMana := tapAddMana) (supertypes := supertypes)
+  creature name manaCost subtypes power toughness oracleText
+    (keywords := keywords) (tapAddMana := tapAddMana)
+    (supertypes := #[.legendary] ++ supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
     (tapAddManaForEach := tapAddManaForEach)
@@ -553,13 +553,12 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (tapAddAnyColorAmongLegendaries : Bool := false)
     (tapAddCommanderIdentity : Bool := false)
     (adventure : Option AdventureFace := none)
-    (legendary := false)
     (entersTapped := false)
     (ward : Option Nat := none) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
     (power := power) (toughness := toughness)
     (keywords := keywords)
-    (supertypes := (if legendary then #[.legendary] else #[]) ++ supertypes)
+    (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -578,16 +577,16 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
 @[irreducible, noinline] def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Keywords := Keywords.none)
+    (supertypes : Array Supertype := #[])
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (legendary := false)
     (ward : Option Nat := none)
     (otherFace : Option CardDef := none)
     (entersWithShield : Nat := 0) : CardDef :=
   card name #[.artifact, .creature] manaCost subtypes oracleText
     (some power) (some toughness) keywords
-    ((if legendary then #[.legendary] else #[]) )
+    supertypes
     (staticAbilities := staticAbilities)
     (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
@@ -609,10 +608,9 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (entersTappedUnlessLegendary : Bool := false)
     (entersTappedUnlessEquipment : Bool := false)
     (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
-    (entersTappedUnlessPayLife : Option Nat := none)
-    (legendary := false) : CardDef :=
+    (entersTappedUnlessPayLife : Option Nat := none) : CardDef :=
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
-    (supertypes := (if legendary then #[.legendary] else #[]) ++ supertypes)
+    (supertypes := supertypes)
     (tapAddMana := tapAddMana)
     (tapAddOneOf := tapAddOneOf)
     (tapAddOneOfIfEnteredOrBasic := tapAddOneOfIfEnteredOrBasic)
@@ -635,7 +633,7 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
     (entersTappedUnlessPayLife : Option Nat := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
-  land name oracleText (legendary := true)
+  land name oracleText (supertypes := #[.legendary])
     (tapAddMana := tapAddMana) (tapAddOneOf := tapAddOneOf)
     (activatedAbilities := activatedAbilities) (subtypes := subtypes)
     (entersTapped := entersTapped)
@@ -799,14 +797,14 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (keywords : Keywords := Keywords.none)
+    (supertypes : Array Supertype := #[])
     (equipSubtype : Option CardSubtype := none)
     (moreEquips : Array ActivatedAbility := #[])
-    (legendary := false)
     (adventure : Option AdventureFace := none) : CardDef :=
   artifact name manaCost oracleText
     (subtypes := #["Equipment"])
     (keywords := keywords)
-    (legendary := legendary)
+    (supertypes := supertypes)
     (staticAbilities := staticAbilities)
     (triggeredAbilities := triggeredAbilities)
     (activatedAbilities :=
@@ -986,7 +984,7 @@ reconstructed from the colors. -/
 #guard ((conditionalDualLand "Silent Lair" .blue .black).summary.splitOn "{T}: Add {C}").length > 1
 #guard ((conditionalDualLand "Silent Lair" .blue .black).summary.splitOn "entered this turn").length > 1
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
-#guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
+#guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (supertypes := #[.legendary])).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
 #guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isInstant
 #guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isSorcery
@@ -1034,11 +1032,11 @@ reconstructed from the colors. -/
   (ManaCost.ofGeneric 2)).activatedAbilities ==
   #[equipAbility (ManaCost.ofGeneric 2)]
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
-  (legendary := true)).hasSupertype .legendary
+  (supertypes := #[.legendary])).hasSupertype .legendary
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
-  (legendary := true)).hasType .artifact
+  (supertypes := #[.legendary])).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
-  (legendary := true)).hasType .creature
+  (supertypes := #[.legendary])).hasType .creature
 #guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTapped
 #guard (conditionalDualLand "Silent Keep" .blue .black).tapAddMana == #[.colorless]
 #guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp

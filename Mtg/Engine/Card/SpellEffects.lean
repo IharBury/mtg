@@ -1271,7 +1271,7 @@ def cruelCalculations : Effect :=
 
 def icyReceptionCounter : Effect :=
   fraSpellOn { noun := "target creature or legendary spell", zone := .stack
-               types := #[.creature], orLegendary := true }
+               types := #[.creature], orSupertypes := #[.legendary] }
     (.counterUnlessPays 3)
     "Counter target creature or legendary spell unless its controller pays {3}"
     (castKind := .counter)
@@ -1559,7 +1559,7 @@ def tamsResistance : Effect := plusOneThenGrant 1 Keyword.vigilance (upToOne := 
 /-! ## Modes of modal triggered abilities -/
 
 def returnLegendaryCardToHand : Effect :=
-  fraSpellOn { noun := "target legendary card from your graveyard", zone := .yourGraveyard, legendary := true }
+  fraSpellOn { noun := "target legendary card from your graveyard", zone := .yourGraveyard, supertypes := #[.legendary] }
     .returnFromGyToHand "Return target legendary card from your graveyard to your hand"
 
 def plusOneVigilanceIndestructible : Effect :=
