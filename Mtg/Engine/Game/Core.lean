@@ -987,6 +987,38 @@ def recomputeControl (g : Game) (id : ObjectId) : Game :=
             controlUntilEot := false
             controlTurnEndsLeft := 0 } })
 
+/-- Recompute `id`'s copied characteristics and copy-duration fields from the
+active `.copy` continuous effects on `id` (CR 611 / 613.7 / 707), restoring the
+original printed card when none remain. -/
+def recomputeCopy (g : Game) (id : ObjectId) (fallbackRestore : Option CardDef := none) : Game :=
+  let latest? := g.lastActive? (fun
+    | .copy oid printed r ue unt usl =>
+      if oid == id then some (printed, r, ue, unt, usl) else none
+    | _ => none)
+  g.modifyObject id (fun o =>
+    match latest? with
+    | some (printed, r, ue, unt, usl) =>
+      { o with
+        printed
+        copyRestore := r
+        copyUntilEot := ue
+        copyUntilNextTurn := unt
+        copyUntilSourceLeaves := usl }
+    | none =>
+      match fallbackRestore.orElse (fun _ => o.copyRestore) with
+      | some card =>
+        { o with
+          printed := card
+          copyRestore := none
+          copyUntilEot := false
+          copyUntilNextTurn := false
+          copyUntilSourceLeaves := none }
+      | none =>
+        { o with
+          copyUntilEot := false
+          copyUntilNextTurn := false
+          copyUntilSourceLeaves := none })
+
 /-- Recompute a slot that holds a single value (or a merged set) from every
 active continuous effect writing it, so creating, updating, or ending one
 effect never erases another effect's contribution (CR 611 / 613.7). Returns
@@ -1015,6 +1047,7 @@ def refreshEffectSlot? (g : Game) (eff : ContinuousEffect) : Option Game :=
   | .playPermission id _ =>
     let perm := g.lastActive? (fun | .playPermission oid perm => if oid == id then some perm else none | _ => none)
     some (g.modifyObject id (fun o => { o with playPermission := perm }))
+  | .copy id _ restore _ _ _ => some (g.recomputeCopy id restore)
   | .control id _ _ _ _ => some (g.recomputeControl id)
   | .assignCombatDamageEqualToughnessUntilEot _ =>
     some { g with
@@ -1115,14 +1148,6 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyObject id (fun o => { o with uncounterableThisCast := true })
   | .fraEmblemUntilTurnOf id p =>
     g.modifyObject id (fun o => { o with fraEffectUntilTurnOf := some p })
-  | .copy id printed restore untilEot untilNextTurn untilSourceLeaves =>
-    g.modifyObject id (fun o =>
-      { o with
-        printed
-        copyRestore := restore
-        copyUntilEot := untilEot
-        copyUntilNextTurn := untilNextTurn
-        copyUntilSourceLeaves := untilSourceLeaves })
   | .additionalLandsThisTurn p n =>
     g.modifyPlayer p (fun pl => { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + n })
   | .protectionFromEverything p =>
@@ -1157,7 +1182,7 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
     { g with powerUpsForbidden := true }
   -- Recomputed from every active effect by `refreshEffectSlot?` above.
   | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
-  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .control ..
+  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .copy .. | .control ..
   | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
   | .pendingLokiCopy .. | .playerControl .. => g
 
@@ -1280,21 +1305,6 @@ def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyObject id (fun o => { o with uncounterableThisCast := false })
   | .fraEmblemUntilTurnOf id _ =>
     { g with objects := g.objects.filter (·.id != id) }
-  | .copy id _ restore _ _ _ =>
-    g.modifyObject id (fun o =>
-      match restore.orElse (fun _ => o.copyRestore) with
-      | some card =>
-        { o with
-          printed := card
-          copyRestore := none
-          copyUntilEot := false
-          copyUntilNextTurn := false
-          copyUntilSourceLeaves := none }
-      | none =>
-        { o with
-          copyUntilEot := false
-          copyUntilNextTurn := false
-          copyUntilSourceLeaves := none })
   | .additionalLandsThisTurn p n =>
     g.modifyPlayer p (fun pl => { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn - n })
   | .protectionFromEverything p =>
@@ -1335,7 +1345,7 @@ def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
     { g with powerUpsForbidden := false }
   -- Recomputed from the remaining active effects by `refreshEffectSlot?` above.
   | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
-  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .control ..
+  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .copy .. | .control ..
   | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
   | .pendingLokiCopy .. | .playerControl .. => g
 
@@ -1352,12 +1362,14 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
 (CR 611). Only that entry is removed, and its stored payload is what is rolled
 back. An id that is not active changes nothing. -/
 def applyEffectExpired (g : Game) (effectId : EffectId) (_eff : ContinuousEffect) : Game :=
-  let g := { g with nextEffectId := max g.nextEffectId (effectId.raw + 1) }
   match g.activeEffects.findIdx? (·.1 == effectId) with
   | none => g
   | some idx =>
     let stored := g.activeEffects[idx]!.2
-    let g := { g with activeEffects := g.activeEffects.eraseIdx! idx }
+    let g :=
+      { g with
+        nextEffectId := max g.nextEffectId (effectId.raw + 1)
+        activeEffects := g.activeEffects.eraseIdx! idx }
     g.uninstallEffect stored
 
 /-- Replace the payload of the active continuous effect `effectId`, keeping its

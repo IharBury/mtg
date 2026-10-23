@@ -256,30 +256,32 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
   -- ≤ Loki's power at cast time (last known if he already left).
-  let pw? :=
-    match g.pendingLokiCopy with
-    | none => none
-    | some (p, some id, fallback) =>
-      if p != caster then none
-      else
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield then some (g.power o) else some fallback
-        | none => some fallback
-    | some (p, none, fallback) =>
-      if p == caster then some fallback else none
-  match pw? with
-  | some pw =>
-    if spell.printed.isInstantOrSorcery && Int.ofNat mv <= pw then
+  if !spell.printed.isInstantOrSorcery then g
+  else
+    let matchingEid? := g.activeEffects.findSome? (fun (eid, eff) =>
+      match eff with
+      | .pendingLokiCopy p src fallback =>
+        if p != caster then none
+        else
+          let pw :=
+            match src with
+            | some id =>
+              match g.findObject? id with
+              | some o => if o.isOnBattlefield then g.power o else fallback
+              | none => fallback
+            | none => fallback
+          if Int.ofNat mv <= pw then some eid else none
+      | _ => none)
+    match matchingEid? with
+    | some eid =>
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.changeObjects copy.id #[
         .chosenX spell.chosenX,
         .isCopy true]
       let g := g.putStackEntry caster copy.id
-      let g := g.expireMatching (fun | .pendingLokiCopy .. => true | _ => false)
+      let g := g.expireEffectById eid
       g.logMsg s!"A copy of {spell.name} is created (Loki)"
-    else g
-  | none => g
+    | none => g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/

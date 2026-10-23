@@ -323,7 +323,8 @@ def controlEffectsOn (g : Game) (id : ObjectId) : Array (EffectId × ContinuousE
     (g2.object! b.id).status.pump == (3, 3) &&
     g2.activeEffects.map Prod.fst == #[⟨100⟩] &&
     (g3.object! b.id).status.pump == (3, 3) &&
-    g3.activeEffects.map Prod.fst == #[⟨100⟩]
+    g3.activeEffects.map Prod.fst == #[⟨100⟩] &&
+    g3.nextEffectId == g2.nextEffectId
 
 /- Expiring an effect that is not active records nothing and rolls nothing
 back, even when the status flag was set some other way. -/
@@ -461,5 +462,76 @@ his last known power, and the end of turn expires that same id (MSH 109). -/
       | _ => false) &&
     (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[eid] &&
     g3.pendingLokiCopy.isNone
+
+/- Multiple pending Loki copies: an opponent's later effect does not hide
+yours, and copying your spell expires only your matching effect (MSH 109). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.createEffect (.pendingLokiCopy me (some b.id) 2)
+  let eidMe := (GameEvent.createdEffectsWithId g1.events)[0]!.1
+  let g2 := (quiet g1).createEffect (.pendingLokiCopy opp none 2)
+  let eidOpp := (GameEvent.createdEffectsWithId g2.events)[0]!.1
+  let (g3, spell) := (quiet g2).allocObject lightningBolt me .stack (some me)
+  let g3 := g3.putStackEntry me spell.id
+  let g4 := g3.putCastTriggersOnStack me (g3.object! spell.id)
+  let copies := g4.objects.filter (fun o =>
+    o.zone == .stack && o.isCopy && o.printed.name == "Lightning Bolt")
+  copies.size == 1 &&
+    (GameEvent.expiredEffectsWithId g4.events).map Prod.fst == #[eidMe] &&
+    (g4.activeEffect? eidOpp).isSome &&
+    g4.pendingLokiCopy == some (opp, none, 2)
+
+/- Stacked copy effects (CR 613.7 / 707): a "copy until this source leaves"
+effect followed by a "copy until end of turn" effect reverts to the earlier
+copy at cleanup and restores the original card only when the source leaves. -/
+#guard
+  let giant : CardDef :=
+    creature "Event Giant" ManaCost.empty #["Giant"] 4 4
+  let g0 := quiet (addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me) giant me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let gt := (g0.battlefield.filter (·.name == "Event Giant"))[0]!
+  let g1 := g0.becomeCopyOf b h (untilSourceLeaves := some h.id)
+  let g2 := g1.becomeCopyOf (g1.object! b.id) gt (untilEot := true)
+  let g3 := (quiet g2).clearEOT
+  let g4 := g3.expireWhileSourceEffects h.id
+  (g2.object! b.id).name == "Event Giant" &&
+    (g2.object! b.id).copyUntilEot &&
+    (g3.object! b.id).name == "Event Hero" &&
+    !((g3.object! b.id).copyUntilEot) &&
+    (g3.object! b.id).copyUntilSourceLeaves == some h.id &&
+    ((g3.object! b.id).copyRestore.map CardDef.name) == some "Event Bear" &&
+    (g4.object! b.id).name == "Event Bear" &&
+    (g4.object! b.id).copyRestore.isNone &&
+    (g4.object! b.id).copyUntilSourceLeaves.isNone
+
+/- Paying an impending cost creates `.notACreature` on the spell with an
+`EffectId` and carries that same `EffectId` to the permanent it becomes
+(CR 400.7, CR 702.176). -/
+#guard
+  let impDef : CardDef :=
+    { bear with
+      name := "Impending Bear"
+      impending := some (1, ManaCost.empty) }
+  let g0 := insertObject afterDraw impDef me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let cardId := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Impending Bear"))[0]!
+  match g0.apply me (.cast cardId) with
+  | .error _ => false
+  | .ok g0 =>
+    let g0 := quiet g0
+    let spellId := g0.stack.back!.objectId
+    match g0.applyKickerToProposed true with
+    | .error _ => false
+    | .ok g1 =>
+      let created := GameEvent.createdEffectsWithId g1.events
+      if created.size != 1 then false
+      else
+        let eid := created[0]!.1
+        let (g2, permId) := (quiet g1).move spellId .battlefield (some me)
+        created[0]!.2 == .notACreature spellId &&
+          !(g1.object! spellId).isCreature &&
+          g2.activeEffect? eid == some (.notACreature permId) &&
+          !(g2.object! permId).isCreature
 
 end Mtg.Engine.EventTests
