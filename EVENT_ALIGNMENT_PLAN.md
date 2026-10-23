@@ -880,8 +880,8 @@ Each field is put in exactly one category. "Log" means a query over
 | :--- | :--- | :--- |
 | **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId`, `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
-| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)` | Delayed-trigger entries created on resolution and fired onto the stack by `matchTriggers` (Phase 8). |
-| **Trigger-time snapshot → `WaitingTrigger` / stack trigger data** | `enrageGrantsAdditionalCombat : Nat` | Records whether Hulk was attacking when its enrage trigger was queued (`Damage.lean` / `.enrageGrantsCombat`); carried on the waiting/stack trigger's `source.attacking` snapshot rather than a global counter (deleted in Phase 8). |
+| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)` | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
+| **Queue-time note — deleted in Phase 8** | `enrageGrantsAdditionalCombat : Nat` | Queue-time counter written in `Damage.lean` for `.enrageGrantsCombat` ("If he's attacking, untap him and there is an additional combat phase after this phase"); not an intervening-if (603.4), so delete the counter and check at resolution whether the source is currently attacking on the battlefield, matching the untap instruction's live check. |
 | **Game effect mirrors → specs** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
 | **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
@@ -1085,13 +1085,15 @@ non-occurrence, and the 616.1a–e order.
    `Game.delayedEndStepReturns`, `Game.delayedEndStepExiles`,
    `Game.delayedEndStepSacrifices`, `Game.delayedGraveReturns`, and
    `Game.delayedSynthetic`) with a delayed-trigger table whose entries are
-   created on resolution and matched/put on the stack by `matchTriggers`
-   instead of polled directly in `Turns.lean`, `TriggeredAbilities.lean`, and
-   `FrcResolve.lean`. Move `Game.enrageGrantsAdditionalCombat` onto the
-   trigger's `source.attacking` snapshot (`WaitingTrigger` / stack trigger data)
-   rather than a global counter.
+   created on resolution and matched by `matchTriggers` (603.2; then put on the
+   stack via `TriggerQueueEvent.putOnStack` when a player would next receive
+   priority per 603.3) instead of polled directly in `Turns.lean`,
+   `TriggeredAbilities.lean`, and `FrcResolve.lean`. Delete
+   `Game.enrageGrantsAdditionalCombat` and have `.enrageGrantsCombat` use the
+   same live resolution-time attacking check (`source` on the battlefield and
+   `status.attacking`) as the untap instruction.
 4. Delete every field in §3.8 marked as a mirror, history, delayed trigger, or
-   trigger-time counter, together with its `StatusChange` / `ObjectChange` /
+   queue-time counter, together with its `StatusChange` / `ObjectChange` /
    `PlayerChange` / `GameChange` constructor, after its readers use the log,
    the layers, or the delayed-trigger table.
 5. Move the continuation registers into a continuation frame stack.
