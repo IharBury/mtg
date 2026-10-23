@@ -18,7 +18,7 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
     else
       let landfall : TriggeredAbility :=
         .onLandYouControlEntersCreateTokens TokenKind.elf 1
-      let g := g.changeStatus src.id (.pushGrantedTriggered landfall)
+      let g := g.createEffect (.grantedTriggered src.id landfall false)
       g.logMsg s!"{src.name} gains landfall"
   | none => g
 
@@ -27,7 +27,7 @@ def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
   g.forEachControlledCreature controller fun g o =>
     if g.hasSubtype o .elf then
       let g := g.pumpPermanent o power 0
-      g.changeStatus o.id (.grantUntilEot Keyword.vigilance)
+      g.createEffect (.keywordsUntilEot o.id Keyword.vigilance)
         |>.logMsg s!"{o.name} gets {signedStat power}/+0 and gains vigilance until end of turn"
     else g
 
@@ -39,7 +39,7 @@ def grantHexproofWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.changeStatus o.id (.pushHexproofGrantedBy sid)
+      let g := g.createEffect (.hexproofWhileSource o.id sid)
       g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
       sourceId (some "The target is no longer legal")
 
@@ -51,7 +51,7 @@ def preventDamageWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.changeStatus o.id (.pushPreventDamageGrantedBy sid)
+      let g := g.createEffect (.preventDamageWhileSource o.id sid)
       g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
       sourceId none
 
@@ -76,7 +76,7 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
 def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
-  g.changePlayer controller (.addAttackPumpPerPlainsThisTurn 1)
+  g.createEffect (.attackPumpPerPlainsThisTurn controller 1)
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 
@@ -110,10 +110,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
               if (g.player controller).lost then
                 g.logMsg s!"{o.name} does not change control (CR 800.4b)"
               else
-                g.changeObjects o.id #[
-                  .controller (some controller),
-                  .controlChanged true,
-                  .controlUntilSourceLeaves (some src.id)]
+                g.createEffect (.control o.id controller false 0 (some src.id))
             g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
           else g
         | none => g

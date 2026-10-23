@@ -159,7 +159,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       if p == caster && spell.printed.isCreature &&
           (spell.printed.colors.contains .red ||
             spell.printed.colors.contains .green) then
-        g.change (.pendingFreeRGCreature none)
+        g.expireEffect (.pendingFreeRGCreatureThisTurn p)
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
     | none => g
@@ -232,7 +232,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- no costs are paid for it (rulings 843–846).
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
-      let g := g.changePlayer caster .decCopyNextInstantSorceryThisTurn
+      let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.changeObjects copy.id #[
         .kicked spell.kicked,
@@ -255,31 +255,33 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
-  -- ≤ Loki's power at cast time (last known if he already left).
-  let pw? :=
-    match g.pendingLokiCopy with
-    | none => none
-    | some (p, some id, fallback) =>
-      if p != caster then none
-      else
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield then some (g.power o) else some fallback
-        | none => some fallback
-    | some (p, none, fallback) =>
-      if p == caster then some fallback else none
-  match pw? with
-  | some pw =>
-    if spell.printed.isInstantOrSorcery && Int.ofNat mv <= pw then
+  -- ≤ Loki's power at cast time (last known if he already left). Each
+  -- activation is its own delayed trigger, so every matching pending effect
+  -- of the caster copies this spell and then ends under its own `EffectId`.
+  if !spell.printed.isInstantOrSorcery then g
+  else
+    let matching := g.activeEffects.filterMap (fun (eid, eff) =>
+      match eff with
+      | .pendingLokiCopy p src fallback =>
+        if p != caster then none
+        else
+          let pw :=
+            match src with
+            | some id =>
+              match g.findObject? id with
+              | some o => if o.isOnBattlefield then g.power o else fallback
+              | none => fallback
+            | none => fallback
+          if Int.ofNat mv <= pw then some eid else none
+      | _ => none)
+    matching.foldl (fun g eid =>
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.changeObjects copy.id #[
         .chosenX spell.chosenX,
         .isCopy true]
       let g := g.putStackEntry caster copy.id
-      g.change (.pendingLokiCopy none)
-        |>.logMsg s!"A copy of {spell.name} is created (Loki)"
-    else g
-  | none => g
+      let g := g.expireEffectById eid
+      g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
@@ -645,10 +647,12 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game 
         match o.printed.otherFace with
         | some back =>
           let shown := { back with otherFace := some { o.printed with otherFace := none } }
+          let g := g.expirePrintedStaticEffects o
           let g := g.changeObjects o.id #[
             .printed shown,
             .status (.transformed true),
             .status (.cantTransform true)]
+          let g := g.createPrintedStaticEffects (g.object! o.id)
           g.logMsg s!"{shown.name} enters back face up (night / daybound)"
         | none => g
       else g

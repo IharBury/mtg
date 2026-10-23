@@ -35,7 +35,9 @@ def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
     attachedTo,
     defaultController := if zone == .battlefield then controller else none
   }
-  (g.change (.setObject obj), obj)
+  let g := g.change (.setObject obj)
+  let g := g.createPrintedStaticEffects obj
+  (g, obj)
 
 /-- Push a stack entry for an already-allocated object (CR 601.2a / 602.2a / 603.3). -/
 def putStackEntry (g : Game) (controller : PlayerId) (objectId : ObjectId) : Game :=

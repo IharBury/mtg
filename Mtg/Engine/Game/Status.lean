@@ -290,7 +290,7 @@ def clearsAtCleanup (s : Status) : Bool :=
   s.replacedCreatureTypesUntilEot.isSome || s.pumpPerArtifactUntilEot ||
   s.ironFistTapGrants != 0 || s.losesAbilitiesUntilEot ||
   !s.grantedTriggersUntilEot.isEmpty || s.cardsInHandPowerUntilEot ||
-  s.firstStrikeOnYourTurn
+  s.firstStrikeOnYourTurn || s.combatDamageCreatesTreasure
 
 end Status
 

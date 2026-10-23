@@ -170,8 +170,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       match pl.manaPool.pay? cost with
       | none => throw s!"{pl.name} cannot pay {cost}"
       | some pool =>
-        return ((g.changePlayer p (.manaPool pool)).changeStatus o.id (.faceDown false))
-          |>.logMsg s!"{pl.name} turns {o.name} face up"
+        let g := (g.changePlayer p (.manaPool pool)).changeStatus o.id (.faceDown false)
+        let g := g.createPrintedStaticEffects (g.object! o.id)
+        return g.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then

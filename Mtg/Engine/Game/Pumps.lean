@@ -15,8 +15,8 @@ namespace Game
 /-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). `trample` also grants
 trample until end of turn (e.g. Oliphaunt). -/
 def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : Game :=
-  let base : Array StatusChange := #[.addPump p t]
-  let g := g.changeStatuses o.id (if trample then base.push (.grantUntilEot Keyword.trample) else base)
+  let g := g.createEffect (.pump o.id p t)
+  let g := if trample then g.createEffect (.keywordsUntilEot o.id Keyword.trample) else g
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
@@ -29,19 +29,19 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
     (label : String) (pred : Game → GameObject → Bool := fun _ _ => true) : Game :=
   g.forEachControlledCreature p fun g o =>
     if pred g o then
-      (g.changeStatus o.id (.grantUntilEot kw))
+      (g.createEffect (.keywordsUntilEot o.id kw))
         |>.logMsg s!"{o.name} gains {label} until end of turn"
     else g
 
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
 def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Game :=
   kws.foldl (fun g kw =>
-    if (g.findObject? o.id).isSome then g.changeStatus o.id (.grantUntilEot kw)
+    if (g.findObject? o.id).isSome then g.createEffect (.keywordsUntilEot o.id kw)
     else g) g
 
 /-- Grant `k` until end of turn and log the standard “gains … until end of turn”. -/
 def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
-  (g.changeStatus o.id (.grantUntilEot k))
+  (g.createEffect (.keywordsUntilEot o.id k))
     |>.logMsg s!"{o.name} gains {k} until end of turn"
 
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
@@ -50,16 +50,16 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     (types : Option (Array CardSubtype) := none)
     (additionalCreature := false) (additionalArtifact := false)
     (pumpPerArtifact := false) : Game :=
-  let s := (g.findObject? o.id).map (·.status) |>.getD o.status
-  (g.changeStatuses o.id #[
-    .setBasePT (some pt),
-    .replacedCreatureTypesUntilEot
-      (types.orElse fun _ => s.replacedCreatureTypesUntilEot),
-    .grantUntilEot kws,
-    .additionalCreatureUntilEot (additionalCreature || s.additionalCreatureUntilEot),
-    .additionalArtifactUntilEot (additionalArtifact || s.additionalArtifactUntilEot),
-    .pumpPerArtifactUntilEot (pumpPerArtifact || s.pumpPerArtifactUntilEot)
-  ]).logMsg msg
+  let g := g.createEffect (.setBasePTUntilEot o.id pt)
+  let g :=
+    match types with
+    | some subs => g.createEffect (.replacedCreatureTypesUntilEot o.id subs)
+    | none => g
+  let g := if kws != Keywords.none then g.createEffect (.keywordsUntilEot o.id kws) else g
+  let g := if additionalCreature then g.createEffect (.additionalCreature o.id true) else g
+  let g := if additionalArtifact then g.createEffect (.additionalArtifactUntilEot o.id) else g
+  let g := if pumpPerArtifact then g.createEffect (.pumpPerArtifactUntilEot o.id) else g
+  g.logMsg msg
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
@@ -233,7 +233,7 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     else
       let g :=
         if g.hasSubtype army subtype then g
-        else g.changeStatus army.id (.pushAdditionalSubtype subtype)
+        else g.createEffect (.additionalSubtype army.id subtype)
       let army := g.object! army.id
       let g := g.addPlusOnePlusOneTo army n
       let g := g.logMsg
@@ -284,17 +284,14 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
-  let g := g.changeStatuses o.id #[
-    .addDamage n false,
-    .untilEotLosesIndestructible true,
-    .untilEotExileIfDies true
-  ]
+  let g := g.changeStatus o.id (.addDamage n false)
+  let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.changeStatus o.id (.grantUntilEot Keyword.cantBeBlocked)
+  let g := g.createEffect (.keywordsUntilEot o.id Keyword.cantBeBlocked)
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/

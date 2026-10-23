@@ -116,7 +116,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
       | none => false)
   if hasPerm || hasHand then
     let g := g.changePlayer p (.pushBeheldQuality quality)
-    let g := g.record ⟨g.turnNumber, .beheld p quality⟩
+    let g := g.record (GameEvent.beheld g.turnNumber p quality)
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
@@ -195,7 +195,7 @@ def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
       if !o.isOnBattlefield then
         g.logMsg "The target is no longer legal"
       else
-        let g := g.changeStatus attackerId (.cantBeBlockedByPlayer (some chosen))
+        let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen)
         g.logMsg
           s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
 
@@ -210,7 +210,8 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
       if o.zone != .graveyard o.owner then acc
       else
         let (acc, newId) := acc.move id .battlefield (some controller)
-        let acc := acc.changeStatuses newId #[.onlyFoodArtifact true, .summoningSick true]
+        let acc := acc.createEffect (.onlyFoodArtifact newId)
+        let acc := acc.changeStatus newId (.summoningSick true)
         let acc := acc.afterPermanentEnters (acc.object! newId)
         let o := acc.object! newId
         acc.logMsg s!"{o.name} returns as a Food artifact") g
@@ -230,12 +231,12 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
         let cardName := (g.object! top).name
         let (g', newId) := g.move top .exile none
         g := g'
-        g := g.changeObject newId (.playPermission (some {
+        g := g.createEffect (.playPermission newId {
             player := p
             turnEndsRemaining := 0
             whileExiled := true
             requireSubtype := some subtype
-            faceDown := true }))
+            faceDown := true })
         g := g.logMsg s!"{pl.name} exiles a card face down"
         let _ := cardName
     return g

@@ -75,10 +75,10 @@ def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
   match exiled.bind g.findObject? with
   | none => g.logMsg "No nonland card was exiled"
   | some o =>
-    g.changeObject o.id (.playPermission (some {
+    g.createEffect (.playPermission o.id {
       player := controller
       turnEndsRemaining := 1
-      anyMana := true }))
+      anyMana := true })
       |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
 
 /-- Copy the nontoken artifact that entered, then make a noncreature token a
@@ -96,15 +96,15 @@ def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectI
       let tok := g.object! tok.id
       if tok.isCreature then g
       else
-        let printed :=
+        let printed : CardDef :=
           { tok.printed with
             types :=
-              if tok.printed.types.any (· == .creature) then tok.printed.types
-              else tok.printed.types.push .creature
+              if tok.printed.types.any (· == CardType.creature) then tok.printed.types
+              else tok.printed.types.push CardType.creature
             subtypes := mergeSubtypes tok.printed.subtypes #[.robot, .villain]
             power := some 2
             toughness := some 2 }
-        g.changeObject tok.id (.printed printed)
+        g.createEffect (.copy tok.id printed tok.copyRestore tok.copyUntilEot tok.copyUntilNextTurn tok.copyUntilSourceLeaves)
           |>.logMsg s!"{printed.name} becomes a 2/2 Robot Villain creature after it enters"
 
 /-- Exile the top card of your library. A Hero card pumps Daredevil. The
@@ -137,9 +137,9 @@ def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mo
     else
       let g := g.changeStatus src.id (.pushModeChosenThisTurn mode)
       if mode == 0 then
-        g.changeStatus src.id (.grantUntilEot Keyword.doubleStrike)
+        g.createEffect (.keywordsUntilEot src.id Keyword.doubleStrike)
       else if mode == 1 then
-        g.changeStatus src.id (.grantUntilEot Keyword.indestructible)
+        g.createEffect (.keywordsUntilEot src.id Keyword.indestructible)
       else
         g.draw controller 1
 
@@ -365,21 +365,21 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
   | some o =>
     match mod with
     | .loseAllAbilities =>
-      g.changeObject id (.printed { o.printed with
+      g.createEffect (.copy id { o.printed with
         keywords := Keywords.none
         triggeredAbilities := #[]
         activatedAbilities := #[]
-        staticAbilities := #[] })
+        staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
     | .keywords k =>
       let o := g.object! id
-      g.changeObject id (.printed { o.printed with
-        keywords := Keywords.merge o.printed.keywords k })
+      g.createEffect (.copy id { o.printed with
+        keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
     | .additionalSubtype subtype =>
       let o := g.object! id
       if o.printed.hasSubtype subtype then g
       else
-        g.changeObject id (.printed { o.printed with
-          subtypes := o.printed.subtypes.push subtype.englishName })
+        g.createEffect (.copy id { o.printed with
+          subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
     | .counter kind n asEnters =>
       let o := g.object! id
       match kind, asEnters with
@@ -577,14 +577,14 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- The source gains Iron Fist's tap ability until end of turn. -/
 def grantIronFistTap (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
-    g.changeStatus o.id (.ironFistTapGrants (o.status.ironFistTapGrants + 1))
+    g.createEffect (.ironFistTapUntilEot o.id)
       |>.logMsg s!"{o.name} gains a tap ability until end of turn")
     "The source is no longer in play"
 
 /-- Until end of turn, the source's base power is the cards in hand. -/
 def grantHandSizePower (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
-    g.changeStatus o.id (.cardsInHandPowerUntilEot true)
+    g.createEffect (.cardsInHandPowerUntilEot o.id)
       |>.logMsg s!"{o.name}'s base power is the number of cards in your hand until end of turn")
     "The source is no longer in play"
 
@@ -691,8 +691,8 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.offerMayCreateWall controller
   | (.resource .secondDrawBecome66) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.changeStatuses o.id
-        #[.setBasePT (some (6, 6)), .grantUntilEot Keyword.trample]
+      g.createEffects
+        #[.setBasePTUntilEot o.id (6, 6), .keywordsUntilEot o.id Keyword.trample]
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>

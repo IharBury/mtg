@@ -138,7 +138,7 @@ def threeUnpaidCostCounters : Game :=
 /-- After Chandra leaves during her turn, Nissa takes the next turn and the
 until-next-turn effect still lasts (CR 800.4j / 800.4m). -/
 def threeAfterLeftPlayerCurrentTurn : Game :=
-  let g := threeStarted.changePlayer ⟨0⟩ (.protectionFromEverything true)
+  let g := threeStarted.createEffect (.protectionFromEverything ⟨0⟩)
   let g := mustApply g ⟨0⟩ .concede
   passBoth (skipTo g .end 200)
 

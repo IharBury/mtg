@@ -35,11 +35,11 @@ def becomePrepared (g : Game) (o : GameObject) : Game :=
     else
       let p := o.controller.getD o.owner
       let (g, copy) := g.allocObject face.toCardDef p .exile
-      let g := g.changeObject copy.id (.playPermission (some {
+      let g := g.createEffect (.playPermission copy.id {
         player := p
         turnEndsRemaining := 0
         whileExiled := true
-        prepareSource := some o.id }))
+        prepareSource := some o.id })
       let g := g.changeStatus o.id (.prepared true)
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
@@ -161,7 +161,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let dying := g.dyingTriggers old dest
   let pwDied :=
     match happened.change with
-    | .moved object .battlefield (.graveyard _) _ _ => object.planeswalker
+    | .effectApplied _ (.moved object .battlefield (.graveyard _) _ _) => object.planeswalker
     | _ => false
   -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
   -- while it is still attached.
@@ -286,8 +286,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     status :=
       if old.zone == .stack && dest == .battlefield then
         { faceDown := old.status.faceDown
-          time := old.status.time
-          notACreature := old.status.notACreature }
+          time := old.status.time }
       else {}
     timestamp := ts
     chosenX := old.chosenX
@@ -494,18 +493,36 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       else g
     | none => g
+  let g := g.expireEffectsOnLeavingObject old
   let g :=
     if old.zone == .battlefield then
-      let g := g.restoreCopiesUntilSourceLeaves old.id
-      g.restoreControlUntilSourceLeaves old.id
+      g.expireWhileSourceEffects old.id
     else g
   let g :=
-    match g.pendingLokiCopy with
-    | some (p, some id, _) =>
-      if id == old.id then
-        g.change (.pendingLokiCopy (some (p, none, old.lastKnownPower.getD old.power)))
-      else g
-    | _ => g
+    match g.findObject? newId with
+    | some cur =>
+      -- A permanent whose spell was cast for its impending cost enters with
+      -- its time counters and isn't a creature while it has one (CR 702.176,
+      -- rulings 967 / 970). The spell itself stays a creature spell, so the
+      -- effect is created only now, on the permanent.
+      let g : Game :=
+        if old.zone == Zone.stack && dest == Zone.battlefield &&
+            cur.printed.impending.isSome && cur.status.time > 0 then
+          g.createEffect (.notACreature newId)
+        else g
+      g.createPrintedStaticEffects cur
+    | none => g
+  -- Loki left: keep his pending copy effect under the same `EffectId`, now
+  -- with his last known power (MSH 109).
+  let g :=
+    g.activeEffects.foldl (fun g (eid, e) =>
+      match e with
+      | .pendingLokiCopy p (some id) _ =>
+        if id == old.id then
+          g.change (.effectUpdated eid
+            (.pendingLokiCopy p none (old.lastKnownPower.getD old.power)))
+        else g
+      | _ => g) g
   -- The object that arrives has a new id (CR 400.7). Trigger matching above
   -- still uses the id the permanent had when it left.
   let g := g.record (happened.withObjectId newId)

@@ -33,12 +33,14 @@ def phaseOut (g : Game) (o : GameObject) : Game :=
   else
     let g := g.removeFromCombat o
     let o := g.object! o.id
+    let g := g.expirePrintedStaticEffects o
     let g := g.changeStatuses o.id #[.phasedOut true, .phasedWith none]
     let g := g.logMsg s!"{o.name} phases out"
     (g.attachmentsOf o).foldl (fun acc att =>
       let att := acc.object! att.id
       let acc := acc.removeFromCombat att
       let att := acc.object! att.id
+      let acc := acc.expirePrintedStaticEffects att
       acc.changeStatuses att.id #[.phasedOut true, .phasedWith (some o.id)]
         |>.logMsg s!"{att.name} phases out attached to {o.name}") g
 
@@ -49,11 +51,13 @@ def phaseIn (g : Game) (o : GameObject) : Game :=
   else
     let g := g.changeStatuses o.id #[
       .phasedOut false, .phasedWith none, .summoningSick false]
+    let g := g.createPrintedStaticEffects (g.object! o.id)
     let g := g.logMsg s!"{o.name} phases in"
     g.objects.foldl (fun acc att =>
       if att.status.phasedOut && att.status.phasedWith == some o.id then
-        acc.changeStatuses att.id #[.phasedOut false, .summoningSick false]
-          |>.logMsg s!"{att.name} phases in still attached to {o.name}"
+        let acc := acc.changeStatuses att.id #[.phasedOut false, .summoningSick false]
+        let acc := acc.createPrintedStaticEffects (acc.object! att.id)
+        acc.logMsg s!"{att.name} phases in still attached to {o.name}"
       else acc) g
 
 /-- Phase in every phased-out permanent `p` controls (CR 502.1). -/

@@ -41,10 +41,10 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
   let obj := g.object! obj.id
   let (g, newId) := g.move obj.id .exile none
   let o := g.object! newId
-  let g := g.changeObject o.id (.playPermission (some {
+  let g := g.createEffect (.playPermission o.id {
       player := entry.controller
       turnEndsRemaining := 0
-      fromAdventure := true }))
+      fromAdventure := true })
   g.logMsg
     s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
 

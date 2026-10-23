@@ -135,7 +135,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let extraTreasure :=
       if proposed.watches .wouldCreateToken &&
           match proposed.change with
-          | .created _ object => object.hasSubtype .food
+          | .effectApplied _ (.created _ object) => object.hasSubtype .food
           | _ => false then
         g.foodTreasureReplacements controller
       else 0

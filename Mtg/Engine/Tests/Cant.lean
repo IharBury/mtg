@@ -229,7 +229,7 @@ not apply while that object is off the battlefield. -/
   let g0 := step board frozen (some (pid board "Titan"))
     #[Target.permanent (pid board "Bear")] (ab := spider)
   let (g, _) := g0.move (pid g0 "Titan") (.graveyard caster) none
-  (obj g "Bear").status.cantUntapGrantedBy == #[pid board "Titan"] &&
+  (obj g "Bear").status.cantUntapGrantedBy == #[] &&
     !g.hostCantBecomeUntapped (obj g "Bear")
 
 /- Tap, then that restriction, is the printed enter ability. -/
