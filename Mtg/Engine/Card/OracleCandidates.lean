@@ -1765,11 +1765,11 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     { tap := true },
   ActivatedAbility.fra "{6}: Put a +1/+1 counter on target legendary creature."
     (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target legendary creature"
-      (.filtered { TargetFilter.creature with noun := "target legendary creature", legendary := true }))
+      (.filtered { TargetFilter.creature with noun := "target legendary creature", supertypes := #[.legendary] }))
     { mana := ManaCost.ofGeneric 6 },
   ActivatedAbility.fra "{6}: Put a +1/+1 counter on target nonlegendary creature."
     (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target nonlegendary creature"
-      (.filtered { TargetFilter.creature with noun := "target nonlegendary creature", nonlegendary := true }))
+      (.filtered { TargetFilter.creature with noun := "target nonlegendary creature", nonSupertypes := #[.legendary] }))
     { mana := ManaCost.ofGeneric 6 },
   ActivatedAbility.fra "{T}: Draw a card, then discard a card."
     (FraCandidates.ab (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card") { tap := true },

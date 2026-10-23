@@ -24,14 +24,24 @@ structure EventObject where
   controller : Option PlayerId := none
   owner : PlayerId := ⟨0⟩
   token : Bool := false
-  legendary : Bool := false
   attacking : Bool := false
   changeling : Bool := false
+  supertypes : Array Supertype := #[]
   types : Array CardType := #[]
   subtypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
+
+/-- `s` is one of this object's supertypes. -/
+def hasSupertype (o : EventObject) (s : Supertype) : Bool :=
+  o.supertypes.any (· == s)
+
+def legendary (o : EventObject) : Bool :=
+  o.hasSupertype .legendary
+
+def basic (o : EventObject) : Bool :=
+  o.hasSupertype .basic
 
 /-- `t` is one of this object's card types. -/
 def hasType (o : EventObject) (t : CardType) : Bool :=
@@ -96,9 +106,9 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     controller := o.controller
     owner := o.owner
     token := o.printed.isToken
-    legendary := o.isLegendary
     attacking := o.status.attacking
     changeling := o.printed.keywords.changeling
+    supertypes := o.supertypes
     types := o.types
     subtypes := o.subtypes }
 

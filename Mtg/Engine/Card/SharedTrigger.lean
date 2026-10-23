@@ -1127,8 +1127,8 @@ structure SharedTriggerOpts where
   printed : String := ""
   /-- Reality Fracture intervening “if” clause. -/
   fraCondition : FraCondition := .none
-  /-- The other permanent must be legendary (“another legendary Elf”). -/
-  anotherLegendary : Bool := false
+  /-- The other permanent must have this supertype (“another legendary Elf”). -/
+  anotherSupertype : Option Supertype := none
 deriving Repr, Inhabited, BEq
 
 /-- Ferocious intervening condition (power 4 or greater). -/

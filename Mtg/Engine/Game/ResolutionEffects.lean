@@ -846,22 +846,25 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
     (untilEot := false) (untilNextTurn := false)
     (untilSourceLeaves : Option ObjectId := none)
     (exceptName : Option String := none)
-    (forceLegendary := false) (notLegendary := false)
-    (addCreature := false) (addSubtypes : Array CardSubtype := #[])
+    (addSupertypes : Array Supertype := #[])
+    (removeSupertypes : Array Supertype := #[])
+    (addTypes : Array CardType := #[])
+    (addSubtypes : Array CardSubtype := #[])
     (setPT : Option (Int × Int) := none)
     (addVigilance := false) (replaceCreatureLine := false) : Game :=
   let restore := o.copyRestore.getD o.printed
   let printed0 := src.printed
   let types :=
     if replaceCreatureLine then #[.creature]
-    else if addCreature && !printed0.types.any (· == .creature) then
-      printed0.types.push .creature
-    else printed0.types
+    else
+      addTypes.foldl
+        (fun acc t => if acc.any (· == t) then acc else acc.push t)
+        printed0.types
   let supertypes :=
-    if notLegendary then printed0.supertypes.filter (· != .legendary)
-    else if forceLegendary && !printed0.supertypes.any (· == .legendary) then
-      printed0.supertypes.push .legendary
-    else printed0.supertypes
+    let kept := printed0.supertypes.filter (fun s => !removeSupertypes.any (· == s))
+    addSupertypes.foldl
+      (fun acc s => if acc.any (· == s) then acc else acc.push s)
+      kept
   let printed : CardDef :=
     { printed0 with
       name := exceptName.getD printed0.name
