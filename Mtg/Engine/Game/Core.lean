@@ -924,12 +924,123 @@ def modifyPlayer (g : Game) (p : PlayerId) (f : Player → Player) : Game :=
     { g with players := g.players.set! p.idx (f pl) }
   else g
 
-/-- Apply the creation of one `ContinuousEffect` in isolation (CR 611). -/
-def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect) : Game :=
-  let g :=
-    { g with
-      nextEffectId := max g.nextEffectId (effectId.raw + 1)
-      activeEffects := g.activeEffects.push (effectId, eff) }
+/-- The value `f` picks from the most recently created active continuous
+effect it applies to (later effects win, CR 613.7). -/
+def lastActive? {α : Type} (g : Game) (f : ContinuousEffect → Option α) : Option α :=
+  g.activeEffects.foldl (fun acc (_, e) =>
+    match f e with
+    | some v => some v
+    | none => acc) none
+
+/-- Whether an active continuous effect has exactly the payload `eff`. -/
+def hasActiveEffect (g : Game) (eff : ContinuousEffect) : Bool :=
+  g.activeEffects.any (fun (_, e) => e == eff)
+
+/-- A continuous effect that only sets a flag. Each recorded effect is one
+contribution; the flag is cleared only when no equal effect remains active. -/
+def effectIsFlag : ContinuousEffect → Bool
+  | .auraConstruct55 _ | .pumpPerArtifactUntilEot _ | .firstStrikeOnYourTurn _
+  | .loseIndestructibleUntilEot _ | .exileIfDiesUntilEot _ | .cardsInHandPowerUntilEot _
+  | .additionalCreature _ _ | .additionalArtifactUntilEot _ | .onlyFoodArtifact _
+  | .returnedAsArtifact _ | .notACreature _ | .combatDamageCreatesTreasureUntilEot _
+  | .losesAbilitiesUntilEot _ | .cantBeBlockedExceptByHasteUntilEot _ | .cantBlockUntilEot _
+  | .goaded _ | .freeCastFromGraveyardUntilEot _ | .flashbackUntilEot _
+  | .exileInstantSorceryInstead _ | .uncounterableThisCast _
+  | .protectionFromEverything _ | .lifeCantChange _ | .lifeLocked _
+  | .cantCastSpellsThisTurn _ | .jaceLoyaltyAtInstantSpeedThisTurn _
+  | .legendRuleOffThisTurn _ | .nextSpellCantBeCounteredThisTurn _
+  | .cantAttackJacesThisTurn _ | .creaturesWithoutFlyingCantBlockUntilEot
+  | .powerUpsForbiddenThisTurn => true
+  | _ => false
+
+/-- Recompute `id`'s controller and control durations from every active
+control-changing effect on it (CR 613.1b / 613.7): the most recent one sets the
+controller. With none left, control returns to the default controller unless
+that player has left the game (CR 800.4a). -/
+def recomputeControl (g : Game) (id : ObjectId) : Game :=
+  let effs := g.activeEffects.filterMap (fun (_, e) =>
+    match e with
+    | .control oid c untilEot turnEndsLeft untilSourceLeaves =>
+      if oid == id then some (c, untilEot, turnEndsLeft, untilSourceLeaves) else none
+    | _ => none)
+  g.modifyObject id (fun o =>
+    match effs.back? with
+    | some (c, _, _, _) =>
+      { o with
+        controller := some c
+        controlChanged := o.controlChanged || o.controller != some c
+        controlUntilSourceLeaves :=
+          effs.foldl (fun acc (_, _, _, usl) => usl.orElse (fun _ => acc)) none
+        status :=
+          { o.status with
+            controlUntilEot := effs.any (fun (_, ue, _, _) => ue)
+            controlTurnEndsLeft := effs.foldl (fun acc (_, _, tel, _) => max acc tel) 0 } }
+    | none =>
+      let p := o.defaultController.getD o.owner
+      let restoreCtrl := !(g.players[p.idx]!).lost
+      { o with
+        controller := if restoreCtrl then some p else o.controller
+        controlChanged := if restoreCtrl then false else o.controlChanged
+        controlUntilSourceLeaves := none
+        status :=
+          { o.status with
+            controlUntilEot := false
+            controlTurnEndsLeft := 0 } })
+
+/-- Recompute a slot that holds a single value (or a merged set) from every
+active continuous effect writing it, so creating, updating, or ending one
+effect never erases another effect's contribution (CR 611 / 613.7). Returns
+`none` for effects whose slot is not recomputed this way. -/
+def refreshEffectSlot? (g : Game) (eff : ContinuousEffect) : Option Game :=
+  match eff with
+  | .keywordsUntilEot id _ =>
+    let kw := g.activeEffects.foldl (fun acc (_, e) =>
+      match e with
+      | .keywordsUntilEot oid k => if oid == id then Keywords.merge acc k else acc
+      | _ => acc) Keywords.none
+    some (g.modifyStatus id (fun s => { s with untilEotKeywords := kw }))
+  | .setBasePTUntilEot id _ =>
+    let pt := g.lastActive? (fun | .setBasePTUntilEot oid pt => if oid == id then some pt else none | _ => none)
+    some (g.modifyStatus id (fun s => { s with setBasePT := pt }))
+  | .replacedCreatureTypesUntilEot id _ =>
+    let subs := g.lastActive? (fun
+      | .replacedCreatureTypesUntilEot oid subs => if oid == id then some subs else none
+      | _ => none)
+    some (g.modifyStatus id (fun s => { s with replacedCreatureTypesUntilEot := subs }))
+  | .cantBeBlockedByPlayerUntilEot id _ =>
+    let p := g.lastActive? (fun
+      | .cantBeBlockedByPlayerUntilEot oid p => if oid == id then some p else none
+      | _ => none)
+    some (g.modifyStatus id (fun s => { s with cantBeBlockedByPlayer := p }))
+  | .playPermission id _ =>
+    let perm := g.lastActive? (fun | .playPermission oid perm => if oid == id then some perm else none | _ => none)
+    some (g.modifyObject id (fun o => { o with playPermission := perm }))
+  | .control id _ _ _ _ => some (g.recomputeControl id)
+  | .assignCombatDamageEqualToughnessUntilEot _ =>
+    some { g with
+      assignCombatDamageEqualToughness :=
+        g.lastActive? (fun | .assignCombatDamageEqualToughnessUntilEot p => some p | _ => none) }
+  | .pendingFreeRGCreatureThisTurn _ =>
+    some { g with
+      pendingFreeRGCreature :=
+        g.lastActive? (fun | .pendingFreeRGCreatureThisTurn p => some p | _ => none) }
+  | .pendingLokiCopy _ _ _ =>
+    some { g with
+      pendingLokiCopy :=
+        g.lastActive? (fun | .pendingLokiCopy p src pw => some (p, src, pw) | _ => none) }
+  | .playerControl _ _ _ =>
+    match g.lastActive? (fun | .playerControl you them onNext => some (you, them, onNext) | _ => none) with
+    | some (you, them, onNext) =>
+      some { g with playerControl := some (you, them), controlOnNextTakenTurn := onNext }
+    | none => some { g with playerControl := none, controlOnNextTakenTurn := false }
+  | _ => none
+
+/-- Install one `ContinuousEffect`'s contribution to the game state (CR 611).
+The effect must already be in `g.activeEffects`. -/
+def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
+  match g.refreshEffectSlot? eff with
+  | some g => g
+  | none =>
   match eff with
   | .staticAbility _ _ => g
   | .auraConstruct55 id =>
@@ -940,16 +1051,12 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyStatus id (fun s => { s with untilTurnOfPump := s.untilTurnOfPump.push (p, dp, dt) })
   | .pumpPerArtifactUntilEot id =>
     g.modifyStatus id (fun s => { s with pumpPerArtifactUntilEot := true })
-  | .keywordsUntilEot id kw =>
-    g.modifyStatus id (fun s => { s with untilEotKeywords := Keywords.merge s.untilEotKeywords kw })
   | .firstStrikeOnYourTurn id =>
     g.modifyStatus id (fun s => { s with firstStrikeOnYourTurn := true })
   | .loseIndestructibleUntilEot id =>
     g.modifyStatus id (fun s => { s with untilEotLosesIndestructible := true })
   | .exileIfDiesUntilEot id =>
     g.modifyStatus id (fun s => { s with untilEotExileIfDies := true })
-  | .setBasePTUntilEot id pt =>
-    g.modifyStatus id (fun s => { s with setBasePT := some pt })
   | .cardsInHandPowerUntilEot id =>
     g.modifyStatus id (fun s => { s with cardsInHandPowerUntilEot := true })
   | .additionalCreature id untilEot =>
@@ -964,8 +1071,6 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
         additionalSubtypes :=
           if dedup && s.additionalSubtypes.any (· == sub) then s.additionalSubtypes
           else s.additionalSubtypes.push sub })
-  | .replacedCreatureTypesUntilEot id subs =>
-    g.modifyStatus id (fun s => { s with replacedCreatureTypesUntilEot := some subs })
   | .onlyFoodArtifact id =>
     g.modifyStatus id (fun s => { s with onlyFoodArtifact := true })
   | .returnedAsArtifact id =>
@@ -992,8 +1097,6 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyStatus id (fun s => { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push src })
   | .cantUntapWhileSource id src =>
     g.modifyStatus id (fun s => { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push src })
-  | .cantBeBlockedByPlayerUntilEot id p =>
-    g.modifyStatus id (fun s => { s with cantBeBlockedByPlayer := some p })
   | .cantBeBlockedExceptByHasteUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
   | .cantBlockUntilEot id =>
@@ -1010,8 +1113,6 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyObject id (fun o => { o with exileInstantSorceryInstead := true })
   | .uncounterableThisCast id =>
     g.modifyObject id (fun o => { o with uncounterableThisCast := true })
-  | .playPermission id perm =>
-    g.modifyObject id (fun o => { o with playPermission := some perm })
   | .fraEmblemUntilTurnOf id p =>
     g.modifyObject id (fun o => { o with fraEffectUntilTurnOf := some p })
   | .copy id printed restore untilEot untilNextTurn untilSourceLeaves =>
@@ -1022,16 +1123,6 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
         copyUntilEot := untilEot
         copyUntilNextTurn := untilNextTurn
         copyUntilSourceLeaves := untilSourceLeaves })
-  | .control id controller untilEot turnEndsLeft untilSourceLeaves =>
-    g.modifyObject id (fun o =>
-      { o with
-        controller := some controller
-        controlChanged := o.controlChanged || o.controller != some controller
-        controlUntilSourceLeaves := untilSourceLeaves
-        status :=
-          { o.status with
-            controlUntilEot := untilEot
-            controlTurnEndsLeft := turnEndsLeft } })
   | .additionalLandsThisTurn p n =>
     g.modifyPlayer p (fun pl => { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + n })
   | .protectionFromEverything p =>
@@ -1062,30 +1153,24 @@ def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyPlayer p (fun pl => { pl with cantAttackJaces := true })
   | .creaturesWithoutFlyingCantBlockUntilEot =>
     { g with creaturesWithoutFlyingCantBlock := true }
-  | .assignCombatDamageEqualToughnessUntilEot p =>
-    { g with assignCombatDamageEqualToughness := some p }
-  | .pendingFreeRGCreatureThisTurn p =>
-    { g with pendingFreeRGCreature := some p }
-  | .pendingLokiCopy p src power =>
-    { g with pendingLokiCopy := some (p, src, power) }
-  | .playerControl you them onNextTurn =>
-    { g with playerControl := some (you, them), controlOnNextTakenTurn := onNextTurn }
   | .powerUpsForbiddenThisTurn =>
     { g with powerUpsForbidden := true }
+  -- Recomputed from every active effect by `refreshEffectSlot?` above.
+  | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
+  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .control ..
+  | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
+  | .pendingLokiCopy .. | .playerControl .. => g
 
-/-- Apply the expiration of one `ContinuousEffect` in isolation (CR 611). -/
-def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect) : Game :=
-  let activeEffects :=
-    match g.activeEffects.findIdx? (fun (eid, e) => eid == effectId && e == eff) with
-    | some idx => g.activeEffects.eraseIdx! idx
-    | none =>
-      match g.activeEffects.findIdx? (fun (_, e) => e == eff) with
-      | some idx => g.activeEffects.eraseIdx! idx
-      | none => g.activeEffects
-  let g :=
-    { g with
-      nextEffectId := max g.nextEffectId (effectId.raw + 1)
-      activeEffects }
+/-- Remove one `ContinuousEffect`'s contribution from the game state (CR 611).
+The effect must already be gone from `g.activeEffects`; a flag stays set while
+an equal effect is still active, and recomputed slots keep the contributions
+of the effects that remain. -/
+def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
+  match g.refreshEffectSlot? eff with
+  | some g => g
+  | none =>
+  if effectIsFlag eff && g.hasActiveEffect eff then g
+  else
   match eff with
   | .staticAbility _ _ => g
   | .auraConstruct55 id =>
@@ -1099,16 +1184,12 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
       | none => s)
   | .pumpPerArtifactUntilEot id =>
     g.modifyStatus id (fun s => { s with pumpPerArtifactUntilEot := false })
-  | .keywordsUntilEot id _ =>
-    g.modifyStatus id (fun s => { s with untilEotKeywords := Keywords.none })
   | .firstStrikeOnYourTurn id =>
     g.modifyStatus id (fun s => { s with firstStrikeOnYourTurn := false })
   | .loseIndestructibleUntilEot id =>
     g.modifyStatus id (fun s => { s with untilEotLosesIndestructible := false })
   | .exileIfDiesUntilEot id =>
     g.modifyStatus id (fun s => { s with untilEotExileIfDies := false })
-  | .setBasePTUntilEot id _ =>
-    g.modifyStatus id (fun s => { s with setBasePT := none })
   | .cardsInHandPowerUntilEot id =>
     g.modifyStatus id (fun s => { s with cardsInHandPowerUntilEot := false })
   | .additionalCreature id untilEot =>
@@ -1118,12 +1199,19 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
   | .additionalArtifactUntilEot id =>
     g.modifyStatus id (fun s => { s with additionalArtifactUntilEot := false })
   | .additionalSubtype id sub _ =>
+    -- Keep the subtype while another active effect still grants it (a
+    -- deduplicating grant may share one entry with another effect).
+    let stillGranted := g.activeEffects.any (fun (_, e) =>
+      match e with
+      | .additionalSubtype oid s' _ => oid == id && s' == sub
+      | _ => false)
     g.modifyStatus id (fun s =>
-      match s.additionalSubtypes.findIdx? (· == sub) with
-      | some idx => { s with additionalSubtypes := s.additionalSubtypes.eraseIdx! idx }
-      | none => s)
-  | .replacedCreatureTypesUntilEot id _ =>
-    g.modifyStatus id (fun s => { s with replacedCreatureTypesUntilEot := none })
+      let count := s.additionalSubtypes.foldl (fun n x => if x == sub then n + 1 else n) 0
+      if stillGranted && count ≤ 1 then s
+      else
+        match s.additionalSubtypes.findIdx? (· == sub) with
+        | some idx => { s with additionalSubtypes := s.additionalSubtypes.eraseIdx! idx }
+        | none => s)
   | .onlyFoodArtifact id =>
     g.modifyStatus id (fun s => { s with onlyFoodArtifact := false })
   | .returnedAsArtifact id =>
@@ -1171,8 +1259,6 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
       match s.cantUntapGrantedBy.findIdx? (· == src) with
       | some idx => { s with cantUntapGrantedBy := s.cantUntapGrantedBy.eraseIdx! idx }
       | none => s)
-  | .cantBeBlockedByPlayerUntilEot id _ =>
-    g.modifyStatus id (fun s => { s with cantBeBlockedByPlayer := none })
   | .cantBeBlockedExceptByHasteUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := false })
   | .cantBlockUntilEot id =>
@@ -1181,7 +1267,9 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyStatus id (fun s => { s with goaded := false })
   | .colorlessGrantUntilCast id cardId =>
     g.modifyStatus id (fun s =>
-      { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.filter (· != cardId) })
+      match s.colorlessGrantUntilCast.findIdx? (· == cardId) with
+      | some idx => { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.eraseIdx! idx }
+      | none => s)
   | .freeCastFromGraveyardUntilEot id =>
     g.modifyStatus id (fun s => { s with freeCastFromGraveyard := false })
   | .flashbackUntilEot id =>
@@ -1190,8 +1278,6 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyObject id (fun o => { o with exileInstantSorceryInstead := false })
   | .uncounterableThisCast id =>
     g.modifyObject id (fun o => { o with uncounterableThisCast := false })
-  | .playPermission id _ =>
-    g.modifyObject id (fun o => { o with playPermission := none })
   | .fraEmblemUntilTurnOf id _ =>
     { g with objects := g.objects.filter (·.id != id) }
   | .copy id _ restore _ _ _ =>
@@ -1209,18 +1295,6 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
           copyUntilEot := false
           copyUntilNextTurn := false
           copyUntilSourceLeaves := none })
-  | .control id _ _ _ _ =>
-    g.modifyObject id (fun o =>
-      let p := o.defaultController.getD o.owner
-      let restoreCtrl := !(g.players[p.idx]!).lost
-      { o with
-        controller := if restoreCtrl then some p else o.controller
-        controlChanged := if restoreCtrl then false else o.controlChanged
-        controlUntilSourceLeaves := none
-        status :=
-          { o.status with
-            controlUntilEot := false
-            controlTurnEndsLeft := 0 } })
   | .additionalLandsThisTurn p n =>
     g.modifyPlayer p (fun pl => { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn - n })
   | .protectionFromEverything p =>
@@ -1257,16 +1331,44 @@ def applyEffectExpired (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     g.modifyPlayer p (fun pl => { pl with cantAttackJaces := false })
   | .creaturesWithoutFlyingCantBlockUntilEot =>
     { g with creaturesWithoutFlyingCantBlock := false }
-  | .assignCombatDamageEqualToughnessUntilEot _ =>
-    { g with assignCombatDamageEqualToughness := none }
-  | .pendingFreeRGCreatureThisTurn _ =>
-    { g with pendingFreeRGCreature := none }
-  | .pendingLokiCopy _ _ _ =>
-    { g with pendingLokiCopy := none }
-  | .playerControl _ _ _ =>
-    { g with playerControl := none, controlOnNextTakenTurn := false }
   | .powerUpsForbiddenThisTurn =>
     { g with powerUpsForbidden := false }
+  -- Recomputed from the remaining active effects by `refreshEffectSlot?` above.
+  | .keywordsUntilEot .. | .setBasePTUntilEot .. | .replacedCreatureTypesUntilEot ..
+  | .cantBeBlockedByPlayerUntilEot .. | .playPermission .. | .control ..
+  | .assignCombatDamageEqualToughnessUntilEot .. | .pendingFreeRGCreatureThisTurn ..
+  | .pendingLokiCopy .. | .playerControl .. => g
+
+/-- Apply the creation of one `ContinuousEffect` in isolation (CR 611): record
+it under `effectId` in `g.activeEffects` and install its contribution. -/
+def applyEffectCreated (g : Game) (effectId : EffectId) (eff : ContinuousEffect) : Game :=
+  let g :=
+    { g with
+      nextEffectId := max g.nextEffectId (effectId.raw + 1)
+      activeEffects := g.activeEffects.push (effectId, eff) }
+  g.installEffect eff
+
+/-- Apply the expiration of the continuous effect recorded under `effectId`
+(CR 611). Only that entry is removed, and its stored payload is what is rolled
+back. An id that is not active changes nothing. -/
+def applyEffectExpired (g : Game) (effectId : EffectId) (_eff : ContinuousEffect) : Game :=
+  let g := { g with nextEffectId := max g.nextEffectId (effectId.raw + 1) }
+  match g.activeEffects.findIdx? (·.1 == effectId) with
+  | none => g
+  | some idx =>
+    let stored := g.activeEffects[idx]!.2
+    let g := { g with activeEffects := g.activeEffects.eraseIdx! idx }
+    g.uninstallEffect stored
+
+/-- Replace the payload of the active continuous effect `effectId`, keeping its
+id and position (CR 611). An id that is not active changes nothing. -/
+def applyEffectUpdated (g : Game) (effectId : EffectId) (eff : ContinuousEffect) : Game :=
+  match g.activeEffects.findIdx? (·.1 == effectId) with
+  | none => g
+  | some idx =>
+    let old := g.activeEffects[idx]!.2
+    let g := { g with activeEffects := g.activeEffects.set! idx (effectId, eff) }
+    (g.uninstallEffect old).installEffect eff
 
 /-- Process one `GameChange` in isolation. -/
 def applyChange (g : Game) (c : GameChange) : Game :=
@@ -1277,6 +1379,7 @@ def applyChange (g : Game) (c : GameChange) : Game :=
     { g with nextEffectId := max g.nextEffectId (id.raw + 1) }
   | .effectCreated id eff => g.applyEffectCreated id eff
   | .effectExpired id eff => g.applyEffectExpired id eff
+  | .effectUpdated id eff => g.applyEffectUpdated id eff
   | .player p pc =>
     if h : p.idx < g.players.size then
       let pl := g.players[p.idx]
@@ -1630,6 +1733,42 @@ def hasActivePrintedStatics (o : GameObject) : Bool :=
     !o.status.losesAbilitiesUntilEot && o.status.losesAbilitiesGrantedBy.isEmpty) ||
   o.zone == .command
 
+/-- The object a continuous effect applies to (the source, for a static
+ability's effect). `none` for effects on players or the whole game. -/
+def effectObject? : ContinuousEffect → Option ObjectId
+  | .staticAbility id _ | .auraConstruct55 id | .pump id _ _ | .untilTurnOfPump id _ _ _
+  | .pumpPerArtifactUntilEot id | .keywordsUntilEot id _ | .firstStrikeOnYourTurn id
+  | .loseIndestructibleUntilEot id | .exileIfDiesUntilEot id | .setBasePTUntilEot id _
+  | .cardsInHandPowerUntilEot id | .additionalCreature id _ | .additionalArtifactUntilEot id
+  | .additionalSubtype id _ _ | .replacedCreatureTypesUntilEot id _ | .onlyFoodArtifact id
+  | .returnedAsArtifact id | .notACreature id | .grantedStatic id _ | .grantedTriggered id _ _
+  | .ironFistTapUntilEot id _ | .combatDamageCreatesTreasureUntilEot id
+  | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ | .hexproofWhileSource id _
+  | .preventDamageWhileSource id _ | .cantUntapWhileSource id _
+  | .cantBeBlockedByPlayerUntilEot id _ | .cantBeBlockedExceptByHasteUntilEot id
+  | .cantBlockUntilEot id | .goaded id | .colorlessGrantUntilCast id _
+  | .freeCastFromGraveyardUntilEot id | .flashbackUntilEot id | .exileInstantSorceryInstead id
+  | .uncounterableThisCast id | .playPermission id _ | .fraEmblemUntilTurnOf id _
+  | .copy id _ _ _ _ _ | .control id _ _ _ _ => some id
+  | _ => none
+
+/-- A continuous effect on an object that lasts until end of turn and ends in
+the cleanup step (CR 514.2). -/
+def effectEndsAtCleanup : ContinuousEffect → Bool
+  | .pump .. | .keywordsUntilEot .. | .loseIndestructibleUntilEot _ | .exileIfDiesUntilEot _
+  | .setBasePTUntilEot .. | .additionalArtifactUntilEot _ | .additionalCreature _ true
+  | .cantBeBlockedByPlayerUntilEot .. | .cantBeBlockedExceptByHasteUntilEot _
+  | .cantBlockUntilEot _ | .replacedCreatureTypesUntilEot .. | .pumpPerArtifactUntilEot _
+  | .ironFistTapUntilEot .. | .losesAbilitiesUntilEot _ | .grantedTriggered _ _ true
+  | .cardsInHandPowerUntilEot _ | .firstStrikeOnYourTurn _
+  | .combatDamageCreatesTreasureUntilEot _ | .freeCastFromGraveyardUntilEot _
+  | .flashbackUntilEot _ => true
+  | _ => false
+
+/-- The active continuous effect recorded under `eid`, if any. -/
+def activeEffect? (g : Game) (eid : EffectId) : Option ContinuousEffect :=
+  (g.activeEffects.find? (·.1 == eid)).map (·.2)
+
 /-- Record the creation of `o`'s printed static-ability continuous effects if `o`
 is active on the battlefield or in the command zone (CR 611.3). -/
 def createPrintedStaticEffects (g : Game) (o : GameObject) : Game :=
@@ -1639,18 +1778,14 @@ def createPrintedStaticEffects (g : Game) (o : GameObject) : Game :=
       acc.change (.effectCreated eid (.staticAbility o.id sa))) g
   else g
 
-/-- Record the expiration of `o`'s printed static-ability continuous effects if
-`o` was active on the battlefield or in the command zone (CR 611.3). -/
+/-- Record the expiration of `o`'s active printed static-ability continuous
+effects (CR 611.3), each under the `EffectId` it was created with. -/
 def expirePrintedStaticEffects (g : Game) (o : GameObject) : Game :=
-  if hasActivePrintedStatics o then
-    o.printed.staticAbilities.foldl (fun acc sa =>
-      let eff := ContinuousEffect.staticAbility o.id sa
-      let eid :=
-        match acc.activeEffects.find? (fun (_, e) => e == eff) with
-        | some (id, _) => id
-        | none => ⟨acc.nextEffectId⟩
-      acc.change (.effectExpired eid eff)) g
-  else g
+  o.printed.staticAbilities.foldl (fun acc sa =>
+    let eff := ContinuousEffect.staticAbility o.id sa
+    match acc.activeEffects.find? (fun (_, e) => e == eff) with
+    | some (eid, _) => acc.change (.effectExpired eid eff)
+    | none => acc) g
 
 /-- Record and apply the creation of a continuous effect (CR 611). Assigns a
 fresh unique `EffectId` from `g.nextEffectId` and updates any dependent
@@ -1689,166 +1824,71 @@ def createEffect (g : Game) (eff : ContinuousEffect) : Game :=
 def createEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
   effs.foldl Game.createEffect g
 
-/-- Record and apply the expiration of a continuous effect with a known `EffectId` (CR 611). -/
-def expireEffectById (g : Game) (eid : EffectId) (eff : ContinuousEffect) : Game :=
-  match eff with
-  | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
-    let wasActive := (g.findObject? id).map hasActivePrintedStatics |>.getD false
-    let g := g.change (.effectExpired eid eff)
-    match g.findObject? id with
-    | some cur =>
-      if !wasActive && hasActivePrintedStatics cur then g.createPrintedStaticEffects cur
-      else g
-    | none => g
-  | .copy id _ _ _ _ _ =>
-    let prev? := g.findObject? id
-    let g :=
-      match prev? with
-      | some prev => g.expirePrintedStaticEffects prev
+/-- Record and apply the expiration of the active continuous effect recorded
+under `eid` (CR 611), using the payload stored when it was created or last
+updated. Also updates any dependent static-ability continuous effects when an
+ability-loss or copy effect ends on an object still on the battlefield. An id
+that is not active records nothing. -/
+def expireEffectById (g : Game) (eid : EffectId) : Game :=
+  match g.activeEffect? eid with
+  | none => g
+  | some eff =>
+    match eff with
+    | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
+      let wasActive := (g.findObject? id).map hasActivePrintedStatics |>.getD false
+      let g := g.change (.effectExpired eid eff)
+      match g.findObject? id with
+      | some cur =>
+        if !wasActive && hasActivePrintedStatics cur then g.createPrintedStaticEffects cur
+        else g
       | none => g
-    let g := g.change (.effectExpired eid eff)
-    match g.findObject? id with
-    | some cur => g.createPrintedStaticEffects cur
-    | none => g
-  | _ => g.change (.effectExpired eid eff)
+    | .copy id _ _ _ _ _ =>
+      let prev? := g.findObject? id
+      let g :=
+        match prev? with
+        | some prev => g.expirePrintedStaticEffects prev
+        | none => g
+      let g := g.change (.effectExpired eid eff)
+      match g.findObject? id with
+      | some cur => g.createPrintedStaticEffects cur
+      | none => g
+    | _ => g.change (.effectExpired eid eff)
 
-/-- Record and apply the expiration of a continuous effect (CR 611), matching
-its `EffectId` from `g.activeEffects`. Also updates any dependent static-ability
-continuous effects when an ability-loss or copy effect ends on an object still
-on the battlefield. -/
+/-- Record and apply the expiration of the earliest active continuous effect
+equal to `eff` (CR 611). When no such effect is active, nothing is recorded
+and nothing is rolled back. -/
 def expireEffect (g : Game) (eff : ContinuousEffect) : Game :=
-  let eid :=
-    match g.activeEffects.find? (fun (_, e) => e == eff) with
-    | some (id, _) => id
-    | none => ⟨g.nextEffectId⟩
-  g.expireEffectById eid eff
+  match g.activeEffects.find? (fun (_, e) => e == eff) with
+  | some (eid, _) => g.expireEffectById eid
+  | none => g
 
-/-- Expire all active continuous effects on `g` matching `pred`; if none are
-recorded in `g.activeEffects`, fall back to expiring `fallback`. -/
-def expireMatchingOr (g : Game) (pred : ContinuousEffect → Bool)
-    (fallback : Option ContinuousEffect := none) : Game :=
+/-- Record and apply the expiration of every active continuous effect matching
+`pred`, each under its own `EffectId` (CR 611). -/
+def expireMatching (g : Game) (pred : ContinuousEffect → Bool) : Game :=
   let matching := g.activeEffects.filter (fun (_, e) => pred e)
-  if matching.isEmpty then
-    match fallback with
-    | some eff => g.expireEffect eff
-    | none => g
-  else
-    matching.foldl (fun acc (eid, e) => acc.expireEffectById eid e) g
+  matching.foldl (fun acc (eid, _) => acc.expireEffectById eid) g
+
+/-- Record and apply the expiration of every active continuous effect equal to
+`eff`, e.g. when their shared duration ends (CR 611). -/
+def expireAll (g : Game) (eff : ContinuousEffect) : Game :=
+  g.expireMatching (· == eff)
 
 /-- Record and apply the expiration of multiple continuous effects in order (CR 611). -/
 def expireEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
   effs.foldl Game.expireEffect g
 
-/-- Expire all until-end-of-turn continuous effects currently on `o` (CR 514.2). -/
+/-- Expire every until-end-of-turn continuous effect on `o`, each under its
+own `EffectId` (CR 514.2). -/
 def expireObjectUntilEotEffects (g : Game) (o : GameObject) : Game :=
-  Id.run do
-    let mut g := g
-    let s := o.status
-    if s.pump != (0, 0) then
-      g := g.expireMatchingOr (fun | .pump id _ _ => id == o.id | _ => false)
-        (some (.pump o.id s.pump.1 s.pump.2))
-    if s.untilEotKeywords != Keywords.none then
-      g := g.expireMatchingOr (fun | .keywordsUntilEot id _ => id == o.id | _ => false)
-        (some (.keywordsUntilEot o.id s.untilEotKeywords))
-    if s.untilEotLosesIndestructible then
-      g := g.expireEffect (.loseIndestructibleUntilEot o.id)
-    if s.untilEotExileIfDies then
-      g := g.expireEffect (.exileIfDiesUntilEot o.id)
-    if let some pt := s.setBasePT then
-      g := g.expireMatchingOr (fun | .setBasePTUntilEot id _ => id == o.id | _ => false)
-        (some (.setBasePTUntilEot o.id pt))
-    if s.additionalArtifactUntilEot then
-      g := g.expireEffect (.additionalArtifactUntilEot o.id)
-    if s.additionalCreatureUntilEot then
-      g := g.expireEffect (.additionalCreature o.id true)
-    if let some p := s.cantBeBlockedByPlayer then
-      g := g.expireMatchingOr (fun | .cantBeBlockedByPlayerUntilEot id _ => id == o.id | _ => false)
-        (some (.cantBeBlockedByPlayerUntilEot o.id p))
-    if s.cantBeBlockedExceptByHasteUntilEot then
-      g := g.expireEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
-    if s.cantBlockUntilEot then
-      g := g.expireEffect (.cantBlockUntilEot o.id)
-    if let some subs := s.replacedCreatureTypesUntilEot then
-      g := g.expireMatchingOr (fun | .replacedCreatureTypesUntilEot id _ => id == o.id | _ => false)
-        (some (.replacedCreatureTypesUntilEot o.id subs))
-    if s.pumpPerArtifactUntilEot then
-      g := g.expireEffect (.pumpPerArtifactUntilEot o.id)
-    if s.ironFistTapGrants != 0 then
-      g := g.expireMatchingOr (fun | .ironFistTapUntilEot id _ => id == o.id | _ => false)
-        (some (.ironFistTapUntilEot o.id s.ironFistTapGrants))
-    if s.losesAbilitiesUntilEot then
-      g := g.expireEffect (.losesAbilitiesUntilEot o.id)
-    for ab in s.grantedTriggersUntilEot do
-      g := g.expireEffect (.grantedTriggered o.id ab true)
-    if s.cardsInHandPowerUntilEot then
-      g := g.expireEffect (.cardsInHandPowerUntilEot o.id)
-    if s.firstStrikeOnYourTurn then
-      g := g.expireEffect (.firstStrikeOnYourTurn o.id)
-    if s.combatDamageCreatesTreasure then
-      g := g.expireEffect (.combatDamageCreatesTreasureUntilEot o.id)
-    if s.freeCastFromGraveyard then
-      g := g.expireEffect (.freeCastFromGraveyardUntilEot o.id)
-    if o.flashbackUntilEot then
-      g := g.expireEffect (.flashbackUntilEot o.id)
-    return g
+  g.expireMatching (fun e => effectEndsAtCleanup e && effectObject? e == some o.id)
 
-/-- Expire all continuous effects on `o` when `o` leaves its zone or ceases to
-exist (CR 400.7, CR 611). Call after `o` has been removed/replaced in `g.objects`
-so ability-loss or copy expiration does not re-create `o`'s static abilities. -/
+/-- Expire every active continuous effect on `o` when `o` leaves its zone or
+ceases to exist (CR 400.7, CR 611), each under its own `EffectId`. Call after
+`o` has been removed/replaced in `g.objects` so ability-loss or copy expiration
+does not re-create `o`'s static abilities. -/
 def expireEffectsOnLeavingObject (g : Game) (o : GameObject) : Game :=
-  Id.run do
-    let mut g := g.expirePrintedStaticEffects o
-    let s := o.status
-    if s.animatedConstruct55 then
-      g := g.expireEffect (.auraConstruct55 o.id)
-    g := g.expireObjectUntilEotEffects o
-    for (p, dp, dt) in s.untilTurnOfPump do
-      g := g.expireEffect (.untilTurnOfPump o.id p dp dt)
-    if s.additionalCreature then
-      g := g.expireEffect (.additionalCreature o.id false)
-    for sub in s.additionalSubtypes do
-      g := g.expireMatchingOr
-        (fun | .additionalSubtype id s' _ => id == o.id && s' == sub | _ => false)
-        (some (.additionalSubtype o.id sub))
-    if s.onlyFoodArtifact then
-      g := g.expireEffect (.onlyFoodArtifact o.id)
-    if s.returnedAsArtifact then
-      g := g.expireEffect (.returnedAsArtifact o.id)
-    if s.notACreature then
-      g := g.expireEffect (.notACreature o.id)
-    for sa in s.grantedStaticAbilities do
-      g := g.expireEffect (.grantedStatic o.id sa)
-    for ta in s.grantedTriggeredAbilities do
-      g := g.expireEffect (.grantedTriggered o.id ta false)
-    for src in s.losesAbilitiesGrantedBy do
-      g := g.expireEffect (.losesAbilitiesWhileSource o.id src)
-    for src in s.hexproofGrantedBy do
-      g := g.expireEffect (.hexproofWhileSource o.id src)
-    for src in s.preventDamageGrantedBy do
-      g := g.expireEffect (.preventDamageWhileSource o.id src)
-    for src in s.cantUntapGrantedBy do
-      g := g.expireEffect (.cantUntapWhileSource o.id src)
-    if s.goaded then
-      g := g.expireEffect (.goaded o.id)
-    for cardId in s.colorlessGrantUntilCast do
-      g := g.expireEffect (.colorlessGrantUntilCast o.id cardId)
-    if o.exileInstantSorceryInstead then
-      g := g.expireEffect (.exileInstantSorceryInstead o.id)
-    if o.uncounterableThisCast then
-      g := g.expireEffect (.uncounterableThisCast o.id)
-    if let some perm := o.playPermission then
-      g := g.expireMatchingOr (fun | .playPermission id _ => id == o.id | _ => false)
-        (some (.playPermission o.id perm))
-    if let some p := o.fraEffectUntilTurnOf then
-      g := g.expireMatchingOr (fun | .fraEmblemUntilTurnOf id _ => id == o.id | _ => false)
-        (some (.fraEmblemUntilTurnOf o.id p))
-    if let some restore := o.copyRestore then
-      g := g.expireMatchingOr (fun | .copy id _ _ _ _ _ => id == o.id | _ => false)
-        (some (.copy o.id o.printed (some restore) o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves))
-    if o.controlChanged || s.controlUntilEot || s.controlTurnEndsLeft > 0 || o.controlUntilSourceLeaves.isSome then
-      g := g.expireMatchingOr (fun | .control id _ _ _ _ => id == o.id | _ => false)
-        (some (.control o.id (o.controller.getD o.owner) s.controlUntilEot s.controlTurnEndsLeft o.controlUntilSourceLeaves))
-    return g
+  let g := g.expirePrintedStaticEffects o
+  g.expireMatching (fun e => effectObject? e == some o.id)
 
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
@@ -2116,67 +2156,86 @@ def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
   g.battlefield.filter (fun o =>
     o.printed.isArtifact && !o.controlledBy controller) |>.size
 
-/-- End a copy effect on `o`, restoring its original printed card (CR 707).
+/-- End every active copy effect on a battlefield object selected by `sel`,
+each under its own `EffectId`, restoring the original printed card (CR 707).
+`sel` sees the object and the effect's durations (until end of turn, until next
+turn, until a source leaves). Does not cause the permanent to enter or leave
+the battlefield. -/
+def restoreCopiesWhere (g : Game)
+    (sel : GameObject → Bool → Bool → Option ObjectId → Bool) : Game :=
+  g.activeEffects.foldl (fun acc (eid, e) =>
+    match e with
+    | .copy id printed restore untilEot untilNextTurn untilSourceLeaves =>
+      match acc.findObject? id with
+      | some o =>
+        if o.zone == .battlefield && sel o untilEot untilNextTurn untilSourceLeaves then
+          let card? := restore.orElse (fun _ => o.copyRestore)
+          let acc := acc.expireEffectById eid
+          match card? with
+          | some card => acc.logMsg s!"{card.name} is no longer a copy of {printed.name}"
+          | none => acc
+        else acc
+      | none => acc
+    | _ => acc) g
+
+/-- End every copy effect on `o`, restoring its original printed card (CR 707).
 Does not cause the permanent to enter or leave the battlefield. -/
 def restoreCopy (g : Game) (o : GameObject) : Game :=
-  match o.copyRestore with
-  | none => g
-  | some card =>
-    let copied := o.printed.name
-    g.expireEffect (.copy o.id o.printed (some card) o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
-      |>.logMsg s!"{card.name} is no longer a copy of {copied}"
+  g.restoreCopiesWhere (fun x _ _ _ => x.id == o.id)
 
 /-- Restore copy effects on battlefield objects that satisfy `p`. -/
 def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
-  g.battlefield.foldl (fun acc o => if p o then acc.restoreCopy o else acc) g
+  g.restoreCopiesWhere (fun o _ _ _ => p o)
 
 /-- Restore copy effects that last until end of turn. -/
 def restoreCopiesUntilEot (g : Game) : Game :=
-  g.restoreCopiesIf (·.copyUntilEot)
+  g.restoreCopiesWhere (fun _ untilEot _ _ => untilEot)
 
 /-- Restore copy effects that last until `p`'s next turn. -/
 def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) : Game :=
-  g.restoreCopiesIf (fun o => o.copyUntilNextTurn && o.controller == some p)
+  g.restoreCopiesWhere (fun o _ untilNextTurn _ => untilNextTurn && o.controller == some p)
 
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
-  g.restoreCopiesIf (fun o => o.copyUntilSourceLeaves == some srcId)
+  g.restoreCopiesWhere (fun _ _ _ untilSourceLeaves => untilSourceLeaves == some srcId)
 
-/-- Restore control-changing effects that last until `srcId` leaves
-(Super Hero Civil War; MSH 143). -/
+/-- End the control-changing effects that last until `srcId` leaves, each under
+its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
+effects on the same permanent keep applying (CR 613.7). -/
 def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
-  g.battlefield.foldl (fun acc o =>
-    if o.controlUntilSourceLeaves == some srcId then
-      let p := o.defaultController.getD o.owner
-      let curCtrl := o.controller.getD o.owner
-      if (acc.player p).lost then
-        acc.expireEffect (.control o.id curCtrl o.status.controlUntilEot o.status.controlTurnEndsLeft o.controlUntilSourceLeaves)
-          |>.logMsg s!"{o.name} does not change control (CR 800.4b)"
+  g.activeEffects.foldl (fun acc (eid, e) =>
+    match e with
+    | .control id _ _ _ (some s) =>
+      if s != srcId then acc
       else
-        acc.expireEffect (.control o.id curCtrl o.status.controlUntilEot o.status.controlTurnEndsLeft o.controlUntilSourceLeaves)
-          |>.logMsg s!"{o.name} returns to {(acc.player p).name}'s control"
-    else acc) g
+        match acc.findObject? id with
+        | none => acc.expireEffectById eid
+        | some o =>
+          let acc := acc.expireEffectById eid
+          let p := o.defaultController.getD o.owner
+          let othersRemain := acc.activeEffects.any (fun (_, e) =>
+            match e with
+            | .control oid _ _ _ _ => oid == id
+            | _ => false)
+          if othersRemain then
+            match (acc.findObject? id).bind (·.controller) with
+            | some q => acc.logMsg s!"{o.name} returns to {(acc.player q).name}'s control"
+            | none => acc
+          else if (acc.player p).lost then
+            acc.logMsg s!"{o.name} does not change control (CR 800.4b)"
+          else
+            acc.logMsg s!"{o.name} returns to {(acc.player p).name}'s control"
+    | _ => acc) g
 
 /-- Expire all continuous effects on other objects that last for as long as
-`srcId` remains on the battlefield (CR 611.2b). -/
+`srcId` remains on the battlefield (CR 611.2b), each under its own `EffectId`. -/
 def expireWhileSourceEffects (g : Game) (srcId : ObjectId) : Game :=
-  Id.run do
-    let mut g := g.restoreCopiesUntilSourceLeaves srcId
-    g := g.restoreControlUntilSourceLeaves srcId
-    for o in g.objects do
-      for s in o.status.hexproofGrantedBy do
-        if s == srcId then
-          g := g.expireEffect (.hexproofWhileSource o.id srcId)
-      for s in o.status.preventDamageGrantedBy do
-        if s == srcId then
-          g := g.expireEffect (.preventDamageWhileSource o.id srcId)
-      for s in o.status.cantUntapGrantedBy do
-        if s == srcId then
-          g := g.expireEffect (.cantUntapWhileSource o.id srcId)
-      for s in o.status.losesAbilitiesGrantedBy do
-        if s == srcId then
-          g := g.expireEffect (.losesAbilitiesWhileSource o.id srcId)
-    return g
+  let g := g.restoreCopiesUntilSourceLeaves srcId
+  let g := g.restoreControlUntilSourceLeaves srcId
+  g.expireMatching (fun
+    | .hexproofWhileSource _ s | .preventDamageWhileSource _ s
+    | .cantUntapWhileSource _ s | .losesAbilitiesWhileSource _ s => s == srcId
+    | _ => false)
 
 /-- Equipment attached to `o` (Whiplash last-known X). -/
 def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
@@ -2185,10 +2244,11 @@ def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
 
 /-- Last player-controlling effect wins (MSH 259). The controlled player
 remains the active player on their turn (MSH 300) and still controls their
-permanents (MSH 358). -/
-def setPlayerControl (g : Game) (you them : PlayerId) : Game :=
+permanents (MSH 358). `onNextTurn` makes the control start on the controlled
+player's next turn they actually take. -/
+def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := false) : Game :=
   let g :=
-    g.createEffect (.playerControl you them false)
+    g.createEffect (.playerControl you them onNextTurn)
       |>.logMsg
         s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
   match (g.player them).teammate with

@@ -276,10 +276,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         .chosenX spell.chosenX,
         .isCopy true]
       let g := g.putStackEntry caster copy.id
-      let g :=
-        match g.pendingLokiCopy with
-        | some (p, src, fallback) => g.expireEffect (.pendingLokiCopy p src fallback)
-        | none => g
+      let g := g.expireMatching (fun | .pendingLokiCopy .. => true | _ => false)
       g.logMsg s!"A copy of {spell.name} is created (Loki)"
     else g
   | none => g

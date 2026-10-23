@@ -73,7 +73,7 @@ def refreshAuraAnimation (g : Game) : Game :=
         a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
     if animated == o.status.animatedConstruct55 then g
     else if animated then g.createEffect (.auraConstruct55 o.id)
-    else g.expireEffect (.auraConstruct55 o.id)) g
+    else g.expireAll (.auraConstruct55 o.id)) g
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule

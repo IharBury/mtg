@@ -233,7 +233,7 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
     else
       let g :=
         if g.hasSubtype army subtype then g
-        else g.changeStatus army.id (.pushAdditionalSubtype subtype)
+        else g.createEffect (.additionalSubtype army.id subtype)
       let army := g.object! army.id
       let g := g.addPlusOnePlusOneTo army n
       let g := g.logMsg
@@ -284,17 +284,14 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
 def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
-  let g := g.changeStatuses o.id #[
-    .addDamage n false,
-    .untilEotLosesIndestructible true,
-    .untilEotExileIfDies true
-  ]
+  let g := g.changeStatus o.id (.addDamage n false)
+  let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
   g.logMsg
     s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.changeStatus o.id (.grantUntilEot Keyword.cantBeBlocked)
+  let g := g.createEffect (.keywordsUntilEot o.id Keyword.cantBeBlocked)
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/

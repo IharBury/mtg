@@ -301,4 +301,165 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
       | .pump id _ _ => id != b.id
       | _ => true)
 
+def opp : PlayerId := ⟨1⟩
+
+/-- Active control-changing effects on `id`. -/
+def controlEffectsOn (g : Game) (id : ObjectId) : Array (EffectId × ContinuousEffect) :=
+  g.activeEffects.filter (fun (_, e) =>
+    match e with
+    | .control oid _ _ _ _ => oid == id
+    | _ => false)
+
+/- Rule 611 / 613.7: expiration removes only the entry recorded under its
+`EffectId`, and an id that is not active rolls nothing back. -/
+#guard
+  let g0 := addPermanent (quiet afterDraw) bear me me
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let pump := ContinuousEffect.pump b.id 3 3
+  let g1 := (g0.applyChange (.effectCreated ⟨100⟩ pump)).applyChange (.effectCreated ⟨101⟩ pump)
+  let g2 := g1.applyChange (.effectExpired ⟨101⟩ pump)
+  let g3 := g2.applyChange (.effectExpired ⟨999⟩ pump)
+  (g1.object! b.id).status.pump == (6, 6) &&
+    (g2.object! b.id).status.pump == (3, 3) &&
+    g2.activeEffects.map Prod.fst == #[⟨100⟩] &&
+    (g3.object! b.id).status.pump == (3, 3) &&
+    g3.activeEffects.map Prod.fst == #[⟨100⟩]
+
+/- Expiring an effect that is not active records nothing and rolls nothing
+back, even when the status flag was set some other way. -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g0 := quiet (g0.changeStatus b.id (.cantBlockUntilEot true))
+  let g1 := g0.expireEffect (.cantBlockUntilEot b.id)
+  g1.events.size == g0.events.size &&
+    g1.nextEffectId == g0.nextEffectId &&
+    (g1.object! b.id).status.cantBlockUntilEot
+
+/- Expiring one until-end-of-turn keyword grant removes only that grant's
+keywords; another grant on the same creature keeps applying. -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := (g0.createEffect (.keywordsUntilEot b.id Keyword.flying)).createEffect
+    (.keywordsUntilEot b.id Keyword.haste)
+  let g2 := g1.expireEffect (.keywordsUntilEot b.id Keyword.flying)
+  (g1.object! b.id).status.untilEotKeywords == Keywords.merge Keyword.flying Keyword.haste &&
+    (g2.object! b.id).status.untilEotKeywords == Keyword.haste
+
+/- A flag set by two continuous effects stays set until both have ended. A
+second "loses all abilities" keeps the printed static abilities off. -/
+#guard
+  let lordDef : CardDef :=
+    { bear with
+      name := "Bear Lord"
+      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+  let g0 := quiet (addPermanent afterDraw lordDef me me)
+  let lord := (g0.battlefield.filter (·.name == "Bear Lord"))[0]!
+  let staticEff := ContinuousEffect.staticAbility lord.id (.fra .creaturesYouControlHaveTrample)
+  let g1 := (g0.createEffect (.cantBlockUntilEot lord.id)).createEffect (.cantBlockUntilEot lord.id)
+  let g2 := g1.expireEffect (.cantBlockUntilEot lord.id)
+  let g3 := g2.expireEffect (.cantBlockUntilEot lord.id)
+  let g4 := (quiet ((g3.createEffect (.losesAbilitiesUntilEot lord.id)).createEffect
+    (.losesAbilitiesUntilEot lord.id))).expireEffect (.losesAbilitiesUntilEot lord.id)
+  (g2.object! lord.id).status.cantBlockUntilEot &&
+    !(g3.object! lord.id).status.cantBlockUntilEot &&
+    (g4.object! lord.id).status.losesAbilitiesUntilEot &&
+    !(GameEvent.createdEffects g4.events).contains staticEff &&
+    !g4.hasActiveEffect staticEff
+
+/- Effects that used to be written straight onto the status are created as
+continuous effects (CR 611.2): Smite-style damage, "can't be blocked this
+turn", and an amassed subtype. -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1).grantCantBeBlockedThisTurn b
+  let created := GameEvent.createdEffects g1.events
+  created.contains (.loseIndestructibleUntilEot b.id) &&
+    created.contains (.exileIfDiesUntilEot b.id) &&
+    created.contains (.keywordsUntilEot b.id Keyword.cantBeBlocked)
+
+/- Rule 613.7: Mind Control (until the source leaves) then Act of Treason
+(until end of turn). Cleanup ends only Treason; Mind Control keeps control
+until its source leaves. -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear opp opp) hero me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let g1 := g0.changeControl b me (untilSourceLeaves := some h.id)
+  let g2 := g1.changeControl (g1.object! b.id) me (untilEot := true)
+  let mindControlId := (controlEffectsOn g1 b.id)[0]!.1
+  let g3 := (quiet g2).clearEOT
+  let g4 := g3.expireWhileSourceEffects h.id
+  (controlEffectsOn g2 b.id).size == 2 &&
+    (g3.object! b.id).controlledBy me &&
+    (controlEffectsOn g3 b.id).map Prod.fst == #[mindControlId] &&
+    (g3.object! b.id).controlUntilSourceLeaves == some h.id &&
+    (g4.object! b.id).controlledBy opp &&
+    (controlEffectsOn g4 b.id).isEmpty
+
+/- Act of Treason then Mind Control: cleanup still ends Treason, and the Aura
+leaving later returns the creature to its owner with no control effect left. -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear opp opp) hero me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let g1 := g0.changeControl b me (untilEot := true)
+  let g2 := g1.changeControl (g1.object! b.id) me (untilSourceLeaves := some h.id)
+  let g3 := (quiet g2).clearEOT
+  let g4 := g3.expireWhileSourceEffects h.id
+  (g2.object! b.id).status.controlUntilEot &&
+    (controlEffectsOn g3 b.id).size == 1 &&
+    (g3.object! b.id).controlledBy me &&
+    (g4.object! b.id).controlledBy opp &&
+    (controlEffectsOn g4 b.id).isEmpty
+
+/- A control effect lasting a number of its controller's turns counts down
+under its own `EffectId` (Evil's Thrall). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear opp opp)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.changeControl b me (turnEndsLeft := 2)
+  let eid := (controlEffectsOn g1 b.id)[0]!.1
+  let g2 := (quiet g1).clearEOT
+  let counted :=
+    match g2.activeEffect? eid with
+    | some (.control _ _ _ n _) => n == 1
+    | _ => false
+  counted &&
+    (g2.object! b.id).controlledBy me &&
+    (g2.object! b.id).status.controlTurnEndsLeft == 1 &&
+    (GameEvent.expiredEffects g2.events).isEmpty
+
+/- Cleanup does not look up a permanent that ending a control effect exiled
+(CR 800.4c). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear opp opp)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := (g0.changeControl b me (untilEot := true)).changePlayer opp (.lost true)
+  let g2 := (quiet g1).clearEOT
+  (g2.findObject? b.id).isNone &&
+    g2.objects.any (fun o => o.name == "Event Bear" && o.zone == .exile)
+
+/- Loki leaving keeps his pending copy effect under the same `EffectId` with
+his last known power, and the end of turn expires that same id (MSH 109). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.createEffect (.pendingLokiCopy me (some b.id) 2)
+  let eid := (GameEvent.createdEffectsWithId g1.events)[0]!.1
+  let (g2, _) := g1.move b.id (.graveyard me) none
+  let updated :=
+    match g2.activeEffect? eid with
+    | some (.pendingLokiCopy p none _) => p == me
+    | _ => false
+  let g3 := (quiet g2).clearTurnActivations
+  updated &&
+    (match g2.pendingLokiCopy with
+      | some (_, none, _) => true
+      | _ => false) &&
+    (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[eid] &&
+    g3.pendingLokiCopy.isNone
+
 end Mtg.Engine.EventTests

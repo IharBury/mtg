@@ -505,13 +505,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       let g := if cur.status.notACreature then g.createEffect (.notACreature newId) else g
       g.createPrintedStaticEffects cur
     | none => g
+  -- Loki left: keep his pending copy effect under the same `EffectId`, now
+  -- with his last known power (MSH 109).
   let g :=
-    match g.pendingLokiCopy with
-    | some (p, some id, _) =>
-      if id == old.id then
-        g.change (.pendingLokiCopy (some (p, none, old.lastKnownPower.getD old.power)))
-      else g
-    | _ => g
+    g.activeEffects.foldl (fun g (eid, e) =>
+      match e with
+      | .pendingLokiCopy p (some id) _ =>
+        if id == old.id then
+          g.change (.effectUpdated eid
+            (.pendingLokiCopy p none (old.lastKnownPower.getD old.power)))
+        else g
+      | _ => g) g
   -- The object that arrives has a new id (CR 400.7). Trigger matching above
   -- still uses the id the permanent had when it left.
   let g := g.record (happened.withObjectId newId)

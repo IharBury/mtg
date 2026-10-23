@@ -685,6 +685,10 @@ inductive GameChange where
   | effectCreated (id : EffectId) (effect : ContinuousEffect)
   /-- A continuous effect ends (CR 611). -/
   | effectExpired (id : EffectId) (effect : ContinuousEffect)
+  /-- Bookkeeping on an existing continuous effect `id` (a decremented turn
+  counter, or last-known information after its source left), keeping the same
+  `EffectId`. This neither creates nor ends an effect (CR 611). -/
+  | effectUpdated (id : EffectId) (effect : ContinuousEffect)
   /-- Update a player's state. -/
   | player (p : PlayerId) (c : PlayerChange)
   | playerChanges (p : PlayerId) (cs : Array PlayerChange)

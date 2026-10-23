@@ -758,8 +758,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       (fun g o => g.addIndestructibleCounter o) sourceId illegal
   | 4 =>
     g.withLegalKindPlayer controller tkind targets (fun g pid =>
-      let g := g.setPlayerControl controller pid
-      g.change (.controlOnNextTakenTurn true))
+      g.setPlayerControl controller pid (onNextTurn := true))
       sourceId illegal
   | 5 =>
     g.withLegalKindPlayer controller tkind targets
