@@ -262,7 +262,7 @@ why it happened:
 ### 2.2 The envelope and causes
 
 ```lean
-/-- One group of simultaneous rules events (603.2c, 608.2c, 704.3, 510.2). -/
+/-- One group of simultaneous rules events (603.2c, 608.2f, 704.3, 510.2). -/
 structure BatchId where
   raw : Nat
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -453,8 +453,8 @@ structure DamagePacket where
 inductive DamageEvent where
   /-- The fact that damage was dealt (120.2). Writes nothing itself. -/
   | dealt (packets : Array DamagePacket)
-  /-- 120.3e: damage marked on a creature; `deathtouch` feeds 704.5h. -/
-  | marked (object : ObjectId) (amount : Nat) (deathtouch : Bool)
+  /-- 120.3e: damage marked on a creature. -/
+  | marked (object : ObjectId) (amount : Nat)
   /-- 514.2 / 703.4p. -/
   | markedCleared (objects : Array ObjectId)
   | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)   -- 615
@@ -478,8 +478,12 @@ sibling event per result, each the only writer of its state:
 | Toxic | 120.3g | `counters (player) poison (put n)` |
 | Defense loss (battle) | 120.3h | `counters (battle) defense (removed n)` |
 
-There are no `hasLifelink` / `hasDeathtouch` / `hasToxic` flags on the packet;
-they would duplicate the source snapshot and could disagree with it.
+There are no `hasLifelink` / `hasDeathtouch` / `hasToxic` flags on the packet or
+on `DamageEvent.marked`; they would duplicate the source snapshot and could
+disagree with it. The 704.5h deathtouch SBA ("dealt damage by a source with
+deathtouch since the last state-based actions were checked") is derived from the
+`DamageEvent.dealt` packets committed since the last SBA batch whose
+`source.keywords.deathtouch` is true and whose `amount > 0`.
 
 ### 2.7 Mana, keyword actions, and players
 
@@ -591,9 +595,14 @@ inductive CombatEvent where
   | removedFromCombat (object : EventObject)                                       -- 506.4 / 511.3
 ```
 
-First-strike and regular combat damage are separate combat damage steps, so
-they are separate `damageAssigned` events and separate damage batches
-(`cause := .turnBased (.dealCombatDamage firstStrike)`).
+First-strike and regular combat damage are separate combat damage steps
+(510.4 / 702.7b), so they are separate `damageAssigned` events and separate
+damage batches (`cause := .turnBased (.dealCombatDamage firstStrike)`). In the
+first combat damage step, only attacking and blocking creatures with first
+strike or double strike assign combat damage; in the second step, the remaining
+attacking and blocking creatures that had neither first strike nor double
+strike as the first combat damage step began, together with those that have
+double strike as the second step begins, assign combat damage (510.4, 702.7b).
 
 ### 2.11 Continuous effects
 
@@ -629,7 +638,7 @@ described in §3.3.
    replaced by queries over `moved.before` / `moved.after`, which are never
    truncated.
 
-### 3.2 One-shot effects and simultaneous batches (603.2c, 608.2c)
+### 3.2 One-shot effects and simultaneous batches (603.2c, 608.2f)
 
 The commit API takes **data**, not a callback, so a nested call cannot open a
 second batch by accident:
@@ -640,6 +649,11 @@ for that batch against the pre-batch snapshot and the post-batch game. -/
 def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent) : Game
 ```
 
+- In Phase 4, `commitBatch` applies `events` under one `BatchId` and runs a
+  batch-level pass for the "whenever one or more …" triggers while keeping the
+  existing per-event trigger queues for individual triggers; Phase 6 replaces
+  those individual per-event queues with the unified `matchTriggers pre post batch`
+  pass (§3.5).
 - An instruction such as "destroy all creatures", "create N tokens",
   "mill N", or "each player discards" builds all its events, then commits once.
 - Combat damage is **two** commits when there is a first-strike step
@@ -756,12 +770,23 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
     Array WaitingTrigger
 ```
 
-- Look-back triggers read `pre` (603.10): zone-change triggers in 603.10a
-  (leaves the battlefield, dies, sacrifice, a card leaving a graveyard or hand,
-  discard, cycling, …), phasing out 603.10b, becoming unattached 603.10c,
-  losing control / an opponent gaining control 603.10d, a spell being countered
-  603.10e, a player losing the game 603.10f (planeswalking 603.10g is a non-goal).
-- Everything else reads `post` (603.10), e.g. enters-the-battlefield (603.6a).
+- Look-back triggers read `pre` (603.10): the four zone-change categories in
+  603.10a — (1) leaves-the-battlefield abilities (including dies, 603.6c /
+  700.4), (2) abilities that trigger when a player sacrifices a permanent,
+  (3) abilities that trigger when a card leaves a graveyard, and (4) abilities
+  that trigger when an object that all players can see is put into a hand or
+  library — plus phasing out 603.10b, becoming unattached 603.10c, losing
+  control / an opponent gaining control 603.10d, a spell being countered
+  603.10e, and a player losing the game 603.10f (planeswalking 603.10g is a
+  non-goal).
+- Everything else reads `post` (603.10), including enters-the-battlefield
+  (603.6a) and **discard / cycling**: 603.10a does not include cards leaving a
+  hand. When a card is discarded (701.9) or cycled (702.29a), it moves from a
+  hidden zone to a destination zone (typically the graveyard), and trigger
+  matching reads `post` and `moved.after` (the revealed characteristics in the
+  destination zone; per 702.29c, *"When you cycle this card"* triggers from
+  whatever zone the card winds up in after it is cycled, and per 702.29d,
+  *"whenever a player cycles or discards"* triggers once when cycled).
 - The matcher must produce the same `WaitingTrigger` data the hand-written
   loops pass to `waitingTriggersFor` today: `causeId`, the cause object
   (`cause := some old`), and last-known power/toughness (e.g.
@@ -806,7 +831,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId`, `attackingPlaneswalker : Option ObjectId`, `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
 | **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
-| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derive from `DamageEvent.marked (deathtouch := true)` since the last SBA batch (704.5h). |
+| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derive from `DamageEvent.dealt` packets where `source.keywords.deathtouch` is true (and `amount > 0`) since the last SBA batch (704.5h). |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
 | | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn. It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
@@ -823,23 +848,34 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields | Target |
 | :--- | :--- | :--- |
-| Cast metadata → log (400.7d) | `castFromGraveyard`, `castFromHand`, `wasCast`, `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `isPreparedSpell`, `treasureManaSpent`, `boastExiled`; `chosenX` once it leaves the stack | `CastEvent`s keyed by spell id, joined via `moved`. `chosenX` stays while on the stack (107.3a). |
-| Effect mirrors → layers / specs | `copyRestore`, `copyUntilEot`, `copyUntilNextTurn`, `copyUntilSourceLeaves` (layer 1); `controlChanged`, `controlUntilSourceLeaves` (layer 2); `playPermission`, `flashbackUntilEot` (permission); `exileInstantSorceryInstead` (replacement); `uncounterableThisCast` (rule); `fraEffectUntilTurnOf` (duration of an emblem) | §3.3 |
-| LKI → `moved.before` | `lastKnownPower`, `lastKnownToughness`, `lastController` | §3.1 |
-| Stays | `id`, `printed`, `owner`, `controller`, `defaultController`, `zone`, `status`, `timestamp`, `attachedTo`, `adventurerCard`, `isCopy`, `linkedExile`, `returnToZone`, `leaveTriggerExile`, `exiledBy` (linked abilities, 607), stack data (`abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCause*`) | — |
-| Engine bookkeeping | `enterProcessed` | Becomes unnecessary once enters triggers come from `commitBatch`. |
+| **Cast metadata → log (400.7d)** | `castFromGraveyard : Bool`, `castFromHand : Bool`, `wasCast : Bool`, `kicked : Bool`, `teamworkPaid : Bool`, `sneakPaid : Bool`, `sneakAttackWhom : Option PlayerId`, `giftPromisedTo : Option PlayerId`, `isPreparedSpell : Bool`, `treasureManaSpent : Bool`, `boastExiled : Array ObjectId`; `chosenX : Option Nat` once it leaves the stack | `CastEvent`s keyed by spell id, joined via `moved`. `chosenX` stays while on the stack (107.3a). |
+| **Effect mirrors → layers / specs** | `copyRestore : Option CardDef`, `copyUntilEot : Bool`, `copyUntilNextTurn : Bool`, `copyUntilSourceLeaves : Option ObjectId` (layer 1); `controlChanged : Bool`, `controlUntilSourceLeaves : Option ObjectId` (layer 2); `playPermission : Option PlayPermission`, `flashbackUntilEot : Bool` (permission); `exileInstantSorceryInstead : Bool` (replacement); `uncounterableThisCast : Bool` (rule); `fraEffectUntilTurnOf : Option PlayerId` (duration of an emblem) | §3.3 |
+| **LKI → `moved.before`** | `lastKnownPower : Option Int`, `lastKnownToughness : Option Int`, `lastController : Option PlayerId` | §3.1 |
+| **Stays** | `id : ObjectId`, `printed : CardDef`, `owner : PlayerId`, `controller : Option PlayerId`, `defaultController : Option PlayerId`, `zone : Zone`, `status : Status`, `timestamp : Nat`, `attachedTo : Option ObjectId`, `adventurerCard : Option CardDef`, `isCopy : Bool`, `linkedExile : Array ObjectId`, `returnToZone : Option Zone`, `leaveTriggerExile : Array ObjectId`, `exiledBy : Option ObjectId` (linked abilities, 607), stack data (`abilityEffect : Option Effect`, `triggeredAbility : Option TriggeredAbility`, `reflexiveResolution : Option TriggeredAbility.TriggerResolution`, `sourceId : Option ObjectId`, `fraCauseId : Option ObjectId`, `fraCauseController : Option PlayerId`, `fraCausePower : Option Int`, `fraCauseStatus : Option Status`) | — |
+| **Engine bookkeeping** | `enterProcessed : Bool` | Becomes unnecessary once enters triggers come from `commitBatch`. |
 
-#### `Player` ([`Player.lean`](Mtg/Engine/Game/Player.lean)) and `Game` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
+#### `Player` ([`Player.lean`](Mtg/Engine/Game/Player.lean))
 
-| Category | Fields | Target |
+| Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| Player effect mirrors | `additionalLandsThisTurn`, `protectionFromEverything`, `lifeCantChange` (until the player's next turn), `lifeLocked` (Platinum Emperion; a separate flag), `cantCastSpellsThisTurn`, `attackPumpPerPlainsThisTurn`, `typeSpellCostLessThisTurn`, `supertypeSpellCostLessThisTurn`, `jaceLoyaltyAtInstantSpeed`, `legendRuleOffThisTurn`, `copyNextInstantSorceryThisTurn`, `mountainExtraRedThisTurn`, `nextSpellCantBeCountered`, `cantAttackJaces` | `ContinuousEffectSpec.playerRule` (611.2c). |
-| Player history → log | `beheldQualities` | `PlayerEvent.beheld` (already recorded as `OneShotEffect.beheld`). |
-| Player state — stays | `life`, `poison` (as a counter target), `manaPool`, `library`, `hand`, `graveyard`, `lost`, `leftTheGame`, `isMonarch` (written by `becameMonarch`), `citysBlessing`, `enduringStory`, `theRingAbilities`, `ringBearerId`, mulligan state | Single-writer events. |
-| Player SBA bookkeeping | `drewFromEmpty` | Derive from a failed-draw event since the last SBA batch (704.5b). |
-| Game effect mirrors | `creaturesWithoutFlyingCantBlock`, `powerUpsForbidden`, `playerControl`, `controlOnNextTakenTurn`, `pendingLokiCopy`, `assignCombatDamageEqualToughness`, `pendingFreeRGCreature` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
-| Game LKI / identity | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
-| Game continuation registers | the "…ThisWay", "may…", "unlessPays…", "spellOr…", "pending…", `grimaImpulse*`, `palantir*`, `triggerSequenceRest`, `chooseModesRest`, `triggerOr`, … families | Continuation frame stack (`EngineChange`). |
+| **Setup / seat metadata — stays** | `id : PlayerId`, `name : String`, `startingLife : Int`, `startingHandSize : Nat`, `sideboard : Array CardDef` (400.11b), `hasCommander : Bool`, `commanderColorIdentity : ColorSet` (903.4), `commanderCreatureTypes : Array CardSubtype`, `teammate : Option PlayerId` | Initialized from `StartConfig` / `Seat`. |
+| **Game state — stays** | `life : Int`, `maxHandSize : Nat` (base 7, 514.1; hand-size modifiers evaluate via `ContinuousEffectSpec.playerRule`), `manaPool : ManaPool`, `poison : Nat` (written by `PermanentEvent.counters (.player p) .poison`), `lost : Bool`, `leftTheGame : Bool`, `mulligansTaken : Nat`, `keptOpeningHand : Bool`, `library : Array ObjectId`, `hand : Array ObjectId`, `graveyard : Array ObjectId`, `isMonarch : Bool` (written by `becameMonarch`, 725), `citysBlessing : Bool` (702.131), `enduringStory : Bool`, `theRingAbilities : Nat`, `ringBearerId : Option ObjectId` (701.54) | Single-writer events. |
+| **Delayed triggers → delayed-trigger table (603.7)** | `eaglesBirdsNextUpkeep : Nat` (upkeep delayed trigger from *The Eagles Are Coming!*), `attackPumpPerPlainsThisTurn : Nat` (*"whenever you attack this turn"* delayed trigger from *Roads Go Ever, Ever On*) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (Phase 8). |
+| **Player effect mirrors → layers / specs** | `additionalLandsThisTurn : Nat` (305.2b), `protectionFromEverything : Bool`, `lifeCantChange : Bool` (until the player's next turn), `lifeLocked : Bool` (Platinum Emperion; a separate flag), `cantCastSpellsThisTurn : Bool`, `typeSpellCostLessThisTurn : Array (CardType × Nat)`, `supertypeSpellCostLessThisTurn : Array (Supertype × Nat)`, `jaceLoyaltyAtInstantSpeed : Bool`, `legendRuleOffThisTurn : Bool`, `copyNextInstantSorceryThisTurn : Nat`, `mountainExtraRedThisTurn : Nat`, `nextSpellCantBeCountered : Bool`, `cantAttackJaces : Bool` | `ContinuousEffectSpec.playerRule` (611.2c). |
+| **Player history → log** | `beheldQualities : Array CardSubtype` | `PlayerEvent.beheld` (already recorded as `OneShotEffect.beheld`). |
+| **Player SBA bookkeeping** | `drewFromEmpty : Bool` | Derive from a failed-draw event since the last SBA batch (704.5b). |
+
+#### `Game` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
+
+| Category | Fields (type) | Target |
+| :--- | :--- | :--- |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId`, `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
+| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
+| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)`, `enrageGrantsAdditionalCombat : Nat` | Delayed-trigger entries evaluated by `matchTriggers` (Phase 8). |
+| **Game effect mirrors → specs** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
+| **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
+| **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
+| **Continuation registers — moved to continuation stack in Phase 8** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId`, `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId`, `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId`, `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId`, `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat` | Continuation frame stack (`EngineChange`). |
 
 ---
 
@@ -952,9 +988,13 @@ Then delete `OneShotEffect`.
 
 ### Phase 4 — Simultaneous batches
 
-1. Add `Game.commitBatch` (§3.2) and `nextBatchId`.
+1. Add `Game.commitBatch` (§3.2) and `nextBatchId`. In Phase 4, `commitBatch`
+   applies the batch under one `BatchId` and runs a batch-level pass for the
+   "one or more" triggers below while keeping the existing per-event queues for
+   individual triggers; Phase 6 replaces those per-event queues with
+   `matchTriggers pre post batch`.
 2. Convert multi-object instructions, the combat damage steps (two batches with
-   first strike), and the SBA loop (one batch per pass).
+   first strike, per 510.4 / 702.7b in §2.10), and the SBA loop (one batch per pass).
 3. Move "one or more" triggers to per-batch evaluation:
    `oneOrMoreOtherCreaturesDie`, `creatureCardsPutIntoYourGy`,
    `youCreateCreatureTokens`, `creaturesYouControlBecomeTapped`,
