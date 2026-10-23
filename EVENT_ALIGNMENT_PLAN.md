@@ -480,10 +480,16 @@ sibling event per result, each the only writer of its state:
 
 There are no `hasLifelink` / `hasDeathtouch` / `hasToxic` flags on the packet or
 on `DamageEvent.marked`; they would duplicate the source snapshot and could
-disagree with it. The 704.5h deathtouch SBA ("dealt damage by a source with
-deathtouch since the last state-based actions were checked") is derived from the
-`DamageEvent.dealt` packets committed since the last SBA batch whose
-`source.keywords.deathtouch` is true and whose `amount > 0`.
+disagree with it. Under 704.5h, a creature is destroyed when its toughness is
+greater than 0 and a `DamageEvent.dealt` packet committed since the last SBA
+batch has that creature as `recipient` (`.permanent c`),
+`source.keywords.deathtouch == true`, and `amount > 0` (120.8: 0 damage is not
+dealt; packets aimed at a player, a battle, or another permanent do not count).
+Reading from `dealt` rather than `DamageEvent.marked` also covers wither and
+infect, which deal damage in the form of −1/−1 counters (120.3d) without
+marking damage; keeping the `toughness > 0` guard on the SBA ensures that at
+toughness 0 or less, 704.5f puts the creature into its owner's graveyard (which
+regeneration cannot replace) instead of 704.5h destroying it.
 
 ### 2.7 Mana, keyword actions, and players
 
@@ -601,8 +607,8 @@ damage batches (`cause := .turnBased (.dealCombatDamage firstStrike)`). In the
 first combat damage step, only attacking and blocking creatures with first
 strike or double strike assign combat damage; in the second step, the remaining
 attacking and blocking creatures that had neither first strike nor double
-strike as the first combat damage step began, together with those that have
-double strike as the second step begins, assign combat damage (510.4, 702.7b).
+strike as the first combat damage step began, together with those that currently
+have double strike, assign combat damage (510.4, 702.7b).
 
 ### 2.11 Continuous effects
 
@@ -644,8 +650,11 @@ The commit API takes **data**, not a callback, so a nested call cannot open a
 second batch by accident:
 
 ```lean
-/-- Apply `events` as one simultaneous batch, then run trigger matching once
-for that batch against the pre-batch snapshot and the post-batch game. -/
+/-- Apply `events` as one simultaneous batch under a single `BatchId` and
+evaluate batch-level ("whenever one or more …") triggers for the batch while
+keeping the existing per-event queues for individual triggers (Phase 4);
+Phase 6 replaces those individual queues with `matchTriggers pre post batch`
+(§3.5). -/
 def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent) : Game
 ```
 
@@ -831,7 +840,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId`, `attackingPlaneswalker : Option ObjectId`, `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
 | **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
-| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derive from `DamageEvent.dealt` packets where `source.keywords.deathtouch` is true (and `amount > 0`) since the last SBA batch (704.5h). |
+| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derive per creature from `DamageEvent.dealt` packets committed since the last SBA batch where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
 | | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn. It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
@@ -871,7 +880,8 @@ Each field is put in exactly one category. "Log" means a query over
 | :--- | :--- | :--- |
 | **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId`, `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
-| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)`, `enrageGrantsAdditionalCombat : Nat` | Delayed-trigger entries evaluated by `matchTriggers` (Phase 8). |
+| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)` | Delayed-trigger entries created on resolution and fired onto the stack by `matchTriggers` (Phase 8). |
+| **Trigger-time snapshot → `WaitingTrigger` / stack trigger data** | `enrageGrantsAdditionalCombat : Nat` | Records whether Hulk was attacking when its enrage trigger was queued (`Damage.lean` / `.enrageGrantsCombat`); carried on the waiting/stack trigger's `source.attacking` snapshot rather than a global counter (deleted in Phase 8). |
 | **Game effect mirrors → specs** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
 | **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
@@ -1063,16 +1073,28 @@ Tests: `Exile.lean`, `Draw.lean`, `GainLife.lean`, `Damage.lean`, `PutCounters.l
 `Untap.lean`, `RulingFixtures.lean`, plus new tests for 614.5 termination, 614.6
 non-occurrence, and the 616.1a–e order.
 
-### Phase 8 — Layers, data durations, field cleanup, continuations
+### Phase 8 — Layers, data durations, delayed triggers, field cleanup, continuations
 
 1. Replace the 60 `ContinuousEffect` constructors with `ContinuousEffectSpec`
    (§3.3) and `EffectDuration`; delete `effectUpdated` and the turn counters.
 2. Evaluate characteristics through layers 1–7d with timestamps (613.7) and
    dependencies (613.8); switch `Game.snapshot` to the layer results.
-3. Delete every field in §3.8 marked as a mirror or history, with its
-   `StatusChange` / `ObjectChange` / `PlayerChange` constructor, after its readers
-   use the log or the layers.
-4. Move the continuation registers into a continuation frame stack.
+3. Replace the ad-hoc 603.7 delayed-trigger fields (`Player.eaglesBirdsNextUpkeep`,
+   `Player.attackPumpPerPlainsThisTurn` together with its
+   `ContinuousEffect.attackPumpPerPlainsThisTurn` constructor,
+   `Game.delayedEndStepReturns`, `Game.delayedEndStepExiles`,
+   `Game.delayedEndStepSacrifices`, `Game.delayedGraveReturns`, and
+   `Game.delayedSynthetic`) with a delayed-trigger table whose entries are
+   created on resolution and matched/put on the stack by `matchTriggers`
+   instead of polled directly in `Turns.lean`, `TriggeredAbilities.lean`, and
+   `FrcResolve.lean`. Move `Game.enrageGrantsAdditionalCombat` onto the
+   trigger's `source.attacking` snapshot (`WaitingTrigger` / stack trigger data)
+   rather than a global counter.
+4. Delete every field in §3.8 marked as a mirror, history, delayed trigger, or
+   trigger-time counter, together with its `StatusChange` / `ObjectChange` /
+   `PlayerChange` / `GameChange` constructor, after its readers use the log,
+   the layers, or the delayed-trigger table.
+5. Move the continuation registers into a continuation frame stack.
 
 Final check: `lake build`, `lake exe mtg-demo`, `lake exe oracle-roundtrip`, and
 `RulesEvent` contains only the families in §2 (zone, permanent, damage, life,
