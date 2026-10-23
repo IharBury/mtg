@@ -27,6 +27,8 @@ structure Player where
   /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
   additionalLandsThisTurn : Nat := 0
   poison : Nat := 0
+  /-- Non-poison counters on this player (CR 122.1). -/
+  counters : Array (CounterKind × Nat) := #[]
   lost : Bool := false
   /-- CR 800.4a has already been performed for this player. -/
   leftTheGame : Bool := false
@@ -103,6 +105,19 @@ structure Player where
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq
+
+namespace Player
+
+/-- Number of counters of `kind` on `pl` (CR 122.1). -/
+def counterCount (pl : Player) (kind : CounterKind) : Nat :=
+  match kind with
+  | .poison => pl.poison
+  | _ =>
+    match pl.counters.find? (·.1 == kind) with
+    | some (_, n) => n
+    | none => 0
+
+end Player
 
 /-- A seat at the table before objects are created. -/
 structure Seat where

@@ -34,7 +34,7 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false false false
-        (cause := .costPayment .life p))).logMsg
+        (cause := some (.costPayment .life p)))).logMsg
         s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
   return g.afterLifeLost p (pl.life - (g.player p).life).toNat
 

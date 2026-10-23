@@ -136,19 +136,23 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             .minusOneMinusOne (o.status.minusOneMinusOne - k)]
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
-      -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
+      -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
       let snap := g.battlefield.filter exilesOppDeath?
+      let hadDeathtouchSinceLastSba :=
+        g.battlefield.any (fun o =>
+          o.isCreature && (o.status.dealtDeathtouch || g.deathtouchDealtSinceLastSba o.id))
       let victims :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
           else
             let t := g.toughness o
+            let dtDealt := o.status.dealtDeathtouch || g.deathtouchDealtSinceLastSba o.id
             if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
             else if o.status.damage ≥ t && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from lethal damage")
-            else if o.status.dealtDeathtouch && !g.hasIndestructible o then
+            else if dtDealt && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from deathtouch")
             else none)
       if !victims.isEmpty then
@@ -202,9 +206,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         .lockedDeathReplacements none,
         .suppressOthersDie false,
         .suppressCreatureCardsToGy false]
-      for o in g.battlefield do
-        if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
-          g := g.changeStatus o.id (.dealtDeathtouch false)
+      if hadDeathtouchSinceLastSba then
+        g := g.change .sbaChecked
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
       for o in g.battlefield do
@@ -259,7 +262,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if !legal then
             let hostId := o.attachedTo.getD ⟨0⟩
             g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
-              (cause := .stateBased .illegalEquipmentOrFortification))
+              (cause := some (.stateBased .illegalEquipmentOrFortification)))
             g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
       match g.decideGameIfFinished with

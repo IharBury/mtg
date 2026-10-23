@@ -254,7 +254,7 @@ def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
   let g :=
     if k != 0 then
       g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0)
-        (cause := .costPayment .loyalty (o.controller.getD o.owner) (some o.id)))
+        (cause := some (.costPayment .loyalty (o.controller.getD o.owner) (some o.id))))
     else g
   let g := match o.controller with
     | some p =>

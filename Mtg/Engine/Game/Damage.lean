@@ -23,7 +23,16 @@ def damageSourceEvent (g : Game) (o : GameObject) : EventObject :=
     subtypes := subs
     keywords := { base.keywords with
       deathtouch := g.hasDeathtouch o
-      lifelink := g.hasLifelink o } }
+      lifelink := g.hasLifelink o }
+    toxic := o.printed.toxic }
+
+/-- The resolving spell, or the source of the resolving ability, as the
+default damage source when an effect deals damage without naming another
+source (CR 609.7 / 113.7 / 120.2). -/
+def resolvingDamageSource? (g : Game) : Option GameObject :=
+  match g.resolvingSpell.bind g.findObject? with
+  | some s => some s
+  | none => (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.findObject?)
 
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 702.12b / 701.8b). If it would die this turn under an exile replacement,
@@ -60,9 +69,8 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
   let srcEvent : EventObject :=
-    match source with
-    | some s => { s with keywords := { s.keywords with deathtouch := s.keywords.deathtouch || deathtouch } }
-    | none => { id := ⟨0⟩, keywords := { deathtouch } }
+    let base := source.getD ((g.resolvingDamageSource?.map g.damageSourceEvent).getD o.asEvent)
+    { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
     o.printed.staticAbilities.any (fun
       | .healOtherDamageWhenDealt => true
@@ -79,7 +87,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
     let marked := g.object! o.id
-    let happened := GameEvent.damaged g.turnNumber (some srcEvent) marked.asEvent n.toNat combat
+    let happened := GameEvent.damaged g.turnNumber srcEvent marked.asEvent n.toNat combat
     let g := g.record happened
     let g := (g.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat)).logMsg msg
     if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
@@ -88,7 +96,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   else
   -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
   let happened :=
-    if n > 0 then some (GameEvent.damaged g.turnNumber (some srcEvent) o.asEvent n.toNat combat) else none
+    if n > 0 then some (GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat) else none
   let g :=
     match happened with
     | some e => g.record e
@@ -114,7 +122,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         let g :=
           if already then
             g.change (.addSourceDealtDamagePower o.id n)
-          else if (happened.getD (GameEvent.damaged g.turnNumber (some srcEvent) o.asEvent n.toNat combat)).matchesTrigger
+          else if (happened.getD (GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat)).matchesTrigger
               p o.id .sourceDealtDamage then
             g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
           else g
@@ -132,7 +140,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   if n > 0 && !combat then
     match o.controller with
     | some p =>
-      let happened := GameEvent.damaged g.turnNumber (some srcEvent) o.asEvent n.toNat false
+      let happened := GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat false
       if happened.matchesTrigger p o.id .sourceDealtNoncombatDamage then
         g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
           (some n)
@@ -170,8 +178,8 @@ def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
   let srcEvent := g.damageSourceEvent src
   let proposed :=
     match recipient with
-    | some pid => GameEvent.damagedPlayer g.turnNumber (some srcEvent) pid n.toNat combat
-    | none => GameEvent.damaged g.turnNumber (some srcEvent) src.asEvent n.toNat combat
+    | some pid => GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat combat
+    | none => GameEvent.damaged g.turnNumber srcEvent src.asEvent n.toNat combat
   if !proposed.watches .wouldDealDamage || g.sourceDamagePrevented src then 0
   else
     let extra :=
@@ -193,8 +201,9 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
   | none => 0
 
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
-def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
-  g.markDamageOn o n s!"{o.name} is dealt {n} damage"
+def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
+    (source : Option EventObject := none) : Game :=
+  g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := source)
 
 /-- Increase `p`'s life total (CR 119.2). Gaining 0 life does nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -221,7 +230,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none) : Game :=
-  match source with
+  match source.orElse (fun _ => g.resolvingDamageSource?) with
   | some src =>
     if g.frcProtectedFrom o src || g.sourceDamagePrevented src then
       g.logMsg s!"damage from {src.name} is prevented"
@@ -248,6 +257,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     (preventable := true) (source : Option GameObject := none) : Game :=
+  let source := source.orElse (fun _ => g.resolvingDamageSource?)
   let n :=
     match source with
     | some src =>
@@ -262,10 +272,12 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
+    let srcEvent :=
+      (source.map g.damageSourceEvent).getD
+        (g.battlefield[0]?.map g.damageSourceEvent |>.getD { id := ⟨0⟩ })
+    let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false
     let g :=
-      if n > 0 then
-        g.record (GameEvent.damagedPlayer g.turnNumber (source.map g.damageSourceEvent) pid n.toNat false)
-      else g
+      if n > 0 then g.record happened else g
     let g :=
       if (pl.lifeLocked || pl.lifeCantChange) && n != 0 then
         g.logMsg s!"{pl.name}'s life total can't change"
@@ -288,7 +300,8 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       | some src =>
         match src.controller with
         | some c =>
-          if n > 0 && g.hasSubtype src .hero then g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
+          if n > 0 && happened.matchesTrigger c srcEvent.id .heroesDealDamageToPlayer then
+            g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
           else g
         | none => g
       | none => g
@@ -352,10 +365,7 @@ def continueIfShuffled (g : Game) : Game :=
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
   -- The source is the resolving spell, or the source of the resolving
   -- ability (CR 609.7 / 113.7).
-  let src :=
-    match g.resolvingSpell.bind g.findObject? with
-    | some s => some s
-    | none => (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.findObject?)
+  let src := g.resolvingDamageSource?
   match t with
   | Target.player pid => g.dealDamageToPlayer pid n (source := src)
   | Target.permanent oid =>

@@ -289,7 +289,11 @@ def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
 
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/
-def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : Game :=
+def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
+    (source : Option EventObject := none) : Game :=
+  let srcEvent := source.getD ((g.resolvingDamageSource?.map g.damageSourceEvent).getD o.asEvent)
+  let g :=
+    if n > 0 then g.record (GameEvent.damaged g.turnNumber srcEvent o.asEvent n) else g
   let g := g.record (GameEvent.damageMarked g.turnNumber o.id n)
   let g := g.createEffects #[.loseIndestructibleUntilEot o.id, .exileIfDiesUntilEot o.id]
   g.logMsg

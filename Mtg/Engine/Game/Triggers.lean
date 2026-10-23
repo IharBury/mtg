@@ -302,7 +302,7 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
       else
         let lore := saga.status.lore + 1
         let g := g.record (GameEvent.counters g.turnNumber (some p) saga.asEvent .lore 1
-          (cause := .turnBased .sagaLoreOnMain))
+          (cause := some (.turnBased .sagaLoreOnMain)))
         let g := g.logMsg s!"{saga.name} gets a lore counter ({lore})"
         let saga := g.object! saga.id
         (sdef.chaptersForLore lore).foldl (fun g ch =>

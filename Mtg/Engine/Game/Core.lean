@@ -1446,7 +1446,19 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
         | .removed n => pl.poison - n
       { g with players := g.players.set! p.idx { pl with poison } }
     else g
-  | .counters (.player _) _ _ _ => g
+  | .counters (.player p) kind delta _ =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      let cur := pl.counterCount kind
+      let next :=
+        match delta with
+        | .put n => cur + n
+        | .removed n => cur - n
+      let counters :=
+        let without := pl.counters.filter (·.1 != kind)
+        if next == 0 then without else without.push (kind, next)
+      { g with players := g.players.set! p.idx { pl with counters } }
+    else g
   | .counters (.object object) kind delta _ =>
     match g.objects.findIdx? (·.id == object.id) with
     | some i =>
@@ -1497,7 +1509,14 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
         match d with
         | .ringBearer => { o.status with ringBearer := gained }
         | .commander => { o.status with isCommander := gained }
-        | .goaded => { o.status with goaded := gained }
+        | .goaded byPlayer =>
+          let goadedBy :=
+            if gained then
+              if o.status.goadedBy.contains byPlayer then o.status.goadedBy
+              else o.status.goadedBy.push byPlayer
+            else
+              o.status.goadedBy.filter (· != byPlayer)
+          { o.status with goaded := !goadedBy.isEmpty, goadedBy }
         | .prepared => { o.status with prepared := gained }
         | .harnessed => { o.status with harnessed := gained }
       { g with objects := g.objects.set! i { o with status := s } }
@@ -1506,19 +1525,7 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
 /-- Apply one `DamageEvent` in isolation (CR 120.3 / 120.4b). -/
 def applyDamageEvent (g : Game) (e : DamageEvent) : Game :=
   match e with
-  | .dealt pkts =>
-    pkts.foldl (fun acc pkt =>
-      if pkt.amount > 0 && pkt.source.keywords.deathtouch then
-        match pkt.recipient with
-        | .permanent target =>
-          match acc.objects.findIdx? (·.id == target.id) with
-          | some i =>
-            let o := acc.objects[i]!
-            { acc with objects := acc.objects.set! i { o with status := { o.status with dealtDeathtouch := true } } }
-          | none => acc
-        | _ => acc
-      else acc) g
-  | .prevented _ _ _ => g
+  | .dealt _ | .prevented _ _ _ => g
   | .marked objectId amount =>
     match g.objects.findIdx? (·.id == objectId) with
     | some i =>
@@ -1831,6 +1838,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
     { g with ancestryLandsTapped := g.ancestryLandsTapped.push id }
   | .removeAncestryLandTapped id =>
     { g with ancestryLandsTapped := g.ancestryLandsTapped.filter (· != id) }
+  | .sbaChecked => g
   | .clearEvents => { g with events := #[] }
 
 /-- Process one `GameChange` in isolation. -/
@@ -1852,9 +1860,6 @@ def applyEvent (g : Game) (e : GameEvent) : Game :=
           cause := .oneShotEffect actualId src ctrl
           change := .rules (.effectApplied actualId eff) },
         some actualId)
-    | .oneShotEffect id src ctrl, _ =>
-      let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
-      ({ e with cause := .oneShotEffect actualId src ctrl }, some actualId)
     | _, .rules (.effectApplied id eff) =>
       let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
       ({ e with
@@ -2285,8 +2290,24 @@ def loggedSheHulkDealtDamage (g : Game) : Bool :=
   GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
 
 /-- Record that combat damage was dealt to `p`. -/
-def noteCombatDamageTo (g : Game) (p : PlayerId) : Game :=
-  g.record (GameEvent.damagedPlayer g.turnNumber none p 1 true)
+def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject := { id := ⟨0⟩ }) : Game :=
+  g.record (GameEvent.damagedPlayer g.turnNumber source p 1 true)
+
+/-- True when `id` has been dealt a positive amount of damage by a source with
+deathtouch since the last time state-based actions were checked (CR 704.5h). -/
+def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
+  g.events.foldl (fun dealt e =>
+    match e.change with
+    | .engine .sbaChecked => false
+    | .rules (.damage (.markedCleared ids)) =>
+      if ids.contains id then false else dealt
+    | .rules (.damage (.dealt pkts)) =>
+      dealt || pkts.any (fun pkt =>
+        pkt.amount > 0 && pkt.source.keywords.deathtouch &&
+          match pkt.recipient with
+          | .permanent c => c.id == id
+          | _ => false)
+    | _ => dealt) false
 
 /-- Set `p`'s life total by gaining or losing the difference (CR 119.5) and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=

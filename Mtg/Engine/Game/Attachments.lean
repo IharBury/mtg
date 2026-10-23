@@ -55,7 +55,7 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
     for o in g.battlefield do
       if o.attachedTo == some hostId then
         g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
-          (cause := .gameRule .unattachOnHostLeave))
+          (cause := some (.gameRule .unattachOnHostLeave)))
         g := g.logMsg s!"{o.name} becomes unattached"
     return g
 

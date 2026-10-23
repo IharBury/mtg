@@ -235,6 +235,8 @@ structure Status where
   faceDown : Bool := false
   /-- Goaded for as long as this flag remains (CR 701.15b). -/
   goaded : Bool := false
+  /-- Players currently goading this permanent (CR 701.15b). -/
+  goadedBy : Array PlayerId := #[]
   /-- Story counters (Staff of the Storyteller). -/
   story : Nat := 0
   /-- Time counters (impending, CR 702.176). -/

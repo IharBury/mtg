@@ -30,7 +30,7 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
     let g := g.record
-      (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p))
+      (GameEvent.poisoned g.turnNumber p 5 (cause := some (.costPayment .ward p)))
     let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
     return g.afterWardResolved
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
