@@ -120,8 +120,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
   let mv := g.objectManaValue o
   let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
   typeOk && colorOk && controllerOk && subtypeOk &&
-    (!f.nonland || !objectHasCardType o .land) &&
-    (!f.noncreature || !objectHasCardType o .creature) &&
+    f.nonTypes.all (fun t => !objectHasCardType o t) &&
     (!f.nonAura || !o.printed.isAura) &&
     (!f.nontoken || !o.printed.isToken) &&
     (!f.permanentCard || o.printed.isPermanentCard) &&
@@ -320,10 +319,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .noncreatureArtifact =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && !o.isCreature)
-  | .stackAbilityFromCreatureSource =>
-    g.legalStackAbilityTargets caster (fun src => src.printed.isCreature)
-  | .stackAbilityFromArtifactSource =>
-    g.legalStackAbilityTargets caster (fun src => src.printed.isArtifact)
+  | .stackAbilityFromSource ty =>
+    g.legalStackAbilityTargets caster (fun src => src.printed.hasType ty)
   | .oppCreaturePowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
       g.power o <= n &&

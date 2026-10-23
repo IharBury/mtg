@@ -58,7 +58,7 @@ turn counter is cleared. -/
   let g := quiet afterDraw
   let (_, no) := holds g .artifactEnteredThisTurn
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨4⟩, controller := some me, owner := me, artifact := true } .stack .battlefield
+    { id := ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
   let g := g.record entered
   let (_, yes) := holds g .artifactEnteredThisTurn
   !no && yes && entered.watches .wouldEnterBattlefield
@@ -67,9 +67,9 @@ turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
   let attack := GameEvent.attacked g.turnNumber me
-    { id := ⟨5⟩, controller := some me, owner := me, creature := true, subtypes := #[.hero] } ⟨1⟩
+    { id := ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨6⟩, controller := some me, owner := me, creature := true, subtypes := #[.villain] } .stack .battlefield
+    { id := ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
   let g := (g.record attack).record entered
   let (_, yes) := holds g (.attackedWithSubtype .hero)
   let (_, no) := holds g (.attackedWithSubtype .goblin)
@@ -85,7 +85,7 @@ instead. -/
 #guard
   let second := GameEvent.drew 1 me ⟨1⟩ 2
   let death := GameEvent.moved 1
-    { id := ⟨7⟩, controller := some me, owner := me, creature := true } .battlefield (.graveyard me)
+    { id := ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
   let exiled := death.withDestination .exile false
   second.matchesTrigger me ⟨0⟩ .youDraw &&
     second.matchesTrigger me ⟨0⟩ .youDrawSecondCard &&

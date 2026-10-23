@@ -244,7 +244,7 @@ structure Status where
   /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
   windcragMardu : Bool := true
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
-  chosenCardType : Option String := none
+  chosenCardType : Option CardType := none
   /-- This card may be cast from its owner's graveyard without paying its
   mana cost, ignoring timing, until end of turn. -/
   freeCastFromGraveyard : Bool := false

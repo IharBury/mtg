@@ -3147,7 +3147,7 @@ inductive Resolution where
   /-- Target player draws `n` cards. -/
   | targetPlayerDraw (n : Nat)
   /-- Copy target activated or triggered ability you control from this source type. -/
-  | copyControlledAbility (fromCreature : Bool)
+  | copyControlledAbility (ty : CardType)
   /-- Create tokens equal to the number of permanents you control of this subtype. -/
   | createTokensEqualSubtype (kind : TokenKind) (subtype : CardSubtype)
   /-- For each kind of counter on target permanent or player, give another of that kind. -/

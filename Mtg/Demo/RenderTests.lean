@@ -1654,7 +1654,7 @@ def freeCloudInHand : Game :=
 
 def freeCloudAfterDeath : Game :=
   freeCloudInHand.record (GameEvent.moved freeCloudInHand.turnNumber
-    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, creature := true }
+    { id := ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.creature] }
     .battlefield (.graveyard ⟨1⟩))
 
 #guard

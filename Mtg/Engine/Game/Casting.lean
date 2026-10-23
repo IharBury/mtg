@@ -210,9 +210,9 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
-        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature
-        legendary := o.isLegendary, artifact := o.printed.isArtifact
-        subtypes := o.printed.subtypes }
+        legendary := o.isLegendary
+        types := o.printed.types
+        subtypes := CardSubtype.ofSubtypes o.printed.subtypes }
     | none => {}
 
 /-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
@@ -683,7 +683,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       let source :=
         match sourceId.bind g.findObject? with
         | some src => src.asEvent
-        | none => { id := ⟨0⟩, controller := some p, owner := p, equipment := true }
+        | none => { id := ⟨0⟩, controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
       g.record (GameEvent.activated g.turnNumber p source false true)
     else g
   let g :=

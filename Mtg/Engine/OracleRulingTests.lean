@@ -2876,7 +2876,7 @@ def andurilOnOwnLegendOk : Bool :=
 def queenAfterFirstNoncreature : Game :=
   let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
   let g := g.record (GameEvent.cast g.turnNumber ⟨1⟩
-    { id := ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, instantOrSorcery := true }
+    { id := ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
     (.hand ⟨1⟩))
   let g := addToHand g lightningBolt ⟨1⟩
   let bolt :=
@@ -3223,7 +3223,7 @@ def radagastCastIsFirstOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
   let g := g.record (GameEvent.cast g.turnNumber ⟨0⟩
-    { id := ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, creature := true }
+    { id := ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
     (.hand ⟨0⟩))
   let cost := g.playManaCost card grizzlyBears
   cost == ManaCost.ofGenericAndColor 1 .green &&

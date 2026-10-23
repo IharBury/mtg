@@ -23,25 +23,42 @@ structure EventObject where
   id : ObjectId
   controller : Option PlayerId := none
   owner : PlayerId := ⟨0⟩
-  creature : Bool := false
   token : Bool := false
-  artifact : Bool := false
-  land : Bool := false
-  planeswalker : Bool := false
-  instantOrSorcery : Bool := false
-  equipment : Bool := false
   legendary : Bool := false
   attacking : Bool := false
   changeling : Bool := false
+  types : Array CardType := #[]
   subtypes : Array CardSubtype := #[]
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
 
+/-- `t` is one of this object's card types. -/
+def hasType (o : EventObject) (t : CardType) : Bool :=
+  o.types.any (· == t)
+
+def creature (o : EventObject) : Bool :=
+  o.hasType .creature
+
+def artifact (o : EventObject) : Bool :=
+  o.hasType .artifact
+
+def land (o : EventObject) : Bool :=
+  o.hasType .land
+
+def planeswalker (o : EventObject) : Bool :=
+  o.hasType .planeswalker
+
+def instantOrSorcery (o : EventObject) : Bool :=
+  o.types.any CardType.isInstantOrSorcery
+
 /-- `s` is one of this object's types, including changeling creature types
 (CR 702.72). -/
 def hasSubtype (o : EventObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) || (o.changeling && !s.isNoncreature)
+
+def equipment (o : EventObject) : Bool :=
+  o.artifact && o.hasSubtype .equipment
 
 /-- Goblin, Orc, or Army. -/
 def goblinOrcArmy (o : EventObject) : Bool :=
@@ -78,16 +95,11 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
   { id := o.id
     controller := o.controller
     owner := o.owner
-    creature := o.isCreature
     token := o.printed.isToken
-    artifact := o.printed.isArtifact || o.types.any (· == .artifact)
-    land := o.printed.isLand || o.types.any (· == .land)
-    planeswalker := o.printed.isPlaneswalker
-    instantOrSorcery := o.printed.isInstantOrSorcery
-    equipment := o.printed.isEquipment
     legendary := o.isLegendary
     attacking := o.status.attacking
     changeling := o.printed.keywords.changeling
+    types := o.types
     subtypes := o.subtypes }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
@@ -275,7 +287,7 @@ inductive StatusChange where
   | time (v : Nat)
   | notACreature (v : Bool)
   | windcragMardu (v : Bool)
-  | chosenCardType (v : Option String)
+  | chosenCardType (v : Option CardType)
   | freeCastFromGraveyard (v : Bool)
   | isCommander (v : Bool)
   | firstStrikeOnYourTurn (v : Bool)

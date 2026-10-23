@@ -51,8 +51,8 @@ structure TargetFilter where
   subtypes : Array CardSubtype := #[]
   /-- A legendary object also qualifies (“creature or legendary spell”). -/
   orLegendary : Bool := false
-  nonland : Bool := false
-  noncreature : Bool := false
+  /-- The target has none of these card types (“nonland”, “noncreature”). -/
+  nonTypes : Array CardType := #[]
   /-- Not an Aura (“non-Aura enchantment”). -/
   nonAura : Bool := false
   /-- A permanent card (CR 110.4b). -/
@@ -199,12 +199,9 @@ inductive EffectTargetKind where
   | enchantmentMvAtLeast (n : Nat)
   /-- Target noncreature artifact. -/
   | noncreatureArtifact
-  /-- An activated or triggered ability you control from a creature source
-  (Echo; MSH 74). -/
-  | stackAbilityFromCreatureSource
-  /-- An activated or triggered ability you control from an artifact source
-  (Scientist Supreme of A.I.M.; MSH 87). -/
-  | stackAbilityFromArtifactSource
+  /-- An activated or triggered ability you control from a source of this card type
+  (Echo, MSH 74; Scientist Supreme of A.I.M., MSH 87). -/
+  | stackAbilityFromSource (ty : CardType)
   /-- Target creature an opponent controls with power `n` or less. -/
   | oppCreaturePowerAtMost (n : Int)
   /-- Target creature an opponent controls that dealt damage this turn. -/
@@ -443,11 +440,9 @@ def spec : EffectTargetKind → Spec
     { noun := s!"target enchantment with mana value {n} or greater" }
   | .noncreatureArtifact =>
     { noun := "target noncreature artifact" }
-  | .stackAbilityFromCreatureSource =>
-    { noun := "target activated or triggered ability you control from a creature source",
-      stackSpell := true }
-  | .stackAbilityFromArtifactSource =>
-    { noun := "target activated or triggered ability you control from an artifact source",
+  | .stackAbilityFromSource ty =>
+    let w := ty.oracleWord
+    { noun := s!"target activated or triggered ability you control from {indefinite w} {w} source",
       stackSpell := true }
   | .oppCreaturePowerAtMost n =>
     { noun := s!"target creature an opponent controls with power {n} or less" }
@@ -588,8 +583,8 @@ def closedKinds : List EffectTargetKind := [
   .upToOneCreatureThenPlayer,
   .attackingOrBlockingCreature,
   .noncreatureArtifact,
-  .stackAbilityFromCreatureSource,
-  .stackAbilityFromArtifactSource,
+  .stackAbilityFromSource .creature,
+  .stackAbilityFromSource .artifact,
   .oppCreatureDealtDamageThisTurn,
   .nonlandNontoken,
   .permanentCardInYourGraveyard,

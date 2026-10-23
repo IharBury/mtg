@@ -196,6 +196,9 @@ def takeSubtype (sub : CardSubtype) : ArgM CardSubtype := do
 def takeSubtypes (xs : Array CardSubtype) : ArgM (Array CardSubtype) :=
   xs.mapM takeSubtype
 
+def takeCardTypes (xs : Array CardType) : ArgM (Array CardType) :=
+  xs.mapM takeCardType
+
 def takeOptSubtype (o : Option CardSubtype) : ArgM (Option CardSubtype) :=
   match o with
   | none => pure none
@@ -596,8 +599,8 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
     return .otherSubtypeGetPowerPerArtifactToken (← takeSubtype s)
   | .extraTriggerIfEnduringStorySubtype s =>
     return .extraTriggerIfEnduringStorySubtype (← takeSubtype s)
-  | .extraTriggerAnotherYouControl ss b =>
-    return .extraTriggerAnotherYouControl (← takeSubtypes ss) b
+  | .extraTriggerAnotherYouControl ss ts =>
+    return .extraTriggerAnotherYouControl (← takeSubtypes ss) (← takeCardTypes ts)
   | .powerPerFatGraveyard p => return .powerPerFatGraveyard (← takeInt p)
   | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeSubtype s)
   | .equippedGetsTrampleAndCombatTreasures p t =>

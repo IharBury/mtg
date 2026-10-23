@@ -730,7 +730,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .exileFlicker) =>
     let kind := EffectTargetKind.filtered {
       noun := "another target nonland, nontoken permanent"
-      nonland := true, nontoken := true, another := true }
+      nonTypes := #[.land], nontoken := true, another := true }
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let name := o.name
       let (g, newId) := g.move o.id .exile none

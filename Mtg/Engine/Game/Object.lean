@@ -196,9 +196,12 @@ def types (o : GameObject) : Array CardType :=
     if ts.any (· == .artifact) then ts else ts.push .artifact
   else
     let asCreature :=
-      o.status.additionalCreature || o.status.additionalCreatureUntilEot
+      o.status.additionalCreature || o.status.additionalCreatureUntilEot ||
+        o.status.animatedConstruct55
     let ts :=
-      if asCreature && !o.printed.isCreature then
+      if o.status.notACreature then
+        o.printed.types.filter (· != .creature)
+      else if asCreature && !o.printed.isCreature then
         o.printed.types.push .creature
       else
         o.printed.types
@@ -265,6 +268,9 @@ def isLegendary (o : GameObject) : Bool :=
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
+
+def hasType (o : GameObject) (t : CardType) : Bool :=
+  o.types.any (· == t)
 
 def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||

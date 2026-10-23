@@ -141,7 +141,7 @@ def reproach : Game :=
 
 #guard
   let (g, id) := entered serrasEmissary
-  (g.object! id).status.chosenCardType == some "Creature"
+  (g.object! id).status.chosenCardType == some .creature
 
 def monarchGinger : Game :=
   let g := afterDraw.changePlayer ⟨0⟩ (.isMonarch true)

@@ -929,9 +929,8 @@ def createTokensEqualRemovedPlusOnes (kind : TokenKind) : Effect :=
 def exileTopXPlayThisTurn : Effect :=
   mkAbility ({}) (.exileTopXPlayThisTurn)
 
-def copyControlledAbility (fromCreature : Bool) : Effect :=
-  mkAbility (.of (if fromCreature then .stackAbilityFromCreatureSource
-             else .stackAbilityFromArtifactSource)) (.copyControlledAbility fromCreature)
+def copyControlledAbility (ty : CardType) : Effect :=
+  mkAbility (.of (.stackAbilityFromSource ty)) (.copyControlledAbility ty)
 
 def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
   mkAbility ({}) (.createTokensEqualSubtype kind (CardSubtype.ofOracleD subtype))
@@ -1460,7 +1459,7 @@ def chargeTheSanctumPump : Effect :=
     (castKind := .pump)
 
 def clashOfElements : Effect :=
-  fraSpellOn { noun := "target nonland permanent", nonland := true } .clashOfElements
+  fraSpellOn { noun := "target nonland permanent", nonTypes := #[.land] } .clashOfElements
     "Choose target nonland permanent. Its owner may put it on top of their library. If they do, this spell deals 2 damage to them. If they didn't put the card on top of their library, they put it on the bottom"
     (castKind := .destroyCreature)
 
@@ -1521,7 +1520,7 @@ def stingingVitriol : Effect :=
     (castKind := .burn)
 
 def theorixCounter : Effect :=
-  fraSpellOn { noun := "target noncreature spell", zone := .stack, noncreature := true }
+  fraSpellOn { noun := "target noncreature spell", zone := .stack, nonTypes := #[.creature] }
     (.counterUnlessPays 2)
     "Counter target noncreature spell unless its controller pays {2}"
     (castKind := .counter)
@@ -1537,7 +1536,7 @@ def twinnedVision : Effect :=
     (castKind := .draw)
 
 def twistedFates : Effect :=
-  fraSpell (.multi #[{ noun := "target nonland permanent", nonland := true },
+  fraSpell (.multi #[{ noun := "target nonland permanent", nonTypes := #[.land] },
       { noun := "target player", zone := .player }] #[])
     (.sequence [.destroyAt 0, .plusOneOnCreaturesOfPlayerAt 1])
     "Destroy target nonland permanent. Put a +1/+1 counter on each creature target player controls"
@@ -1580,7 +1579,7 @@ def drawThenDiscardOne : Effect :=
   fraUntargeted (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card"
 
 def destroyNoncreatureNonland : Effect :=
-  fraSpellOn { noun := "target noncreature, nonland permanent", noncreature := true, nonland := true }
+  fraSpellOn { noun := "target noncreature, nonland permanent", nonTypes := #[.creature, .land] }
     .destroyTarget "Destroy target noncreature, nonland permanent"
 
 def gainLifeMode (n : Nat) : Effect :=

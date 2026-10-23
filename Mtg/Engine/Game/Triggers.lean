@@ -240,12 +240,12 @@ def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) 
       match ab with
       | .extraTriggerIfEnduringStorySubtype subtype =>
         if story && g.hasSubtype source subtype then acc + 1 else acc
-      | .extraTriggerAnotherYouControl subtypes includeBattles =>
+      | .extraTriggerAnotherYouControl subtypes types =>
         if o.id == source.id then acc
         else
           let matchSubtype := subtypes.any (fun s => g.hasSubtype source s)
-          let matchBattle := includeBattles && source.printed.isBattle
-          if matchSubtype || matchBattle then acc + 1 else acc
+          let matchType := types.any source.printed.hasType
+          if matchSubtype || matchType then acc + 1 else acc
       | .equippedTriggersAgain =>
         if o.attachedTo == some source.id then acc + 1 else acc
       | _ => acc) acc) 0

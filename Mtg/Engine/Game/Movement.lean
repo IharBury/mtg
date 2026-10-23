@@ -570,7 +570,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     let (g, newId) := g.move id .battlefield (some controller)
     let o := g.object! newId
     let chosenCardType :=
-      if o.printed.asEntersChooseCardType && o.status.chosenCardType.isNone then some "Creature"
+      if o.printed.asEntersChooseCardType && o.status.chosenCardType.isNone then some .creature
       else o.status.chosenCardType
     let windcragMardu :=
       if o.printed.asEntersChooseMarduOrJeskai then true else o.status.windcragMardu
