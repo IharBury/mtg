@@ -493,18 +493,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       else g
     | none => g
-  -- Carry an impending `notACreature` effect from the resolving spell on the
-  -- stack to the permanent it becomes under the same `EffectId` (CR 400.7,
-  -- CR 702.176).
-  let g : Game :=
-    if old.zone == Zone.stack && dest == Zone.battlefield then
-      g.activeEffects.foldl (fun (g : Game) (eid, e) =>
-        match e with
-        | .notACreature id =>
-          if id == old.id then g.change (.effectUpdated eid (.notACreature newId))
-          else g
-        | _ => g) g
-    else g
   let g := g.expireEffectsOnLeavingObject old
   let g :=
     if old.zone == .battlefield then
@@ -512,7 +500,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g :=
     match g.findObject? newId with
-    | some cur => g.createPrintedStaticEffects cur
+    | some cur =>
+      -- A permanent whose spell was cast for its impending cost enters with
+      -- its time counters and isn't a creature while it has one (CR 702.176,
+      -- rulings 967 / 970). The spell itself stays a creature spell, so the
+      -- effect is created only now, on the permanent.
+      let g : Game :=
+        if old.zone == Zone.stack && dest == Zone.battlefield &&
+            cur.printed.impending.isSome && cur.status.time > 0 then
+          g.createEffect (.notACreature newId)
+        else g
+      g.createPrintedStaticEffects cur
     | none => g
   -- Loki left: keep his pending copy effect under the same `EffectId`, now
   -- with his last known power (MSH 109).

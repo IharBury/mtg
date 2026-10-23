@@ -482,6 +482,24 @@ yours, and copying your spell expires only your matching effect (MSH 109). -/
     (g4.activeEffect? eidOpp).isSome &&
     g4.pendingLokiCopy == some (opp, none, 2)
 
+/- Two pending Loki copies for the same player both see the next matching
+cast: each copies the spell and ends. One whose power is too low stays
+pending (MSH 109). -/
+#guard
+  let g0 := quiet afterDraw
+  let g1 := ((g0.createEffect (.pendingLokiCopy me none 2)).createEffect
+    (.pendingLokiCopy me none 3)).createEffect (.pendingLokiCopy me none 0)
+  let ids := (GameEvent.createdEffectsWithId g1.events).map Prod.fst
+  let (g2, spell) := (quiet g1).allocObject lightningBolt me .stack (some me)
+  let g2 := g2.putStackEntry me spell.id
+  let g3 := g2.putCastTriggersOnStack me (g2.object! spell.id)
+  let copies := g3.objects.filter (fun o =>
+    o.zone == .stack && o.isCopy && o.printed.name == "Lightning Bolt")
+  ids.size == 3 &&
+    copies.size == 2 &&
+    (GameEvent.expiredEffectsWithId g3.events).map Prod.fst == #[ids[0]!, ids[1]!] &&
+    (g3.activeEffect? ids[2]!).isSome
+
 /- Stacked copy effects (CR 613.7 / 707): a "copy until this source leaves"
 effect followed by a "copy until end of turn" effect reverts to the earlier
 copy at cleanup and restores the original card only when the source leaves. -/
@@ -506,9 +524,9 @@ copy at cleanup and restores the original card only when the source leaves. -/
     (g4.object! b.id).copyRestore.isNone &&
     (g4.object! b.id).copyUntilSourceLeaves.isNone
 
-/- Paying an impending cost creates `.notACreature` on the spell with an
-`EffectId` and carries that same `EffectId` to the permanent it becomes
-(CR 400.7, CR 702.176). -/
+/- A spell cast for its impending cost is still a creature spell on the stack
+(ruling 967). The permanent it becomes enters with a `.notACreature`
+continuous effect that has its own `EffectId` (CR 702.176, ruling 970). -/
 #guard
   let impDef : CardDef :=
     { bear with
@@ -524,14 +542,13 @@ copy at cleanup and restores the original card only when the source leaves. -/
     match g0.applyKickerToProposed true with
     | .error _ => false
     | .ok g1 =>
-      let created := GameEvent.createdEffectsWithId g1.events
-      if created.size != 1 then false
-      else
-        let eid := created[0]!.1
-        let (g2, permId) := (quiet g1).move spellId .battlefield (some me)
-        created[0]!.2 == .notACreature spellId &&
-          !(g1.object! spellId).isCreature &&
-          g2.activeEffect? eid == some (.notACreature permId) &&
-          !(g2.object! permId).isCreature
+      let (g2, permId) := (quiet g1).move spellId .battlefield (some me)
+      let created := GameEvent.createdEffectsWithId g2.events
+      (GameEvent.createdEffectsWithId g1.events).isEmpty &&
+        (g1.object! spellId).isCreature &&
+        (match created.find? (fun (_, e) => e == .notACreature permId) with
+          | some (eid, _) => g2.activeEffect? eid == some (.notACreature permId)
+          | none => false) &&
+        !(g2.object! permId).isCreature
 
 end Mtg.Engine.EventTests

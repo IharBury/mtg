@@ -255,10 +255,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
-  -- ≤ Loki's power at cast time (last known if he already left).
+  -- ≤ Loki's power at cast time (last known if he already left). Each
+  -- activation is its own delayed trigger, so every matching pending effect
+  -- of the caster copies this spell and then ends under its own `EffectId`.
   if !spell.printed.isInstantOrSorcery then g
   else
-    let matchingEid? := g.activeEffects.findSome? (fun (eid, eff) =>
+    let matching := g.activeEffects.filterMap (fun (eid, eff) =>
       match eff with
       | .pendingLokiCopy p src fallback =>
         if p != caster then none
@@ -272,16 +274,14 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
             | none => fallback
           if Int.ofNat mv <= pw then some eid else none
       | _ => none)
-    match matchingEid? with
-    | some eid =>
+    matching.foldl (fun g eid =>
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.changeObjects copy.id #[
         .chosenX spell.chosenX,
         .isCopy true]
       let g := g.putStackEntry caster copy.id
       let g := g.expireEffectById eid
-      g.logMsg s!"A copy of {spell.name} is created (Loki)"
-    | none => g
+      g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
