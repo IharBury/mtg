@@ -84,15 +84,10 @@ structure Game where
   /-- After Palantír of Orthanc finishes scrying, this opponent may have
   the controller draw. Stores controller, opponent, and the Palantír. -/
   palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
-  /-- Last-known status of objects that left the battlefield, newest last
-  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
-  lastKnownStatus : Array (ObjectId × Status) := #[]
   /-- The spell whose effect is currently resolving (CR 608.2). -/
   resolvingSpell : Option ObjectId := none
   /-- The activated or triggered ability currently resolving. -/
   resolvingAbility : Option ObjectId := none
-  /-- Where recently moved objects went (old id, new id), most recent last. -/
-  movedTo : Array (ObjectId × ObjectId) := #[]
   /-- Tokens created by the most recent `createKindTokens` call, so a following
   sequence step can haste them or leave them out of a plus-one. -/
   recentTokenIds : Array ObjectId := #[]
@@ -1580,9 +1575,127 @@ def applyLifeEvent (g : Game) (e : LifeEvent) : Game :=
       else { g with players := g.players.set! p.idx { pl with life := pl.life - (amount : Int) } }
     else g
 
+/-- Remove `id` from `zone`'s id list without recording an extra event. -/
+def stripFromZoneList (g : Game) (id : ObjectId) (zone : Zone) : Game :=
+  match zone with
+  | .library p => g.modifyPlayer p (fun pl => { pl with library := pl.library.filter (· != id) })
+  | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.filter (· != id) })
+  | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.filter (· != id) })
+  | .stack => { g with stack := g.stack.filter (·.objectId != id) }
+  | .battlefield | .exile | .command | .ante | .outside _ => g
+
+/-- Insert `id` into `dest`'s id list without recording an extra event. -/
+def insertIntoZoneList (g : Game) (id : ObjectId) (dest : Zone)
+    (libPos : Option LibraryPosition := none) : Game :=
+  match dest with
+  | .library p =>
+    g.modifyPlayer p (fun pl =>
+      let lib := pl.library.filter (· != id)
+      let lib' :=
+        match libPos with
+        | some .bottom => #[id] ++ lib
+        | some (.fromTop offset) =>
+          let split := lib.size - Nat.min offset lib.size
+          lib.extract 0 split ++ #[id] ++ lib.extract split lib.size
+        | some .top | some .shuffledIn | none => lib.push id
+      { pl with library := lib' })
+  | .hand p =>
+    g.modifyPlayer p (fun pl =>
+      let h := pl.hand.filter (· != id)
+      { pl with hand := h.push id })
+  | .graveyard p =>
+    g.modifyPlayer p (fun pl =>
+      let gy := pl.graveyard.filter (· != id)
+      { pl with graveyard := gy.push id })
+  | .stack | .battlefield | .exile | .command | .ante | .outside _ => g
+
+/-- Apply one `ZoneEvent` in isolation (CR 400.6, 400.7, 111.10, 704.5d–e). -/
+def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
+  match e with
+  | .moved before after fromZone toZone _ _ entersWith libPos =>
+    let newId : ObjectId := after.id.getD ⟨g.nextObjectId⟩
+    let ts : Nat := if after.timestamp > 0 then after.timestamp else g.timestamp + 1
+    let mergedCounters :=
+      if entersWith.isEmpty then after.counters
+      else
+        entersWith.foldl (fun acc (k, n) =>
+          if acc.count k == 0 then acc.add k n else acc) after.counters
+    let afterWithCounters : EventObject := { after with zone := toZone, counters := mergedCounters }
+    let matchIdx? :=
+      before.id.bind (fun bid =>
+        g.objects.findIdx? (fun o =>
+          o.id == bid &&
+            (o.zone == fromZone ||
+              (toZone == .battlefield && o.zone == .battlefield && before.id == after.id))))
+    match matchIdx? with
+    | some idx =>
+      let existing := g.objects[idx]!
+      let g := g.stripFromZoneList existing.id fromZone
+      let afterFull : EventObject :=
+        if afterWithCounters.printed.isNone && afterWithCounters.name.isEmpty then
+          { afterWithCounters with printed := some existing.printed, name := existing.printed.name }
+        else afterWithCounters
+      let fresh := afterFull.toGameObject newId ts
+      let objs := (g.objects.filter (fun (o : GameObject) => o.id != existing.id)).push fresh
+      let g :=
+        { g with
+          objects := objs
+          nextObjectId := max g.nextObjectId (newId.raw + 1)
+          timestamp := max g.timestamp ts }
+      g.insertIntoZoneList newId toZone libPos
+    | none =>
+      if before.id != after.id || !after.name.isEmpty || after.printed.isSome then
+        let g :=
+          match before.id with
+          | some bid => g.stripFromZoneList bid fromZone
+          | none => g
+        let fresh := afterWithCounters.toGameObject newId ts
+        let objs :=
+          match g.objects.findIdx? (fun o => o.id == newId) with
+          | some i => g.objects.set! i fresh
+          | none => g.objects.push fresh
+        let g :=
+          { g with
+            objects := objs
+            nextObjectId := max g.nextObjectId (newId.raw + 1)
+            timestamp := max g.timestamp ts }
+        g.insertIntoZoneList newId toZone libPos
+      else g
+  | .created object controller =>
+    let newId : ObjectId := object.id.getD ⟨g.nextObjectId⟩
+    let ts : Nat := if object.timestamp > 0 then object.timestamp else g.timestamp + 1
+    let objWithCtrl : EventObject :=
+      { object with
+        controller :=
+          if object.zone == Zone.battlefield || object.zone == Zone.stack then
+            object.controller.orElse (fun _ => some controller)
+          else object.controller }
+    let fresh := objWithCtrl.toGameObject newId ts
+    let objs :=
+      match g.objects.findIdx? (fun o => o.id == newId) with
+      | some i => g.objects.set! i fresh
+      | none => g.objects.push fresh
+    let g :=
+      { g with
+        objects := objs
+        nextObjectId := max g.nextObjectId (newId.raw + 1)
+        timestamp := max g.timestamp ts }
+    g.insertIntoZoneList newId fresh.zone
+  | .ceasedToExist object =>
+    match object.id with
+    | none => g
+    | some id =>
+      let g :=
+        match g.objects.find? (fun o => o.id == id) with
+        | some cur => g.stripFromZoneList id cur.zone
+        | none => g
+      let g := g.stripFromZoneList id object.zone
+      { g with objects := g.objects.filter (fun o => o.id != id) }
+
 /-- Process one `RulesEvent` in isolation. -/
 def applyRulesEvent (g : Game) (r : RulesEvent) : Game :=
   match r with
+  | .zone e => g.applyZoneEvent e
   | .permanent e => g.applyPermanentEvent e
   | .damage e => g.applyDamageEvent e
   | .life e => g.applyLifeEvent e
@@ -1717,16 +1830,8 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .pendingDrawAfterScry v => { g with pendingDrawAfterScry := v }
   | .discardedCardThisWay v => { g with discardedCardThisWay := v }
   | .palantirAfterScry v => { g with palantirAfterScry := v }
-  | .lastKnownStatus v => { g with lastKnownStatus := v }
-  | .recordLastKnownStatus id s =>
-    let lki := g.lastKnownStatus.push (id, s)
-    { g with lastKnownStatus := lki.extract (lki.size - Nat.min lki.size 32) lki.size }
   | .resolvingSpell v => { g with resolvingSpell := v }
   | .resolvingAbility v => { g with resolvingAbility := v }
-  | .movedTo v => { g with movedTo := v }
-  | .recordMovedTo oldId newId =>
-    let m := g.movedTo.push (oldId, newId)
-    { g with movedTo := m.extract (m.size - Nat.min m.size 64) m.size }
   | .recentTokenIds v => { g with recentTokenIds := v }
   | .pushRecentTokenId id => { g with recentTokenIds := g.recentTokenIds.push id }
   | .fraAfterLook v => { g with fraAfterLook := v }
@@ -1882,6 +1987,22 @@ def applyEvent (g : Game) (e : GameEvent) : Game :=
           cause := .oneShotEffect actualId none none
           change := .rules (.effectApplied actualId eff) },
         some actualId)
+    | _, .rules (.zone (.moved before after fromZone toZone verb actor entersWith libPos)) =>
+      if after.id.isNone then
+        let newId : ObjectId := ⟨g.nextObjectId⟩
+        let ts : Nat := if after.timestamp > 0 then after.timestamp else g.timestamp + 1
+        ({ e with
+            change := .rules (.zone (.moved before { after with id := some newId, timestamp := ts } fromZone toZone verb actor entersWith libPos)) },
+          none)
+      else (e, none)
+    | _, .rules (.zone (.created object controller)) =>
+      if object.id.isNone then
+        let newId : ObjectId := ⟨g.nextObjectId⟩
+        let ts : Nat := if object.timestamp > 0 then object.timestamp else g.timestamp + 1
+        ({ e with
+            change := .rules (.zone (.created { object with id := some newId, timestamp := ts } controller)) },
+          none)
+      else (e, none)
     | _, _ => (e, none)
   let g := { g with events := g.events.push e }
   let g := g.applyChange e.change
@@ -2617,11 +2738,42 @@ def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
 def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
   actor == whose
 
-/-- The object a moved object became, following zone changes (CR 400.7). -/
+/-- The object a moved object became, following `ZoneEvent.moved` records in
+`g.events` (CR 400.7). -/
 partial def followMoved (g : Game) (id : ObjectId) : ObjectId :=
-  match g.movedTo.reverse.find? (·.1 == id) with
-  | some (_, next) => if next == id then id else g.followMoved next
+  let next? := g.events.reverse.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before after _ _ _ _ _ _)) =>
+      if before.id == some id then
+        match after.id with
+        | some next => if next != id then some next else none
+        | none => none
+      else none
+    | _ => none)
+  match next? with
+  | some next => g.followMoved next
   | none => id
+
+/-- Last-known `before` snapshot of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownBefore? (g : Game) (id : ObjectId) : Option EventObject :=
+  g.events.reverse.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) =>
+      if before.id == some id then some before else none
+    | _ => none)
+
+/-- Last-known `CounterBag` of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownCounters (g : Game) (id : ObjectId) : CounterBag :=
+  match g.lastKnownBefore? id with
+  | some before => before.counters
+  | none => #[]
+
+/-- Last-known counter `Status` of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownCounterStatus? (g : Game) (id : ObjectId) : Option Status :=
+  (g.lastKnownBefore? id).map (fun before => ({} : Status).withCounterBag before.counters)
 
 /-- Player putting counters: the resolving spell or ability's controller,
 or `fallback` when none is resolving. -/

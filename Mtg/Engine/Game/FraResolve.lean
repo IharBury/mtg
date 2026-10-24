@@ -32,7 +32,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o =>
           if o.zone == .stack then
             if o.isCopy then
-              (g.removeFromZoneList o.id .stack |>.ceaseToExist o.id).logMsg
+              (g.ceaseToExist o.id).logMsg
                 s!"The copy of {o.name} ceases to exist (CR 704.5e)"
             else g.returnToHand id o.owner
           else g
@@ -426,13 +426,22 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let g := g.logMsg s!"{card.name} is exiled"
       let printed := (g.object! ex).printed
       -- Permanent spells cast this way become tokens.
-      let (g, copy) := g.allocObject { printed with isToken := printed.isPermanentCard }
-        controller .exile (some controller)
-      let g := g.changeObject copy.id (.isCopy true)
-      let g := g.createEffect (.playPermission copy.id {
+      let copyId : ObjectId := ⟨g.nextObjectId⟩
+      let copyTs := g.timestamp + 1
+      let copyObj : GameObject := {
+        id := copyId
+        printed := { printed with isToken := printed.isPermanentCard }
+        owner := controller
+        controller := some controller
+        zone := .exile
+        timestamp := copyTs
+        isCopy := true
+      }
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+      let g := g.createEffect (.playPermission copyId {
         player := controller, turnEndsRemaining := 0,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
-      (g, cs.push copy.id)) (g, #[])
+      (g, cs.push copyId)) (g, #[])
     if copies.isEmpty then g
     else
       g.beginFraChoice controller (.castCopiesFree copies 6 copies.size)
@@ -452,13 +461,24 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some spell =>
       if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
       else
-        let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
-        let g := g.changeObjects copy.id #[
-          .chosenX spell.chosenX, .isCopy true, .adventurerCard spell.adventurerCard]
-        let g := g.putStackEntry controller copy.id
+        let copyId : ObjectId := ⟨g.nextObjectId⟩
+        let copyTs := g.timestamp + 1
+        let copyObj : GameObject := {
+          id := copyId
+          printed := spell.printed
+          owner := controller
+          controller := some controller
+          zone := .stack
+          timestamp := copyTs
+          chosenX := spell.chosenX
+          isCopy := true
+          adventurerCard := spell.adventurerCard
+        }
+        let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+        let g := g.putStackEntry controller copyId
         let g :=
           match g.stack.find? (fun e => e.objectId == spell.id),
-              g.stack.findIdx? (fun e => e.objectId == copy.id) with
+              g.stack.findIdx? (fun e => e.objectId == copyId) with
           | some orig, some i =>
             g.changes #[
               .stackEntry i (.targets orig.targets),

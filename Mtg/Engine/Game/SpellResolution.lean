@@ -191,12 +191,9 @@ def resolveTop (g : Game) : Game :=
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak || g.entersTapped entry.controller obj.printed)
             (summoningSick := sick)
-          -- The permanent remembers X (CR 107.3m) and whether it was cast.
-          let g := g.changeObjects newId #[.chosenX obj.chosenX, .wasCast (!obj.isCopy)]
-          let g :=
-            if sneak then
-              g.changeStatuses newId #[.attacking true, .attackingWhom sneakWhom]
-            else g
+            (attacking := sneak)
+            (attackingWhom := if sneak then sneakWhom else none)
+            (wasCast := some (!obj.isCopy))
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)

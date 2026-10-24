@@ -316,9 +316,9 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
         let owner := o.owner
         let name := o.name
         let (g, exId) := g.move o.id .exile none
+        let ex := g.object! exId
         let (g, retId) := g.move exId .battlefield (some owner)
-        let ret := g.object! retId
-        let g := g.changeStatus retId (.summoningSick (!ret.printed.keywords.haste))
+          (summoningSick := !ex.printed.keywords.haste)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
@@ -339,10 +339,9 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
         let owner := o.owner
         let name := o.name
         let (g, newId) := g.move o.id .exile none
+        let ex := g.object! newId
         let (g, retId) := g.move newId .battlefield (some owner)
-        let ret := g.object! retId
-        let g := g.changeStatuses retId
-          #[.tapped true, .summoningSick (!ret.printed.keywords.haste)]
+          (tapped := true) (summoningSick := !ex.printed.keywords.haste)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
@@ -356,6 +355,25 @@ def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Boo
       match m with
       | .keywords k => k.haste
       | _ => false)
+
+/-- Extra enters-with counters specified by `mods`. -/
+def enterModsExtraCounters (mods : List TriggeredAbility.TriggerEnterWith) : CounterBag :=
+  mods.foldl (fun acc m =>
+    match m with
+    | .counter .finality n _ => acc.add .finality n
+    | .counter kind n true => acc.add kind n
+    | _ => acc) #[]
+
+/-- Attacking status specified by `mods` as the permanent enters. -/
+def enterModsAttacking (g : Game) (controller : PlayerId)
+    (mods : List TriggeredAbility.TriggerEnterWith) : Bool × Option PlayerId :=
+  if mods.any (· == .attacking) then
+    let whom :=
+      match (g.livingOpponents controller)[0]? with
+      | some pl => some pl.id
+      | none => none
+    (true, whom)
+  else (false, none)
 
 /-- Apply one enters-with change to the permanent `id`. -/
 def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
@@ -388,21 +406,19 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
       | .plusOnePlusOne, false =>
         g.addPlusOnePlusOneTo o n (byPlayer := some controller)
       | .finality, _ =>
-        g.addFinalityTo o n (byPlayer := some controller)
+        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true)
       | kind, asEnters =>
         g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller)
-    | .attacking =>
-      let whom :=
-        match (g.livingOpponents controller)[0]? with
-        | some pl => some pl.id
-        | none => none
-      g.changeStatuses id #[.attacking true, .attackingWhom whom]
+    | .attacking => g
 
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  let (atk, whom) := g.enterModsAttacking controller mods
   let (g, newId) := g.putOntoBattlefield o.id o.owner
+    (attacking := atk) (attackingWhom := whom)
+    (extraEntersWith := enterModsExtraCounters mods)
   let g := mods.foldl (fun g m => g.applyEnterMod controller newId m) g
   let g := g.afterPermanentEnters (g.object! newId)
   if losesAbilitiesAndHaste mods then

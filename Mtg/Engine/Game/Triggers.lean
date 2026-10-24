@@ -60,7 +60,7 @@ def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effec
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
   let modes := g.triggerModesOf obj
   if !modes.any (g.triggerModeChoosable p obj) then
-    let g := g.removeFromZoneList obj.id .stack |>.ceaseToExist obj.id
+    let g := g.ceaseToExist obj.id
     g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
   else
     let what := if count == 2 then "two modes" else "a mode"
@@ -330,12 +330,34 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat) : Game :=
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
-/-- As a Saga enters, put a lore counter on it (CR 714.2a). -/
+/-- As a Saga enters, put a lore counter on it (CR 714.3a). When the Saga
+entered via `move` or `applyEntersWith`, the lore counter(s) are already in
+`o.status.lore` and `entersWith`, so we log and queue the chapter triggers
+without adding another counter. -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
-  if o.printed.saga.isSome then g.addOneLoreCounter o else g
+  match o.controller, o.printed.saga with
+  | some p, some sdef =>
+    if o.status.faceDown then g
+    else if o.status.lore == 0 then
+      g.addOneLoreCounter o
+    else
+      Id.run do
+        let mut g := g
+        for i in [0:o.status.lore] do
+          let lore := i + 1
+          g := g.logMsg s!"{o.name} gets a lore counter ({lore})"
+          let saga := g.object! o.id
+          g := (sdef.chaptersForLore lore).foldl (fun g ch =>
+            match ch.chapterEffect with
+            | none => g
+            | some ce =>
+              g.queueTrigger p saga (TriggeredAbility.sagaChapter lore ce)
+                .sagaChapter) g
+        return g
+  | _, _ => g
 
 /-- After the draw step / as first main begins, add a lore counter to each
-Saga the active player controls (CR 714.2b). -/
+Saga the active player controls (CR 714.3b). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
   (g.permanentsOf g.activePlayer).foldl (fun acc o =>
     if o.printed.saga.isSome then acc.addOneLoreCounter o else acc) g
@@ -522,25 +544,17 @@ def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
   if !o.printed.isToken then g
   else
     let p := o.controller.getD o.owner
-    match g.events.back? with
-    | some happened =>
-      if happened.matchesTrigger p o.id .youSacrificeToken then
-        g.putControlledTriggers p .youSacrificeToken
-      else g
-    | none => g
+    if g.events.reverse.any (fun happened =>
+        happened.turn == g.turnNumber &&
+          happened.matchesTrigger p o.id .youSacrificeToken) then
+      g.putControlledTriggers p .youSacrificeToken
+    else g
 
-/-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers. -/
+/-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers
+(CR 701.17a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
-  let g := g.moveToOwnerGraveyard o reason
-  let now := g.followMoved o.id
-  let g :=
-    match g.findObject? now with
-    | some moved =>
-      if moved.zone == Zone.graveyard moved.owner then
-        let happened := GameEvent.sacrificed g.turnNumber (o.controller.getD o.owner) o.asEvent
-        g.record happened
-      else g
-    | none => g
+  let actor := o.controller.getD o.owner
+  let g := g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
   g.queueYouSacrificeToken o
 
 /-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/

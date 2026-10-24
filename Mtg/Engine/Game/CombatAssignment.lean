@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.PowerToughness
+import Mtg.Engine.Game.Library
 
 /-!
 # Combat damage assignment (CR 510.1)

@@ -20,43 +20,44 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
   else
     let top := pl.library.back!
     let cardName := (g.object! top).name
-    let rest := pl.library.pop
-    let g := g.changePlayer p (.library rest)
-    let (g, _) := g.move top (.hand p) none
-    let pl := g.player p
     let nth := GameEvent.draws g.events g.turnNumber p + 1
     let firstOfTheirDrawStep :=
       g.step == .draw && g.activePlayer == p &&
         !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
-    let g := g.logMsg s!"{pl.name} draws {cardName}"
-    let happened := GameEvent.drew g.turnNumber p top nth firstOfTheirDrawStep
     -- Opening hands are drawn before anyone keeps (CR 103.4). They are not
     -- “cards drawn this turn” once that counter is cleared for the first turn.
-    let g := if pl.keptOpeningHand then g.record happened else g
-    Id.run do
-      let mut g := g
-      for o in g.permanentsOf p do
-        if happened.matchesTrigger p o.id .youDraw then
-          g := g.change (.enqueueWaitingTriggers
-            (o.waitingTriggersFor p .youDraw))
-        if happened.matchesTrigger p o.id .youDrawSecondCard then
-          g := g.change (.enqueueWaitingTriggers
-            (o.waitingTriggersFor p .youDrawSecondCard))
-      if happened.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
-        for q in g.livingPlayers do
-          for o in g.permanentsOf q.id do
-            if happened.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
+    let verb : Option ZoneVerb :=
+      if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
+    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p)
+    let pl := g.player p
+    let g := g.logMsg s!"{pl.name} draws {cardName}"
+    if !pl.keptOpeningHand then g
+    else
+      let happened := GameEvent.drew g.turnNumber p newId nth firstOfTheirDrawStep
+      Id.run do
+        let mut g := g
+        for o in g.permanentsOf p do
+          if happened.matchesTrigger p o.id .youDraw then
+            g := g.change (.enqueueWaitingTriggers
+              (o.waitingTriggersFor p .youDraw))
+          if happened.matchesTrigger p o.id .youDrawSecondCard then
+            g := g.change (.enqueueWaitingTriggers
+              (o.waitingTriggersFor p .youDrawSecondCard))
+        if happened.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
+          for q in g.livingPlayers do
+            for o in g.permanentsOf q.id do
+              if happened.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
+                g := g.change (.enqueueWaitingTriggers
+                  (o.waitingTriggersFor q.id .anyPlayerDrawsSecond))
+        for opp in g.livingOpponents p do
+          for o in g.permanentsOf opp.id do
+            if happened.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
               g := g.change (.enqueueWaitingTriggers
-                (o.waitingTriggersFor q.id .anyPlayerDrawsSecond))
-      for opp in g.livingOpponents p do
-        for o in g.permanentsOf opp.id do
-          if happened.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
-            g := g.change (.enqueueWaitingTriggers
-              (o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep))
-          if happened.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
-            g := g.change (.enqueueWaitingTriggers
-              (o.waitingTriggersFor opp.id .opponentDrawsSecondCard))
-      return g
+                (o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep))
+            if happened.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
+              g := g.change (.enqueueWaitingTriggers
+                (o.waitingTriggersFor opp.id .opponentDrawsSecondCard))
+        return g
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
 card of your draw step). The replacement matches the draw that would happen. -/
@@ -133,17 +134,18 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
   match dest with
-  | .library owner =>
+  | .library p =>
     Id.run do
       let mut g := g
-      let mut newBottom : Array ObjectId := #[]
-      for id in ids do
-        let (g', newId) := g.move id dest none
+      for i in [0:ids.size] do
+        let id := ids[i]!
+        let libSize := ((g.player p).library.filter (· != id)).size
+        let pos : LibraryPosition :=
+          if i == 0 then .bottom
+          else .fromTop (libSize - Nat.min i libSize)
+        let (g', _) := g.move id dest none (libraryPosition := some pos)
         g := g'
-        newBottom := newBottom.push newId
-      let pl := g.player owner
-      let without := newBottom.foldl (fun lib id => lib.filter (· != id)) pl.library
-      g.changePlayer owner (.library (newBottom ++ without))
+      return g
   | _ =>
     ids.foldl (fun acc id => (acc.move id dest none).1) g
 

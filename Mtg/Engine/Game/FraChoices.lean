@@ -157,13 +157,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         let owner := o.owner
         let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
-        let (g, newId) := g.move id (.library owner) none
+        let pos : LibraryPosition := if answer == .accept then .top else .bottom
+        let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
         if answer == .accept then
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on top of their library"
           return (g.dealDamageToPlayer owner damage (source := src?)).finishFraChoice
         else
-          let pl := g.player owner
-          let g := g.changePlayer owner (.library (#[newId] ++ pl.library.filter (· != newId)))
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on the bottom of their library"
           return g.finishFraChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
@@ -388,7 +387,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
-    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
@@ -536,6 +535,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     match g.findObject? id with
     | some o =>
       let g := g.changeStatus o.id (.tapped true)
+      let events := g.events.map (fun ev =>
+        match ev.change with
+        | .rules (.zone (.moved before after fromZone .battlefield verb actor entersWith libPos)) =>
+          if after.id == some id then
+            { ev with
+              change := .rules (.zone (.moved before
+                { after with tapped := true, status := { after.status with tapped := true } }
+                fromZone .battlefield verb actor entersWith libPos)) }
+          else ev
+        | _ => ev)
+      let g := { g with events }
       return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
     | none => return g.finishFraChoice
   | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
@@ -686,7 +696,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile abilityId _, .decline =>
-    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>

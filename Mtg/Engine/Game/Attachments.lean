@@ -22,29 +22,18 @@ def attachSourceTo (g : Game) (src host : GameObject) : Game :=
 def stripId (ids : Array ObjectId) (id : ObjectId) : Array ObjectId :=
   ids.filter (fun x => x != id)
 
-def removeFromZoneList (g : Game) (id : ObjectId) (z : Zone) : Game :=
-  match z with
-  | .library p => g.changePlayer p (.stripLibrary id)
-  | .hand p => g.changePlayer p (.stripHand id)
-  | .graveyard p => g.changePlayer p (.stripGraveyard id)
-  | .stack => g.change (.removeFromStack id)
-  | _ => g
-
-/-- An object ceases to exist (CR 608.2m / 111.7 / 704.5d / 704.5e).
+/-- An object ceases to exist (CR 608.2m / 111.8 / 704.5d / 704.5e).
 The object is deleted and its id is removed from the zone it occupied, so a
 graveyard, hand, library, or stack keeps nothing of it. -/
-def ceaseToExist (g : Game) (id : ObjectId) : Game :=
-  let old? := g.findObject? id
-  let g :=
-    match old? with
-    | some o => g.removeFromZoneList id o.zone
-    | none => g
-  let g := g.change (.removeObject id)
-  match old? with
+def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) : Game :=
+  match g.findObject? id with
   | some old =>
+    let snap := g.snapshot old
+    let g := g.record (GameEvent.ceasedToExist g.turnNumber snap cause)
     let g := g.expireEffectsOnLeavingObject old
     if old.zone == .battlefield then g.expireWhileSourceEffects id else g
-  | none => g
+  | none =>
+    g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } cause)
 
 /-- Move an object to a new zone, assigning a new object identity (CR 400.7).
 Auras and Equipment attached to a permanent that leaves the battlefield

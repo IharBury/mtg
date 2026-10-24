@@ -42,6 +42,42 @@ def dragon55flyingToken : CardDef :=
 def humanSoldierToken : CardDef :=
   creatureToken "Human Soldier" #[.human, .soldier] 1 1 (some .white)
 
+/-- Extra +1/+1 counters from each permanent `o`'s controller controls with
+`.extraPlusOneCounter` (The Golden Gear: "If one or more +1/+1 counters would
+be put on a creature you control, that many plus one +1/+1 counters are put on
+it instead", CR 614.1a). Handles both an object already on the battlefield and a
+candidate `o` about to enter (CR 614.12). -/
+def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
+  if n == 0 || !o.isCreature then n
+  else
+    match o.controller with
+    | none => n
+    | some p =>
+      let others := ((g.permanentsOf p).filter (fun x =>
+        x.id != o.id && x.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
+      let self :=
+        if !o.status.faceDown && o.staticAbilities.any (· == .fra .extraPlusOneCounter) then 1
+        else 0
+      n + others + self
+
+/-- `extraCountersOn` extended to account for `entering`'s own
+`.extraCounterOnPermanents` ability when `entering` is not yet in
+`g.permanentsOf` (CR 614.12). -/
+def extraCountersOnEntering (g : Game) (entering : GameObject) (n : Nat)
+    (putter : Option PlayerId := entering.controller) : Nat :=
+  if n == 0 then 0
+  else
+    let base := g.extraCountersOn putter n (host := entering.controller)
+    let selfSamson :=
+      match putter, entering.controller with
+      | some p, some c =>
+        if p == c && !entering.status.faceDown &&
+            !(g.permanentsOf p).any (·.id == entering.id) &&
+            entering.printed.staticAbilities.any (· == .extraCounterOnPermanents) then 1
+        else 0
+      | _, _ => 0
+    base + selfSamson
+
 /-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
 Only weavers already on the battlefield before timestamp `asOf` apply
 (simultaneous enters do not see each other). -/
@@ -66,11 +102,79 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
     let g := g.changeStatus o.id (.addPlusOnePlusOne n)
     g.logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
 
+/-- Counters placed on `entering` as it enters the battlefield from replacement
+effects (CR 614.1c / 614.12 / 306.5b / 714.3a). -/
+def computeEntersWithCounters (g : Game) (entering : GameObject)
+    (fromStackTime : Nat := 0) (applyHope : Bool := true)
+    (asOf : Nat := g.timestamp) (extraCounters : CounterBag := #[])
+    (includeLoyalty : Bool := true) : CounterBag :=
+  let loyalty : Nat :=
+    if includeLoyalty && !entering.status.faceDown && entering.printed.isPlaneswalker then
+      match entering.printed.loyalty with
+      | some n => if n > 0 then g.extraCountersOnEntering entering n.toNat else 0
+      | none => 0
+    else 0
+  let printedPlusOneBase : Nat :=
+    if entering.status.faceDown then 0 else entering.printed.entersWithPlusOneCounters
+  let fromPrintedPlusOne : Nat :=
+    if printedPlusOneBase > 0 then
+      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering printedPlusOneBase)
+    else 0
+  let xPlusOneBase : Nat :=
+    if !entering.status.faceDown && entering.staticAbilities.any (· == .entersWithXPlusOne) then
+      entering.chosenX.getD 0
+    else 0
+  let fromXPlusOne : Nat :=
+    if xPlusOneBase > 0 then
+      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering xPlusOneBase)
+    else 0
+  let extraPlusOneBase : Nat := extraCounters.count .plusOnePlusOne
+  let fromExtraPlusOne : Nat :=
+    if extraPlusOneBase > 0 then
+      g.extraPlusOneOnCreature entering (g.extraCountersOnEntering entering extraPlusOneBase)
+    else 0
+  let fromWeaver : Nat :=
+    if applyHope then g.hopeCountersOnEnter entering asOf else 0
+  let plusOneTotal := fromPrintedPlusOne + fromXPlusOne + fromExtraPlusOne + fromWeaver
+  let indestructible : Nat :=
+    if !entering.status.faceDown && entering.printed.entersWithIndestructibleCounter then
+      g.extraCountersOnEntering entering 1
+    else 0
+  let shield : Nat :=
+    if !entering.status.faceDown && entering.printed.entersWithShield > 0 then
+      g.extraCountersOnEntering entering entering.printed.entersWithShield
+    else 0
+  let hope : Nat :=
+    if !entering.status.faceDown && entering.printed.entersWithHopePerCreature then
+      match entering.controller with
+      | some p =>
+        let others := ((g.creaturesControlledBy p).filter (·.id != entering.id)).size
+        let self := if entering.isCreature then 1 else 0
+        g.extraCountersOnEntering entering (others + self) (putter := some p)
+      | none => 0
+    else 0
+  let lore : Nat :=
+    if !entering.status.faceDown && entering.printed.saga.isSome then
+      g.extraCountersOnEntering entering 1
+    else 0
+  let bag : CounterBag := #[]
+  let bag := if loyalty > 0 then bag.add .loyalty loyalty else bag
+  let bag := if plusOneTotal > 0 then bag.add .plusOnePlusOne plusOneTotal else bag
+  let bag := if indestructible > 0 then bag.add .indestructible indestructible else bag
+  let bag := if shield > 0 then bag.add .shield shield else bag
+  let bag := if hope > 0 then bag.add .hope hope else bag
+  let bag := if fromStackTime > 0 then bag.add .time fromStackTime else bag
+  let bag := if lore > 0 then bag.add .lore lore else bag
+  extraCounters.foldl (fun acc (k, n) =>
+    if k == .plusOnePlusOne || n == 0 then acc
+    else acc.add k (g.extraCountersOnEntering entering n)) bag
+
 /-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
 that must let enters-the-battlefield triggers see the token (amass, recruit)
 invoke `afterPermanentEnters` after this returns. -/
 def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
-    (tapped := false) : Game × GameObject :=
+    (tapped := false) (attacking := false)
+    (attackingWhom : Option PlayerId := none) : Game × GameObject :=
   if (g.player controller).lost then
     (g.logMsg "no token is created (CR 800.4b)",
       { id := ⟨0⟩, printed := { printed with isToken := true },
@@ -79,15 +183,38 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let printed := { printed with isToken := true }
     let sick := printed.isCreature && !printed.keywords.haste
     let asOf := g.timestamp
-    let (g, obj) := g.allocObject printed controller .battlefield (some controller)
-      (status := { tapped := tapped, summoningSick := sick })
-    let g := g.record (GameEvent.created g.turnNumber controller obj.asEvent)
+    let newId : ObjectId := ⟨g.nextObjectId⟩
+    let ts := g.timestamp + 1
+    let entersTapped := tapped || g.entersTapped controller printed
+    let baseObj : GameObject := {
+      id := newId
+      printed := printed
+      owner := controller
+      controller := some controller
+      defaultController := some controller
+      zone := .battlefield
+      status := {
+        tapped := entersTapped
+        summoningSick := sick
+        attacking := attacking
+        attackingWhom := attackingWhom
+      }
+      timestamp := ts
+    }
+    let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf) (includeLoyalty := false)
+    let obj := { baseObj with status := baseObj.status.withCounterBag entersWith }
+    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj))
+    let g := g.createPrintedStaticEffects (g.object! newId)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
-    let g := g.change (.pushPendingTokenEnter obj.id)
-    let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
+    let g := g.change (.pushPendingTokenEnter newId)
+    let weaverBonus := g.hopeCountersOnEnter baseObj asOf
+    let g :=
+      if weaverBonus > 0 then
+        g.logMsg s!"{obj.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+      else g
     -- Storied is not a trigger; an artifact token can be the third permanent.
     let g := g.refreshEnduringStory
-    (g, g.object! obj.id)
+    (g, g.object! newId)
 
 /-- How many times a token-creating event is replaced (`2^n` for `n`
 token-doublers such as Bard, King of Dale). -/
@@ -117,9 +244,11 @@ def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
 /-- Create a token under `controller`, applying token-doubling and
 Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
-    (tapped := false) (batch := false) : Game × GameObject :=
+    (tapped := false) (batch := false) (attacking := false)
+    (attackingWhom : Option PlayerId := none) : Game × GameObject :=
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
+      (attacking := attacking) (attackingWhom := attackingWhom)
   else
     let original := printed
     let proposed := GameEvent.created g.turnNumber controller {
@@ -135,7 +264,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let extraTreasure :=
       if proposed.watches .wouldCreateToken &&
           match proposed.change with
-          | .rules (.effectApplied _ (.created _ object)) => object.hasSubtype .food
+          | .rules (.zone (.created object _)) => object.hasSubtype .food
           | _ => false then
         g.foodTreasureReplacements controller
       else 0
@@ -144,6 +273,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let mut last : Option GameObject := none
       for _ in [0:copies] do
         let (g', obj) := g.createOneToken controller printed (tapped := tapped)
+          (attacking := attacking) (attackingWhom := attackingWhom)
         g := g'
         last := some obj
       for _ in [0:copies * extraTreasure] do
@@ -501,12 +631,9 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
       printed.isCreature || (g.replaceArtifactTokenWithDragon controller printed).isCreature
     for _ in [0:n] do
       let (g', obj) := g.createToken controller printed (tapped := tapped) (batch := true)
+        (attacking := attacking) (attackingWhom := dest)
       g := g'
       ids := ids.push obj.id
-      if attacking then
-        g := g.changeStatuses obj.id #[
-          .attacking true,
-          .attackingWhom dest]
     g := g.change (.recentTokenIds ids)
     if n > 0 && creature then
       g := g.noteCreatureTokenEvent controller

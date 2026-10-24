@@ -56,19 +56,28 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
   if (g.player controller).lost then
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
-    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
-    let g := g.changeObjects copy.id #[
-      .kicked src.kicked,
-      .giftPromisedTo src.giftPromisedTo,
-      .teamworkPaid src.teamworkPaid,
-      .sneakPaid src.sneakPaid,
-      .sneakAttackWhom src.sneakAttackWhom,
-      .chosenX src.chosenX,
-      .isCopy true,
-      .adventurerCard src.adventurerCard]
-    let g := g.putStackEntry controller copy.id
+    let copyId : ObjectId := ⟨g.nextObjectId⟩
+    let copyTs := g.timestamp + 1
+    let copyObj : GameObject := {
+      id := copyId
+      printed := src.printed
+      owner := controller
+      controller := some controller
+      zone := .stack
+      timestamp := copyTs
+      kicked := src.kicked
+      giftPromisedTo := src.giftPromisedTo
+      teamworkPaid := src.teamworkPaid
+      sneakPaid := src.sneakPaid
+      sneakAttackWhom := src.sneakAttackWhom
+      chosenX := src.chosenX
+      isCopy := true
+      adventurerCard := src.adventurerCard
+    }
+    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+    let g := g.putStackEntry controller copyId
     let g :=
-      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copy.id) with
+      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copyId) with
       | some orig, some i =>
         g.changes #[
           .stackEntry i (.targets orig.targets),
@@ -289,7 +298,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       g.logMsg s!"{o.name} is no longer on the stack"
     else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
       let name := o.name
-      let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+      let g := g.ceaseToExist o.id
       g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || o.uncounterableThisCast then
       g.logMsg s!"{o.name} can't be countered"
@@ -363,14 +372,13 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
             let hostId := host.id
             let hostName := host.name
             let (g, newId) := g.move id .battlefield (some owner)
-            let g := g.changeObject newId (.attachedTo (some hostId))
+              (attachedTo := some hostId)
             let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
             g.afterPermanentEnters (g.object! newId)
         else
-          let (g, newId) := g.move id .battlefield (some owner)
-          let o := g.object! newId
           let sick := !o.printed.keywords.haste
-          let g := g.changeStatus newId (.summoningSick sick)
+          let (g, newId) := g.move id .battlefield (some owner)
+            (summoningSick := sick)
           let g := g.logMsg s!"{name} returns to the battlefield"
           g.afterPermanentEnters (g.object! newId)
 
@@ -734,10 +742,10 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
           | some pl => some pl.id
           | none => none
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := true)
-      let g := g.changeStatuses newId #[.attacking true, .attackingWhom whom]
+        (attacking := true) (attackingWhom := whom)
+        (extraEntersWith := #[(.finality, 1)])
       let o := g.object! newId
-      let g := g.addFinalityTo o
-      let o := g.object! newId
+      let g := g.logMsg s!"{o.name} gets a finality counter"
       g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
 
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
@@ -824,7 +832,7 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
   | none => g.logMsg "No reflexive triggered ability is on the stack"
   | some (id, controller, kind, paid) =>
     let sourceId := (g.findObject? id).bind (·.sourceId)
-    let g := ((g.removeFromZoneList id .stack).ceaseToExist id).change (.pending .none)
+    let g := (g.ceaseToExist id).change (.pending .none)
     if kind == 10 then
       let division :=
         if !division.isEmpty then division
@@ -898,17 +906,26 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
   if (g.player controller).lost then
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
-    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
-      (abilityEffect := src.abilityEffect)
-      (triggeredAbility := src.triggeredAbility)
-      (sourceId := src.sourceId)
-      (lastKnownPower := src.lastKnownPower)
-      (lastKnownToughness := src.lastKnownToughness)
-    let g := g.changeObjects copy.id #[
-      .chosenX src.chosenX,
-      .isCopy true,
-      .teamworkPaid src.teamworkPaid]
-    let g := g.putStackEntry controller copy.id
+    let copyId : ObjectId := ⟨g.nextObjectId⟩
+    let copyTs := g.timestamp + 1
+    let copyObj : GameObject := {
+      id := copyId
+      printed := src.printed
+      owner := controller
+      controller := some controller
+      zone := .stack
+      timestamp := copyTs
+      abilityEffect := src.abilityEffect
+      triggeredAbility := src.triggeredAbility
+      sourceId := src.sourceId
+      lastKnownPower := src.lastKnownPower
+      lastKnownToughness := src.lastKnownToughness
+      chosenX := src.chosenX
+      isCopy := true
+      teamworkPaid := src.teamworkPaid
+    }
+    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+    let g := g.putStackEntry controller copyId
     let g :=
       match g.stack.findIdx? (fun e => e.objectId == src.id) with
       | some i =>

@@ -11,21 +11,6 @@ fights (CR 701.14), and life loss and gain (CR 119).
 namespace Mtg.Engine
 namespace Game
 
-/-- Snapshot `o` as an `EventObject` including continuous subtype and keyword
-effects currently on `g`. -/
-def damageSourceEvent (g : Game) (o : GameObject) : EventObject :=
-  let base := o.asEvent
-  let subs :=
-    if g.hasSubtype o .hero && !base.subtypes.contains .hero then
-      base.subtypes.push .hero
-    else base.subtypes
-  { base with
-    subtypes := subs
-    keywords := { base.keywords with
-      deathtouch := g.hasDeathtouch o
-      lifelink := g.hasLifelink o }
-    toxic := o.printed.toxic }
-
 /-- The resolving spell, or the source of the resolving ability, as the
 default damage source when an effect deals damage without naming another
 source (CR 609.7 / 113.7 / 120.2). -/
@@ -70,7 +55,7 @@ def resolvingMovedDamageSource? (g : Game) : Option GameObject :=
 /-- Snapshot the resolving damage source as an `EventObject`, following a
 source that moved zones before its ability resolved (CR 113.7a). -/
 def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
-  g.resolvingMovedDamageSource?.map g.damageSourceEvent
+  g.resolvingMovedDamageSource?.map g.snapshot
 
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 701.8b / 702.12b). If it would die this turn under an exile replacement,
@@ -206,7 +191,7 @@ controls. If all damage is prevented, neither replacement applies
 already-divided amounts (MSH 179). -/
 def replacedDamageAmount (g : Game) (src : GameObject) (n : Int)
     (combat := false) (recipient : Option PlayerId := none) : Int :=
-  let srcEvent := g.damageSourceEvent src
+  let srcEvent := g.snapshot src
   let proposed :=
     match recipient with
     | some pid => GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat combat
@@ -276,7 +261,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       let prevented := g.preventsAllDamageTo o || o.status.shield > 0
       let g := g.changeStatus src.id (.dealtDamageThisTurn true)
       let g := g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
-        (deathtouch || g.hasDeathtouch src) (source := some (g.damageSourceEvent src))
+        (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src))
       -- CR 702.15b: damage dealt by a source with lifelink.
       match src.controller with
       | some c =>
@@ -304,7 +289,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
     let srcEvent :=
-      ((source.map g.damageSourceEvent).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+      ((source.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false
     let g := if n > 0 then g.record happened else g
     let g :=

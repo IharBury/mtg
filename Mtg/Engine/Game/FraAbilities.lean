@@ -409,9 +409,19 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             let (g, exId) := g.move id .exile none
             let g := g.logMsg s!"{name} is exiled"
             let card := g.object! exId
-            let (g, copy) := g.allocObject card.printed controller .exile (some controller)
-            let g := g.changeObject copy.id (.isCopy true)
-            g.beginFraChoice controller (.mayCastCopy copy.id)
+            let copyId : ObjectId := ⟨g.nextObjectId⟩
+            let copyTs := g.timestamp + 1
+            let copyObj : GameObject := {
+              id := copyId
+              printed := card.printed
+              owner := controller
+              controller := some controller
+              zone := .exile
+              timestamp := copyTs
+              isCopy := true
+            }
+            let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+            g.beginFraChoice controller (.mayCastCopy copyId)
               s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
@@ -423,13 +433,22 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       | some card =>
         if card.zone != .exile then (g, cs)
         else
-          let (g, copy) := g.allocObject { card.printed with isToken := card.printed.isPermanentCard }
-            controller .exile (some controller)
-          let g := g.changeObject copy.id (.isCopy true)
-          let g := g.createEffect (.playPermission copy.id {
+          let copyId : ObjectId := ⟨g.nextObjectId⟩
+          let copyTs := g.timestamp + 1
+          let copyObj : GameObject := {
+            id := copyId
+            printed := { card.printed with isToken := card.printed.isPermanentCard }
+            owner := controller
+            controller := some controller
+            zone := .exile
+            timestamp := copyTs
+            isCopy := true
+          }
+          let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+          let g := g.createEffect (.playPermission copyId {
             player := controller, turnEndsRemaining := 0,
             whileExiled := true, withoutManaCost := true, ignoreTiming := true })
-          (g, cs.push copy.id)
+          (g, cs.push copyId)
       | none => (g, cs)) (g, #[])
     if copies.isEmpty then g.logMsg "No exiled card is left to copy"
     else
