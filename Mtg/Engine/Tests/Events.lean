@@ -393,7 +393,7 @@ turn", and an amassed subtype. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1).grantCantBeBlockedThisTurn b
+  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1 (source := some b.asEvent)).grantCantBeBlockedThisTurn b
   let created := GameEvent.createdEffects g1.events
   created.contains (.loseIndestructibleUntilEot b.id) &&
     created.contains (.exileIfDiesUntilEot b.id) &&
@@ -640,7 +640,8 @@ event updates `Player.life` in isolation (CR 119.2 / 119.3). -/
 /- Phase 1 isolation: `DamageEvent.dealt` is a pure fact and writes nothing,
 `DamageEvent.marked` and `DamageEvent.markedCleared` update and clear
 `Status.damage` in isolation (CR 120.3e / 514.2), and CR 704.5h queries
-`DamageEvent.dealt` packets committed since the last SBA check. -/
+`DamageEvent.dealt` packets committed since the last SBA check (removing
+marked damage does not end the CR 704.5h window). -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -648,9 +649,11 @@ event updates `Player.life` in isolation (CR 119.2 / 119.3). -/
   let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource b.asEvent 1 false)
   let g1 := gDealtOnly.applyChange (.rules (.damage (.marked b.id 1)))
   let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
-  let gDestroyed := g1.checkSBA
-  (gDealtOnly.object! b.id).status == b.status &&
+  let gDestroyed := g2.checkSBA
+  (g0.checkSBA).events.any (·.change == .engine .sbaChecked) &&
+    (gDealtOnly.object! b.id).status == b.status &&
     g1.deathtouchDealtSinceLastSba b.id &&
+    g2.deathtouchDealtSinceLastSba b.id &&
     (g1.object! b.id).status == { b.status with damage := 1 } &&
     (g2.object! b.id).status == { b.status with damage := 0 } &&
     (gDestroyed.battlefield.filter (·.id == b.id)).isEmpty
@@ -669,8 +672,8 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
   let g4 := g3.applyChange (.rules (.permanent (.controlChanged b.asEvent opp me)))
   let g5 := g4.applyChange (.rules (.permanent (.designation b.asEvent (.goaded me) true)))
   let g6 := g5.applyChange (.rules (.permanent (.designation b.asEvent (.goaded opp) true)))
-  let g7 := g6.applyChange (.rules (.permanent (.designation b.asEvent (.goaded me) false)))
-  let g8 := g7.applyChange (.rules (.permanent (.designation b.asEvent (.goaded opp) false)))
+  let g7 := g6.expireGoadedFor me
+  let g8 := g7.expireGoadedFor opp
   let heroToPlayer := GameEvent.damagedPlayer 1 h.asEvent opp 2 true
   let bearToHero := GameEvent.damaged 1 b.asEvent h.asEvent 2 false
   (g1.object! h.id) == { h with attachedTo := some b.id } &&

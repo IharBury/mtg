@@ -381,7 +381,8 @@ def violentEchoesAt (g : Game) (target : String) : Game :=
 damage marked needs 1 more, so 5 of the 6 is excess: Empower Jace 5. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.dealDamageToPermanent (namedPermanent g "Grizzly Bears") 1
+  let b := namedPermanent g "Grizzly Bears"
+  let g := g.dealDamageToPermanent b 1 (source := some b.asEvent)
   let g := violentEchoesAt g "Grizzly Bears"
   (jaceTokenOf g).status.loyaltyCounters == 5
 #guard (fraRuling 121).comment.contains "damage already marked on the creature is taken into account"

@@ -710,7 +710,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         g.hasSubtype o .hero && some o.id != sourceId) then
       g.withLegalKindTarget controller .opponent targets (fun g tgt =>
         match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid 1
+        | Target.player pid => g.dealDamageToPlayer pid 1 (source := sourceId.bind g.findObject?)
         | _ => g) sourceId none
     else
       g.logMsg "Human Torch's ability has no effect"

@@ -146,6 +146,12 @@ def spyId (g : Game) : ObjectId :=
   | some o => o.id
   | none => panic! "missing Widow Source"
 
+def noteHit (g : Game) (p : PlayerId) : Game :=
+  let g :=
+    if onBattlefield g "Widow Source" then g
+    else addPermanent g spy caster caster
+  g.noteCombatDamageTo p (g.object! (spyId g)).asEvent
+
 /- The only revealed creature enters. Cards under the window stay above the
 card that goes on the bottom. The opponent's library stays put. -/
 #guard
@@ -311,7 +317,7 @@ opponent. The controller's library is used when that player was damaged.
 An empty library is remembered with nothing exiled. -/
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw opp [relic, bolt]) caster [bear]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 exileImpulse
   g.grimaImpulseReady && g.grimaImpulseVictim == some opp &&
     (g.grimaImpulseFound.bind g.findObject?).any (·.name == "Reveal Bolt") &&
@@ -323,7 +329,7 @@ An empty library is remembered with nothing exiled. -/
 
 #guard
   let g0 := onlyLibrary afterDraw opp [bolt, plot]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 exileImpulse
   g.grimaImpulseReady &&
     (g.grimaImpulseFound.bind g.findObject?).any (·.name == "Reveal Bolt") &&
@@ -334,7 +340,7 @@ An empty library is remembered with nothing exiled. -/
 
 #guard
   let g0 := onlyLibrary afterDraw opp [plot, relic]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 exileImpulse
   g.grimaImpulseReady && g.grimaImpulseFound.isNone &&
     g.grimaImpulseOthers.size == 2 && (g.player opp).library.isEmpty &&
@@ -342,7 +348,7 @@ An empty library is remembered with nothing exiled. -/
 
 #guard
   let g0 := onlyLibrary afterDraw opp []
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let before := g0.log.size
   let g := step g0 exileImpulse
   g.grimaImpulseReady && g.grimaImpulseVictim == some opp &&
@@ -358,7 +364,7 @@ An empty library is remembered with nothing exiled. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [bolt]) opp [plot]
-  let g0 := g0.noteCombatDamageTo caster
+  let g0 := noteHit g0 caster
   let g := step g0 exileImpulse
   g.grimaImpulseVictim == some caster &&
     (g.grimaImpulseFound.bind g.findObject?).any (·.name == "Reveal Bolt") &&
@@ -368,7 +374,7 @@ An empty library is remembered with nothing exiled. -/
 /- The following impulse cast reads the stored spell. -/
 #guard
   let g0 := onlyLibrary afterDraw opp [plot, bolt]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 (.sequence [exileImpulse, .mayCast .impulse .unlimited .withoutPaying])
   match g.pending with
   | .fraChoice p (.mayCastGrima _ _ v) =>
@@ -417,7 +423,7 @@ reported, and an empty library exiles nothing. -/
 then resolves the follow-up. No announced player reveals nothing. -/
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := (g0.change (.grimaImpulseReady false)).noteCombatDamageTo opp
+  let g0 := noteHit (g0.change (.grimaImpulseReady false)) opp
   let g := step g0 (.revealLibrary (.top 3) (.put .revealed))
   onBattlefield g "Reveal Plot" && onBattlefield g "Reveal Bear" &&
     onBattlefield g "Reveal Tale" && libNames g caster == []
@@ -437,7 +443,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 (.revealLibrary (.top 3) (.put .randomCreature) .damagedPlayer)
   !onBattlefield g "Reveal Bolt" && !onBattlefield g "Reveal Plot" &&
     inLib g opp "Reveal Bolt" && inLib g opp "Reveal Plot" &&
@@ -463,7 +469,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0 (.revealLibrary .untilSaga (.put .revealed) .damagedPlayer)
   !onBattlefield g "Reveal Bolt" && !onBattlefield g "Reveal Plot" &&
     inLib g opp "Reveal Bolt" && inLib g opp "Reveal Plot" &&
@@ -478,7 +484,7 @@ then resolves the follow-up. No announced player reveals nothing. -/
 
 #guard
   let g0 := onlyLibrary (onlyLibrary afterDraw caster [plot, bear, tale]) opp [bolt, plot]
-  let g0 := g0.noteCombatDamageTo opp
+  let g0 := noteHit g0 opp
   let g := step g0
     (.revealLibrary .untilInstantOrSorcery (.put .revealed) .damagedPlayer)
   onBattlefield g "Reveal Bolt" && inLib g opp "Reveal Plot" &&

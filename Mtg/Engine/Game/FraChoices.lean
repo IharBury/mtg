@@ -936,7 +936,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
-        (fun g tgt => g.dealDamageToTarget tgt amount) sourceId none
+        (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.findObject?))
+        sourceId none
     return (g.logMsg "The Sensational She-Hulk deals damage (only once each turn)").finishFraChoice
   | .sheHulkMayDamage .., .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishFraChoice

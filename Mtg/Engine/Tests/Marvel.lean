@@ -548,7 +548,8 @@ def myPreciousEquipped : Game :=
 /-- Black Panther prevents all damage that would be dealt to him. -/
 def pantherDamagePrevented : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
-  g.dealDamageToPermanent (namedPermanent g "Black Panther, Hope Enduring") 3
+  let p := namedPermanent g "Black Panther, Hope Enduring"
+  g.dealDamageToPermanent p 3 (source := some p.asEvent)
 
 #guard (namedPermanent pantherDamagePrevented "Black Panther, Hope Enduring").status.damage == 0
 #guard pantherDamagePrevented.log.any (fun s => mentions s "prevented")

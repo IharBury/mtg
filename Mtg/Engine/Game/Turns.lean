@@ -136,6 +136,13 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
           (.playPermission oid { perm with turnEndsRemaining := perm.turnEndsRemaining - 1 }))
     | _ => g) g
 
+/-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
+def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
+  g.battlefield.foldl (fun g o =>
+    if o.status.goadedBy.contains p then
+      g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false)
+    else g) g
+
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
 Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
 and Garruk, Curse Breaker (CR 611.2b). -/
@@ -149,6 +156,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let g := g.expireGoadedFor p
   let g := g.expireFraUntilTurnEffects p
   let g :=
     if g.hasActiveEffect (.protectionFromEverything p) then
@@ -224,6 +232,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
+      g := g.expireGoadedFor ap
       g := g.expireFraUntilTurnEffects ap
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap

@@ -296,7 +296,6 @@ inductive StatusChange where
   | animatedConstruct55 (v : Bool)
   | chosenName (v : Option String)
   | faceDown (v : Bool)
-  | goaded (v : Bool)
   | story (v : Nat)
   | time (v : Nat)
   | notACreature (v : Bool)
@@ -544,8 +543,6 @@ inductive ContinuousEffect where
   | cantBeBlockedExceptByHasteUntilEot (object : ObjectId)
   /-- `object` can't block this turn (CR 611.2). -/
   | cantBlockUntilEot (object : ObjectId)
-  /-- `object` is goaded until its controller's next turn (CR 611.2, 701.15). -/
-  | goaded (object : ObjectId)
   /-- `card` may be cast spending mana as though it were mana of any color while `object` grants it (CR 611.2). -/
   | colorlessGrantUntilCast (object : ObjectId) (card : ObjectId)
   /-- `object` may be cast from the graveyard without paying its mana cost this turn (CR 611.2). -/
@@ -1309,6 +1306,11 @@ def attached (turn : Nat) (object host : ObjectId)
 def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
     (cause : Option EventCause := none) : GameEvent :=
   rulesOrUnclassified turn (.permanent (.unattached attachment fromHost)) cause
+
+/-- `object` gained or lost designation `d` (CR 110.6 / 701.15b / 701.54a / 903.3). -/
+def designation (turn : Nat) (object : EventObject) (d : PermanentDesignation)
+    (gained : Bool := true) (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.permanent (.designation object d gained)) cause
 
 /-- `player` beheld `quality` (CR 701.62 / 610.1). -/
 def beheld (turn : Nat) (player : PlayerId) (quality : CardSubtype)

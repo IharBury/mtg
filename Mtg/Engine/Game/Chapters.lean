@@ -126,7 +126,8 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   match ch with
   | .dealDamageToOppCreature n =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      g.dealDamageToPermanent o n) sourceId (some "The target is no longer legal")
+      g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.damageSourceEvent))
+      sourceId (some "The target is no longer legal")
   | .destroyOppArtifact =>
     g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
       g.destroyPermanent o) sourceId (some "The target is no longer legal")
@@ -188,13 +189,15 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
     g.gainControlWhileSource controller sourceId targets
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+    let src? := sourceId.bind g.findObject?
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+        (source := src?.map g.damageSourceEvent)
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.dealDamageToPlayer pid x)
+      (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
       sourceId (some "The target is no longer legal")
   | .spell s =>
     g.applyEffect controller {

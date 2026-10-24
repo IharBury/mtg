@@ -140,19 +140,15 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
       let snap := g.battlefield.filter exilesOppDeath?
-      let hadDeathtouchSinceLastSba :=
-        g.battlefield.any (fun o =>
-          o.isCreature && (o.status.dealtDeathtouch || g.deathtouchDealtSinceLastSba o.id))
       let victims :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
           else
             let t := g.toughness o
-            let dtDealt := o.status.dealtDeathtouch || g.deathtouchDealtSinceLastSba o.id
             if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
             else if o.status.damage ≥ t && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from lethal damage")
-            else if dtDealt && !g.hasIndestructible o then
+            else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from deathtouch")
             else none)
       if !victims.isEmpty then
@@ -205,9 +201,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       g := g.changes #[
         .lockedDeathReplacements none,
         .suppressOthersDie false,
-        .suppressCreatureCardsToGy false]
-      if hadDeathtouchSinceLastSba then
-        g := g.change .sbaChecked
+        .suppressCreatureCardsToGy false,
+        .sbaChecked]
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
       for o in g.battlefield do

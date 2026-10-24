@@ -100,7 +100,8 @@ def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbi
 def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
     (missing : Option String := none) : Game :=
-  g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
+  g.withLegalKindTarget controller kind targets
+    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?))
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
@@ -143,12 +144,15 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
     s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
-def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
+def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
+    (sourceId : Option ObjectId := none) : Game :=
+  match action with
   | .pump pw tw => g.pumpPermanent o pw tw
   | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
-  | .dealDamage n => g.dealDamageToPermanent o n
+  | .dealDamage n =>
+    g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.damageSourceEvent)
   | .loseIndestructible =>
     let g := g.createEffect (.loseIndestructibleUntilEot o.id)
     g.logMsg s!"{o.name} loses indestructible until end of turn"
@@ -206,7 +210,7 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
     g.applyDamageToKindTarget controller kind targets n sourceId missing
   | _ =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      g.applyPermanentAction o action) sourceId missing
+      g.applyPermanentAction o action (sourceId := sourceId)) sourceId missing
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any
@@ -261,13 +265,15 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
 
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
-    (pred : GameObject → Bool := fun _ => true) : Game :=
+    (pred : GameObject → Bool := fun _ => true)
+    (source : Option EventObject := none) : Game :=
   g.foldBattlefield (fun o => o.isCreature && pred o)
-    (fun g o => g.dealDamageToPermanent o n)
+    (fun g o => g.dealDamageToPermanent o n (source := source))
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
-def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
+def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
+    (source : Option EventObject := none) : Game :=
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source)
 
 end Game
 end Mtg.Engine

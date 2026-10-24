@@ -114,23 +114,27 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     some (g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let before := o.status.damage
       let g := g.dealDamageToPermanent o n
+        (source := (sourceId.bind g.findObject?).map g.damageSourceEvent)
       let dealt := ((g.object! o.id).status.damage - before).toNat
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
   | .exileTopMayCastElseDamageOpponents n =>
+    let src? := sourceId.bind g.findObject?
     match (g.player controller).library.back? with
     | none =>
-      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
     | some top =>
       let (g, id) := g.move top .exile none
       let card := g.object! id
       let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
       if card.printed.isLand then
         -- Ruling 855: a land can't be cast, so the damage is dealt.
-        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n))
+        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
       else
-        some ((g.change (.pending (.mayCastExiledElseDamage controller id n))).logMsg
+        some ((g.changes #[
+          .notedSourceThisWay (sourceId.orElse (fun _ => g.resolvingSpell)),
+          .pending (.mayCastExiledElseDamage controller id n)]).logMsg
           s!"{(g.player controller).name} may cast {card.name}")
   | .emblemCastSpellDamage n =>
     -- Ruling 858: the emblem is colorless.
@@ -1356,7 +1360,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match g.findObject? id with
       | some o =>
         if o.isOnBattlefield && o.isCreature then
-          g.applyPermanentAction o action
+          g.applyPermanentAction o action (sourceId := g.resolvingDamageSource?.map (·.id))
         else g.logMsg "The target is no longer legal"
       | none => g.logMsg "The target is no longer legal"
   | .returnGySubtypeToHand subtype =>
@@ -1481,7 +1485,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
     (missing := "The ability's source is no longer in play") : Game :=
-  g.withSourceOnBattlefield sourceId (fun g o => g.applyPermanentAction o action) missing
+  g.withSourceOnBattlefield sourceId (fun g o => g.applyPermanentAction o action (sourceId := sourceId)) missing
 
 /-- Return a graveyard source to the battlefield tapped or to its owner's hand. -/
 def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)

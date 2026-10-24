@@ -1041,7 +1041,7 @@ def doctorDoomDamageTrackedOk : Bool :=
   let doom := namedPermanent g "Doctor Doom"
   let g := g.changeStatus doom.id (.grantUntilEot Keyword.indestructible)
   let doom := namedPermanent g "Doctor Doom"
-  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3"
+  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3" (source := some doom.asEvent)
   let g := g.checkSBA
   onBattlefield g "Doctor Doom" &&
     (namedPermanent g "Doctor Doom").status.damage == 3 &&
@@ -1053,7 +1053,7 @@ def doctorDoomDamageTrackedOk : Bool :=
      let doom := namedPermanent g "Doctor Doom"
      let g := g.changeStatus doom.id (.grantUntilEot Keyword.indestructible)
      let doom := namedPermanent g "Doctor Doom"
-     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true)
+     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true) (source := some doom.asEvent)
      let g := g.checkSBA
      onBattlefield g "Doctor Doom" &&
        !(namedPermanent g "Doctor Doom").status.dealtDeathtouch &&

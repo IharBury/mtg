@@ -655,7 +655,6 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .animatedConstruct55 v => { s with animatedConstruct55 := v }
   | .chosenName v => { s with chosenName := v }
   | .faceDown v => { s with faceDown := v }
-  | .goaded v => { s with goaded := v }
   | .story v => { s with story := v }
   | .time v => { s with time := v }
   | .notACreature v => { s with notACreature := v }
@@ -947,7 +946,7 @@ def effectIsFlag : ContinuousEffect → Bool
   | .additionalCreature _ _ | .additionalArtifactUntilEot _ | .onlyFoodArtifact _
   | .returnedAsArtifact _ | .notACreature _ | .combatDamageCreatesTreasureUntilEot _
   | .losesAbilitiesUntilEot _ | .cantBeBlockedExceptByHasteUntilEot _ | .cantBlockUntilEot _
-  | .goaded _ | .freeCastFromGraveyardUntilEot _ | .flashbackUntilEot _
+  | .freeCastFromGraveyardUntilEot _ | .flashbackUntilEot _
   | .exileInstantSorceryInstead _ | .uncounterableThisCast _
   | .protectionFromEverything _ | .lifeCantChange _ | .lifeLocked _
   | .cantCastSpellsThisTurn _ | .jaceLoyaltyAtInstantSpeedThisTurn _
@@ -1142,8 +1141,6 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
   | .cantBlockUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBlockUntilEot := true })
-  | .goaded id =>
-    g.modifyStatus id (fun s => { s with goaded := true })
   | .colorlessGrantUntilCast id cardId =>
     g.modifyStatus id (fun s => { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.push cardId })
   | .freeCastFromGraveyardUntilEot id =>
@@ -1296,8 +1293,6 @@ def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := false })
   | .cantBlockUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBlockUntilEot := false })
-  | .goaded id =>
-    g.modifyStatus id (fun s => { s with goaded := false })
   | .colorlessGrantUntilCast id cardId =>
     g.modifyStatus id (fun s =>
       match s.colorlessGrantUntilCast.findIdx? (· == cardId) with
@@ -1950,7 +1945,7 @@ def effectObject? : ContinuousEffect → Option ObjectId
   | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ | .hexproofWhileSource id _
   | .preventDamageWhileSource id _ | .cantUntapWhileSource id _
   | .cantBeBlockedByPlayerUntilEot id _ | .cantBeBlockedExceptByHasteUntilEot id
-  | .cantBlockUntilEot id | .goaded id | .colorlessGrantUntilCast id _
+  | .cantBlockUntilEot id | .colorlessGrantUntilCast id _
   | .freeCastFromGraveyardUntilEot id | .flashbackUntilEot id | .exileInstantSorceryInstead id
   | .uncounterableThisCast id | .playPermission id _ | .fraEmblemUntilTurnOf id _
   | .copy id _ _ _ _ _ | .control id _ _ _ _ => some id
@@ -2290,7 +2285,7 @@ def loggedSheHulkDealtDamage (g : Game) : Bool :=
   GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
 
 /-- Record that combat damage was dealt to `p`. -/
-def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject := { id := ⟨0⟩ }) : Game :=
+def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject) : Game :=
   g.record (GameEvent.damagedPlayer g.turnNumber source p 1 true)
 
 /-- True when `id` has been dealt a positive amount of damage by a source with
@@ -2299,8 +2294,6 @@ def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
   g.events.foldl (fun dealt e =>
     match e.change with
     | .engine .sbaChecked => false
-    | .rules (.damage (.markedCleared ids)) =>
-      if ids.contains id then false else dealt
     | .rules (.damage (.dealt pkts)) =>
       dealt || pkts.any (fun pkt =>
         pkt.amount > 0 && pkt.source.keywords.deathtouch &&
