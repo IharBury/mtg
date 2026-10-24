@@ -48,7 +48,7 @@ def attach (g : Game) (equip host : String) : Game :=
 
 def cast (g : Game) (name : String) : Game :=
   let o := anyObj g name
-  g.setObject { o with castState := { o.castState with wasCast := true } }
+  g.setObject { o with wasCast := true }
 
 def strikes (g : Game) (name : String) : Bool :=
   g.hasDoubleStrike (obj g name)

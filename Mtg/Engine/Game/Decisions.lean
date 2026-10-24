@@ -38,25 +38,24 @@ def checkLookedPiles (g : Game) (p q : PlayerId) (count : Nat)
 /-- Clear the finished scry or surveil, draw any follow-up cards, offer
 Palantír's opponent their choice, and give the active player priority. -/
 def finishLibraryLook (g : Game) : Game :=
-  let g := { g with pending := .none, afterScrySurveil := { g.afterScrySurveil with
-    surveilReturnMvAtMost := none
-    surveilReturnNoncreatureNonland := false } }
+  let g := { g with pending := .none, surveilReturnMvAtMost := none
+                    surveilReturnNoncreatureNonland := false }
   let g :=
     match g.fraAfterLook with
     | some (c, src, next) =>
-      ({ g with afterScrySurveil := { g.afterScrySurveil with fraAfterLook := none } }).applyFra c default next #[] src
+      ({ g with fraAfterLook := none }).applyFra c default next.toResolution #[] src
     | none => g
   let g :=
     match g.pendingDrawAfterScry with
     | some (q, n) =>
-      let g := { g with afterScrySurveil := { g.afterScrySurveil with pendingDrawAfterScry := none } }
+      let g := { g with pendingDrawAfterScry := none }
       g.draw q n
     | none => g
   if g.pending != .none then g
   else
     match g.palantirAfterScry with
     | some (controller, opp, sid) =>
-      ({ g with afterScrySurveil := { g.afterScrySurveil with palantirAfterScry := none } }).offerPalantirChoice controller opp sid
+      ({ g with palantirAfterScry := none }).offerPalantirChoice controller opp sid
     | none =>
       let g := g.resumeTriggerSequence
       if g.pending != .none then g else g.receivePriority g.activePlayer
@@ -269,7 +268,9 @@ def resumeSequenceThenPriority (g : Game) : Game :=
 def acceptMayThen (g : Game) : Game :=
   let g := { g with
     pending := .none
-    mayThen := { g.mayThen with drop := 0, conditional := none, resume := false } }
+    mayThenDrop := 0
+    mayThenConditional := none
+    mayThenResume := false }
   g.resumeSequenceThenPriority
 
 /-- The optional action of `mayThen` was declined. Skip its conditional and
@@ -278,8 +279,10 @@ def declineMayThen (g : Game) : Game :=
   let n := g.mayThenDrop
   let g := { g with
     pending := .none
-    thisWay := { g.thisWay with sacrificedPowerThisWay := none }
-    mayThen := { g.mayThen with drop := 0, conditional := none, resume := false } }
+    mayThenDrop := 0
+    mayThenConditional := none
+    sacrificedPowerThisWay := none
+    mayThenResume := false }
   let g :=
     match g.triggerSequenceRest with
     | none => g
@@ -321,20 +324,20 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       match g.triggerSequenceRest with
       | some rest =>
         if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
-          { g with thisWay := { g.thisWay with discardedCardThisWay := some (q, g.followMoved card.id) } }
+          { g with discardedCardThisWay := some (q, g.followMoved card.id) }
         else g
       | none => g
     if g.thirstDiscardsLeft > 0 then
       let left :=
         if card.printed.hasType g.thirstDiscardType then 0 else g.thirstDiscardsLeft - 1
-      let g := { g with discardReq := { g.discardReq with thirstDiscardsLeft := left } }
+      let g := { g with thirstDiscardsLeft := left }
       if left == 0 then
         return ({ g with pending := .none }).resumeSequenceThenPriority
       else
         return g.beginDiscardCards #[p]
     if g.pendingDiscardsLeft > 0 then
       let left := g.pendingDiscardsLeft - 1
-      let g := { g with discardReq := { g.discardReq with pendingDiscardsLeft := left } }
+      let g := { g with pendingDiscardsLeft := left }
       if left == 0 then
         g.continueAfterDiscard remaining
       else
@@ -426,7 +429,9 @@ def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
     | some action, some ctx =>
       let g := { g with
         pending := .none
-        triggerMayBranch := {}
+        mayOnAccept := none
+        mayOnDecline := none
+        mayContext := none
         triggerSequenceRest := some { ctx with steps := [action] } }.clearMay
       let g := g.resumeTriggerSequence
       if g.pending != .none || g.over then return g
@@ -515,7 +520,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         throw s!"{o.name} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap
       n := n + 1
-    g := { g with pending := .none, thisWay := { g.thisWay with humansTappedThisWay := n } }
+    g := { g with pending := .none, humansTappedThisWay := n }
     g := g.resumeTriggerSequence
     if g.pending != .none then return g
     return g.receivePriority g.activePlayer
@@ -671,19 +676,21 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     | some follow, some ctx =>
       let g := { g with
         pending := .none
-        triggerMayBranch := {}
+        mayOnAccept := none
+        mayOnDecline := none
+        mayContext := none
         triggerSequenceRest := some { ctx with steps := [follow] } }.clearMay
       let g := g.resumeTriggerSequence
       if g.pending != .none || g.over then return g
       return g.receivePriority g.activePlayer
     | _, _ =>
-      let g := { g with pending := .none, triggerMayBranch := {} }.clearMay
+      let g := { g with pending := .none, mayOnAccept := none, mayOnDecline := none, mayContext := none }.clearMay
       return g.receivePriority g.activePlayer
   | .tapHumans q =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to tap Humans"
     let g := g.logMsg s!"{(g.player p).name} taps no Humans"
-    let g := { g with pending := .none, thisWay := { g.thisWay with humansTappedThisWay := 0 } }
+    let g := { g with pending := .none, humansTappedThisWay := 0 }
     let g := g.resumeTriggerSequence
     if g.pending != .none then return g
     return g.receivePriority g.activePlayer
@@ -720,7 +727,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"
     let g := g.logMsg
       s!"{(g.player p).name} declines to put an artifact onto the battlefield"
-    let g := { g with pending := .none, thisWay := { g.thisWay with putArtifactThisWay := none } }
+    let g := { g with pending := .none, putArtifactThisWay := none }
     return g.resumeSequenceThenPriority
   | .mayHaveVillainConnive q _ _ =>
     if p != q then
@@ -809,7 +816,7 @@ def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
       throw "You already kept your opening hand (CR 103.5)"
     if !g.canTakeMulligan p then
       throw "A player may not take further mulligans after their opening hand would be zero cards (CR 103.5)"
-    let g := { g with mulligan := { g.mulligan with willMulligan := g.willMulligan.push p } }
+    let g := { g with willMulligan := g.willMulligan.push p }
     let g := g.logMsg s!"{g.player p |>.name} will take a mulligan (CR 103.5)"
     return g.afterDeclaration p
   | _ => throw "Not time to take a mulligan (CR 103.5)"
@@ -897,7 +904,6 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .putOnTop p ids => g.putIdsOnTop p ids
     | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
     | .plusOne id => g.addPlusOneIfStillCreature id
-    | _ => g
   if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
       && !g.players.isEmpty then
     let g := g.resumeTriggerSequence
@@ -942,7 +948,6 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
       | _, _ => throw "Pick exactly one of the listed objects"
     | .chooseIndex _ =>
       throw "Supply an index (random <n> or flip heads/tails)"
-    | _ => throw "No random event is waiting for a result"
   | _ => throw "No random event is waiting for a result"
 
 /-- Apply a `--norandom` index (starting player, coin toss). -/

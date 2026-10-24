@@ -18,8 +18,8 @@ def searchNoun (kind : String) : String :=
   | none => kind
 
 /-- What still happens after the library is shuffled. -/
-def searchAfter (p : PlayerId) : Option Resolution → AfterRandom
-  | some (.gainLife (.fixed n) _ _) => .gainLife p n.toNat
+def searchAfter (p : PlayerId) : Option FraNext → AfterRandom
+  | some (.gainLife n) => .gainLife p n
   | _ => .none
 
 /-- True when failing to find still shuffles. Searching only the hand does not
@@ -54,7 +54,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
         let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
           if o.printed.isLand then acc + 1 else acc) 0
         if tapped && entered.printed.isLand && landCount >= n then
-          let g := { g with afterLibrarySearch := .none }
+          let g := { g with untapSearchedIfLands := none }
           g.setObject { (g.object! newId) with status :=
             { (g.object! newId).status with tapped := false } }
             |>.logMsg s!"{(g.object! newId).name} is untapped"
@@ -95,7 +95,7 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
     let g :=
       match source.bind g.findObject? with
       | some src =>
-        g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push newId } }
+        g.setObject { src with linkedExile := src.linkedExile.push newId }
       | none => g
     g.logMsg s!"{(g.player p).name} exiles {name}"
 
@@ -137,15 +137,15 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
     if g.pending == .none then { g with pending := saved } else g
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
-def searchDone (g : Game) (p : PlayerId) (after : Option Resolution) : Game × AfterRandom :=
+def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
-  | some id => ({ g with afterLibrarySearch := .none }, .plusOne id)
+  | some id => ({ g with plusOneAfterSearch := none }, .plusOne id)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
-def shuffleSearch (g : Game) (p : PlayerId) (after : Option Resolution) : Game :=
+def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
+  let g := { g with untapSearchedIfLands := none }
   let (g, done) := g.searchDone p after
-  let g := { g with afterLibrarySearch := .none }
   g.shuffleThen p done
 
 /-- Put the waiting post-search counter when this search does not shuffle. -/
@@ -153,12 +153,12 @@ def applyWaitingPlusOne (g : Game) : Game :=
   match g.plusOneAfterSearch with
   | none => g
   | some id =>
-    addPlusOneIfStillCreature { g with afterLibrarySearch := .none } id
+    addPlusOneIfStillCreature { g with plusOneAfterSearch := none } id
 
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.19b). -/
 def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
-    (dest : SearchDest) (after : Option Resolution) (kind : String) : Game :=
+    (dest : SearchDest) (after : Option FraNext) (kind : String) : Game :=
   let noun := searchNoun kind
   if ids.isEmpty then
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
@@ -203,13 +203,12 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
         (g.findObject? id).any (·.zone == .library p))
       let g := ids.foldl (fun g id => (g.placeSearched p id false).1) g
       if fromLibrary then g.shuffleSearch p after else g.applyWaitingPlusOne
-    | _ => g
 
 /-- Search `p`'s library for up to `count` cards matching `pred` (CR 701.19).
 The player chooses which, or none (CR 701.19b). `optional` may skip the
 search entirely, and then the library is not shuffled. -/
 def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind : String)
-    (dest : SearchDest) (count : Nat := 1) (after : Option Resolution := none)
+    (dest : SearchDest) (count : Nat := 1) (after : Option FraNext := none)
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
   let keep (id : ObjectId) := (g.findObject? id).any (pred ·.printed)
   let pl := g.player p

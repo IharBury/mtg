@@ -107,7 +107,7 @@ but other cards are still limited to four. -/
 /-- Ruling 852: casting Proft from a graveyard needs seven other cards there.
 A flashback cost stands in for the permission to cast it from the graveyard. -/
 def proftFromGraveyard (others : Nat) : Game :=
-  let proft := { proftSinisterMastermind with castOption := .flashback (ManaCost.ofColor .black) }
+  let proft := { proftSinisterMastermind with flashback := some (ManaCost.ofColor .black) }
   let g := (List.range others).foldl (fun g _ => addToGraveyard g grizzlyBears ⟨0⟩) afterDraw
   withBlackMana (addToGraveyard g proft ⟨0⟩) ⟨0⟩ 1
 

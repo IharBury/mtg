@@ -71,7 +71,7 @@ card, or start the first turn when that was why the game was waiting. -/
 partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
   if rest.isEmpty then
     if g.awaitingOpeningBegin then
-      let g := { g with mulligan := { g.mulligan with awaitingOpeningBegin := false } }
+      let g := { g with awaitingOpeningBegin := false }
       g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
         |>.beginTurn
     else g
@@ -92,7 +92,10 @@ then the starting player takes their first turn (CR 103.8 / MSH 84). -/
 def finishOpeningHands (g : Game) : Game :=
   let g := { g with
     pending := .none
-    mulligan := { awaitingOpeningBegin := true } }
+    mulliganToDeclare := #[]
+    willMulligan := #[]
+    mulliganToBottom := #[]
+    awaitingOpeningBegin := true }
   g.applyOpeningHandActions
 
 /-- Start (or restart) a CR 103.5 round: eligible players declare in turn
@@ -106,10 +109,9 @@ def beginMulliganRound (g : Game) : Game :=
     else
       promptMulligan
         { g with
-          mulligan := { g.mulligan with
-            toDeclare := remaining
-            willMulligan := #[]
-            toBottom := #[] } }
+          mulliganToDeclare := remaining
+          willMulligan := #[]
+          mulliganToBottom := #[] }
         remaining[0]!
 
 /-- Shuffle the cards in `p`'s hand back into their library (CR 103.5). -/
@@ -151,7 +153,7 @@ def skipFreeMulliganBottoms (g : Game) : Game :=
           s!"{g.player p |>.name} puts no cards on the bottom of their library (CR 103.5c)"
       else
         need := need.push p
-    return { g with mulligan := { g.mulligan with toBottom := need } }
+    return { g with mulliganToBottom := need }
 
 /-- Take remaining declared mulligans, pausing if `--norandom` needs a
 library order. `mulliganToBottom` is the original simultaneous group. -/
@@ -184,7 +186,7 @@ def resolveDeclaredMulligans (g : Game) : Game :=
     if order.isEmpty then
       g.beginMulliganRound
     else
-      let g := { g with mulligan := { g.mulligan with willMulligan := #[], toBottom := order } }
+      let g := { g with willMulligan := #[], mulliganToBottom := order }
       executeMulliganQueue g order
 
 /-- Remove `who` from a sequential CR 103.5 queue, then finish or prompt the
@@ -203,14 +205,14 @@ acts. When the round's declarations are complete, pending mulligans are taken
 together. -/
 def afterDeclaration (g : Game) (who : PlayerId) : Game :=
   g.advancePlayerQueue who g.mulliganToDeclare
-    (fun g rest => { g with mulligan := { g.mulligan with toDeclare := rest } })
+    (fun g rest => { g with mulliganToDeclare := rest })
     (·.resolveDeclaredMulligans) (·.promptMulligan)
 
 /-- After `who` has put cards on the bottom, the next such player acts, or a
 new declaration round begins. -/
 def afterBottom (g : Game) (who : PlayerId) : Game :=
   g.advancePlayerQueue who g.mulliganToBottom
-    (fun g rest => { g with mulligan := { g.mulligan with toBottom := rest } })
+    (fun g rest => { g with mulliganToBottom := rest })
     (·.beginMulliganRound) (·.promptBottom)
 
 end Game

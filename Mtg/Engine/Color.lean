@@ -9,17 +9,15 @@ or none.
 namespace Mtg.Engine
 
 /-- One of the five colors of Magic (CR 105.1). -/
-abbrev Color := Option (Option (Option Bool))
+inductive Color where
+  | white
+  | blue
+  | black
+  | red
+  | green
+deriving DecidableEq, Repr, Hashable, Inhabited
 
 namespace Color
-
-@[match_pattern] abbrev colorKind (k : Option (Option (Option Bool)) := none) : Color := k
-
-@[match_pattern] abbrev white : Color := .colorKind none
-@[match_pattern] abbrev blue : Color := .colorKind (some none)
-@[match_pattern] abbrev black : Color := .colorKind (some (some none))
-@[match_pattern] abbrev red : Color := .colorKind (some (some (some false)))
-@[match_pattern] abbrev green : Color := .colorKind (some (some (some true)))
 
 /-- Canonical WUBRG order (CR 105.1). -/
 def all : List Color := [.white, .blue, .black, .red, .green]
@@ -45,15 +43,13 @@ instance : ToString Color where
 
 end Color
 
-/-- A (possibly empty) combination of the five colors (CR 105.2), or deterministic
-xorshift64 RNG state (`Rng`, CR 103.3). -/
+/-- A (possibly empty) combination of the five colors (CR 105.2). -/
 structure ColorSet where
   white : Bool := false
   blue : Bool := false
   black : Bool := false
   red : Bool := false
   green : Bool := false
-  state : UInt64 := 0
 deriving BEq, DecidableEq, Repr, Inhabited
 
 namespace ColorSet
@@ -125,7 +121,7 @@ theorem empty_isColorless : ColorSet.empty.isColorless = true := rfl
 
 theorem singleton_monocolored (c : Color) :
     (ColorSet.singleton c).isMonocolored = true := by
-  rcases c with none | none | none | false | true <;> rfl
+  cases c <;> rfl
 
 theorem all_five_colors : Color.all.length = 5 := rfl
 

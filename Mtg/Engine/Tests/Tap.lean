@@ -67,7 +67,7 @@ def village : Game :=
   addPermanent g bear caster caster
 
 def offered : Game :=
-  step { village with thisWay := { village.thisWay with humansTappedThisWay := 4 } } humansDraw
+  step { village with humansTappedThisWay := 4 } humansDraw
 
 def rejects (g : Game) (ids : Array ObjectId) (needle : String) : Bool :=
   match g.choosePermanents caster ids with
@@ -280,7 +280,7 @@ source to still be there. -/
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw == humansDraw
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters == enchantedRemove
-#guard Effect.enterTapLoseAbilitiesWhileSource.resolution == targetLose
+#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution == targetLose
 #guard (SharedTrigger.timing .tapHumansDraw).resolution == humansDraw
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution == enchantedRemove
 

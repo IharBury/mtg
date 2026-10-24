@@ -24,9 +24,12 @@ def must (e : Except String Game) : Game :=
   | .ok g => g
   | .error msg => panic! msg
 
-def spellEff (c : CardDef) : Effect :=
+def spellFrc (c : CardDef) : Effect × FrcEffect :=
   match c.spellEffect with
-  | some e => e
+  | some e =>
+    match e.resolution with
+    | .frc fe => (e, fe)
+    | _ => panic! s!"{c.name} is not an FRC spell"
   | none => panic! s!"{c.name} has no spell"
 
 def entered (card : CardDef) : Game × ObjectId :=
@@ -67,22 +70,25 @@ def forgePain : Game :=
 #guard (forgePain.player ⟨0⟩).life == 19
 
 def brainstormed : Game :=
-  afterDraw.applyEffect ⟨0⟩ (spellEff brainstorm) #[]
+  let (e, fe) := spellFrc brainstorm
+  afterDraw.applyFrc ⟨0⟩ e fe #[] none
 
 #guard (brainstormed.player ⟨0⟩).hand.size ==
   (afterDraw.player ⟨0⟩).hand.size + 1
 
 def desparked : Game :=
   let g := addPermanent afterDraw darksteelAngel ⟨1⟩ ⟨1⟩
+  let (e, fe) := spellFrc despark
   let id := (findPerm g "Darksteel Angel").id
-  g.applyEffect ⟨0⟩ (spellEff despark) #[Target.permanent id]
+  g.applyFrc ⟨0⟩ e fe #[Target.permanent id] none
 
 #guard desparked.objects.any (fun o => o.name == "Darksteel Angel" && o.zone == .exile)
 
 def pathed : Game :=
   let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  let (e, fe) := spellFrc pathToExile
   let id := (findPerm g "Gray Ogre").id
-  g.applyEffect ⟨0⟩ (spellEff pathToExile) #[Target.permanent id]
+  g.applyFrc ⟨0⟩ e fe #[Target.permanent id] none
 
 #guard pathed.objects.any (fun o => o.name == "Gray Ogre" && o.zone == .exile)
 #guard
@@ -92,14 +98,16 @@ def pathed : Game :=
 
 def swordsLife : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let (e, fe) := spellFrc swordsToPlowshares
   let id := (findPerm g "Grizzly Bears").id
-  g.applyEffect ⟨0⟩ (spellEff swordsToPlowshares) #[Target.permanent id]
+  g.applyFrc ⟨0⟩ e fe #[Target.permanent id] none
 
 #guard (swordsLife.player ⟨1⟩).life == 22
 #guard swordsLife.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile)
 
 def fiction : Game :=
-  afterDraw.applyEffect ⟨0⟩ (spellEff factOrFiction) #[]
+  let (e, fe) := spellFrc factOrFiction
+  afterDraw.applyFrc ⟨0⟩ e fe #[] none
 
 #guard (fiction.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 3
 #guard (fiction.player ⟨0⟩).graveyard.size == 2
@@ -122,7 +130,8 @@ def angelAtZero : Game :=
 #guard (angelAtZero.player ⟨0⟩).life == 0
 
 def reproach : Game :=
-  let g := afterDraw.applyEffect ⟨0⟩ (spellEff teferisReproach) #[Target.player ⟨1⟩]
+  let (e, fe) := spellFrc teferisReproach
+  let g := afterDraw.applyFrc ⟨0⟩ e fe #[Target.player ⟨1⟩] none
   let g := g.gainLife ⟨1⟩ 5
   g.loseLife ⟨1⟩ 3
 
@@ -136,7 +145,7 @@ def reproach : Game :=
 
 def monarchGinger : Game :=
   let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with isMonarch := true })
-  g.applyEffect ⟨0⟩ { resolution := .createTokens .gingerbrute (.fixed 1) false .you .ifMonarch } #[]
+  g.applyFrc ⟨0⟩ {} .gingerbrute #[] none
 
 #guard monarchGinger.battlefield.any (fun o => o.name == "Gingerbrute" && o.printed.isToken)
 

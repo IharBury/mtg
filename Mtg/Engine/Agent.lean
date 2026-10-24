@@ -100,93 +100,62 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.player p).hand.back? with
       | some id => some (.discard id)
       | none => some .pass
+    | .sacrificeCreature _ =>
+      match (g.sacrificeCreatureChoices p)[0]? with
+      | some sac => some (.sacrifice sac.id)
+      | none => some .pass
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
       some (.putOnBottom ((g.player p).hand.extract 0 n))
+    | .scry _ n =>
+      some (.scry (g.scryLookedIds p n) #[])
+    | .surveil _ n =>
+      some (.surveil (g.scryLookedIds p n) #[])
+    | .mayDiscardDraw _ _ =>
+      discardBackOrDecline g p
     | .chooseAdditionalCost _ =>
       match g.proposedSpell with
       | some prop =>
         some (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
       | none => some .pass
+    | .chooseSacrificeCreature _ _ _ =>
+      match (g.creaturesControlledBy p)[0]? with
+      | some o => some (.sacrifice o.id)
+      | none => some .pass
+    | .chooseDiscardCard _ _ =>
+      discardBackOrDecline g p
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
     | .chooseLegend _ _ ids =>
       some (.keepLegend (defaultLegendToKeep g ids))
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
-    | .chooseKicker _ =>
-      some (.announceKicker false)
-    | .chooseGift _ =>
-      some (.announceGift none)
-    | .chooseTeamwork _ =>
-      some (.announceTeamwork false)
-    | .chooseTeamworkCreatures _ need =>
-      some (.choosePermanents (g.pickTeamworkCreatures p need))
-    | .fraChoice _ choice =>
-      some (g.defaultFraAction p choice)
-    | .resolve _ choice =>
-      chooseResolve g p choice
-    | .resolveRandom _ =>
-      -- Random results are supplied by the host (`--norandom`), never the heuristic.
-      none
-    | .none =>
-      -- Play a land if possible (from hand or from exile under a permission).
-      let lands :=
-        (g.handObjects p).filter (·.printed.isLand) ++
-        (g.exiledPlayable p).filter (·.printed.isLand)
-      if g.canPlayLand p then
-        match lands[0]? with
-        | some land => some (.playLand land.id)
-        | none =>
-          chooseActivate g p
-      else
-        chooseActivate g p
-    | _ => none
-where
-  chooseResolve (g : Game) (p : PlayerId) (choice : ResolvePending) : Option Action :=
-    match choice with
-    | .sacrificeCreature =>
-      match (g.sacrificeCreatureChoices p)[0]? with
-      | some sac => some (.sacrifice sac.id)
-      | none => some .pass
-    | .scry n =>
-      some (.scry (g.scryLookedIds p n) #[])
-    | .surveil n =>
-      some (.surveil (g.scryLookedIds p n) #[])
-    | .mayDiscardDraw _ =>
-      discardBackOrDecline g p
-    | .chooseSacrificeCreature _ _ =>
-      match (g.creaturesControlledBy p)[0]? with
-      | some o => some (.sacrifice o.id)
-      | none => some .pass
-    | .chooseDiscardCard _ =>
-      discardBackOrDecline g p
-    | .mayPayGeneric n =>
+    | .mayPayGeneric _ n =>
       payGenericOrTapFirstSource g p n
-    | .chooseLibraryPlacement _ =>
+    | .chooseLibraryPlacement _ _ =>
       some .chooseBottom
-    | .mayAttachEquipment hostId =>
+    | .mayAttachEquipment _ hostId =>
       match (g.permanentsOf p).find? (fun o =>
         o.printed.isEquipment && o.attachedTo != some hostId) with
       | some eq => some (.choosePermanents #[eq.id])
       | none => some .decline
-    | .mayResolve =>
+    | .mayResolve _ =>
       match g.mayEffect with
       | some e =>
-        match e.resolution with
+        match e.spellResolution with
         | .loseLife _ _ | .discard _ => some .decline
         | _ => some .accept
       | none => some .decline
-    | .tapHumans =>
+    | .tapHumans _ =>
       let humans :=
         (g.permanentsOf p).filter (fun o =>
           g.hasSubtype o "Human" && !o.status.tapped)
       if humans.isEmpty then some .decline
       else some (.choosePermanents (humans.map (·.id)))
-    | .payOrLetCounter n _ =>
+    | .payOrLetCounter _ n _ =>
       payGenericOrTapFirstSource g p n
-    | .payWard _ cost =>
+    | .payWard _ _ cost =>
       match cost with
       | .genericMana n => payGenericOrTapFirstSource g p n
       | .discardOrPay n =>
@@ -217,50 +186,74 @@ where
           match perms[0]? with
           | some o => some (.sacrifice o.id)
           | none => some .decline
-      | _ => some .decline
-    | .recruitDiscard =>
+    | .recruitDiscard _ =>
       discardBackOrDecline g p
-    | .chooseRingBearer =>
+    | .chooseKicker _ =>
+      some (.announceKicker false)
+    | .chooseGift _ =>
+      some (.announceGift none)
+    | .chooseTeamwork _ =>
+      some (.announceTeamwork false)
+    | .chooseTeamworkCreatures _ need =>
+      some (.choosePermanents (g.pickTeamworkCreatures p need))
+    | .chooseRingBearer _ =>
       match (g.ringBearerChoices p)[0]? with
       | some o => some (.chooseRingBearer (some o.id))
       | none => some (.chooseRingBearer none)
-    | .maySacrificeAnotherBolg bolgId =>
+    | .maySacrificeAnotherBolg _ bolgId =>
       match (g.permanentsOf p).find? (fun o => o.isCreature && o.id != bolgId) with
       | some o => some (.sacrifice o.id)
       | none => some .decline
-    | .mayCastFromLooked ids maxMv =>
+    | .mayCastFromLooked _ ids maxMv =>
       match ids.reverse.find? (fun id =>
         (g.mayCastFromLookedError p ids maxMv id).isNone) with
       | some id => some (.cast id)
       | none => some .decline
-    | .mayPutLandFromHand =>
+    | .mayPutLandFromHand _ =>
       match (g.player p).hand.findSome? (fun id =>
         match g.findObject? id with
         | some o => if o.printed.isLand then some id else none
         | none => none) with
       | some id => some (.cast id)
       | none => some .decline
-    | .chooseTriggerOr =>
+    | .chooseTriggerOr _ =>
       some (.chooseMode 0)
-    | .maySacArtifactOrDiscard _ =>
+    | .maySacArtifactOrDiscard _ _ =>
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.sacrifice o.id)
       | none => discardBackOrDecline g p
-    | .mayPutArtifactFromHand _ =>
+    | .mayPutArtifactFromHand _ _ =>
       match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.cast o.id)
       | none => some .decline
-    | .mayHaveVillainConnive _ _ =>
+    | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
-    | .mayCastExiledElseDamage cardId _ =>
+    | .mayCastExiledElseDamage _ cardId _ =>
       match (g.apply p (.cast cardId)) with
       | .ok _ => some (.cast cardId)
       | .error _ => some .decline
-    | .chooseProliferate _ =>
+    | .fraChoice _ choice =>
+      some (g.defaultFraAction p choice)
+    | .chooseProliferate _ _ =>
       let own := (g.permanentsOf p).filter (·.status.hasCounters) |>.map (Target.permanent ·.id)
       let opps := (g.livingOpponents p).filter (·.poison > 0) |>.map (Target.player ·.id)
       some (.targets (own ++ opps))
-    | _ => none
+    | .resolveRandom _ =>
+      -- Random results are supplied by the host (`--norandom`), never the heuristic.
+      none
+    | .none =>
+      -- Play a land if possible (from hand or from exile under a permission).
+      let lands :=
+        (g.handObjects p).filter (·.printed.isLand) ++
+        (g.exiledPlayable p).filter (·.printed.isLand)
+      if g.canPlayLand p then
+        match lands[0]? with
+        | some land => some (.playLand land.id)
+        | none =>
+          chooseActivate g p
+      else
+        chooseActivate g p
+where
   /-- During CR 601.2b, announce a legal mode for the proposed modal spell. -/
   chooseSpellMode (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
@@ -379,7 +372,7 @@ where
       (spellKind o .draw || modeKind o .draw) &&
         match o.printed.spellEffect with
         | some e =>
-          match e.resolution with
+          match e.spellResolution with
           | .sequence [.draw (.fixed cards) .you, .loseLife (.fixed life) .you] =>
             (g.player p).life > life &&
               (g.player p).library.size >= cards.toNat

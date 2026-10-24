@@ -1,4 +1,4 @@
-import Mtg.Engine.Card.Saga
+import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.TriggerEffects
@@ -18,16 +18,21 @@ namespace TriggeredAbility
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .triggered w e opts =>
-    { e with
+    let t := (e.asTrigger?.getD (.draw 0)).timing
+    { t with
       events :=
         match w with
-        | .fromEffect => e.events
+        | .fromEffect => t.events
         | _ => w.events
+      onceEachTurn := t.onceEachTurn || opts.onceEachTurn
+      youControlCreatureWithPower := opts.youControlCreatureWithPower
+      thisOrNontokenSubtype := opts.thisOrNontokenSubtype
+      thisOrAnotherSubtype := opts.thisOrAnotherSubtype
+      anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
+      gainedLifeAtLeast := opts.gainedLifeAtLeast
+      anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
       targeting := if opts.untargeted then {} else e.targeting
-      allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets
-      onceEachTurn := e.onceEachTurn || opts.onceEachTurn
-      condition := opts.condition
-      subtype := opts.subtype }
+      allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
 
 /-- Unified effect this trigger resolves. -/
 def effect (ab : TriggeredAbility) : Effect :=
@@ -38,10 +43,11 @@ def effect (ab : TriggeredAbility) : Effect :=
 def opts : TriggeredAbility → SharedTriggerOpts
   | .triggered _ _ o => o
 
-/-- Chapter number when this triggered ability is a Saga chapter (CR 714.2b). -/
-def sagaChapterNumber? : TriggeredAbility → Option Nat
-  | .triggered (.sagaChapter n) _ _ => some n
-  | _ => none
+/-- Leftover shared trigger this ability resolves. -/
+def shared (ab : TriggeredAbility) : SharedTrigger :=
+  match ab.effect.asTrigger? with
+  | some te => te
+  | none => .draw 0
 
 /-- Catalog aliases for reusable triggers that now share `triggered`. -/
 def onEnterScry (n : Nat) : TriggeredAbility := .triggered .enter (Effect.ofTrigger (.scry n))
@@ -148,7 +154,7 @@ def onYouCastColorFromHandConnive (color : Color) : TriggeredAbility :=
 def onEquippedCreatureYouControlAttacksConnive : TriggeredAbility :=
   .triggered .equippedCreatureYouControlAttacks (Effect.ofTrigger .connive)
 def onCombatTargetYouControlConnives : TriggeredAbility :=
-  .triggered .yourBeginCombat (Effect.ofTrigger (.connive .creatureYouControl))
+  .triggered .yourBeginCombat (Effect.ofTrigger (.connive (.target .creatureYouControl)))
 def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppNonland))
 def onEnterExileOppTappedUntilLeaves : TriggeredAbility :=
@@ -178,21 +184,21 @@ def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
   .triggered .youActivateCreatureAbility (Effect.ofTrigger (.draw 1)) .once
 def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
   .triggered .anotherSubtypeOrEquipmentEnters (Effect.ofTrigger (.draw 1))
-    { onceEachTurn := true, subtype := some subtype }
+    { onceEachTurn := true, anotherSubtypeOrEquipment := some subtype }
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
-  .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { condition := .gainedLifeAtLeast n }
+  .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { gainedLifeAtLeast := some n }
 def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrNontokenSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { subtype := some subtype }
+    { thisOrNontokenSubtype := some subtype }
 def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
-    { subtype := some subtype }
+    { thisOrAnotherSubtype := some subtype }
 def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.createTokens kind n))
-    { subtype := some subtype }
+    { watchedSubtype := some subtype }
 def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
   .triggered .opponentDrawsSecond (Effect.ofTrigger (.createTokens .treasure 1))
 def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
@@ -221,7 +227,7 @@ def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
 def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
     TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.onSource (.plusOne n)))
-    { subtype := some subtype }
+    { thisOrAnotherSubtype := some subtype }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
   .triggered .opponentCastsSpell (Effect.ofTrigger (.amass n "Orc"))
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
@@ -229,7 +235,7 @@ def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
 def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
   .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger (.pumpCause power toughness))
 def onEnterTargetOpponentDiscards (n : Nat) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.opponentDiscards n (.target .opponent)))
+  .triggered .enter (Effect.ofTrigger (.opponentDiscards n .target))
 def onEquipmentYouControlEntersDraw : TriggeredAbility :=
   .triggered .equipmentYouControlEnters (Effect.ofTrigger (.draw 1))
 def onEnterSearchForest : TriggeredAbility :=
@@ -262,7 +268,7 @@ def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.seqDrawThenDiscard 2)
-    { subtype := some subtype, anotherLegendary := true }
+    { thisOrAnotherSubtype := some subtype, anotherLegendary := true }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
   .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
@@ -323,7 +329,7 @@ def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility
 def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
     (generic : Nat) : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw generic))
-    { condition := .anotherCreaturePowerAtMost power }
+    { anotherCreaturePowerAtMost := some power }
 def onEnterDrawThenBottomIfNoLegendary : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 def onYourEndStepRemoveHopeDrawSac : TriggeredAbility :=
@@ -412,7 +418,7 @@ def onCombatDamageCreateTreasuresEqualPlayerArtifacts : TriggeredAbility :=
 def onEnterOrOpponentDrawsDeal1AmassOrcs : TriggeredAbility :=
   .triggered (.or .enter .opponentDrawsExceptFirst) (Effect.ofTrigger .deal1ThenAmassOrcs)
 def onAttackWithTotalPowerUntapExtraCombat (n : Int) : TriggeredAbility :=
-  .triggered (.youAttackWithTotalPower n) (Effect.ofTrigger (.untapAttackersExtraCombat n)) .once
+  .triggered .youAttackWithTotalPower (Effect.ofTrigger (.untapAttackersExtraCombat n)) .once
 def onAnotherCreatureYouControlEntersAlliance : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger .allianceMode)
 def onEnterDestroyOtherAmassControllerPower : TriggeredAbility :=
@@ -421,7 +427,7 @@ def onOpponentCastsChosenParityModes : TriggeredAbility :=
   .triggered .opponentCastsMatchingParity (Effect.ofTrigger .gollumMode)
 def onThisOrAnotherSubtypeEntersDiscardHand (subtype : String) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger .discardHandDrawDamageIfStory)
-    { subtype := some subtype }
+    { thisOrAnotherSubtype := some subtype }
 def onAttackCastFromGyArtifactInstantSorcery : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .castFromGyArtifactInstantSorcery)
 def onAttackEquippedGainDoubleStrike : TriggeredAbility :=
@@ -459,7 +465,11 @@ def onFinalSagaChapterRevealSaga : TriggeredAbility :=
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
 def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
-  .triggered (.sagaChapter n) e
+  match e.asChapter? with
+  | some ch =>
+    .triggered .sagaChapter
+      { e with sharedTrigger := some (SharedTrigger.chapter n ch) }
+  | none => .triggered .sagaChapter e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork Effect.seqPlusOneOnSourceAndDraw
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
@@ -636,19 +646,13 @@ def counterOn (noun : String) (kind : CounterKind) (n : Nat) : String :=
   | .stun => s!"put {kind.countersPhrase n} on {noun}"
   | _ => "put counters"
 
-/-- Printed noun for the permanent `who` names when it is one of the four
-standard affected-permanent selectors. `targetNoun` is the announced target. -/
-def affectedNoun? (who : ObjectSelector) (targetNoun : String) : Option String :=
-  match who with
-  | .target => some targetNoun
-  | .source => some "this creature"
-  | .enchanted => some "enchanted creature"
-  | .whileSource | .target .whileSource => some "that creature"
-  | _ => none
-
 /-- Printed noun for the permanent `who` names. `targetNoun` is the announced target. -/
-def affectedNoun (who : ObjectSelector) (targetNoun : String) : String :=
-  (affectedNoun? who targetNoun).getD targetNoun
+def affectedNoun (who : TriggerAffected) (targetNoun : String) : String :=
+  match who with
+  | .target => targetNoun
+  | .source => "this creature"
+  | .enchanted => "enchanted creature"
+  | .targetWhileSource => "that creature"
 
 /-- Oracle clause for the single step that follows attaching to the announced
 creature. A compound action flattened into more than one step is `none`. -/
@@ -678,7 +682,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
     some "that creature can't be blocked this turn"
   | .becomeArtifact (.target .whileSource) =>
     some "until end of turn, that creature becomes an artifact in addition to its other types"
-  | .becomePrepared (.target .whileSource) _ => some "that creature becomes prepared"
+  | .becomePrepared (.target .whileSource) => some "that creature becomes prepared"
   | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
     some s!"that creature has base power and toughness {p}/{t} until end of turn"
   | .putOnLibrary .top (.target .whileSource) =>
@@ -698,332 +702,800 @@ private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array S
     | some ss, .othersOfSubtype subtype => some (ss.push subtype)
     | _, _ => none) (some #[])
 
-/-- Part 1 of `sequenceResolutionPhrase`. -/
-private def sequenceResolutionPhrasePart1 (rs : List TriggerResolution) (noun : String) : Option String :=
-  match rs with
-  | [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] =>
-    some s!"return {noun} to your hand. You gain life equal to that card's power"
-  | [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] =>
-    some "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
-      .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] =>
-    some "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
-    some "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | [.createTokens kind (.fixed 1) false, .attach .source .createdToken] =>
-    some s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
-  | [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
-    some s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-  | [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife .forEachDestroyedThisWay] =>
-    some "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
-  | [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature] =>
-    some "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
-  | [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
-    some s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
-  | [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
-    some s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
-  | [.pump (.fixed p) (.fixed t)
-      (.intersection [.creaturesYouControl, .union parts]),
-      .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] =>
-    some <|
+/-- Effect clause from resolution, targeting, and divided-damage parameters. -/
+def resolutionPhrase (t : TriggerTiming) : String :=
+  let noun := t.targeting.kind.noun
+  match t.resolution with
+  | .pump power toughness who =>
+    match power, toughness, who with
+    | .greatestPower, .fixed 0, .source =>
+      "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
+    | .perLookedAt, .perLookedAt, .source =>
+      "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
+    | .perOtherCreature, .perOtherCreature, .source =>
+      "it gets +1/+1 until end of turn for each other creature you control"
+    | .perPlains, .perPlains, .target =>
+      "target creature you control gets +1/+1 until end of turn for each Plains you control"
+    | .fixed power, .fixed toughness, .cause _ =>
+      s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .equalSourceToughness, .equalSourceToughness, .othersOfSubtype subtype =>
+      s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
+    | .equalSourcePower, .fixed 0, .target =>
+      s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
+    | .fixed power, .fixed toughness, .creaturesYouControl =>
+      s!"creatures you control get {signedStat power}/{signedStat toughness} until end of turn"
+    | .fixed power, .fixed toughness,
+        .intersection [.creaturesYouControl, .union parts] =>
       match othersOfSubtypeParts parts with
       | some subtypes =>
-        let who :=
+        let recipients :=
           if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
           else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-        s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+        s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
       | none =>
-        "resolve each step"
-  | [.noteResolveThisTurn 3,
+        "those permanents get +P/+T until end of turn"
+    | .fixed power, .fixed toughness, .opponentsCreatures =>
+      s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
+    | .fixed power, .fixed toughness, .target =>
+      s!"{noun} gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .double, .double, .target =>
+      s!"double {noun}'s power and toughness until end of turn"
+    | .fixed power, .fixed toughness, .source =>
+      s!"this creature gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .double, .double, .source =>
+      "double this creature's power and toughness until end of turn"
+    | .fixed power, .fixed toughness, .enchanted =>
+      s!"enchanted creature gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .double, .double, .enchanted =>
+      "double enchanted creature's power and toughness until end of turn"
+    | .fixed power, .fixed toughness, (.target .whileSource) =>
+      s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
+    | .double, .double, (.target .whileSource) =>
+      "double that creature's power and toughness until end of turn"
+    | .fixed power, .fixed toughness,
+        .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
+      s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
+    | _, _, _ =>
+      "those permanents get +P/+T until end of turn"
+  | .setBasePT .equalSourcePower .equalSourceToughness .target =>
+    "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
+  | .lose .indestructible .target =>
+    s!"{noun} loses indestructible until end of turn"
+  | .lose .indestructible .source =>
+    "this creature loses indestructible until end of turn"
+  | .lose .indestructible .enchanted =>
+    "enchanted creature loses indestructible until end of turn"
+  | .lose .indestructible (.target .whileSource) =>
+    "that creature loses indestructible until end of turn"
+  | .lose .allAbilities (.target .ifPresent) =>
+    "it loses all abilities for as long as this remains on the battlefield"
+  | .lose _ _ =>
+    "lose"
+  | .cant (.beBlocked .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn"
+  | .cant (.beBlocked .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn"
+  | .cant (.beBlocked .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn"
+  | .cant (.beBlocked (.target .whileSource)) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn"
+  | .cant (.beBlockedExceptByHaste .target) =>
+    s!"{affectedNoun .target noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .source) =>
+    s!"{affectedNoun .source noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste .enchanted) =>
+    s!"{affectedNoun .enchanted noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.beBlockedExceptByHaste (.target .whileSource)) =>
+    s!"{affectedNoun .targetWhileSource noun} can't be blocked this turn except by creatures with haste"
+  | .cant (.untapWhileYouControl .target) =>
+    "that creature can't become untapped for as long as you control this creature"
+  | .cant _ =>
+    "can't"
+  | .becomeArtifact .target =>
+    s!"until end of turn, {noun} becomes an artifact in addition to its other types"
+  | .becomeArtifact .source =>
+    "until end of turn, this creature becomes an artifact in addition to its other types"
+  | .becomeArtifact .enchanted =>
+    "until end of turn, enchanted creature becomes an artifact in addition to its other types"
+  | .becomeArtifact (.target .whileSource) =>
+    "until end of turn, that creature becomes an artifact in addition to its other types"
+  | .becomeArtifact _ =>
+    "becomes an artifact"
+  | .becomePrepared .target =>
+    s!"{noun} becomes prepared"
+  | .becomePrepared .source =>
+    "this creature becomes prepared"
+  | .becomePrepared .enchanted =>
+    "enchanted creature becomes prepared"
+  | .becomePrepared (.target .whileSource) =>
+    "that creature becomes prepared"
+  | .becomePrepared _ =>
+    "becomes prepared"
+  | .setBasePT (.fixed p) (.fixed t) .target =>
+    s!"{noun} has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) .source =>
+    s!"this creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) .enchanted =>
+    s!"enchanted creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT (.fixed p) (.fixed t) (.target .whileSource) =>
+    s!"that creature has base power and toughness {p}/{t} until end of turn"
+  | .setBasePT _ _ _ =>
+    "set base power and toughness"
+  | .putOnLibrary .top .target =>
+    s!"{noun}'s owner puts it on top of their library"
+  | .putOnLibrary .bottom .target =>
+    s!"{noun}'s owner puts it on the bottom of their library"
+  | .putOnLibrary .top .source =>
+    "this creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom .source =>
+    "this creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .top .enchanted =>
+    "enchanted creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom .enchanted =>
+    "enchanted creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .top (.target .whileSource) =>
+    "that creature's owner puts it on top of their library"
+  | .putOnLibrary .bottom (.target .whileSource) =>
+    "that creature's owner puts it on the bottom of their library"
+  | .putOnLibrary .bottom .cardFromHand =>
+    "put a card from your hand on the bottom of your library"
+  | .putOnLibrary _ _ =>
+    "put on library"
+  | .surveil (.fixed n) => s!"surveil {n}"
+  | .surveil _ => "surveil"
+  | .empowerJace (.fixed n) => s!"empower Jace {n}"
+  | .empowerJace _ => "empower Jace"
+  | .prepareSource .ifNotPrepared =>
+    "if this creature isn't prepared, it becomes prepared"
+  | .prepareSource .ifThreeCreaturesDied =>
+    "if three or more creatures died this turn, this creature becomes prepared"
+  | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1)) =>
+    "if you removed two or more loyalty counters to activate it, draw a card"
+  | .putCounters what who =>
+    match what, who with
+    | .ofKind .plusOnePlusOne _, .youControl .eachCreature =>
+      "put a +1/+1 counter on each creature you control"
+    | .ofKind .plusOnePlusOne _, .youControl (.subtype s) =>
+      s!"put a +1/+1 counter on each {s} you control"
+    | .ofKind .plusOnePlusOne _, .youControl .citysBlessing =>
+      "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
+    | .ofKind .plusOnePlusOne _, .eachOther =>
+      "put a +1/+1 counter on each other creature you control"
+    | .plusOneLastKnownMv, _ =>
+      s!"put X +1/+1 counters on {noun}, where X is that spell's mana value"
+    | .ofKind .loyalty _, .source => "put a loyalty counter on this"
+    | .sourceCounters, _ =>
+      "put its counters on up to one target creature you control"
+    | .ofKind .charge _, _ => "put a charge counter on this enchantment"
+    | .ofKind .quest _, _ => "put a quest counter on this enchantment"
+    | .honePerOpponent, _ =>
+      "put a hone counter on this for each creature target opponent controls"
+    | .ofKind .plan _, _ => "put a plan counter on this enchantment"
+    | .ofKind .plusOnePlusOne _, .permanent true =>
+      s!"put a +1/+1 counter on {noun}"
+    | .plusOneNoted, _ =>
+      "put a +1/+1 counter on it for each invasion counter on this enchantment"
+    | .ofKind .invasion _, _ => "put an invasion counter on this enchantment"
+    | .ofKind .trample _, _ =>
+      s!"put a trample counter on up to one {noun}"
+    | .ofKind .influence _, _ => "put an influence counter on this"
+    | .ofKind .loyalty _, .permanent _ => "put a loyalty counter on it"
+    | .plusOneSacrificedPower, _ =>
+      "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+    | .ofKind .plusOnePlusOne n, .permanent false =>
+      s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
+    | .ofKind .indestructible n, .permanent false =>
+      s!"put {(.indestructible : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .doubleStrike n, .permanent false =>
+      s!"put {(.doubleStrike : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .burden n, .permanent false =>
+      s!"put {(.burden : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind .stun n, .permanent false =>
+      s!"put {(.stun : CounterKind).countersPhrase n} on {noun}"
+    | .ofKind kind n, .source =>
+      counterOn "this creature" kind n
+    | .ofKind kind n, .enchanted =>
+      counterOn "enchanted creature" kind n
+    | .ofKind kind n, (.target .whileSource) =>
+      counterOn "that creature" kind n
+    | .ofKind .plusOnePlusOne _, .eachUpToLastKnown =>
+      "put a +1/+1 counter on each of up to that many target creatures you control"
+    | .missingKeywordsFromTarget, .source =>
+      "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
+    | _, _ => "put counters"
+  | .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target,
+      .createTokens .treasure (.fixed 1) false .kind (.controller .target)]) =>
+    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
+  | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
+      (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
+    s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
+  | .«if» (.not (.atLeast (.count .planeswalkersYouControl) (.fixed 1))) (.sacrifice (.sacrificedSource .controllerSacrifices)) =>
+    "if you don't control a planeswalker, sacrifice this creature"
+  | .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) =>
+    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
+  | .may (.pay (.mana symbols)) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) .ifYouDo =>
+    match symbols.toList with
+    | [.generic n] =>
+      s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
+    | _ =>
+      "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
+  | .dealDamage amount who note =>
+    match who, amount, note with
+    | .blockers, .fixed n, _ =>
+      s!"it deals {n} damage to each creature blocking it"
+    | .permanent, .lastKnownPower, .excess =>
+      s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
+    | .permanent, .lastKnownPower, _ =>
+      s!"it deals damage equal to its power to {noun}"
+    | .player .eachOpponent, .subtypeCount subtype, _ =>
+      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
+    | .player .eachOpponent, .discardedHand, _ =>
+      "this deals X damage to each opponent"
+    | .player .eachOpponent, .fixed n, _ =>
+      s!"this creature deals {n} damage to each opponent"
+    | .target, .subtypeCount subtype, _ =>
+      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
+    | .target, .fixed n, .none =>
+      s!"deals {n} damage to {noun}"
+    | .target, .spellManaValue, _ =>
+      s!"this deals damage equal to that spell's mana value to {noun}"
+    | .target, .fixed n, _ =>
+      s!"it deals {n} damage to {noun}"
+    | .player (.target .opponent), .greatestArtifactMv, _ =>
+      s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
+    | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
+      s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
+    | .player (.target .opponent), .fixed n, _ =>
+      s!"this deals {n} damage to {noun}"
+    | .permanent, .fixed n, _ =>
+      s!"it deals {n} damage to {noun}"
+    | .source, .fixed n, .none =>
+      s!"deals {n} damage to this creature"
+    | .enchanted, .fixed n, .none =>
+      s!"deals {n} damage to enchanted creature"
+    | (.target .whileSource), .fixed n, .none =>
+      s!"deals {n} damage to that creature"
+    | _, _, _ =>
+      "deal damage"
+  | .scry (.fixed n) => s!"scry {n}"
+  | .scry _ => "scry"
+  | .draw amount who =>
+    match who, amount with
+    | .opponentHasYou, _ =>
+      "target opponent may have you draw a card"
+    | .you, .forEachTappedHuman =>
+      "draw a card for each Human tapped this way"
+    | .you, .perFatGraveyard =>
+      "draw a card for each graveyard with seven or more cards in it"
+    | .you, .discardedHand =>
+      "draw X cards, where X is the number of cards discarded this way"
+    | .you, .equalToManaSpent =>
+      "draw X cards, where X is the amount of mana spent to cast that spell"
+    | .you, .perControlled _ =>
+      "draw a card for each permanent you control of that type"
+    | .you, .upToHandSize _ =>
+      "if you have fewer than that many cards in hand, draw cards equal to the difference"
+    | .controller .enchanted, _ =>
+      "that player draws a card"
+    | .eachOpponent, .fixed n =>
+      s!"each opponent draws {cardPhrase n.toNat}"
+    | .you, .fixed n =>
+      s!"draw {cardPhrase n.toNat}"
+    | _, _ =>
+      "draw cards"
+  | .searchLibrary (.put .forest .asPrinted .none) =>
+    "search your library for a Forest card, put that card onto the battlefield, then shuffle"
+  | .searchLibrary (.returnToHand .basicLand .none) =>
+    searchLibraryToHandPhrase "a basic land card"
+  | .searchLibrary (.put .basicLandOnTop .asPrinted .none) =>
+    "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .searchLibrary (.put .dragon .asPrinted .none) =>
+    "search your hand and/or library for a Dragon card and put it onto the battlefield"
+  | .searchLibrary _ =>
+    "search your library"
+  | .discard what =>
+    match what with
+    | .cards n .you =>
+      s!"discard {cardPhrase n}"
+    | .hand =>
+      "discard your hand"
+    | .cards n .eachOpponent =>
+      if n == 1 then "each opponent discards a card"
+      else s!"each opponent discards {cardPhrase n}"
+    | .cards n (.target .opponent) =>
+      s!"{noun} discards {cardPhrase n}"
+    | .chosenNonland =>
+      s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
+    | _ =>
+      "discard cards"
+  | .may (.discard (.cards 1)) (.draw (.fixed n)) .ifYouDo =>
+    s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
+  | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
+    "you may have this deal that much damage"
+  | .may .retargetCause (.sequence []) .ifYouDo =>
+    "you may choose new targets for that spell"
+  | .may (.pay (.mana symbols)) (.queueReflexive follow) .ifYouDo =>
+    let times :=
+      match TriggerResolution.queuedReflexive follow with
+      | .modeled _ times => times
+      | _ => 1
+    match symbols.toList with
+    | [.generic n] =>
+      if times > 1 then s!"you may pay \{{n}} up to {times} times"
+      else s!"you may pay \{{n}}"
+    | _ => "you may pay that cost"
+  | .may (.pay (.mana symbols)) (.becomeCopy (.cause none)) .ifYouDo =>
+    match symbols.toList with
+    | [.generic 2] => "you may pay {2} to copy it"
+    | _ => "you may pay to copy it"
+  | .may (.loseLife (.fixed 2) .you)
+      (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
+    "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
+  | .may (.exile .top .playThisTurn .ifHero) (.sequence []) _ =>
+    "you may exile the top card of your library. If that card is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
+  | .may action _ =>
+    match action with
+    | .tap .humans =>
+      "you may tap any number of untapped Humans you control"
+    | .sacrifice .another _ =>
+      "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+    | .put .artifactFromHand _ .forAttach =>
+      "you may put an artifact card from your hand onto the battlefield"
+    | .discard .hand =>
+      "you may discard your hand"
+    | .draw _ .opponentHasYou =>
+      "target opponent may have you draw a card"
+    | .put .landFromHand .tapped _ =>
+      "you may put a land card from your hand onto the battlefield tapped"
+    | .put (.creatureFromHand subtype maxMv) _ _ =>
+      s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
+    | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
+      let disc := if n == 2 then "two cards" else cardPhrase n
+      s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
+    | _ => "you may do it"
+  | .sacrifice what _ =>
+    match what with
+    | .opponentChosenCreature =>
+      s!"{noun} sacrifices a creature of their choice"
+    | .eachPlayersCreature =>
+      "each player sacrifices a creature of their choice"
+    | .leastPower =>
+      "defending player sacrifices a creature with the least power among creatures they control"
+    | .combatDamager =>
+      "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn"
+    | .chosenNontokenCreature =>
+      "each opponent sacrifices a nontoken creature of their choice"
+    | .sacrificedSource .controllerSacrifices =>
+      "sacrifice this creature"
+    | .another =>
+      "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+    | _ =>
+      "sacrifice it"
+  | .dividedDamage =>
+    match t.dividedDamage with
+    | some (amount, maxTargets) =>
+      s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
+    | none => "it deals damage divided as you choose"
+  | .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower] =>
+    s!"return {noun} to your hand. You gain life equal to that card's power"
+  | .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] =>
+    "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
+  | .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
+      .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])] =>
+    "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
+  | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
+    "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
+  | .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] =>
+    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
+    s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife .forEachDestroyedThisWay] =>
+    "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature] =>
+    "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
+  | .sequence [.dealDamage (.fixed n) .target .markedPermanent, .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none)] =>
+    s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
+  | .sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source)] =>
+    s!"return {noun} to its owner's hand. If you do, put a +1/+1 counter on this creature"
+  | .sequence [.pump (.fixed p) (.fixed t)
+      (.intersection [.creaturesYouControl, .union parts]),
+      .pump (.fixed oppP) (.fixed oppT) .opponentsCreatures] =>
+    match othersOfSubtypeParts parts with
+    | some subtypes =>
+      let who :=
+        if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+        else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+      s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+    | none =>
+      "resolve each step"
+  | .sequence
+      [.noteResolveThisTurn 3,
        .«if» (.nthResolve 1) (.gainLife (.fixed 1)),
        .«if» (.nthResolve 2) (.draw (.fixed 1)),
        .«if» (.nthResolve 3) (.putCounters (.ofKind .plusOnePlusOne) .youControl)] =>
-    some "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
-  | [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
-    some s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) (.grant .attacking .createdToken)] =>
-    some "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
-  | [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
-    some s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
-  | [.untap .attackingCreatures, .additionalCombatPhase] =>
-    some "untap all attacking creatures. After this phase, there is an additional combat phase"
-  | [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
-    some s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-  | [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
-    some "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
-  | _ => none
-
-/-- Part 2 of `sequenceResolutionPhrase`. -/
-private def sequenceResolutionPhrasePart2 (rs : List TriggerResolution) (noun : String) : Option String :=
-  if let some s := sequenceResolutionPhrasePart1 rs noun then some s
-  else match rs with
-  | [.putCounters (.ofKind .trample) .permanent, .grant .bearType .target, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] =>
-    some s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
-  | [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
-    some s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
-  | [.tap .enchanted, .removeCounters .all .enchanted] =>
-    some "tap enchanted creature and remove all counters from it"
-  | [.putCounters (.ofKind .quest) .source,
+    "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
+  | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
+    s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
+    "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
+  | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" false _] =>
+    s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
+  | .sequence [.untap .attackingCreatures, .additionalCombatPhase] =>
+    "untap all attacking creatures. After this phase, there is an additional combat phase"
+  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1))] =>
+    s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
+  | .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent))] =>
+    "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
+  | .sequence [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] =>
+    s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
+  | .sequence [.mill (.fixed n) .you .milledCards, .returnToHand (.milledSubtype subtype)] =>
+    s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
+  | .sequence [.tap .enchanted, .removeCounters .all .enchanted] =>
+    "tap enchanted creature and remove all counters from it"
+  | .sequence [.putCounters (.ofKind .quest) .source,
       .«if» ((.atLeast (.count .questCounters) (.fixed 6)))
         (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)])] =>
-    some "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
-  | [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand .tapped _] =>
-    some "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
-  | [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] =>
-    some "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
-  | [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
-    some "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
-  | [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
+    "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
+  | .sequence [.draw (.fixed 1), .discard (.cards 1), .put .discardedLand .tapped _] =>
+    "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
+  | .sequence [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] =>
+    "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
+  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] =>
+    "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
+  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
     let disc := if n == 2 then "two cards" else cardPhrase n
-    some s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
-  | [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
-    some "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
-  | [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
+    s!"draw X cards, where X is the amount of mana spent to cast that spell, then discard {disc}"
+  | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _] =>
+    "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
+  | .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer,
       .mayCast .impulse .unlimited .withoutPaying .none] =>
-    some "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
-  | [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
-    some "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
-  | [.mill (.fixed 2) .eachOpponent .opponentsMilled,
+    "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
+  | .sequence [.putCounters (.ofKind .influence) .source, .scry (.fixed 2), .may (.draw _ .opponentHasYou) _] =>
+    "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
+  | .sequence [.mill (.fixed 2) .eachOpponent .opponentsMilled,
       .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))] =>
-    some "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
-  | [.sacrifice .combatDamager, .ringTempts] =>
-    some "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
-  | [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] =>
-    some s!"scry {n} and put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] =>
-    some "draw a card, then discard a card and put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace (.fixed 1) false] =>
-    some "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed m)] =>
-    some s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] =>
-    some "you draw a card, lose 1 life, and put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source, .createTokens .treasure (.fixed 1) true] =>
-    some "create a tapped Treasure token and put a plan counter on this enchantment"
-  | [.putCounters (.ofKind .plan) .source,
+    "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
+  | .sequence [.sacrifice .combatDamager, .ringTempts] =>
+    "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
+  | .sequence [.putCounters (.ofKind .plan) .source, .scry (.fixed n)] =>
+    s!"scry {n} and put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] =>
+    "draw a card, then discard a card and put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace (.fixed 1) false] =>
+    "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed m)] =>
+    s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] =>
+    "you draw a card, lose 1 life, and put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .treasure (.fixed 1) true] =>
+    "create a tapped Treasure token and put a plan counter on this enchantment"
+  | .sequence [.putCounters (.ofKind .plan) .source,
       .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] =>
-    some "put a +1/+1 counter on target creature you control and a plan counter on this enchantment"
-  | _ => none
-
-/-- Part 3 of `sequenceResolutionPhrase`. -/
-private def sequenceResolutionPhrasePart3 (rs : List TriggerResolution) (noun : String) : Option String :=
-  if let some s := sequenceResolutionPhrasePart2 rs noun then some s
-  else match rs with
-  | [.sacrifice .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
-    some "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
-  | [.sacrifice .plan .forReflexive,
+    "put a +1/+1 counter on target creature you control and a plan counter on this enchantment"
+  | .sequence [.sacrifice .plan, .draw (.fixed 1), .putCounters (.ofKind .plusOnePlusOne) .youControl] =>
+    "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
+  | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))] =>
-    some "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
-  | [.sacrifice .plan .forReflexive,
+    "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
+  | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn))] =>
-    some "sacrifice it. When you do, you control target opponent during their next turn"
-  | [.sacrifice .plan .forReflexive,
+    "sacrifice it. When you do, you control target opponent during their next turn"
+  | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] =>
-    some "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
-  | [.sacrifice .plan, .createTokens .robotVillain22 (.fixed n) false] =>
-    some s!"sacrifice it and create {englishNumber n.toNat} 2/2 colorless Robot Villain artifact creature tokens"
-  | [.sacrifice .plan .forReflexive,
+    "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
+  | .sequence [.sacrifice .plan, .createTokens .robotVillain22 (.fixed n) false] =>
+    s!"sacrifice it and create {englishNumber n.toNat} 2/2 colorless Robot Villain artifact creature tokens"
+  | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] =>
-    some s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
-  | [.sacrifice .plan .forReflexive,
+    s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
+  | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.putCounters (.ofKind .indestructible) .permanent))] =>
-    some "sacrifice it. When you do, put an indestructible counter on target creature you control"
-  | [.attach .source .target, followup] =>
-    some <|
-      match attachedFollowupPhrase followup with
-      | some phrase => s!"attach it to {noun}. {capitalizeAscii phrase}"
-      | none => "resolve each step"
-  | [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] =>
-    some "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-  | [.draw (.fixed 1), .may (.put .landFromHand .tapped _) _] =>
-    some "draw a card, then you may put a land card from your hand onto the battlefield tapped"
-  | [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] =>
-    some "draw a card. If you control another Hero, you gain 2 life"
-  | [.createTokens .alien (.fixed 1) false .you .invasion,
+    "sacrifice it. When you do, put an indestructible counter on target creature you control"
+  | .sequence [.attach .source .target, followup] =>
+    match attachedFollowupPhrase followup with
+    | some phrase => s!"attach it to {noun}. {capitalizeAscii phrase}"
+    | none => "resolve each step"
+  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted] =>
+    "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .sequence [.draw (.fixed 1), .may (.put .landFromHand .tapped _) _] =>
+    "draw a card, then you may put a land card from your hand onto the battlefield tapped"
+  | .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] =>
+    "draw a card. If you control another Hero, you gain 2 life"
+  | .sequence [.createTokens .treasure (.fixed 1) false .alien .you .invasion,
       .putCounters .plusOneNoted .createdToken,
       .putCounters (.ofKind .invasion) .source] =>
-    some "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
-  | [.createTokens .sturdyShield (.fixed 1) false .you .remember,
+    "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
+  | .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield .you .remember,
       .attach .createdToken .source] =>
-    some "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
-  | [.exile .graveyardCard .forLater .playCard, .grant .playNotedUntilNextTurn .target] =>
-    some s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
-  | [.tap .target, .cant (.untapWhileYouControl .target)] =>
-    some s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
-  | [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)] =>
-    some "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
-  | _ => none
-
-/-- Effect clause for `Resolution.sequence` in `resolutionPhrase`. -/
-private def sequenceResolutionPhrase (rs : List TriggerResolution) (noun : String) : String :=
-  if let some s := sequenceResolutionPhrasePart3 rs noun then s
-  else match rs with
-  | [.grant (.keywords k) .target,
+    "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
+  | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
+    s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
+  | .sequence [.tap .target, .cant (.untapWhileYouControl .target)] =>
+    s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
+  | .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)] =>
+    "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
+  | .sequence [.grant (.keywords k) .target,
       .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
       .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] =>
     s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
-  | [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) (.putOnLibrary .shuffled .source)] =>
+  | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
-  | [.surveil (.fixed 0) .armReturnLifeGained, .surveil (.fixed 1) _] =>
+  | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
-  | [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
+  | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
     s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | [.pump (.fixed p) (.fixed t) .target, .grant (.keywords k) .target] =>
+  | .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords k) .target] =>
     if k == Keyword.trample then
       s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
     else
       "resolve each step"
-  | [.becomeArtifact .target, .grant (.keywords k) .target] =>
+  | .sequence [.becomeArtifact .target, .grant (.keywords k) .target] =>
     if k == Keyword.indestructible then
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
     else
       "resolve each step"
-  | [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
+  | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
     s!"tap {noun} and put a stun counter on it"
-  | [.destroy .target,
-      .createTokens .treasure (.fixed 1) false (.controller .target)] =>
+  | .sequence [.destroy .target,
+      .createTokens .treasure (.fixed 1) false .kind (.controller .target)] =>
     s!"destroy {noun}. They create a Treasure token"
-  | [.may (.put .artifactFromHand _ .forAttach) _, .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] =>
+  | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
-  | [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed m)] =>
+  | .sequence [.loseLife (.fixed n) (.target .opponent), .gainLife (.fixed m)] =>
     s!"target opponent loses {n} life and you gain {m} life"
-  | [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
+  | .sequence [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
       .grant (.keywords k) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] =>
     if k == Keyword.vigilance then
       s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
     else
       "resolve each step"
-  | [.searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
+  | .sequence [.searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
       .gainLife (.fixed life)] =>
     s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
-  | [.createTokens .treasure (.fixed 1) false,
+  | .sequence [.createTokens .treasure (.fixed 1) false,
       .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
       .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] =>
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
-  | [.draw (.fixed 1), .grant .basePowerEqualHand .source] =>
+  | .sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source] =>
     "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
-  | [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)] =>
     "put a +1/+1 counter on this creature. Scry 1"
-  | [.putCounters (.ofKind .plusOnePlusOne 2) .source, .becomeCopy .causingSpell] =>
+  | .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] =>
     "copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on this creature"
-  | _ =>
+  | .sequence _ =>
     "resolve each step"
-
-/-- Effect clause for `Resolution.«if» (.atLeast left right) thenDo` in `resolutionPhrase`. -/
-private def ifAtLeastResolutionPhrase (left right : NumberSelector) (thenDo : TriggerResolution) (noun : String) : String :=
-  match left, right, thenDo with
-  | .creaturesDiedThisTurn, .fixed 3, .becomePrepared .source _ =>
-    "if three or more creatures died this turn, this creature becomes prepared"
-  | .lastKnownPower, .fixed 2, .draw (.fixed 1) _ =>
-    "if you removed two or more loyalty counters to activate it, draw a card"
-  | .count .landsYouControl, .fixed 6, .sequence [.destroy .target _,
-      .createTokens .treasure (.fixed 1) false (.controller .target) _] =>
-    s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
-  | .count .forestsExceptCause, .fixed 5, .pump (.fixed 3) (.fixed 3) .target =>
-    s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
-  | .cardsDrawnThisTurn, .fixed 2, .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
-    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
-  | .count .putEquipment, .fixed 1, .attach .putArtifact .notedHost =>
-    "if it's an Equipment, attach it to this creature"
-  | .count (.intersection [.equipped, .legendaryCreaturesYouControl]), .fixed 1, .grant .attacking .createdToken =>
-    "those tokens are tapped and attacking if that creature is legendary"
-  | .count (.youControl (.subtype "Bear")), .fixed 3, .draw (.fixed 2) _ =>
-    "if you control three or more Bears, draw two cards"
-  | .count .questCounters, .fixed 6, .sequence [.sacrifice (.sacrificedSource .movedAsSacrificed) _, .searchLibrary (.put .dragon .asPrinted .none)] =>
-    "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
-  | .count (.othersOfSubtype "Hero"), .fixed 1, .gainLife (.fixed n) _ _ =>
-    s!"if you control another Hero, you gain {n} life"
-  | .count (.target .creature), .fixed 1, .putCounters (.ofKind .plusOnePlusOne 1) .permanent =>
-    "put a +1/+1 counter on it if it's a creature"
-  | .count (.target .planeswalker), .fixed 1, .putCounters (.ofKind .loyalty 1) .permanent =>
-    "put a loyalty counter on it if it's a planeswalker"
-  | .libraryCards, .fixed 1, .putOnLibrary .shuffled .source =>
-    "Fblthp's owner shuffles him into their library"
-  | .count .harnessedSource, .fixed 1, .exile .target .returnImmediately _ =>
-    "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
-  | _, _, _ =>
-    "if that is true"
-
-/-- Effect clause for `Resolution.«if» cond thenDo` in `resolutionPhrase`. -/
-private def ifResolutionPhrase (cond : @& ConditionSelector) (thenDo : @& TriggerResolution) (noun : @& String) : String :=
-  match cond, thenDo with
-  | .atLeast left right, _ =>
-    ifAtLeastResolutionPhrase left right thenDo noun
-  | .not .preparedSource, .becomePrepared .source _ =>
-    "if this creature isn't prepared, it becomes prepared"
-  | .not (.atLeast (.count .planeswalkersYouControl) (.fixed 1)), .sacrifice (.sacrificedSource .controllerSacrifices) _ =>
-    "if you don't control a planeswalker, sacrifice this creature"
-  | .not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1)), .putOnLibrary .bottom .cardFromHand =>
+  | .gainLife amount =>
+    match amount with
+    | .fixed n => s!"you gain {n} life"
+    | .equalToTargetPower =>
+      "you gain life equal to that card's power"
+    | .forEachDestroyedThisWay =>
+      "you gain 1 life for each permanent destroyed this way"
+    | .perOtherCreature =>
+      "you gain 1 life for each other creature you control"
+    | .attachedEquipment =>
+      "you gain X life, where X is the number of Equipment attached to it"
+    | _ =>
+      "you gain life"
+  | .may (.pay (.mana symbols)) (.draw (.fixed 1)) .ifYouDo =>
+    match symbols.toList with
+    | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
+    | _ => "you may pay. If you do, draw a card"
+  | .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand) =>
     "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
-  | .removedHope, .draw (.fixed 1) _ =>
-    "if a hope counter was removed this way, draw a card"
-  | .not .hopeOnSource, .sequence [.sacrifice .source _, .gainLife (.fixed 4) _ _] =>
-    "if this has no hope counters on it, sacrifice it and you gain 4 life"
-  | .dealtDamageToSubtype subtype, .destroy .permanentDealtDamage .none =>
-    s!"if a {subtype} is dealt damage this way, destroy it"
-  | .returnedPermanent, .putCounters (.ofKind .plusOnePlusOne 1) .source =>
-    "if you do, put a +1/+1 counter on this creature"
-  | .nthResolve n, _ =>
-    s!"if this is time {n} this ability has resolved this turn"
-  | .or [.attackedWithSubtype attacked, .subtypeEntered entered], .draw (.fixed 1) _ =>
-    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
-    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
-    s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
-  | .youControlledDestroyed, .draw (.fixed 1) _ =>
-    "if you controlled that creature, draw a card"
-  | .enduringStoryNoted, .dealDamage .discardedHand (.player .eachOpponent) _ =>
-    "if you have an enduring story, this deals X damage to each opponent"
-  | .equipmentAttached, .fight .equipmentHost .reflexive =>
-    "that creature deals damage equal to its power to up to one target creature"
-  | .opponentsMilled, .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying _) =>
-    "when one or more cards are milled this way, exile and copy a card"
-  | .planWasSacrificed, .queueReflexive (.dealDamage (.fixed n) .target .divided) =>
-    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-  | .planWasSacrificed, .queueReflexive _ =>
-    "when you do, the reflexive ability triggers"
-  | .not (.atLeast .libraryCards (.fixed 1)), .winTheGame =>
-    "if your library has no cards in it, you win the game"
-  | .manaSpent, .discard (.cards n _) =>
-    s!"discard {cardPhrase n}"
-  | _, _ =>
-    "if that is true"
-
-/-- Effect clause for `Resolution.chooseModes` (including `.«if»`, `.ifElse`, `.or`) in `resolutionPhrase`. -/
-private def chooseModesResolutionPhrase (t : @& TriggerTiming) (r : @& TriggerResolution)
-    (modes : @& List TriggerResolution) (how : @& TriggerModeHow) (noun : @& String) : String :=
-  match modes, how with
-  | [thenDo], .«if» cond =>
-    ifResolutionPhrase cond thenDo noun
-  | [thenDo, elseDo], .ifElse cond =>
-    if cond == (.or [.scriedThisTurn, .surveilledThisTurn]) &&
-        thenDo == (.putCounters (.ofKind .plusOnePlusOne) .permanent) &&
-        elseDo == (.pump (.fixed 1) (.fixed 1) .target) then
-      s!"{noun} gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead"
-    else if cond == (.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)) &&
-        thenDo == (.createTokens .villain21menace (.fixed 1) true) &&
-        elseDo == (.mill (.fixed 2)) then
-      "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
-    else if cond == (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)) &&
-        thenDo == (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) &&
-        elseDo == (.putCounters (.ofKind .plusOnePlusOne) .permanent) then
-      "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-    else
-      "if that is true"
-  | _, .one =>
-    if modes == [.tap .target, .untap .target] then
-      if t.targeting.kind == .nonland then
-        "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
+  | .exile what how note =>
+    match what, how, note with
+    | .target, .leaveTrigger, .none =>
+      if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
+    | .target, .untilSourceLeaves, .copyAndHost =>
+      "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield"
+    | .target, .untilSourceLeaves, .none =>
+      if t.allowsZeroTargets then
+        if t.targeting.kind == .defendingPlayerCreature then
+          s!"you may exile {noun} until this leaves the battlefield"
+        else
+          s!"you may exile {noun}"
       else
-        "choose one — tap target creature an opponent controls; untap target creature you control"
-    else if modes == [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] then
-      "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
-    else if modes == [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] then
-      "create a Food token or a Treasure token"
-    else if modes == [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] then
-      "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
+        s!"exile {noun} until this leaves the battlefield"
+    | .top, .playUntilNextTurn, .none =>
+      s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+    | .top, .playThisTurn, .ifHero =>
+      "exile the top card of your library. If it is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
+    | (.target .eachPermanent), .untilSourceLeaves, .none =>
+      "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
+    | .target, .nextEndStep, .none =>
+      s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
+    | .landsYouControl, .forLater, .lands =>
+      "exile up to three target lands you control"
+    | .graveyardCard, .forLater, .playCard =>
+      s!"exile {noun}"
+    | .target, .forLater, .none =>
+      if noun.isEmpty then "exile it" else s!"exile {noun}"
+    | .source, .forLater, .none =>
+      "exile this creature"
+    | .enchanted, .forLater, .none =>
+      "exile enchanted creature"
+    | (.target .whileSource), .forLater, .none =>
+      "exile that creature"
+    | .top, .forLater, .impulse =>
+      "exile cards from the top of their library until they exile an instant or sorcery card"
+    | _, _, _ =>
+      "exile it"
+  | .put what how note =>
+    match what, how, note with
+    | .linkedExile, _, _ =>
+      "return the exiled card to the battlefield under its owner's control"
+    | .nonlandMvAtMost mv, _, _ =>
+      s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+    | .source, .asArtifact, _ =>
+      "if they were a creature, return them to the battlefield. They're an artifact"
+    | .source, .underOwner, .entering _ =>
+      "return this from its owner's graveyard to the battlefield under its owner's control"
+    | .cause _, .underOwner, _ =>
+      "return it to the battlefield under its owner's control"
+    | .notedLands, .tapped, _ =>
+      "return those lands to the battlefield tapped"
+    | .discardedLand, .tapped, _ =>
+      "if you discard a land card this way, put it onto the battlefield tapped"
+    | .landFromHand, .tapped, _ =>
+      "put a land card from your hand onto the battlefield tapped"
+    | .artifactFromHand, _, .forAttach =>
+      "put an artifact card from your hand onto the battlefield"
+    | .randomCreature, _, _ =>
+      "put a random creature card from among them onto the battlefield"
+    | .revealed, _, _ =>
+      "put that card onto the battlefield"
+    | .forest, _, _ =>
+      "put that card onto the battlefield"
+    | .basicLandOnTop, _, _ =>
+      "put that card on top of your library"
+    | .dragon, _, _ =>
+      "put it onto the battlefield"
+    | .creatureMvAtMost mv, _, _ =>
+      s!"return target creature card with mana value {mv} or less from your graveyard to the battlefield"
+    | _, _, _ =>
+      "put it onto the battlefield"
+  | .removeCounters what who =>
+    match what, who with
+    | .hope, .source =>
+      "remove a hope counter from this"
+    | .all, .enchanted =>
+      "remove all counters from enchanted creature"
+    | _, _ =>
+      "remove counters"
+  | .«if» .removedHope (.draw (.fixed 1)) =>
+    "if a hope counter was removed this way, draw a card"
+  | .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)]) =>
+    "if this has no hope counters on it, sacrifice it and you gain 4 life"
+  | .tap .humans =>
+    "tap any number of untapped Humans you control"
+  | .destroy .oppArtifactsEnchantments .countDestroyed =>
+    "destroy all artifacts and enchantments your opponents control"
+  | .destroy .permanentDealtDamage .none =>
+    "destroy the permanent dealt damage this way"
+  | .destroy .target .forAmass | .destroy .target .none | .destroy .target .chosenToken =>
+    if noun.isEmpty then "destroy it" else s!"destroy {noun}"
+  | .destroy .source _ =>
+    "destroy this creature"
+  | .destroy .enchanted _ =>
+    "destroy enchanted creature"
+  | .destroy (.target .whileSource) _ =>
+    "destroy that creature"
+  | .destroy _ _ =>
+    "destroy it"
+  | .recruit .recruit =>
+    "recruit"
+  | .recruit .you =>
+    "you recruit"
+  | .amass .lastKnownPower subtype _ _ =>
+    s!"amass {pluralizeName subtype} X, where X is this creature's power"
+  | .amass .notedExcess subtype _ _ =>
+    s!"amass {pluralizeName subtype} X, where X is the excess damage"
+  | .amass .notedPower subtype _ (.controller .target) =>
+    s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
+  | .amass (.fixed n) subtype true _ =>
+    s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
+  | .amass (.fixed n) subtype _ _ =>
+    s!"amass {pluralizeName subtype} {n}"
+  | .amass _ _ _ _ =>
+    "amass"
+  | .createTokens kind amount tapped token who note =>
+    match token, who, amount, note with
+    | .axe, _, _, .attachReflexive =>
+      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
+    | .axe, _, _, _ =>
+      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+    | .kind, .you, .oppArtifacts, _ =>
+      "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
+    | .kind, .you, .damagedPlayerArtifacts, _ =>
+      "you create a Treasure token for each artifact that player controls"
+    | .kind, .you, .lastKnownPower, _ =>
+      if kind == .birdSoldier then
+        "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+      else
+        "create that many Treasure tokens"
+    | .kind, .you, .perSubtype subtype, _ =>
+      s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
+    | .kind, .you, .chosenCreatureType, _ =>
+      "choose a creature type. Create a Treasure token for each creature you control of that type"
+    | .zabu, _, _, _ =>
+      "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+    | .theVoid, _, _, _ =>
+      s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+    | .redwing, _, _, _ =>
+      "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
+    | .alien, _, _, _ =>
+      "create a 1/1 red Alien creature token with haste"
+    | .galactus, _, _, _ =>
+      "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
+    | .sturdyShield, _, _, _ =>
+      "create a colorless Equipment artifact token named Sturdy Shield"
+    | .merfolk, _, .blueManaSymbols, _ =>
+      "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
+    | .kind, .controller .target, _, _ =>
+      "they create a Treasure token"
+    | .kind, .you, .fixed n, _ =>
+      TokenKind.createPhrase kind n.toNat (tapped := tapped)
+    | _, _, _, _ =>
+      "create a token"
+  | .attach what host =>
+    match what, host with
+    | .source, .createdToken =>
+      "attach this Equipment to it"
+    | .source, .target =>
+      s!"attach it to {noun}"
+    | .target, .optionalCreature =>
+      "attach target Equipment you control to up to one target creature you control"
+    | .source, (.target .laterCreature) =>
+      "attach this to up to one target creature you control"
+    | .anyYouControl, .target =>
+      "attach any number of Equipment you control to target creature you control"
+    | .createdToken, .source | .putArtifact, .notedHost =>
+      "attach it to this creature"
+    | _, _ =>
+      "attach it"
+  | .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage .none) =>
+    s!"if a {subtype} is dealt damage this way, destroy it"
+  | .addMana types amount =>
+    match amount with
+    | .perChargeCounter =>
+      s!"add {manaSymbolsText types} for each charge counter on this enchantment"
+    | .fixed 1 => s!"add {manaSymbolsText types}"
+    | _ => "add mana"
+  | .or [.tap .target, .untap .target] =>
+    if t.targeting.kind == .nonland then
+      "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
-      "choose one"
-  | _, _ =>
+      "choose one — tap target creature an opponent controls; untap target creature you control"
+  | .becomePT (.fixed p) (.fixed t) =>
+    s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .becomePT _ _ =>
+    "you may have this creature's base power and toughness become those values until end of turn"
+  | .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne 1) .source) =>
+    "if you do, put a +1/+1 counter on this creature"
+  | .lookAtTopRevealTypes (.fixed n) types =>
+    let joined :=
+      match types.toList with
+      | [a, b] => s!"a {a} or {b} card"
+      | xs => s!"a {String.intercalate " or " xs} card"
+    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
+  | .lookAtTopRevealTypes _ _ =>
+    "look at the top cards of your library"
+  | .gainControl .untilEndOfTurn =>
+    s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
+  | .gainControl .whileSourceRemains =>
+    s!"gain control of {noun} for as long as this Saga remains on the battlefield"
+  | .gainControl .duringNextTurn =>
+    "you control target opponent during their next turn"
+  | .honeEachEquipment =>
+    "put a hone counter on each Equipment you control"
+  | .cascade =>
+    "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
+  | .noteResolveThisTurn _ =>
+    "count another resolution of this ability this turn"
+  | .«if» (.nthResolve n) _ =>
+    s!"if this is time {n} this ability has resolved this turn"
+  | .chooseModes modes how =>
     if modes == TriggerResolution.allianceModes && how == .oneUnusedThisTurn then
       "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
     else if modes == TriggerResolution.gollumModes && how == .oneUnused then
@@ -1035,1060 +1507,309 @@ private def chooseModesResolutionPhrase (t : @& TriggerTiming) (r : @& TriggerRe
     else if modes == TriggerResolution.visionModes && how == .vision then
       "choose one that hasn't been chosen this turn — • This gains double strike until end of turn. • This gains indestructible until end of turn. • Draw a card"
     else
-      let s := SpellResolution.toPhrase r noun
-      if s.isEmpty then "choose a mode" else s
-
-/-- Part 1 of `grantResolutionPhrase`. -/
-private def grantResolutionPhrasePart1 (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (noun : @& String) : Option String :=
-  match what with
-  | .basePT pw tw =>
-    if pw == .equalSourcePower && tw == .equalSourceToughness && who == .target then
-      some "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-    else
-      match pw, tw with
-      | .fixed p, .fixed t =>
-        some <|
-          match affectedNoun? who noun with
-          | some n => s!"{n} has base power and toughness {p}/{t} until end of turn"
-          | none => "set base power and toughness"
-      | _, _ => some "set base power and toughness"
-  | .lose l =>
-    match l with
-    | .indestructible =>
-      some <|
-        match affectedNoun? who noun with
-        | some n => s!"{n} loses indestructible until end of turn"
-        | none => "lose"
-    | .allAbilities =>
-      if who == (.target .ifPresent) then
-        some "it loses all abilities for as long as this remains on the battlefield"
-      else some "lose"
-  | .cant action =>
-    if who == .target then
-      match action with
-      | .beBlocked cWho =>
-        some <|
-          match affectedNoun? cWho noun with
-          | some n => s!"{n} can't be blocked this turn"
-          | none => "can't"
-      | .beBlockedExceptByHaste cWho =>
-        some <|
-          match affectedNoun? cWho noun with
-          | some n => s!"{n} can't be blocked this turn except by creatures with haste"
-          | none => "can't"
-      | .untapWhileYouControl .target =>
-        some "that creature can't become untapped for as long as you control this creature"
-      | _ => some "can't"
-    else none
-  | .artifact =>
-    some <|
-      match affectedNoun? who noun with
-      | some n => s!"until end of turn, {n} becomes an artifact in addition to its other types"
-      | none => "becomes an artifact"
-  | .prepared _ =>
-    some <|
-      match affectedNoun? who noun with
-      | some n => s!"{n} becomes prepared"
-      | none => "becomes prepared"
-  | .empowerJace amt =>
-    if who == .youIfCast then
-      match amt with
-      | .fixed n => some s!"empower Jace {n}"
-      | _ => some "empower Jace"
-    else none
-  | .recruit r =>
-    if who == .youIfCast then
-      if r == .recruit then some "recruit"
-      else if r == .you then some "you recruit"
-      else none
-    else none
-  | .attachTo host =>
-    some <|
-      match who, host with
-      | .source, .createdToken =>
-        "attach this Equipment to it"
-      | .source, .target =>
-        s!"attach it to {noun}"
-      | .target, .optionalCreature =>
-        "attach target Equipment you control to up to one target creature you control"
-      | .source, (.target .laterCreature) =>
-        "attach this to up to one target creature you control"
-      | .anyYouControl, .target =>
-        "attach any number of Equipment you control to target creature you control"
-      | .createdToken, .source | .putArtifact, .notedHost =>
-        "attach it to this creature"
-      | _, _ =>
-        "attach it"
-  | _ => none
-
-/-- Part 2 of `grantResolutionPhrase`. -/
-private def grantResolutionPhrasePart2 (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (noun : @& String) : Option String :=
-  match what with
-  | .control how =>
-    if who == .target then
-      match how with
-      | .untilEndOfTurn =>
-        some s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
-      | .whileSourceRemains =>
-        some s!"gain control of {noun} for as long as this Saga remains on the battlefield"
-      | .duringNextTurn =>
-        some "you control target opponent during their next turn"
-      | _ => none
-    else none
-  | .cascade =>
-    if who == .source then
-      some "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
-    else none
-  | .noteResolveThisTurn _ =>
-    if who == .source then some "count another resolution of this ability this turn" else none
-  | .ringTempts =>
-    if who == .youIfCast then some "the Ring tempts you" else none
-  | .spellsCostLess _ amt =>
-    if who == .youIfCast then
-      match amt with
-      | .fixed n => some s!"spells you cast this turn cost \{{n}} less to cast"
-      | _ => some "spells you cast this turn cost less to cast"
-    else none
-  | .investigate =>
-    match who with
-    | .player _ => some "investigate"
-    | _ => none
-  | .connive =>
-    if who == .source then some "it connives"
-    else if who == .target then some s!"{noun} connives"
-    else if who == .enteringVillain then some "you may have it connive"
-    else some "connive"
-  | .fight how =>
-    some <|
-      match who, how with
-      | .source, .mutual =>
-        "this fights up to one other target creature"
-      | .announced, .upToOneOther =>
-        "target creature you control fights up to one other target creature"
-      | .announced, .mutual =>
-        "target creature you control fights another target creature"
-      | .equipmentHost, .reflexive =>
-        "that creature deals damage equal to its power to up to one target creature"
-      | _, _ =>
-        "fight"
-  | .additionalCombatPhase =>
-    if who == .youIfCast then some "after this phase, there is an additional combat phase" else none
-  | .winTheGame =>
-    if who == .youIfCast then some "you win the game" else none
-  | .copy of =>
-    if who == .source then
-      match of with
-      | .artifactEnchantmentOrLand =>
-        some "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
-      | .creatureOrGraveyardCard =>
-        some "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
-      | .noted =>
-        some "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
-      | .cause none =>
-        some "create a token that's a copy of the artifact that caused this"
-      | .sourceTwoNonlegendaryTokens =>
-        some "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-      | .causingSpell =>
-        some "copy that spell. You may choose new targets for the copy"
-      | _ =>
-        some "become a copy"
-    else none
-  | _ => none
-
-/-- Effect clause for `Resolution.grant` (and its `[match_pattern]` aliases) in `resolutionPhrase`. -/
-private def grantResolutionPhrase (what : @& TriggerGrantWhat) (who : @& ObjectSelector) (r : @& TriggerResolution) (noun : @& String) : String :=
-  if let some s := grantResolutionPhrasePart1 what who noun then s
-  else if let some s := grantResolutionPhrasePart2 what who noun then s
-  else
-    let fallback (_ : Unit) : String :=
-      let s := SpellResolution.toPhrase r noun
-      if s.isEmpty then "grant" else s
-    match what with
-    | .attacking =>
-      if who == .createdToken then "those tokens enter tapped and attacking" else fallback ()
-    | .newTargets =>
-      if who == .causingSpell then "choose new targets for that spell" else fallback ()
-    | .protectionEverything =>
-      if who == .youIfCast then "if you cast it, you gain protection from everything until your next turn" else fallback ()
-    | .keywords k =>
-      match who with
-      | .equippedAttackers => s!"each equipped attacking creature gains {k.joinedAnd} until end of turn"
-      | .target => s!"{noun} gains {k.joinedAnd} until end of turn"
-      | .source => s!"this creature gains {k.joinedAnd} until end of turn"
-      | .enchanted => s!"enchanted creature gains {k.joinedAnd} until end of turn"
-      | .target .whileSource => s!"that creature gains {k.joinedAnd} until end of turn"
-      | .creaturesYouControl => s!"creatures you control gain {k.joinedAnd} until end of turn"
-      | .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
-        s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
-      | .spellTargets => "those creatures gain flying until end of turn"
-      | _ => fallback ()
-    | .hexproofWhileSource =>
-      if who == .target then s!"{noun} gains hexproof for as long as this Saga remains on the battlefield" else fallback ()
-    | .preventDamageWhileSource =>
-      "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
-    | .landfallCreateElf =>
-      if who == .source then
-        "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
-      else fallback ()
-    | .assignCombatDamageEqualToughness =>
-      if who == .creaturesYouControl then
-        "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
-      else fallback ()
-    | .basePowerEqualHand =>
-      if who == .source then
-        "until end of turn, this creature's base power is equal to the number of cards in your hand"
-      else fallback ()
-    | .ironFistTap =>
-      if who == .source then
-        "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
-      else fallback ()
-    | .bearType =>
-      if who == .target then "it becomes a Bear in addition to its other types" else fallback ()
-    | .playNotedUntilNextTurn =>
-      if who == .target then playThatCardUntilNextTurnPhrase else fallback ()
-    | _ => fallback ()
-
-/-- Part 1 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
-private def mayResolutionPhrasePart1 (action follow : @& TriggerResolution) : Option String :=
-  match action with
-  | .pay (.mana symbols) =>
-    match follow with
-    | .sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)] =>
-      some <|
-        match symbols.toList with
-        | [.generic n] =>
-          s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
-        | _ =>
-          "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
-    | .queueReflexive follow =>
-      some <|
-        let times :=
-          match TriggerResolution.queuedReflexive follow with
-          | .modeled _ times => times
-          | _ => 1
-        match symbols.toList with
-        | [.generic n] =>
-          if times > 1 then s!"you may pay \{{n}} up to {times} times"
-          else s!"you may pay \{{n}}"
-        | _ => "you may pay that cost"
-    | .becomeCopy (.cause none) =>
-      some <|
-        match symbols.toList with
-        | [.generic 2] => "you may pay {2} to copy it"
-        | _ => "you may pay to copy it"
-    | _ => none
-  | .discard (.cards 1) =>
-    match follow with
-    | .draw (.fixed n) => some s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
-    | _ => none
-  | .dealDamage .lastKnownPower .target .none =>
-    if follow == .sequence [] then some "you may have this deal that much damage" else none
-  | .grant .newTargets .causingSpell =>
-    if follow == .sequence [] then some "you may choose new targets for that spell" else none
-  | .loseLife (.fixed 2) .you =>
-    if follow == .grant .assignCombatDamageEqualToughness .creaturesYouControl then
-      some "you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
-    else none
-  | _ => none
-
-/-- Part 2 of `mayResolutionPhrase` (for `when = .ifYouDo`). -/
-private def mayResolutionPhrasePart2 (action follow : @& TriggerResolution) : String :=
-  match action with
-  | .pay cost =>
-    match cost with
-    | .mana symbols =>
-      if follow == .draw (.fixed 1) then
-        match symbols.toList with
-        | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
-        | _ => "you may pay. If you do, draw a card"
-      else if follow == .returnToHand .source then
-        s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
-      else "you may do it. If you do, do that"
-    | .sacrifice (.fixed 1) .another =>
-      if follow == .putCounters .plusOneSacrificedPower .source then
-        "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-      else if follow == .queueReflexive (.destroy .target) then
-        "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-      else "you may sacrifice that. If you do, do that"
-    | .sacrifice (.fixed 1) .anotherCreatureOrArtifact =>
-      if follow == .sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false] then
-        "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
-      else "you may sacrifice that. If you do, do that"
-    | .sacrifice _ _ =>
-      "you may sacrifice that. If you do, do that"
-    | .discard _ _ =>
-      "you may discard that. If you do, do that"
-    | .or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card] =>
-      if follow == .draw (.fixed 1) then
-        "you may sacrifice an artifact or discard a card. If you do, draw a card"
-      else "you may do it. If you do, do that"
-    | .or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland] =>
-      if follow == .queueReflexive (.dealDamage (.fixed 2) .target) then
-        "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
-      else "you may do it. If you do, do that"
-    | _ =>
-      "you may do it. If you do, do that"
-  | .discard .hand =>
-    match follow with
-    | .draw (.fixed n) => s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
-    | _ => "you may do it. If you do, do that"
-  | .draw (.perControlled _) _ =>
-    if follow == .draw (.fixed 1) .eachOpponent then
-      "you may draw a card for each artifact you control. If you do, each opponent draws a card"
-    else "you may do it. If you do, do that"
-  | .tap .source =>
-    match follow with
-    | .queueReflexive (.grant (.keywords k) .target) =>
-      if k == Keyword.indestructible then
-        "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
-      else
-        "you may tap this creature. When you do, that ability triggers"
-    | _ => "you may do it. If you do, do that"
-  | .exile .discarded .playUntilNextTurn =>
-    if follow == .sequence [] then
-      "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
-    else "you may do it. If you do, do that"
-  | .createTokens .wall04defender (.fixed 1) false =>
-    if follow == .sequence [] then
-      "you may create a 0/4 colorless Wall creature token with defender"
-    else "you may do it. If you do, do that"
-  | _ =>
-    "you may do it. If you do, do that"
-
-/-- Effect clause for `Resolution.may` when `when = .ifYouDont`. -/
-private def mayResolutionPhraseIfYouDont (action : @& TriggerResolution) : String :=
-  match action with
-  | .tap .humans =>
-    "you may tap any number of untapped Humans you control"
-  | .sacrifice .another _ =>
-    "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .put what how note =>
-    match what with
-    | .artifactFromHand =>
-      if note == .forAttach then
-        "you may put an artifact card from your hand onto the battlefield"
-      else "you may do it"
-    | .landFromHand =>
-      if how == .tapped then
-        "you may put a land card from your hand onto the battlefield tapped"
-      else "you may do it"
-    | .creatureFromHand subtype maxMv =>
-      s!"you may put a {subtype} creature card with mana value {maxMv} or less from your hand onto the battlefield. If you don't, draw a card"
-    | _ => "you may do it"
-  | .discard .hand =>
-    "you may discard your hand"
-  | .draw _ .opponentHasYou =>
-    "target opponent may have you draw a card"
-  | .sequence [.draw .equalToManaSpent _, .«if» .manaSpent (.discard (.cards n))] =>
-    let disc := if n == 2 then "two cards" else cardPhrase n
-    s!"you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard {disc}"
-  | _ => "you may do it"
-
-/-- Effect clause for `Resolution.may` in `resolutionPhrase`. -/
-private def mayResolutionPhrase (action follow : @& TriggerResolution) (when : @& TriggerMayWhen) : String :=
-  let fallback (_ : Unit) : String :=
-    match when with
-    | .ifYouDont => mayResolutionPhraseIfYouDont action
-    | .ifYouDo =>
-      if let some s := mayResolutionPhrasePart1 action follow then s
-      else mayResolutionPhrasePart2 action follow
-  if follow == .sequence [] then
-    match action with
-    | .grant (.basePT pw tw) .source =>
-      match pw, tw with
-      | .fixed p, .fixed t =>
-        s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
-      | _, _ =>
-        "you may have this creature's base power and toughness become those values until end of turn"
-    | .exile what how note =>
-      if what == .top && how == .playThisTurn && note == .ifHero then
-        "you may exile the top card of your library. If that card is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
-      else fallback ()
-    | _ => fallback ()
-  else
-    fallback ()
-
-/-- `resolutionPhrase` for `pumpOrDamage`: pump and dealDamage. -/
-private def resolutionPhrasePumpOrDamage (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .pump power toughness who =>
-    some <|
-      match power, toughness, who with
-      | .greatestPower, .fixed 0, .source =>
-        "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
-      | .perLookedAt, .perLookedAt, .source =>
-        "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
-      | .perOtherCreature, .perOtherCreature, .source =>
-        "it gets +1/+1 until end of turn for each other creature you control"
-      | .perPlains, .perPlains, .target =>
-        "target creature you control gets +1/+1 until end of turn for each Plains you control"
-      | .fixed power, .fixed toughness, .cause _ =>
-        s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
-      | .equalSourceToughness, .equalSourceToughness, .othersOfSubtype subtype =>
-        s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
-      | .equalSourcePower, .fixed 0, .target =>
-        s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
-      | .fixed power, .fixed toughness, .creaturesYouControl =>
-        s!"creatures you control get {signedStat power}/{signedStat toughness} until end of turn"
-      | .fixed power, .fixed toughness,
-          .intersection [.creaturesYouControl, .union parts] =>
-        match othersOfSubtypeParts parts with
-        | some subtypes =>
-          let recipients :=
-            if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
-            else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
-          s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
-        | none =>
-          "those permanents get +P/+T until end of turn"
-      | .fixed power, .fixed toughness, .opponentsCreatures =>
-        s!"creatures your opponents control get {signedStat power}/{signedStat toughness} until end of turn"
-      | .fixed power, .fixed toughness, .target =>
-        s!"{noun} gets {signedStat power}/{signedStat toughness} until end of turn"
-      | .double, .double, .target =>
-        s!"double {noun}'s power and toughness until end of turn"
-      | .fixed power, .fixed toughness, .source =>
-        s!"this creature gets {signedStat power}/{signedStat toughness} until end of turn"
-      | .double, .double, .source =>
-        "double this creature's power and toughness until end of turn"
-      | .fixed power, .fixed toughness, .enchanted =>
-        s!"enchanted creature gets {signedStat power}/{signedStat toughness} until end of turn"
-      | .double, .double, .enchanted =>
-        "double enchanted creature's power and toughness until end of turn"
-      | .fixed power, .fixed toughness, (.target .whileSource) =>
-        s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
-      | .double, .double, (.target .whileSource) =>
-        "double that creature's power and toughness until end of turn"
-      | .fixed power, .fixed toughness,
-          .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
-        s!"{subtype}s you control get {signedStat power}/{signedStat toughness} until end of turn"
-      | _, _, _ =>
-        "those permanents get +P/+T until end of turn"
-  | .dealDamage amount who note =>
-    some <|
-      match who, amount, note with
-      | .target, .fixed 0, .preallocated =>
-        match t.dividedDamage with
-        | some (amount, maxTargets) =>
-          s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
-        | none => "it deals damage divided as you choose"
-      | .blockers, .fixed n, _ =>
-        s!"it deals {n} damage to each creature blocking it"
-      | .permanent, .lastKnownPower, .excess =>
-        s!"Bolg deals damage equal to the sacrificed creature's power to {noun}"
-      | .permanent, .lastKnownPower, _ =>
-        s!"it deals damage equal to its power to {noun}"
-      | .player .eachOpponent, .subtypeCount subtype, _ =>
-        s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
-      | .player .eachOpponent, .discardedHand, _ =>
-        "this deals X damage to each opponent"
-      | .player .eachOpponent, .fixed n, _ =>
-        s!"this creature deals {n} damage to each opponent"
-      | .target, .subtypeCount subtype, _ =>
-        s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
-      | .target, .fixed n, .none =>
-        s!"deals {n} damage to {noun}"
-      | .target, .spellManaValue, _ =>
-        s!"this deals damage equal to that spell's mana value to {noun}"
-      | .target, .fixed n, _ =>
-        s!"it deals {n} damage to {noun}"
-      | .player (.target .opponent), .greatestArtifactMv, _ =>
-        s!"this Saga deals X damage to {noun}, where X is the greatest mana value among artifacts you control"
-      | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
-        s!"this Saga deals {n} damage to each non-{subtype} creature and each opponent"
-      | .player (.target .opponent), .fixed n, _ =>
-        s!"this deals {n} damage to {noun}"
-      | .permanent, .fixed n, _ =>
-        s!"it deals {n} damage to {noun}"
-      | .source, .fixed n, .none =>
-        s!"deals {n} damage to this creature"
-      | .enchanted, .fixed n, .none =>
-        s!"deals {n} damage to enchanted creature"
-      | (.target .whileSource), .fixed n, .none =>
-        s!"deals {n} damage to that creature"
-      | _, _, _ =>
-        "deal damage"
-  | _ => none
-
-/-- `resolutionPhrase` for `playerNumeric`: surveil, scry, draw, gainLife, mill, and loseLife. -/
-private def resolutionPhrasePlayerNumeric (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .surveil amount note =>
-    some <|
-      match amount, note with
-      | .fixed 0, .armReturnLifeGained => "if you gained life this turn"
-      | .fixed n, _ => s!"surveil {n}"
-      | _, _ => "surveil"
-  | .scry amount =>
-    some <|
-      match amount with
-      | .fixed n => s!"scry {n}"
-      | _ => "scry"
-  | .draw amount who =>
-    some <|
-      match who, amount with
-      | .opponentHasYou, _ =>
-        "target opponent may have you draw a card"
-      | .you, .forEachTappedHuman =>
-        "draw a card for each Human tapped this way"
-      | .you, .perFatGraveyard =>
-        "draw a card for each graveyard with seven or more cards in it"
-      | .you, .discardedHand =>
-        "draw X cards, where X is the number of cards discarded this way"
-      | .you, .equalToManaSpent =>
-        "draw X cards, where X is the amount of mana spent to cast that spell"
-      | .you, .perControlled _ =>
-        "draw a card for each permanent you control of that type"
-      | .you, .upToHandSize _ =>
-        "if you have fewer than that many cards in hand, draw cards equal to the difference"
-      | .controller .enchanted, _ =>
-        "that player draws a card"
-      | .eachOpponent, .fixed n =>
-        s!"each opponent draws {cardPhrase n.toNat}"
-      | .you, .fixed n =>
-        s!"draw {cardPhrase n.toNat}"
-      | _, _ =>
-        "draw cards"
-  | .gainLife amount .you false =>
-    some <|
-      match amount with
-      | .fixed n => s!"you gain {n} life"
-      | .equalToTargetPower =>
-        "you gain life equal to that card's power"
-      | .forEachDestroyedThisWay =>
-        "you gain 1 life for each permanent destroyed this way"
-      | .perOtherCreature =>
-        "you gain 1 life for each other creature you control"
-      | .attachedEquipment =>
-        "you gain X life, where X is the number of Equipment attached to it"
-      | _ =>
-        "you gain life"
-  | .gainLife _ _ false =>
-    some "you gain life"
-  | .mill amount who note =>
-    some <|
-      match amount, who, note with
-      | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
-        s!"mill {n} cards"
-      | .fixed n, .target .player, .none =>
-        s!"{noun} mills {n} cards"
-      | .thatManyLost, .thatPlayer, .none =>
-        "that player mills that many cards"
-      | .fixed n, .eachOpponent, .opponentsMilled =>
-        s!"each opponent mills {n} cards"
-      | _, _, _ =>
-        "mill"
-  | .loseLife amount who =>
-    some <|
-      match amount, who with
-      | .fixed n, .you => s!"you lose {n} life"
-      | .fixed n, .target .opponent => s!"{noun} loses {n} life"
-      | .fixed n, .eachOpponent => s!"each opponent loses {n} life"
-      | .perBurden, .you =>
-        "you lose 1 life for each burden counter on this"
-      | .attachedEquipment, .eachOpponent =>
-        "each opponent loses X life, where X is the number of Equipment attached to it"
-      | _, _ =>
-        "lose life"
-  | _ => none
-
-/-- `resolutionPhrase` for `tapDiscardOrReturn`: putOnLibrary, discard, returnToHand, tap, and untap. -/
-private def resolutionPhraseTapDiscardOrReturn (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .putOnLibrary place who =>
-    some <|
-      match place, who with
-      | .shuffled, .source =>
-        "its owner shuffles it into their library"
-      | .bottom, .cardFromHand =>
-        "put a card from your hand on the bottom of your library"
-      | .top, _ =>
-        match affectedNoun? who noun with
-        | some n => s!"{n}'s owner puts it on top of their library"
-        | none => "put on library"
-      | .bottom, _ =>
-        match affectedNoun? who noun with
-        | some n => s!"{n}'s owner puts it on the bottom of their library"
-        | none => "put on library"
-      | _, _ =>
-        "put on library"
-  | .discard what =>
-    some <|
-      match what with
-      | .cards n .you =>
-        s!"discard {cardPhrase n}"
-      | .hand =>
-        "discard your hand"
-      | .cards n .eachOpponent =>
-        if n == 1 then "each opponent discards a card"
-        else s!"each opponent discards {cardPhrase n}"
-      | .cards n (.target .opponent) =>
-        s!"{noun} discards {cardPhrase n}"
-      | .chosenNonland =>
-        s!"{noun} reveals their hand. You choose a nonland card from it. That player discards that card"
-      | _ =>
-        "discard cards"
+      "choose a mode"
   | .returnToHand what note =>
-    some <|
-      match what, note with
-      | .graveyardCard, .none =>
-        s!"return {noun} to your hand"
-      | .permanent, .returnedPermanent =>
-        s!"return up to one {noun} to its owner's hand"
-      | .graveyardPermanent, .none =>
-        s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
-      | .milledSubtype subtype, .none =>
-        s!"put all {subtype} cards milled this way into your hand"
-      | .source, .none =>
-        "return this card from your graveyard to your hand"
-      | .revealed, .none =>
-        "put it into your hand"
-      | .basicLand, .none =>
-        "put it into your hand"
-      | .linkedExile, .none =>
-        "put a card exiled with this Saga into its owner's hand"
-      | .cause _, .none =>
-        "return that card to its owner's hand"
-      | _, _ =>
-        "return it to a hand"
-  | .tap who =>
-    some <|
-      match who with
-      | .humans =>
-        "tap any number of untapped Humans you control"
-      | .enchanted | .enchantedWhileSource => "tap enchanted creature"
-      | .source => "tap this creature"
-      | (.target .whileSource) => "tap that creature"
-      | (.target .ifPresent) =>
-        "tap up to one target creature"
-      | .target =>
-        s!"tap {noun}"
-      | _ =>
-        "tap it"
-  | .untap who =>
-    some <|
-      match who with
-      | .attackingCreatures => "untap all attacking creatures"
-      | .equipped => "untap equipped creature"
-      | _ =>
-        match affectedNoun? who noun with
-        | some n => s!"untap {n}"
-        | none => "untap it"
-  | _ => none
-
-/-- `resolutionPhrase` for `manaPayOrCast`: addMana, mayCast, and pay. -/
-private def resolutionPhraseManaPayOrCast (t : @& TriggerTiming) (_noun : @& String) : Option String :=
-  match t.resolution with
-  | .addMana types amount _ =>
-    some <|
-      match amount with
-      | .perChargeCounter =>
-        s!"add {manaSymbolsText types} for each charge counter on this enchantment"
-      | .fixed 1 => s!"add {manaSymbolsText types}"
-      | _ => "add mana"
+    match what, note with
+    | .graveyardCard, .none =>
+      s!"return {noun} to your hand"
+    | .permanent, .returnedPermanent =>
+      s!"return up to one {noun} to its owner's hand"
+    | .graveyardPermanent, .none =>
+      s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
+    | .milledSubtype subtype, .none =>
+      s!"put all {subtype} cards milled this way into your hand"
+    | .source, .none =>
+      "return this card from your graveyard to your hand"
+    | .revealed, .none =>
+      "put it into your hand"
+    | .basicLand, .none =>
+      "put it into your hand"
+    | .linkedExile, .none =>
+      "put a card exiled with this Saga into its owner's hand"
+    | .cause _, .none =>
+      "return that card to its owner's hand"
+    | _, _ =>
+      "return it to a hand"
+  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] =>
+    "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .mayCast origin maxMv cost note =>
-    some <|
-      match origin, maxMv, cost, note with
-      | .graveyard, .unlimited, .pay, .exileInstead =>
-        "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
-      | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
-        "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
-      | .hand, .lastKnown, .withoutPaying, .none =>
-        "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
-      | .impulse, .unlimited, .withoutPaying, .none =>
-        "you may cast that card without paying its mana cost"
-      | .nextRedOrGreenCreature, .unlimited, .withoutPaying, .none =>
-        "the next red or green creature spell you cast this turn can be cast without paying its mana cost"
-      | .looked, .greatestAttackingPower, .withoutPaying, .none =>
-        "you may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost"
-      | _, _, _, _ =>
-        "you may cast a spell"
-  | .pay (.mana symbols) =>
-    some s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"
-  | .pay _ =>
-    some "pay that cost"
-  | _ => none
-
-/-- `resolutionPhrase` for `putOrExile`: exile and put. -/
-private def resolutionPhrasePutOrExile (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .exile what how note =>
-    some <|
-      match what with
-      | .target =>
-        if how == .leaveTrigger && note == .none then
-          if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
-        else if how == .untilSourceLeaves && note == .copyAndHost then
-          "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield"
-        else if how == .untilSourceLeaves && note == .none then
-          if t.allowsZeroTargets then
-            if t.targeting.kind == .defendingPlayerCreature then
-              s!"you may exile {noun} until this leaves the battlefield"
-            else
-              s!"you may exile {noun}"
-          else
-            s!"exile {noun} until this leaves the battlefield"
-        else if how == .nextEndStep && note == .none then
-          s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
-        else if how == .forLater && note == .none then
-          if noun.isEmpty then "exile it" else s!"exile {noun}"
-        else "exile it"
-      | .top =>
-        if how == .playUntilNextTurn && note == .none then
-          s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-        else if how == .playThisTurn && note == .ifHero then
-          "exile the top card of your library. If it is a Hero card, this gets +2/+1 until end of turn. You may play that card this turn"
-        else if how == .forLater && note == .impulse then
-          "exile cards from the top of their library until they exile an instant or sorcery card"
-        else "exile it"
-      | .target .eachPermanent =>
-        if how == .untilSourceLeaves && note == .none then
-          "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
-        else "exile it"
-      | .landsYouControl =>
-        if how == .forLater && note == .lands then "exile up to three target lands you control" else "exile it"
-      | .graveyardCard =>
-        if how == .forLater && note == .playCard then s!"exile {noun}" else "exile it"
-      | .source =>
-        if how == .forLater && note == .none then "exile this creature" else "exile it"
-      | .enchanted =>
-        if how == .forLater && note == .none then "exile enchanted creature" else "exile it"
-      | .target .whileSource =>
-        if how == .forLater && note == .none then "exile that creature" else "exile it"
-      | _ =>
-        "exile it"
-  | .put what how note =>
-    some <|
-      match what with
-      | .linkedExile =>
-        "return the exiled card to the battlefield under its owner's control"
-      | .nonlandMvAtMost mv =>
-        s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
-      | .source =>
-        if how == .asArtifact then
-          "if they were a creature, return them to the battlefield. They're an artifact"
-        else if how == .underOwner && (match note with | .entering _ => true | _ => false) then
-          "return this from its owner's graveyard to the battlefield under its owner's control"
-        else "put it onto the battlefield"
-      | .cause _ =>
-        if how == .underOwner then "return it to the battlefield under its owner's control"
-        else "put it onto the battlefield"
-      | .notedLands =>
-        if how == .tapped then "return those lands to the battlefield tapped" else "put it onto the battlefield"
-      | .discardedLand =>
-        if how == .tapped then "if you discard a land card this way, put it onto the battlefield tapped" else "put it onto the battlefield"
-      | .landFromHand =>
-        if how == .tapped then "put a land card from your hand onto the battlefield tapped" else "put it onto the battlefield"
-      | .artifactFromHand =>
-        if note == .forAttach then "put an artifact card from your hand onto the battlefield" else "put it onto the battlefield"
-      | .randomCreature =>
-        "put a random creature card from among them onto the battlefield"
-      | .revealed | .forest =>
-        "put that card onto the battlefield"
-      | .basicLandOnTop =>
-        "put that card on top of your library"
-      | .dragon =>
-        "put it onto the battlefield"
-      | .creatureMvAtMost mv =>
-        s!"return target creature card with mana value {mv} or less from your graveyard to the battlefield"
-      | _ =>
-        "put it onto the battlefield"
-  | _ => none
-
-/-- `resolutionPhrase` for `sacrificeOrDestroy`: sacrifice and destroy. -/
-private def resolutionPhraseSacrificeOrDestroy (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .sacrifice what _ =>
-    some <|
-      match what with
-      | .opponentChosenCreature =>
-        s!"{noun} sacrifices a creature of their choice"
-      | .eachPlayersCreature =>
-        "each player sacrifices a creature of their choice"
-      | .leastPower =>
-        "defending player sacrifices a creature with the least power among creatures they control"
-      | .combatDamager =>
-        "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn"
-      | .chosenNontokenCreature =>
-        "each opponent sacrifices a nontoken creature of their choice"
-      | .sacrificedSource .controllerSacrifices =>
-        "sacrifice this creature"
-      | .another =>
-        "sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-      | _ =>
-        "sacrifice it"
-  | .destroy what note =>
-    some <|
-      match what, note with
-      | .oppArtifactsEnchantments, .countDestroyed =>
-        "destroy all artifacts and enchantments your opponents control"
-      | .permanentDealtDamage, .none =>
-        "destroy the permanent dealt damage this way"
-      | .target, .forAmass | .target, .none | .target, .chosenToken =>
-        if noun.isEmpty then "destroy it" else s!"destroy {noun}"
-      | .source, _ =>
-        "destroy this creature"
-      | .enchanted, _ =>
-        "destroy enchanted creature"
-      | (.target .whileSource), _ =>
-        "destroy that creature"
-      | _, _ =>
-        "destroy it"
-  | _ => none
-
-/-- `resolutionPhrase` for `createOrAmass`: amass and createTokens. -/
-private def resolutionPhraseCreateOrAmass (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .amass amount subtype attach who =>
-    some <|
-      match amount, attach, who with
-      | .lastKnownPower, _, _ =>
-        s!"amass {pluralizeName subtype} X, where X is this creature's power"
-      | .notedExcess, _, _ =>
-        s!"amass {pluralizeName subtype} X, where X is the excess damage"
-      | .notedPower, _, (.controller .target) =>
-        s!"its controller amasses {pluralizeName subtype} X, where X is that creature's power"
-      | (.fixed n), true, _ =>
-        s!"amass {pluralizeName subtype} {n}, then attach this Equipment to the amassed Army"
-      | (.fixed n), _, _ =>
-        s!"amass {pluralizeName subtype} {n}"
-      | _, _, _ =>
-        "amass"
-  | .createTokens kind amount tapped who note =>
-    some <|
-      if kind == .axe then
-        if note == .attachReflexive then
-          "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
-        else
-          "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
-      else if kind == .zabu then
-        "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-      else if kind == .theVoid then
-        s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
-      else if kind == .redwing then
-        "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-      else if kind == .alien then
-        "create a 1/1 red Alien creature token with haste"
-      else if kind == .galactus then
-        "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
-      else if kind == .sturdyShield then
-        "create a colorless Equipment artifact token named Sturdy Shield"
-      else
-        match who, amount with
-        | _, .blueManaSymbols =>
-          if kind == .merfolk then
-            "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
-          else "create a token"
-        | .you, .oppArtifacts =>
-          "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
-        | .you, .damagedPlayerArtifacts =>
-          "you create a Treasure token for each artifact that player controls"
-        | .you, .lastKnownPower =>
-          if kind == .birdSoldier then
-            "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
-          else
-            "create that many Treasure tokens"
-        | .you, .perSubtype subtype =>
-          s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
-        | .you, .chosenCreatureType =>
-          "choose a creature type. Create a Treasure token for each creature you control of that type"
-        | .controller .target, _ =>
-          "they create a Treasure token"
-        | .you, .fixed n =>
-          TokenKind.createPhrase kind n.toNat (tapped := tapped)
-        | _, _ =>
-          "create a token"
-  | _ => none
-
-private def putCountersResolutionPhrase (r : @& TriggerResolution) (what : @& CounterSelector)
-    (who : @& ObjectSelector) (noun : @& String) : String :=
-  let fallback (_ : Unit) : String :=
-    let s := SpellResolution.toPhrase r noun
-    if s.isEmpty then "put counters" else s
-  match what with
-  | .plusOneLastKnownMv =>
-    s!"put X +1/+1 counters on {noun}, where X is that spell's mana value"
-  | .sourceCounters =>
-    "put its counters on up to one target creature you control"
-  | .honePerOpponent =>
-    "put a hone counter on this for each creature target opponent controls"
-  | .plusOneNoted =>
-    "put a +1/+1 counter on it for each invasion counter on this enchantment"
-  | .plusOneSacrificedPower =>
-    "put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .missingKeywordsFromTarget =>
-    if who == .source then
-      "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
-    else fallback ()
-  | .ofKind kind n =>
-    match kind with
-    | .plusOnePlusOne =>
-      match who with
-      | .youControl .eachCreature => "put a +1/+1 counter on each creature you control"
-      | .youControl (.subtype s) => s!"put a +1/+1 counter on each {s} you control"
-      | .youControl .citysBlessing =>
-        "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
-      | .eachOther => "put a +1/+1 counter on each other creature you control"
-      | .permanent true => s!"put a +1/+1 counter on {noun}"
-      | .permanent false => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-      | .source => counterOn "this creature" kind n
-      | .enchanted => counterOn "enchanted creature" kind n
-      | .target .whileSource => counterOn "that creature" kind n
-      | .eachUpToLastKnown => "put a +1/+1 counter on each of up to that many target creatures you control"
-      | _ => fallback ()
-    | .hone =>
-      if who == .youControl (.subtype "Equipment") then "put a hone counter on each Equipment you control"
-      else if who == .source then counterOn "this creature" kind n
-      else if who == .enchanted then counterOn "enchanted creature" kind n
-      else if who == .target .whileSource then counterOn "that creature" kind n
-      else fallback ()
-    | .loyalty =>
-      if who == .source then "put a loyalty counter on this"
-      else if (match who with | .permanent _ => true | _ => false) then "put a loyalty counter on it"
-      else if who == .enchanted then counterOn "enchanted creature" kind n
-      else if who == .target .whileSource then counterOn "that creature" kind n
-      else fallback ()
-    | .charge => "put a charge counter on this enchantment"
-    | .quest => "put a quest counter on this enchantment"
-    | .plan => "put a plan counter on this enchantment"
-    | .invasion => "put an invasion counter on this enchantment"
-    | .trample => s!"put a trample counter on up to one {noun}"
-    | .influence => "put an influence counter on this"
-    | .indestructible | .doubleStrike | .burden | .stun =>
-      if who == .permanent false then s!"put {kind.countersPhrase n} on {noun}"
-      else if who == .source then counterOn "this creature" kind n
-      else if who == .enchanted then counterOn "enchanted creature" kind n
-      else if who == .target .whileSource then counterOn "that creature" kind n
-      else fallback ()
-    | _ =>
-      if who == .source then counterOn "this creature" kind n
-      else if who == .enchanted then counterOn "enchanted creature" kind n
-      else if who == .target .whileSource then counterOn "that creature" kind n
-      else fallback ()
-  | _ => fallback ()
-
-/-- `resolutionPhrase` for `putCounters`: removeCounters and putCounters. -/
-private def resolutionPhraseCounters (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .removeCounters what who =>
-    some <|
-      match what, who with
-      | .hope, .source =>
-        "remove a hope counter from this"
-      | .all, .enchanted =>
-        "remove all counters from enchanted creature"
-      | _, _ =>
-        "remove counters"
-  | r@(.putCounters what who) =>
-    some (putCountersResolutionPhrase r what who noun)
-  | _ => none
-
-private def revealLibraryResolutionPhrase (r : @& TriggerResolution) (how : @& TriggerLibraryHow)
-    (thenDo : @& TriggerResolution) (who : @& PlayerSelector) (noun : @& String) : String :=
-  match how, thenDo, who with
-  | .topNumber (.fixed n), .returnToHand (.lookedTypes types) _, _ =>
-    let joined :=
-      match types.toList with
-      | [a, b] => s!"a {a} or {b} card"
-      | xs => s!"a {String.intercalate " or " xs} card"
-    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-  | .topNumber _, .returnToHand (.lookedTypes _) _, _ =>
-    "look at the top cards of your library"
-  | .top n, .put .randomCreature .asPrinted .none, .you =>
-    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
-  | .untilCreature,
-    .ifElse .revealedManaValueAtMostLands
-      (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
-    .you =>
-    s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
-  | .untilSaga, .put .revealed .asPrinted .none, .you =>
-    "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
-  | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
-    "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-  | .untilNonland,
-    .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
-      (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
-    .announced =>
-    "that player exiles cards until a nonland card"
-  | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
-    s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
-  | _, _, _ =>
-    let s := SpellResolution.toPhrase r noun
-    if s.isEmpty then "reveal cards from a library" else s
-
-/-- `resolutionPhrase` for `revealOrReflexive`: searchLibrary, queueReflexive, revealFromHand, and revealLibrary. -/
-private def resolutionPhraseRevealOrReflexive (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .searchLibrary thenDo =>
-    some <|
-      match thenDo with
-      | .put .forest .asPrinted .none =>
-        "search your library for a Forest card, put that card onto the battlefield, then shuffle"
-      | .returnToHand .basicLand .none =>
-        searchLibraryToHandPhrase "a basic land card"
-      | .put .basicLandOnTop .asPrinted .none =>
-        "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-      | .put .dragon .asPrinted .none =>
-        "search your hand and/or library for a Dragon card and put it onto the battlefield"
-      | _ =>
-        let s := SpellResolution.toPhrase (.searchLibrary thenDo) noun
-        if s.isEmpty then "search your library" else s
-  | .queueReflexive followup =>
-    some <|
-      match followup with
-      | .pump .perPlains .perPlains .target =>
-        "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
-      | .mayCast .milledSpell .causingSpell .withoutPaying =>
-        "exile and copy a card"
-      | .dealDamage (.fixed n) .target .divided =>
-        s!"when you do, it deals {n} damage divided as you choose among one or two targets"
-      | _ =>
-        "when you do, that ability triggers"
+    match origin, maxMv, cost, note with
+    | .graveyard, .unlimited, .pay, .exileInstead =>
+      "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
+    | .hand, .twiceLegendaryWizards, .withoutPaying, .none =>
+      "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
+    | .hand, .lastKnown, .withoutPaying, .none =>
+      "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
+    | .impulse, .unlimited, .withoutPaying, .none =>
+      "you may cast that card without paying its mana cost"
+    | .nextRedOrGreenCreature, .unlimited, .withoutPaying, .none =>
+      "the next red or green creature spell you cast this turn can be cast without paying its mana cost"
+    | .looked, .greatestAttackingPower, .withoutPaying, .none =>
+      "you may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost"
+    | _, _, _, _ =>
+      "you may cast a spell"
+  | .grant what who =>
+    match what, who with
+    | .doubleStrike, .equippedAttackers =>
+      "each equipped attacking creature gains double strike until end of turn"
+    | .protectionEverything, .youIfCast =>
+      "if you cast it, you gain protection from everything until your next turn"
+    | .keywords k, .target =>
+      s!"{noun} gains {k.joinedAnd} until end of turn"
+    | .keywords k, .source =>
+      s!"this creature gains {k.joinedAnd} until end of turn"
+    | .keywords k, .enchanted =>
+      s!"enchanted creature gains {k.joinedAnd} until end of turn"
+    | .keywords k, (.target .whileSource) =>
+      s!"that creature gains {k.joinedAnd} until end of turn"
+    | .keywords k, .creaturesYouControl =>
+      s!"creatures you control gain {k.joinedAnd} until end of turn"
+    | .keywords k, .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
+      s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
+    | .hexproofWhileSource, .target =>
+      s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
+    | .preventDamageWhileSource, _ =>
+      "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield"
+    | .landfallCreateElf, .source =>
+      "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+    | .assignCombatDamageEqualToughness, .creaturesYouControl =>
+      "until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power"
+    | .basePowerEqualHand, .source =>
+      "until end of turn, this creature's base power is equal to the number of cards in your hand"
+    | .ironFistTap, .source =>
+      "this gains \"{T}: This deals damage equal to its power to any other target\" until end of turn"
+    | .keywords _, .spellTargets =>
+      "those creatures gain flying until end of turn"
+    | _, _ =>
+      "grant"
+  | .revealLibrary how thenDo who =>
+    match how, thenDo, who with
+    | .top n, .put .randomCreature .asPrinted .none, .you =>
+      s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
+    | .untilCreature,
+      .ifElse .revealedManaValueAtMostLands
+        (.put .revealed .asPrinted .none) (.returnToHand .revealed .none),
+      .you =>
+      s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
+    | .untilSaga, .put .revealed .asPrinted .none, .you =>
+      "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
+    | .untilInstantOrSorcery, .exile .top .forLater .impulse, .damagedPlayer =>
+      "that player exiles cards from the top of their library until they exile an instant or sorcery card"
+    | .untilNonland,
+      .may (.putCounters (.ofKind .plusOnePlusOne 1) .source)
+        (.exile .top .forLater .anyManaThisTurn) .ifYouDont,
+      .announced =>
+      "that player exiles cards until a nonland card"
+    | .top n, .mayCast .looked .greatestAttackingPower .withoutPaying .none, .you =>
+      s!"look at the top {n} cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}"
+    | _, _, _ =>
+      "reveal cards from a library"
+  | .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
+    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+  | .mill amount who note =>
+    match amount, who, note with
+    | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
+      s!"mill {n} cards"
+    | .fixed n, .target .player, .none =>
+      s!"{noun} mills {n} cards"
+    | .thatManyLost, .thatPlayer, .none =>
+      "that player mills that many cards"
+    | .fixed n, .eachOpponent, .opponentsMilled =>
+      s!"each opponent mills {n} cards"
+    | _, _, _ =>
+      "mill"
+  | .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
+    "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+  | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
+    s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
+  | .copySelfNonlegendary =>
+    "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
+  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
+      (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
+    "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
+  | .ringTempts =>
+    "the Ring tempts you"
+  | .may (.discard .hand) (.draw (.fixed n)) .ifYouDo =>
+    s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
+  | .queueReflexive (.pump .perPlains .perPlains .target) =>
+    "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
+  | .spellsCostLess _ (.fixed n) =>
+    s!"spells you cast this turn cost \{{n}} less to cast"
+  | .spellsCostLess _ _ =>
+    "spells you cast this turn cost less to cast"
+  | .may (.draw (.perControlled _) _) (.draw (.fixed 1) .eachOpponent) .ifYouDo =>
+    "you may draw a card for each artifact you control. If you do, each opponent draws a card"
+  | .investigate => "investigate"
+  | .connive .source => "it connives"
+  | .connive .target => s!"{noun} connives"
+  | .connive .enteringVillain => "you may have it connive"
+  | .connive _ => "connive"
+  | .«if» (.or [.attackedWithSubtype attacked, .subtypeEntered entered]) (.draw (.fixed 1)) =>
+    let attackedNoun := if attacked == "Hero" then "a Hero" else s!"a {attacked}"
+    let enteredNoun := if entered == "Hero" then "a Hero" else s!"a {entered}"
+    s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
+  | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
+    "create a Food token or a Treasure token"
+  | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
+      (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
+    "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
+  | .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
+      (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
+      (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
+    "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo =>
+    "you may sacrifice an artifact or discard a card. If you do, draw a card"
+  | .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost) =>
+    "if it's an Equipment, attach it to this creature"
+  | .fight who how =>
+    match who, how with
+    | .source, .mutual =>
+      "this fights up to one other target creature"
+    | .announced, .upToOneOther =>
+      "target creature you control fights up to one other target creature"
+    | .announced, .mutual =>
+      "target creature you control fights another target creature"
+    | .equipmentHost, .reflexive =>
+      "that creature deals damage equal to its power to up to one target creature"
+    | _, _ =>
+      "fight"
+  | .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo =>
+    "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
+  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
+    "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
-    some <|
-      match count, thenDo with
-      | .hand, .exile .target .untilSourceLeaves .none =>
-        "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-      | .onePlusCreatureCards, .discard (.cards 1 (.target .opponent)) =>
-        s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
-      | _, _ =>
-        "reveal cards from their hand"
-  | r@(.revealLibrary how thenDo who) =>
-    some (revealLibraryResolutionPhrase r how thenDo who noun)
-  | _ => none
-
-/-- `resolutionPhrase` for `sequenceOrModes`: sequence and chooseModes. -/
-private def resolutionPhraseControlFlow (t : @& TriggerTiming) (noun : @& String) : Option String :=
-  match t.resolution with
-  | .sequence rs =>
-    some (sequenceResolutionPhrase rs noun)
-  | r@(.chooseModes modes how) =>
-    some (chooseModesResolutionPhrase t r modes how noun)
-  | _ => none
-
-/-- Effect clause from resolution, targeting, and divided-damage parameters. -/
-def resolutionPhrase (t : @& TriggerTiming) : String :=
-  let noun := t.targeting.kind.noun
-  let opt :=
-    match t.resolution with
-    | r@(.grant what who) => some (grantResolutionPhrase what who r noun)
-    | .combatCountersOrTokens (some _) .. => none
-    | .combatCountersOrTokens none _ (some _) .. => resolutionPhraseCounters t noun
-    | .combatCountersOrTokens none none none (some _) ..
-    | .combatCountersOrTokens none none none none (some _) .. =>
-      resolutionPhraseCreateOrAmass t noun
-    | .combatCountersOrTokens none .. => resolutionPhrasePumpOrDamage t noun
-    | .playerResource false .. => resolutionPhrasePlayerNumeric t noun
-    | .playerResource true .. => resolutionPhraseManaPayOrCast t noun
-    | .zoneOrTap true .. => resolutionPhraseTapDiscardOrReturn t noun
-    | .zoneOrTap false _ _ (some _) .. | .zoneOrTap false _ _ none _ (some _) .. =>
-      resolutionPhrasePutOrExile t noun
-    | .zoneOrTap false _ _ none _ none .. => resolutionPhraseSacrificeOrDestroy t noun
-    | .flowOrReveal true .. | .flowOrReveal false none (some _) .. =>
-      resolutionPhraseRevealOrReflexive t noun
-    | .may action follow when => some (mayResolutionPhrase action follow when)
-    | .flowOrReveal false (some _) .. => none
-    | .flowOrReveal false none none .. => resolutionPhraseControlFlow t noun
-  opt.getD (SpellResolution.toPhrase t.resolution noun)
+    match count, thenDo with
+    | .hand, .exile .target .untilSourceLeaves .none =>
+      "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
+    | .onePlusCreatureCards, .discard (.cards 1 (.target .opponent)) =>
+      s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
+    | _, _ =>
+      "reveal cards from their hand"
+  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
+    "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
+  | .may (.tap .source) (.queueReflexive (.grant (.keywords k) .target)) .ifYouDo =>
+    if k == Keyword.indestructible then
+      "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
+    else
+      "you may tap this creature. When you do, that ability triggers"
+  | .markRecentTokensAttacking =>
+    "those tokens enter tapped and attacking"
+  | .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking =>
+    "those tokens are tapped and attacking if that creature is legendary"
+  | .additionalCombatPhase =>
+    "after this phase, there is an additional combat phase"
+  | .«if» .youControlledDestroyed (.draw (.fixed 1)) =>
+    "if you controlled that creature, draw a card"
+  | .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent)) =>
+    "if you have an enduring story, this deals X damage to each opponent"
+  | .becomeBear =>
+    "it becomes a Bear in addition to its other types"
+  | .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2)) =>
+    "if you control three or more Bears, draw two cards"
+  | .tap .enchanted | .tap .enchantedWhileSource => "tap enchanted creature"
+  | .tap .source => "tap this creature"
+  | .tap (.target .whileSource) => "tap that creature"
+  | .«if» ((.atLeast (.count .questCounters) (.fixed 6))) (.sequence [.sacrifice (.sacrificedSource .movedAsSacrificed), .searchLibrary (.put .dragon .asPrinted .none)]) =>
+    "if it has six or more quest counters on it, sacrifice it and search for a Dragon"
+  | .«if» .equipmentAttached (.fight .equipmentHost .reflexive) =>
+    "that creature deals damage equal to its power to up to one target creature"
+  | .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying) =>
+    "exile and copy a card"
+  | .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) =>
+    "when one or more cards are milled this way, exile and copy a card"
+  | .loseLife amount who =>
+    match amount, who with
+    | .fixed n, .you => s!"you lose {n} life"
+    | .fixed n, .target .opponent => s!"{noun} loses {n} life"
+    | .fixed n, .eachOpponent => s!"each opponent loses {n} life"
+    | .perBurden, .you =>
+      "you lose 1 life for each burden counter on this"
+    | .attachedEquipment, .eachOpponent =>
+      "each opponent loses X life, where X is the number of Equipment attached to it"
+    | _, _ =>
+      "lose life"
+  | .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided)) =>
+    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+  | .queueReflexive (.dealDamage (.fixed n) .target .divided) =>
+    s!"when you do, it deals {n} damage divided as you choose among one or two targets"
+  | .«if» .planWasSacrificed (.queueReflexive _) =>
+    "when you do, the reflexive ability triggers"
+  | .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed n)) =>
+    s!"if you control another Hero, you gain {n} life"
+  | .grantPlayNotedUntilNextTurn =>
+    playThatCardUntilNextTurnPhrase
+  | .tap (.target .ifPresent) =>
+    "tap up to one target creature"
+  | .tap .target =>
+    s!"tap {noun}"
+  | .tap _ =>
+    "tap it"
+  | .untap who =>
+    match who with
+    | .attackingCreatures => "untap all attacking creatures"
+    | .target => s!"untap {affectedNoun .target noun}"
+    | .source => s!"untap {affectedNoun .source noun}"
+    | .enchanted => s!"untap {affectedNoun .enchanted noun}"
+    | .target .whileSource => s!"untap {affectedNoun .targetWhileSource noun}"
+    | .equipped => "untap equipped creature"
+    | .firstThisTurn => "untap it"
+    | _ => "untap it"
+  | .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
+    "put a +1/+1 counter on it if it's a creature"
+  | .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent) =>
+    "put a loyalty counter on it if it's a planeswalker"
+  | .winTheGame =>
+    "you win the game"
+  | .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame =>
+    "if your library has no cards in it, you win the game"
+  | .shuffleSource =>
+    "its owner shuffles it into their library"
+  | .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource =>
+    "Fblthp's owner shuffles him into their library"
+  | .armSurveilReturnLifeGained =>
+    "if you gained life this turn"
+  | .becomeCopy .artifactEnchantmentOrLand =>
+    "until your next turn, this becomes a copy of up to one target artifact, non-Aura enchantment, or land, except its name, and it's a legendary 4/4 Human Villain creature with vigilance"
+  | .becomeCopy .creatureOrGraveyardCard =>
+    "until your next turn, this becomes a copy of up to one target creature or creature card in a graveyard, except its name, and it's a legendary Human Mercenary Villain creature"
+  | .becomeCopy .noted =>
+    "enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .becomeCopy (.cause none) =>
+    "create a token that's a copy of the artifact that caused this"
+  | .becomeCopy _ =>
+    "become a copy"
+  | .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) =>
+    "exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control"
+  | .retargetCause =>
+    "choose new targets for that spell"
+  | .copyCause =>
+    "copy that spell. You may choose new targets for the copy"
+  | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
+    "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
+  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
+    "you may create a 0/4 colorless Wall creature token with defender"
+  | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>
+    "you may sacrifice that. If you do, do that"
+  | .may (.pay (.discard _ _)) _ .ifYouDo =>
+    "you may discard that. If you do, do that"
+  | .may _ _ .ifYouDo =>
+    "you may do it. If you do, do that"
+  | .pay (.mana symbols) =>
+    s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"
+  | .pay _ =>
+    "pay that cost"
+  | .queueReflexive _ =>
+    "when you do, that ability triggers"
+  | .«if» .manaSpent (.discard (.cards n)) =>
+    s!"discard {cardPhrase n}"
+  | .«if» _ _ =>
+    "if that is true"
+  | .ifElse _ _ _ =>
+    "if that is true"
+  | .or _ =>
+    "choose one"
+  | r =>
+    SpellResolution.toPhrase r noun
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -2118,195 +1839,348 @@ def sequenceClause (e : Effect) : Option String :=
     some "you draw a card and lose 1 life"
   | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
     some s!"draw {cardPhrase n.toNat}, then discard a card"
-  | .sequence [.pump (.fixed p) (.fixed 0) .source, .grant (.keywords k) .creaturesYouControl] =>
+  | .sequence [.onSource (.pump p 0), .teamGain k] =>
     if k == Keyword.trample then
       some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
     else none
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne n) .permanent, .grant (.keywords k) .target] =>
+  | .sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)] =>
     if k == Keyword.lifelink && n == 1 then
       some s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
     else if k == Keyword.vigilance then
       some s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
     else none
-  | .sequence [.pump (.fixed 1) (.fixed 0) .source, .cant (.beBlocked .source)] =>
+  | .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] =>
     some "this gets +1/+0 until end of turn and can't be blocked this turn"
-  | .sequence [.draw 1, .putCounters (.ofKind .plusOnePlusOne 1) .source] =>
+  | .sequence [.draw 1, .onSource (.plusOne 1)] =>
     some "draw a card and put a +1/+1 counter on this"
-  | .sequence [.pump (.fixed p) (.fixed 0) .creaturesYouControl, .grant (.keywords k) .creaturesYouControl] =>
+  | .sequence [.creaturesYouControlPump p 0, .teamGain k] =>
     if k == Keyword.firstStrike then
       some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
     else none
-  | .sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw 1] =>
+  | .sequence [.onSource (.plusOne 1), .draw 1] =>
     some "put a +1/+1 counter on this and draw a card"
-  | .sequence [.pump (.fixed p) (.fixed t) .source, .dealDamage (.fixed n) (.player .eachOpponent)] =>
+  | .sequence [.onSource (.pump p t), .damageEachOpponent n] =>
     some s!"this gets {signedStat p}/{signedStat t} until end of turn and deals {n} damage to each opponent"
   | .sequence
-      [.untap .target,
-       .«if» (.subtype subtype) (.putCounters (.ofKind .plusOnePlusOne n) .permanent)] =>
+      [.onPermanent .untap,
+       .«if» (.subtype subtype) (.onPermanent (.plusOne n))] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
   | .sequence [.loseLife (.fixed n) .you, .createTokens .treasure 1 false] =>
     some s!"you lose {n} life and create a Treasure token"
-  | .sequence [.exile .graveyardCard .forLater, .loseLife (.fixed n) .eachOpponent] =>
+  | .sequence [.exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
   | _ => none
 
-private partial def isOnEnchanted : TriggerResolution → Bool
-  | .putCounters _ .enchanted | .pump _ _ .enchanted | .destroy .enchanted _
-  | .dealDamage _ .enchanted _ | .grant _ .enchanted | .tap .enchantedWhileSource
-  | .untap .enchanted | .cant (.beBlocked .enchanted)
-  | .putOnLibrary _ .enchanted
-  | .exile .enchanted .forLater _ => true
-  | .sequence [r, _] => isOnEnchanted r
-  | _ => false
+/-- Printed sentence for a leftover dies trigger. Its resolution is a
+`TriggerResolution` that does not carry `DeathLeftover`. -/
+def deathSentence : DeathLeftover → String
+  | .hellcatReturn =>
+    "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
+  | .villainReturnAsHero =>
+    "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
+  | .attackingReturnHand =>
+    "Whenever an attacking creature you control dies, return that card to its owner's hand."
+  | .deathtouchOppSac =>
+    "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
 
-private def toNotationEnter (ab : TriggeredAbility) (r : TriggerResolution)
-    (kind : EffectTargetKind) : Option String :=
-  match r, kind with
-  | .may (.sacrifice .another .none) (.sequence []) _, _ =>
-    some (leadInSentence ab "When Bolg enters")
-  | .sequence [.destroy .target .forAmass, .amass .notedPower _ _ (.controller .target), .«if» .youControlledDestroyed (.draw (.fixed 1) _)], .anotherCreature =>
-    some "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-  | .returnToHand .graveyardCard _, .creatureCardInYourGraveyard =>
-    some "When this enchantment enters, return target creature card from your graveyard to your hand."
-  | .createTokens .axe (.fixed 1) false _ .attachReflexive, _ =>
-    some (leadInSentence ab "When Dáin enters")
-  | .sequence [.tap .enchanted, .removeCounters .all .enchanted], _ =>
-    some (leadInSentence ab "When this Aura enters")
-  | .sequence [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)], _ =>
-    some "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
-  | .becomeCopy .sourceTwoNonlegendaryTokens, _ =>
-    some (leadInSentence ab "When The Notary Hobbits enter")
-  | .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached (.fight .equipmentHost .reflexive)], .creatureYouControl =>
-    some (leadInSentence ab "When Thorin enters")
-  | .sequence [.exile .landsYouControl .forLater .lands, .put .notedLands .tapped _], _ =>
-    some (leadInSentence ab "When Gandalf enters")
-  | .grant .protectionEverything .youIfCast, _ =>
-    some (leadInSentence ab "When The One Ring enters")
-  | .connive .source, .none =>
-    some (leadInSentence ab "When this creature enters")
-  | .attach .source .target, .creatureYouControl =>
-    some (leadInSentence ab "When this Equipment enters")
-  | .surveil (.fixed n) .none, .none =>
-    some s!"When this permanent enters, surveil {n}."
-  | .sequence (.attach .source .target :: _ :: _), .creatureYouControl =>
-    some (leadInSentence ab "When this Equipment enters")
-  | .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted], .creature =>
-    some (leadInSentence ab "When this Aura enters")
-  | .exile .target .nextEndStep _, .creatureYouControl =>
-    some (leadInSentence ab "When this Vehicle enters")
-  | .or [.tap .target, .untap _], .nonland =>
-    some (leadInSentence ab "When this creature enters")
-  | .or [.createTokens .food (.fixed 1) false _ _, .createTokens .treasure (.fixed 1) false _ _], _ =>
-    some (leadInSentence ab "When this creature enters")
-  | .ifElse (.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)) (.createTokens .villain21menace (.fixed 1) true _ _) (.mill (.fixed 2) _ _), _ =>
-    some (leadInSentence ab "When this creature enters")
-  | .sequence [.draw (.fixed 1) _, .may (.put .landFromHand .tapped _) (.sequence []) _], _ =>
-    some (leadInSentence ab "When this creature enters")
-  | .sequence [.draw (.fixed 1) _, .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2) _)], _ =>
-    some (leadInSentence ab "When this creature enters")
-  | .ifElse (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) (.putCounters (.ofKind .plusOnePlusOne 1) .permanent), .creature =>
-    some (leadInSentence ab "When this creature enters")
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1) _) .ifYouDo, _ =>
-    some (leadInSentence ab "When this creature enters")
-  | .exile .target .untilSourceLeaves .none, .oppTappedCreature =>
-    some "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-  | .discard (.cards n (.target .opponent)), .opponent =>
-    let cards := if n == 2 then "two cards" else cardPhrase n
-    some s!"When this enchantment enters, target opponent discards {cards}."
-  | _, _ => none
+/-- Printed sentence for a leftover “enters or attacks” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`EnterOrAttackLeftover`. -/
+def enterOrAttackSentence : EnterOrAttackLeftover → String
+  | .copyKeywords =>
+    "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
+  | .createSquirrel =>
+    "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
 
-private def toNotationOtherPart3 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
-    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
-  match w, e.resolution, e.targetKind, opts with
-  | .yourUpkeep, .loseLife .perBurden _, _, _ =>
-    some "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
-  | .landYouControlEnters, .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source _) .ifYouDo, _, _ =>
-    some (leadInSentence ab "Landfall — Whenever a land you control enters")
-  | .youPutCountersOnGoblinOrcArmy, .dealDamage (.fixed 2) (.player (.target .opponent)) _, .opponent, _ =>
-    some "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-  | .eachEndStep, .«if» (.or [.attackedWithSubtype subtype, .subtypeEntered _]) (.draw (.fixed 1) _), _, _ =>
-    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
-    some s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
-  | .attack, .pump .equalSourceToughness .equalSourceToughness (.othersOfSubtype subtype), _, _ =>
-    some s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
-  | (.youCastColorFromHand color), .connive .source, .none, _ =>
-    some s!"Whenever you cast a {color} spell from your hand, this connives."
-  | .sourceDealtDamage, .putCounters (.ofKind .plusOnePlusOne 1) .source, _, _ =>
-    some "Whenever this is dealt damage, put a +1/+1 counter on it."
-  | _, _, _, _ => none
+/-- Printed sentence for a leftover “whenever this attacks” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`ThisAttackLeftover`. -/
+def thisAttackSentence : ThisAttackLeftover → String
+  | .mayPayPlusOne =>
+    "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
+  | .payReturnAttacking =>
+    "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
+  | .ifArtifactEnteredDraw =>
+    "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
+  | .blinkNontoken =>
+    "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
+  | .equippedDrain =>
+    "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
+  | .drawIfPower4 =>
+    "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
+  | .attacksAlonePlus2Indestructible =>
+    "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
 
-private def toNotationOtherPart2 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
-    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
-  match w, e.resolution, e.targetKind, opts with
-  | .attack, .mayCast .graveyard .unlimited .pay .exileInstead, _, _ =>
-    some (leadInSentence ab "Whenever Bilbo attacks")
-  | .attack, .grant (.keywords _) .equippedAttackers, _, _ =>
-    some (leadInSentence ab "Whenever Dáin attacks")
-  | .dies, .revealLibrary (.top _) (.put .randomCreature _ _) _, _, _ =>
-    some (leadInSentence ab "When this artifact is put into a graveyard from the battlefield")
-  | .yourBeginCombat, .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords _) .target]), .anotherCreatureYouControl, _ =>
-    some "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
-  | .anotherCreatureYouControlEnters, _, _, { subtype := some "Elf", anotherLegendary := true, .. } =>
-    some "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
-  | .dies, .put .source .asArtifact _, _, _ =>
-    some (leadInSentence ab "When Tom, Bert, and William die")
-  | .anotherCreatureYouControlEnters, .putCounters (.ofKind .plusOnePlusOne 2) .source, _, { subtype := some "Wolf", .. } =>
-    some "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
-  | .combatDamageToPlayer, .sequence [.revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer, .mayCast .impulse .unlimited .withoutPaying _], _, _ =>
-    some (leadInSentence ab "Whenever Gríma deals combat damage to a player")
-  | .yourEndStep, .sequence [.putCounters (.ofKind .influence 1) .source, .scry (.fixed 2), .may (.draw (.fixed 1) .opponentHasYou) (.sequence []) _], .opponent, _ =>
-    some "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
-  | .sourceDealtNoncombatDamage, .createTokens .treasure .lastKnownPower false _ _, _, _ =>
-    some (leadInSentence ab "Whenever Smaug is dealt noncombat damage")
-  | _, _, _, _ => toNotationOtherPart3 ab w e opts
+/-- Printed sentence for a leftover “whenever you attack” trigger.
+Its resolution is a `TriggerResolution` that does not carry
+`YouAttackLeftover`. -/
+def youAttackingSentence : YouAttackLeftover → String
+  | .pay2LifeToughness =>
+    "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
+  | .exileTopHeroPump =>
+    "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
+  | .lookSixCast =>
+    s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
 
-private def toNotationOtherPart1 (ab : @& TriggeredAbility) (w : @& SharedTriggerWhen)
-    (e : @& Effect) (opts : @& SharedTriggerOpts) : Option String :=
-  match w, e.resolution, e.targetKind, opts with
-  | .sagaChapter _, _, _, _ =>
-    some s!"When a lore counter is put on this Saga, {e.phrase}."
-  | .combatDamageToPlayer, .createTokens .treasure .damagedPlayerArtifacts false _ _, _, _ =>
-    some (leadInSentence ab "Whenever this creature deals combat damage to a player")
-  | .enterOrOpponentDrawsExceptFirst, .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc" _ _], _, _ =>
-    some "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
-  | .eachUpkeep, .createTokens k (.fixed n) false _ _, _, _ =>
-    some s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n.toNat}."
-  | .eachOpponentDrawStep, .draw (.fixed 1) _, _, _ =>
-    some "At the beginning of each opponent's draw step, you draw a card."
-  | .youGainLife, .putCounters (.ofKind .loyalty 1) .source, _, _ =>
-    some "Whenever you gain life, put a loyalty counter on Ajani."
-  | .opponentDrawsSecond, .createTokens .treasure (.fixed 1) false _ _, _, _ =>
-    some "Whenever an opponent draws their second card each turn, you create a Treasure token."
-  | .youAttackWithTotalPower n, .sequence [.untap .attackingCreatures, .additionalCombatPhase], _, _ =>
-    some (leadInSentence ab
-      s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn")
-  | .anotherCreatureYouControlEnters, .chooseModes _ .oneUnusedThisTurn, _, _ =>
-    some (leadInSentence ab "Alliance — Whenever another creature you control enters")
-  | .combatDamageToPlayerOrBattle, .createTokens .treasure (.fixed 2) false _ _, _, { subtype := some "Dwarf", .. } =>
-    some (leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle")
-  | (.youCastColor .red), .dealDamage (.fixed 3) (.player .eachOpponent) _, .opponent, _ =>
-    some "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
-  | .thisOrAnotherSubtypeEnters, .sequence [.may (.discard .hand) (.sequence []) _, .draw .discardedHand _, .«if» .enduringStoryNoted (.dealDamage .discardedHand (.player .eachOpponent) _)], _, { subtype := some "Dwarf", .. } =>
-    some "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
-  | _, _, _, _ => toNotationOtherPart2 ab w e opts
+/-- Printed sentence for a leftover draw, discard, life, or +1/+1-counter
+trigger. Its resolution is a `TriggerResolution` that does not carry
+`ResourceLeftover`. -/
+def resourceSentence : ResourceLeftover → String
+  | .discardExilePlay =>
+    "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
+  | .drawIfAnotherHeroDamage =>
+    "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
+  | .secondDrawBecome66 =>
+    "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
+  | .secondDrawPlusOneTarget =>
+    "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
+  | .secondDrawDrain =>
+    "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
+  | .gainLifePlusOnes =>
+    "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
+  | .plusOneCreateInsectOnce =>
+    "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
+  | .plusOneOnThisOnce =>
+    "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
+  | .plusOneOnHeroesCreateWall =>
+    "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
+
+/-- Printed sentence for a leftover “whenever you cast …” trigger.
+Its resolution is a `TriggerResolution` that does not carry `CastLeftover`. -/
+def castingSentence : CastLeftover → String
+  | .villainToken =>
+    "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
+  | .merfolkFromBlue =>
+    "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
+  | .mayPayHasteUnblockable =>
+    "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
+  | .plusOneEachOther =>
+    "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
+  | .exileFlicker =>
+    "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .visionModes =>
+    "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
+  | .damageEqualMv =>
+    "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
+  | .drawPowerEqualHand =>
+    "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
+  | .plusOneThis =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
+  | .plusOneScry =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
+  | .ironFistTap =>
+    "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
+  | .targetsGainFlying =>
+    "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
+  | .copyIfArtifactOrLand =>
+    "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
+  | .tapCreatureOrLand =>
+    "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
+
+/-- Printed sentence for a leftover watch trigger. Its resolution is a
+`TriggerResolution` that does not carry `WatchLeftover`. -/
+def watchSentence : WatchLeftover → String
+  | .combatDamageExileUntilNonland =>
+    "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
+  | .attacksAloneDrain =>
+    "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
+  | .attacksAloneFirstStrikeMenace =>
+    "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
+  | .firstTapUntap =>
+    "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
+  | .sheHulkRedirectOnce =>
+    "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
+  | .speedballTargeted =>
+    "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
+  | .anyPlayerSecondDraw =>
+    "Whenever a player draws their second card each turn, you draw a card."
+  | .youTargetDrawOnce =>
+    "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
+  | .villainOrArtifactDamage =>
+    "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
+  | .villainConniveOnce =>
+    "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
+  | .villainPlusOneDamageOnce =>
+    "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
+  | .villainAttachEquipment =>
+    "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
+  | .villainPlusOneLifelink =>
+    "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
+  | .hulklingCompare =>
+    "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
+  | .justiceBounce =>
+    "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
+  | .nontokenHeroModal =>
+    "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
+  | .ultronCopy =>
+    "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
+  | .enchantedAttachEquipment =>
+    "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
+  | .equippedAttacksAloneUntapScry =>
+    "Whenever equipped creature attacks alone, untap it and scry 1."
+  | .equippedAttacksTap =>
+    "Whenever equipped creature attacks, tap target creature defending player controls."
+  | .equippedTappedDamage =>
+    "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
+  | .heroesDamagePlusTwo =>
+    "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
+  | .merfolkAttackDraw =>
+    "Whenever one or more Merfolk you control attack a player, draw a card."
+  | .tokensEnterMayDraw =>
+    "Whenever one or more tokens you control enter, you may draw a card."
+  | .hawkeyeModes =>
+    "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
+  | .redHulk =>
+    "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
+  | .hulk =>
+    "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
+
+/-- Printed sentence for a leftover step trigger. Its resolution is a
+`TriggerResolution` that does not carry `StepLeftover`. -/
+def stepSentence : StepLeftover → String
+  | .enchantedControllerDraws =>
+    "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
+  | .drawToTen =>
+    "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
+  | .copyAbsorbingMan =>
+    "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
+  | .hydeChoose =>
+    "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
+  | .copyTaskmaster =>
+    "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
+  | .harnessedFlicker =>
+    "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
 
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
     if !opts.printed.isEmpty then opts.printed else
-    if !e.phrase.isEmpty && (match w with | .sagaChapter _ => false | _ => true) then e.phrase else
-    if w == .enter then
-      if let some s := toNotationEnter ab e.resolution e.targetKind then s
-      else if e.targetKind == .none && isOnEnchanted e.resolution then
-        leadInSentence ab "When this Aura enters"
-      else
-        let t := ab.timing
-        let once := if t.onceEachTurn then " This ability triggers only once each turn." else ""
-        let clause := (sequenceClause ab.effect).getD (resolutionPhrase t)
-        s!"{eventPrefix t}{interveningClause t}, {clause}.{once}"
-    else if let some s := toNotationOtherPart1 ab w e opts then s
-    else
-    if !e.phrase.isEmpty then e.phrase else
+    match w, e.asTrigger?, opts with
+    | .sagaChapter, some (.chapter _ _), _ =>
+      s!"When a lore counter is put on this Saga, {e.phrase}."
+    | .enter, some .bolgMaySacrifice, _ =>
+      leadInSentence ab "When Bolg enters"
+    | .combatDamageToPlayer, some .createTreasuresEqualDamagedPlayerArtifacts, _ =>
+      leadInSentence ab "Whenever this creature deals combat damage to a player"
+    | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
+    "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+    | .eachUpkeep, some (.createTokens k n), _ =>
+    s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n}."
+    | .eachOpponentDrawStep, some (.draw 1), _ =>
+    "At the beginning of each opponent's draw step, you draw a card."
+    | .youGainLife, some .loyaltyOnSource, _ =>
+    "Whenever you gain life, put a loyalty counter on Ajani."
+    | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
+    "Whenever an opponent draws their second card each turn, you create a Treasure token."
+    | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>
+      leadInSentence ab
+        s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn"
+    | .anotherCreatureYouControlEnters, some .allianceMode, _ =>
+      leadInSentence ab "Alliance — Whenever another creature you control enters"
+    | .enter, some .destroyOtherAmassControllerPower, _ =>
+    "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some "Dwarf", .. } =>
+      leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
+    | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
+    "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
+    | .enter, some .returnCreatureFromGyToHand, _ =>
+    "When this enchantment enters, return target creature card from your graveyard to your hand."
+    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some "Dwarf", .. } =>
+    "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
+    | .attack, some .castFromGyArtifactInstantSorcery, _ =>
+      leadInSentence ab "Whenever Bilbo attacks"
+    | .enter, some (.createAxe true), _ =>
+      leadInSentence ab "When Dáin enters"
+    | .attack, some .equippedAttackersGainDoubleStrike, _ =>
+      leadInSentence ab "Whenever Dáin attacks"
+    | .enter, some .tapEnchantedRemoveCounters, _ =>
+      leadInSentence ab "When this Aura enters"
+    | .dies, some (.revealTopPutRandomCreature _), _ =>
+      leadInSentence ab "When this artifact is put into a graveyard from the battlefield"
+    | .yourBeginCombat, some .beginCombatIfDrawnTwoPump, _ =>
+    "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
+    | .enter, some .honePerOppAttach, _ =>
+    "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
+    | .enter, some .copySelfNonlegendary, _ =>
+      leadInSentence ab "When The Notary Hobbits enter"
+    | .enter, some .attachEquipmentThenFight, _ =>
+      leadInSentence ab "When Thorin enters"
+    | .anotherCreatureYouControlEnters, _, { thisOrAnotherSubtype := some "Elf", anotherLegendary := true, .. } =>
+    "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
+    | .dies, some .returnAsArtifact, _ =>
+      leadInSentence ab "When Tom, Bert, and William die"
+    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
+    "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
+    | .enter, some .exileLandsThenReturnTapped, _ =>
+      leadInSentence ab "When Gandalf enters"
+    | .combatDamageToPlayer, some .grimaImpulse, _ =>
+      leadInSentence ab "Whenever Gríma deals combat damage to a player"
+    | .yourEndStep, some .palantir, _ =>
+    "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
+    | .sourceDealtNoncombatDamage, some .treasuresEqualLastKnown, _ =>
+      leadInSentence ab "Whenever Smaug is dealt noncombat damage"
+    | .enter, some .protectionEverything, _ =>
+      leadInSentence ab "When The One Ring enters"
+    | .yourUpkeep, some .loseLifePerBurden, _ =>
+    "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
+    | .landYouControlEnters, some .payReturnFromGy, _ =>
+      leadInSentence ab "Landfall — Whenever a land you control enters"
+    | .youPutCountersOnGoblinOrcArmy, some (.damageTargetOpponent 2), _ =>
+    "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
+    | .enter, some (.connive .source), _ =>
+      leadInSentence ab "When this creature enters"
+    | .eachEndStep, some (.drawIfAttackedOrEnteredSubtype subtype), _ =>
+    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
+    s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
+    | .attack, some (.othersOfSubtypeGetEqualSourceToughness subtype), _ =>
+    s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
+    | (.youCastColorFromHand color), some (.connive .source), _ =>
+    s!"Whenever you cast a {color} spell from your hand, this connives."
+    | .sourceDealtDamage, some (.onSource (.plusOne 1)), _ =>
+    "Whenever this is dealt damage, put a +1/+1 counter on it."
+    | .enter, some (.attachTo .creatureYouControl), _ =>
+      leadInSentence ab "When this Equipment enters"
+    | .enter, some (.surveil n), _ =>
+    s!"When this permanent enters, surveil {n}."
+    | .enter, some (.onEnchanted _), _ =>
+      leadInSentence ab "When this Aura enters"
+    | .enter, some (.attachThen _), _ =>
+      leadInSentence ab "When this Equipment enters"
+    | .enter, some .exileOtherCopyEnchanted, _ =>
+      leadInSentence ab "When this Aura enters"
+    | .enter, some .exileUntilNextEndStep, _ =>
+      leadInSentence ab "When this Vehicle enters"
+    | .enter, some .tapOrUntapNonland, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .createFoodOrTreasure, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .villainIfGyElseMill, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .drawMayPutLandTapped, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .drawGainLifeIfAnotherHero, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .plusOneOrTwoIfAnotherHero, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some .maySacArtifactOrDiscardDraw, _ =>
+      leadInSentence ab "When this creature enters"
+    | .enter, some (.exileUntilLeaves .oppTappedCreature), _ =>
+    "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
+    | .enter, some (.opponentDiscards n .target), _ =>
+    let cards := if n == 2 then "two cards" else cardPhrase n
+    s!"When this enchantment enters, target opponent discards {cards}."
+    | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
+    s!"When this permanent enters, it deals {n} damage to up to one target creature."
+    | _, some (.step e), _ => stepSentence e
+    | _, some (.death e), _ => deathSentence e
+    | _, some (.thisAttack e), _ => thisAttackSentence e
+    | _, some (.enterOrAttack e), _ => enterOrAttackSentence e
+    | _, some (.watch e), _ => watchSentence e
+    | _, some (.youAttacking e), _ => youAttackingSentence e
+    | _, some (.casting e), _ => castingSentence e
+    | _, some (.resource e), _ => resourceSentence e
+
+    | _, _, _ =>
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then
       "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
@@ -2332,7 +2206,7 @@ def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
     (once := false) (cond : FraCondition := .none) : TriggeredAbility :=
   .triggered w { targeting := .of kind, resolution := r, phrase := printed
                  allowsZeroTargets, maxTargets }
-    { printed, onceEachTurn := once, condition := cond, allowsZeroTargets }
+    { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
 
 end TriggeredAbility
 

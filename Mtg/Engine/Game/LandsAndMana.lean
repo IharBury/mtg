@@ -36,6 +36,10 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
         !(o.isCreature && g.activatesAsThoughHaste p) then none
     else some (o, types))
 
+/-- Permanents `p` currently controls with this subtype. -/
+def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+  (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
+
 /-- Greatest mana value among permanents `p` controls matching `pred`. -/
 def greatestManaValueAmong (g : Game) (p : PlayerId) (pred : GameObject → Bool) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>

@@ -63,12 +63,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- Photon Blast Barrage: “When you cast this spell, copy it X times.”
   let copiesSelf :=
     match spell.printed.spellEffect.map (·.resolution) with
-    | some (.sequence [.becomeCopy .sourceSpellXTimes, .dealDamage (.fixed _) .target .none]) => !spell.isCopy
+    | some (.copyThisSpellXTimesThenDamage _) => !spell.isCopy
     | _ => false
   let g :=
     if copiesSelf then
       g.putTriggeredAbilityOnStack caster spell
-        (.triggered .enter { resolution := .becomeCopy .sourceSpellXTimes
+        (.triggered .enter { resolution := .copySourceSpellXTimes
                              phrase := "When you cast this spell, copy it X times. You may choose new targets for the copies" } {})
         "cast trigger"
     else g
@@ -150,7 +150,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     (g.permanentsOf caster).foldl (fun g o =>
       if o.staticAbilities.any (fun | .extort => true | _ => false) then
         g.queueTrigger caster o
-          (.triggered .enter { resolution := .loseLife (.fixed 1) .extort
+          (.triggered .enter { resolution := .extort
                                phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" } {})
           .youCastSpell
       else g) g
@@ -237,12 +237,11 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn - 1 })
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.setObject { copy with
-        castState := { copy.castState with
-          kicked := spell.kicked
-          giftPromisedTo := spell.giftPromisedTo
-          teamworkPaid := spell.teamworkPaid
-          isCopy := true }
+        kicked := spell.kicked
+        giftPromisedTo := spell.giftPromisedTo
+        teamworkPaid := spell.teamworkPaid
         chosenX := spell.chosenX
+        isCopy := true
         adventurerCard := spell.adventurerCard }
       let g := g.putStackEntry caster copy.id
       let g :=
@@ -275,7 +274,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
       let g := g.setObject { copy with
         chosenX := spell.chosenX
-        castState := { copy.castState with isCopy := true } }
+        isCopy := true }
       let g := g.putStackEntry caster copy.id
       { g with pendingLokiCopy := none }
         |>.logMsg s!"A copy of {spell.name} is created (Loki)"
@@ -336,10 +335,9 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
         g.foldControlledPermanents q none fun g src =>
           -- Invisible Woman: one or more counters at once trigger once.
           let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
-            ab.firesOn .youPutPlusOne &&
-              match ab.effect.resolution with
-              | .may (.createTokens .wall04defender ..) .. => true
-              | _ => false)
+            match ab.shared with
+            | .resource .plusOneOnHeroesCreateWall => true
+            | _ => false)
           if oncePerBatch && g.waitingTriggers.any (fun w =>
               w.source.id == src.id && w.event == .youPutPlusOne) then g
           else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
@@ -379,27 +377,30 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
     else g
   | _, _ => g
 
-/-- Put counters from `o.printed.entersWithCounters` on `o` as it enters (CR 614.1c). -/
-def enterWithPrintedCounters (g : Game) (o : GameObject) : Game :=
-  match o.printed.entersWithCounters with
-  | none => g
-  | some (kind, amount) =>
-    let base? : Option Nat :=
-      match amount with
-      | .fixed n => if n > 0 then some n.toNat else none
-      | .count .creature => o.controller.map g.countCreaturesControlledBy
-      | _ => none
-    match base? with
-    | none => g
-    | some base =>
-      let n := g.extraCountersOn o.controller base
-      let n := if kind == .plusOnePlusOne then g.extraPlusOneOnCreature o n else n
-      let g := g.setObject { o with status := o.status.addCounters kind n }
-      let msg :=
-        match kind with
-        | .indestructible => s!"{o.name} enters with an indestructible counter"
-        | _ => s!"{o.name} enters with {n} {kind.oracleName} counter(s)"
-      g.logMsg msg
+/-- “This creature enters with N +1/+1 counters on it.” -/
+def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
+  let base := o.printed.entersWithPlusOneCounters
+  if base == 0 then g
+  else
+    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller base)
+    let g := g.setObject { o with status := o.status.addPlusOnePlusOne n }
+    g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
+
+def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
+  if o.printed.entersWithIndestructibleCounter then
+    let n := g.extraCountersOn o.controller 1
+    let g := g.setObject { o with status :=
+      { o.status with indestructibleCounters := o.status.indestructibleCounters + n } }
+    g.logMsg s!"{o.name} enters with an indestructible counter"
+  else g
+
+def enterWithShield (g : Game) (o : GameObject) : Game :=
+  let base := o.printed.entersWithShield
+  if base == 0 then g
+  else
+    let n := g.extraCountersOn o.controller base
+    let g := g.setObject { o with status := { o.status with shield := o.status.shield + n } }
+    g.logMsg s!"{o.name} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if o.staticAbilities.any (fun
@@ -413,19 +414,32 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
       g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g
 
+def enterWithHope (g : Game) (o : GameObject) : Game :=
+  if o.printed.entersWithHopePerCreature then
+    match o.controller with
+    | some p =>
+      let n := g.extraCountersOn (some p) (g.countCreaturesControlledBy p)
+      let g := g.setObject { o with status := { o.status with hope := n } }
+      g.logMsg s!"{o.name} enters with {n} hope counter(s)"
+    | none => g
+  else g
+
 /-- Counters and statuses a permanent enters with (CR 614.1c / 614.12):
-loyalty, printed counters (+1/+1, indestructible, shield, hope, etc.),
-X +1/+1, and prepared. These replacement effects apply even when entering
-causes no triggers (ruling 890). -/
+loyalty, +1/+1, indestructible, shield, X +1/+1, prepared, and hope. These
+replacement effects apply even when entering causes no triggers (ruling
+890). -/
 def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let id := o.id
   let g := g.enterWithLoyalty (g.object! id)
-  let g := g.enterWithPrintedCounters (g.object! id)
+  let g := g.enterWithPlusOnes (g.object! id)
+  let g := g.enterWithIndestructibleCounter (g.object! id)
+  let g := g.enterWithShield (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
   let o := g.object! id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
   let o := g.object! id
-  if o.printed.entersPrepared then g.becomePrepared o else g
+  let g := if o.printed.entersPrepared then g.becomePrepared o else g
+  g.enterWithHope (g.object! id)
 
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
@@ -507,10 +521,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.foldControlledPermanents p none fun g src =>
           let onceForBatch :=
             src.printed.triggeredAbilities.any (fun ab =>
-              ab.firesOn .tokenYouControlEnters &&
-                match ab.effect.resolution with
-                | .may (.draw ..) .. => true
-                | _ => false)
+              match ab.shared with
+              | .watch .tokensEnterMayDraw => true
+              | _ => false)
           if onceForBatch && g.waitingTriggers.any (fun w =>
               w.source.id == src.id && w.event == .tokenYouControlEnters) then g
           else g.putMatchingSourceTriggers p src .tokenYouControlEnters

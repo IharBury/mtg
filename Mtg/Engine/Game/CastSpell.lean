@@ -145,8 +145,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
       let o := g.object! newId
-      let g := g.setObject { o with castState :=
-        { o.castState with isCopy := true, isPreparedSpell := true } }
+      let g := g.setObject { o with isCopy := true, isPreparedSpell := true }
       match g.findObject? src with
       | some perm =>
         (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
@@ -162,10 +161,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g :=
     if fromGraveyard then
       let o := g.object! newId
-      g.setObject { o with castState := { o.castState with castFromGraveyard := true } }
+      g.setObject { o with castFromGraveyard := true }
     else if original.zone == .hand original.owner then
       let o := g.object! newId
-      g.setObject { o with castState := { o.castState with castFromHand := true } }
+      g.setObject { o with castFromHand := true }
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
@@ -229,7 +228,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         let g := { g with pending := .chooseTargets p }
         return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
       return g.afterTargetsChosen
-    | _ =>
+    | .spell =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
       if !spell.printed.isModal then
         throw "That spell is not modal (CR 700.2)"
@@ -282,14 +281,10 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
   g.foldControlledPermanents p none fun g o =>
-    let isDrawIfRemovedTwo (ab : TriggeredAbility) : Bool :=
-      match ab.effect.resolution with
-      | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1) _) => true
-      | _ => false
     let waiting :=
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        !isDrawIfRemovedTwo wt.ability || removed ≥ 2)).map (fun wt =>
-        if isDrawIfRemovedTwo wt.ability then
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
+        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
           { wt with lastKnownPower := some (Int.ofNat removed) }
         else wt)
     g.enqueueWaitingTriggers waiting
@@ -345,7 +340,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         | some ab => ab.effect.requiresTarget
         | none => false
       return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
-    | _ =>
+    | .spell =>
       let spell := g.object! prop.spellId
       let face := spell.printed
       return g.enterProposalWindow p pl prop face.isModal

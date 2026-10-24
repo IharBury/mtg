@@ -9,178 +9,79 @@ effects.
 
 namespace Mtg.Engine
 
-/-- Part of an activation cost that needs the player to choose what to pay
-with, additional activation cost, or equip target restriction (CR 601.2h / 602.1 / 602.2b / 702.6). -/
-abbrev CostPick := SpellCastKind
-
-namespace CostPick
-
-/-- Chosen-object activation cost, additional activation cost, or equip restriction kind. -/
-@[match_pattern] abbrev costPickKind (subtypeOpt : Option String := Option.none) (powerOpt : Option Nat := Option.none)
-    (kindOpt : Option CounterKind := Option.none)
-    (alt1 : Bool := false) (alt2 : Bool := false)
-    (twoKind : Bool := false) (discardFlag : Bool := false)
-    (exileOrTap : Bool := false) (tapFlag : Bool := false) (subtypeSac : Bool := false) : CostPick :=
-  SpellCastKind.spellCastKind powerOpt Option.none subtypeOpt alt1 alt2 twoKind discardFlag exileOrTap tapFlag (some subtypeSac) kindOpt
-
-end CostPick
-
 /-- A loyalty symbol in an activation cost (CR 107.7 / 209.2).
 
 `[+N]` puts N loyalty counters on the source, `[-N]` removes N, and `[0]`
 puts zero. `[+X]` and `[-X]` use X in place of a fixed number (CR 107.3a). -/
-abbrev LoyaltySymbol := CostPick
+inductive LoyaltySymbol where
+  | plus (n : Nat)
+  | minus (n : Nat)
+  | zero
+  | plusX
+  | minusX
+deriving Repr, Inhabited, BEq
 
 namespace LoyaltySymbol
 
-@[match_pattern] abbrev loyaltySymbolKind (n : Nat := 0) (minus : Bool := false)
-    (variableXFlag : Bool := false) (zeroFlag : Bool := false) : LoyaltySymbol :=
-  CostPick.costPickKind Option.none (some n) Option.none minus variableXFlag zeroFlag false false false false
-@[match_pattern] abbrev fixed (n : Nat) (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind n minus false false
-@[match_pattern] abbrev zero : LoyaltySymbol := .loyaltySymbolKind 0 false false true
-@[match_pattern] abbrev variableX (minus : Bool := false) : LoyaltySymbol := .loyaltySymbolKind 0 minus true false
-@[match_pattern] abbrev plus (n : Nat) : LoyaltySymbol := .fixed n false
-@[match_pattern] abbrev minus (n : Nat) : LoyaltySymbol := .fixed n true
-@[match_pattern] abbrev plusX : LoyaltySymbol := .variableX false
-@[match_pattern] abbrev minusX : LoyaltySymbol := .variableX true
-
 /-- Rules notation: `[+N]`, `[-N]`, `[0]`, `[+X]`, or `[-X]`. -/
 def toNotation : LoyaltySymbol → String
-  | .fixed n false => s!"[+{n}]"
-  | .fixed n true => s!"[-{n}]"
+  | .plus n => s!"[+{n}]"
+  | .minus n => s!"[-{n}]"
   | .zero => "[0]"
-  | .variableX false => "[+X]"
-  | .variableX true => "[-X]"
-  | _ => "[0]"
+  | .plusX => "[+X]"
+  | .minusX => "[-X]"
 
 /-- Counters this symbol adds, or removes when negative.
 `[+X]` and `[-X]` are not a fixed number. -/
 def counters : LoyaltySymbol → Option Int
-  | .fixed n false => some (Int.ofNat n)
-  | .fixed n true => some (-Int.ofNat n)
+  | .plus n => some (Int.ofNat n)
+  | .minus n => some (-Int.ofNat n)
   | .zero => some 0
-  | _ => none
+  | .plusX | .minusX => none
 
 end LoyaltySymbol
 
-namespace CostPick
-export LoyaltySymbol (loyaltySymbolKind fixed zero variableX plus minus plusX minusX)
+/-- Reality Fracture activation costs (CR 602.1 / 118). -/
+inductive FraCost where
+  | none
+  /-- Exile another creature card from your graveyard. -/
+  | exileAnotherCreatureCardFromGraveyard
+  /-- Sacrifice another artifact. -/
+  | sacrificeAnotherArtifact
+  /-- Sacrifice another creature or planeswalker. -/
+  | sacrificeAnotherCreatureOrPlaneswalker
+  /-- Sacrifice an artifact or land. -/
+  | sacrificeArtifactOrLand
+  /-- Discard a legendary card. -/
+  | discardLegendaryCard
+  /-- Tap two untapped artifacts you control. -/
+  | tapTwoUntappedArtifacts
+  /-- Exile this card from your hand. -/
+  | exileSourceFromHand
+  /-- Exile this permanent. -/
+  | exileSource
+  /-- Crew N: tap any number of untapped creatures you control with total
+  power N or more (CR 702.122). -/
+  | crew (power : Nat)
+  /-- Boast cost of Baron Helmut Zemo: exile any number of black cards from
+  your graveyard with fifteen or more black mana symbols among their mana
+  costs. -/
+  | zemoBoast
+deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- Sacrifice another permanent of this subtype, or another creature when
-the subtype is `Creature`. -/
-@[match_pattern] abbrev sacrificeAnotherSubtype (subtype : String) : CostPick :=
-  costPickKind (some subtype) Option.none Option.none false false false false false false true
-@[match_pattern] abbrev sacrificeArtifactChoice (legendary : Bool := false) (anotherOrEquip : Bool := false) : CostPick :=
-  costPickKind Option.none Option.none Option.none legendary anotherOrEquip false false false false false
-@[match_pattern] abbrev sacrificeTwoKindChoice (anotherCreatureOrPw : Bool := false) (landOrDiscard : Bool := false) : CostPick :=
-  costPickKind Option.none Option.none Option.none anotherCreatureOrPw landOrDiscard true false false false false
-@[match_pattern] abbrev discardChoice (nonland : Bool := false) (legendary : Bool := false) : CostPick :=
-  costPickKind Option.none Option.none Option.none nonland legendary false true false false false
-@[match_pattern] abbrev exileAnotherCreatureCardFromGraveyard : CostPick :=
-  costPickKind Option.none Option.none Option.none false false false false true false false
-@[match_pattern] abbrev tapChoice (twoArtifacts : Bool := false) : CostPick :=
-  costPickKind Option.none Option.none Option.none twoArtifacts false false false false true false
-@[match_pattern] abbrev sacrificeArtifact : CostPick := .sacrificeArtifactChoice false false
-@[match_pattern] abbrev sacrificeLegendaryArtifact : CostPick := .sacrificeArtifactChoice true false
-@[match_pattern] abbrev sacrificeAnotherArtifact : CostPick := .sacrificeArtifactChoice false true
-@[match_pattern] abbrev sacrificeEquipmentAttachedToSource : CostPick := .sacrificeArtifactChoice true true
-@[match_pattern] abbrev sacrificeArtifactOrCreature : CostPick := .sacrificeTwoKindChoice false false
-@[match_pattern] abbrev sacrificeAnotherCreatureOrPlaneswalker : CostPick := .sacrificeTwoKindChoice true false
-@[match_pattern] abbrev sacrificeArtifactOrLand : CostPick := .sacrificeTwoKindChoice false true
-@[match_pattern] abbrev sacrificeArtifactOrDiscardNonland : CostPick := .sacrificeTwoKindChoice true true
-@[match_pattern] abbrev discardACard : CostPick := .discardChoice false false
-@[match_pattern] abbrev discardNonland : CostPick := .discardChoice true false
-@[match_pattern] abbrev discardLegendaryCard : CostPick := .discardChoice false true
-@[match_pattern] abbrev discardLegendarySameName : CostPick := .discardChoice true true
-@[match_pattern] abbrev tapUntappedCreature : CostPick := .tapChoice false
-@[match_pattern] abbrev tapTwoUntappedArtifacts : CostPick := .tapChoice true
+/-- A Reality Fracture “Activate only if …” condition. -/
+inductive FraActivationCondition where
+  | none
+  /-- “Activate only if you've scried or surveilled this turn.” -/
+  | scriedOrSurveilledThisTurn
+  /-- “Activate only if there are `n` or more cards in your graveyard.” -/
+  | graveyardAtLeast (n : Nat)
+  /-- “Activate only if there are `n` or more loyalty counters among Jaces you
+  control.” -/
+  | jaceLoyaltyAtLeast (n : Nat)
+deriving Repr, Inhabited, BEq, DecidableEq
 
-end CostPick
-
-/-- How many objects `pick` takes. -/
-def CostPick.count : CostPick → Nat
-  | .tapTwoUntappedArtifacts => 2
-  | _ => 1
-
-/-- The cost phrase of `pick`, for prompts and logs. -/
-def CostPick.phrase : CostPick → String
-  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
-  | .sacrificeArtifact => "sacrifice an artifact"
-  | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
-  | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
-  | .sacrificeAnotherArtifact => "sacrifice another artifact"
-  | .sacrificeAnotherCreatureOrPlaneswalker => "sacrifice another creature or planeswalker"
-  | .sacrificeArtifactOrLand => "sacrifice an artifact or land"
-  | .sacrificeEquipmentAttachedToSource => "sacrifice an Equipment attached to the source"
-  | .sacrificeArtifactOrDiscardNonland => "sacrifice an artifact or discard a nonland card"
-  | .discardACard => "discard a card"
-  | .discardNonland => "discard a nonland card"
-  | .discardLegendaryCard => "discard a legendary card"
-  | .discardLegendarySameName =>
-    "discard a legendary card with the same name as a legendary permanent you control"
-  | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
-  | .tapUntappedCreature => "tap an untapped creature you control"
-  | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
-  | _ => ""
-
-/-- Additional non-mana activation costs (CR 602.1 / 118). -/
-abbrev ExtraActivationCost := CostPick
-
-namespace ExtraActivationCost
-
-@[match_pattern] abbrev extraCostKind (powerOpt : Option Nat := Option.none) (kindOpt : Option CounterKind := Option.none)
-    (alt1 : Bool := false) (alt2 : Bool := false)
-    (exileOrSac : Bool := false) (counterMod : Bool := false) (zemo : Bool := false)
-    (removeKind : Bool := false) (crewFlag : Bool := false) : ExtraActivationCost :=
-  CostPick.costPickKind Option.none powerOpt kindOpt alt1 alt2 exileOrSac counterMod zemo removeKind crewFlag
-
-/-- Remove a counter of `kind` from the source. -/
-@[match_pattern] abbrev removeCounter (kind : CounterKind) : ExtraActivationCost :=
-  .extraCostKind Option.none (some kind) false false false false false true false
-/-- Crew N: tap any number of untapped creatures you control with total
-power N or more (CR 702.122). -/
-@[match_pattern] abbrev crew (power : Nat) : ExtraActivationCost :=
-  .extraCostKind (some power) Option.none false false false false false false true
-@[match_pattern] abbrev none : ExtraActivationCost := .extraCostKind Option.none Option.none false false false false false false false
-@[match_pattern] abbrev exileOrSacrificeCost (fromHand : Bool := false) (battlefield : Bool := false) : ExtraActivationCost :=
-  .extraCostKind Option.none Option.none fromHand battlefield true false false false false
-@[match_pattern] abbrev counterModCost (putStun : Bool := false) : ExtraActivationCost :=
-  .extraCostKind Option.none Option.none putStun false false true false false false
-@[match_pattern] abbrev zemoBoast : ExtraActivationCost := .extraCostKind Option.none Option.none false false false false true false false
-@[match_pattern] abbrev exileSourceFromGraveyard : ExtraActivationCost := .exileOrSacrificeCost false false
-@[match_pattern] abbrev exileSourceFromHand : ExtraActivationCost := .exileOrSacrificeCost true false
-@[match_pattern] abbrev exileSource : ExtraActivationCost := .exileOrSacrificeCost false true
-@[match_pattern] abbrev sacrificeAnotherCreatureOrArtifact : ExtraActivationCost := .exileOrSacrificeCost true true
-@[match_pattern] abbrev removeAnyNumberPlusOne : ExtraActivationCost := .counterModCost false
-@[match_pattern] abbrev putStunCounterOnSource : ExtraActivationCost := .counterModCost true
-
-end ExtraActivationCost
-
-abbrev FraCost := ExtraActivationCost
-
-/-- An “Activate only if …” restriction on an activated ability (CR 602.5b),
-represented by the unified `ConditionSelector`. -/
-abbrev ActivationCondition := ConditionSelector
-
-abbrev FraActivationCondition := ConditionSelector
-
-/-- Cost reduction on an activated ability (CR 602.2b / 601.2f), represented by
-the unified `CostReduction`. -/
-abbrev ActivationCostReduction := CostReduction
-
-/-- Target quality restriction on an equip ability (CR 702.6). -/
-abbrev EquipRestriction := CostPick
-
-namespace EquipRestriction
-@[match_pattern] abbrev equipRestrictionKind (sOpt : Option String := Option.none) (subtypeFlag : Bool := false) (worthyFlag : Bool := false) : EquipRestriction :=
-  CostPick.costPickKind sOpt Option.none Option.none subtypeFlag worthyFlag false false false false false
-@[match_pattern] abbrev none : EquipRestriction := .equipRestrictionKind Option.none false false
-@[match_pattern] abbrev subtype (s : String) : EquipRestriction := .equipRestrictionKind (some s) true false
-@[match_pattern] abbrev worthy : EquipRestriction := .equipRestrictionKind Option.none false true
-end EquipRestriction
-
-/-- Costs of an activated ability besides announcements (CR 602.1), or one
-printed Saga chapter line (`SagaChapter`, CR 714). -/
+/-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
@@ -188,77 +89,49 @@ structure ActivationCost where
   ability exactly when this is set. -/
   loyalty : Option LoyaltySymbol := none
   sacrificeSource : Bool := false
+  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
+  sacrificeAnotherCreatureOrArtifact : Bool := false
   /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
   payLife : Nat := 0
   /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
   discardSource : Bool := false
-  /-- Chosen-object costs (sacrificing, discarding, tapping, or exiling chosen objects). -/
-  picks : Array CostPick := #[]
-  /-- Additional activation cost (CR 602.1). -/
-  extra : ExtraActivationCost := .none
-  roman : String := ""
-  effect : String := ""
-  /-- Chapter numbers this line triggers on. Empty means parse `roman`. -/
-  numbers : Array Nat := #[]
-  /-- Structured resolution. `none` is reminder-only (tests). -/
-  chapterEffect : Option Effect := none
+  /-- Exile this card from your graveyard. -/
+  exileSourceFromGraveyard : Bool := false
+  /-- Sacrifice another permanent you control of this subtype. -/
+  sacrificeAnotherSubtype : Option String := none
+  /-- Discard a card (not necessarily this card). -/
+  discardACard : Bool := false
+  /-- Tap an untapped creature you control. -/
+  tapAnUntappedCreatureYouControl : Bool := false
+  /-- Remove an indestructible counter from the source (Arwen). -/
+  removeIndestructibleCounter : Bool := false
+  /-- Sacrifice a legendary artifact you control (Mount Doom). -/
+  sacrificeLegendaryArtifact : Bool := false
+  /-- Discard a legendary card with the same name as a legendary you control. -/
+  discardLegendarySameName : Bool := false
+  /-- Sacrifice an artifact you control (Stone-Giant). -/
+  sacrificeArtifact : Bool := false
+  /-- Sacrifice an artifact or creature you control. -/
+  sacrificeArtifactOrCreature : Bool := false
+  /-- Sacrifice an artifact or discard a nonland card. -/
+  sacrificeArtifactOrDiscardNonland : Bool := false
+  /-- Remove any number of +1/+1 counters from the source. -/
+  removeAnyNumberPlusOne : Bool := false
+  /-- Put a stun counter on the source. -/
+  putStunCounterOnSource : Bool := false
+  /-- Sacrifice an Equipment attached to the source. -/
+  sacrificeEquipmentAttachedToSource : Bool := false
+  /-- A Reality Fracture cost. -/
+  fra : FraCost := .none
+  /-- Remove a story counter from the source. -/
+  removeStoryCounter : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
 
-def fra (c : ActivationCost) : ExtraActivationCost :=
-  c.extra
-
-def exileSourceFromGraveyard (c : ActivationCost) : Bool :=
-  c.extra == .exileSourceFromGraveyard
-
-def sacrificeAnotherCreatureOrArtifact (c : ActivationCost) : Bool :=
-  c.extra == .sacrificeAnotherCreatureOrArtifact
-
-def removeIndestructibleCounter (c : ActivationCost) : Bool :=
-  c.extra == .removeCounter .indestructible
-
-def removeAnyNumberPlusOne (c : ActivationCost) : Bool :=
-  c.extra == .removeAnyNumberPlusOne
-
-def putStunCounterOnSource (c : ActivationCost) : Bool :=
-  c.extra == .putStunCounterOnSource
-
-def removeStoryCounter (c : ActivationCost) : Bool :=
-  c.extra == .removeCounter .story
-
 /-- True when this cost contains a loyalty symbol (CR 209.2). -/
 def isLoyalty (c : ActivationCost) : Bool :=
   c.loyalty.isSome
-
-def discardACard (c : ActivationCost) : Bool :=
-  c.picks.contains .discardACard
-
-def discardLegendarySameName (c : ActivationCost) : Bool :=
-  c.picks.contains .discardLegendarySameName
-
-def sacrificeLegendaryArtifact (c : ActivationCost) : Bool :=
-  c.picks.contains .sacrificeLegendaryArtifact
-
-def sacrificeArtifact (c : ActivationCost) : Bool :=
-  c.picks.contains .sacrificeArtifact
-
-def sacrificeArtifactOrCreature (c : ActivationCost) : Bool :=
-  c.picks.contains .sacrificeArtifactOrCreature
-
-def sacrificeArtifactOrDiscardNonland (c : ActivationCost) : Bool :=
-  c.picks.contains .sacrificeArtifactOrDiscardNonland
-
-def sacrificeEquipmentAttachedToSource (c : ActivationCost) : Bool :=
-  c.picks.contains .sacrificeEquipmentAttachedToSource
-
-def tapAnUntappedCreatureYouControl (c : ActivationCost) : Bool :=
-  c.picks.contains .tapUntappedCreature
-
-def sacrificeAnotherSubtype (c : ActivationCost) : Option String :=
-  c.picks.findSome? fun
-    | .sacrificeAnotherSubtype t => some t
-    | _ => none
 
 def toNotation (c : ActivationCost) : String :=
   let parts : List String :=
@@ -310,18 +183,25 @@ instance : ToString ActivationCost where
 
 end ActivationCost
 
-/-- An activated ability printed on a card (CR 602.1), or timing, zone, condition,
-and frequency restrictions on an activated ability (`ActivationRestrictions`,
-CR 602.5 / 117.1a / 112.6 / 702.6 / 702.177 / 702.193). Mana abilities that
+/-- An activated ability printed on a card (CR 602.1). Mana abilities that
 are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
 `CardDef.tapAddManaForEach` / basic land types. -/
 structure ActivatedAbility where
+  cost : ActivationCost
+  /-- The ability's printed line, when its wording isn't built from the cost
+  and effect (Reality Fracture). -/
+  printed : String := ""
   /-- Exhaust: activate this ability only once (CR 702.177). -/
   exhaust : Bool := false
-  /-- An “Activate only if …” restriction (CR 602.5b). -/
-  condition : ActivationCondition := .none
-  /-- Cost reduction on this activated ability (CR 602.2b / 601.2f). -/
-  costReduction : ActivationCostReduction := .none
+  /-- A Reality Fracture “Activate only if …” condition. -/
+  fraCondition : FraActivationCondition := .none
+  /-- Equip that costs {1} less for each +1/+1 counter on the target creature. -/
+  costLessPerPlusOneOnTarget : Bool := false
+  /-- First (or only) mode of this ability. -/
+  effect : Effect
+  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
+  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
+  otherModes : Array Effect := #[]
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
   /-- Timing restriction “Activate only during your turn”. -/
@@ -334,82 +214,41 @@ structure ActivatedAbility where
   /-- This ability can be activated only while the source is in your hand
   (CR 112.6 / 702.29, e.g. cycling). -/
   activateFromHand : Bool := false
-  /-- Target quality restriction on an equip ability (CR 702.6). -/
-  equipRestriction : EquipRestriction := .none
+  /-- Timing restriction “Activate only if you control a legendary creature”. -/
+  onlyIfYouControlLegendary : Bool := false
+  /-- This ability costs this much generic mana less if you control a legendary
+  creature (e.g. Esquire of the King). -/
+  costReductionIfYouControlLegendary : Nat := 0
+  /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
+  equipSubtype : Option String := none
+  /-- This ability costs this much generic mana less for each Equipment you
+  control. -/
+  costReductionPerEquipment : Nat := 0
+  /-- “Activate only if you attacked with two or more creatures this turn.” -/
+  onlyIfYouAttackedWithTwoOrMore : Bool := false
+  /-- “Activate only if an opponent has been dealt noncombat damage this turn.” -/
+  onlyIfOpponentDealtNoncombatDamage : Bool := false
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
-  cost : ActivationCost := {}
-  /-- The ability's printed line, when its wording isn't built from the cost
-  and effect (Reality Fracture). -/
-  printed : String := ""
-  /-- First (or only) mode of this ability. -/
-  effect : Effect := default
-  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
-  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
-  otherModes : Array Effect := #[]
+  /-- Equip worthy: attach only to a legendary non-Villain red or white
+  creature (MSH 118 / 119). Other attach effects ignore this. -/
+  equipWorthy : Bool := false
+  /-- “Activate only if you control a creature with toughness `n` or greater.” -/
+  onlyIfYouControlCreatureToughnessAtLeast : Nat := 0
+  /-- “Activate only if there are `n` or more creature cards in your graveyard.” -/
+  onlyIfGyCreaturesAtLeast : Nat := 0
+  /-- This ability costs this much generic mana less if it targets a creature
+  with power at most this value. -/
+  costReductionIfTargetPowerAtMost : Option (Nat × Int) := none
 deriving Repr, Inhabited, BEq
-
-abbrev ActivationRestrictions := ActivatedAbility
-
-/-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
-def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
-  ab.cost.picks
 
 namespace ActivatedAbility
 
-def fraCondition (ab : ActivatedAbility) : ActivationCondition :=
-  ab.condition
-
-def onlyIfYouControlLegendary (ab : ActivatedAbility) : Bool :=
-  ab.condition == .youControlLegendary
-
-def onlyIfYouAttackedWithTwoOrMore (ab : ActivatedAbility) : Bool :=
-  ab.condition == .youAttackedWithTwoOrMore
-
-def onlyIfOpponentDealtNoncombatDamage (ab : ActivatedAbility) : Bool :=
-  ab.condition == .opponentDealtNoncombatDamage
-
-def onlyIfYouControlCreatureToughnessAtLeast (ab : ActivatedAbility) : Nat :=
-  match ab.condition with
-  | .youControlCreatureToughnessAtLeast n => n
-  | _ => 0
-
-def onlyIfGyCreaturesAtLeast (ab : ActivatedAbility) : Nat :=
-  match ab.condition with
-  | .gyCreaturesAtLeast n => n
-  | _ => 0
-
-def costLessPerPlusOneOnTarget (ab : ActivatedAbility) : Bool :=
-  ab.costReduction == .perPlusOneOnTarget
-
-def costReductionIfYouControlLegendary (ab : ActivatedAbility) : Nat :=
-  match ab.costReduction with
-  | .ifYouControlLegendary n => n
-  | _ => 0
-
-def costReductionPerEquipment (ab : ActivatedAbility) : Nat :=
-  match ab.costReduction with
-  | .perEquipment n => n
-  | _ => 0
-
-def costReductionIfTargetPowerAtMost (ab : ActivatedAbility) : Option (Nat × Int) :=
-  match ab.costReduction with
-  | .ifTargetPowerAtMost n p => some (n, p)
-  | _ => none
-
-def equipSubtype (ab : ActivatedAbility) : Option String :=
-  match ab.equipRestriction with
-  | .subtype s => some s
-  | _ => none
-
-def equipWorthy (ab : ActivatedAbility) : Bool :=
-  ab.equipRestriction == .worthy
-
 /-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
 def crewAbility (n : Nat) : ActivatedAbility :=
-  { cost := { extra := .crew n }, printed := s!"Crew {n}"
-    effect := { resolution := .grant .artifactCreatureVehicle .source
+  { cost := { fra := .crew n }, printed := s!"Crew {n}"
+    effect := { resolution := .becomeArtifactCreatureUntilEot
                 phrase := "This Vehicle becomes an artifact creature until end of turn" } }
 
 /-- An equip ability (CR 702.6): attach to target creature you control,
@@ -420,9 +259,9 @@ def isEquip (ab : ActivatedAbility) : Bool :=
 /-- Baron Helmut Zemo's boast ability (activate only if it attacked this turn
 and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
-  { cost := { extra := .zemoBoast }
+  { cost := { fra := .zemoBoast }
     printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
-    effect := { resolution := .mayCast .boastExiled .unlimited .withoutPaying
+    effect := { resolution := .zemoBoastCopies
                 phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs" } }
 
 /-- Every mode of this ability; a non-modal ability is a singleton. -/

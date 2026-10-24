@@ -55,34 +55,34 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
   .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
 
-#guard Effect.resourcePlusOneCreateInsectOnce.onceEachTurn
-#guard Effect.resourcePlusOneOnThisOnce.onceEachTurn
-#guard Effect.resourceGainLifePlusOnes.allowsZeroTargets
-#guard Effect.resourceDrawIfAnotherHeroDamage.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).allowsZeroTargets
+#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).targeting.kind ==
   .opponent
-#guard Effect.resourceSecondDrawPlusOneTarget.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).targeting.kind ==
   .creature
-#guard Effect.resourceGainLifePlusOnes.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).targeting.kind ==
   .creatureYouControl
 
 #guard toString (resource Effect.resourceDiscardExilePlay) ==
-  Effect.resourceDiscardExilePlay.phrase
+  TriggeredAbility.resourceSentence .discardExilePlay
 #guard toString (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  Effect.resourceDrawIfAnotherHeroDamage.phrase
+  TriggeredAbility.resourceSentence .drawIfAnotherHeroDamage
 #guard toString (resource Effect.resourceSecondDrawBecome66) ==
-  Effect.resourceSecondDrawBecome66.phrase
+  TriggeredAbility.resourceSentence .secondDrawBecome66
 #guard toString (resource Effect.resourceSecondDrawPlusOneTarget) ==
-  Effect.resourceSecondDrawPlusOneTarget.phrase
+  TriggeredAbility.resourceSentence .secondDrawPlusOneTarget
 #guard toString (resource Effect.resourceSecondDrawDrain) ==
-  Effect.resourceSecondDrawDrain.phrase
+  TriggeredAbility.resourceSentence .secondDrawDrain
 #guard toString (resource Effect.resourceGainLifePlusOnes) ==
-  Effect.resourceGainLifePlusOnes.phrase
+  TriggeredAbility.resourceSentence .gainLifePlusOnes
 #guard toString (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  Effect.resourcePlusOneCreateInsectOnce.phrase
+  TriggeredAbility.resourceSentence .plusOneCreateInsectOnce
 #guard toString (resource Effect.resourcePlusOneOnThisOnce) ==
-  Effect.resourcePlusOneOnThisOnce.phrase
+  TriggeredAbility.resourceSentence .plusOneOnThisOnce
 #guard toString (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  Effect.resourcePlusOneOnHeroesCreateWall.phrase
+  TriggeredAbility.resourceSentence .plusOneOnHeroesCreateWall
 
 /- Moonstone may exile the discarded card. Declining leaves it in the graveyard. -/
 def moonstoneBoard : Game :=

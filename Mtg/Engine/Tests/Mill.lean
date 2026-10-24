@@ -86,10 +86,10 @@ def playerMill : TriggeredAbility := .onDrawSecondMillPlayer 1
 #guard
   let marked := putInGraveyard afterDraw relic caster
   let old := (marked.player caster).graveyard.back!
-  let base := putOnLibrary (putOnLibrary marked elf caster) bolt caster
-  let g0 := { base with thisWay := { base.thisWay with
+  let g0 := {
+    putOnLibrary (putOnLibrary marked elf caster) bolt caster with
     milledIdsThisWay := #[old]
-    opponentsMilledThisWay := true } }
+    opponentsMilledThisWay := true }
   let g := step g0 (.mill (.fixed 2))
   inGraveyard g caster "Mill Bolt" && inGraveyard g caster "Mill Elf" &&
     libSize g caster == libSize g0 caster - 2 &&
@@ -209,10 +209,10 @@ graveyard this way. An empty or short library still records what was milled. -/
 #guard
   let marked := putInGraveyard afterDraw relic caster
   let old := (marked.player caster).graveyard.back!
-  let base := putOnLibrary (putOnLibrary marked plot caster) elf caster
-  let g0 := { base with thisWay := { base.thisWay with
+  let g0 := {
+    putOnLibrary (putOnLibrary marked plot caster) elf caster with
     milledIdsThisWay := #[old]
-    opponentsMilledThisWay := true } }
+    opponentsMilledThisWay := true }
   let g := step g0 (.mill (.fixed 2) (note := .milledCards))
   noted g "Mill Elf" && noted g "Mill Plot" && !noted g "Mill Relic" &&
     g.milledIdsThisWay.size == 2 && g.opponentsMilledThisWay &&
@@ -225,8 +225,7 @@ graveyard this way. An empty or short library still records what was milled. -/
     logContains g "mills nothing (empty library)"
 
 #guard
-  let base := onlyLibrary afterDraw caster []
-  let g0 := { base with thisWay := { base.thisWay with milledIdsThisWay := #[⟨0⟩] } }
+  let g0 := { onlyLibrary afterDraw caster [] with milledIdsThisWay := #[⟨0⟩] }
   let g := step g0 (.mill (.fixed 2) (note := .milledCards))
   g.milledIdsThisWay.isEmpty &&
     logContains g "mills nothing (empty library)"
@@ -259,10 +258,10 @@ A lost opponent is not milled. The controller's earlier note stays. -/
 #guard
   let marked := putInGraveyard afterDraw relic caster
   let old := (marked.player caster).graveyard.back!
-  let base := onlyLibrary marked opp [plot, bolt]
-  let g0 := { base with thisWay := { base.thisWay with
+  let g0 := {
+    onlyLibrary marked opp [plot, bolt] with
     milledIdsThisWay := #[old]
-    opponentsMilledThisWay := false } }
+    opponentsMilledThisWay := false }
   let g := step g0 (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled))
   inGraveyard g opp "Mill Bolt" && inGraveyard g opp "Mill Plot" &&
     libSize g caster == libSize g0 caster &&
@@ -310,10 +309,10 @@ ability and clears the note. -/
 
 /- A count, a player, and a note are read together. -/
 #guard
-  let base := putOnLibrary (putOnLibrary afterDraw elf caster) bolt opp
-  let g0 := { base with thisWay := { base.thisWay with
+  let g0 := {
+    putOnLibrary (putOnLibrary afterDraw elf caster) bolt opp with
     milledIdsThisWay := #[⟨1⟩]
-    opponentsMilledThisWay := true } }
+    opponentsMilledThisWay := true }
   let run (r : TriggeredAbility.TriggerResolution) : Game :=
     step g0 r #[Target.player opp]
       (lastKnownPower := some 2) (lastKnownToughness := some 1)

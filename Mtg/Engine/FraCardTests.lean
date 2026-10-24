@@ -458,7 +458,7 @@ to it. -/
   let g := addToLibraryTop afterDraw grizzlyBears me
   let g := passBoth (castFra g somethingWorthSaving)
   match g.pending with
-  | .fraChoice _ (.mayTakeMilled ids 1) =>
+  | .fraChoice _ (.mayPutMilledPermanent ids 1) =>
     let bears := ids.find? (fun id => (g.object! id).name == "Grizzly Bears")
     let g := mustApply g me (.choosePermanents #[bears.get!])
     inHand g me "Grizzly Bears" && life g me == 21

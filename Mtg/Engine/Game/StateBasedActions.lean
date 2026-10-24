@@ -151,9 +151,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               some (o, s!"{o.name} dies from deathtouch")
             else none)
       if !victims.isEmpty then
-        g := { g with batchMove := { g.batchMove with
+        g := { g with
           lockedDeathReplacements := some snap
-          suppressOthersDie := true } }
+          suppressOthersDie := true }
         -- CR 614.6: a replaced death never happens, so only creatures that
         -- will actually go to a graveyard cause “die” triggers. A Bee that
         -- dies at the same time as another creature that *does* die still
@@ -188,7 +188,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                       !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
                     g := { g with waitingTriggers := g.waitingTriggers ++ wts }
                 | none => pure ()
-            g := { g with batchMove := { g.batchMove with suppressCreatureCardsToGy := true } }
+            g := { g with suppressCreatureCardsToGy := true }
       for pair in victims do
         let o := pair.1
         let reason := pair.2
@@ -198,7 +198,10 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.moveToOwnerGraveyard o reason
             changed := true
         | none => pure ()
-      g := { g with batchMove := {} }
+      g := { g with
+        lockedDeathReplacements := none
+        suppressOthersDie := false
+        suppressCreatureCardsToGy := false }
       for o in g.battlefield do
         if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
           g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }

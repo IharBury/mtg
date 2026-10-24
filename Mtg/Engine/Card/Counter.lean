@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.Text
-import Mtg.Engine.TypeLine
 
 /-!
 # Counters (CR 122)
@@ -10,113 +9,41 @@ puts any one of them; `Status` stores each kind in its own field.
 
 namespace Mtg.Engine
 
-/-- A kind of counter a permanent can have (CR 122.1), grouped by CR 122 counter category. -/
-abbrev CounterKind := CardType
+/-- A kind of counter a permanent can have (CR 122.1). Keyword counters other
+than trample, lifelink, and indestructible share `KeywordCounters`. -/
+inductive CounterKind where
+  | plusOnePlusOne
+  | minusOneMinusOne
+  | loyalty
+  | hope
+  | charge
+  | stun
+  | shield
+  | finality
+  | plan
+  | burden
+  | quest
+  | invasion
+  | influence
+  | trample
+  | indestructible
+  | lifelink
+  | hone
+  | shadow
+  | lore
+  | story
+  | time
+  | haste
+  | vigilance
+  | flying
+  | menace
+  | reach
+  | deathtouch
+  | firstStrike
+  | doubleStrike
+deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CounterKind
-/-- Unified counter kind (CR 122.1): P/T counter (`!cat1 && !cat2`, CR 122.1a), keyword counter (`cat1 && !cat2`, CR 122.1b), rule counter (`!cat1 && cat2`, CR 122.1c–d), or named counter (`cat1 && cat2`, CR 122.1). -/
-@[match_pattern] abbrev counterKind (cat1 : Bool := false) (cat2 : Bool := false)
-    (alt1 : Bool := false) (alt2 : Bool := false)
-    (alt3 : Bool := false) (alt4 : Bool := false) : CounterKind :=
-  CardType.cardTypeKind none (some true) true 0 "" cat1 cat2 alt1 alt2 alt3 alt4 false false false
-end CounterKind
-
-/-- A keyword counter a permanent can have (CR 122.1b). -/
-abbrev KeywordCounter := CounterKind
-
-namespace KeywordCounter
-
-@[match_pattern] abbrev keywordCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
-    (alt3 : Bool := false) (alt4 : Bool := false) : KeywordCounter :=
-  CounterKind.counterKind true false alt1 alt2 alt3 alt4
-@[match_pattern] abbrev trample : KeywordCounter := .keywordCounterKind false false false false
-@[match_pattern] abbrev indestructible : KeywordCounter := .keywordCounterKind true false false false
-@[match_pattern] abbrev lifelink : KeywordCounter := .keywordCounterKind false true false false
-@[match_pattern] abbrev shadow : KeywordCounter := .keywordCounterKind true true false false
-@[match_pattern] abbrev haste : KeywordCounter := .keywordCounterKind false false true false
-@[match_pattern] abbrev vigilance : KeywordCounter := .keywordCounterKind true false true false
-@[match_pattern] abbrev flying : KeywordCounter := .keywordCounterKind false true true false
-@[match_pattern] abbrev menace : KeywordCounter := .keywordCounterKind true true true false
-@[match_pattern] abbrev reach : KeywordCounter := .keywordCounterKind false false false true
-@[match_pattern] abbrev deathtouch : KeywordCounter := .keywordCounterKind true false false true
-@[match_pattern] abbrev firstStrike : KeywordCounter := .keywordCounterKind false true false true
-@[match_pattern] abbrev doubleStrike : KeywordCounter := .keywordCounterKind true true false true
-
-end KeywordCounter
-
-/-- A rule-defined non-keyword counter a permanent can have (CR 122.1c–d / CR 306.5 / CR 714). -/
-abbrev RuleCounter := CounterKind
-
-namespace RuleCounter
-
-@[match_pattern] abbrev ruleCounterKind (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) : RuleCounter :=
-  CounterKind.counterKind false true alt1 alt2 alt3 false
-@[match_pattern] abbrev loyalty : RuleCounter := .ruleCounterKind false false false
-@[match_pattern] abbrev stun : RuleCounter := .ruleCounterKind true false false
-@[match_pattern] abbrev shield : RuleCounter := .ruleCounterKind false true false
-@[match_pattern] abbrev finality : RuleCounter := .ruleCounterKind true true false
-@[match_pattern] abbrev lore : RuleCounter := .ruleCounterKind false false true
-@[match_pattern] abbrev time : RuleCounter := .ruleCounterKind true false true
-
-end RuleCounter
-
-/-- A named ability or card counter a permanent can have (CR 122.1). -/
-abbrev NamedCounter := CounterKind
-
-namespace NamedCounter
-
-@[match_pattern] abbrev namedCounterKind (alt1 : Bool := false) (alt2 : Bool := false)
-    (alt3 : Bool := false) (alt4 : Bool := false) : NamedCounter :=
-  CounterKind.counterKind true true alt1 alt2 alt3 alt4
-@[match_pattern] abbrev hope : NamedCounter := .namedCounterKind false false false false
-@[match_pattern] abbrev charge : NamedCounter := .namedCounterKind true false false false
-@[match_pattern] abbrev plan : NamedCounter := .namedCounterKind false true false false
-@[match_pattern] abbrev burden : NamedCounter := .namedCounterKind true true false false
-@[match_pattern] abbrev quest : NamedCounter := .namedCounterKind false false true false
-@[match_pattern] abbrev invasion : NamedCounter := .namedCounterKind true false true false
-@[match_pattern] abbrev influence : NamedCounter := .namedCounterKind false true true false
-@[match_pattern] abbrev hone : NamedCounter := .namedCounterKind true true true false
-@[match_pattern] abbrev story : NamedCounter := .namedCounterKind false false false true
-
-end NamedCounter
-
-namespace CounterKind
-
-@[match_pattern] abbrev pt (plus : Bool := true) : CounterKind :=
-  .counterKind false false plus false false false
-@[match_pattern] abbrev keyword (k : KeywordCounter) : CounterKind := k
-@[match_pattern] abbrev rule (k : RuleCounter) : CounterKind := k
-@[match_pattern] abbrev named (k : NamedCounter) : CounterKind := k
-
-@[match_pattern] abbrev plusOnePlusOne : CounterKind := .pt true
-@[match_pattern] abbrev minusOneMinusOne : CounterKind := .pt false
-@[match_pattern] abbrev loyalty : CounterKind := .rule .loyalty
-@[match_pattern] abbrev hope : CounterKind := .named .hope
-@[match_pattern] abbrev charge : CounterKind := .named .charge
-@[match_pattern] abbrev stun : CounterKind := .rule .stun
-@[match_pattern] abbrev shield : CounterKind := .rule .shield
-@[match_pattern] abbrev finality : CounterKind := .rule .finality
-@[match_pattern] abbrev plan : CounterKind := .named .plan
-@[match_pattern] abbrev burden : CounterKind := .named .burden
-@[match_pattern] abbrev quest : CounterKind := .named .quest
-@[match_pattern] abbrev invasion : CounterKind := .named .invasion
-@[match_pattern] abbrev influence : CounterKind := .named .influence
-@[match_pattern] abbrev trample : CounterKind := .keyword .trample
-@[match_pattern] abbrev indestructible : CounterKind := .keyword .indestructible
-@[match_pattern] abbrev lifelink : CounterKind := .keyword .lifelink
-@[match_pattern] abbrev hone : CounterKind := .named .hone
-@[match_pattern] abbrev shadow : CounterKind := .keyword .shadow
-@[match_pattern] abbrev lore : CounterKind := .rule .lore
-@[match_pattern] abbrev story : CounterKind := .named .story
-@[match_pattern] abbrev time : CounterKind := .rule .time
-@[match_pattern] abbrev haste : CounterKind := .keyword .haste
-@[match_pattern] abbrev vigilance : CounterKind := .keyword .vigilance
-@[match_pattern] abbrev flying : CounterKind := .keyword .flying
-@[match_pattern] abbrev menace : CounterKind := .keyword .menace
-@[match_pattern] abbrev reach : CounterKind := .keyword .reach
-@[match_pattern] abbrev deathtouch : CounterKind := .keyword .deathtouch
-@[match_pattern] abbrev firstStrike : CounterKind := .keyword .firstStrike
-@[match_pattern] abbrev doubleStrike : CounterKind := .keyword .doubleStrike
 
 /-- Oracle name of this counter, without the word `counter` (`+1/+1`, `stun`,
 `first strike`). -/
@@ -149,7 +76,7 @@ def oracleName : CounterKind → String
   | .reach => "reach"
   | .deathtouch => "deathtouch"
   | .firstStrike => "first strike"
-  | _ => "double strike"
+  | .doubleStrike => "double strike"
 
 /-- Every counter kind, in constructor order. -/
 def all : List CounterKind := [

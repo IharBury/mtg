@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.Text
-import Mtg.Engine.TypeLine
 
 /-!
 # Token kinds (CR 111)
@@ -11,161 +10,73 @@ namespace Mtg.Engine
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
 cards reconstruct printed “create a …” lines. -/
-abbrev TokenKind := CardType
+inductive TokenKind where
+  | treasure
+  | food
+  | humanSoldier
+  | wolf
+  | dwarf
+  | bear
+  | elf
+  | spirit
+  | birdSoldier
+  | wall
+  | dragon
+  /-- A Clue artifact token (CR 111 / 701.55). -/
+  | clue
+  /-- A 3/2 white Hero creature token with vigilance. -/
+  | hero32vigilance
+  /-- A 2/1 black Villain creature token with menace. -/
+  | villain21menace
+  /-- A 2/2 colorless Robot Villain artifact creature token. -/
+  | robotVillain22
+  /-- A 6/5 blue Leviathan creature token with hexproof. -/
+  | leviathan65hexproof
+  /-- A 1/1 white Soldier creature token. -/
+  | soldier11white
+  /-- A 1/1 green Squirrel creature token. -/
+  | squirrel11green
+  /-- A 0/4 colorless Wall creature token with defender. -/
+  | wall04defender
+  /-- A 3/3 colorless Robot Villain artifact creature token named Doombot. -/
+  | doombot
+  /-- A 1/1 green Insect creature token. -/
+  | insect11green
+  /-- A predefined Vibranium artifact token (MSH). -/
+  | vibranium
+  /-- A 1/1 green Minion creature token named Moloid. -/
+  | moloid
+  /-- A 2/2 colorless Wizard Soldier creature token named Cadet (FRA). -/
+  | cadet
+  /-- A red and green Heartwood artifact token (FRA). -/
+  | heartwood
+  /-- A colorless Lotus artifact token (FRA). -/
+  | lotus
+  /-- A blue Jace planeswalker token (FRA). -/
+  | jace
+  /-- A 1/1 colorless Sculpture Treasure artifact creature token (FRA). -/
+  | sculpture
+  /-- A legendary 3/3 green Dog creature token named Mowu (FRA). -/
+  | mowu
+  /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate (FRA). -/
+  | pridemate
+  /-- A 4/4 green Beast creature token with trample (FRA). -/
+  | beast44trample
+  /-- A 5/5 red Dragon creature token with flying (FRA). -/
+  | dragon55flying
+  /-- A 3/3 green Forest Tentacle land creature token (FRA). -/
+  | forestTentacle
+  /-- A 1/1 colorless Thopter artifact creature token with flying (FRA). -/
+  | thopter
+  /-- A 3/3 blue Angel creature token with flying (FRA). -/
+  | angel33blue
+  /-- A 1/1 blue Illusion creature token (FRA). -/
+  | illusion11blue
+  /-- An 8/8 blue Leviathan creature token with hexproof (FRA). -/
+  | leviathan88hexproof
+deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TokenKind
-/-- Unified token kind (CR 111): non-creature artifact (`!cat1 && !cat2 && !isJace`), artifact creature (`cat1 && !cat2 && !isJace`), legendary (`!cat1 && cat2 && !isJace`), creature (`cat1 && cat2 && !isJace`), or Jace planeswalker (`isJace`). -/
-@[match_pattern] abbrev tokenKind (cat1 : Bool := false) (cat2 : Bool := false) (isJace : Bool := false)
-    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-    (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : TokenKind :=
-  CardType.cardTypeKind (some none) (some false) true 0 "" cat1 cat2 isJace alt1 alt2 alt3 g1 g2 g3
-end TokenKind
-
-/-- Non-creature artifact tokens (CR 111.10). -/
-abbrev ArtifactToken := TokenKind
-
-namespace ArtifactToken
-
-@[match_pattern] abbrev artifactTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
-    (setArtifact : Bool := false) (equipment : Bool := false) : ArtifactToken :=
-  TokenKind.tokenKind false false false alt1 alt2 false setArtifact equipment false
-@[match_pattern] abbrev predefinedOrSet (alt1 : Bool := false) (alt2 : Bool := false)
-    (setArtifact : Bool := false) : ArtifactToken :=
-  artifactTokenKind alt1 alt2 setArtifact false
-@[match_pattern] abbrev equipment (sturdyShield : Bool := false) : ArtifactToken :=
-  artifactTokenKind sturdyShield false false true
-
-end ArtifactToken
-
-/-- Artifact creature tokens (CR 111). -/
-abbrev ArtifactCreatureToken := TokenKind
-
-namespace ArtifactCreatureToken
-
-@[match_pattern] abbrev kind (alt1 : Bool := false) (alt2 : Bool := false) (construct : Bool := false) : ArtifactCreatureToken :=
-  TokenKind.tokenKind true false false alt1 alt2 construct false false false
-
-end ArtifactCreatureToken
-
-/-- Legendary creature tokens (CR 111 / CR 205.4a). -/
-abbrev LegendaryToken := TokenKind
-
-namespace LegendaryToken
-
-@[match_pattern] abbrev legendaryTokenKind (alt1 : Bool := false) (alt2 : Bool := false) (msh : Bool := false) : LegendaryToken :=
-  TokenKind.tokenKind false true false alt1 alt2 msh false false false
-@[match_pattern] abbrev mowuOrZabu (zabu : Bool := false) : LegendaryToken :=
-  legendaryTokenKind zabu false false
-@[match_pattern] abbrev mshLegend (redwing : Bool := false) (galactusOrTigerGod : Bool := false) : LegendaryToken :=
-  legendaryTokenKind redwing galactusOrTigerGod true
-
-end LegendaryToken
-
-/-- Non-artifact, non-legendary creature tokens (CR 111). -/
-abbrev CreatureToken := TokenKind
-
-namespace CreatureToken
-
-@[match_pattern] abbrev creatureTokenKind (alt1 : Bool := false) (alt2 : Bool := false)
-    (alt3 : Bool := false) (g1 : Bool := false) (g2 : Bool := false) (g3 : Bool := false) : CreatureToken :=
-  TokenKind.tokenKind true true false alt1 alt2 alt3 g1 g2 g3
-@[match_pattern] abbrev whiteOrGreen (alt1 : Bool := false) (alt2 : Bool := false)
-    (green : Bool := false) : CreatureToken :=
-  creatureTokenKind alt1 alt2 green false false false
-@[match_pattern] abbrev whiteFlyingOrBlue (alt1 : Bool := false) (alt2 : Bool := false)
-    (blue : Bool := false) : CreatureToken :=
-  creatureTokenKind alt1 alt2 blue true false false
-@[match_pattern] abbrev dragonOrLeviathan (alt : Bool := false)
-    (leviathan : Bool := false) : CreatureToken :=
-  creatureTokenKind alt leviathan false false true false
-@[match_pattern] abbrev redOrAlignment (alt1 : Bool := false) (alt2 : Bool := false)
-    (alignment : Bool := false) : CreatureToken :=
-  creatureTokenKind alt1 alt2 alignment true true false
-@[match_pattern] abbrev otherCreature (moloid : Bool := false)
-    (cadetOrCitizen : Bool := false) : CreatureToken :=
-  creatureTokenKind moloid cadetOrCitizen false false false true
-@[match_pattern] abbrev fraCreature (forestTentacle : Bool := false) : CreatureToken :=
-  creatureTokenKind forestTentacle false false true false true
-@[match_pattern] abbrev rogue : CreatureToken :=
-  creatureTokenKind false false false false true true
-
-end CreatureToken
-
-namespace TokenKind
-
-@[match_pattern] abbrev artifact (a : ArtifactToken) : TokenKind := a
-@[match_pattern] abbrev creature (c : CreatureToken) : TokenKind := c
-@[match_pattern] abbrev artifactCreature (a : ArtifactCreatureToken) : TokenKind := a
-@[match_pattern] abbrev legendary (l : LegendaryToken) : TokenKind := l
-@[match_pattern] abbrev jace : TokenKind :=
-  .tokenKind false false true false false false false false false
-
--- ArtifactToken aliases
-@[match_pattern] abbrev treasure : TokenKind := .artifact (.predefinedOrSet false false false)
-@[match_pattern] abbrev food : TokenKind := .artifact (.predefinedOrSet true false false)
-@[match_pattern] abbrev clue : TokenKind := .artifact (.predefinedOrSet false true false)
-@[match_pattern] abbrev map : TokenKind := .artifact (.predefinedOrSet true true false)
-@[match_pattern] abbrev vibranium : TokenKind := .artifact (.predefinedOrSet false false true)
-@[match_pattern] abbrev heartwood : TokenKind := .artifact (.predefinedOrSet true false true)
-@[match_pattern] abbrev lotus : TokenKind := .artifact (.predefinedOrSet false true true)
-@[match_pattern] abbrev incubator : TokenKind := .artifact (.predefinedOrSet true true true)
-@[match_pattern] abbrev axe : TokenKind := .artifact (.equipment false)
-@[match_pattern] abbrev sturdyShield : TokenKind := .artifact (.equipment true)
-
--- ArtifactCreatureToken aliases
-@[match_pattern] abbrev robotVillain22 : TokenKind := .artifactCreature (.kind false false false)
-@[match_pattern] abbrev doombot : TokenKind := .artifactCreature (.kind true false false)
-@[match_pattern] abbrev wall : TokenKind := .artifactCreature (.kind false true false)
-@[match_pattern] abbrev sculpture : TokenKind := .artifactCreature (.kind true true false)
-@[match_pattern] abbrev thopter : TokenKind := .artifactCreature (.kind false false true)
-@[match_pattern] abbrev myr : TokenKind := .artifactCreature (.kind true false true)
-@[match_pattern] abbrev mite : TokenKind := .artifactCreature (.kind false true true)
-@[match_pattern] abbrev gingerbrute : TokenKind := .artifactCreature (.kind true true true)
-
--- LegendaryToken aliases
-@[match_pattern] abbrev mowu : TokenKind := .legendary (.mowuOrZabu false)
-@[match_pattern] abbrev zabu : TokenKind := .legendary (.mowuOrZabu true)
-@[match_pattern] abbrev theVoid : TokenKind := .legendary (.mshLegend false false)
-@[match_pattern] abbrev redwing : TokenKind := .legendary (.mshLegend true false)
-@[match_pattern] abbrev galactus : TokenKind := .legendary (.mshLegend false true)
-@[match_pattern] abbrev tigerGod : TokenKind := .legendary (.mshLegend true true)
-
--- CreatureToken aliases
-@[match_pattern] abbrev humanSoldier : TokenKind := .creature (.whiteOrGreen false false false)
-@[match_pattern] abbrev soldier11white : TokenKind := .creature (.whiteOrGreen true false false)
-@[match_pattern] abbrev human : TokenKind := .creature (.whiteOrGreen false true false)
-@[match_pattern] abbrev warrior : TokenKind := .creature (.whiteOrGreen true true false)
-@[match_pattern] abbrev wolf : TokenKind := .creature (.whiteOrGreen false false true)
-@[match_pattern] abbrev bear : TokenKind := .creature (.whiteOrGreen true false true)
-@[match_pattern] abbrev elf : TokenKind := .creature (.whiteOrGreen false true true)
-@[match_pattern] abbrev squirrel11green : TokenKind := .creature (.whiteOrGreen true true true)
-@[match_pattern] abbrev spirit : TokenKind := .creature (.whiteFlyingOrBlue false false false)
-@[match_pattern] abbrev birdSoldier : TokenKind := .creature (.whiteFlyingOrBlue true false false)
-@[match_pattern] abbrev angel : TokenKind := .creature (.whiteFlyingOrBlue false true false)
-@[match_pattern] abbrev insect : TokenKind := .creature (.whiteFlyingOrBlue true true false)
-@[match_pattern] abbrev dragon : TokenKind := .creature (.dragonOrLeviathan false false)
-@[match_pattern] abbrev dragon55flying : TokenKind := .creature (.dragonOrLeviathan true false)
-@[match_pattern] abbrev leviathan65hexproof : TokenKind := .creature (.dragonOrLeviathan false true)
-@[match_pattern] abbrev leviathan88hexproof : TokenKind := .creature (.dragonOrLeviathan true true)
-@[match_pattern] abbrev angel33blue : TokenKind := .creature (.whiteFlyingOrBlue false false true)
-@[match_pattern] abbrev illusion11blue : TokenKind := .creature (.whiteFlyingOrBlue true false true)
-@[match_pattern] abbrev merfolk : TokenKind := .creature (.whiteFlyingOrBlue false true true)
-@[match_pattern] abbrev shark : TokenKind := .creature (.whiteFlyingOrBlue true true true)
-@[match_pattern] abbrev dwarf : TokenKind := .creature (.redOrAlignment false false false)
-@[match_pattern] abbrev goblin : TokenKind := .creature (.redOrAlignment true false false)
-@[match_pattern] abbrev kobold : TokenKind := .creature (.redOrAlignment false true false)
-@[match_pattern] abbrev alien : TokenKind := .creature (.redOrAlignment true true false)
-@[match_pattern] abbrev hero32vigilance : TokenKind := .creature (.redOrAlignment false false true)
-@[match_pattern] abbrev villain21menace : TokenKind := .creature (.redOrAlignment true false true)
-@[match_pattern] abbrev wall04defender : TokenKind := .creature (.redOrAlignment false true true)
-@[match_pattern] abbrev beast44trample : TokenKind := .creature (.redOrAlignment true true true)
-@[match_pattern] abbrev insect11green : TokenKind := .creature (.otherCreature false false)
-@[match_pattern] abbrev moloid : TokenKind := .creature (.otherCreature true false)
-@[match_pattern] abbrev cadet : TokenKind := .creature (.otherCreature false true)
-@[match_pattern] abbrev citizen : TokenKind := .creature (.otherCreature true true)
-@[match_pattern] abbrev pridemate : TokenKind := .creature (.fraCreature false)
-@[match_pattern] abbrev forestTentacle : TokenKind := .creature (.fraCreature true)
-@[match_pattern] abbrev rogue : TokenKind := .creature .rogue
 
 def oracleNoun : TokenKind → String
   | .treasure => "Treasure token"
@@ -208,34 +119,6 @@ def oracleNoun : TokenKind → String
   | .angel33blue => "3/3 blue Angel creature token with flying"
   | .illusion11blue => "1/1 blue Illusion creature token"
   | .leviathan88hexproof => "8/8 blue Leviathan creature token with hexproof"
-  | .axe => "colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
-  | .zabu =>
-    "Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-  | .theVoid =>
-    "The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
-  | .redwing =>
-    "Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-  | .alien => "1/1 red Alien creature token with haste"
-  | .sturdyShield => "colorless Equipment artifact token named Sturdy Shield"
-  | .galactus => "Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
-  | .merfolk => "1/1 blue Merfolk creature token"
-  | .tigerGod =>
-    "The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .citizen => "1/1 green and white Citizen creature token"
-  | .warrior => "1/1 white Warrior creature token"
-  | .insect => "2/1 white Insect creature token with flying"
-  | .myr => "1/1 colorless Myr artifact creature token"
-  | .kobold => "0/1 red Kobold creature token named Kobolds of Kher Keep"
-  | .mite =>
-    "1/1 colorless Phyrexian Mite artifact creature token with toxic 1 and \"This token can't block.\""
-  | .shark => "X/X blue Shark creature token with flying"
-  | .gingerbrute => "1/1 colorless Food Golem artifact creature token named Gingerbrute with haste"
-  | .angel => "4/4 white Angel creature token with flying"
-  | .human => "1/1 white Human creature token"
-  | .goblin => "1/1 red Goblin creature token"
-  | .map => "Map token"
-  | .rogue => "2/2 black Rogue creature token"
-  | _ => "Incubator token"
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=

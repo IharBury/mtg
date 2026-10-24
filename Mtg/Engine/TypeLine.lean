@@ -12,39 +12,24 @@ namespace Mtg.Engine
 
 /-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
-  | cardTypeKind (k0 : Option (Option (Option Bool)) := none) (k1 : Option Bool := none)
-      (isSupertype : Bool := false) (n : Nat := 0) (s : String := "")
-      (b1 : Bool := false) (b2 : Bool := false) (b3 : Bool := false)
-      (b4 : Bool := false) (b5 : Bool := false) (b6 : Bool := false)
-      (b7 : Bool := false) (b8 : Bool := false) (b9 : Bool := false)
+  | artifact
+  | battle
+  | creature
+  | enchantment
+  | instant
+  | land
+  | planeswalker
+  | sorcery
+  | kindred
+  | dungeon
+  | plane
+  | phenomenon
+  | vanguard
+  | scheme
+  | conspiracy
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CardType
-
-@[match_pattern] abbrev artifact : CardType := .cardTypeKind none none false
-@[match_pattern] abbrev battle : CardType := .cardTypeKind none (some false) false
-@[match_pattern] abbrev creature : CardType := .cardTypeKind none (some true) false
-@[match_pattern] abbrev enchantment : CardType := .cardTypeKind (some none) none false
-@[match_pattern] abbrev instant : CardType := .cardTypeKind (some none) (some false) false
-@[match_pattern] abbrev land : CardType := .cardTypeKind (some none) (some true) false
-@[match_pattern] abbrev planeswalker : CardType := .cardTypeKind (some (some none)) none false
-@[match_pattern] abbrev sorcery : CardType := .cardTypeKind (some (some none)) (some false) false
-@[match_pattern] abbrev kindred : CardType := .cardTypeKind (some (some none)) (some true) false
-@[match_pattern] abbrev dungeon : CardType := .cardTypeKind (some (some (some false))) none false
-@[match_pattern] abbrev plane : CardType := .cardTypeKind (some (some (some false))) (some false) false
-@[match_pattern] abbrev phenomenon : CardType := .cardTypeKind (some (some (some false))) (some true) false
-@[match_pattern] abbrev vanguard : CardType := .cardTypeKind (some (some (some true))) none false
-@[match_pattern] abbrev scheme : CardType := .cardTypeKind (some (some (some true))) (some false) false
-@[match_pattern] abbrev conspiracy : CardType := .cardTypeKind (some (some (some true))) (some true) false
-@[match_pattern] abbrev supertypeKind (k : Option (Option (Option Bool)) := none) : CardType :=
-  .cardTypeKind k none true
-@[match_pattern] abbrev basic : CardType := .supertypeKind none
-@[match_pattern] abbrev legendary : CardType := .supertypeKind (some none)
-@[match_pattern] abbrev ongoing : CardType := .supertypeKind (some (some none))
-@[match_pattern] abbrev snow : CardType := .supertypeKind (some (some (some false)))
-@[match_pattern] abbrev world : CardType := .supertypeKind (some (some (some true)))
-@[match_pattern] abbrev spell : CardType := .instant
-@[match_pattern] abbrev planar : CardType := .plane
 
 def englishName : CardType → String
   | .artifact => "Artifact"
@@ -62,12 +47,6 @@ def englishName : CardType → String
   | .vanguard => "Vanguard"
   | .scheme => "Scheme"
   | .conspiracy => "Conspiracy"
-  | .basic => "Basic"
-  | .legendary => "Legendary"
-  | .ongoing => "Ongoing"
-  | .snow => "Snow"
-  | .world => "World"
-  | _ => ""
 
 /-- Lowercase Oracle word (`artifact`, `creature`). -/
 def oracleWord (t : CardType) : String :=
@@ -93,7 +72,6 @@ def pluralName : CardType → String
   | .scheme => "schemes"
   | .sorcery => "sorceries"
   | .vanguard => "vanguards"
-  | _ => ""
 
 /-- Every card type in CR 205.2a, in that order. -/
 def all : List CardType := [
@@ -120,23 +98,29 @@ def isInstantOrSorcery : CardType → Bool
 end CardType
 
 /-- Supertypes (CR 205.4). -/
-abbrev Supertype := CardType
+inductive Supertype where
+  | basic
+  | legendary
+  | ongoing
+  | snow
+  | world
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Supertype
 
-@[match_pattern] abbrev supertypeKind (k : Option (Option (Option Bool)) := none) : Supertype :=
-  CardType.supertypeKind k
-@[match_pattern] abbrev basic : Supertype := CardType.basic
-@[match_pattern] abbrev legendary : Supertype := CardType.legendary
-@[match_pattern] abbrev ongoing : Supertype := CardType.ongoing
-@[match_pattern] abbrev snow : Supertype := CardType.snow
-@[match_pattern] abbrev world : Supertype := CardType.world
-
-def englishName : Supertype → String := CardType.englishName
+def englishName : Supertype → String
+  | .basic => "Basic"
+  | .legendary => "Legendary"
+  | .ongoing => "Ongoing"
+  | .snow => "Snow"
+  | .world => "World"
 
 /-- Lowercase Oracle word (`legendary`, `basic`). -/
 def oracleWord (s : Supertype) : String :=
   s.englishName.map Char.toLower
+
+instance : ToString Supertype where
+  toString := englishName
 
 /-- Every supertype in CR 205.4a, in that order. -/
 def all : List Supertype :=
@@ -159,21 +143,17 @@ def basicLandTypes : List Subtype :=
 /-- Which card type a CR 205.3 subtype belongs to.
 `spell` is shared by instants and sorceries (205.3k). `creature` is shared by
 creatures and kindreds (205.3m). -/
-abbrev SubtypeClass := CardType
-
-namespace SubtypeClass
-
-@[match_pattern] abbrev artifact : SubtypeClass := CardType.artifact
-@[match_pattern] abbrev enchantment : SubtypeClass := CardType.enchantment
-@[match_pattern] abbrev land : SubtypeClass := CardType.land
-@[match_pattern] abbrev planeswalker : SubtypeClass := CardType.planeswalker
-@[match_pattern] abbrev spell : SubtypeClass := CardType.instant
-@[match_pattern] abbrev creature : SubtypeClass := CardType.creature
-@[match_pattern] abbrev planar : SubtypeClass := CardType.plane
-@[match_pattern] abbrev dungeon : SubtypeClass := CardType.dungeon
-@[match_pattern] abbrev battle : SubtypeClass := CardType.battle
-
-end SubtypeClass
+inductive SubtypeClass where
+  | artifact
+  | enchantment
+  | land
+  | planeswalker
+  | spell
+  | creature
+  | planar
+  | dungeon
+  | battle
+deriving DecidableEq, Repr, BEq
 
 def artifactTypes : List String := [
   "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",
@@ -297,61 +277,12 @@ def battleTypes : List String := [
   "Siege"
 ]
 
-/-- One known subtype from CR 205.3g–q, one unique official Oracle ruling
-(`OracleRuling`), keyword counters on a permanent (`KeywordCounters`, CR 122.1b),
-what a payment is for and restricted mana allowances (`ManaSpend`, `ManaAllowances`,
-CR 106.10), or unspent mana a player currently has (`ManaPool`, CR 106.4). -/
+/-- One known subtype from CR 205.3g–q. -/
 structure KnownSubtype where
-  name : String := ""
-  plural : String := ""
-  kind : SubtypeClass := .creature
-  /-- 1-based index in `uniqueOracleRulings`. -/
-  id : Nat := 0
-  /-- Official Wizards judge ruling (Gatherer / Scryfall `wotc`), not
-  printed Oracle text. -/
-  comment : String := ""
-  /-- Cards this comment applies to. Rulings are issued by judges; they
-  are not printed on the cards. -/
-  cards : Array String := #[]
-  /-- Distinct set codes among those cards (`hob` / `hoc` / `msh` / `fra`). -/
-  sets : Array String := #[]
-  haste : Nat := 0
-  vigilance : Nat := 0
-  flying : Nat := 0
-  menace : Nat := 0
-  reach : Nat := 0
-  deathtouch : Nat := 0
-  firstStrike : Nat := 0
-  doubleStrike : Nat := 0
-  trample : Nat := 0
-  indestructible : Nat := 0
-  lifelink : Nat := 0
-  spell : Bool := false
-  fromHand : Bool := false
-  planeswalker : Bool := false
-  noncreature : Bool := false
-  legendary : Bool := false
-  artifact : Bool := false
-  /-- Subtypes of the spell being cast. -/
-  subtypes : Array String := #[]
-  /-- Subtypes of the spell or ability source. -/
-  sourceSubtypes : Array String := #[]
-  /-- Activating an equip ability. -/
-  equip : Bool := false
-  hero : Bool := false
-  villain : Bool := false
-  cantNonartifact : Bool := false
-  creature : Bool := false
-  white : Nat := 0
-  blue : Nat := 0
-  black : Nat := 0
-  red : Nat := 0
-  green : Nat := 0
-  colorless : Nat := 0
-  /-- One entry per mana with a spending restriction (CR 106.6 / 106.10). These
-  are included in the totals above. -/
-  restricted : Array (Option Color × CardType) := #[]
-deriving DecidableEq, Repr, Inhabited, BEq
+  name : String
+  plural : String
+  kind : SubtypeClass
+deriving Repr
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
 and `Urza's` remain different subtypes. -/

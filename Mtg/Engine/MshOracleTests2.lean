@@ -161,7 +161,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let speed := namedPermanent g "Speed, Young Avenger"
   let unpaid :=
-    g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
+    g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
   !unpaid.hasModeledReflexiveOnStack &&
     (let g := unpaid.modifyPlayer ⟨0⟩ (fun pl =>
        { pl with manaPool := (pl.manaPool.add (.colored .red) 1) })
@@ -190,7 +190,7 @@ def speedReflexiveHasteOnlyOk : Bool :=
   let g := g.modifyPlayer ⟨0⟩ (fun pl =>
     { pl with manaPool := pl.manaPool.add (.colored .red) 1 })
   let speed := namedPermanent g "Speed, Young Avenger"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
     (some speed.id)
   let g := mustApply g ⟨0⟩ .accept
   let kind := (Game.modeledReflexiveEffect 9 1).targetKind
@@ -290,8 +290,8 @@ def kingpinExtortAndToughnessOk : Bool :=
        attacking := true, attackingWhom := some ⟨1⟩, summoningSick := false } }
      let kp := namedPermanent g "The Kingpin of Crime"
      let life0 := (g.player ⟨0⟩).life
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
-       #[] (lastKnownPower := some (1 : Int)) (sourceName := "The Kingpin of Crime")
+     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
+       #[] "The Kingpin of Crime" (some (1 : Int))
      let g := mustApply g ⟨0⟩ .accept
      let kp := namedPermanent g "The Kingpin of Crime"
      g.power kp == 1 &&
@@ -335,7 +335,7 @@ def aresDiesAttackingOk : Bool :=
     attacking := true, attackingWhom := some ⟨1⟩ } }
   let ares := namedPermanent g "Ares, God of War"
   let (g, _) := g.move ares.id (.graveyard ⟨0⟩) none
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathAttackingReturnHand)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathAttackingReturnHand)
     (some ares.id)
   (g.handObjects ⟨0⟩).any (fun o => o.name == "Ares, God of War") &&
     !g.battlefield.any (fun o => o.name == "Ares, God of War") &&
@@ -456,7 +456,7 @@ def controlAnotherPlayerOk : Bool :=
     (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
     g.resourcesFor ⟨1⟩ == ⟨1⟩ &&
     (let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
-     let g := { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } }
+     let g := { g with controlOnNextTakenTurn := true }
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
     (mshRuling 573).comment.contains "next turn they actually take" &&
     (mshRuling 611).comment.contains "overwrite each other" &&
@@ -590,7 +590,7 @@ def daredevilPlayExiledOk : Bool :=
   let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let dd := namedPermanent g "Daredevil, Man Without Fear"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
   let g := mustApply g ⟨0⟩ .accept
   let bolt? := g.objects.find? (fun o =>
     o.name == "Lightning Bolt" && o.zone == .exile)
@@ -602,7 +602,7 @@ def daredevilPlayExiledOk : Bool :=
     (let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
      let g := addToLibraryTop g mistyKnightHeroForHire ⟨0⟩
      let dd := namedPermanent g "Daredevil, Man Without Fear"
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
      let g := mustApply g ⟨0⟩ .accept
      let hero? := g.objects.find? (fun o =>
        o.name == "Misty Knight, Hero for Hire" && o.zone == .exile)
@@ -796,7 +796,7 @@ def boastOncePerTurnOk : Bool :=
     (let g := g.markBoastUsed z
      let z := namedPermanent g "Baron Helmut Zemo"
      !g.canActivateBoast z &&
-       (let g := { g with combat := { g.combat with additionalCombatPhases := 1 } }
+       (let g := { g with additionalCombatPhases := 1 }
         !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
     (mshRuling 526).comment.contains "only once"
 
@@ -811,9 +811,9 @@ def okoyeFirstStrikeLossOk : Bool :=
     attacking := true, attackingWhom := some ⟨1⟩ } }
   let tok := g.object! tok.id
   g.hasFirstStrike tok &&
-    (let g := { g with combat := { g.combat with
+    (let g := { g with
         firstStrikeDamageDone := true
-        firstStrikeAssignedThisCombat := #[tok.id] } }
+        firstStrikeAssignedThisCombat := #[tok.id] }
      let (g, _) := g.move (namedPermanent g "Okoye, Dora Milaje Leader").id
        (.graveyard ⟨0⟩) none
      let tok := g.object! tok.id
@@ -825,7 +825,7 @@ def okoyeFirstStrikeLossOk : Bool :=
 
 /-- Rulings 191 / 192: Nick Fury puts a DFC onto the battlefield front-face-up
 unless it is night and the front has daybound. -/
-def nickFuryDayDfc : CardDef := { bruceBanner with keywordRule := .daybound }
+def nickFuryDayDfc : CardDef := { bruceBanner with daybound := true }
 
 def nickFuryDayEnter : Game :=
   let g := addToLibraryTop afterDraw nickFuryDayDfc ⟨0⟩
@@ -1116,16 +1116,14 @@ def superHeroCivilWarLeaveOk : Bool :=
   let saga := namedPermanent g "The Super Hero Civil War"
   let bears := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
-  let g := g.applyTriggeredAbility ⟨0⟩
-    (.sagaChapter 2 (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6))
+  let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
     (some saga.id) #[Target.permanent bears.id]
   (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
     (let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
      let saga := namedPermanent g "The Super Hero Civil War"
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyTriggeredAbility ⟨0⟩
-       (.sagaChapter 2 (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6))
+     let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
        (some saga.id) #[Target.permanent bears.id]
      (namedPermanent g "Grizzly Bears").controlledBy ⟨0⟩) &&
     (mshRuling 496).comment.contains "won't gain control"

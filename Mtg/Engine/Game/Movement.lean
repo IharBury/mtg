@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.PowerToughness
+import Mtg.Engine.Game.StatBonuses
 
 /-!
 # Zone changes (CR 400)
@@ -56,7 +56,8 @@ def unprepare (g : Game) (o : GameObject) : Game :=
 def exilesOppDeath? (o : GameObject) : Bool :=
   o.printed.exileOppCreaturesInstead ||
     o.staticAbilities.any (fun
-      | .rule (.exileOpponentsDyingCreatures _) => true
+      | .exileOppDeathCreateWolf => true
+      | .fra .exileOpponentsDyingCreatures => true
       | _ => false)
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
@@ -102,8 +103,8 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
     | .graveyard _, some p =>
       (old.waitingTriggersFor p .dying (some (g.snapshotPower old))).filter (fun w =>
         old.isCreature ||
-          match w.ability.effect.resolution with
-          | .put .source .asArtifact _ => false
+          match w.ability.shared with
+          | .returnAsArtifact => false
           | _ => true)
     | _, _ => (#[] : Array WaitingTrigger)
   else (#[] : Array WaitingTrigger)
@@ -433,7 +434,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g :=
     if died && old.status.attacking then
-      { g with lastEvent := { g.lastEvent with lastDiedAttacker := some newId } }
+      { g with lastDiedAttacker := some newId }
     else g
   let g :=
     if exileInstead then
@@ -563,13 +564,13 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
           | none => acc) (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers := g.waitingTriggers ++ extra
-    batchMove := { g.batchMove with suppressCreatureCardsToGy := true } }
+    suppressCreatureCardsToGy := true }
   let g :=
     objs.foldl (fun g o =>
       match g.findObject? o.id with
       | some o => g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
       | none => g) g
-  { g with batchMove := { g.batchMove with suppressCreatureCardsToGy := false } }
+  { g with suppressCreatureCardsToGy := false }
 
 /-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
 and optional attachment. `applyHope` applies Arwen-style enter-with-counters

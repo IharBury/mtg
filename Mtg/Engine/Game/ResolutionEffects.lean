@@ -59,14 +59,13 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
   else
     let (g, copy) := g.allocObject src.printed controller .stack (some controller)
     let g := g.setObject { copy with
-      castState := { copy.castState with
-        kicked := src.kicked
-        giftPromisedTo := src.giftPromisedTo
-        teamworkPaid := src.teamworkPaid
-        sneakPaid := src.sneakPaid
-        sneakAttackWhom := src.sneakAttackWhom
-        isCopy := true }
+      kicked := src.kicked
+      giftPromisedTo := src.giftPromisedTo
+      teamworkPaid := src.teamworkPaid
+      sneakPaid := src.sneakPaid
+      sneakAttackWhom := src.sneakAttackWhom
       chosenX := src.chosenX
+      isCopy := true
       adventurerCard := src.adventurerCard }
     let g := g.putStackEntry controller copy.id
     let g :=
@@ -132,11 +131,10 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
       let (g, newId) := g.move id .stack (some p)
-      let cur := g.object! newId
-      let g := g.setObject { cur with castState := { cur.castState with
+      let g := g.setObject { (g.object! newId) with
         castFromGraveyard := fromGy
         exileInstantSorceryInstead := exileInstantSorceryInstead && fromGy
-        isCopy := wasCopy } }
+        isCopy := wasCopy }
       let g := g.putStackEntry p newId
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
@@ -261,7 +259,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let (g, newId) := g.putOntoBattlefield cardId p
     let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
     let g := g.afterPermanentEnters (g.object! newId)
-    return { g with pending := .none, thisWay := { g.thisWay with putArtifactThisWay := some (newId, hostId) } }
+    return { g with pending := .none, putArtifactThisWay := some (newId, hostId) }
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
@@ -327,11 +325,11 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
   let fromZone := o.zone
   let (g, newId) := g.move o.id .exile none
   let o := g.object! newId
-  let g := g.setObject { o with exileLinks := { o.exileLinks with returnToZone := some fromZone } }
+  let g := g.setObject { o with returnToZone := some fromZone }
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
-      g.setObject { src with exileLinks := { src.exileLinks with linkedExile := src.linkedExile.push newId } }
+      g.setObject { src with linkedExile := src.linkedExile.push newId }
     | none => g
   g.logMsg s!"{name} is exiled until the source leaves the battlefield"
 
@@ -344,7 +342,7 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
-      g.setObject { src with exileLinks := { src.exileLinks with leaveTriggerExile := src.leaveTriggerExile.push newId } }
+      g.setObject { src with leaveTriggerExile := src.leaveTriggerExile.push newId }
     | none => g
   g.logMsg s!"{name} is exiled"
 
@@ -391,6 +389,51 @@ until-leaves). -/
 def returnLinkedExile (g : Game) (source : GameObject) : Game :=
   (source.leaveTriggerExile ++ source.linkedExile).foldl
     (fun acc id => acc.returnExiledId id) g
+
+/-- Named MSH tokens that carry extra rules text. -/
+def zabuToken : CardDef :=
+  { (creatureToken "Zabu" #["Cat"] 2 2 (some .green)) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne] }
+
+def redwingToken : CardDef :=
+  { (creatureToken "Redwing" #["Bird", "Scout"] 1 1 (some .blue) Keyword.flying) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.onAttackScry 1] }
+
+def theVoidToken : CardDef :=
+  { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
+      ((Keyword.flying).merge Keyword.indestructible)) with
+    supertypes := #[.legendary]
+    staticAbilities := #[.attacksEachCombatIfAble] }
+
+def galactusAttackTrigger : Effect := {
+  targeting := .of (.filtered { noun := "target land", types := #[.land] })
+  resolution := .onPermanent .destroy
+  phrase := "Whenever Galactus attacks, destroy target land."
+}
+
+def galactusToken : CardDef :=
+  { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
+      ((Keyword.flying).merge Keyword.trample)) with
+    supertypes := #[.legendary]
+    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
+
+def tigerGodToken : CardDef :=
+  { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
+    supertypes := #[.legendary]
+    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
+
+def sturdyShieldToken : CardDef :=
+  { name := "Sturdy Shield"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[.equippedCreatureGets 1 2]
+    activatedAbilities := #[
+      { cost := { mana := ManaCost.ofGeneric 2 }
+        effect := Effect.attachToTargetCreatureYouControl
+        onlyAsSorcery := true }]
+    isToken := true }
 
 def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Game :=
   let (g, _) := g.createToken controller printed
@@ -731,7 +774,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
   | 4 =>
     g.withLegalKindPlayer controller tkind targets (fun g pid =>
       let g := g.setPlayerControl controller pid
-      { g with turnControl := { g.turnControl with controlOnNextTakenTurn := true } })
+      { g with controlOnNextTakenTurn := true })
       sourceId illegal
   | 5 =>
     g.withLegalKindPlayer controller tkind targets
@@ -856,16 +899,12 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       keywords :=
         if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
         else printed0.keywords }
-  let duration : CopyDuration :=
-    match untilSourceLeaves with
-    | some src => .untilSourceLeaves src
-    | none =>
-      if untilEot then .untilEot
-      else if untilNextTurn then .untilNextTurn
-      else .permanent
   let g := g.setObject { o with
     printed
-    copyEffect := some { restore, duration } }
+    copyRestore := some restore
+    copyUntilEot := untilEot
+    copyUntilNextTurn := untilNextTurn
+    copyUntilSourceLeaves := untilSourceLeaves }
   g.logMsg s!"{restore.name} becomes a copy of {printed0.name}"
 
 /-- Copy an activated or triggered ability on the stack. The copy is not
@@ -883,7 +922,8 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       (lastKnownToughness := src.lastKnownToughness)
     let g := g.setObject { copy with
       chosenX := src.chosenX
-      castState := { copy.castState with isCopy := true, teamworkPaid := src.teamworkPaid } }
+      isCopy := true
+      teamworkPaid := src.teamworkPaid }
     let g := g.putStackEntry controller copy.id
     let g :=
       match g.stack.findIdx? (fun e => e.objectId == src.id) with
@@ -896,6 +936,15 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
           chosenMode := orig.chosenMode } }
       | none => g
     g.logMsg s!"A copy of {src.name} is created"
+
+/-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
+def revealHand (g : Game) (p : PlayerId) : Game :=
+  let names :=
+    (g.player p).hand.foldl (fun acc id =>
+      match g.findObject? id with
+      | some o => if acc == "" then o.name else s!"{acc}, {o.name}"
+      | none => acc) ""
+  g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
 /-- After every player has chosen, the chosen creature cards enter together,
 the exiled cards return to their owners' hands, and the spell is exiled. -/
