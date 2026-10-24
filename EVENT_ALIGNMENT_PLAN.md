@@ -315,8 +315,8 @@ deriving Repr, Inhabited, BEq
 /-- An object as it was when the event happened: characteristics (109.3)
 plus status. Layer-dependent values are provisional until Phase 8 (see §4). -/
 structure EventObject where
-  -- identity (already present today)
-  id : ObjectId
+  -- identity (already present today; `none` only for proposed or unattributed events)
+  id : Option ObjectId := none
   owner : PlayerId
   controller : Option PlayerId
   token : Bool
@@ -324,6 +324,7 @@ structure EventObject where
   supertypes : Array Supertype
   types : Array CardType
   subtypes : Array CardSubtype
+  toxic : Nat := 0
   -- characteristics to add
   name : String
   colors : ColorSet
@@ -347,8 +348,8 @@ structure EventObject where
 deriving Repr, Inhabited, BEq
 ```
 
-`owner` and `controller` already exist. The builder becomes
-`Game.snapshot (g : Game) (o : GameObject) : EventObject`, because power,
+`owner`, `controller`, and `toxic` already exist, and `id` is `Option ObjectId` (populated as `some o.id` by `GameObject.asEvent` and `Game.snapshot`, and `none` for proposed or unattributed events). The builder becomes
+`Game.snapshot (g : Game) (o : GameObject) : EventObject` (subsuming `Game.damageSourceEvent`), because power,
 toughness, colors, and granted abilities depend on the game.
 
 ### 2.4 Zone changes
@@ -424,9 +425,12 @@ inductive PermanentEvent where
   | designation (object : EventObject) (d : PermanentDesignation) (gained : Bool)       -- goaded 701.15b, ring-bearer, …
 ```
 
-`CounterTarget` is an object or a player, so poison counters (122.1f) are a
-counter event too. The +1/+1 / −1/−1 annihilation SBA (704.5q) is two
+`CounterTarget` is an object or a player, so poison counters (122.1f) and other
+player counters (`Player.counters`, e.g. energy/experience/rad) are counter
+events too. The +1/+1 / −1/−1 annihilation SBA (704.5q) is two
 `counters … (removed n)` events with `cause := .stateBased .counterAnnihilation`.
+`PermanentDesignation.goaded` carries `(byPlayer : PlayerId) (untilNextTurn : Bool := true)`,
+covering both standard CR 701.15a goad and indefinite goad (e.g. Dack Fayden).
 
 **Counter storage.** The ~22 counter fields on `Status` (`plusOnePlusOne`,
 `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`,
@@ -840,7 +844,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId`, `attackingPlaneswalker : Option ObjectId`, `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
 | **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
-| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derive per creature from `DamageEvent.dealt` packets committed since the last SBA batch where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). |
+| **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derived in Phase 1 per creature via `Game.deathtouchDealtSinceLastSba` from `DamageEvent.dealt` packets committed since the last `EngineChange.sbaChecked` marker where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). Delete the remaining `Status.dealtDeathtouch` field and cleanup/test references in Phase 8. |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
 | | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn. It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
@@ -851,7 +855,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Continuous-effect mirrors → layers** | `pump : Int × Int`, `untilTurnOfPump : Array (PlayerId × Int × Int)`, `pumpPerArtifactUntilEot : Bool`, `setBasePT : Option (Int × Int)`, `cardsInHandPowerUntilEot : Bool`, `untilEotKeywords : Keywords`, `firstStrikeOnYourTurn : Bool`, `untilEotLosesIndestructible : Bool`, `additionalCreature : Bool`, `additionalCreatureUntilEot : Bool`, `additionalArtifactUntilEot : Bool`, `additionalSubtypes : Array CardSubtype`, `replacedCreatureTypesUntilEot : Option (Array CardSubtype)`, `onlyFoodArtifact : Bool`, `returnedAsArtifact : Bool`, `notACreature : Bool`, `animatedConstruct55 : Bool`, `grantedStaticAbilities : Array StaticAbility`, `grantedTriggeredAbilities : Array TriggeredAbility`, `grantedTriggersUntilEot : Array TriggeredAbility`, `ironFistTapGrants : Nat`, `combatDamageCreatesTreasure : Bool`, `losesAbilitiesUntilEot : Bool`, `losesAbilitiesGrantedBy : Array ObjectId`, `hexproofGrantedBy : Array ObjectId`, `cantBeBlockedByPlayer : Option PlayerId`, `cantBeBlockedExceptByHasteUntilEot : Bool`, `cantBlockUntilEot : Bool`, `controlUntilEot : Bool`, `controlTurnEndsLeft : Nat` | `ContinuousEffectSpec.layered` / `.gameRule`. |
 | **Replacement/prevention mirrors** | `untilEotExileIfDies : Bool`, `preventDamageGrantedBy : Array ObjectId`, `cantUntapGrantedBy : Array ObjectId`, `cantTransform : Bool` | `ContinuousEffectSpec.replacement` / `.prevention` (or a rule spec for "can't"). |
 | **Permission mirrors** | `freeCastFromGraveyard : Bool`, `colorlessGrantUntilCast : Array ObjectId` | `ContinuousEffectSpec.permission`. |
-| **Designation** | `goaded : Bool` | `PermanentEvent.designation` (701.15b), ends as the goading player's next turn begins. |
+| **Designation** | `goaded : Bool`, `goadedBy : Array PlayerId`, `goadedUntilNextTurnOf : Array PlayerId`, `monstrous : Bool`, `renowned : Bool`, `suspected : Bool`, `saddled : Bool` | `PermanentEvent.designation` (701.15b, 701.37, 701.38, 701.60, 702.171); until-next-turn goads expire via `Game.expireGoadedFor` as the goading player's next turn begins, while `untilNextTurn := false` goads persist for the rest of the game. |
 
 #### `GameObject` ([`Object.lean`](Mtg/Engine/Game/Object.lean))
 
@@ -931,10 +935,12 @@ flowchart TD
    - **Do not touch the enters-with family here.** It moves onto the zone
      event in Phase 2; routing it through a post-entry counter event would keep
      the wrong intermediate state.
-4. Keep `OneShotEffect` only as a temporary constructor that lowers to the
-   durable constructors (no new writer). Inventory the remaining raw setters
-   with a grep for `.tapped (`, `.setLife`, `.loyaltyCounters (`, `.lore (`,
-   `.poison (` in `Mtg/Engine/Game/` before and after the PR.
+4. Remove the migrated constructors (`.life`, `.damaged`, `.damagedPlayer`,
+   `.tapped`, `.untapped`, `.counters`, `.control`, `.attached`, `.poisoned`) from
+   `OneShotEffect`, leaving `OneShotEffect` only for the unmigrated variants.
+   Inventory the remaining raw setters with a grep for `.tapped (`, `.setLife`,
+   `.loyaltyCounters (`, `.lore (`, `.poison (` in `Mtg/Engine/Game/` before and
+   after the PR.
 
 Tests: `Tests/Tap.lean`, `Untap.lean`, `GainLife.lean`, `LoseLife.lean`,
 `PutCounters.lean`, `RemoveCounters.lean`, `Damage.lean`, `Attach.lean`, `Events.lean`.
@@ -944,17 +950,21 @@ Tests: `Tests/Tap.lean`, `Untap.lean`, `GainLife.lean`, `LoseLife.lean`,
 1. Add `ZoneEvent.moved` / `created` / `ceasedToExist` (§2.4) with the id
    allocation rule from §2.1 (builder reads, `applyChange` writes). Remove the
    `allocId` / `bumpTime` / `replaceObject` / `push*` / `removeFromZoneList`
-   calls from `Game.move`, `createToken`, and the copy paths.
-2. Move enters-with counters and choices (`enterWithLoyalty`,
-   `enterWithPlusOnes`, `enterWithIndestructibleCounter`, `enterWithShield`,
-   `enterWithXPlusOnes`, `enterWithHope`, prepared, impending time counters)
-   into the construction of `moved.after` and `entersWith` (614.1c / 614.12 /
-   306.5b / 714.3a). Add the "counters put" projection that includes
-   `entersWith` (122.6).
+   calls from `Game.move`, `createToken`, and the copy paths, and remove
+   `.moved`, `.sacrificed`, and `.created` from `OneShotEffect`.
+2. Move enters-with counters, enters-tapped status writes (`Entering.lean`,
+   `Tokens.lean`, `EffectResolution.lean`, `FraChoices.lean`,
+   `ModeledTriggers.lean`, `TriggeredAbilities.lean`), and as-enters choices
+   (`enterWithLoyalty`, `enterWithPlusOnes`, `enterWithIndestructibleCounter`,
+   `enterWithShield`, `enterWithXPlusOnes`, `enterWithHope`, prepared,
+   impending time counters) into the construction of `moved.after` /
+   `created.object` and `entersWith` (614.1c / 614.12 / 306.5b / 714.3a). Add
+   the "counters put" projection that includes `entersWith` (122.6).
 3. Make the draw a `moved` with `verb := .draw nth firstOfOwnDrawStep`; drop
-   the separate `drew` record with the pre-move id. Re-point `GameEvent.draws`,
+   `OneShotEffect.drew` with the pre-move id. Re-point `GameEvent.draws`,
    `drewFirstOfDrawStep`, and the draw triggers at the new verb.
-4. Extend `EventObject` (§2.3) and add `Game.snapshot`. **Snapshot today's
+4. Extend `EventObject` (§2.3) and add `Game.snapshot` (unifying
+   `Game.damageSourceEvent` into `Game.snapshot`). **Snapshot today's
    cached values** (`Game.power`, `GameObject.types`, `Status` flags) and mark the
    layer-dependent fields provisional in their doc comments; Phase 8 switches
    the source to the layer system without changing the event shape, so the
@@ -994,7 +1004,9 @@ rules events:
 - `.gameRule` — setup, mulligans, and leaving the game (800.4a).
 
 Add a `#guard` that no rules event in a full demo game has `.unclassified`.
-Then delete `OneShotEffect`.
+Migrate the remaining `OneShotEffect` constructors (`.looked`, `.resolved`,
+`.beheld`, `.proliferated`, `.sheHulkDealtDamage`) to `PlayerEvent` /
+`StackObjectEvent` and delete `OneShotEffect`.
 
 ### Phase 4 — Simultaneous batches
 
@@ -1003,8 +1015,11 @@ Then delete `OneShotEffect`.
    "one or more" triggers below while keeping the existing per-event queues for
    individual triggers; Phase 6 replaces those per-event queues with
    `matchTriggers pre post batch`.
-2. Convert multi-object instructions, the combat damage steps (two batches with
-   first strike, per 510.4 / 702.7b in §2.10), and the SBA loop (one batch per pass).
+2. Convert multi-object instructions (including bulk counter operations
+   `.withoutCounters`, `.proliferatedExceptPlusOne`, and
+   `.addCountersExceptPlusOne`, deleting those `StatusChange` constructors), the
+   combat damage steps (two batches with first strike, per 510.4 / 702.7b in
+   §2.10), and the SBA loop (one batch per pass).
 3. Move "one or more" triggers to per-batch evaluation:
    `oneOrMoreOtherCreaturesDie`, `creatureCardsPutIntoYourGy`,
    `youCreateCreatureTokens`, `creaturesYouControlBecomeTapped`,
