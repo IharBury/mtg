@@ -811,8 +811,8 @@ inductive LifeEvent where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A one-shot effect (CR 610) that does something just once and has no duration.
-Kept during migration as a temporary constructor that lowers to the durable
-`RulesEvent` constructors. -/
+Kept during migration only for variants not yet lowered to durable `RulesEvent`
+constructors. -/
 inductive OneShotEffect where
   /-- `object` moved from `fromZone` to `toZone` (CR 610.1 / 610.3).
   A creature moving from the battlefield to a graveyard died (CR 700.4).
@@ -825,23 +825,6 @@ inductive OneShotEffect where
   player has drawn this turn, including this one. `firstOfOwnDrawStep` is the
   first card of that player's own draw step (CR 121.2). -/
   | drew (player : PlayerId) (card : ObjectId) (nth : Nat) (firstOfOwnDrawStep : Bool)
-  /-- `player` gained or lost `amount` life (CR 119 / 610.1). Gaining is `gained`.
-  Life lost because of damage has `fromDamage`. Combat damage has `combat`. -/
-  | life (player : PlayerId) (amount : Nat) (gained fromDamage combat : Bool := false)
-  /-- `amount` damage was dealt to `object` (CR 120 / 610.1). `combat` is combat damage. -/
-  | damaged (source : Option ObjectId) (object : EventObject) (amount : Nat) (combat : Bool)
-  /-- `amount` damage was dealt to `player` (CR 120 / 610.1). -/
-  | damagedPlayer (source : Option ObjectId) (player : PlayerId) (amount : Nat) (combat : Bool)
-  /-- `object` became tapped (`nowTapped`) or the tap was the change (CR 701.26a / 610.1).
-  `duringControllersTurn` is true on that object's controller's turn. -/
-  | tapped (object : EventObject) (nowTapped duringControllersTurn : Bool)
-  /-- `object` untapped (CR 701.26b / 610.1). `replacedByStun` means a stun
-  counter was removed instead, so the untap did not happen (CR 122.1d). -/
-  | untapped (object : EventObject) (replacedByStun : Bool := false)
-  /-- `n` counters of `kind` were put on or removed from `object` (CR 122 / 610.1).
-  `removed` is a removal. -/
-  | counters (player : Option PlayerId) (object : EventObject) (kind : CounterKind)
-      (n : Nat) (removed : Bool := false)
   /-- `player` looked at `n` cards by scrying, or by surveilling when `surveil` (CR 701.22 / 701.25 / 610.1).
   `asked` is the printed number. Scry 0 is not recorded. Scrying a positive
   number still happens when the library has fewer cards (CR 701.22). -/
@@ -850,17 +833,11 @@ inductive OneShotEffect where
   | sacrificed (player : PlayerId) (object : EventObject)
   /-- `player` created `object` (CR 111 / 701.7 / 610.1). -/
   | created (player : PlayerId) (object : EventObject)
-  /-- `object` changed controller from `fromPlayer` to `toPlayer`. -/
-  | control (object : ObjectId) (fromPlayer toPlayer : PlayerId)
   /-- The `nth` time `player` resolved the ability that counts its own
   resolutions this turn (CR 610.1). -/
   | resolved (player : PlayerId) (nth : Nat)
-  /-- `object` became attached to `host` (CR 701.3 / 610.1). -/
-  | attached (object host : ObjectId)
   /-- `player` beheld `quality` (CR 701.62 / 610.1). Later zone changes do not undo it. -/
   | beheld (player : PlayerId) (quality : CardSubtype)
-  /-- `player` got `n` poison counters (CR 122.1c / 610.1). -/
-  | poisoned (player : PlayerId) (n : Nat)
   /-- `player` proliferated (CR 701.34 / 610.1). -/
   | proliferated (player : PlayerId)
   /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
@@ -903,44 +880,6 @@ inductive RulesEvent where
   `EffectId`. This neither creates nor ends an effect (CR 611). -/
   | effectUpdated (id : EffectId) (effect : ContinuousEffect)
 deriving Repr, Inhabited, BEq
-
-namespace OneShotEffect
-
-/-- Lower a `OneShotEffect` to its durable `RulesEvent` constructor. -/
-def toRulesEvent (id : EffectId) : OneShotEffect → RulesEvent
-  | .tapped object true during => .permanent (.tapped object during)
-  | .tapped object false _ => .permanent (.untapped object)
-  | .untapped object false => .permanent (.untapped object)
-  | .untapped object true => .permanent (.counters (.object object) .stun (.removed 1) none)
-  | .counters actor object kind n false =>
-    .permanent (.counters (.object object) kind (.put n) actor)
-  | .counters actor object kind n true =>
-    .permanent (.counters (.object object) kind (.removed n) actor)
-  | .poisoned player n =>
-    .permanent (.counters (.player player) .poison (.put n) none)
-  | .attached object host =>
-    .permanent (.attached { id := object } host none)
-  | .control object fromP toP =>
-    .permanent (.controlChanged { id := object } fromP toP)
-  | .life player amount true _ _ =>
-    .life (.gained player amount)
-  | .life player amount false fromDamage combat =>
-    .life (.lost player amount fromDamage combat)
-  | .damaged source object amount combat =>
-    .damage (.dealt #[{
-      source := { id := source.getD ⟨0⟩ }
-      recipient := .permanent object
-      amount := amount
-      combat := combat }])
-  | .damagedPlayer source player amount combat =>
-    .damage (.dealt #[{
-      source := { id := source.getD ⟨0⟩ }
-      recipient := .player player
-      amount := amount
-      combat := combat }])
-  | eff => .effectApplied id eff
-
-end OneShotEffect
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/
 inductive EngineChange where
@@ -1168,10 +1107,9 @@ def rulesOrUnclassified (turn : Nat) (e : RulesEvent)
 def engine (turn : Nat) (c : EngineChange) (batch : BatchId := ⟨0⟩) : GameEvent :=
   unclassified turn (.engine c) batch
 
-/-- A one-shot effect is applied (CR 610). Lowers to the durable `RulesEvent`
-constructors. -/
+/-- A one-shot effect is applied (CR 610). -/
 def effectApplied (turn : Nat) (id : EffectId) (effect : OneShotEffect) : GameEvent :=
-  rules turn (effect.toRulesEvent id) (.oneShotEffect id)
+  rules turn (.effectApplied id effect) (.oneShotEffect id)
 
 /-- `object` moved from `fromZone` to `toZone` (CR 610.1 / 610.3). -/
 def moved (turn : Nat) (object : EventObject) (fromZone toZone : Zone)
