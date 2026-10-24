@@ -75,7 +75,6 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       adventurerCard := src.adventurerCard
     }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.change (.setObject copyObj)
     let g := g.putStackEntry controller copyId
     let g :=
       match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copyId) with
@@ -927,7 +926,6 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       teamworkPaid := src.teamworkPaid
     }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.change (.setObject copyObj)
     let g := g.putStackEntry controller copyId
     let g :=
       match g.stack.findIdx? (fun e => e.objectId == src.id) with

@@ -897,4 +897,38 @@ replaced by exile (CR 614.6) is journaled with `verb == .exile` rather than
       | .rules (.zone (.moved _ _ .battlefield _ .sacrifice _ _ _)) => true
       | _ => false)
 
+/- Phase 2 isolation: `ZoneEvent.moved` and `ZoneEvent.created` are the sole
+writers of the objects they install (preserving full `printed` `CardDef`,
+`summoningSick`, `attackingWhom`, `returnedAsArtifact`, `onlyFoodArtifact`,
+`wasCast`, and stack-copy metadata), with zero `EngineChange.setObject`
+events. -/
+#guard
+  let g0 := insertObject (quiet afterDraw) bear me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Event Bear"))[0]!
+  let (g1, permId) := (quiet g0).putOntoBattlefield cid me
+    (tapped := true) (summoningSick := false)
+    (attacking := true) (attackingWhom := some opp)
+    (returnedAsArtifact := true) (onlyFoodArtifact := true) (wasCast := some true)
+  let (g2, tok) := (quiet g1).createToken me treasureToken
+    (tapped := true) (attacking := true) (attackingWhom := some opp)
+  let hasSetObject (evs : Array GameEvent) : Bool :=
+    evs.any (fun e =>
+      match e.change with
+      | .engine (.setObject _) => true
+      | _ => false)
+  let perm := g1.object! permId
+  !hasSetObject g1.events &&
+    !hasSetObject g2.events &&
+    perm.status.tapped &&
+    !perm.status.summoningSick &&
+    perm.status.attacking &&
+    perm.status.attackingWhom == some opp &&
+    perm.status.returnedAsArtifact &&
+    perm.status.onlyFoodArtifact &&
+    perm.wasCast &&
+    perm.printed == bear &&
+    tok.printed.activatedAbilities.size == treasureToken.activatedAbilities.size &&
+    tok.status.attacking &&
+    tok.status.attackingWhom == some opp
+
 end Mtg.Engine.EventTests

@@ -250,7 +250,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         adventurerCard := spell.adventurerCard
       }
       let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
-      let g := g.change (.setObject copyObj)
       let g := g.putStackEntry caster copyId
       let g :=
         match g.stack.find? (fun e => e.objectId == spell.id),
@@ -298,7 +297,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         isCopy := true
       }
       let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
-      let g := g.change (.setObject copyObj)
       let g := g.putStackEntry caster copyId
       let g := g.expireEffectById eid
       g.logMsg s!"A copy of {spell.name} is created (Loki)") g
@@ -502,16 +500,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           s!"{(g.player p).name} chooses a nonland card name for {o.name}"
       | none => g
     else g
-  -- The Black Gate: “As it enters, you may pay N life. If you don't, it
-  -- enters tapped.”
-  let g :=
-    match o.printed.entersTappedUnlessPayLife, o.controller with
-    | some n, some p =>
-      if o.status.tapped || g.pending != Pending.none then g
-      else
-        (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped o.id n)))).logMsg
-          s!"{(g.player p).name} may pay {n} life, or {o.name} enters tapped"
-    | _, _ => g
   let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then

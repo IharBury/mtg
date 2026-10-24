@@ -528,26 +528,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
-  | .payLifeOrEnterTapped _ n, .accept =>
+  | .payLifeOrEnterTapped id n, .accept =>
     let g ← g.payLifeCost p n
-    return g.finishFraChoice
+    return (g.finishPlayLand p id (tapped := false)).finishFraChoice
   | .payLifeOrEnterTapped id _, .decline =>
-    match g.findObject? id with
-    | some o =>
-      let g := g.changeStatus o.id (.tapped true)
-      let events := g.events.map (fun ev =>
-        match ev.change with
-        | .rules (.zone (.moved before after fromZone .battlefield verb actor entersWith libPos)) =>
-          if after.id == some id then
-            { ev with
-              change := .rules (.zone (.moved before
-                { after with tapped := true }
-                fromZone .battlefield verb actor entersWith libPos)) }
-          else ev
-        | _ => ev)
-      let g := { g with events }
-      return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
-    | none => return g.finishFraChoice
+    return (g.finishPlayLand p id (tapped := true)).finishFraChoice
   | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
   | .mayPayExtort _, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }

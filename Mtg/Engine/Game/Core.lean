@@ -1636,19 +1636,24 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
       let impendingNotCreature :=
         fromZone == .stack && toZone == .battlefield &&
           printed.impending.isSome && mergedCounters.count .time > 0
-      let sick := (after.creature || printed.isCreature) && !after.keywords.haste
+      let sick :=
+        if after.printed.isSome then after.summoningSick
+        else (after.creature || printed.isCreature) && !after.keywords.haste
       let baseStatus : Status :=
         if toZone == .battlefield then
           { faceDown := faceDown
             tapped := after.tapped
             summoningSick := sick
             attacking := after.attacking
+            attackingWhom := after.attackingWhom
             phasedOut := after.phasedOut
             chosenCardType := chosenCardType
             windcragMardu := windcragMardu
             prepared := prepared
             transformed := after.transformed
             cantTransform := after.transformed
+            returnedAsArtifact := after.returnedAsArtifact
+            onlyFoodArtifact := after.onlyFoodArtifact
             notACreature := impendingNotCreature
             gotPlusOneThisTurn := mergedCounters.count .plusOnePlusOne > 0 }
         else {}
@@ -1656,18 +1661,22 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         if mergedCounters.isEmpty then baseStatus
         else baseStatus.withCounterBag mergedCounters
       let lkiPower : Option Int :=
-        if fromZone == .battlefield then before.power
+        if after.printed.isSome then after.lastKnownPower
+        else if fromZone == .battlefield then before.power
         else existing?.bind (·.lastKnownPower)
       let lkiToughness : Option Int :=
-        if fromZone == .battlefield then before.toughness
+        if after.printed.isSome then after.lastKnownToughness
+        else if fromZone == .battlefield then before.toughness
         else existing?.bind (·.lastKnownToughness)
       let lastCtrl : Option PlayerId :=
         if fromZone == .battlefield then
           (existing?.bind (·.controller)).orElse (fun _ => before.controller)
         else existing?.bind (·.lastController)
-      let chosenX : Option Nat := existing?.bind (·.chosenX)
+      let chosenX : Option Nat :=
+        after.chosenX.orElse (fun _ => existing?.bind (·.chosenX))
       let wasCast : Bool :=
-        if toZone == .battlefield then
+        if after.printed.isSome then after.wasCast
+        else if toZone == .battlefield then
           fromZone == .stack && !after.isCopy
         else if toZone == .stack then
           verb == .cast || (existing?.map (·.wasCast)).getD false
@@ -1676,7 +1685,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         printed := printed
         owner := after.owner
         controller :=
-          if toZone == .battlefield || toZone == .stack then after.controller
+          if toZone == .battlefield || toZone == .stack || after.printed.isSome then after.controller
           else none
         lastController := lastCtrl
         defaultController := if toZone == .battlefield then after.controller else none
@@ -1696,15 +1705,18 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         (fromZone == .battlefield || fromZone == .stack) &&
           toZone != .battlefield && toZone != .stack
       let printed : CardDef :=
-        if leavingPlay && existing.status.transformed then
-          match existing.printed.otherFace with
-          | some front => { front with otherFace := some { existing.printed with otherFace := none } }
-          | none => existing.printed
-        else if toZone == .battlefield && after.transformed && !existing.status.transformed then
-          match existing.printed.otherFace with
-          | some back => { back with otherFace := some { existing.printed with otherFace := none } }
-          | none => existing.printed
-        else existing.printed
+        match after.printed with
+        | some p => p
+        | none =>
+          if leavingPlay && existing.status.transformed then
+            match existing.printed.otherFace with
+            | some front => { front with otherFace := some { existing.printed with otherFace := none } }
+            | none => existing.printed
+          else if toZone == .battlefield && after.transformed && !existing.status.transformed then
+            match existing.printed.otherFace with
+            | some back => { back with otherFace := some { existing.printed with otherFace := none } }
+            | none => existing.printed
+          else existing.printed
       let fresh := materialize printed (some existing)
       let objs := (g.objects.filter (fun (o : GameObject) => o.id != existing.id)).push fresh
       let g :=
@@ -1720,8 +1732,11 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
           | some bid => g.stripFromZoneList bid fromZone
           | none => g
         let printed :=
-          if !after.name.isEmpty || !after.types.isEmpty then after.toCardDef
-          else before.toCardDef
+          match after.printed.orElse (fun _ => before.printed) with
+          | some p => p
+          | none =>
+            if !after.name.isEmpty || !after.types.isEmpty then after.toCardDef
+            else before.toCardDef
         let fresh := materialize printed none
         let objs :=
           match g.objects.findIdx? (fun o => o.id == newId) with
@@ -1738,15 +1753,20 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
     let newId : ObjectId := object.id.getD ⟨g.nextObjectId⟩
     let ts : Nat := g.timestamp + 1
     let printed := object.toCardDef
-    let sick := (object.creature || printed.isCreature) && !object.keywords.haste
+    let sick :=
+      if object.printed.isSome then object.summoningSick
+      else (object.creature || printed.isCreature) && !object.keywords.haste
     let baseStatus : Status :=
       if object.zone == Zone.battlefield then
         { tapped := object.tapped
           summoningSick := sick
           attacking := object.attacking
+          attackingWhom := object.attackingWhom
           phasedOut := object.phasedOut
           faceDown := object.faceDown
           transformed := object.transformed
+          returnedAsArtifact := object.returnedAsArtifact
+          onlyFoodArtifact := object.onlyFoodArtifact
           gotPlusOneThisTurn := object.counters.count .plusOnePlusOne > 0 }
       else {}
     let status :=
@@ -1765,8 +1785,21 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         zone := object.zone
         status := status
         timestamp := ts
+        abilityEffect := object.abilityEffect
+        triggeredAbility := object.triggeredAbility
+        sourceId := object.sourceId
+        lastKnownPower := object.lastKnownPower
+        lastKnownToughness := object.lastKnownToughness
         attachedTo := if object.zone == Zone.battlefield then object.attachedTo else none
-        isCopy := object.isCopy }
+        adventurerCard := object.adventurerCard
+        wasCast := object.wasCast
+        kicked := object.kicked
+        teamworkPaid := object.teamworkPaid
+        sneakPaid := object.sneakPaid
+        sneakAttackWhom := object.sneakAttackWhom
+        giftPromisedTo := object.giftPromisedTo
+        isCopy := object.isCopy
+        chosenX := object.chosenX }
     let objs :=
       match g.objects.findIdx? (fun o => o.id == newId) with
       | some i => g.objects.set! i fresh

@@ -438,7 +438,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         isCopy := true
       }
       let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-      let g := g.change (.setObject copyObj)
       let g := g.createEffect (.playPermission copyId {
         player := controller, turnEndsRemaining := 0,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
@@ -476,7 +475,6 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           adventurerCard := spell.adventurerCard
         }
         let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-        let g := g.change (.setObject copyObj)
         let g := g.putStackEntry controller copyId
         let g :=
           match g.stack.find? (fun e => e.objectId == spell.id),

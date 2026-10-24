@@ -16,6 +16,21 @@ def recordLandPlayed (g : Game) (p : PlayerId) : Game :=
   g.record (GameEvent.playedLand g.turnNumber p
     { controller := some p, owner := p, types := #[.land] })
 
+/-- Put `id` onto the battlefield as `p`'s land play and run its enters
+processing (CR 305.1). -/
+def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := false) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some card =>
+    let entersTapped := tapped || g.entersTapped p card.printed
+    let (g, newId) := g.putOntoBattlefield id p
+      (tapped := entersTapped) (summoningSick := false)
+      (verb := some .playLand) (actor := some p)
+    let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
+    let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
+    let g := if tapped then g.logMsg s!"{card.name} enters tapped" else g
+    g.afterLandEnters (g.object! newId)
+
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
     throw "Can't play a land now (CR 116.2a / 305.3)"
@@ -24,13 +39,16 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw (g.playZoneError p card)
   if !card.printed.isLand then
     throw s!"{card.name} is not a land"
-  let (g, newId) := g.putOntoBattlefield id p
-    (tapped := g.entersTapped p card.printed) (summoningSick := false)
-    (verb := some .playLand) (actor := some p)
-  let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
-  let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
-  -- Lands have no summoning sickness. `entersTapped` overrides CR 110.5b.
-  let g := g.afterLandEnters (g.object! newId)
+  -- The Black Gate: “As it enters, you may pay N life. If you don't, it
+  -- enters tapped.” Choose tapped before moving so the arrival event is
+  -- recorded with the final tap status (CR 614.1c).
+  match card.printed.entersTappedUnlessPayLife with
+  | some n =>
+    if !g.entersTapped p card.printed then
+      return (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped id n)))).logMsg
+        s!"{(g.player p).name} may pay {n} life, or {card.name} enters tapped"
+  | none => pure ()
+  let g := g.finishPlayLand p id
   if g.pending != .none then
     return g
   return g.receivePriority p

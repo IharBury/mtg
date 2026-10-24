@@ -206,7 +206,6 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
     let obj := { baseObj with status := status }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj))
-    let g := g.change (.setObject obj)
     let g := g.createPrintedStaticEffects (g.object! newId)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
     let g := g.change (.pushPendingTokenEnter newId)

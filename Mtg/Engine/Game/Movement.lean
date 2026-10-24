@@ -36,7 +36,6 @@ def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace) : Game
     timestamp := copyTs
   }
   let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj))
-  let g := g.change (.setObject copyObj)
   let g := g.createPrintedStaticEffects (g.object! copyId)
   g.createEffect (.playPermission copyId {
     player := p
@@ -422,9 +421,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
   -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
   let g := g.record happened
-  let g :=
-    if g.object! newId != fresh then g.change (.setObject fresh)
-    else g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>

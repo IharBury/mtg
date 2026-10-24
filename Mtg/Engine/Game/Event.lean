@@ -56,27 +56,48 @@ structure EventObject where
   transformed     : Bool                 := false
   attachedTo      : Option ObjectId      := none
   counters        : CounterBag           := #[]
-  token           : Bool                 := false
-  isCopy          : Bool                 := false
-  changeling      : Bool                 := false
+  token              : Bool                        := false
+  isCopy             : Bool                        := false
+  changeling         : Bool                        := false
+  summoningSick      : Bool                        := false
+  attackingWhom      : Option PlayerId             := none
+  returnedAsArtifact : Bool                        := false
+  onlyFoodArtifact   : Bool                        := false
+  wasCast            : Bool                        := false
+  printed            : Option CardDef              := none
+  chosenX            : Option Nat                  := none
+  kicked             : Bool                        := false
+  teamworkPaid       : Bool                        := false
+  sneakPaid          : Bool                        := false
+  sneakAttackWhom    : Option PlayerId             := none
+  giftPromisedTo     : Option PlayerId             := none
+  adventurerCard     : Option CardDef              := none
+  abilityEffect      : Option Effect               := none
+  triggeredAbility   : Option TriggeredAbility     := none
+  sourceId           : Option ObjectId             := none
+  lastKnownPower     : Option Int                  := none
+  lastKnownToughness : Option Int                  := none
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
 
 /-- Synthesize a `CardDef` from the characteristics in `e` (CR 109.3). -/
 def toCardDef (e : EventObject) : CardDef :=
-  { name := e.name
-    colorIndicator := if e.colors.isColorless then none else some e.colors
-    supertypes := e.supertypes
-    types := e.types
-    subtypes := e.subtypes.map CardSubtype.englishName
-    power := e.power
-    toughness := e.toughness
-    loyalty := e.loyalty.map Int.ofNat
-    keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
-    toxic := e.toxic
-    staticAbilities := e.staticAbilities
-    isToken := e.token }
+  match e.printed with
+  | some p => p
+  | none =>
+    { name := e.name
+      colorIndicator := if e.colors.isColorless then none else some e.colors
+      supertypes := e.supertypes
+      types := e.types
+      subtypes := e.subtypes.map CardSubtype.englishName
+      power := e.power
+      toughness := e.toughness
+      loyalty := e.loyalty.map Int.ofNat
+      keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
+      toxic := e.toxic
+      staticAbilities := e.staticAbilities
+      isToken := e.token }
 
 /-- `s` is one of this object's supertypes. -/
 def hasSupertype (o : EventObject) (s : Supertype) : Bool :=
@@ -176,7 +197,25 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     counters := o.status.toCounterBag
     token := o.printed.isToken
     isCopy := o.isCopy
-    changeling := o.printed.keywords.changeling }
+    changeling := o.printed.keywords.changeling
+    summoningSick := o.status.summoningSick
+    attackingWhom := o.status.attackingWhom
+    returnedAsArtifact := o.status.returnedAsArtifact
+    onlyFoodArtifact := o.status.onlyFoodArtifact
+    wasCast := o.wasCast
+    printed := some o.printed
+    chosenX := o.chosenX
+    kicked := o.kicked
+    teamworkPaid := o.teamworkPaid
+    sneakPaid := o.sneakPaid
+    sneakAttackWhom := o.sneakAttackWhom
+    giftPromisedTo := o.giftPromisedTo
+    adventurerCard := o.adventurerCard
+    abilityEffect := o.abilityEffect
+    triggeredAbility := o.triggeredAbility
+    sourceId := o.sourceId
+    lastKnownPower := o.lastKnownPower
+    lastKnownToughness := o.lastKnownToughness }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives

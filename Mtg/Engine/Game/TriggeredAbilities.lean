@@ -3795,6 +3795,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (g.findObject? oid).map fun o => (g.power o).toNat
           | _ => none
       let steps := rs.flatMap TriggeredAbility.TriggerResolution.flatten
+      match steps with
+      | [.createTokens kind (.fixed n) tapped .kind .you .none,
+          .«if» cond .markRecentTokensAttacking] =>
+        let (g, holds) :=
+          g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+        let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+        if holds then
+          g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+        else g
+      | steps =>
       let (g, rest, _, _) :=
         steps.foldl
           (fun (acc : Game × List TriggeredAbility.TriggerResolution × Bool × Bool) step =>
@@ -4009,25 +4019,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
   | .markRecentTokensAttacking =>
-    let dest := some g.defendingPlayer
-    let ids := g.recentTokenIds
-    let g :=
-      ids.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          g.changeStatuses o.id #[.attacking true, .attackingWhom dest]
-        | none => g) g
-    let events := g.events.map (fun ev =>
-      match ev.change with
-      | .rules (.zone (.created obj creator)) =>
-        if obj.id.any ids.contains then
-          { ev with
-            change := .rules (.zone (.created
-              { obj with attacking := true }
-              creator)) }
-        else ev
-      | _ => ev)
-    let g := { g with events }
     g.logMsg
       s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
   | .additionalCombatPhase =>
@@ -4562,6 +4553,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match steps with
         | [.shuffleSource, .draw (.fixed n)] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+        | [.createTokens kind (.fixed n) tapped .kind .you .none,
+            .«if» cond .markRecentTokensAttacking] =>
+          let (g, holds) :=
+            g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+          let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+          if holds then
+            g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+          else g
         | steps =>
           steps.foldl (fun g r =>
             let step : TriggeredAbility :=

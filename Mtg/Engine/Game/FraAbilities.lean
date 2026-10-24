@@ -422,7 +422,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
               isCopy := true
             }
             let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-            let g := g.change (.setObject copyObj)
             g.beginFraChoice controller (.mayCastCopy copyId)
               s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
         | none => g.logMsg "The target is no longer legal"
@@ -447,7 +446,6 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             isCopy := true
           }
           let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-          let g := g.change (.setObject copyObj)
           let g := g.createEffect (.playPermission copyId {
             player := controller, turnEndsRemaining := 0,
             whileExiled := true, withoutManaCost := true, ignoreTiming := true })
