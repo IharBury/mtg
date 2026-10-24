@@ -611,10 +611,12 @@ value in your graveyard; they annihilate with +1/+1 counters (ruling 885). -/
 Master of Barbs pumps your team. -/
 #guard
   let g := addPermanent afterDraw massacreGirlMostWanted me me
-  counters (settle (g.dealDamageToPlayer opp 1)) "Massacre Girl, Most Wanted" == 1
+  let src := namedPermanent g "Massacre Girl, Most Wanted"
+  counters (settle (g.dealDamageToPlayer opp 1 (source := some src))) "Massacre Girl, Most Wanted" == 1
 #guard
   let g := addPermanent (addPermanent afterDraw masterOfBarbs me me) grizzlyBears me me
-  let g := settle (g.dealDamageToPlayer opp 1)
+  let src := namedPermanent g "Master of Barbs"
+  let g := settle (g.dealDamageToPlayer opp 1 (source := some src))
   g.power (namedPermanent g "Grizzly Bears") == 3
 
 /-! ## Life, scry, discard, and loyalty triggers -/
@@ -708,7 +710,8 @@ Master of Barbs pumps your team. -/
 #guard
   let g := addPermanent afterDraw hexhavenInvigorator me me
   let lands := ((afterDraw.permanentsOf me).filter (·.printed.isLand)).size
-  let g := resolveTop (stackTriggers (g.dealDamageToPermanent (namedPermanent g "Hexhaven Invigorator") 2))
+  let inv := namedPermanent g "Hexhaven Invigorator"
+  let g := resolveTop (stackTriggers (g.dealDamageToPermanent inv 2 (source := some inv.asEvent)))
   let g := mustApply g me .accept
   let g := applyIdle g
   ((g.permanentsOf me).filter (·.printed.isLand)).size == lands + 2
@@ -724,16 +727,16 @@ Master of Barbs pumps your team. -/
 #guard
   let g := addToGraveyard afterDraw darklightPhoenix me
   let g := (g.record (GameEvent.moved g.turnNumber
-      { id := ⟨51⟩, controller := some me, owner := me, types := #[.creature] }
+      { id := some ⟨51⟩, controller := some me, owner := me, types := #[.creature] }
       .battlefield (.graveyard me))).record
     (GameEvent.moved g.turnNumber
-      { id := ⟨52⟩, controller := some me, owner := me, types := #[.creature] }
+      { id := some ⟨52⟩, controller := some me, owner := me, types := #[.creature] }
       .battlefield (.graveyard me))
   let g := settle (skipTo g .beginningOfCombat 80)
   onBattlefield g "Darklight Phoenix"
 #guard
   let g := addToGraveyard afterDraw commandTheStage me
-  let g := settle (g.dealDamageToPlayer opp 1)
+  let g := settle (g.dealDamageToPlayer opp 1 (source := some (graveyardCard g me "Command the Stage")))
   let g := settle (skipTo g .upkeep 200)
   inHand g me "Command the Stage"
 #guard

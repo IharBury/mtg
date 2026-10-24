@@ -73,7 +73,7 @@ structure Game where
   /-- Creatures that assigned first-strike combat damage this combat. They
   assign regular damage only if they have double strike (Okoye; MSH 173). -/
   firstStrikeAssignedThisCombat : Array ObjectId := #[]
-  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  /-- It is night (CR 731 / 702.145). Used by Nick Fury / daybound (MSH 191). -/
   isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
@@ -352,7 +352,8 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
       stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
       influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-      hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
+      hone := 0, shadow := 0, lore := 0, story := 0, time := 0, poison := 0
+      keywordCounters := {} }
   | .proliferatedExceptPlusOne extra =>
     let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
     { s with
@@ -365,7 +366,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       trampleCounters := inc s.trampleCounters
       indestructibleCounters := inc s.indestructibleCounters
       lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-      lore := inc s.lore, story := inc s.story, time := inc s.time
+      lore := inc s.lore, story := inc s.story, time := inc s.time, poison := inc s.poison
       keywordCounters := s.keywordCounters.incPresent extra }
   | .addCountersExceptPlusOne «from» extra =>
     let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
@@ -384,6 +385,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
       lore := s.lore + bump «from».lore
       story := s.story + bump «from».story, time := s.time + bump «from».time
+      poison := s.poison + bump «from».poison
       keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
   | .addPump p t =>
     { s with pump := (s.pump.1 + p, s.pump.2 + t) }
@@ -423,6 +425,7 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
     | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
     | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
     | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
+    | .poison => { s with poison := s.poison + n }
   | .removeCounters kind n =>
     match kind with
     | .plusOnePlusOne => { s with plusOnePlusOne := s.plusOnePlusOne - n }
@@ -454,11 +457,11 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
     | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch - n }
     | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike - n }
     | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike - n }
+    | .poison => { s with poison := s.poison - n }
   | .grantUntilEot k =>
     { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
   | .clearedAtCleanup =>
     { s with
-      damage := 0
       pump := (0, 0)
       untilEotKeywords := Keywords.none
       untilEotLosesIndestructible := false
@@ -652,7 +655,6 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
   | .animatedConstruct55 v => { s with animatedConstruct55 := v }
   | .chosenName v => { s with chosenName := v }
   | .faceDown v => { s with faceDown := v }
-  | .goaded v => { s with goaded := v }
   | .story v => { s with story := v }
   | .time v => { s with time := v }
   | .notACreature v => { s with notACreature := v }
@@ -944,7 +946,7 @@ def effectIsFlag : ContinuousEffect → Bool
   | .additionalCreature _ _ | .additionalArtifactUntilEot _ | .onlyFoodArtifact _
   | .returnedAsArtifact _ | .notACreature _ | .combatDamageCreatesTreasureUntilEot _
   | .losesAbilitiesUntilEot _ | .cantBeBlockedExceptByHasteUntilEot _ | .cantBlockUntilEot _
-  | .goaded _ | .freeCastFromGraveyardUntilEot _ | .flashbackUntilEot _
+  | .freeCastFromGraveyardUntilEot _ | .flashbackUntilEot _
   | .exileInstantSorceryInstead _ | .uncounterableThisCast _
   | .protectionFromEverything _ | .lifeCantChange _ | .lifeLocked _
   | .cantCastSpellsThisTurn _ | .jaceLoyaltyAtInstantSpeedThisTurn _
@@ -953,10 +955,21 @@ def effectIsFlag : ContinuousEffect → Bool
   | .powerUpsForbiddenThisTurn => true
   | _ => false
 
-/-- Recompute `id`'s controller and control durations from every active
-control-changing effect on it (CR 613.1b / 613.7): the most recent one sets the
-controller. With none left, control returns to the default controller unless
-that player has left the game (CR 800.4a). -/
+/-- Effective controller of `o` under `g.activeEffects` (CR 613.1b / 613.7 /
+800.4a). -/
+def effectiveController? (g : Game) (o : GameObject) : Option PlayerId :=
+  let ctrl? := g.lastActive? (fun
+    | .control oid c _ _ _ => if oid == o.id then some c else none
+    | _ => none)
+  match ctrl? with
+  | some c => some c
+  | none =>
+    let p := o.defaultController.getD o.owner
+    if !(g.players[p.idx]!).lost then some p else o.controller
+
+/-- Recompute `id`'s control duration flags from every active control-changing
+effect on it (CR 613.1b / 613.7). `o.controller` and `o.controlChanged` are
+written only by `PermanentEvent.controlChanged`. -/
 def recomputeControl (g : Game) (id : ObjectId) : Game :=
   let effs := g.activeEffects.filterMap (fun (_, e) =>
     match e with
@@ -965,10 +978,8 @@ def recomputeControl (g : Game) (id : ObjectId) : Game :=
     | _ => none)
   g.modifyObject id (fun o =>
     match effs.back? with
-    | some (c, _, _, _) =>
+    | some _ =>
       { o with
-        controller := some c
-        controlChanged := o.controlChanged || o.controller != some c
         controlUntilSourceLeaves :=
           effs.foldl (fun acc (_, _, _, usl) => usl.orElse (fun _ => acc)) none
         status :=
@@ -976,11 +987,7 @@ def recomputeControl (g : Game) (id : ObjectId) : Game :=
             controlUntilEot := effs.any (fun (_, ue, _, _) => ue)
             controlTurnEndsLeft := effs.foldl (fun acc (_, _, tel, _) => max acc tel) 0 } }
     | none =>
-      let p := o.defaultController.getD o.owner
-      let restoreCtrl := !(g.players[p.idx]!).lost
       { o with
-        controller := if restoreCtrl then some p else o.controller
-        controlChanged := if restoreCtrl then false else o.controlChanged
         controlUntilSourceLeaves := none
         status :=
           { o.status with
@@ -1134,8 +1141,6 @@ def installEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := true })
   | .cantBlockUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBlockUntilEot := true })
-  | .goaded id =>
-    g.modifyStatus id (fun s => { s with goaded := true })
   | .colorlessGrantUntilCast id cardId =>
     g.modifyStatus id (fun s => { s with colorlessGrantUntilCast := s.colorlessGrantUntilCast.push cardId })
   | .freeCastFromGraveyardUntilEot id =>
@@ -1288,8 +1293,6 @@ def uninstallEffect (g : Game) (eff : ContinuousEffect) : Game :=
     g.modifyStatus id (fun s => { s with cantBeBlockedExceptByHasteUntilEot := false })
   | .cantBlockUntilEot id =>
     g.modifyStatus id (fun s => { s with cantBlockUntilEot := false })
-  | .goaded id =>
-    g.modifyStatus id (fun s => { s with goaded := false })
   | .colorlessGrantUntilCast id cardId =>
     g.modifyStatus id (fun s =>
       match s.colorlessGrantUntilCast.findIdx? (· == cardId) with
@@ -1382,9 +1385,207 @@ def applyEffectUpdated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
     let g := { g with activeEffects := g.activeEffects.set! idx (effectId, eff) }
     (g.uninstallEffect old).installEffect eff
 
-/-- Process one `GameChange` in isolation. -/
-def applyChange (g : Game) (c : GameChange) : Game :=
-  match c with
+/-- Apply one `PermanentEvent` in isolation (CR 110.5, 122, 701.3, 701.26). -/
+def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
+  let findEventIdx? (object : EventObject) : Option Nat :=
+    object.id.bind (fun id => g.objects.findIdx? (·.id == id))
+  match e with
+  | .tapped object _ =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      let s := { o.status with tapped := true, becameTappedThisTurn := true }
+      { g with objects := g.objects.set! i { o with status := s } }
+    | none => g
+  | .untapped object =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      let s := { o.status with tapped := false }
+      { g with objects := g.objects.set! i { o with status := s } }
+    | none => g
+  | .phasedOut object _ =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := true } } }
+    | none => g
+  | .phasedIn object _ =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false } } }
+    | none => g
+  | .transformed object nowBackFace =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with status := { o.status with transformed := nowBackFace } } }
+    | none => g
+  | .turnedFaceUp object =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with status := { o.status with faceDown := false } } }
+    | none => g
+  | .turnedFaceDown object =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with status := { o.status with faceDown := true } } }
+    | none => g
+  | .counters (.player p) .poison delta _ =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      let poison :=
+        match delta with
+        | .put n => pl.poison + n
+        | .removed n => pl.poison - n
+      { g with players := g.players.set! p.idx { pl with poison } }
+    else g
+  | .counters (.player p) kind delta _ =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      let cur := pl.counterCount kind
+      let next :=
+        match delta with
+        | .put n => cur + n
+        | .removed n => cur - n
+      let counters :=
+        let without := pl.counters.filter (·.1 != kind)
+        if next == 0 then without else without.push (kind, next)
+      { g with players := g.players.set! p.idx { pl with counters } }
+    else g
+  | .counters (.object object) kind delta _ =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      let sc :=
+        match delta with
+        | .put n => StatusChange.addCounters kind n
+        | .removed n => StatusChange.removeCounters kind n
+      { g with objects := g.objects.set! i { o with status := o.status.applyChange sc } }
+    | none => g
+  | .attached attachment host _ =>
+    match findEventIdx? attachment with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with attachedTo := some host } }
+    | none => g
+  | .unattached attachment _ =>
+    match findEventIdx? attachment with
+    | some i =>
+      let o := g.objects[i]!
+      { g with objects := g.objects.set! i { o with attachedTo := none } }
+    | none => g
+  | .controlChanged object fromPlayer toPlayer =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      let defaultCtrl := o.defaultController.getD o.owner
+      let hasActiveCtrl := g.activeEffects.any (fun (_, e) =>
+        match e with
+        | .control oid _ _ _ _ => some oid == object.id
+        | _ => false)
+      let changed :=
+        if hasActiveCtrl || toPlayer != defaultCtrl then
+          o.controlChanged || o.controller != some toPlayer || fromPlayer != toPlayer
+        else false
+      { g with
+        objects :=
+          g.objects.set! i
+            { o with
+              controller := some toPlayer
+              controlChanged := changed } }
+    | none => g
+  | .designation object d gained =>
+    match findEventIdx? object with
+    | some i =>
+      let o := g.objects[i]!
+      let s :=
+        match d with
+        | .ringBearer => { o.status with ringBearer := gained }
+        | .commander => { o.status with isCommander := gained }
+        | .goaded byPlayer untilNextTurn =>
+          let (goadedBy, goadedUntilNextTurnOf) :=
+            if gained then
+              let byNow :=
+                if o.status.goadedBy.contains byPlayer then o.status.goadedBy
+                else o.status.goadedBy.push byPlayer
+              let untilNow :=
+                if !untilNextTurn then
+                  o.status.goadedUntilNextTurnOf.filter (· != byPlayer)
+                else if !o.status.goadedBy.contains byPlayer ||
+                    o.status.goadedUntilNextTurnOf.contains byPlayer then
+                  if o.status.goadedUntilNextTurnOf.contains byPlayer then
+                    o.status.goadedUntilNextTurnOf
+                  else
+                    o.status.goadedUntilNextTurnOf.push byPlayer
+                else
+                  o.status.goadedUntilNextTurnOf
+              (byNow, untilNow)
+            else
+              let untilNow := o.status.goadedUntilNextTurnOf.filter (· != byPlayer)
+              let byNow :=
+                if !untilNextTurn || o.status.goadedUntilNextTurnOf.contains byPlayer then
+                  o.status.goadedBy.filter (· != byPlayer)
+                else
+                  o.status.goadedBy
+              (byNow, untilNow)
+          { o.status with goaded := !goadedBy.isEmpty, goadedBy, goadedUntilNextTurnOf }
+        | .prepared => { o.status with prepared := gained }
+        | .harnessed => { o.status with harnessed := gained }
+      { g with objects := g.objects.set! i { o with status := s } }
+    | none => g
+
+/-- Apply one `DamageEvent` in isolation (CR 120.3 / 120.4b). -/
+def applyDamageEvent (g : Game) (e : DamageEvent) : Game :=
+  match e with
+  | .dealt _ | .prevented _ _ _ => g
+  | .marked objectId amount =>
+    match g.objects.findIdx? (·.id == objectId) with
+    | some i =>
+      let o := g.objects[i]!
+      let s := o.status.applyChange (.addDamage (amount : Int) false)
+      { g with objects := g.objects.set! i { o with status := s } }
+    | none => g
+  | .markedCleared objectIds =>
+    objectIds.foldl (fun acc id =>
+      match acc.objects.findIdx? (·.id == id) with
+      | some i =>
+        let o := acc.objects[i]!
+        { acc with
+          objects :=
+            acc.objects.set! i
+              { o with
+                status :=
+                  { o.status with
+                    damage := 0
+                    dealtDeathtouch := false } } }
+      | none => acc) g
+
+/-- Apply one `LifeEvent` in isolation (CR 119.2 / 119.3). -/
+def applyLifeEvent (g : Game) (e : LifeEvent) : Game :=
+  match e with
+  | .gained p amount =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      if pl.lifeLocked || pl.lifeCantChange then g
+      else { g with players := g.players.set! p.idx { pl with life := pl.life + (amount : Int) } }
+    else g
+  | .lost p amount _ _ =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      if pl.lifeLocked || pl.lifeCantChange then g
+      else { g with players := g.players.set! p.idx { pl with life := pl.life - (amount : Int) } }
+    else g
+
+/-- Process one `RulesEvent` in isolation. -/
+def applyRulesEvent (g : Game) (r : RulesEvent) : Game :=
+  match r with
+  | .permanent e => g.applyPermanentEvent e
+  | .damage e => g.applyDamageEvent e
+  | .life e => g.applyLifeEvent e
   | .cast .. | .attacked .. | .stepped .. | .activated ..
   | .spentMana .. | .playedLand .. => g
   | .effectApplied id _ =>
@@ -1392,6 +1593,10 @@ def applyChange (g : Game) (c : GameChange) : Game :=
   | .effectCreated id eff => g.applyEffectCreated id eff
   | .effectExpired id eff => g.applyEffectExpired id eff
   | .effectUpdated id eff => g.applyEffectUpdated id eff
+
+/-- Process one `EngineChange` in isolation. -/
+def applyEngineChange (g : Game) (c : EngineChange) : Game :=
+  match c with
   | .player p pc =>
     if h : p.idx < g.players.size then
       let pl := g.players[p.idx]
@@ -1649,21 +1854,40 @@ def applyChange (g : Game) (c : GameChange) : Game :=
     { g with ancestryLandsTapped := g.ancestryLandsTapped.push id }
   | .removeAncestryLandTapped id =>
     { g with ancestryLandsTapped := g.ancestryLandsTapped.filter (· != id) }
+  | .sbaChecked => g
   | .clearEvents => { g with events := #[] }
 
+/-- Process one `GameChange` in isolation. -/
+def applyChange (g : Game) (c : GameChange) : Game :=
+  match c with
+  | .rules r => g.applyRulesEvent r
+  | .engine e => g.applyEngineChange e
+
 /-- Process one `GameEvent` in isolation, appending it to `g.events` and
-applying its `GameChange`. One-shot effects (`effectApplied`) receive a fresh
-unique `EffectId` from `g.nextEffectId` when recorded if not already assigned
-one at or above `g.nextEffectId` (CR 610). -/
+applying its `GameChange`. One-shot effects receive a fresh unique `EffectId`
+from `g.nextEffectId` when recorded if not already assigned one at or above
+`g.nextEffectId` (CR 610). -/
 def applyEvent (g : Game) (e : GameEvent) : Game :=
-  let e :=
-    match e.change with
-    | .effectApplied id eff =>
+  let (e, bumpId?) :=
+    match e.cause, e.change with
+    | .oneShotEffect id src ctrl, .rules (.effectApplied _ eff) =>
       let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
-      ⟨e.turn, .effectApplied actualId eff⟩
-    | _ => e
+      ({ e with
+          cause := .oneShotEffect actualId src ctrl
+          change := .rules (.effectApplied actualId eff) },
+        some actualId)
+    | _, .rules (.effectApplied id eff) =>
+      let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
+      ({ e with
+          cause := .oneShotEffect actualId none none
+          change := .rules (.effectApplied actualId eff) },
+        some actualId)
+    | _, _ => (e, none)
   let g := { g with events := g.events.push e }
-  g.applyChange e.change
+  let g := g.applyChange e.change
+  match bumpId? with
+  | some actualId => { g with nextEffectId := max g.nextEffectId (actualId.raw + 1) }
+  | none => g
 
 /-- Record a change that happened. Replacements consult an event before
 this, and do not record a change they replace (CR 614.6). -/
@@ -1674,12 +1898,12 @@ def record (g : Game) (e : GameEvent) : Game :=
 def recordAll (g : Game) (es : Array GameEvent) : Game :=
   es.foldl Game.record g
 
-/-- Add and process a `GameChange` on the current turn. -/
-def change (g : Game) (c : GameChange) : Game :=
-  g.record ⟨g.turnNumber, c⟩
+/-- Add and process an `EngineChange` on the current turn. -/
+def change (g : Game) (c : EngineChange) : Game :=
+  g.record (GameEvent.engine g.turnNumber c)
 
-/-- Add and process a sequence of `GameChange`s on the current turn. -/
-def changes (g : Game) (cs : Array GameChange) : Game :=
+/-- Add and process a sequence of `EngineChange`s on the current turn. -/
+def changes (g : Game) (cs : Array EngineChange) : Game :=
   cs.foldl Game.change g
 
 /-- Add and process a `PlayerChange` for `p`. -/
@@ -1742,7 +1966,7 @@ def effectObject? : ContinuousEffect → Option ObjectId
   | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ | .hexproofWhileSource id _
   | .preventDamageWhileSource id _ | .cantUntapWhileSource id _
   | .cantBeBlockedByPlayerUntilEot id _ | .cantBeBlockedExceptByHasteUntilEot id
-  | .cantBlockUntilEot id | .goaded id | .colorlessGrantUntilCast id _
+  | .cantBlockUntilEot id | .colorlessGrantUntilCast id _
   | .freeCastFromGraveyardUntilEot id | .flashbackUntilEot id | .exileInstantSorceryInstead id
   | .uncounterableThisCast id | .playPermission id _ | .fraEmblemUntilTurnOf id _
   | .copy id _ _ _ _ _ | .control id _ _ _ _ => some id
@@ -1771,7 +1995,7 @@ def createPrintedStaticEffects (g : Game) (o : GameObject) : Game :=
   if hasActivePrintedStatics o then
     o.printed.staticAbilities.foldl (fun acc sa =>
       let eid : EffectId := ⟨acc.nextEffectId⟩
-      acc.change (.effectCreated eid (.staticAbility o.id sa))) g
+      acc.record (GameEvent.effectCreated acc.turnNumber eid (.staticAbility o.id sa))) g
   else g
 
 /-- Record the expiration of `o`'s active printed static-ability continuous
@@ -1780,7 +2004,7 @@ def expirePrintedStaticEffects (g : Game) (o : GameObject) : Game :=
   o.printed.staticAbilities.foldl (fun acc sa =>
     let eff := ContinuousEffect.staticAbility o.id sa
     match acc.activeEffects.find? (fun (_, e) => e == eff) with
-    | some (eid, _) => acc.change (.effectExpired eid eff)
+    | some (eid, _) => acc.record (GameEvent.effectExpired acc.turnNumber eid eff)
     | none => acc) g
 
 /-- Record and apply the creation of a continuous effect (CR 611). Assigns a
@@ -1792,7 +2016,7 @@ def createEffect (g : Game) (eff : ContinuousEffect) : Game :=
   | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
     let prev? := g.findObject? id
     let eid : EffectId := ⟨g.nextEffectId⟩
-    let g := g.change (.effectCreated eid eff)
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
     match prev? with
     | some prev => g.expirePrintedStaticEffects prev
     | none => g
@@ -1803,18 +2027,31 @@ def createEffect (g : Game) (eff : ContinuousEffect) : Game :=
       | some prev => g.expirePrintedStaticEffects prev
       | none => g
     let eid : EffectId := ⟨g.nextEffectId⟩
-    let g := g.change (.effectCreated eid eff)
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
     match g.findObject? id with
     | some cur =>
       if hasActivePrintedStatics cur then
         newPrinted.staticAbilities.foldl (fun acc sa =>
           let sid : EffectId := ⟨acc.nextEffectId⟩
-          acc.change (.effectCreated sid (.staticAbility id sa))) g
+          acc.record (GameEvent.effectCreated acc.turnNumber sid (.staticAbility id sa))) g
       else g
+    | none => g
+  | .control id _ _ _ _ =>
+    let prevCtrl? := (g.findObject? id).bind (·.controller)
+    let eid : EffectId := ⟨g.nextEffectId⟩
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    match g.findObject? id with
+    | some o =>
+      let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
+      match g.effectiveController? o with
+      | some toP =>
+        if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+        else g
+      | none => g
     | none => g
   | _ =>
     let eid : EffectId := ⟨g.nextEffectId⟩
-    g.change (.effectCreated eid eff)
+    g.record (GameEvent.effectCreated g.turnNumber eid eff)
 
 /-- Record and apply the creation of multiple continuous effects in order (CR 611). -/
 def createEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
@@ -1832,7 +2069,7 @@ def expireEffectById (g : Game) (eid : EffectId) : Game :=
     match eff with
     | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
       let wasActive := (g.findObject? id).map hasActivePrintedStatics |>.getD false
-      let g := g.change (.effectExpired eid eff)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
       match g.findObject? id with
       | some cur =>
         if !wasActive && hasActivePrintedStatics cur then g.createPrintedStaticEffects cur
@@ -1844,11 +2081,23 @@ def expireEffectById (g : Game) (eid : EffectId) : Game :=
         match prev? with
         | some prev => g.expirePrintedStaticEffects prev
         | none => g
-      let g := g.change (.effectExpired eid eff)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
       match g.findObject? id with
       | some cur => g.createPrintedStaticEffects cur
       | none => g
-    | _ => g.change (.effectExpired eid eff)
+    | .control id _ _ _ _ =>
+      let prevCtrl? := (g.findObject? id).bind (·.controller)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
+      match g.findObject? id with
+      | some o =>
+        let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
+        match g.effectiveController? o with
+        | some toP =>
+          if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+          else g
+        | none => g
+      | none => g
+    | _ => g.record (GameEvent.effectExpired g.turnNumber eid eff)
 
 /-- Record and apply the expiration of the earliest active continuous effect
 equal to `eff` (CR 611). When no such effect is active, nothing is recorded
@@ -2057,16 +2306,34 @@ def loggedSheHulkDealtDamage (g : Game) : Bool :=
   GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
 
 /-- Record that combat damage was dealt to `p`. -/
-def noteCombatDamageTo (g : Game) (p : PlayerId) : Game :=
-  g.record (GameEvent.damagedPlayer g.turnNumber none p 1 true)
+def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject) : Game :=
+  g.record (GameEvent.damagedPlayer g.turnNumber source p 1 true)
 
-/-- Set `p`'s life total and log `msg`. -/
+/-- True when `id` has been dealt a positive amount of damage by a source with
+deathtouch since the last time state-based actions were checked (CR 704.5h). -/
+def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
+  g.events.foldl (fun dealt e =>
+    match e.change with
+    | .engine .sbaChecked => false
+    | .rules (.damage (.dealt pkts)) =>
+      dealt || pkts.any (fun pkt =>
+        pkt.amount > 0 && pkt.source.keywords.deathtouch &&
+          match pkt.recipient with
+          | .permanent c => c.id == some id
+          | _ => false)
+    | _ => dealt) false
+
+/-- Set `p`'s life total by gaining or losing the difference (CR 119.5) and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
   let pl := g.player p
   if (pl.lifeLocked || pl.lifeCantChange) && life != pl.life then
     g.logMsg s!"{pl.name}'s life total can't change"
+  else if life > pl.life then
+    (g.record (GameEvent.life g.turnNumber p (life - pl.life).toNat true)).logMsg msg
+  else if life < pl.life then
+    (g.record (GameEvent.life g.turnNumber p (pl.life - life).toNat false)).logMsg msg
   else
-    g.changePlayer p (.life life) |>.logMsg msg
+    g.logMsg msg
 
 /-- Remember that `p` created one or more creature tokens (CR 603.2c).
 One instruction notes the player once. -/

@@ -15,7 +15,7 @@ namespace Game
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{o.name} has no indestructible counter"
-  let g := g.changeStatus o.id (.indestructibleCounters (o.status.indestructibleCounters - 1))
+  let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .indestructible 1 true)
   return g.logMsg s!"{o.name} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
@@ -29,8 +29,13 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
   let pl := g.player p
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
-  let g := g.setLife p (pl.life - (n : Int))
-    s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
+  let g :=
+    if pl.lifeLocked || pl.lifeCantChange then
+      g.logMsg s!"{pl.name}'s life total can't change"
+    else
+      (g.record (GameEvent.life g.turnNumber p n false false false
+        (cause := some (.costPayment .life p)))).logMsg
+        s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
   return g.afterLifeLost p (pl.life - (g.player p).life).toNat
 
 /-- Default order for paying a cost with permanents: tokens first, then the
@@ -179,20 +184,24 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let src := g.object! sourceId
       if src.status.story == 0 then
         throw s!"{src.name} has no story counter"
-      g := g.changeStatus sourceId (.story (src.status.story - 1))
+      g := g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .story 1 true)
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {src.name}"
     if a.cost.removeIndestructibleCounter then
       g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
     if a.cost.putStunCounterOnSource then
       let src := g.object! sourceId
       let n := g.countersYouPut src 1 (putter := some p)
-      g := (g.changeStatus sourceId (.stun (src.status.stun + n))).logMsg
-        s!"{(g.player p).name} puts a stun counter on {src.name}"
+      let g' := if n > 0 then g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .stun n) else g
+      g := g'.logMsg s!"{(g.player p).name} puts a stun counter on {src.name}"
     if a.cost.removeAnyNumberPlusOne then
       let src := g.object! sourceId
       if src.status.plusOnePlusOne < removePlusOnes then
         throw s!"{src.name} doesn't have {removePlusOnes} +1/+1 counters"
-      g := (g.changeStatus sourceId (.plusOnePlusOne (src.status.plusOnePlusOne - removePlusOnes))).logMsg
+      let g' :=
+        if removePlusOnes > 0 then
+          g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .plusOnePlusOne removePlusOnes true)
+        else g
+      g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {src.name}"
   | none => pure ()
   if sacrificeSource then

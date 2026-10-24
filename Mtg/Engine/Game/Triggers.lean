@@ -301,7 +301,8 @@ def addOneLoreRaw (g : Game) (saga : GameObject) : Game :=
       if !saga.isOnBattlefield then g
       else
         let lore := saga.status.lore + 1
-        let g := g.changeStatus saga.id (.lore lore)
+        let g := g.record (GameEvent.counters g.turnNumber (some p) saga.asEvent .lore 1
+          (cause := some (.turnBased .sagaLoreOnMain)))
         let g := g.logMsg s!"{saga.name} gets a lore counter ({lore})"
         let saga := g.object! saga.id
         (sdef.chaptersForLore lore).foldl (fun g ch =>
@@ -413,14 +414,12 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
     g.logMsg s!"{o.name} is already tapped"
   else
     let first := !o.status.becameTappedThisTurn
-    let g := g.changeStatuses o.id #[.tapped true, .becameTappedThisTurn true]
-    let g := g.logMsg s!"{o.name} becomes tapped"
     let during :=
       match o.controller with
       | some p => g.activePlayer == p
       | none => false
-    let happened := GameEvent.tapped g.turnNumber (g.object! o.id).asEvent true during
-    let g := g.record happened
+    let happened := GameEvent.tapped g.turnNumber o.asEvent true during
+    let g := (g.record happened).logMsg s!"{o.name} becomes tapped"
     match o.controller with
     | some p =>
       let g :=
@@ -472,7 +471,6 @@ def afterLifeLost (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let happened := GameEvent.life g.turnNumber p n false true
-    let g := g.record happened
     if !happened.matchesTrigger p ⟨0⟩ .playerLosesLife then g
     else
       g.livingPlayers.foldl (fun acc pl =>
@@ -907,8 +905,8 @@ def queueScryOrSurveilTriggers (g : Game) (p : PlayerId) : Game :=
   g.foldControlledPermanents p none fun g o =>
     g.putMatchingSourceTriggers p o .youScryOrSurveil
 
-/-- Start scrying `n` as a keyword action (CR 701.20).
-Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
+/-- Start scrying `n` as a keyword action (CR 701.22).
+Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size

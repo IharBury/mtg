@@ -752,7 +752,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
   | 1 =>
     g.withLegalKindTarget controller tkind targets
-      (fun g tgt => g.dealDamageToTarget tgt 2) sourceId illegal
+      (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.findObject?)) sourceId illegal
   | 3 =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.addIndestructibleCounter o) sourceId illegal
@@ -777,7 +777,8 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       | some o => if o.isOnBattlefield then o.status.plusOnePlusOne else paid
       | none => paid
     g.withLegalKindTarget controller tkind targets
-      (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters)) sourceId illegal
+      (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters) (source := sourceId.bind g.findObject?))
+      sourceId illegal
   | 9 =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o =>
@@ -788,7 +789,8 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
     let legal := g.legalTargetsForKind controller tkind sourceId
     (List.range targets.size).foldl (fun g i =>
       let tgt := targets[i]!
-      if legal.contains tgt then g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
+      if legal.contains tgt then
+        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
       else g.illegalAbilityTarget tgt) g
   | 11 =>
     let legal := g.legalTargetsForKind controller tkind sourceId

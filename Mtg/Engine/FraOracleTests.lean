@@ -65,8 +65,8 @@ def sculptorEntered : Game := enterPermanent afterDraw jaceRealitySculptor ⟨0�
 
 #guard (namedPermanent sculptorEntered "Jace, Reality Sculptor").status.loyaltyCounters == 5
 #guard
-  let g := sculptorEntered.dealDamageToPermanent
-    (namedPermanent sculptorEntered "Jace, Reality Sculptor") 3
+  let j := namedPermanent sculptorEntered "Jace, Reality Sculptor"
+  let g := sculptorEntered.dealDamageToPermanent j 3 (source := some j.asEvent)
   (namedPermanent g "Jace, Reality Sculptor").status.loyaltyCounters == 2
 
 /-- A planeswalker with no loyalty counters is put into its owner's
@@ -371,7 +371,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
   let g := if prepared then g.becomePrepared o else g
   let g := (List.range deaths).foldl (fun g _ =>
     g.record (GameEvent.moved g.turnNumber
-      { id := o.id, owner := ⟨0⟩, types := #[.creature] }
+      { id := some o.id, owner := ⟨0⟩, types := #[.creature] }
       .battlefield (.graveyard ⟨0⟩))) g
   g.applyTriggeredAbility ⟨0⟩ recollectorTrigger (some o.id)
 

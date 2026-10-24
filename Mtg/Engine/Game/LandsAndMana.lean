@@ -14,7 +14,7 @@ namespace Game
 onto the battlefield. Tests use this when the drop itself is not the action. -/
 def recordLandPlayed (g : Game) (p : PlayerId) : Game :=
   g.record (GameEvent.playedLand g.turnNumber p
-    { id := ⟨0⟩, controller := some p, owner := p, types := #[.land] })
+    { controller := some p, owner := p, types := #[.land] })
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then

@@ -173,8 +173,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           (source := some striker)
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
+    let sid := sourceId.orElse (fun _ => g.resolvingSpell)
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
+      g.beginFraChoice o.owner (.topOrBottomDamage o.id 2 sid)
         s!"{(g.player o.owner).name} may put {o.name} on top of their library") sourceId illegal
   | .entrustTheSpark =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then

@@ -959,20 +959,20 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
         | none => g
   | .target, .subtypeCount subtype, _ =>
     let amt := g.countSubtype controller subtype
-    g.applyEffect controller (Effect.dealDamage amt) targets
+    g.applyEffect controller (Effect.dealDamage amt) targets (sourceId := sourceId)
   | .target, .fixed n, .markedPermanent =>
     let n := n.toNat
     let g := g.change (.permanentDealtDamageThisWay none)
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
       | Target.player _ =>
-        g.applyEffect controller (Effect.dealDamage n) #[tgt]
+        g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
           let before := o.status.damage
-          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
+          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
           let marked :=
             match g.findObject? oid with
             | some o => o.isOnBattlefield && o.status.damage > before
@@ -982,16 +982,18 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .player (.target .opponent), .greatestArtifactMv, _ =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid x)
+      g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
   | .eachNonSubtypeAndOpponents subtype, .fixed n, _ =>
     let n := n.toNat
+    let src? := sourceId.bind g.findObject?
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+        (source := src?.map g.damageSourceEvent)
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
   | .player (.target .opponent), .fixed n, _ =>
     let n := n.toNat
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.dealDamageToPlayer pid n)
+      g.dealDamageToPlayer pid n (source := sourceId.bind g.findObject?))
   | .target, .fixed n, .none =>
     let n := n.toNat
     g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
@@ -1002,15 +1004,15 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .source, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o (.dealDamage n)
+      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
   | .enchanted, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o (.dealDamage n)
+      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
   | .whileSource, .fixed n, _ | .target .whileSource, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o (.dealDamage n)
+      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
   | who, amount, .divided =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower }
@@ -1047,7 +1049,8 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
             let share := base + if i < extra then 1 else 0
             if share > 0 then
               match recipients[i]? with
-              | some (.inl pid) => game := game.dealDamageToPlayer pid share
+              | some (.inl pid) =>
+                game := game.dealDamageToPlayer pid share (source := sourceId.bind game.findObject?)
               | some (.inr o) =>
                 game := game.dealDamageFrom sourceName o (Int.ofNat share)
                   (source := sourceId.bind game.findObject?)
@@ -4576,7 +4579,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | r =>
     match Resolution.toSpell r with
     | some _ =>
-      g.applyUnified controller ab.effect targets
+      g.applyUnified controller ab.effect targets (sourceId := sourceId)
     | none =>
       g.applyUnifiedAbility controller { ab.effect with resolution := r }
         targets sourceId lastKnownPower

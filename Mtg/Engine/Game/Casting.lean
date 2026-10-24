@@ -684,7 +684,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       let source :=
         match sourceId.bind g.findObject? with
         | some src => src.asEvent
-        | none => { id := ⟨0⟩, controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
+        | none => { controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
       g.record (GameEvent.activated g.turnNumber p source false true)
     else g
   let g :=

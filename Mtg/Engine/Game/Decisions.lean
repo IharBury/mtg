@@ -225,8 +225,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
-        g := g.changePlayer pid (.addPoison 1)
-        g := g.record (GameEvent.poisoned g.turnNumber pid 1)
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p))
         g := g.record (GameEvent.proliferated g.turnNumber p)
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
@@ -497,9 +496,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     let some host := g.findObject? hostId | throw "The creature is no longer in play"
     if !host.isOnBattlefield then
       throw s!"{host.name} is no longer on the battlefield"
-    let (g, ts) := g.bumpTime
-    let g := g.changeObjects eq.id #[.attachedTo (some host.id), .timestamp ts]
-    let g := g.logMsg s!"{eq.name} attaches to {host.name}"
+    let g := g.attachSourceTo eq host
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .tapHumans q =>
@@ -530,7 +527,7 @@ Timing permissions are ignored, but its costs are paid (rulings 857 /
 def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     Except String Game := do
   match g.pending with
-  | .mayCastExiledElseDamage q cardId _ =>
+  | .mayCastExiledElseDamage q cardId .. =>
     if p != q then
       throw s!"Only {(g.player q).name} may cast that card"
     if id != cardId then
@@ -571,11 +568,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       if (g.chosenModesOf spell).isEmpty then throw "Choose a mode (CR 700.2)"
       return (g.logMsg s!"{(g.player p).name} chooses no more modes").afterModesChosen p
     | none => throw "Choose a mode (CR 700.2)"
-  | .mayCastExiledElseDamage q _ n =>
+  | .mayCastExiledElseDamage q _ n sid =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to cast"
+    let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     let g := g.logMsg s!"{(g.player p).name} doesn't cast the exiled card"
-    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n)
+    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n (source := src?))
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .mayDiscardDraw q _ =>

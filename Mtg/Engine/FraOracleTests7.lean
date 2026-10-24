@@ -290,6 +290,7 @@ finality counter. -/
   (.activate (graveyardCard repriserInGraveyard ⟨0⟩ "Grim Repriser").id 0) "noncombat damage"
 #guard
   let g := repriserInGraveyard.dealDamageToPlayer ⟨1⟩ 1
+    (source := some (graveyardCard repriserInGraveyard ⟨0⟩ "Grim Repriser"))
   let g := mustApply g ⟨0⟩ (.activate (graveyardCard g ⟨0⟩ "Grim Repriser").id 0)
   let g := resolveStack (mustApply g ⟨0⟩ .pay) 20
   (namedPermanent g "Grim Repriser").status.finality == 1

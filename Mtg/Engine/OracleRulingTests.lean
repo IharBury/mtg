@@ -2456,7 +2456,8 @@ def garrisonTapsSelfOk : Bool :=
 /-- Ruling 142: Smite's extra effects apply even if no damage is marked. -/
 def smiteZeroDamage : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  g.dealDamageLoseIndestructibleExileTo (namedPermanent g "Grizzly Bears") 0
+  let b := namedPermanent g "Grizzly Bears"
+  g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
 
 def smiteZeroDamageOk : Bool :=
   let b := namedPermanent smiteZeroDamage "Grizzly Bears"
@@ -2488,15 +2489,16 @@ def exiledTokenCeasesOk : Bool :=
 /-- Ruling 151 / 126 / 256: protection from everything blocks targeting and
 preventable damage, but not unpreventable damage. -/
 def withProtection : Game :=
-  afterDraw.changePlayer ⟨1⟩ (.protectionFromEverything true)
+  (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩).changePlayer ⟨1⟩ (.protectionFromEverything true)
 
 def protectionFromEverythingOk : Bool :=
   let ts := withProtection.legalTargets ⟨0⟩ (Effect.dealDamage 3)
+  let src := namedPermanent withProtection "Grizzly Bears"
   !ts.any (fun t => t == Target.player ⟨1⟩) &&
-    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5
+    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5 (source := some src)
      (g.player ⟨1⟩).life == 20 &&
        g.log.any (fun s => mentions s "prevented")) &&
-    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5 (preventable := false)
+    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5 (preventable := false) (source := some src)
      (g.player ⟨1⟩).life == 15) &&
     (ruling 151).comment.contains "can't be the target" &&
     (ruling 126).comment.contains "illegal target" &&
@@ -2675,7 +2677,7 @@ def cavernHoardResolveCount : Game :=
   let g := addPermanent afterDraw cavernHoardDragon ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
-  let g := g.noteCombatDamageTo ⟨1⟩
+  let g := g.noteCombatDamageTo ⟨1⟩ (namedPermanent g "Cavern-Hoard Dragon").asEvent
   let t := namedPermanent g "Treasure"
   let g := (g.move t.id (.graveyard ⟨1⟩) none).1
   g.applyTriggeredAbility ⟨0⟩
@@ -2876,7 +2878,7 @@ def andurilOnOwnLegendOk : Bool :=
 def queenAfterFirstNoncreature : Game :=
   let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
   let g := g.record (GameEvent.cast g.turnNumber ⟨1⟩
-    { id := ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
+    { id := some ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
     (.hand ⟨1⟩))
   let g := addToHand g lightningBolt ⟨1⟩
   let bolt :=
@@ -3223,7 +3225,7 @@ def radagastCastIsFirstOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
   let g := g.record (GameEvent.cast g.turnNumber ⟨0⟩
-    { id := ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
+    { id := some ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
     (.hand ⟨0⟩))
   let cost := g.playManaCost card grizzlyBears
   cost == ManaCost.ofGenericAndColor 1 .green &&
@@ -3451,7 +3453,7 @@ def protectionStillAttackableOk : Bool :=
   let g := afterDraw.changePlayer ⟨1⟩ (.protectionFromEverything true)
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   (g.player ⟨1⟩).protectionFromEverything &&
-    (let g := g.dealDamageToPlayer ⟨1⟩ 2
+    (let g := g.dealDamageToPlayer ⟨1⟩ 2 (source := some (namedPermanent g "Grizzly Bears"))
      (g.player ⟨1⟩).life == 20) &&
     (ruling 239).comment.contains "Creatures can still attack you"
 
@@ -3513,7 +3515,8 @@ def lordOfEaglesGenericOnlyOk : Bool :=
 
 def smiteExileAnyDeathOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.dealDamageLoseIndestructibleExileTo (namedPermanent g "Grizzly Bears") 0
+  let b := namedPermanent g "Grizzly Bears"
+  let g := g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
   (namedPermanent g "Grizzly Bears").status.untilEotExileIfDies &&
     (ruling 285).comment.contains "not just if it dies due to damage" &&
     (ruling 332).comment.contains "doesn't have indestructible"
@@ -3967,7 +3970,7 @@ def mirkwoodElkZeroPowerOk : Bool :=
 
 def spellsBeforeLothoCountOk : Bool :=
   let g := afterDraw.record (GameEvent.cast afterDraw.turnNumber ⟨0⟩
-    { id := ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
+    { id := some ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
   g.loggedSpellsCast ⟨0⟩ == 1 &&
     (ruling 267).comment.contains "Spells that were cast before Lotho"
 

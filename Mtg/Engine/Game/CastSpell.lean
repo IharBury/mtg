@@ -250,11 +250,11 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
 record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
 def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
   let k := (sym.counters).getD 0
-  let n := ((o.status.loyaltyCounters : Int) + k).toNat
-  let g := g.changeStatuses o.id #[.loyaltyCounters n, .loyaltyActivatedThisTurn true]
+  let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
   let g :=
     if k != 0 then
-      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0))
+      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0)
+        (cause := some (.costPayment .loyalty (o.controller.getD o.owner) (some o.id))))
     else g
   let g := match o.controller with
     | some p =>
@@ -282,7 +282,7 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
   let happened := GameEvent.activated g.turnNumber p
-    { id := ⟨0⟩, controller := some p, owner := p } true
+    { controller := some p, owner := p } true
   if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
   else
   g.foldControlledPermanents p none fun g o =>

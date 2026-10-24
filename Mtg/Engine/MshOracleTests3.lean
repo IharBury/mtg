@@ -94,7 +94,7 @@ simultaneous lethal damage, and life gain is one event. -/
 def tigraLethalLifeOk : Bool :=
   let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
   let tigra := namedPermanent g "Tigra, Feline Fury"
-  let g := g.markDamageOn tigra 1 "Tigra is dealt 1"
+  let g := g.markDamageOn tigra 1 "Tigra is dealt 1" (source := some tigra.asEvent)
   let g := g.gainLife ⟨0⟩ 3
   let g := g.checkSBA
   !onBattlefield g "Tigra, Feline Fury" &&

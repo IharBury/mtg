@@ -311,9 +311,9 @@ def mistyKnightDiscardCountOk : Bool :=
   let growth := namedGraveyardCard g ⟨0⟩ "Giant Growth"
   let (g, _) := g.move bolt.id .exile none
   let (g, _) := g.move growth.id .exile none
-  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨81⟩, owner := ⟨0⟩ }
+  let g := g.record (GameEvent.moved g.turnNumber { id := some ⟨81⟩, owner := ⟨0⟩ }
     (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
-  let g := g.record (GameEvent.moved g.turnNumber { id := ⟨82⟩, owner := ⟨0⟩ }
+  let g := g.record (GameEvent.moved g.turnNumber { id := some ⟨82⟩, owner := ⟨0⟩ }
     (.hand ⟨0⟩) (.graveyard ⟨0⟩) false true)
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
@@ -469,12 +469,12 @@ def captainMarVellFlashOk : Bool :=
   !gCombat.asSorcery? ⟨0⟩ &&
     !gCombat.canCast ⟨0⟩ bears &&
     (let gOpp := gCombat.record (GameEvent.cast gCombat.turnNumber ⟨1⟩
-      { id := ⟨41⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
+      { id := some ⟨41⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      gOpp.canCast ⟨0⟩ (handCardNamed gOpp ⟨0⟩ "Grizzly Bears")) &&
     (let gLate := addToHand afterDraw grizzlyBears ⟨0⟩
      let gLate := gLate.change (.step .beginningOfCombat)
      let gLate := gLate.record (GameEvent.cast gLate.turnNumber ⟨1⟩
-       { id := ⟨42⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
+       { id := some ⟨42⟩, controller := some ⟨1⟩, owner := ⟨1⟩ } (.hand ⟨1⟩))
      !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&
        (let gLate := addPermanent gLate captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
         gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears"))) &&
@@ -1041,7 +1041,7 @@ def doctorDoomDamageTrackedOk : Bool :=
   let doom := namedPermanent g "Doctor Doom"
   let g := g.changeStatus doom.id (.grantUntilEot Keyword.indestructible)
   let doom := namedPermanent g "Doctor Doom"
-  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3"
+  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3" (source := some doom.asEvent)
   let g := g.checkSBA
   onBattlefield g "Doctor Doom" &&
     (namedPermanent g "Doctor Doom").status.damage == 3 &&
@@ -1053,7 +1053,7 @@ def doctorDoomDamageTrackedOk : Bool :=
      let doom := namedPermanent g "Doctor Doom"
      let g := g.changeStatus doom.id (.grantUntilEot Keyword.indestructible)
      let doom := namedPermanent g "Doctor Doom"
-     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true)
+     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true) (source := some doom.asEvent)
      let g := g.checkSBA
      onBattlefield g "Doctor Doom" &&
        !(namedPermanent g "Doctor Doom").status.dealtDeathtouch &&

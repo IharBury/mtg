@@ -107,7 +107,7 @@ checked before the permanent enters, so lands or planeswalkers entering at
 the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
   let proposed := GameEvent.moved g.turnNumber
-    { id := ⟨0⟩, controller := some p, owner := p, types := card.types
+    { controller := some p, owner := p, types := card.types
       subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
   if !proposed.watches .wouldEnterBattlefield then false
   else

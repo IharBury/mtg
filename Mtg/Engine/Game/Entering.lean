@@ -327,9 +327,6 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
   let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
   let g := if n > 0 then g.record happened else g
-  let g := g.changeStatuses o.id #[
-    .addPlusOnePlusOne n,
-    .gotPlusOneThisTurn ((g.object! o.id).status.gotPlusOneThisTurn || n > 0)]
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"

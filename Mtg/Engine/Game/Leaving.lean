@@ -40,9 +40,7 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
       g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
     else g
   else
-    let fromP := o.controller.getD o.owner
-    (g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)).record
-      (GameEvent.control g.turnNumber o.id fromP p)
+    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End the control-changing effect recorded under `eid` on `oid`. Any other
@@ -193,7 +191,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
   | .fraChoice q _ =>
     if q == p then g.changes #[.pending .none, .chooseModesRest none] else g
-  | .mayCastExiledElseDamage q _ _ =>
+  | .mayCastExiledElseDamage q .. =>
     if q == p then g.change (.pending .none) else g
   | .chooseTriggerOr q =>
     if q == p then g.changes #[.pending .none, .triggerOr none] else g

@@ -58,7 +58,7 @@ turn counter is cleared. -/
   let g := quiet afterDraw
   let (_, no) := holds g .artifactEnteredThisTurn
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
+    { id := some ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
   let g := g.record entered
   let (_, yes) := holds g .artifactEnteredThisTurn
   !no && yes && entered.watches .wouldEnterBattlefield
@@ -67,9 +67,9 @@ turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
   let attack := GameEvent.attacked g.turnNumber me
-    { id := ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
+    { id := some ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
+    { id := some ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
   let g := (g.record attack).record entered
   let (_, yes) := holds g (.attackedWithSubtype .hero)
   let (_, no) := holds g (.attackedWithSubtype .goblin)
@@ -85,7 +85,7 @@ instead. -/
 #guard
   let second := GameEvent.drew 1 me ⟨1⟩ 2
   let death := GameEvent.moved 1
-    { id := ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
+    { id := some ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
   let exiled := death.withDestination .exile false
   second.matchesTrigger me ⟨0⟩ .youDraw &&
     second.matchesTrigger me ⟨0⟩ .youDrawSecondCard &&
@@ -105,7 +105,7 @@ records the exile instead of the death. -/
   let g := g0.draw me 1
   let drew := g.events.any fun e =>
     match e.change with
-    | .effectApplied _ (.drew p _ _ _) => p == me
+    | .rules (.effectApplied _ (.drew p _ _ _)) => p == me
     | _ => false
   let g := addPermanent g bear me me
   let b := (g.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -123,7 +123,7 @@ records the exile instead of the death. -/
       match g.events.back? with
       | some e => !e.isCreatureToGraveyard &&
           match e.change with
-          | .effectApplied _ (.moved _ _ .exile _ _) => true
+          | .rules (.effectApplied _ (.moved _ _ .exile _ _)) => true
           | _ => false
       | none => false
   g.events.size > before && drew && died && replaced
@@ -135,11 +135,11 @@ records the exile instead of the death. -/
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let pump := ContinuousEffect.pump b.id 3 3
   let kw := ContinuousEffect.keywordsUntilEot b.id Keyword.trample
-  let g1 := (g0.applyChange (.effectCreated ⟨100⟩ pump)).applyChange (.effectCreated ⟨101⟩ kw)
+  let g1 := (g0.applyChange (.rules (.effectCreated ⟨100⟩ pump))).applyChange (.rules (.effectCreated ⟨101⟩ kw))
   let applied :=
     (g1.object! b.id).status.pump == (3, 3) &&
       (g1.object! b.id).status.untilEotKeywords == Keyword.trample
-  let g2 := (g1.applyChange (.effectExpired ⟨100⟩ pump)).applyChange (.effectExpired ⟨101⟩ kw)
+  let g2 := (g1.applyChange (.rules (.effectExpired ⟨100⟩ pump))).applyChange (.rules (.effectExpired ⟨101⟩ kw))
   let reverted :=
     (g2.object! b.id).status.pump == (0, 0) &&
       (g2.object! b.id).status.untilEotKeywords == Keywords.none
@@ -223,12 +223,19 @@ battlefield. -/
   createdOnEnter && expiredOnLose && recreatedOnCleanup && expiredOnLeave
 
 /- Rule 610: applications of one-shot effects (drawing cards, moving objects
-between zones, gaining/losing life, dealing damage, putting counters, tapping/
-untapping permanents, creating tokens, scrying/surveilling) are recorded as
-`GameChange.effectApplied` events with unique `EffectId`s. -/
+between zones, creating tokens, scrying/surveilling) receive unique `EffectId`s,
+whereas durable `RulesEvent`s (`LifeEvent`, `PermanentEvent`, `DamageEvent`)
+record state changes directly without minting synthetic `OneShotEffect`s. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let effId0 := g0.nextEffectId
+  let gUnclassified :=
+    ((g0.gainLife me 3).loseLife me 2).record
+      (GameEvent.tapped g0.turnNumber b.asEvent true true)
+  let unclassifiedDidNotAdvance :=
+    gUnclassified.nextEffectId == effId0 &&
+      (GameEvent.appliedEffectsWithId gUnclassified.events).isEmpty
   let g1 := g0.draw me 1
   let g2 := g1.gainLife me 3
   let g3 := g2.loseLife me 2
@@ -248,13 +255,22 @@ untapping permanents, creating tokens, scrying/surveilling) are recorded as
       return seen.size == ids.size
   let hasDraw := effs.any (fun | .drew p _ _ _ => p == me | _ => false)
   let hasMove := effs.any (fun | .moved _ (.library _) (.hand _) _ _ => true | _ => false)
-  let hasGain := effs.any (fun | .life p 3 true _ _ => p == me | _ => false)
-  let hasLoss := effs.any (fun | .life p 2 false _ _ => p == me | _ => false)
-  let hasCounters := effs.any (fun | .counters _ obj .plusOnePlusOne 2 false => obj.id == b.id | _ => false)
-  let hasTap := effs.any (fun | .tapped obj true true => obj.id == b.id | _ => false)
-  let hasUntap := effs.any (fun | .untapped obj false => obj.id == b.id | _ => false)
   let hasToken := effs.any (fun | .created p obj => p == me && obj.token | _ => false)
-  uniqueIds && ids.size >= 8 &&
+  let hasGain := g7.events.any (fun e => e.change == .rules (.life (.gained me 3)))
+  let hasLoss := g7.events.any (fun e => e.change == .rules (.life (.lost me 2 false false)))
+  let hasCounters := g7.events.any (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters (.object obj) .plusOnePlusOne (.put 2) _)) => obj.id == b.id
+    | _ => false)
+  let hasTap := g7.events.any (fun e =>
+    match e.change with
+    | .rules (.permanent (.tapped obj true)) => obj.id == b.id
+    | _ => false)
+  let hasUntap := g7.events.any (fun e =>
+    match e.change with
+    | .rules (.permanent (.untapped obj)) => obj.id == b.id
+    | _ => false)
+  unclassifiedDidNotAdvance && uniqueIds && ids.size >= 3 &&
     hasDraw && hasMove && hasGain && hasLoss &&
     hasCounters && hasTap && hasUntap && hasToken
 
@@ -268,13 +284,14 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let objIdBefore := g0.nextObjectId
   let effIdBefore := g0.nextEffectId
-  -- Apply two separate pump continuous effects and a one-shot life gain without creating any objects.
+  -- Apply two separate pump continuous effects and a life gain without creating any objects.
   let g1 := ((g0.createEffect (.pump b.id 2 2)).gainLife me 4).createEffect (.pump b.id 1 3)
   let objIdUnchanged := g1.nextObjectId == objIdBefore
   let createdPairs := GameEvent.createdEffectsWithId g1.events
-  let appliedPairs := GameEvent.appliedEffectsWithId g1.events
+  let appliedPairsBeforeToken := GameEvent.appliedEffectsWithId g1.events
   -- Now create a token (which increments `nextObjectId` AND emits a one-shot `created` effect).
   let g2 := g1.createTreasureTokens me 1
+  let appliedPairs := GameEvent.appliedEffectsWithId g2.events
   let objIdIncremented := g2.nextObjectId == objIdBefore + 1
   -- Expire until-end-of-turn continuous effects during cleanup.
   let g3 := (quiet g2).clearEOT
@@ -290,8 +307,9 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
       return seen.size == allCreationAndOneShotIds.size
   objIdUnchanged &&
     objIdIncremented &&
-    g1.nextEffectId == effIdBefore + 3 &&
+    g1.nextEffectId == effIdBefore + 2 &&
     createdPairs.size == 2 &&
+    appliedPairsBeforeToken.isEmpty &&
     appliedPairs.size == 1 &&
     allDistinct &&
     expiredPairs == createdPairs &&
@@ -316,9 +334,9 @@ def controlEffectsOn (g : Game) (id : ObjectId) : Array (EffectId × ContinuousE
   let g0 := addPermanent (quiet afterDraw) bear me me
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let pump := ContinuousEffect.pump b.id 3 3
-  let g1 := (g0.applyChange (.effectCreated ⟨100⟩ pump)).applyChange (.effectCreated ⟨101⟩ pump)
-  let g2 := g1.applyChange (.effectExpired ⟨101⟩ pump)
-  let g3 := g2.applyChange (.effectExpired ⟨999⟩ pump)
+  let g1 := (g0.applyChange (.rules (.effectCreated ⟨100⟩ pump))).applyChange (.rules (.effectCreated ⟨101⟩ pump))
+  let g2 := g1.applyChange (.rules (.effectExpired ⟨101⟩ pump))
+  let g3 := g2.applyChange (.rules (.effectExpired ⟨999⟩ pump))
   (g1.object! b.id).status.pump == (6, 6) &&
     (g2.object! b.id).status.pump == (3, 3) &&
     g2.activeEffects.map Prod.fst == #[⟨100⟩] &&
@@ -375,7 +393,7 @@ turn", and an amassed subtype. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1).grantCantBeBlockedThisTurn b
+  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1 b.asEvent).grantCantBeBlockedThisTurn b
   let created := GameEvent.createdEffects g1.events
   created.contains (.loseIndestructibleUntilEot b.id) &&
     created.contains (.exileIfDiesUntilEot b.id) &&
@@ -574,5 +592,120 @@ step (CR 702.176, ruling 970). -/
           (g5.object! permId).status.time == 1 &&
           (g5.object! copyId).isCreature &&
           (g5.object! copyId).status.time == 2
+
+/- Phase 1 isolation: applying a single `PermanentEvent.tapped` or
+`PermanentEvent.untapped` event yields the exact tapped state without separate
+status setters (CR 701.26a / 701.26b). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.tapped b.asEvent true)))
+  let g2 := g1.applyChange (.rules (.permanent (.untapped b.asEvent)))
+  (g1.object! b.id).status == { b.status with tapped := true, becameTappedThisTurn := true } &&
+    (g2.object! b.id).status == { b.status with tapped := false, becameTappedThisTurn := true }
+
+/- Phase 1 isolation: applying a single `PermanentEvent.counters` event puts or
+removes counters on a permanent (including poison counters) or counters on a
+player (poison and non-poison, CR 122.1). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.counters (.object b.asEvent) .plusOnePlusOne (.put 3) (some me))))
+  let g2 := g1.applyChange (.rules (.permanent (.counters (.object b.asEvent) .plusOnePlusOne (.removed 1) none)))
+  let g3 := g2.applyChange (.rules (.permanent (.counters (.player me) .poison (.put 4) (some opp))))
+  let g4 := g3.applyChange (.rules (.permanent (.counters (.player me) .poison (.removed 1) none)))
+  let g5 := g4.applyChange (.rules (.permanent (.counters (.object b.asEvent) .poison (.put 2) none)))
+  let g6 := g5.applyChange (.rules (.permanent (.counters (.object b.asEvent) .poison (.removed 1) none)))
+  let g7 := g6.applyChange (.rules (.permanent (.counters (.player me) .charge (.put 3) none)))
+  let g8 := g7.applyChange (.rules (.permanent (.counters (.player me) .charge (.removed 1) none)))
+  (g1.object! b.id).status == { b.status with plusOnePlusOne := 3, gotPlusOneThisTurn := true } &&
+    (g2.object! b.id).status == { b.status with plusOnePlusOne := 2, gotPlusOneThisTurn := true } &&
+    (g3.player me) == { (g0.player me) with poison := 4 } &&
+    (g4.player me) == { (g0.player me) with poison := 3 } &&
+    (g5.object! b.id).status == { b.status with plusOnePlusOne := 2, gotPlusOneThisTurn := true, poison := 2 } &&
+    (g6.object! b.id).status == { b.status with plusOnePlusOne := 2, gotPlusOneThisTurn := true, poison := 1 } &&
+    (g7.player me).counterCount .charge == 3 &&
+    (g8.player me).counterCount .charge == 2
+
+/- Phase 1 isolation: applying a single `LifeEvent.gained` or `LifeEvent.lost`
+event updates `Player.life` in isolation (CR 119.2 / 119.3). -/
+#guard
+  let g0 := quiet afterDraw
+  let p0 := g0.player me
+  let g1 := g0.applyChange (.rules (.life (.gained me 5)))
+  let g2 := g1.applyChange (.rules (.life (.lost me 8 true true)))
+  (g1.player me) == { p0 with life := p0.life + 5 } &&
+    (g2.player me) == { p0 with life := p0.life - 3 }
+
+/- Phase 1 isolation: `DamageEvent.dealt` is a pure fact and writes nothing,
+`DamageEvent.marked` and `DamageEvent.markedCleared` update and clear
+`Status.damage` in isolation (CR 120.3e / 514.2), and CR 704.5h queries
+`DamageEvent.dealt` packets committed since the last SBA check (removing
+marked damage does not end the CR 704.5h window). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let dtSource : EventObject := { keywords := { deathtouch := true } }
+  let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource b.asEvent 1 false)
+  let g1 := gDealtOnly.applyChange (.rules (.damage (.marked b.id 1)))
+  let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
+  let gDestroyed := g2.checkSBA
+  (g0.checkSBA).events.any (·.change == .engine .sbaChecked) &&
+    (gDealtOnly.object! b.id).status == b.status &&
+    g1.deathtouchDealtSinceLastSba b.id &&
+    g2.deathtouchDealtSinceLastSba b.id &&
+    (g1.object! b.id).status == { b.status with damage := 1 } &&
+    (g2.object! b.id).status == { b.status with damage := 0 } &&
+    (gDestroyed.battlefield.filter (·.id == b.id)).isEmpty
+
+/- Phase 1 isolation: applying `PermanentEvent.attached`, `PermanentEvent.unattached`,
+`PermanentEvent.controlChanged`, and `PermanentEvent.designation (.goaded byPlayer)`
+updates `attachedTo`, `controller`, `controlChanged`, `goaded`, and `goadedBy`
+in isolation (CR 701.3 / 110.2 / 701.15b). -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let h := (g0.battlefield.filter (·.name == "Event Hero"))[0]!
+  let g1 := g0.applyChange (.rules (.permanent (.attached h.asEvent b.id none)))
+  let g2 := g1.applyChange (.rules (.permanent (.unattached h.asEvent b.id)))
+  let g3 := g2.applyChange (.rules (.permanent (.controlChanged b.asEvent me opp)))
+  let g4 := g3.applyChange (.rules (.permanent (.controlChanged b.asEvent opp me)))
+  let g5 := g4.applyChange (.rules (.permanent (.designation b.asEvent (.goaded me) true)))
+  let g6 := g5.applyChange (.rules (.permanent (.designation b.asEvent (.goaded opp) true)))
+  let g7 := g6.expireGoadedFor me
+  let g8 := g7.expireGoadedFor opp
+  let heroToPlayer := GameEvent.damagedPlayer 1 h.asEvent opp 2 true
+  let bearToHero := GameEvent.damaged 1 b.asEvent h.asEvent 2 false
+  (g1.object! h.id) == { h with attachedTo := some b.id } &&
+    (g2.object! h.id) == { h with attachedTo := none } &&
+    (g3.object! b.id) == { b with controller := some opp, controlChanged := true } &&
+    (g4.object! b.id) == { b with controller := some me, controlChanged := false } &&
+    (g5.object! b.id).status.goaded &&
+    (g5.object! b.id).status.goadedBy == #[me] &&
+    (g6.object! b.id).status.goaded &&
+    (g6.object! b.id).status.goadedBy == #[me, opp] &&
+    (g7.object! b.id).status.goaded &&
+    (g7.object! b.id).status.goadedBy == #[opp] &&
+    !(g8.object! b.id).status.goaded &&
+    (g8.object! b.id).status.goadedBy.isEmpty &&
+    (let gPerm := (g8.applyChange (.rules (.permanent (.designation b.asEvent (.goaded me false) true)))).expireGoadedFor me
+     (gPerm.object! b.id).status.goaded &&
+       (gPerm.object! b.id).status.goadedBy == #[me] &&
+       (gPerm.object! b.id).status.goadedUntilNextTurnOf.isEmpty) &&
+    (let dtCreature : CardDef := { bear with name := "Deathtouch Bear", keywords := Keyword.deathtouch }
+     let gDt := quiet (addPermanent afterDraw dtCreature me me)
+     let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
+     let gNoDt := gDt.markDamageOn c 1 "1 damage"
+     let gWithDt := gDt.markDamageOn c 1 "1 deathtouch damage" (deathtouch := true)
+     (gNoDt.events.any fun e =>
+       match e.change with
+       | .rules (.damage (.dealt pkts)) => pkts.any (·.source.id.isNone)
+       | _ => false) &&
+       !gNoDt.deathtouchDealtSinceLastSba c.id &&
+       gWithDt.deathtouchDealtSinceLastSba c.id) &&
+    heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
+    !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer &&
+    !(GameEvent.moved 1 { controller := some me, owner := me, types := #[.creature] }
+      .stack .battlefield).matchesTrigger me b.id .anotherCreatureYouControlEnters
 
 end Mtg.Engine.EventTests

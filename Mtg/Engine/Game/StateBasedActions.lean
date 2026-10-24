@@ -136,7 +136,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             .minusOneMinusOne (o.status.minusOneMinusOne - k)]
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
-      -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
+      -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
       let snap := g.battlefield.filter exilesOppDeath?
@@ -148,7 +148,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
             else if o.status.damage ≥ t && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from lethal damage")
-            else if o.status.dealtDeathtouch && !g.hasIndestructible o then
+            else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from deathtouch")
             else none)
       if !victims.isEmpty then
@@ -201,10 +201,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       g := g.changes #[
         .lockedDeathReplacements none,
         .suppressOthersDie false,
-        .suppressCreatureCardsToGy false]
-      for o in g.battlefield do
-        if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
-          g := g.changeStatus o.id (.dealtDeathtouch false)
+        .suppressCreatureCardsToGy false,
+        .sbaChecked]
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
       for o in g.battlefield do
@@ -257,7 +255,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             | some host => host.isOnBattlefield && host.printed.isCreature
             | none => true
           if !legal then
-            g := g.changeObject o.id (.attachedTo none)
+            let hostId := o.attachedTo.getD ⟨0⟩
+            g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+              (cause := some (.stateBased .illegalEquipmentOrFortification)))
             g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
       match g.decideGameIfFinished with

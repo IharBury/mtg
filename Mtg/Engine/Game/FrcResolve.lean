@@ -322,7 +322,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     let g := g.putHits controller hits
     let g := hits.foldl (fun g id =>
       match g.followMoved id |> g.findObject? with
-      | some o => g.createEffect (.goaded o.id)
+      | some o => g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded controller false) true)
       | none => g) g
     let opps := g.livingOpponents controller
     let g := Id.run do

@@ -4,7 +4,7 @@ import Mtg.Engine.Game.LibrarySearch
 # Resolution target helpers (CR 608.2b)
 
 Re-checking target legality as an effect resolves, `applyPermanentAction`
-for shared actions on permanents, beginning scry, mill (CR 701.13), and
+for shared actions on permanents, beginning scry, mill (CR 701.17), and
 damage to each matching creature.
 -/
 
@@ -100,7 +100,8 @@ def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbi
 def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
     (missing : Option String := none) : Game :=
-  g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
+  g.withLegalKindTarget controller kind targets
+    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?))
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
@@ -143,12 +144,15 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
     s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
-def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
+def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
+    (sourceId : Option ObjectId := none) : Game :=
+  match action with
   | .pump pw tw => g.pumpPermanent o pw tw
   | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
-  | .dealDamage n => g.dealDamageToPermanent o n
+  | .dealDamage n =>
+    g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.damageSourceEvent)
   | .loseIndestructible =>
     let g := g.createEffect (.loseIndestructibleUntilEot o.id)
     g.logMsg s!"{o.name} loses indestructible until end of turn"
@@ -157,7 +161,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.grantUntilEotLogged o k
   | .indestructibleCounter => g.addIndestructibleCounter o
   | .doubleStrikeCounter =>
-    let g := g.changeStatus o.id (.addCounters .doubleStrike 1)
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .doubleStrike 1)
     g.logMsg s!"{o.name} gets a double strike counter"
   | .burdenCounter => g.addBurdenCounter o
   | .tap => g.becomeTapped o
@@ -167,10 +171,10 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
     else if o.status.stun > 0 then
-      let g := g.changeStatus o.id (.removeCounters .stun 1)
+      let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true)
       g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
     else
-      let g := g.changeStatus o.id (.tapped false)
+      let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
       g.logMsg s!"{o.name} untaps"
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
@@ -182,8 +186,12 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .tapAndStun =>
     -- Ruling 764: an already tapped creature still gets the stun counter.
     let g := if o.status.tapped then g else g.becomeTapped o
-    let n := g.countersYouPut (g.object! o.id) 1
-    let g := g.changeStatus o.id (.addCounters .stun n)
+    let cur := g.object! o.id
+    let n := g.countersYouPut cur 1
+    let g :=
+      if n > 0 then
+        g.record (GameEvent.counters g.turnNumber cur.controller cur.asEvent .stun n)
+      else g
     g.logMsg s!"A stun counter is put on {o.name}"
   | .setBasePT pw tw =>
     let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
@@ -202,7 +210,7 @@ def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind
     g.applyDamageToKindTarget controller kind targets n sourceId missing
   | _ =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      g.applyPermanentAction o action) sourceId missing
+      g.applyPermanentAction o action (sourceId := sourceId)) sourceId missing
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any
@@ -221,7 +229,7 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     (g.change (.pending (.surveil p count))).logMsg
       s!"{pl.name} surveils {n}"
 
-/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
+/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
   Id.run do
     let mut g := g
@@ -257,13 +265,15 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
 
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
-    (pred : GameObject → Bool := fun _ => true) : Game :=
+    (pred : GameObject → Bool := fun _ => true)
+    (source : Option EventObject := none) : Game :=
   g.foldBattlefield (fun o => o.isCreature && pred o)
-    (fun g o => g.dealDamageToPermanent o n)
+    (fun g o => g.dealDamageToPermanent o n (source := source))
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
-def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
+def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
+    (source : Option EventObject := none) : Game :=
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source)
 
 end Game
 end Mtg.Engine

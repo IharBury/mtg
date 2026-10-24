@@ -164,7 +164,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
     | .fraChoice p _ => who p
-    | .mayCastExiledElseDamage p _ _ => who p
+    | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
