@@ -233,18 +233,27 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
       let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
-      let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
-      let g := g.changeObjects copy.id #[
-        .kicked spell.kicked,
-        .giftPromisedTo spell.giftPromisedTo,
-        .teamworkPaid spell.teamworkPaid,
-        .chosenX spell.chosenX,
-        .isCopy true,
-        .adventurerCard spell.adventurerCard]
-      let g := g.putStackEntry caster copy.id
+      let copyId : ObjectId := ⟨g.nextObjectId⟩
+      let copyTs := g.timestamp + 1
+      let copyObj : GameObject := {
+        id := copyId
+        printed := spell.printed
+        owner := caster
+        controller := some caster
+        zone := .stack
+        timestamp := copyTs
+        kicked := spell.kicked
+        giftPromisedTo := spell.giftPromisedTo
+        teamworkPaid := spell.teamworkPaid
+        chosenX := spell.chosenX
+        isCopy := true
+        adventurerCard := spell.adventurerCard
+      }
+      let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
+      let g := g.putStackEntry caster copyId
       let g :=
         match g.stack.find? (fun e => e.objectId == spell.id),
-            g.stack.findIdx? (fun e => e.objectId == copy.id) with
+            g.stack.findIdx? (fun e => e.objectId == copyId) with
         | some orig, some i =>
           g.changes #[
             .stackEntry i (.targets orig.targets),
@@ -275,11 +284,20 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
           if Int.ofNat mv <= pw then some eid else none
       | _ => none)
     matching.foldl (fun g eid =>
-      let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
-      let g := g.changeObjects copy.id #[
-        .chosenX spell.chosenX,
-        .isCopy true]
-      let g := g.putStackEntry caster copy.id
+      let copyId : ObjectId := ⟨g.nextObjectId⟩
+      let copyTs := g.timestamp + 1
+      let copyObj : GameObject := {
+        id := copyId
+        printed := spell.printed
+        owner := caster
+        controller := some caster
+        zone := .stack
+        timestamp := copyTs
+        chosenX := spell.chosenX
+        isCopy := true
+      }
+      let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
+      let g := g.putStackEntry caster copyId
       let g := g.expireEffectById eid
       g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
@@ -306,17 +324,9 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
           (cause := some entering))
       |>.promptTriggerTargetsIfNeeded
 
-/-- Yoshimaru, Beloved Companion: one more +1/+1 counter for each such
-permanent the creature's controller controls. -/
-def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
-  if n == 0 || !o.isCreature then n
-  else
-    match o.controller with
-    | none => n
-    | some p =>
-      n + ((g.permanentsOf p).filter (·.staticAbilities.any (· == .fra .extraPlusOneCounter))).size
-
-/-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
+/-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
+counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
+`extraEntersWith` (CR 614.1c), so only the log and put-counter triggers run. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
@@ -326,7 +336,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let n :=
     if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
   let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
-  let g := if n > 0 then g.record happened else g
+  let g := if n > 0 && !entersWith then g.record happened else g
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
@@ -368,84 +378,93 @@ def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
         | _ => false))
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
-printed loyalty. -/
+printed loyalty (placed in `entersWith` during the zone change). -/
 def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
-  match o.printed.isPlaneswalker, o.printed.loyalty with
-  | true, some n =>
-    if n > 0 then
-      let k := g.extraCountersOn o.controller n.toNat
-      let g := g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters + k))
-      let g := match o.controller with
-        | some p => g.queueLoyaltyPutTriggers p
-        | none => g
-      g.logMsg s!"{o.name} enters with {k} loyalty counter(s)"
-    else g
-  | _, _ => g
-
-/-- “This creature enters with N +1/+1 counters on it.” -/
-def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
-  let base := o.printed.entersWithPlusOneCounters
-  if base == 0 then g
+  if o.status.faceDown then g
   else
-    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller base)
-    let g := g.changeStatus o.id (.addPlusOnePlusOne n)
-    g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
+    match o.printed.isPlaneswalker, o.printed.loyalty with
+    | true, some n =>
+      if n > 0 then
+        let k := g.extraCountersOnEntering o n.toNat
+        let g := match o.controller with
+          | some p => g.queueLoyaltyPutTriggers p
+          | none => g
+        g.logMsg s!"{o.name} enters with {k} loyalty counter(s)"
+      else g
+    | _, _ => g
+
+/-- “This creature enters with N +1/+1 counters on it” (placed in `entersWith`
+during the zone change). -/
+def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
+  if o.status.faceDown then g
+  else
+    let base := o.printed.entersWithPlusOneCounters
+    if base == 0 then g
+    else
+      let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o base)
+      g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if o.printed.entersWithIndestructibleCounter then
-    let n := g.extraCountersOn o.controller 1
-    let g := g.changeStatus o.id (.indestructibleCounters (o.status.indestructibleCounters + n))
+  if !o.status.faceDown && o.printed.entersWithIndestructibleCounter then
     g.logMsg s!"{o.name} enters with an indestructible counter"
   else g
 
 def enterWithShield (g : Game) (o : GameObject) : Game :=
-  let base := o.printed.entersWithShield
-  if base == 0 then g
+  if o.status.faceDown then g
   else
-    let n := g.extraCountersOn o.controller base
-    let g := g.changeStatus o.id (.shield (o.status.shield + n))
-    g.logMsg s!"{o.name} enters with {n} shield counter(s)"
+    let base := o.printed.entersWithShield
+    if base == 0 then g
+    else
+      let n := g.extraCountersOnEntering o base
+      g.logMsg s!"{o.name} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
-  if o.staticAbilities.any (fun
+  if !o.status.faceDown && o.staticAbilities.any (fun
       | .entersWithXPlusOne => true
       | _ => false) then
-    let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller (o.chosenX.getD 0))
+    let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o (o.chosenX.getD 0))
     if n == 0 then g
-    else
-      let g := g.changeStatus o.id (.plusOnePlusOne (o.status.plusOnePlusOne + n))
-      g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
+    else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g
 
 def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if o.printed.entersWithHopePerCreature then
+  if !o.status.faceDown && o.printed.entersWithHopePerCreature then
     match o.controller with
     | some p =>
       let n := g.extraCountersOn (some p) (g.countCreaturesControlledBy p)
-      let g := g.changeStatus o.id (.hope n)
       g.logMsg s!"{o.name} enters with {n} hope counter(s)"
     | none => g
   else g
 
 /-- Counters and statuses a permanent enters with (CR 614.1c / 614.12):
-loyalty, +1/+1, indestructible, shield, X +1/+1, prepared, and hope. These
-replacement effects apply even when entering causes no triggers (ruling
-890). -/
+loyalty, +1/+1, indestructible, shield, X +1/+1, prepared, and hope. When the
+permanent arrived via `move` or `createOneToken`, the counters and `prepared`
+status are already part of `moved.after` / `created.object` and `entersWith`;
+inserts that skip `move` record their `ZoneEvent.moved` here so `entersWith`
+and `after` are still populated atomically. -/
 def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let id := o.id
+  let g :=
+    if g.loggedEntered id then g
+    else
+      let entersWith := g.computeEntersWithCounters o (applyHope := false)
+      let prepared := o.status.prepared || (!o.status.faceDown && o.printed.entersPrepared)
+      let afterObj := {
+        o with
+        status := ({ o.status with prepared := prepared }).withCounterBag
+          (o.status.toCounterBag.merge entersWith)
+      }
+      let gWithAfter : Game :=
+        { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then afterObj else x) }
+      g.record (GameEvent.moved g.turnNumber (g.snapshot o) .stack .battlefield
+        (after := some (gWithAfter.snapshot afterObj))
+        (entersWith := entersWith))
   let g := g.enterWithLoyalty (g.object! id)
   let g := g.enterWithPlusOnes (g.object! id)
   let g := g.enterWithIndestructibleCounter (g.object! id)
   let g := g.enterWithShield (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
-  let o := g.object! id
-  -- A zone change already recorded this arrival. Inserts that skip `move`
-  -- still have to leave an enters event, or “entered this turn” is invisible.
-  let g :=
-    if g.loggedEntered o.id then g
-    else
-      g.record (GameEvent.moved g.turnNumber o.asEvent .stack .battlefield)
-  let g := if o.printed.entersPrepared then g.becomePrepared o else g
+  let g := g.ensurePreparedCopy (g.object! id)
   g.enterWithHope (g.object! id)
 
 /-- After a permanent enters, put its enters triggers and “another … enters”
@@ -637,21 +656,11 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game 
   | none => g.logMsg "No card to put onto the battlefield"
   | some o =>
     let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
-    let (g, newId) := g.putOntoBattlefield id controller
+    let (g, newId) := g.putOntoBattlefield id controller (nightBack := nightBack)
     let o := g.object! newId
     let g :=
       if nightBack then
-        match o.printed.otherFace with
-        | some back =>
-          let shown := { back with otherFace := some { o.printed with otherFace := none } }
-          let g := g.expirePrintedStaticEffects o
-          let g := g.changeObjects o.id #[
-            .printed shown,
-            .status (.transformed true),
-            .status (.cantTransform true)]
-          let g := g.createPrintedStaticEffects (g.object! o.id)
-          g.logMsg s!"{shown.name} enters back face up (night / daybound)"
-        | none => g
+        g.logMsg s!"{o.name} enters back face up (night / daybound)"
       else g
     g.afterPermanentEnters (g.object! newId)
 

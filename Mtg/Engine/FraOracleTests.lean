@@ -369,9 +369,9 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
   let g := enterPermanent afterDraw bloodlineRecollector ⟨0⟩
   let o := namedPermanent g "Bloodline Recollector"
   let g := if prepared then g.becomePrepared o else g
-  let g := (List.range deaths).foldl (fun g _ =>
+  let g := (List.range deaths).foldl (fun g i =>
     g.record (GameEvent.moved g.turnNumber
-      { id := some o.id, owner := ⟨0⟩, types := #[.creature] }
+      { id := some ⟨90 + i⟩, owner := ⟨0⟩, types := #[.creature] }
       .battlefield (.graveyard ⟨0⟩))) g
   g.applyTriggeredAbility ⟨0⟩ recollectorTrigger (some o.id)
 

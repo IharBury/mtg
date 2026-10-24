@@ -154,4 +154,32 @@ def matchPhrase (toks : List String) : Option (Nat × CounterKind × Nat) :=
 
 end CounterKind
 
+/-- Multiset of counters carried by an object or placed as it enters (CR 122.1). -/
+abbrev CounterBag := Array (CounterKind × Nat)
+
+namespace CounterBag
+
+/-- Total count of `k` in `bag`. -/
+def count (bag : CounterBag) (k : CounterKind) : Nat :=
+  (bag.filter (·.1 == k)).foldl (fun acc (_, n) => acc + n) 0
+
+/-- Add `n` counters of kind `k` to `bag` (no-op when `n == 0`). -/
+def add (bag : CounterBag) (k : CounterKind) (n : Nat) : CounterBag :=
+  if n == 0 then bag
+  else
+    match bag.findIdx? (·.1 == k) with
+    | some idx => bag.modify idx (fun (_, m) => (k, m + n))
+    | none => bag.push (k, n)
+
+/-- Set the count of `k` in `bag` to `n` (removing `k` when `n == 0`). -/
+def set (bag : CounterBag) (k : CounterKind) (n : Nat) : CounterBag :=
+  let without := bag.filter (·.1 != k)
+  if n == 0 then without else without.push (k, n)
+
+/-- Merge two counter bags by summing counts for each kind. -/
+def merge (a b : CounterBag) : CounterBag :=
+  b.foldl (fun acc (k, n) => acc.add k n) a
+
+end CounterBag
+
 end Mtg.Engine

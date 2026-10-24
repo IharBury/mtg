@@ -136,12 +136,9 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   let side := if top then "top" else "bottom"
   let name := o.name
   let owner := o.owner
-  let (g, newId) := g.move o.id (.library owner) none
-  let pl := g.player owner
-  let without := stripId pl.library newId
-  let library := if top then without ++ #[newId] else #[newId] ++ without
-  (g.changePlayer owner (.library library)).logMsg
-    s!"{(g.player owner).name} puts {name} on the {side} of their library"
+  let pos : LibraryPosition := if top then .top else .bottom
+  let (g, _) := g.move o.id (.library owner) none (libraryPosition := some pos)
+  g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
 
 /-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
@@ -152,7 +149,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .destroy => g.destroyPermanent o
   | .plusOne n => g.addPlusOnePlusOneTo o n
   | .dealDamage n =>
-    g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.damageSourceEvent)
+    g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.snapshot)
   | .loseIndestructible =>
     let g := g.createEffect (.loseIndestructibleUntilEot o.id)
     g.logMsg s!"{o.name} loses indestructible until end of turn"
@@ -229,7 +226,7 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     (g.change (.pending (.surveil p count))).logMsg
       s!"{pl.name} surveils {n}"
 
-/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
+/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
   Id.run do
     let mut g := g
@@ -240,7 +237,7 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
       else
         let top := pl.library.back!
         let name := (g.object! top).name
-        let (g', _) := g.move top (.graveyard p) none
+        let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 

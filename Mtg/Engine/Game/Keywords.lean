@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Library
+import Mtg.Engine.Game.StatBonuses
 
 /-!
 # Current keywords (CR 613.1f)

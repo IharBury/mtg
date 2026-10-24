@@ -293,7 +293,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       else if !src.status.blocking.isEmpty && recipients.isEmpty then
         g := g.logMsg
           s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
-      let srcEvent := g.damageSourceEvent src
+      let srcEvent := g.snapshot src
       if g.sourceDamagePrevented src then
         g := g.logMsg s!"combat damage from {src.name} is prevented"
       else

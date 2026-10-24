@@ -210,8 +210,7 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
       if o.zone != .graveyard o.owner then acc
       else
         let (acc, newId) := acc.move id .battlefield (some controller)
-        let acc := acc.createEffect (.onlyFoodArtifact newId)
-        let acc := acc.changeStatus newId (.summoningSick true)
+          (summoningSick := true) (applyHope := false) (onlyFoodArtifact := true)
         let acc := acc.afterPermanentEnters (acc.object! newId)
         let o := acc.object! newId
         acc.logMsg s!"{o.name} returns as a Food artifact") g
@@ -423,9 +422,7 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
     : Game × GameObject :=
-  let (g, tok) := g.createToken controller src.printed
-  let g := g.changeObject tok.id (.kicked false)
-  (g, g.object! tok.id)
+  g.createToken controller src.printed
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

@@ -99,7 +99,7 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (leavingPlayer : PlayerId) :
     let g := g.change (.removeWaitingTriggersOf leavingPlayer)
     g.ceaseToExist newId
   else
-    g.removeFromZoneList o.id o.zone |>.ceaseToExist o.id
+    g.ceaseToExist o.id
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -131,7 +131,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         match g.findObject? spellId with
         | none => g
         | some o =>
-          let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+          let g := g.ceaseToExist o.id
           g.logMsg s!"{o.name} is countered"
     else g
   | .payWard q spellId _ =>
@@ -141,7 +141,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       match g.findObject? spellId with
       | none => g
       | some o =>
-        let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+        let g := g.ceaseToExist o.id
         g.logMsg s!"{o.name} is countered"
     else g
   | .mayPayGeneric q _ =>
@@ -238,7 +238,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let g :=
       g.objects.foldl (fun acc o =>
         if o.zone == .stack && o.controlledBy p && !representedByCard o then
-          acc.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+          acc.ceaseToExist o.id
         else acc) g
     let still := g.objects.filter (fun o => o.controlledBy p)
     let g :=

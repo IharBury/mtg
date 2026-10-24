@@ -105,7 +105,8 @@ records the exile instead of the death. -/
   let g := g0.draw me 1
   let drew := g.events.any fun e =>
     match e.change with
-    | .rules (.effectApplied _ (.drew p _ _ _)) => p == me
+    | .rules (.zone (.moved _ _ (.library p) (.hand q) (.draw _ _) (some actor) _ _)) =>
+      p == me && q == me && actor == me
     | _ => false
   let g := addPermanent g bear me me
   let b := (g.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -123,7 +124,7 @@ records the exile instead of the death. -/
       match g.events.back? with
       | some e => !e.isCreatureToGraveyard &&
           match e.change with
-          | .rules (.effectApplied _ (.moved _ _ .exile _ _)) => true
+          | .rules (.zone (.moved _ _ _ .exile _ _ _ _)) => true
           | _ => false
       | none => false
   g.events.size > before && drew && died && replaced
@@ -222,9 +223,9 @@ battlefield. -/
   let expiredOnLeave := (GameEvent.expiredEffects g4.events).contains staticEff
   createdOnEnter && expiredOnLose && recreatedOnCleanup && expiredOnLeave
 
-/- Rule 610: applications of one-shot effects (drawing cards, moving objects
-between zones, creating tokens, scrying/surveilling) receive unique `EffectId`s,
-whereas durable `RulesEvent`s (`LifeEvent`, `PermanentEvent`, `DamageEvent`)
+/- Rule 610 / 400: applications of one-shot effects (scrying/surveilling,
+resolving abilities, proliferating) receive unique `EffectId`s, whereas durable
+`RulesEvent`s (`ZoneEvent`, `LifeEvent`, `PermanentEvent`, `DamageEvent`)
 record state changes directly without minting synthetic `OneShotEffect`s. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
@@ -243,9 +244,11 @@ record state changes directly without minting synthetic `OneShotEffect`s. -/
   let g5 := g4.record (GameEvent.tapped g4.turnNumber b.asEvent true true)
   let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false)
   let g7 := g6.createTreasureTokens me 1
-  let appliedWithIds := GameEvent.appliedEffectsWithId g7.events
+  let g8 := ((g7.record (GameEvent.looked g7.turnNumber me 2)).record
+    (GameEvent.resolved g7.turnNumber me 1)).record
+    (GameEvent.proliferated g7.turnNumber me)
+  let appliedWithIds := GameEvent.appliedEffectsWithId g8.events
   let ids := appliedWithIds.map Prod.fst
-  let effs := appliedWithIds.map Prod.snd
   let uniqueIds :=
     Id.run do
       let mut seen : Array EffectId := #[]
@@ -253,25 +256,31 @@ record state changes directly without minting synthetic `OneShotEffect`s. -/
         if !seen.contains id then
           seen := seen.push id
       return seen.size == ids.size
-  let hasDraw := effs.any (fun | .drew p _ _ _ => p == me | _ => false)
-  let hasMove := effs.any (fun | .moved _ (.library _) (.hand _) _ _ => true | _ => false)
-  let hasToken := effs.any (fun | .created p obj => p == me && obj.token | _ => false)
-  let hasGain := g7.events.any (fun e => e.change == .rules (.life (.gained me 3)))
-  let hasLoss := g7.events.any (fun e => e.change == .rules (.life (.lost me 2 false false)))
-  let hasCounters := g7.events.any (fun e =>
+  let hasDrawMove := g8.events.any (fun e =>
     match e.change with
-    | .rules (.permanent (.counters (.object obj) .plusOnePlusOne (.put 2) _)) => obj.id == b.id
+    | .rules (.zone (.moved _ _ (.library p) (.hand q) (.draw 1 _) (some actor) _ _)) =>
+      p == me && q == me && actor == me
     | _ => false)
-  let hasTap := g7.events.any (fun e =>
+  let hasToken := g8.events.any (fun e =>
     match e.change with
-    | .rules (.permanent (.tapped obj true)) => obj.id == b.id
+    | .rules (.zone (.created obj p)) => p == me && obj.token
     | _ => false)
-  let hasUntap := g7.events.any (fun e =>
+  let hasGain := g8.events.any (fun e => e.change == .rules (.life (.gained me 3)))
+  let hasLoss := g8.events.any (fun e => e.change == .rules (.life (.lost me 2 false false)))
+  let hasCounters := g8.events.any (fun e =>
     match e.change with
-    | .rules (.permanent (.untapped obj)) => obj.id == b.id
+    | .rules (.permanent (.counters (.object obj) .plusOnePlusOne (.put 2) _)) => obj.id == some b.id
     | _ => false)
-  unclassifiedDidNotAdvance && uniqueIds && ids.size >= 3 &&
-    hasDraw && hasMove && hasGain && hasLoss &&
+  let hasTap := g8.events.any (fun e =>
+    match e.change with
+    | .rules (.permanent (.tapped obj true)) => obj.id == some b.id
+    | _ => false)
+  let hasUntap := g8.events.any (fun e =>
+    match e.change with
+    | .rules (.permanent (.untapped obj)) => obj.id == some b.id
+    | _ => false)
+  unclassifiedDidNotAdvance && uniqueIds && ids.size == 3 &&
+    hasDrawMove && hasGain && hasLoss &&
     hasCounters && hasTap && hasUntap && hasToken
 
 /- Unique `EffectId`s across one-shot (Rule 610) and continuous (Rule 611)
@@ -289,8 +298,8 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
   let objIdUnchanged := g1.nextObjectId == objIdBefore
   let createdPairs := GameEvent.createdEffectsWithId g1.events
   let appliedPairsBeforeToken := GameEvent.appliedEffectsWithId g1.events
-  -- Now create a token (which increments `nextObjectId` AND emits a one-shot `created` effect).
-  let g2 := g1.createTreasureTokens me 1
+  -- Now create a token (which increments `nextObjectId` via `ZoneEvent.created`) and a one-shot look effect.
+  let g2 := (g1.createTreasureTokens me 1).record (GameEvent.looked g1.turnNumber me 1)
   let appliedPairs := GameEvent.appliedEffectsWithId g2.events
   let objIdIncremented := g2.nextObjectId == objIdBefore + 1
   -- Expire until-end-of-turn continuous effects during cleanup.
@@ -707,5 +716,125 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
     !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer &&
     !(GameEvent.moved 1 { controller := some me, owner := me, types := #[.creature] }
       .stack .battlefield).matchesTrigger me b.id .anotherCreatureYouControlEnters
+
+/- Phase 2 isolation: applying `ZoneEvent.moved`, `ZoneEvent.created`, and
+`ZoneEvent.ceasedToExist` via `Game.applyChange` atomically updates `g.objects`,
+zone lists (`hand`, `graveyard`, `library`), `nextObjectId`, and `timestamp`
+(CR 400.7 / 111.1 / 704.5d). -/
+#guard
+  let g0 := quiet afterDraw
+  let hand0 := (g0.player me).hand
+  let cardId := hand0[0]!
+  let card := g0.object! cardId
+  let nextId0 := g0.nextObjectId
+  let ts0 := g0.timestamp
+  let newId : ObjectId := ⟨nextId0⟩
+  let afterObj : EventObject :=
+    { (g0.snapshot card) with
+      id := some newId
+      zone := .battlefield
+      controller := some me
+      tapped := true
+      counters := #[(.plusOnePlusOne, 2)]
+      timestamp := ts0 + 1 }
+  let g1 := g0.applyChange (.rules (.zone (.moved
+    (g0.snapshot card) afterObj (.hand me) .battlefield
+    .put (some me) #[(.plusOnePlusOne, 2)] none)))
+  let tokId : ObjectId := ⟨g1.nextObjectId⟩
+  let tokSnap : EventObject :=
+    { id := some tokId
+      printed := some treasureToken
+      name := "Treasure"
+      owner := me
+      controller := some me
+      zone := .battlefield
+      token := true
+      types := #[.artifact]
+      subtypes := #[.treasure]
+      tapped := true
+      timestamp := g1.timestamp + 1 }
+  let g2 := g1.applyChange (.rules (.zone (.created tokSnap me)))
+  let g3 := g2.applyChange (.rules (.zone (.ceasedToExist tokSnap)))
+  !(g1.player me).hand.contains cardId &&
+    (g1.findObject? cardId).isNone &&
+    (g1.object! newId).zone == .battlefield &&
+    (g1.object! newId).status.tapped &&
+    (g1.object! newId).status.plusOnePlusOne == 2 &&
+    g1.nextObjectId == nextId0 + 1 &&
+    g1.timestamp == ts0 + 1 &&
+    (g2.object! tokId).zone == .battlefield &&
+    (g2.object! tokId).status.tapped &&
+    g2.nextObjectId == nextId0 + 2 &&
+    (g3.findObject? tokId).isNone
+
+/- Phase 2 isolation: enters-with counters (planeswalker loyalty, printed +1/+1,
+shield, indestructible, Saga first lore counter, and impending time counters)
+and enters-tapped status are part of `ZoneEvent.moved.after` and `entersWith`
+with zero post-entry counter or tap events, and `GameEvent.countersPut` includes
+both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
+306.5b / 614.1c / 614.12 / 714.3a). -/
+#guard
+  let tapPlusCreature : CardDef :=
+    { bear with
+      name := "Tapped Plus Bear"
+      entersTapped := true
+      entersWithPlusOneCounters := 2
+      entersWithShield := 1 }
+  let g0 := insertObject (quiet afterDraw) tapPlusCreature me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Tapped Plus Bear"))[0]!
+  let (g1, permId) := (quiet g0).putOntoBattlefield cid me
+  let g1 := g1.afterPermanentEnters (g1.object! permId)
+  let moveEvents := g1.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before after fromZone toZone _ _ entersWith _)) =>
+      some (before, after, fromZone, toZone, entersWith)
+    | _ => none)
+  let separateCounterEvents := g1.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.counters _ _ _ _)) => true
+    | _ => false)
+  let separateTapEvents := g1.events.filter (fun e =>
+    match e.change with
+    | .rules (.permanent (.tapped _ _)) => true
+    | _ => false)
+  let putProjection := GameEvent.countersPut g1.events
+  moveEvents.size == 1 &&
+    separateCounterEvents.isEmpty &&
+    separateTapEvents.isEmpty &&
+    (let (_, after, _, toZone, entersWith) := moveEvents[0]!
+     toZone == .battlefield &&
+       after.tapped &&
+       after.counters.count .plusOnePlusOne == 2 &&
+       after.counters.count .shield == 1 &&
+       entersWith.count .plusOnePlusOne == 2 &&
+       entersWith.count .shield == 1) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .plusOnePlusOne && n == 2) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .shield && n == 1)
+
+/- Phase 2 isolation: `followMoved`, `lastKnownBefore?`, and `lastKnownCounters`
+are pure queries over `ZoneEvent.moved` in `g.events`, and `Game.snapshot`
+populates characteristics and status on `before` when a permanent leaves the
+battlefield (CR 400.7 / 113.7a / 608.2h). -/
+#guard
+  let g0 := quiet (addPermanent afterDraw bear me me)
+  let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
+  let g1 := (g0.addPlusOnePlusOneTo b 2).pumpPermanent (g0.object! b.id) 1 1
+  let (g2, gyId) := g1.move b.id (.graveyard me) (verb := some .sacrifice) (actor := some me)
+  let (g3, exId) := g2.move gyId .exile none
+  g3.followMoved b.id == exId &&
+    g3.lastKnownCounters b.id == #[(.plusOnePlusOne, 2)] &&
+    (match g3.lastKnownBefore? b.id with
+     | some before =>
+       before.name == "Event Bear" &&
+         before.zone == .battlefield &&
+         before.power == some 5 &&
+         before.toughness == some 5 &&
+         before.counters.count .plusOnePlusOne == 2
+     | none => false) &&
+    g2.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield (.graveyard _) .sacrifice (some actor) _ _)) =>
+        actor == me
+      | _ => false)
 
 end Mtg.Engine.EventTests
