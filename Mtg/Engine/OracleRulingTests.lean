@@ -2457,7 +2457,7 @@ def garrisonTapsSelfOk : Bool :=
 def smiteZeroDamage : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Grizzly Bears"
-  g.dealDamageLoseIndestructibleExileTo b 0 (source := some b.asEvent)
+  g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
 
 def smiteZeroDamageOk : Bool :=
   let b := namedPermanent smiteZeroDamage "Grizzly Bears"
@@ -3516,7 +3516,7 @@ def lordOfEaglesGenericOnlyOk : Bool :=
 def smiteExileAnyDeathOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Grizzly Bears"
-  let g := g.dealDamageLoseIndestructibleExileTo b 0 (source := some b.asEvent)
+  let g := g.dealDamageLoseIndestructibleExileTo b 0 b.asEvent
   (namedPermanent g "Grizzly Bears").status.untilEotExileIfDies &&
     (ruling 285).comment.contains "not just if it dies due to damage" &&
     (ruling 332).comment.contains "doesn't have indestructible"

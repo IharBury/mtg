@@ -871,7 +871,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
   | .onSource a =>
-    g.applyOnPermanent controller effect.targetKind targets a
+    g.applyOnPermanent controller effect.targetKind targets a sourceId
   | _ =>
   match effect.spellResolution with
   | .fight .announced (.timesPower k) =>
@@ -937,7 +937,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
     | _ => g.logMsg "The effect does nothing"
   | .onPermanent action =>
-    g.applyOnPermanent controller effect.targetKind targets action
+    g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .creaturesPump p t scope =>
     match scope with
     | .youControl =>
@@ -1091,11 +1091,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let n := match amount with
       | .fixed => n
       | .otherSpellsManaValue => g.otherSpellsManaValue controller
+    let srcEvent? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).map g.damageSourceEvent
     let g := match which with
-      | .each => g.dealDamageToEachCreatureMatching n
+      | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
-        g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
-      | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype
+        g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller) (source := srcEvent?)
+      | .nonSubtype subtype => g.dealDamageToEachNonDragon n subtype (source := srcEvent?)
     match amount, which with
     | .otherSpellsManaValue, .opponentsControl =>
       g.logMsg s!"deals {n} damage to each opposing creature"
@@ -1443,7 +1444,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ =>
       g.conniveTricksterTarget controller connive
   | .copyThisSpellXTimesThenDamage n =>
-    g.applyDamageToKindTarget controller .creature targets n
+    g.applyDamageToKindTarget controller .creature targets n sourceId
   | .mayDrawPerArtifactOppsDraw ty =>
     g.mayDrawPerArtifact controller ty
   | .mayPutHeroMvOrDraw n subtype =>

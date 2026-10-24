@@ -393,7 +393,7 @@ turn", and an amassed subtype. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1 (source := some b.asEvent)).grantCantBeBlockedThisTurn b
+  let g1 := (g0.dealDamageLoseIndestructibleExileTo b 1 b.asEvent).grantCantBeBlockedThisTurn b
   let created := GameEvent.createdEffects g1.events
   created.contains (.loseIndestructibleUntilEot b.id) &&
     created.contains (.exileIfDiesUntilEot b.id) &&
@@ -697,7 +697,8 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
      let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
      let gNoDt := gDt.markDamageOn c 1 "1 damage"
      let gWithDt := gDt.markDamageOn c 1 "1 deathtouch damage" (deathtouch := true)
-     !gNoDt.deathtouchDealtSinceLastSba c.id &&
+     gDt.objects.all (·.id != ⟨0⟩) &&
+       !gNoDt.deathtouchDealtSinceLastSba c.id &&
        gWithDt.deathtouchDealtSinceLastSba c.id) &&
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
     !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer

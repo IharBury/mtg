@@ -72,6 +72,13 @@ source that moved zones before its ability resolved (CR 113.7a). -/
 def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
   g.resolvingMovedDamageSource?.map g.damageSourceEvent
 
+/-- Unattributed damage source snapshot used only when a damage helper is called
+outside spell or ability resolution without an explicit `source`. Its id is the
+reserved `⟨0⟩`, which `allocId` never hands out (`nextObjectId` starts at `1`),
+so it never collides with any object in `g.objects`. -/
+def unattributedDamageSource : EventObject :=
+  { id := ⟨0⟩ }
+
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 702.12b / 701.8b). If it would die this turn under an exile replacement,
 `move` sends it to exile instead of the graveyard (CR 614.1). -/
@@ -107,7 +114,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
   let srcEvent : EventObject :=
-    let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+    let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD unattributedDamageSource
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
     o.printed.staticAbilities.any (fun
@@ -304,7 +311,8 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
     let srcEvent :=
-      ((source.map g.damageSourceEvent).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
+      ((source.map g.damageSourceEvent).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD
+        unattributedDamageSource
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false
     let g := if n > 0 then g.record happened else g
     let g :=
