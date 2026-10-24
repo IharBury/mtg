@@ -697,7 +697,7 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
      let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
      let gNoDt := gDt.markDamageOn c 1 "1 damage"
      let gWithDt := gDt.markDamageOn c 1 "1 deathtouch damage" (deathtouch := true)
-     gDt.objects.all (·.id != ⟨0⟩) &&
+     gDt.objects.all (·.id != Game.unattributedDamageSourceId) &&
        !gNoDt.deathtouchDealtSinceLastSba c.id &&
        gWithDt.deathtouchDealtSinceLastSba c.id) &&
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&

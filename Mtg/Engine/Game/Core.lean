@@ -23,8 +23,7 @@ structure Game where
   startingPlayer : PlayerId := ⟨0⟩
   isFirstTurn : Bool := true
   pending : Pending := .none
-  /-- Next unique object identifier (`⟨0⟩` is reserved for unattributed events). -/
-  nextObjectId : Nat := 1
+  nextObjectId : Nat := 0
   /-- Next unique effect identifier (CR 610 / 611), independent of `nextObjectId`. -/
   nextEffectId : Nat := 0
   /-- Active continuous effects paired with their unique `EffectId` (CR 611). -/

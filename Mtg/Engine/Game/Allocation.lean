@@ -10,11 +10,9 @@ putting spells and activated abilities on the stack (CR 405).
 namespace Mtg.Engine
 namespace Game
 
-/-- Allocate a fresh, non-zero `ObjectId` (`⟨0⟩` is reserved and never allocated). -/
 def allocId (g : Game) : Game × ObjectId :=
-  let next := max g.nextObjectId 1
-  let id : ObjectId := ⟨next⟩
-  (g.change (.nextObjectId (next + 1)), id)
+  let id : ObjectId := ⟨g.nextObjectId⟩
+  (g.change (.nextObjectId (g.nextObjectId + 1)), id)
 
 def bumpTime (g : Game) : Game × Nat :=
   let ts := g.timestamp

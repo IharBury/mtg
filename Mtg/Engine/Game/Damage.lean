@@ -72,12 +72,18 @@ source that moved zones before its ability resolved (CR 113.7a). -/
 def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
   g.resolvingMovedDamageSource?.map g.damageSourceEvent
 
+/-- Reserved `ObjectId` for damage dealt in a unit-test helper without a source
+object. Chosen outside the sequential ids handed out by `allocId` (`0, 1, …`)
+so it never collides with any object in `g.objects`. -/
+def unattributedDamageSourceId : ObjectId :=
+  ⟨UInt64.size⟩
+
 /-- Unattributed damage source snapshot used only when a damage helper is called
-outside spell or ability resolution without an explicit `source`. Its id is the
-reserved `⟨0⟩`, which `allocId` never hands out (`nextObjectId` starts at `1`),
+outside spell or ability resolution without an explicit `source`. Its id is
+`unattributedDamageSourceId`, outside the sequential ids handed out by `allocId`,
 so it never collides with any object in `g.objects`. -/
 def unattributedDamageSource : EventObject :=
-  { id := ⟨0⟩ }
+  { id := unattributedDamageSourceId }
 
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 702.12b / 701.8b). If it would die this turn under an exile replacement,
