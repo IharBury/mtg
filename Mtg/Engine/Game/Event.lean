@@ -1401,7 +1401,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
   let you (p : PlayerId) : Bool := p == listener
   let this (o : EventObject) : Bool := o.id == some sourceId
   let yours (o : EventObject) : Bool := o.controller == some listener
-  let other (o : EventObject) : Bool := o.id != some sourceId
+  let other (o : EventObject) : Bool := o.id.any (· != sourceId)
   match e.change with
   | .engine _ => false
   | .rules r =>

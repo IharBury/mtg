@@ -704,6 +704,8 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
        !gNoDt.deathtouchDealtSinceLastSba c.id &&
        gWithDt.deathtouchDealtSinceLastSba c.id) &&
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
-    !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer
+    !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer &&
+    !(GameEvent.moved 1 { controller := some me, owner := me, types := #[.creature] }
+      .stack .battlefield).matchesTrigger me b.id .anotherCreatureYouControlEnters
 
 end Mtg.Engine.EventTests
