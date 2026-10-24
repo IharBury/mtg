@@ -26,6 +26,7 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw s!"{card.name} is not a land"
   let (g, newId) := g.putOntoBattlefield id p
     (tapped := g.entersTapped p card.printed) (summoningSick := false)
+    (verb := some .playLand) (actor := some p)
   let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
   let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
   -- Lands have no summoning sickness. `entersTapped` overrides CR 110.5b.

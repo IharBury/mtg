@@ -57,7 +57,7 @@ def creaturesBlockedBy (g : Game) (blocker : GameObject) : Array GameObject :=
 /-- Snapshot `o` as an `EventObject` (CR 113.7a).
 Note: `colors`, `manaValue`, `types`, `subtypes`, `power`, `toughness`,
 `keywords`, and `staticAbilities` are provisional until the Layer 1–7 pipeline
-in Phase 4 (CR 613.1). -/
+in Phase 8 (CR 613.1). -/
 def snapshot (g : Game) (o : GameObject) : EventObject :=
   let base := o.asEvent
   let extraSubtypes : Array CardSubtype :=

@@ -21,30 +21,30 @@ namespace Mtg.Engine
 (CR 113.7a). Subtypes include those granted at that moment.
 Note: `colors`, `manaValue`, `types`, `subtypes`, `power`, `toughness`,
 `keywords`, and `staticAbilities` are provisional until the Layer 1–7 pipeline
-in Phase 4 (CR 613.1). -/
+in Phase 8 (CR 613.1). -/
 structure EventObject where
   id              : Option ObjectId      := none
   controller      : Option PlayerId      := none
   owner           : PlayerId             := ⟨0⟩
   -- characteristics (CR 109.3)
   name            : String               := ""
-  /-- Provisional until Layer 5 in Phase 4 (CR 613.1e). -/
+  /-- Provisional until Layer 5 in Phase 8 (CR 613.1e). -/
   colors          : ColorSet             := {}
   manaValue       : Nat                  := 0
   supertypes      : Array Supertype      := #[]
-  /-- Provisional until Layer 4 in Phase 4 (CR 613.1d). -/
+  /-- Provisional until Layer 4 in Phase 8 (CR 613.1d). -/
   types           : Array CardType       := #[]
-  /-- Provisional until Layer 4 in Phase 4 (CR 613.1d). -/
+  /-- Provisional until Layer 4 in Phase 8 (CR 613.1d). -/
   subtypes        : Array CardSubtype    := #[]
-  /-- Provisional until Layer 7 in Phase 4 (CR 613.4). -/
+  /-- Provisional until Layer 7 in Phase 8 (CR 613.4). -/
   power           : Option Int           := none
-  /-- Provisional until Layer 7 in Phase 4 (CR 613.4). -/
+  /-- Provisional until Layer 7 in Phase 8 (CR 613.4). -/
   toughness       : Option Int           := none
   loyalty         : Option Nat           := none
-  /-- Provisional until Layer 6 in Phase 4 (CR 613.1f). -/
+  /-- Provisional until Layer 6 in Phase 8 (CR 613.1f). -/
   keywords        : Keywords             := {}
   toxic           : Nat                  := 0
-  /-- Provisional until Layer 6 in Phase 4 (CR 613.1f). -/
+  /-- Provisional until Layer 6 in Phase 8 (CR 613.1f). -/
   staticAbilities : Array StaticAbility  := #[]
   -- status & designations (CR 110.5–110.6)
   zone            : Zone                 := .battlefield
@@ -59,93 +59,24 @@ structure EventObject where
   token           : Bool                 := false
   isCopy          : Bool                 := false
   changeling      : Bool                 := false
-  -- materialization state for `applyZoneEvent`
-  timestamp       : Nat                  := 0
-  printed         : Option CardDef       := none
-  status          : Status               := {}
-  defaultController : Option PlayerId    := none
-  lastController  : Option PlayerId      := none
-  abilityEffect   : Option Effect        := none
-  triggeredAbility : Option TriggeredAbility := none
-  sourceId        : Option ObjectId      := none
-  lastKnownPower  : Option Int           := none
-  lastKnownToughness : Option Int        := none
-  adventurerCard  : Option CardDef       := none
-  chosenX         : Option Nat           := none
-  wasCast         : Bool                 := false
-  kicked          : Bool                 := false
-  giftPromisedTo  : Option PlayerId      := none
-  teamworkPaid    : Bool                 := false
-  sneakPaid       : Bool                 := false
-  sneakAttackWhom : Option PlayerId      := none
-  castFromGraveyard : Bool               := false
-  fraEffectUntilTurnOf : Option PlayerId := none
 deriving Repr, Inhabited, BEq
 
 namespace EventObject
 
-/-- Materialize a `GameObject` from an `EventObject` for `ZoneEvent.moved` or
-`ZoneEvent.created` (CR 400.7 / 111.1). -/
-def toGameObject (e : EventObject) (fallbackId : ObjectId) (fallbackTs : Nat) : GameObject :=
-  let id := e.id.getD fallbackId
-  let ts := if e.timestamp > 0 then e.timestamp else fallbackTs
-  let printed : CardDef :=
-    match e.printed with
-    | some p =>
-      if e.token && !p.isToken then { p with isToken := true }
-      else p
-    | none =>
-      { name := e.name
-        colorIndicator := if e.colors.isColorless then none else some e.colors
-        supertypes := e.supertypes
-        types := e.types
-        subtypes := e.subtypes.map CardSubtype.englishName
-        power := e.power
-        toughness := e.toughness
-        loyalty := e.loyalty.map Int.ofNat
-        keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
-        toxic := e.toxic
-        staticAbilities := e.staticAbilities
-        isToken := e.token }
-  let baseStatus :=
-    if !e.counters.isEmpty || e.status.toCounterBag != e.counters then
-      e.status.withCounterBag e.counters
-    else e.status
-  let status :=
-    { baseStatus with
-      tapped := e.tapped
-      attacking := e.attacking
-      phasedOut := e.phasedOut
-      faceDown := e.faceDown
-      transformed := e.transformed }
-  { id := id
-    printed := printed
-    owner := e.owner
-    controller := e.controller
-    lastController := e.lastController
-    defaultController :=
-      if e.zone == .battlefield then e.defaultController.orElse (fun _ => e.controller)
-      else e.defaultController
-    zone := e.zone
-    status := status
-    timestamp := ts
-    attachedTo := e.attachedTo
-    abilityEffect := e.abilityEffect
-    triggeredAbility := e.triggeredAbility
-    sourceId := e.sourceId
-    lastKnownPower := e.lastKnownPower
-    lastKnownToughness := e.lastKnownToughness
-    adventurerCard := e.adventurerCard
-    chosenX := e.chosenX
-    wasCast := e.wasCast
-    kicked := e.kicked
-    giftPromisedTo := e.giftPromisedTo
-    teamworkPaid := e.teamworkPaid
-    sneakPaid := e.sneakPaid
-    sneakAttackWhom := e.sneakAttackWhom
-    castFromGraveyard := e.castFromGraveyard
-    fraEffectUntilTurnOf := e.fraEffectUntilTurnOf
-    isCopy := e.isCopy }
+/-- Synthesize a `CardDef` from the characteristics in `e` (CR 109.3). -/
+def toCardDef (e : EventObject) : CardDef :=
+  { name := e.name
+    colorIndicator := if e.colors.isColorless then none else some e.colors
+    supertypes := e.supertypes
+    types := e.types
+    subtypes := e.subtypes.map CardSubtype.englishName
+    power := e.power
+    toughness := e.toughness
+    loyalty := e.loyalty.map Int.ofNat
+    keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
+    toxic := e.toxic
+    staticAbilities := e.staticAbilities
+    isToken := e.token }
 
 /-- `s` is one of this object's supertypes. -/
 def hasSupertype (o : EventObject) (s : Supertype) : Bool :=
@@ -216,8 +147,8 @@ end EventObject
 
 /-- This object as it is now, for a `GameEvent` (CR 113.7a).
 Note: layer-dependent fields (`colors`, `types`, `subtypes`, `power`,
-`toughness`, `keywords`, `staticAbilities`) are provisional when read without
-`Game`; prefer `Game.snapshot` when `Game` is in scope. -/
+`toughness`, `keywords`, `staticAbilities`) are provisional until Phase 8 when
+read without `Game`; prefer `Game.snapshot` when `Game` is in scope. -/
 def GameObject.asEvent (o : GameObject) : EventObject :=
   { id := some o.id
     controller := o.controller
@@ -245,27 +176,7 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     counters := o.status.toCounterBag
     token := o.printed.isToken
     isCopy := o.isCopy
-    changeling := o.printed.keywords.changeling
-    timestamp := o.timestamp
-    printed := some o.printed
-    status := o.status
-    defaultController := o.defaultController
-    lastController := o.lastController
-    abilityEffect := o.abilityEffect
-    triggeredAbility := o.triggeredAbility
-    sourceId := o.sourceId
-    lastKnownPower := o.lastKnownPower
-    lastKnownToughness := o.lastKnownToughness
-    adventurerCard := o.adventurerCard
-    chosenX := o.chosenX
-    wasCast := o.wasCast
-    kicked := o.kicked
-    giftPromisedTo := o.giftPromisedTo
-    teamworkPaid := o.teamworkPaid
-    sneakPaid := o.sneakPaid
-    sneakAttackWhom := o.sneakAttackWhom
-    castFromGraveyard := o.castFromGraveyard
-    fraEffectUntilTurnOf := o.fraEffectUntilTurnOf }
+    changeling := o.printed.keywords.changeling }
 
 /-- Later steps of a trigger `sequence`, waiting until the pending choice
 opened by an earlier step finishes. They run before any player receives
@@ -961,19 +872,21 @@ inductive LifeEvent where
       (fromDamage : Bool := false) (combat : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Why an object moved between zones (CR 400.6, 121.1, 701.8, 701.9, 701.13, 701.21). -/
+/-- Why an object moved between zones (CR 400.6, 121.1, 701.8, 701.9, 701.17, 701.21). -/
 inductive ZoneVerb where
-  | put
+  | cast
   | draw (nth : Nat) (firstOfOwnDrawStep : Bool := false)
   | discard
-  | sacrifice
-  | destroy (regenerated : Bool := false)
-  | exile
   | mill
+  | sacrifice
+  | destroy
+  | exile
   | counter
-  | castToStack
+  | resolve
+  | put
   | returnToHand
   | shuffleIntoLibrary
+  | playLand
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Where an object is placed in a library when moving to `.library _` (CR 401). -/
@@ -1301,12 +1214,21 @@ def moved (turn : Nat) (before : EventObject) (fromZone toZone : Zone)
       if sacrificed then .sacrifice
       else if discarded then .discard
       else if toZone == .exile then .exile
+      else if toZone == .stack then .cast
       else .put
   let beforeObj := { before with zone := fromZone }
   let afterObj :=
     match after with
     | some a => { a with zone := toZone }
-    | none => { before with zone := toZone }
+    | none =>
+      { before with
+        zone := toZone
+        controller := if toZone == .battlefield || toZone == .stack then before.controller else none
+        tapped := false
+        attacking := false
+        blocking := false
+        attachedTo := none
+        counters := if toZone == .battlefield then entersWith else #[] }
   let actor' :=
     match actor with
     | some a => some a
@@ -1527,8 +1449,6 @@ def withDestination (e : GameEvent) (toZone : Zone) (discarded : Bool) : GameEve
     let after' := { after with
       zone := toZone
       controller := if toZone == .battlefield || toZone == .stack then after.controller else none
-      defaultController := if toZone == .battlefield then after.defaultController else none
-      status := if toZone == .battlefield then after.status else {}
       tapped := if toZone == .battlefield then after.tapped else false
       counters := if toZone == .battlefield then after.counters else #[] }
     let entersWith' := if toZone == .battlefield then entersWith else #[]
@@ -1801,9 +1721,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .stepped .draw active, .eachOpponentDrawStep => !you active
     | .stepped .upkeep _, .eaglesCreateBirds => true
     | .stepped .upkeep active, .enchantedControllerUpkeep => you active
-    | .zone (.moved before _ .battlefield _ .sacrifice actor _ _), .youSacrificeToken =>
+    | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && before.token
+      you p && before.token && owner == before.owner
     | .activated p _ true _, .youActivateLoyaltyAbility => you p
     | .activated p source false _, .youActivateCreatureAbility =>
       you p && source.creature

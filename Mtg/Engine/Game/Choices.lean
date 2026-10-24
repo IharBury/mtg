@@ -278,6 +278,7 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
       if castTheCard then
         let o := g.object! instId
         let (g, _) := g.move instId .stack (some controller)
+          (verb := some .cast) (actor := some controller)
         g.logMsg
           s!"{(g.player controller).name} casts {o.name} as the ability resolves"
       else

@@ -36,6 +36,7 @@ def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace) : Game
     timestamp := copyTs
   }
   let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj))
+  let g := g.change (.setObject copyObj)
   let g := g.createPrintedStaticEffects (g.object! copyId)
   g.createEffect (.playPermission copyId {
     player := p
@@ -158,11 +159,111 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     match old.zone, dest with
     | .hand p, .graveyard q => p == q
     | _, _ => false
+  let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat) :
+      GameObject × CounterBag × Nat × Bool × Bool :=
+    let newId : ObjectId := ⟨g.nextObjectId⟩
+    let ts := g.timestamp + 1
+    let leavingPlay :=
+      (old.zone == .battlefield || old.zone == .stack) &&
+        targetZone != .battlefield && targetZone != .stack
+    let printed :=
+      if leavingPlay && old.status.transformed then
+        match old.printed.otherFace with
+        | some front =>
+          { front with otherFace := some { old.printed with otherFace := none } }
+        | none => old.printed
+      else if targetZone == .battlefield && nightBack then
+        match old.printed.otherFace with
+        | some back =>
+          { back with otherFace := some { old.printed with otherFace := none } }
+        | none => old.printed
+      else old.printed
+    let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
+    let fromStackTime :=
+      if targetZone == .battlefield && old.zone == .stack then old.status.time else 0
+    let entersTapped :=
+      targetZone == .battlefield &&
+        (tapped ||
+          (!faceDown &&
+            match controller with
+            | some p => g.entersTapped p printed
+            | none => false))
+    let chosenCardType :=
+      if targetZone == .battlefield && !faceDown && printed.asEntersChooseCardType then
+        some CardType.creature
+      else none
+    let windcragMardu :=
+      targetZone == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai
+    let prepared :=
+      targetZone == .battlefield && !faceDown && printed.entersPrepared
+    let impendingNotCreature :=
+      old.zone == .stack && targetZone == .battlefield &&
+        printed.impending.isSome && fromStackTime > 0
+    let baseStatus : Status :=
+      if targetZone == .battlefield then
+        { faceDown := faceDown
+          tapped := entersTapped
+          summoningSick := summoningSick
+          attacking := attacking
+          attackingWhom := attackingWhom
+          chosenCardType := chosenCardType
+          windcragMardu := windcragMardu
+          prepared := prepared
+          transformed := nightBack
+          cantTransform := nightBack
+          returnedAsArtifact := returnedAsArtifact
+          onlyFoodArtifact := onlyFoodArtifact
+          notACreature := impendingNotCreature }
+      else {}
+    let candidate : GameObject := {
+      id := newId
+      printed
+      owner := old.owner
+      controller := controller
+      lastController :=
+        if old.zone == .battlefield then old.controller else old.lastController
+      defaultController := if targetZone == .battlefield then controller else none
+      zone := targetZone
+      status := baseStatus
+      timestamp := ts
+      attachedTo := if targetZone == .battlefield then attachedTo else none
+      chosenX := old.chosenX
+      wasCast :=
+        if targetZone == .battlefield then wasCast.getD (old.zone == .stack && !old.isCopy)
+        else false
+      lastKnownPower := lkiPower
+      lastKnownToughness := lkiToughness
+    }
+    let entersWith : CounterBag :=
+      if targetZone == .battlefield then
+        g.computeEntersWithCounters candidate
+          (fromStackTime := fromStackTime)
+          (applyHope := applyHope)
+          (asOf := asOf)
+          (extraCounters := extraEntersWith)
+      else #[]
+    let weaverBonus : Nat :=
+      if targetZone == .battlefield && applyHope then
+        g.hopeCountersOnEnter candidate asOf
+      else 0
+    let fresh : GameObject :=
+      if entersWith.isEmpty then candidate
+      else
+        { candidate with
+          status :=
+            { (candidate.status.withCounterBag entersWith) with
+              gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 } }
+    (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown)
+  let (proposedFresh, proposedEntersWith, _, _, _) := buildArrival g dest g.timestamp
+  let gWithProposed : Game :=
+    { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then proposedFresh else x) }
+  let proposedAfterSnap := gWithProposed.snapshot proposedFresh
   -- The change that would happen. Replacements match it before it is recorded
   -- (CR 614.1). A replaced change never happens (CR 614.6).
   let proposed :=
     GameEvent.moved g.turnNumber beforeSnap old.zone dest (discarded := discarded)
-      (verb := verb) (actor := actor) (libraryPosition := libraryPosition) (cause := cause)
+      (after := some proposedAfterSnap) (verb := verb) (actor := actor)
+      (entersWith := proposedEntersWith) (libraryPosition := libraryPosition) (cause := cause)
   -- Snapshot the replacement source before the object leaves so a
   -- simultaneous death of Head of the Hunt still applies (CR 614.6).
   let headSource :=
@@ -296,94 +397,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let g :=
     if old.zone == .battlefield then g.removePreparedCopy id else g
   let asOf := g.timestamp
-  let newId : ObjectId := ⟨g.nextObjectId⟩
-  let ts := g.timestamp + 1
-  let leavingPlay :=
-    (old.zone == .battlefield || old.zone == .stack) &&
-      dest != .battlefield && dest != .stack
-  let printed :=
-    if leavingPlay && old.status.transformed then
-      match old.printed.otherFace with
-      | some front =>
-        { front with otherFace := some { old.printed with otherFace := none } }
-      | none => old.printed
-    else if dest == .battlefield && nightBack then
-      match old.printed.otherFace with
-      | some back =>
-        { back with otherFace := some { old.printed with otherFace := none } }
-      | none => old.printed
-    else old.printed
-  let faceDown := dest == .battlefield && old.zone == .stack && old.status.faceDown
-  let fromStackTime :=
-    if dest == .battlefield && old.zone == .stack then old.status.time else 0
-  let entersTapped :=
-    dest == .battlefield &&
-      (tapped ||
-        (!faceDown &&
-          match controller with
-          | some p => g.entersTapped p printed
-          | none => false))
-  let chosenCardType :=
-    if dest == .battlefield && !faceDown && printed.asEntersChooseCardType then
-      some CardType.creature
-    else none
-  let windcragMardu :=
-    dest == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai
-  let prepared :=
-    dest == .battlefield && !faceDown && printed.entersPrepared
-  let impendingNotCreature :=
-    old.zone == .stack && dest == .battlefield &&
-      printed.impending.isSome && fromStackTime > 0
-  let baseStatus : Status :=
-    if dest == .battlefield then
-      { faceDown := faceDown
-        tapped := entersTapped
-        summoningSick := summoningSick
-        attacking := attacking
-        attackingWhom := attackingWhom
-        chosenCardType := chosenCardType
-        windcragMardu := windcragMardu
-        prepared := prepared
-        transformed := nightBack
-        cantTransform := nightBack
-        returnedAsArtifact := returnedAsArtifact
-        onlyFoodArtifact := onlyFoodArtifact
-        notACreature := impendingNotCreature }
-    else {}
-  let candidate : GameObject := {
-    id := newId
-    printed
-    owner := old.owner
-    controller := controller
-    lastController :=
-      if old.zone == .battlefield then old.controller else old.lastController
-    defaultController := if dest == .battlefield then controller else none
-    zone := dest
-    status := baseStatus
-    timestamp := ts
-    attachedTo := if dest == .battlefield then attachedTo else none
-    chosenX := old.chosenX
-    wasCast :=
-      if dest == .battlefield then wasCast.getD (old.zone == .stack && !old.isCopy)
-      else false
-    lastKnownPower := lkiPower
-    lastKnownToughness := lkiToughness
-  }
-  let entersWith : CounterBag :=
-    if dest == .battlefield then
-      g.computeEntersWithCounters candidate
-        (fromStackTime := fromStackTime)
-        (applyHope := applyHope)
-        (asOf := asOf)
-        (extraCounters := extraEntersWith)
-    else #[]
-  let weaverBonus : Nat :=
-    if dest == .battlefield && applyHope then
-      g.hopeCountersOnEnter candidate asOf
-    else 0
-  let fresh : GameObject :=
-    if entersWith.isEmpty then candidate
-    else { candidate with status := candidate.status.withCounterBag entersWith }
+  let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown) :=
+    buildArrival g dest asOf
+  let newId := fresh.id
+  let printed := fresh.printed
   let g :=
     if exileInstead then
       g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
@@ -391,11 +408,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let gWithFresh : Game :=
     { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then fresh else x) }
   let afterSnap := gWithFresh.snapshot fresh
+  let finalVerb : Option ZoneVerb :=
+    if exileInstead then some .exile else verb
   let happened :=
     GameEvent.moved g.turnNumber beforeSnap old.zone dest
       (discarded := finalDiscarded)
       (after := some afterSnap)
-      (verb := verb)
+      (verb := finalVerb)
       (actor := actor)
       (entersWith := entersWith)
       (libraryPosition := libraryPosition)
@@ -403,6 +422,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
   -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
   let g := g.record happened
+  let g :=
+    if g.object! newId != fresh then g.change (.setObject fresh)
+    else g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>

@@ -31,9 +31,9 @@ def empoweredJaceAgain : Game :=
 /-- Put the angel on the battlefield and run enters-the-battlefield actions. -/
 def preparedAngel : Game :=
   let g := skipTo (addPermanent started grayOgre ⟨0⟩ ⟨0⟩) .precombatMain 40
-  let (g, obj) := g.allocObject blossomBlessedAngel ⟨0⟩ .battlefield (some ⟨0⟩)
-    (status := { summoningSick := false })
-  g.afterPermanentEnters obj
+  let (g, obj) := g.allocObject blossomBlessedAngel ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
 
 #guard (namedPermanent preparedAngel "Blossom-Blessed Angel").status.prepared
 #guard preparedAngel.objects.any (fun o =>

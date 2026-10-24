@@ -67,7 +67,7 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
   else if g.hasIndestructible o then
     g.logMsg s!"{o.name} is indestructible and isn't destroyed"
   else
-    g.moveToOwnerGraveyard o s!"{o.name} is destroyed"
+    g.moveToOwnerGraveyard o s!"{o.name} is destroyed" (verb := some .destroy)
 
 /-- Queue “a creature you control is dealt damage” triggers (She-Hulk). -/
 def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : Game :=

@@ -25,6 +25,7 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
       | .draw _ n => .draw owner n
       | other => other
     let (g, _) := g.move src.id (.library owner) none
+      (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
     g.requestShuffle owner after |>.continueIfShuffled
 
 /-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):

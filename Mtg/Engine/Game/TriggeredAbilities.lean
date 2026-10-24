@@ -4023,7 +4023,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         if obj.id.any ids.contains then
           { ev with
             change := .rules (.zone (.created
-              { obj with attacking := true, status := { obj.status with attacking := true, attackingWhom := dest } }
+              { obj with attacking := true }
               creator)) }
         else ev
       | _ => ev)

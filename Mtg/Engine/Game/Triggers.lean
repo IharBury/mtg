@@ -330,16 +330,13 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat) : Game :=
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
-/-- As a Saga enters, put a lore counter on it (CR 714.3a). When the Saga
-entered via `move` or `applyEntersWith`, the lore counter(s) are already in
-`o.status.lore` and `entersWith`, so we log and queue the chapter triggers
-without adding another counter. -/
+/-- As a Saga enters, put a lore counter on it (CR 714.3a). The lore counter(s)
+are placed in `entersWith` during the zone change, so we log and queue the
+chapter triggers for the lore counter(s) on `o`. -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
   match o.controller, o.printed.saga with
   | some p, some sdef =>
-    if o.status.faceDown then g
-    else if o.status.lore == 0 then
-      g.addOneLoreCounter o
+    if o.status.faceDown || o.status.lore == 0 then g
     else
       Id.run do
         let mut g := g
@@ -546,6 +543,9 @@ def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
     let p := o.controller.getD o.owner
     if g.events.reverse.any (fun happened =>
         happened.turn == g.turnNumber &&
+          (match happened.change with
+           | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) => before.id == some o.id
+           | _ => false) &&
           happened.matchesTrigger p o.id .youSacrificeToken) then
       g.putControlledTriggers p .youSacrificeToken
     else g

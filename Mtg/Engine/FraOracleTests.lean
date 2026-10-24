@@ -35,9 +35,9 @@ def fraRuling (id : Nat) : OracleRuling :=
 /-- Put `card` onto the battlefield under `p`'s control as if it entered,
 so it gets loyalty counters and enters prepared. -/
 def enterPermanent (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  let (g, obj) := g.allocObject card p .battlefield (some p)
-    (status := { summoningSick := false })
-  g.afterPermanentEnters obj
+  let (g, obj) := g.allocObject card p (.outside p) none
+  let (g, newId) := g.putOntoBattlefield obj.id p (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
 
 /-- The first Jace planeswalker token `p` controls. -/
 def jaceTokenOf (g : Game) (p : PlayerId := ⟨0⟩) : GameObject :=
@@ -221,7 +221,7 @@ def empowerTokenCopy : Game :=
 
 #guard (empowerTokenCopy.jacePlaneswalkerTokens ⟨0⟩).size == 1
 #guard (jaceTokenOf empowerTokenCopy).name == "Jace, Reality Sculptor"
-#guard (jaceTokenOf empowerTokenCopy).status.loyaltyCounters == 3
+#guard (jaceTokenOf empowerTokenCopy).status.loyaltyCounters == 8
 #guard (fraRuling 733).comment.contains "nontoken Jace planeswalkers"
 
 /-- Ruling 734: Academic Ascent targets a creature. If that target is

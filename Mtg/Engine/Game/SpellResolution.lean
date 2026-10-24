@@ -24,7 +24,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
     | some host =>
       if host.auraCanEnchant obj.printed then
         let (g, newId) := g.putOntoBattlefield obj.id entry.controller
-          (attachedTo := some host.id)
+          (attachedTo := some host.id) (verb := some .resolve) (actor := some entry.controller)
         let o := g.object! newId
         let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
         g.afterPermanentEnters (g.object! newId)
@@ -39,7 +39,7 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
   let orig := obj.adventurerCard.getD obj.printed
   let g := g.changeObjects obj.id #[.printed orig, .adventurerCard none]
   let obj := g.object! obj.id
-  let (g, newId) := g.move obj.id .exile none
+  let (g, newId) := g.move obj.id .exile none (verb := some .resolve) (actor := some entry.controller)
   let o := g.object! newId
   let g := g.createEffect (.playPermission o.id {
       player := entry.controller
@@ -194,6 +194,8 @@ def resolveTop (g : Game) : Game :=
             (attacking := sneak)
             (attackingWhom := if sneak then sneakWhom else none)
             (wasCast := some (!obj.isCopy))
+            (verb := some .resolve)
+            (actor := some entry.controller)
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
@@ -201,10 +203,11 @@ def resolveTop (g : Game) : Game :=
           (g.ceaseToExist obj.id).logMsg
             s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
         else if obj.castFromGraveyard then
-          let (g, _) := g.move obj.id .exile none
+          let (g, _) := g.move obj.id .exile none (verb := some .resolve) (actor := some entry.controller)
           g.logMsg s!"{obj.name} is exiled (flashback)"
         else
           g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
+            (verb := some .resolve) (actor := some entry.controller)
 
 end Game
 end Mtg.Engine

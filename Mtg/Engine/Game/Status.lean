@@ -328,10 +328,8 @@ def toCounterBag (s : Status) : CounterBag :=
 
 /-- Replace the counter fields of `s` with the counts in `bag` (CR 122.1). -/
 def withCounterBag (s : Status) (bag : CounterBag) : Status :=
-  let plusOne := bag.count .plusOnePlusOne
   { s with
-    plusOnePlusOne := plusOne
-    gotPlusOneThisTurn := s.gotPlusOneThisTurn || plusOne > s.plusOnePlusOne
+    plusOnePlusOne := bag.count .plusOnePlusOne
     minusOneMinusOne := bag.count .minusOneMinusOne
     loyaltyCounters := bag.count .loyalty
     hope := bag.count .hope

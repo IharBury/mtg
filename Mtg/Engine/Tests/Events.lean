@@ -735,15 +735,13 @@ zone lists (`hand`, `graveyard`, `library`), `nextObjectId`, and `timestamp`
       zone := .battlefield
       controller := some me
       tapped := true
-      counters := #[(.plusOnePlusOne, 2)]
-      timestamp := ts0 + 1 }
+      counters := #[(.plusOnePlusOne, 2)] }
   let g1 := g0.applyChange (.rules (.zone (.moved
     (g0.snapshot card) afterObj (.hand me) .battlefield
     .put (some me) #[(.plusOnePlusOne, 2)] none)))
   let tokId : ObjectId := ⟨g1.nextObjectId⟩
   let tokSnap : EventObject :=
     { id := some tokId
-      printed := some treasureToken
       name := "Treasure"
       owner := me
       controller := some me
@@ -751,8 +749,7 @@ zone lists (`hand`, `graveyard`, `library`), `nextObjectId`, and `timestamp`
       token := true
       types := #[.artifact]
       subtypes := #[.treasure]
-      tapped := true
-      timestamp := g1.timestamp + 1 }
+      tapped := true }
   let g2 := g1.applyChange (.rules (.zone (.created tokSnap me)))
   let g3 := g2.applyChange (.rules (.zone (.ceasedToExist tokSnap)))
   !(g1.player me).hand.contains cardId &&
@@ -779,11 +776,42 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
       name := "Tapped Plus Bear"
       entersTapped := true
       entersWithPlusOneCounters := 2
-      entersWithShield := 1 }
+      entersWithShield := 1
+      entersWithIndestructibleCounter := true }
+  let testPlaneswalker : CardDef :=
+    { name := "Test Planeswalker"
+      types := #[.planeswalker]
+      subtypes := #["Jace"]
+      loyalty := some 4 }
+  let testSaga : CardDef :=
+    { name := "Test Saga"
+      types := #[.enchantment]
+      subtypes := #["Saga"]
+      saga := some {
+        sacrificeAfter := "II"
+        chapters := #[
+          SagaChapter.of "I" "Gain 1 life." (.gainLife 1),
+          SagaChapter.of "II" "Gain 2 life." (.gainLife 2)] } }
+  let testImpending : CardDef :=
+    { bear with
+      name := "Impending Bear"
+      impending := some (3, ManaCost.ofGeneric 1) }
   let g0 := insertObject (quiet afterDraw) tapPlusCreature me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := insertObject g0 testPlaneswalker me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := insertObject g0 testSaga me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let g0 := insertObject g0 testImpending me .stack (some me) { time := 3 } (fun _ _ => #[])
   let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Tapped Plus Bear"))[0]!
+  let pwid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Test Planeswalker"))[0]!
+  let sagaId := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Test Saga"))[0]!
+  let impId := (g0.objects.filter (fun o => o.name == "Impending Bear" && o.zone == .stack))[0]!.id
   let (g1, permId) := (quiet g0).putOntoBattlefield cid me
   let g1 := g1.afterPermanentEnters (g1.object! permId)
+  let (g1, pwPermId) := g1.putOntoBattlefield pwid me
+  let g1 := g1.afterPermanentEnters (g1.object! pwPermId)
+  let (g1, sagaPermId) := g1.putOntoBattlefield sagaId me
+  let g1 := g1.afterPermanentEnters (g1.object! sagaPermId)
+  let (g1, impPermId) := g1.putOntoBattlefield impId me
+  let g1 := g1.afterPermanentEnters (g1.object! impPermId)
   let moveEvents := g1.events.filterMap (fun e =>
     match e.change with
     | .rules (.zone (.moved before after fromZone toZone _ _ entersWith _)) =>
@@ -798,7 +826,9 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
     | .rules (.permanent (.tapped _ _)) => true
     | _ => false)
   let putProjection := GameEvent.countersPut g1.events
-  moveEvents.size == 1 &&
+  let (gTok, pwTok) := (quiet afterDraw).createToken me testPlaneswalker
+  let gTok := gTok.afterPermanentEnters (gTok.object! pwTok.id)
+  moveEvents.size == 4 &&
     separateCounterEvents.isEmpty &&
     separateTapEvents.isEmpty &&
     (let (_, after, _, toZone, entersWith) := moveEvents[0]!
@@ -806,21 +836,42 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
        after.tapped &&
        after.counters.count .plusOnePlusOne == 2 &&
        after.counters.count .shield == 1 &&
+       after.counters.count .indestructible == 1 &&
        entersWith.count .plusOnePlusOne == 2 &&
-       entersWith.count .shield == 1) &&
+       entersWith.count .shield == 1 &&
+       entersWith.count .indestructible == 1) &&
+    (let (_, after, _, _, entersWith) := moveEvents[1]!
+     after.counters.count .loyalty == 4 &&
+       entersWith.count .loyalty == 4) &&
+    (let (_, after, _, _, entersWith) := moveEvents[2]!
+     after.counters.count .lore == 1 &&
+       entersWith.count .lore == 1) &&
+    (let (_, after, _, _, entersWith) := moveEvents[3]!
+     after.counters.count .time == 3 &&
+       entersWith.count .time == 3) &&
+    (gTok.object! pwTok.id).status.loyaltyCounters == 4 &&
     putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .plusOnePlusOne && n == 2) &&
-    putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .shield && n == 1)
+    putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .shield && n == 1) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some permId && k == .indestructible && n == 1) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some pwPermId && k == .loyalty && n == 4) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some sagaPermId && k == .lore && n == 1) &&
+    putProjection.any (fun (o, k, n, _) => o.id == some impPermId && k == .time && n == 3)
 
 /- Phase 2 isolation: `followMoved`, `lastKnownBefore?`, and `lastKnownCounters`
 are pure queries over `ZoneEvent.moved` in `g.events`, and `Game.snapshot`
 populates characteristics and status on `before` when a permanent leaves the
-battlefield (CR 400.7 / 113.7a / 608.2h). -/
+battlefield (CR 400.7 / 113.7a / 608.2h). Also verifies that a sacrifice
+replaced by exile (CR 614.6) is journaled with `verb == .exile` rather than
+`.sacrifice`. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let g1 := (g0.addPlusOnePlusOneTo b 2).pumpPermanent (g0.object! b.id) 1 1
   let (g2, gyId) := g1.move b.id (.graveyard me) (verb := some .sacrifice) (actor := some me)
   let (g3, exId) := g2.move gyId .exile none
+  let (g4, tok) := (quiet g0).createToken me treasureToken
+  let g4 := g4.createEffect (.exileIfDiesUntilEot tok.id)
+  let g5 := (quiet g4).sacrificeToGraveyard (g4.object! tok.id) "sacrificed"
   g3.followMoved b.id == exId &&
     g3.lastKnownCounters b.id == #[(.plusOnePlusOne, 2)] &&
     (match g3.lastKnownBefore? b.id with
@@ -835,6 +886,15 @@ battlefield (CR 400.7 / 113.7a / 608.2h). -/
       match e.change with
       | .rules (.zone (.moved _ _ .battlefield (.graveyard _) .sacrifice (some actor) _ _)) =>
         actor == me
+      | _ => false) &&
+    g5.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.moved before _ .battlefield .exile .exile _ _ _)) =>
+        before.id == some tok.id
+      | _ => false) &&
+    !g5.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield _ .sacrifice _ _ _)) => true
       | _ => false)
 
 end Mtg.Engine.EventTests

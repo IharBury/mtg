@@ -66,7 +66,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let rest := ids.filter (· != id)
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
-  let (g, newId) := g.move id .stack (some p)
+  let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -541,7 +541,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if after.id == some id then
             { ev with
               change := .rules (.zone (.moved before
-                { after with tapped := true, status := { after.status with tapped := true } }
+                { after with tapped := true }
                 fromZone .battlefield verb actor entersWith libPos)) }
           else ev
         | _ => ev)

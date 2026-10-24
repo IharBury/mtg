@@ -75,6 +75,7 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       adventurerCard := src.adventurerCard
     }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+    let g := g.change (.setObject copyObj)
     let g := g.putStackEntry controller copyId
     let g :=
       match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copyId) with
@@ -140,7 +141,7 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let manaBefore := pl.manaPool
       let fromGy := original.zone == .graveyard original.owner
       let wasCopy := original.isCopy
-      let (g, newId) := g.move id .stack (some p)
+      let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       let g := g.changeObjects newId #[
         .castFromGraveyard fromGy,
         .isCopy wasCopy]
@@ -308,6 +309,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         else Zone.graveyard o.owner
       let name := o.name
       let (g, newId) := g.move spellId dest none
+        (verb := some .counter) (actor := some controller)
       let g :=
         if dest == .exile && grantFreeCast then
           g.createEffect (.playPermission newId {
@@ -925,6 +927,7 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
       teamworkPaid := src.teamworkPaid
     }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+    let g := g.change (.setObject copyObj)
     let g := g.putStackEntry controller copyId
     let g :=
       match g.stack.findIdx? (fun e => e.objectId == src.id) with

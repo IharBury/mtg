@@ -1576,8 +1576,9 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let gPlan := gPlan.incrementPlanThen ⟨0⟩ (some plan.id) (fun g _ => g)
   let planOk := (gPlan.object! plan.id).status.plan == 2
   let gCap := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
-  let gCap := addPermanent gCap captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
-  let gCap := gCap.afterPermanentEnters (namedPermanent gCap "Captain America, Super-Soldier")
+  let (gCap, capObj) := gCap.allocObject captainAmericaSuperSoldier ⟨0⟩ (.outside ⟨0⟩) none
+  let (gCap, capId) := gCap.putOntoBattlefield capObj.id ⟨0⟩ (summoningSick := false)
+  let gCap := gCap.afterPermanentEnters (gCap.object! capId)
   let shieldOk :=
     (namedPermanent gCap "Captain America, Super-Soldier").status.shield == 2
   let gPro := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
@@ -4479,8 +4480,9 @@ def loseAbilitiesUntapOk : Bool :=
 
 /-- Captain America's shield gives you and other Heroes hexproof, not himself. -/
 def capShieldHexproofOk : Bool :=
-  let g := addPermanent afterDraw captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
-  let g := g.afterPermanentEnters (namedPermanent g "Captain America, Super-Soldier")
+  let (g, capObj) := afterDraw.allocObject captainAmericaSuperSoldier ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, capId) := g.putOntoBattlefield capObj.id ⟨0⟩ (summoningSick := false)
+  let g := g.afterPermanentEnters (g.object! capId)
   let g := addPermanent g whiteTigerAvaAyala ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let cap := namedPermanent g "Captain America, Super-Soldier"
