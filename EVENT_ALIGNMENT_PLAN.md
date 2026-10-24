@@ -855,7 +855,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Continuous-effect mirrors → layers** | `pump : Int × Int`, `untilTurnOfPump : Array (PlayerId × Int × Int)`, `pumpPerArtifactUntilEot : Bool`, `setBasePT : Option (Int × Int)`, `cardsInHandPowerUntilEot : Bool`, `untilEotKeywords : Keywords`, `firstStrikeOnYourTurn : Bool`, `untilEotLosesIndestructible : Bool`, `additionalCreature : Bool`, `additionalCreatureUntilEot : Bool`, `additionalArtifactUntilEot : Bool`, `additionalSubtypes : Array CardSubtype`, `replacedCreatureTypesUntilEot : Option (Array CardSubtype)`, `onlyFoodArtifact : Bool`, `returnedAsArtifact : Bool`, `notACreature : Bool`, `animatedConstruct55 : Bool`, `grantedStaticAbilities : Array StaticAbility`, `grantedTriggeredAbilities : Array TriggeredAbility`, `grantedTriggersUntilEot : Array TriggeredAbility`, `ironFistTapGrants : Nat`, `combatDamageCreatesTreasure : Bool`, `losesAbilitiesUntilEot : Bool`, `losesAbilitiesGrantedBy : Array ObjectId`, `hexproofGrantedBy : Array ObjectId`, `cantBeBlockedByPlayer : Option PlayerId`, `cantBeBlockedExceptByHasteUntilEot : Bool`, `cantBlockUntilEot : Bool`, `controlUntilEot : Bool`, `controlTurnEndsLeft : Nat` | `ContinuousEffectSpec.layered` / `.gameRule`. |
 | **Replacement/prevention mirrors** | `untilEotExileIfDies : Bool`, `preventDamageGrantedBy : Array ObjectId`, `cantUntapGrantedBy : Array ObjectId`, `cantTransform : Bool` | `ContinuousEffectSpec.replacement` / `.prevention` (or a rule spec for "can't"). |
 | **Permission mirrors** | `freeCastFromGraveyard : Bool`, `colorlessGrantUntilCast : Array ObjectId` | `ContinuousEffectSpec.permission`. |
-| **Designation** | `goaded : Bool`, `goadedBy : Array PlayerId`, `goadedUntilNextTurnOf : Array PlayerId` | `PermanentEvent.designation (.goaded byPlayer untilNextTurn)` (701.15b); until-next-turn goads expire via `Game.expireGoadedFor` as the goading player's next turn begins, while `untilNextTurn := false` goads persist for the rest of the game (`ringBearer`, `isCommander`, `prepared`, and `harnessed` also write through `PermanentEvent.designation`). |
+| **Designation** | `goaded : Bool`, `goadedBy : Array PlayerId`, `goadedUntilNextTurnOf : Array PlayerId` | `PermanentEvent.designation (.goaded byPlayer untilNextTurn)` (701.15b); until-next-turn goads expire via `Game.expireGoadedFor` as the goading player's next turn begins, while `untilNextTurn := false` goads persist for the rest of the game. |
 
 #### `GameObject` ([`Object.lean`](Mtg/Engine/Game/Object.lean))
 
@@ -957,9 +957,10 @@ Tests: `Tests/Tap.lean`, `Untap.lean`, `GainLife.lean`, `LoseLife.lean`,
    `SpellResolution.lean`, `LibrarySearch.lean`, `CastExtras.lean`,
    `ResolutionEffects.lean`, `EffectResolution.lean`, `FraHelpers.lean`,
    `FraResolve.lean`, and `TriggeredAbilities.lean`; direct post-entry `.tapped`
-   writes in `Entering.lean` for the pay-life-or-enter-tapped choice,
-   `EffectResolution.lean`, `FraChoices.lean`, `ModeledTriggers.lean`, and
-   `TriggeredAbilities.lean`; and token construction in `Tokens.lean`), and
+   writes in `EffectResolution.lean`, `FraChoices.lean` (including the
+   pay-life-or-enter-tapped decline arm opened by `Entering.lean`),
+   `ModeledTriggers.lean`, and `TriggeredAbilities.lean`; and token construction
+   in `Tokens.lean`), and
    as-enters choices (`enterWithLoyalty`, `enterWithPlusOnes`,
    `enterWithIndestructibleCounter`, `enterWithShield`, `enterWithXPlusOnes`,
    `enterWithHope`, prepared, impending time counters) into the construction of
