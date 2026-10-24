@@ -253,7 +253,7 @@ inductive FraChoice where
   | maySacrificePlaneswalker
   /-- The owner of `id` puts it on top (accept) or on the bottom (decline) of
   their library; on top, they are dealt `damage`. -/
-  | topOrBottomDamage (id : ObjectId) (damage : Nat)
+  | topOrBottomDamage (id : ObjectId) (damage : Nat) (sourceId : Option ObjectId := none)
   /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
   | sphinxsApproach (spellId : ObjectId)
   /-- You may reveal two cards with different names from outside the game. -/
@@ -629,6 +629,7 @@ inductive Pending where
   If you don't, the ability deals `damage` to each opponent (Chandra, Torch
   of Defiance). -/
   | mayCastExiledElseDamage (player : PlayerId) (cardId : ObjectId) (damage : Nat)
+      (sourceId : Option ObjectId := none)
   /-- Choose any number of permanents and players with counters to
   proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
   | chooseProliferate (player : PlayerId) (remaining : Nat)

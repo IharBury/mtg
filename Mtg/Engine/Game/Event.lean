@@ -741,7 +741,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 inductive PermanentDesignation where
   | ringBearer                 -- 701.54a
   | commander                  -- 903.3
-  | goaded (byPlayer : PlayerId) -- 701.15b
+  | goaded (byPlayer : PlayerId) (untilNextTurn : Bool := true) -- 701.15b
   | prepared                   -- set mechanic
   | harnessed                  -- set mechanic
 deriving DecidableEq, Repr, Inhabited, BEq

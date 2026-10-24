@@ -1504,14 +1504,33 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
         match d with
         | .ringBearer => { o.status with ringBearer := gained }
         | .commander => { o.status with isCommander := gained }
-        | .goaded byPlayer =>
-          let goadedBy :=
+        | .goaded byPlayer untilNextTurn =>
+          let (goadedBy, goadedUntilNextTurnOf) :=
             if gained then
-              if o.status.goadedBy.contains byPlayer then o.status.goadedBy
-              else o.status.goadedBy.push byPlayer
+              let byNow :=
+                if o.status.goadedBy.contains byPlayer then o.status.goadedBy
+                else o.status.goadedBy.push byPlayer
+              let untilNow :=
+                if !untilNextTurn then
+                  o.status.goadedUntilNextTurnOf.filter (· != byPlayer)
+                else if !o.status.goadedBy.contains byPlayer ||
+                    o.status.goadedUntilNextTurnOf.contains byPlayer then
+                  if o.status.goadedUntilNextTurnOf.contains byPlayer then
+                    o.status.goadedUntilNextTurnOf
+                  else
+                    o.status.goadedUntilNextTurnOf.push byPlayer
+                else
+                  o.status.goadedUntilNextTurnOf
+              (byNow, untilNow)
             else
-              o.status.goadedBy.filter (· != byPlayer)
-          { o.status with goaded := !goadedBy.isEmpty, goadedBy }
+              let untilNow := o.status.goadedUntilNextTurnOf.filter (· != byPlayer)
+              let byNow :=
+                if !untilNextTurn || o.status.goadedUntilNextTurnOf.contains byPlayer then
+                  o.status.goadedBy.filter (· != byPlayer)
+                else
+                  o.status.goadedBy
+              (byNow, untilNow)
+          { o.status with goaded := !goadedBy.isEmpty, goadedBy, goadedUntilNextTurnOf }
         | .prepared => { o.status with prepared := gained }
         | .harnessed => { o.status with harnessed := gained }
       { g with objects := g.objects.set! i { o with status := s } }

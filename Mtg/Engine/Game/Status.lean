@@ -237,6 +237,9 @@ structure Status where
   goaded : Bool := false
   /-- Players currently goading this permanent (CR 701.15b). -/
   goadedBy : Array PlayerId := #[]
+  /-- Players whose goad designation on this permanent ends as their next turn
+  begins (CR 701.15a). -/
+  goadedUntilNextTurnOf : Array PlayerId := #[]
   /-- Story counters (Staff of the Storyteller). -/
   story : Nat := 0
   /-- Time counters (impending, CR 702.176). -/

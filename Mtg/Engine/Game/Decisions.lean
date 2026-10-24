@@ -527,7 +527,7 @@ Timing permissions are ignored, but its costs are paid (rulings 857 /
 def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     Except String Game := do
   match g.pending with
-  | .mayCastExiledElseDamage q cardId _ =>
+  | .mayCastExiledElseDamage q cardId .. =>
     if p != q then
       throw s!"Only {(g.player q).name} may cast that card"
     if id != cardId then
@@ -568,11 +568,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       if (g.chosenModesOf spell).isEmpty then throw "Choose a mode (CR 700.2)"
       return (g.logMsg s!"{(g.player p).name} chooses no more modes").afterModesChosen p
     | none => throw "Choose a mode (CR 700.2)"
-  | .mayCastExiledElseDamage q _ n =>
+  | .mayCastExiledElseDamage q _ n sid =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to cast"
+    let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     let g := g.logMsg s!"{(g.player p).name} doesn't cast the exiled card"
-    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n)
+    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n (source := src?))
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .mayDiscardDraw q _ =>

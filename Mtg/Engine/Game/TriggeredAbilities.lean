@@ -959,20 +959,20 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
         | none => g
   | .target, .subtypeCount subtype, _ =>
     let amt := g.countSubtype controller subtype
-    g.applyEffect controller (Effect.dealDamage amt) targets
+    g.applyEffect controller (Effect.dealDamage amt) targets (sourceId := sourceId)
   | .target, .fixed n, .markedPermanent =>
     let n := n.toNat
     let g := g.change (.permanentDealtDamageThisWay none)
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
       | Target.player _ =>
-        g.applyEffect controller (Effect.dealDamage n) #[tgt]
+        g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
           let before := o.status.damage
-          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
+          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
           let marked :=
             match g.findObject? oid with
             | some o => o.isOnBattlefield && o.status.damage > before
@@ -4579,7 +4579,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | r =>
     match Resolution.toSpell r with
     | some _ =>
-      g.applyUnified controller ab.effect targets
+      g.applyUnified controller ab.effect targets (sourceId := sourceId)
     | none =>
       g.applyUnifiedAbility controller { ab.effect with resolution := r }
         targets sourceId lastKnownPower

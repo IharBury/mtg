@@ -149,17 +149,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySacrificePlaneswalker, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishFraChoice
   | .maySacrificePlaneswalker, _ => throw "Choose a planeswalker to sacrifice, or decline"
-  | .topOrBottomDamage id damage, .accept | .topOrBottomDamage id damage, .decline =>
+  | .topOrBottomDamage id damage sid, .accept | .topOrBottomDamage id damage sid, .decline =>
     match g.findObject? id with
     | none => return g.finishFraChoice
     | some o =>
       if !o.isOnBattlefield then return g.finishFraChoice
       else
         let owner := o.owner
+        let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
         let (g, newId) := g.move id (.library owner) none
         if answer == .accept then
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on top of their library"
-          return (g.dealDamageToPlayer owner damage).finishFraChoice
+          return (g.dealDamageToPlayer owner damage (source := src?)).finishFraChoice
         else
           let pl := g.player owner
           let g := g.changePlayer owner (.library (#[newId] ++ pl.library.filter (· != newId)))

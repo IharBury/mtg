@@ -120,7 +120,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       if excess > 0 then g.empowerJace controller excess
       else g) sourceId (some "The target is no longer legal"))
   | .exileTopMayCastElseDamageOpponents n =>
-    let src? := sourceId.bind g.findObject?
+    let sid := sourceId.orElse (fun _ => g.resolvingSpell)
+    let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     match (g.player controller).library.back? with
     | none =>
       some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
@@ -132,9 +133,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         -- Ruling 855: a land can't be cast, so the damage is dealt.
         some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
       else
-        some ((g.changes #[
-          .notedSourceThisWay (sourceId.orElse (fun _ => g.resolvingSpell)),
-          .pending (.mayCastExiledElseDamage controller id n)]).logMsg
+        some ((g.change (.pending (.mayCastExiledElseDamage controller id n sid))).logMsg
           s!"{(g.player controller).name} may cast {card.name}")
   | .emblemCastSpellDamage n =>
     -- Ruling 858: the emblem is colorless.
@@ -837,8 +836,10 @@ private def branchOnSpellIf (g : Game) (controller : PlayerId) (effect : Effect)
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
-    (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
-  match g.applyFraResolution? controller effect targets none with
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) : Game :=
+  let sourceId := sourceId.orElse (fun _ => g.resolvingSpell)
+  match g.applyFraResolution? controller effect targets sourceId with
   | some g => g
   | none =>
   match effect.resolution with
@@ -857,7 +858,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           steps.foldl (fun g r =>
             g.applyUnified controller { effect with resolution := r } targets
               (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-              (giftPromised := giftPromised) (chosenX := chosenX)) g
+              (giftPromised := giftPromised) (chosenX := chosenX)
+              (sourceId := sourceId)) g
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary none
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
@@ -975,7 +977,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | [r] =>
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+        (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
     | rs =>
       g.beginSpellOr controller effect targets rs
   | .attachEquipment =>
@@ -988,13 +990,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let run (g : Game) : Game :=
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+        (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
     g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised
   | .ifElse cond whenTrue whenFalse =>
     let run (r : SpellResolution) (g : Game) : Game :=
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)
+        (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
     g.branchOnSpellIf controller effect targets cond castFromGraveyard
       (run whenTrue) (run whenFalse) giftPromised
   | .exchangeControl =>
@@ -1266,6 +1268,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
   | .dealDamageToControllerOfTarget n =>
+    let src? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).orElse (fun _ => g.resolvingMovedDamageSource?)
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? (g.followMoved id) with
@@ -1274,7 +1277,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           if o.zone == .battlefield then o.controller
           else o.lastController.orElse (fun _ => o.controller)
         match pid? with
-        | some pid => g.dealDamageToPlayer pid n
+        | some pid => g.dealDamageToPlayer pid n (source := src?)
         | none => g
       | none => g
     | _ => g
@@ -1477,10 +1480,12 @@ partial def flushUnlessPays (g : Game) : Game :=
 /-- Resolve a printed spell effect (CR 608). -/
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
-    (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (sourceId : Option ObjectId := none) : Game :=
   g.applyUnified controller effect targets
     (castFromGraveyard := castFromGraveyard) (kicked := kicked)
     (giftPromised := giftPromised) (chosenX := chosenX)
+    (sourceId := sourceId)
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -1639,7 +1644,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     match Resolution.toSpell r with
     | some _ =>
       g.applyUnified controller { effect with resolution := r } targets
-        (chosenX := chosenX)
+        (chosenX := chosenX) (sourceId := sourceId)
     | none =>
       match r with
       | .searchBasicLand => g.resolveSearchBasicLandTapped controller
@@ -1712,7 +1717,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .discardLegendarySameNameDraw =>
         g.draw controller 2
       | .dealDamageToAny n =>
-        g.applyEffect controller (Effect.dealDamage n) targets
+        g.applyEffect controller (Effect.dealDamage n) targets (sourceId := sourceId)
       | .drawEqualToLastKnownPower =>
         g.draw controller ((lastKnownPower.getD 0).toNat)
       | .arwenShare =>

@@ -139,7 +139,7 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
 /-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
-    if o.status.goadedBy.contains p then
+    if o.status.goadedUntilNextTurnOf.contains p then
       g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false)
     else g) g
 

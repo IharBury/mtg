@@ -191,7 +191,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _
   | .fraChoice q _ =>
     if q == p then g.changes #[.pending .none, .chooseModesRest none] else g
-  | .mayCastExiledElseDamage q _ _ =>
+  | .mayCastExiledElseDamage q .. =>
     if q == p then g.change (.pending .none) else g
   | .chooseTriggerOr q =>
     if q == p then g.changes #[.pending .none, .triggerOr none] else g

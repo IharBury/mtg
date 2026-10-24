@@ -688,6 +688,17 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
     (g7.object! b.id).status.goadedBy == #[opp] &&
     !(g8.object! b.id).status.goaded &&
     (g8.object! b.id).status.goadedBy.isEmpty &&
+    (let gPerm := (g8.applyChange (.rules (.permanent (.designation b.asEvent (.goaded me false) true)))).expireGoadedFor me
+     (gPerm.object! b.id).status.goaded &&
+       (gPerm.object! b.id).status.goadedBy == #[me] &&
+       (gPerm.object! b.id).status.goadedUntilNextTurnOf.isEmpty) &&
+    (let dtCreature : CardDef := { bear with name := "Deathtouch Bear", keywords := Keyword.deathtouch }
+     let gDt := quiet (addPermanent afterDraw dtCreature me me)
+     let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
+     let gNoDt := gDt.markDamageOn c 1 "1 damage"
+     let gWithDt := gDt.markDamageOn c 1 "1 deathtouch damage" (deathtouch := true)
+     !gNoDt.deathtouchDealtSinceLastSba c.id &&
+       gWithDt.deathtouchDealtSinceLastSba c.id) &&
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
     !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer
 

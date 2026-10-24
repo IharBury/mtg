@@ -228,7 +228,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>
       some .haveVillainConnive
-    | .mayCastExiledElseDamage _ cardId _ =>
+    | .mayCastExiledElseDamage _ cardId .. =>
       match (g.apply p (.cast cardId)) with
       | .ok _ => some (.cast cardId)
       | .error _ => some .decline
