@@ -111,7 +111,7 @@ private def phraseWith (r : Resolution) (noun : String)
     s!"You gain {n} life"
   | .recruit _ =>
     "Recruit"
-  | .amass (.fixed n) "Goblin" _ _ =>
+  | .amass (.fixed n) .goblin _ _ =>
     s!"Amass Goblins {n.toNat}"
   | .createTokens kind (.fixed n) tapped _ _ _ =>
     capitalizeAscii (TokenKind.createPhrase kind n.toNat (tapped := tapped))
@@ -150,7 +150,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .subtypesGainMenace subtypes =>
-    s!"{StaticAbility.joinedSubtypes subtypes StaticAbility.pluralSubtype} you control gain menace until end of turn"
+    s!"{StaticAbility.joinedSubtypes subtypes CardSubtype.pluralName} you control gain menace until end of turn"
   | .exileThenReturnNextEnd =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
   | .searchBasicBeholdSubtypeUntap subtype =>
@@ -188,8 +188,9 @@ private def phraseWith (r : Resolution) (noun : String)
   | .eachOppDiscardThenPlusOne =>
     "Each opponent discards a card. Put a +1/+1 counter on this"
   | .lookAtTopPutTypes n types =>
-    let listed := orJoin types.toList
-    let art := indefinite (types[0]?.getD "")
+    let names := (types.map CardSubtype.englishName).toList
+    let listed := orJoin names
+    let art := indefinite (names[0]?.getD "")
     s!"Look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
   | .transform =>
     "Transform this"
@@ -223,9 +224,9 @@ private def phraseWith (r : Resolution) (noun : String)
     "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
   | .targetPlayerDraw n =>
     s!"{noun} draws {cardPhrase n}"
-  | .copyControlledAbility fromCreature =>
-    let src := if fromCreature then "a creature" else "an artifact"
-    s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
+  | .copyControlledAbility ty =>
+    let w := ty.oracleWord
+    s!"Copy target activated or triggered ability you control from {indefinite w} {w} source. You may choose new targets for the copy"
   | .createTokensEqualSubtype kind subtype =>
     s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .proliferateEachKind =>
@@ -250,8 +251,9 @@ private def phraseWith (r : Resolution) (noun : String)
     let joined :=
       if k.reach && k.vigilance then "reach and vigilance"
       else k.joinedAnd
-    let typeWords := String.intercalate " " types.toList
-    let art := indefinite (types[0]?.getD "")
+    let names := (types.map CardSubtype.englishName).toList
+    let typeWords := String.intercalate " " names
+    let art := indefinite (names[0]?.getD "")
     s!"Until end of turn, this becomes {art} {typeWords} with base power and toughness {p}/{t} and gains {joined}"
   | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"

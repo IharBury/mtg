@@ -204,10 +204,10 @@ end FraStatic
 inductive StaticAbility where
   /-- Other creatures you control that have any of these subtypes have trample
   (e.g. Orcish Siegemaster). -/
-  | otherCreaturesHaveTrample (subtypes : Array String)
+  | otherCreaturesHaveTrample (subtypes : Array CardSubtype)
   /-- Other creatures you control that have any of these subtypes get +P/+T
   (e.g. Elvish Archdruid). -/
-  | otherCreaturesGet (subtypes : Array String) (power toughness : Int)
+  | otherCreaturesGet (subtypes : Array CardSubtype) (power toughness : Int)
   /-- Enchanted creature gets +P/+T (e.g. Gift of Strands). -/
   | enchantedCreatureGets (power toughness : Int)
   /-- Equipped creature gets +P/+T (e.g. Ragged Short Spear). -/
@@ -219,7 +219,7 @@ inductive StaticAbility where
   /-- This creature can't block unless its controller controls a permanent with
   any of these subtypes (e.g. Olog-hai Crusher). An empty list means it can't
   block at all. The restriction is checked when declaring blockers (CR 509.1b). -/
-  | cantBlockUnlessYouControl (subtypes : Array String)
+  | cantBlockUnlessYouControl (subtypes : Array CardSubtype)
   /-- This creature can't be blocked except by `n` or more creatures
   (e.g. Troll of Khazad-dûm with 3). Menace is the keyword for `n = 2`. -/
   | cantBeBlockedExceptBy (n : Nat)
@@ -228,7 +228,7 @@ inductive StaticAbility where
   | cantBeBlockedByMoreThan (n : Nat)
   /-- Enchanted creature is only this subtype and can't attack or block
   (e.g. Fog on the Barrow-Downs). -/
-  | enchantedIsOnlySubtypeCantAttackOrBlock (subtype : String)
+  | enchantedIsOnlySubtypeCantAttackOrBlock (subtype : CardSubtype)
   /-- This creature's power is equal to the number of cards in your hand
   (e.g. Minas Tirith Garrison). -/
   | powerEqualCardsInHand
@@ -245,10 +245,10 @@ inductive StaticAbility where
   /-- Creatures you control (including this) get +P/+T. -/
   | creaturesYouControlGet (power toughness : Int)
   /-- This has haste as long as you control another permanent of this subtype. -/
-  | hasteIfYouControlOtherSubtype (subtype : String)
+  | hasteIfYouControlOtherSubtype (subtype : CardSubtype)
   /-- This can't attack unless you control `n` or more other permanents of
   this subtype. -/
-  | cantAttackUnlessYouControlNOther (n : Nat) (subtype : String)
+  | cantAttackUnlessYouControlNOther (n : Nat) (subtype : CardSubtype)
   /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
   | legendaryCreaturesGetAndWard (power toughness : Int) (ward : Nat)
   /-- Nonlegendary creatures you control get +P/+T. -/
@@ -260,7 +260,7 @@ inductive StaticAbility where
   /-- Each creature you control with a +1/+1 counter has menace. -/
   | creaturesYouControlWithPlusOneHaveMenace
   /-- This has lifelink as long as you control another of this subtype. -/
-  | lifelinkIfYouControlOtherSubtype (subtype : String)
+  | lifelinkIfYouControlOtherSubtype (subtype : CardSubtype)
   /-- Threshold — this gets +P/+T if there are seven or more cards in your
   graveyard. -/
   | thresholdGets (power toughness : Int)
@@ -283,7 +283,7 @@ inductive StaticAbility where
   their controller pays `{n}` for each. -/
   | creaturesCantAttackYouUnlessPayIfEnduringStory (n : Nat)
   /-- Other permanents of these subtypes have `{T}: Add one of these types`. -/
-  | otherSubtypeHaveTapAddOneOf (subtypes : Array String) (mana : Array ManaType)
+  | otherSubtypeHaveTapAddOneOf (subtypes : Array CardSubtype) (mana : Array ManaType)
   /-- This can't be blocked by creatures with power `n` or greater. -/
   | cantBeBlockedByPowerAtLeast (n : Int)
   /-- Equipped creature has these keywords and can't be blocked. -/
@@ -297,12 +297,12 @@ inductive StaticAbility where
   /-- Instant and sorcery spells cost {X} less, X = equipped creature's power. -/
   | instantSorceryCostReductionEqualEquippedPower
   /-- Other permanents of this subtype get +P/+0 for each artifact token. -/
-  | otherSubtypeGetPowerPerArtifactToken (subtype : String)
+  | otherSubtypeGetPowerPerArtifactToken (subtype : CardSubtype)
   /-- As long as you have an enduring story, Dwarf triggers go twice. -/
-  | extraTriggerIfEnduringStorySubtype (subtype : String)
+  | extraTriggerIfEnduringStorySubtype (subtype : CardSubtype)
   /-- If a triggered ability of another matching permanent you control
   triggers, it triggers an additional time (e.g. Chief of the Wilds). -/
-  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
+  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (types : Array CardType)
   /-- Enchanted creature loses all abilities and doesn't untap. -/
   | enchantedLosesAbilitiesDoesntUntap
   /-- During your turn, equipped creature has hexproof and can't be blocked. -/
@@ -318,7 +318,7 @@ inductive StaticAbility where
   | exileOppDeathCreateWolf
   /-- This has all activated abilities of cards of this subtype in your
   graveyard. -/
-  | copyActivatedFromGySubtype (subtype : String)
+  | copyActivatedFromGySubtype (subtype : CardSubtype)
   /-- Equipped creature gets +P/+T and has trample and a combat Treasure
   trigger. -/
   | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
@@ -327,14 +327,14 @@ inductive StaticAbility where
   /-- Ward — sacrifice a legendary artifact or legendary creature. -/
   | wardSacrificeLegendary
   /-- Creatures you control of this subtype get +P/+T (includes the source). -/
-  | creaturesYouControlOfSubtypeGet (subtype : String) (power toughness : Int)
+  | creaturesYouControlOfSubtypeGet (subtype : CardSubtype) (power toughness : Int)
   /-- You and other permanents of this subtype have hexproof while this has
   a shield counter. -/
-  | youAndOtherSubtypeHaveHexproofIfShield (subtype : String)
+  | youAndOtherSubtypeHaveHexproofIfShield (subtype : CardSubtype)
   /-- Opponents can't cast spells during your turn. -/
   | opponentsCantCastOnYourTurn
   /-- Spells of this subtype you cast cost `{n}` less. -/
-  | subtypeSpellsCostLess (subtype : String) (n : Nat)
+  | subtypeSpellsCostLess (subtype : CardSubtype) (n : Nat)
   /-- This creature can't be blocked if its power is `n` or less. -/
   | cantBeBlockedIfPowerAtMost (n : Int)
   /-- Prevent all damage that would be dealt to this permanent. -/
@@ -345,7 +345,7 @@ inductive StaticAbility where
   | maximumHandSize (n : Nat)
   /-- This creature's power is equal to the number of permanents you control
   of this subtype (e.g. Namor and Merfolk). -/
-  | powerEqualSubtypeYouControl (subtype : String)
+  | powerEqualSubtypeYouControl (subtype : CardSubtype)
   /-- This creature's power is equal to the number of legendary creatures
   you control (e.g. Super-Adaptoid). -/
   | powerEqualLegendaryCreaturesYouControl
@@ -453,7 +453,7 @@ inductive StaticAbility where
   /-- Enchanted creature gets +P/+T and has these keywords, and may gain
   additional types. -/
   | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords)
-    (types : Array String)
+    (types : Array CardSubtype)
   /-- Enchanted creature loses all abilities and can't become untapped. -/
   | enchantedLosesAbilitiesCantUntap
   /-- Enchanted creature gets +P/+T and has these keywords and ward `{w}`. -/
@@ -490,7 +490,7 @@ def hostGetsPhrase (host : String) (p t : Int) : String :=
   s!"{host} gets {signedStat p}/{signedStat t}."
 
 /-- Join subtype names for Oracle-style lord reminders (`Orc` and `Goblin`). -/
-def joinedSubtypes (subtypes : Array String) (each : String → String := fun s => s) : String :=
+def joinedSubtypes (subtypes : Array CardSubtype) (each : CardSubtype → String := CardSubtype.englishName) : String :=
   String.intercalate " and " (subtypes.toList.map each)
 
 /-- How a static ability applies (CR 604 / 613). Grouped so Game accessors and
@@ -498,21 +498,21 @@ def joinedSubtypes (subtypes : Array String) (each : String → String := fun s 
 and equipped host pumps share `hostGets`. -/
 inductive StaticShape where
   /-- Other matching creatures you control have trample. -/
-  | lordTrample (subtypes : Array String)
+  | lordTrample (subtypes : Array CardSubtype)
   /-- Other matching creatures you control get +P/+T. -/
-  | lordPump (subtypes : Array String) (power toughness : Int)
+  | lordPump (subtypes : Array CardSubtype) (power toughness : Int)
   /-- The enchanted or equipped host gets +P/+T. -/
   | hostGets (host : String) (power toughness : Int)
   /-- Characteristic-defining P/T equal to lands you control. -/
   | landsYouControlPT
   /-- This creature can't block unless you control a listed subtype. -/
-  | cantBlockUnless (subtypes : Array String)
+  | cantBlockUnless (subtypes : Array CardSubtype)
   /-- This creature can't be blocked except by `n` or more creatures. -/
   | cantBeBlockedExcept (n : Nat)
   /-- This creature can't be blocked by more than `n` creatures. -/
   | cantBeBlockedByMoreThan (n : Nat)
   /-- Enchanted creature is only this subtype and can't attack or block. -/
-  | enchantedOnlySubtypeCantAttackOrBlock (subtype : String)
+  | enchantedOnlySubtypeCantAttackOrBlock (subtype : CardSubtype)
   /-- Characteristic-defining power equal to cards in your hand. -/
   | cardsInHandPower
   /-- Equipped or enchanted host has these keywords, and optionally +P/+T. -/
@@ -522,13 +522,13 @@ inductive StaticShape where
   /-- Characteristic-defining power equal to creatures you control. -/
   | creaturesYouControlPower
   /-- Creatures you control of this subtype have trample. -/
-  | youControlSubtypeTrample (subtype : String)
+  | youControlSubtypeTrample (subtype : CardSubtype)
   /-- Creatures you control get +P/+T (includes the source). -/
-  | teamPump (power toughness : Int) (legendaryOnly nonlegendaryOnly : Bool)
+  | teamPump (power toughness : Int) (supertype nonSupertype : Option Supertype)
   /-- This has haste while you control another of this subtype. -/
-  | hasteIfOtherSubtype (subtype : String)
+  | hasteIfOtherSubtype (subtype : CardSubtype)
   /-- This can't attack unless you control `n` other permanents of this subtype. -/
-  | cantAttackUnlessNOther (n : Nat) (subtype : String)
+  | cantAttackUnlessNOther (n : Nat) (subtype : CardSubtype)
   /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
   | legendaryTeamPumpWard (power toughness : Int) (ward : Nat)
   /-- Equipped/enchanted host gets +P/+T and has ward `{w}`. -/
@@ -536,7 +536,7 @@ inductive StaticShape where
   /-- Creatures you control with a +1/+1 counter have menace. -/
   | creaturesWithPlusOneHaveMenace
   /-- This has lifelink while you control another of this subtype. -/
-  | lifelinkIfOtherSubtype (subtype : String)
+  | lifelinkIfOtherSubtype (subtype : CardSubtype)
   /-- Threshold +P/+T. -/
   | thresholdGets (power toughness : Int)
   /-- Can't be blocked by creatures with power `n` or less. -/
@@ -554,7 +554,7 @@ inductive StaticShape where
   /-- Attack tax if enduring story. -/
   | attackTaxIfEnduringStory (n : Nat)
   /-- Other matching permanents have a tap-add-one-of mana ability. -/
-  | otherSubtypeTapAddOneOf (subtypes : Array String) (mana : Array ManaType)
+  | otherSubtypeTapAddOneOf (subtypes : Array CardSubtype) (mana : Array ManaType)
   /-- Can't be blocked by creatures with power `n` or greater. -/
   | cantBeBlockedByPowerAtLeast (n : Int)
   /-- Equipped creature has keywords and can't be blocked. -/
@@ -568,28 +568,28 @@ inductive StaticShape where
   /-- Instant/sorcery cost reduction equal to equipped power. -/
   | instantSorceryCostReductionEqualEquippedPower
   /-- Other matching creatures get +P/+0 per artifact token. -/
-  | otherSubtypePowerPerArtifactToken (subtype : String)
-  | extraTriggerIfEnduringStorySubtype (subtype : String)
-  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
+  | otherSubtypePowerPerArtifactToken (subtype : CardSubtype)
+  | extraTriggerIfEnduringStorySubtype (subtype : CardSubtype)
+  | extraTriggerAnotherYouControl (subtypes : Array CardSubtype) (types : Array CardType)
   | enchantedLosesAbilitiesDoesntUntap
   | equippedHexproofUnblockableDuringYourTurn
   | equippedTriggersAgain
   | equippedFirstStrikePlusPerInstantSorcery
   | powerPerFatGraveyard (power : Int)
   | exileOppDeathCreateWolf
-  | copyActivatedFromGySubtype (subtype : String)
+  | copyActivatedFromGySubtype (subtype : CardSubtype)
   | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
   | wardDiscardEnchantmentInstantOrSorcery
   | wardSacrificeLegendary
-  | teamPumpSubtype (subtype : String) (power toughness : Int)
-  | youAndOtherSubtypeHexproofIfShield (subtype : String)
+  | teamPumpSubtype (subtype : CardSubtype) (power toughness : Int)
+  | youAndOtherSubtypeHexproofIfShield (subtype : CardSubtype)
   | opponentsCantCastOnYourTurn
-  | subtypeSpellsCostLess (subtype : String) (n : Nat)
+  | subtypeSpellsCostLess (subtype : CardSubtype) (n : Nat)
   | cantBeBlockedIfPowerAtMost (n : Int)
   | preventAllDamageToThis
   | noMaximumHandSize
   | maximumHandSize (n : Nat)
-  | powerEqualSubtype (subtype : String)
+  | powerEqualSubtype (subtype : CardSubtype)
   | powerEqualLegendaryCreatures
   | typeSpellsCostLess (ty : CardType) (n : Nat)
   | supertypeSpellsCostLess (s : Supertype) (n : Nat)
@@ -634,7 +634,7 @@ inductive StaticShape where
   | healOtherDamageWhenDealt
   | entersWithXPlusOne
   | enchantedGetsHasAndTypes (power toughness : Int) (k : Keywords)
-    (types : Array String)
+    (types : Array CardSubtype)
   | enchantedLosesAbilitiesCantUntap
   | enchantedGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
@@ -649,35 +649,35 @@ deriving Repr, Inhabited, BEq
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
 compile error here rather than silently matching `none` / `(0, 0)` / `false`. -/
 structure StaticMeta where
-  lordPump : Option (Array String × Int × Int) := none
-  trampleSubtypes : Option (Array String) := none
+  lordPump : Option (Array CardSubtype × Int × Int) := none
+  trampleSubtypes : Option (Array CardSubtype) := none
   hostBonus : Int × Int := (0, 0)
   landsYouControlPT : Bool := false
-  cantBlockUnless : Option (Array String) := none
+  cantBlockUnless : Option (Array CardSubtype) := none
   cantBeBlockedExcept : Option Nat := none
   /-- Maximum number of creatures that may block this creature. -/
   cantBeBlockedByMoreThan : Option Nat := none
-  enchantedOnlySubtype : Option String := none
+  enchantedOnlySubtype : Option CardSubtype := none
   cardsInHandPower : Bool := false
   hostKeywords : Keywords := Keywords.none
   cantBeBlockedByTokens : Bool := false
   creaturesYouControlPower : Bool := false
   /-- Lord pump includes the source (not only other creatures). -/
   lordIncludesSelf : Bool := false
-  /-- Lord pump applies only to legendary creatures. -/
-  lordLegendaryOnly : Bool := false
-  /-- Lord pump applies only to nonlegendary creatures. -/
-  lordNonlegendaryOnly : Bool := false
+  /-- Lord pump applies only to creatures of this supertype. -/
+  lordSupertype : Option Supertype := none
+  /-- Lord pump applies only to creatures without this supertype. -/
+  lordNonSupertype : Option Supertype := none
   /-- Ward cost this ability grants matching creatures. -/
   grantedWard : Option Nat := none
   /-- This has haste while you control another of this subtype. -/
-  hasteIfOtherSubtype : Option String := none
+  hasteIfOtherSubtype : Option CardSubtype := none
   /-- Can't attack unless you control this many other permanents of the subtype. -/
-  cantAttackUnlessNOther : Option (Nat × String) := none
+  cantAttackUnlessNOther : Option (Nat × CardSubtype) := none
   /-- Creatures you control with a +1/+1 counter have menace. -/
   creaturesWithPlusOneHaveMenace : Bool := false
   /-- This has lifelink while you control another of this subtype. -/
-  lifelinkIfOtherSubtype : Option String := none
+  lifelinkIfOtherSubtype : Option CardSubtype := none
   /-- Threshold +P/+T if seven or more cards in graveyard. -/
   thresholdGets : Option (Int × Int) := none
   /-- Can't be blocked by creatures with power at most this. -/
@@ -709,7 +709,7 @@ structure StaticMeta where
   /-- Your maximum hand size, if this ability sets one. -/
   maximumHandSize : Option Nat := none
   /-- Power equal to permanents you control of this subtype. -/
-  powerEqualSubtype : Option String := none
+  powerEqualSubtype : Option CardSubtype := none
   /-- Power equal to legendary creatures you control. -/
   powerEqualLegendaryCreatures : Bool := false
 deriving Repr, Inhabited, BEq
@@ -730,13 +730,13 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
   | .creaturesYouControlPower => { creaturesYouControlPower := true }
   | .youControlSubtypeTrample subtype => { trampleSubtypes := some #[subtype] }
-  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+  | .teamPump p t supertype nonSupertype =>
     { lordPump := some (#[], p, t), lordIncludesSelf := true,
-      lordLegendaryOnly := legendaryOnly, lordNonlegendaryOnly := nonlegendaryOnly }
+      lordSupertype := supertype, lordNonSupertype := nonSupertype }
   | .hasteIfOtherSubtype subtype => { hasteIfOtherSubtype := some subtype }
   | .cantAttackUnlessNOther n subtype => { cantAttackUnlessNOther := some (n, subtype) }
   | .legendaryTeamPumpWard p t w =>
-    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordLegendaryOnly := true,
+    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordSupertype := some .legendary,
       grantedWard := some w }
   | .hostGetsAndWard _ p t w =>
     { hostBonus := (p, t), grantedWard := some w }
@@ -870,12 +870,12 @@ def shape : StaticAbility → StaticShape
   | .enchantedCreatureGetsAndHas p t k => .hostKeywords "Enchanted creature" k p t
   | .cantBeBlockedByTokens => .cantBeBlockedByTokens
   | .powerEqualCreaturesYouControl => .creaturesYouControlPower
-  | .armiesYouControlHaveTrample => .youControlSubtypeTrample "Army"
-  | .creaturesYouControlGet p t => .teamPump p t false false
+  | .armiesYouControlHaveTrample => .youControlSubtypeTrample .army
+  | .creaturesYouControlGet p t => .teamPump p t none none
   | .hasteIfYouControlOtherSubtype subtype => .hasteIfOtherSubtype subtype
   | .cantAttackUnlessYouControlNOther n subtype => .cantAttackUnlessNOther n subtype
   | .legendaryCreaturesGetAndWard p t w => .legendaryTeamPumpWard p t w
-  | .nonlegendaryCreaturesGet p t => .teamPump p t false true
+  | .nonlegendaryCreaturesGet p t => .teamPump p t none (some .legendary)
   | .equippedCreatureGetsAndHas p t k => .hostKeywords "Equipped creature" k p t
   | .equippedCreatureGetsAndWard p t w => .hostGetsAndWard "Equipped creature" p t w
   | .creaturesYouControlWithPlusOneHaveMenace => .creaturesWithPlusOneHaveMenace
@@ -903,8 +903,8 @@ def shape : StaticAbility → StaticShape
     .otherSubtypePowerPerArtifactToken subtype
   | .extraTriggerIfEnduringStorySubtype subtype =>
     .extraTriggerIfEnduringStorySubtype subtype
-  | .extraTriggerAnotherYouControl subtypes includeBattles =>
-    .extraTriggerAnotherYouControl subtypes includeBattles
+  | .extraTriggerAnotherYouControl subtypes types =>
+    .extraTriggerAnotherYouControl subtypes types
   | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
   | .equippedHexproofUnblockableDuringYourTurn =>
     .equippedHexproofUnblockableDuringYourTurn
@@ -991,7 +991,7 @@ table. -/
 def toNotation (ab : StaticAbility) : String :=
   match ab.shape with
   | .lordTrample subtypes =>
-    s!"Other {joinedSubtypes subtypes pluralSubtype} you control have trample."
+    s!"Other {joinedSubtypes subtypes CardSubtype.pluralName} you control have trample."
   | .lordPump subtypes p t =>
     if subtypes.isEmpty then
       s!"Other creatures you control get {signedStat p}/{signedStat t}."
@@ -1001,7 +1001,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .landsYouControlPT =>
     "This creature's power and toughness are each equal to the number of lands you control."
   | .cantBlockUnless subtypes =>
-    match subtypes.toList with
+    match (subtypes.map CardSubtype.englishName).toList with
     | [] => "This creature can't block."
     | xs =>
       s!"This creature can't block unless you control a {String.intercalate " or " xs}."
@@ -1024,17 +1024,18 @@ def toNotation (ab : StaticAbility) : String :=
   | .creaturesYouControlPower =>
     "This power is equal to the number of creatures you control."
   | .youControlSubtypeTrample subtype =>
-    s!"{pluralSubtype subtype} you control have trample."
-  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+    s!"{subtype.pluralName} you control have trample."
+  | .teamPump p t supertype nonSupertype =>
     let who :=
-      if legendaryOnly then "Legendary creatures you control"
-      else if nonlegendaryOnly then "Nonlegendary creatures you control"
-      else "Creatures you control"
+      match supertype, nonSupertype with
+      | some s, _ => s!"{s} creatures you control"
+      | none, some s => s!"Non{s.oracleWord} creatures you control"
+      | none, none => "Creatures you control"
     s!"{who} get {signedStat p}/{signedStat t}."
   | .hasteIfOtherSubtype subtype =>
     s!"This creature has haste as long as you control another {subtype}."
   | .cantAttackUnlessNOther n subtype =>
-    s!"This creature can't attack unless you control {englishNumber n} or more other {pluralSubtype subtype}."
+    s!"This creature can't attack unless you control {englishNumber n} or more other {subtype.pluralName}."
   | .legendaryTeamPumpWard p t w =>
     s!"Legendary creatures you control get {signedStat p}/{signedStat t} and have ward \{{w}}."
   | .hostGetsAndWard host p t w =>
@@ -1070,7 +1071,7 @@ def toNotation (ab : StaticAbility) : String :=
     s!"As long as you have an enduring story, creatures can't attack you unless their controller pays \{{n}} for each of those creatures."
   | .otherSubtypeTapAddOneOf subtypes mana =>
     let add := manaSymbolsText mana " or "
-    s!"Other {joinedSubtypes subtypes pluralSubtype} you control have \"\{T}: Add {add}.\""
+    s!"Other {joinedSubtypes subtypes CardSubtype.pluralName} you control have \"\{T}: Add {add}.\""
   | .cantBeBlockedByPowerAtLeast n =>
     s!"This creature can't be blocked by creatures with power {n} or greater."
   | .equippedKeywordsAndUnblockable k =>
@@ -1084,12 +1085,12 @@ def toNotation (ab : StaticAbility) : String :=
   | .instantSorceryCostReductionEqualEquippedPower =>
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power."
   | .otherSubtypePowerPerArtifactToken subtype =>
-    s!"Other {pluralSubtype subtype} you control get +1/+0 for each artifact token you control."
+    s!"Other {subtype.pluralName} you control get +1/+0 for each artifact token you control."
   | .extraTriggerIfEnduringStorySubtype subtype =>
     s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
-  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+  | .extraTriggerAnotherYouControl subtypes types =>
     let parts :=
-      subtypes.toList ++ (if includeBattles then ["battle"] else [])
+      (subtypes.map CardSubtype.englishName).toList ++ (types.map CardType.oracleWord).toList
     let joined :=
       match parts with
       | [a] => a
@@ -1117,9 +1118,9 @@ def toNotation (ab : StaticAbility) : String :=
   | .wardSacrificeLegendary =>
     "Ward—Sacrifice a legendary artifact or legendary creature."
   | .teamPumpSubtype subtype p t =>
-    s!"{pluralSubtype subtype} you control get {signedStat p}/{signedStat t}."
+    s!"{subtype.pluralName} you control get {signedStat p}/{signedStat t}."
   | .youAndOtherSubtypeHexproofIfShield subtype =>
-    s!"As long as this has a shield counter on it, you and other {pluralSubtype subtype} you control have hexproof."
+    s!"As long as this has a shield counter on it, you and other {subtype.pluralName} you control have hexproof."
   | .opponentsCantCastOnYourTurn =>
     "Your opponents can't cast spells during your turn."
   | .subtypeSpellsCostLess subtype n =>
@@ -1133,7 +1134,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .maximumHandSize n =>
     s!"Your maximum hand size is {n}."
   | .powerEqualSubtype subtype =>
-    s!"This creature's power is equal to the number of {pluralSubtype subtype} you control."
+    s!"This creature's power is equal to the number of {subtype.pluralName} you control."
   | .powerEqualLegendaryCreatures =>
     "This creature's power is equal to the number of legendary creatures you control."
   | .typeSpellsCostLess ty n =>
@@ -1226,7 +1227,7 @@ def toNotation (ab : StaticAbility) : String :=
       else k.joinedAnd
     let extra :=
       if types.isEmpty then ""
-      else s!", and is a {String.intercalate " " types.toList} in addition to its other types"
+      else s!", and is a legendary {String.intercalate " " (types.toList.map CardSubtype.englishName)} in addition to its other types"
     s!"Enchanted creature gets {signedStat p}/{signedStat t}, has {kw}{extra}."
   | .enchantedLosesAbilitiesCantUntap =>
     "Enchanted creature loses all abilities and can't become untapped."
@@ -1245,11 +1246,11 @@ instance : ToString StaticAbility where
   toString := toNotation
 
 /-- Lord +P/+T this ability grants other matching creatures, if any. -/
-def lordPump? (ab : StaticAbility) : Option (Array String × Int × Int) :=
+def lordPump? (ab : StaticAbility) : Option (Array CardSubtype × Int × Int) :=
   ab.shape.spec.lordPump
 
 /-- Subtypes this ability grants trample to, if any. -/
-def trampleSubtypes? (ab : StaticAbility) : Option (Array String) :=
+def trampleSubtypes? (ab : StaticAbility) : Option (Array CardSubtype) :=
   ab.shape.spec.trampleSubtypes
 
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
@@ -1262,7 +1263,7 @@ def isLandsYouControlPT (ab : StaticAbility) : Bool :=
   ab.shape.spec.landsYouControlPT
 
 /-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
-def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
+def cantBlockUnless? (ab : StaticAbility) : Option (Array CardSubtype) :=
   ab.shape.spec.cantBlockUnless
 
 /-- Minimum number of blockers required, if this ability restricts blocking. -/
@@ -1274,7 +1275,7 @@ def cantBeBlockedByMoreThan? (ab : StaticAbility) : Option Nat :=
   ab.shape.spec.cantBeBlockedByMoreThan
 
 /-- Enchanted-only subtype that also prevents attacking and blocking. -/
-def enchantedOnlySubtype? (ab : StaticAbility) : Option String :=
+def enchantedOnlySubtype? (ab : StaticAbility) : Option CardSubtype :=
   ab.shape.spec.enchantedOnlySubtype
 
 /-- True for the cards-in-hand power characteristic-defining ability. -/
@@ -1297,30 +1298,38 @@ def isCreaturesYouControlPower (ab : StaticAbility) : Bool :=
 def lordIncludesSelf (ab : StaticAbility) : Bool :=
   ab.shape.spec.lordIncludesSelf
 
+/-- Supertype required by this lord pump, if any. -/
+def lordSupertype? (ab : StaticAbility) : Option Supertype :=
+  ab.shape.spec.lordSupertype
+
+/-- Supertype excluded by this lord pump, if any. -/
+def lordNonSupertype? (ab : StaticAbility) : Option Supertype :=
+  ab.shape.spec.lordNonSupertype
+
 /-- True when this lord pump applies only to legendary creatures. -/
 def lordLegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.shape.spec.lordLegendaryOnly
+  ab.lordSupertype? == some .legendary
 
 /-- True when this lord pump applies only to nonlegendary creatures. -/
 def lordNonlegendaryOnly (ab : StaticAbility) : Bool :=
-  ab.shape.spec.lordNonlegendaryOnly
+  ab.lordNonSupertype? == some .legendary
 
 /-- Ward cost this ability grants matching creatures, if any. -/
 def grantedWard? (ab : StaticAbility) : Option Nat :=
   ab.shape.spec.grantedWard
 
 /-- Subtype that grants this creature haste while another is controlled. -/
-def hasteIfOtherSubtype? (ab : StaticAbility) : Option String :=
+def hasteIfOtherSubtype? (ab : StaticAbility) : Option CardSubtype :=
   ab.shape.spec.hasteIfOtherSubtype
 
 /-- Attack restriction: need `n` other permanents of this subtype. -/
-def cantAttackUnlessNOther? (ab : StaticAbility) : Option (Nat × String) :=
+def cantAttackUnlessNOther? (ab : StaticAbility) : Option (Nat × CardSubtype) :=
   ab.shape.spec.cantAttackUnlessNOther
 
 def creaturesWithPlusOneHaveMenace (ab : StaticAbility) : Bool :=
   ab.shape.spec.creaturesWithPlusOneHaveMenace
 
-def lifelinkIfOtherSubtype? (ab : StaticAbility) : Option String :=
+def lifelinkIfOtherSubtype? (ab : StaticAbility) : Option CardSubtype :=
   ab.shape.spec.lifelinkIfOtherSubtype
 
 def thresholdGets? (ab : StaticAbility) : Option (Int × Int) :=

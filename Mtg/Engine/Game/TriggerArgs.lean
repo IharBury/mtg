@@ -139,7 +139,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .humans =>
     some (g.battlefield.filter fun o =>
-      o.isCreature && o.controlledBy controller && g.hasSubtype o "Human")
+      o.isCreature && o.controlledBy controller && g.hasSubtype o .human)
   | .attackingCreatures =>
     some (g.battlefield.filter (·.status.attacking))
   | .equipped =>
@@ -147,7 +147,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | some host => if host.isOnBattlefield then some #[host] else someEmpty
     | none => someEmpty
   | .firstThisTurn =>
-    let id := g.recordedCauseId.orElse (fun _ => g.lastBecameTapped)
+    let id := g.recordedCauseId.orElse (fun _ => g.loggedLastBecameTapped)
     match id.bind onBf with
     | some o => if o.status.tapped then some #[o] else someEmpty
     | none => someEmpty
@@ -192,7 +192,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | none => someEmpty
   | .enteringVillain =>
     match g.recordedCauseId.bind onBf with
-    | some o => if g.hasSubtype o "Villain" then some #[o] else someEmpty
+    | some o => if g.hasSubtype o .villain then some #[o] else someEmpty
     | none => someEmpty
   | .landsYouControl =>
     some ((g.permanentsOf controller).filter (·.printed.isLand))
@@ -204,7 +204,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     -- The causing Forest's id is this trigger's last-known power.
     let cause : Option ObjectId := ctx.lastKnownPower.map (fun k => ⟨k.toNat⟩)
     some ((g.permanentsOf controller).filter fun o =>
-      g.hasSubtype o "Forest" && some o.id != cause)
+      g.hasSubtype o .forest && some o.id != cause)
   | .creature | .target .creature =>
     some (permanentTargets.filter (·.isCreature))
   | .planeswalker | .target .planeswalker =>
@@ -307,7 +307,7 @@ def collectPlayers (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Player
   | .thatPlayer =>
     ctx.lastKnownToughness.map fun idx => #[⟨idx.toNat⟩]
   | .damagedPlayer =>
-    one (g.lastCombatDamagePlayer.getD (g.opponent controller))
+    one (g.loggedLastCombatDamagePlayer.getD (g.opponent controller))
   | .announced =>
     match ctx.targets.findSome? fun
       | Target.player pid => some pid
@@ -366,7 +366,7 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .perOtherCreature =>
     some (g.battlefield.filter (fun c =>
       c.isCreature && c.controlledBy controller && some c.id != sourceId)).size
-  | .perPlains => some (g.countSubtype controller "Plains")
+  | .perPlains => some (g.countSubtype controller .plains)
   | .equalSourcePower => some (g.sourcePowerAtResolution sourceId ctx.lastKnownPower)
   | .equalSourceToughness =>
     some <|
@@ -388,7 +388,9 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
   | .equalToManaSpent =>
     some <|
-      ((g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.manaSpentToCast)).getD 0
+      match g.resolvingAbilityObject?.bind (·.fraCauseId) with
+      | some id => GameEvent.manaSpentOn g.events id
+      | none => 0
   | .perControlled ty =>
     some ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
   | .upToHandSize n =>
@@ -434,11 +436,11 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
     some n
   | .oppArtifacts => some (g.countOpponentArtifacts controller)
   | .damagedPlayerArtifacts =>
-    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let pid := g.loggedLastCombatDamagePlayer.getD (g.opponent controller)
     some (g.countArtifactsControlledBy pid)
   | .blueManaSymbols => some (g.blueSymbolsInCastSpell ctx.lastKnownPower)
   | .count what => (g.countNamed ctx what).map (fun n => (n : Int))
-  | .cardsDrawnThisTurn => some (g.player controller).cardsDrawnThisTurn
+  | .cardsDrawnThisTurn => some (g.loggedDraws controller)
   | .libraryCards => some (g.player controller).library.size
   | .chosenX => none
 
@@ -484,13 +486,13 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
     let g := pids.foldl (fun g pid => g.mill pid n) g
     let after := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
-    { g with milledIdsThisWay := after.filter (fun id => !before.contains id) }
+    g.change (.milledIdsThisWay (after.filter (fun id => !before.contains id)))
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)
     let (g, flag) := g.millThenReflexive opps n
     let g := pids.foldl (fun g pid =>
       if pid == controller then g.mill pid n else g) g
-    { g with opponentsMilledThisWay := flag }
+    g.change (.opponentsMilledThisWay flag)
 
 end Game
 end Mtg.Engine

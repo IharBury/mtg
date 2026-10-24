@@ -72,7 +72,8 @@ def refreshAuraAnimation (g : Game) : Game :=
       a.attachedTo == some o.id &&
         a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
     if animated == o.status.animatedConstruct55 then g
-    else g.setObject { o with status := { o.status with animatedConstruct55 := animated } }) g
+    else if animated then g.createEffect (.auraConstruct55 o.id)
+    else g.expireAll (.auraConstruct55 o.id)) g
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule
@@ -96,15 +97,15 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if shielded then
             pure ()
           else if pl.life ≤ 0 then
-            g := g.setPlayer { pl with lost := true }
+            g := g.changePlayer pl.id (.lost true)
             g := g.logMsg s!"{pl.name} loses the game (life total {pl.life})"
             changed := true
           else if pl.drewFromEmpty then
-            g := g.setPlayer { pl with lost := true }
+            g := g.changePlayer pl.id (.lost true)
             g := g.logMsg s!"{pl.name} loses the game (drew from empty library)"
             changed := true
           else if pl.poison ≥ 10 then
-            g := g.setPlayer { pl with lost := true }
+            g := g.changePlayer pl.id (.lost true)
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
       match g.decideGameIfFinished with
@@ -123,19 +124,19 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         if still.size ≥ 2 then
           return (g, changed)
         else
-          g := { g with pending := .none }
+          g := g.change (.pending .none)
       | _ => pure ()
       -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
       -- pairs.
       for o in g.battlefield do
         let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
         if k > 0 then
-          g := g.setObject { o with status := { o.status with
-            plusOnePlusOne := o.status.plusOnePlusOne - k
-            minusOneMinusOne := o.status.minusOneMinusOne - k } }
+          g := g.changeStatuses o.id #[
+            .plusOnePlusOne (o.status.plusOnePlusOne - k),
+            .minusOneMinusOne (o.status.minusOneMinusOne - k)]
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
-      -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
+      -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
       let snap := g.battlefield.filter exilesOppDeath?
@@ -147,13 +148,13 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
             else if o.status.damage ≥ t && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from lethal damage")
-            else if o.status.dealtDeathtouch && !g.hasIndestructible o then
+            else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
               some (o, s!"{o.name} dies from deathtouch")
             else none)
       if !victims.isEmpty then
-        g := { g with
-          lockedDeathReplacements := some snap
-          suppressOthersDie := true }
+        g := g.changes #[
+          .lockedDeathReplacements (some snap),
+          .suppressOthersDie true]
         -- CR 614.6: a replaced death never happens, so only creatures that
         -- will actually go to a graveyard cause “die” triggers. A Bee that
         -- dies at the same time as another creature that *does* die still
@@ -165,9 +166,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             if actualDeaths.any (fun pair => pair.1.id != o.id) then
               match o.controller with
               | some p =>
-                g := { g with waitingTriggers :=
-                  g.waitingTriggers ++
-                    o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
+                g := g.change (.enqueueWaitingTriggers
+                  (o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie))
               | none => pure ()
           -- “One or more creature cards” fires once per source still on
           -- the battlefield (Robot Domination; MSH 138).
@@ -186,9 +186,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                   if gyOwners.any (· == p) then
                     let wts := (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
                       !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
-                    g := { g with waitingTriggers := g.waitingTriggers ++ wts }
+                    g := g.change (.enqueueWaitingTriggers wts)
                 | none => pure ()
-            g := { g with suppressCreatureCardsToGy := true }
+            g := g.change (.suppressCreatureCardsToGy true)
       for pair in victims do
         let o := pair.1
         let reason := pair.2
@@ -198,13 +198,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.moveToOwnerGraveyard o reason
             changed := true
         | none => pure ()
-      g := { g with
-        lockedDeathReplacements := none
-        suppressOthersDie := false
-        suppressCreatureCardsToGy := false }
-      for o in g.battlefield do
-        if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
-          g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+      g := g.changes #[
+        .lockedDeathReplacements none,
+        .suppressOthersDie false,
+        .suppressCreatureCardsToGy false,
+        .sbaChecked]
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
       for o in g.battlefield do
@@ -216,7 +214,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>
-        g := { g with pending := .chooseLegend p name ids }
+        g := g.change (.pending (.chooseLegend p name ids))
         g := g.logMsg
           s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
         return (g, true)
@@ -257,7 +255,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             | some host => host.isOnBattlefield && host.printed.isCreature
             | none => true
           if !legal then
-            g := g.setObject { o with attachedTo := none }
+            let hostId := o.attachedTo.getD ⟨0⟩
+            g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+              (cause := some (.stateBased .illegalEquipmentOrFortification)))
             g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
       match g.decideGameIfFinished with

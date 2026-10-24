@@ -503,7 +503,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
   let giant := namedPermanent g "Hill Giant"
   let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
   combatDamageSourceLine g giant true ==
@@ -599,7 +599,7 @@ def mountainLine (g : Game) : String :=
   let c := card "Silent Siege" #[.creature]
     (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
     (keywords := Keyword.trample)
-    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (staticAbilities := #[.otherCreaturesHaveTrample #[.orc, .goblin]])
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower
   textForStackedAbility c t == t &&
@@ -988,10 +988,7 @@ def mountainLine (g : Game) : String :=
   let hosp := namedPermanent g "Beorn's Hospitality"
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
-  let g' := g.setObject { hosp with
-    status := { hosp.status with
-      additionalCreature := true
-      additionalSubtypes := #["Bear"] } }
+  let g' := g.changeStatuses hosp.id #[.additionalCreature true, .additionalSubtypes #[.bear]]
   let hosp' := namedPermanent g' "Beorn's Hospitality"
   !hosp.isCreature && hosp'.isCreature &&
     zoneBlock g .battlefield ==
@@ -1582,11 +1579,11 @@ def withFreeExileCast (g : Game) (name : String) (p : PlayerId) : Game :=
   match g.objects.find? (fun o => o.zone == .exile && o.name == name) with
   | none => g
   | some o =>
-    g.setObject { o with playPermission := some {
+    g.changeObject o.id (.playPermission (some {
       player := p
       turnEndsRemaining := 0
       whileExiled := true
-      withoutManaCost := true } }
+      withoutManaCost := true }))
 
 def freeExileOgre : Game :=
   withFreeExileCast (insertObject started grayOgre ⟨1⟩ .exile) "Gray Ogre" ⟨0⟩
@@ -1656,7 +1653,9 @@ def freeCloudInHand : Game :=
   addToHand (readyMain (emptyHand afterDraw ⟨0⟩)) freeCloud ⟨0⟩
 
 def freeCloudAfterDeath : Game :=
-  { freeCloudInHand with creatureDiedThisTurn := true }
+  freeCloudInHand.record (GameEvent.moved freeCloudInHand.turnNumber
+    { id := some ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.creature] }
+    .battlefield (.graveyard ⟨1⟩))
 
 #guard
   let o := handCardNamed freeCloudInHand ⟨0⟩ "Free Cloud"

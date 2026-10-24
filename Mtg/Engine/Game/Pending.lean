@@ -48,9 +48,11 @@ inductive AfterRandom where
   /-- Put these cards on top of `p`'s library after shuffling. -/
   | putOnTop (p : PlayerId) (ids : Array ObjectId)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
-  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : String)
+  | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype)
   /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
   | plusOne (id : ObjectId)
+  /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
+  | discardRandom (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Payment a player may make to stop ward from countering their spell
@@ -132,17 +134,12 @@ inductive SearchDest where
   | battlefieldTappedThenHand
   /-- Onto the battlefield tapped; you may behold a `subtype`, and if you do,
   untap it (Elven Passage). -/
-  | battlefieldTappedBeholdUntap (subtype : String)
+  | battlefieldTappedBeholdUntap (subtype : CardSubtype)
   /-- Onto the battlefield from the hand or library; shuffle only if the
   library was searched (Last Light of Durin's Day). -/
   | battlefieldFromHandOrLibrary
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- What a “you may sacrifice …” choice accepts. -/
-inductive FraSacrifice where
-  | land
-  | creatureOrPlaneswalker
-  | creature
+  /-- Into the hand, then shuffle, then discard a card at random (Curse-Marred Demon). -/
+  | handThenDiscardRandom
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Part of an activation cost that needs the player to choose what to pay
@@ -150,7 +147,8 @@ with (CR 601.2h / 602.2b). -/
 inductive CostPick where
   /-- Sacrifice another permanent of this subtype, or another creature when
   the subtype is `Creature`. -/
-  | sacrificeAnotherSubtype (subtype : String)
+  | sacrificeAnotherSubtype (subtype : CardSubtype)
+  | sacrificeAnotherCreature
   | sacrificeArtifact
   | sacrificeLegendaryArtifact
   | sacrificeArtifactOrCreature
@@ -179,7 +177,8 @@ def CostPick.count : CostPick → Nat
 
 /-- The cost phrase of `pick`, for prompts and logs. -/
 def CostPick.phrase : CostPick → String
-  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.toLower}"
+  | .sacrificeAnotherSubtype t => s!"sacrifice another {t.englishName.toLower}"
+  | .sacrificeAnotherCreature => "sacrifice another creature"
   | .sacrificeArtifact => "sacrifice an artifact"
   | .sacrificeLegendaryArtifact => "sacrifice a legendary artifact"
   | .sacrificeArtifactOrCreature => "sacrifice an artifact or creature"
@@ -219,6 +218,7 @@ def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
   (if c.sacrificeEquipmentAttachedToSource then
     #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
   (if c.tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
+  (if c.sacrificeAnotherCreature then #[CostPick.sacrificeAnotherCreature] else #[]) ++
   (match c.sacrificeAnotherSubtype with
    | some t => #[CostPick.sacrificeAnotherSubtype t]
    | none => #[]) ++ fra
@@ -237,7 +237,7 @@ inductive CardChoice where
   | keepDestroyRest
   /-- Amass `subtype` `n` onto the chosen Army. `attach` is an Equipment to
   attach afterward (Goblin Plate Mail). -/
-  | amassArmy (subtype : String) (n : Nat) (attach : Option ObjectId)
+  | amassArmy (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A choice made while a Reality Fracture effect resolves. The player answers
@@ -253,7 +253,7 @@ inductive FraChoice where
   | maySacrificePlaneswalker
   /-- The owner of `id` puts it on top (accept) or on the bottom (decline) of
   their library; on top, they are dealt `damage`. -/
-  | topOrBottomDamage (id : ObjectId) (damage : Nat)
+  | topOrBottomDamage (id : ObjectId) (damage : Nat) (sourceId : Option ObjectId := none)
   /-- You may exile `spellId` and four other cards named Sphinx's Approach. -/
   | sphinxsApproach (spellId : ObjectId)
   /-- You may reveal two cards with different names from outside the game. -/
@@ -275,9 +275,9 @@ inductive FraChoice where
   /-- Discard `n` cards, then tap and stun up to as many target creatures as
   nonland cards were discarded (Seasoned Cryomancer). -/
   | discardThenStun (n : Nat) (sourceId : Option ObjectId)
-  /-- You may sacrifice a permanent of `kind` (land, creature or planeswalker);
+  /-- You may sacrifice a permanent with one of `types` (land, creature or planeswalker);
   if you do, do `next`. -/
-  | maySacrificeThen (kind : FraSacrifice) (next : FraNext)
+  | maySacrificeThen (types : Array CardType) (next : FraNext)
     (sourceId : Option ObjectId)
   /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
   | mayMovePlusOne (sourceId : ObjectId)
@@ -332,7 +332,7 @@ inductive FraChoice where
   | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : ObjectId)
   /-- Choose a creature type you control. `types` are offered by index
   (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
-  | chooseCreatureType (types : Array String)
+  | chooseCreatureType (types : Array CardSubtype)
   /-- You may sacrifice another creature. If you do, the source gets +1/+1
   counters equal to that creature's power (Rhovanion Rampager). -/
   | maySacrificeAnotherCreatureForPower (sourceId : ObjectId)
@@ -502,7 +502,7 @@ inductive FraChoice where
   | riddlesChoosePile (controller : PlayerId) (faceUp faceDown : Array ObjectId)
   /-- Choose one creature type among `types`, then return every creature that
   isn't that type (Raise the Palisade). -/
-  | palisadeCreatureType (types : Array String)
+  | palisadeCreatureType (types : Array CardSubtype)
   /-- `eligible` are this player's creature cards in hand. `rest` choose next.
   `exiled` return to their owners' hands after `chosen` enter (Worlds Within
   Worlds). -/
@@ -629,6 +629,7 @@ inductive Pending where
   If you don't, the ability deals `damage` to each opponent (Chandra, Torch
   of Defiance). -/
   | mayCastExiledElseDamage (player : PlayerId) (cardId : ObjectId) (damage : Nat)
+      (sourceId : Option ObjectId := none)
   /-- Choose any number of permanents and players with counters to
   proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
   | chooseProliferate (player : PlayerId) (remaining : Nat)

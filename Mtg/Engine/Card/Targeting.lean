@@ -44,22 +44,25 @@ names it. Every listed restriction must hold. -/
 structure TargetFilter where
   noun : String
   zone : TargetZone := .battlefield
+  /-- The target has at least one of these supertypes. Empty means any supertype. -/
+  supertypes : Array Supertype := #[]
   /-- The target has at least one of these card types. Empty means any
   permanent, card, or spell. -/
   types : Array CardType := #[]
   /-- The target has at least one of these subtypes. Empty means any subtype. -/
-  subtypes : Array String := #[]
-  /-- A legendary object also qualifies (“creature or legendary spell”). -/
-  orLegendary : Bool := false
-  nonland : Bool := false
-  noncreature : Bool := false
+  subtypes : Array CardSubtype := #[]
+  /-- An object with one of these supertypes also qualifies alongside `types`
+  (“creature or legendary spell”). -/
+  orSupertypes : Array Supertype := #[]
+  /-- The target has none of these supertypes (“nonlegendary”). -/
+  nonSupertypes : Array Supertype := #[]
+  /-- The target has none of these card types (“nonland”, “noncreature”). -/
+  nonTypes : Array CardType := #[]
   /-- Not an Aura (“non-Aura enchantment”). -/
   nonAura : Bool := false
   /-- A permanent card (CR 110.4b). -/
   permanentCard : Bool := false
   nontoken : Bool := false
-  legendary : Bool := false
-  nonlegendary : Bool := false
   controller : TargetController := .any
   /-- The target is at least one of these colors. Empty means any color. -/
   colors : Array Color := #[]
@@ -139,7 +142,7 @@ inductive EffectTargetKind where
   /-- Target attacking creature without flying. -/
   | attackingCreatureWithoutFlying
   /-- Target creature you control with this subtype (e.g. Equip Human). -/
-  | creatureYouControlSubtype (subtype : String)
+  | creatureYouControlSubtype (subtype : CardSubtype)
   /-- A spell on the stack. -/
   | spell
   /-- A creature spell on the stack. -/
@@ -155,7 +158,7 @@ inductive EffectTargetKind where
   /-- Target creature with power `n` or less. -/
   | creaturePowerAtMost (n : Int)
   /-- Target creature you control with any of these subtypes. -/
-  | creatureYouControlAnySubtype (subtypes : Array String)
+  | creatureYouControlAnySubtype (subtypes : Array CardSubtype)
   /-- Target permanent. -/
   | permanent
   /-- Target creature card in your graveyard. -/
@@ -199,12 +202,9 @@ inductive EffectTargetKind where
   | enchantmentMvAtLeast (n : Nat)
   /-- Target noncreature artifact. -/
   | noncreatureArtifact
-  /-- An activated or triggered ability you control from a creature source
-  (Echo; MSH 74). -/
-  | stackAbilityFromCreatureSource
-  /-- An activated or triggered ability you control from an artifact source
-  (Scientist Supreme of A.I.M.; MSH 87). -/
-  | stackAbilityFromArtifactSource
+  /-- An activated or triggered ability you control from a source of this card type
+  (Echo, MSH 74; Scientist Supreme of A.I.M., MSH 87). -/
+  | stackAbilityFromSource (ty : CardType)
   /-- Target creature an opponent controls with power `n` or less. -/
   | oppCreaturePowerAtMost (n : Int)
   /-- Target creature an opponent controls that dealt damage this turn. -/
@@ -381,7 +381,7 @@ def spec : EffectTargetKind → Spec
   | .creatureYouControlAnySubtype subtypes =>
     { noun :=
         if subtypes.isEmpty then "target creature you control"
-        else s!"target {orJoin subtypes.toList} you control"
+        else s!"target {orJoin (subtypes.toList.map CardSubtype.englishName)} you control"
       prefer := .own }
   | .permanent =>
     { noun := "target permanent", prefer := .ownThenOpponent }
@@ -443,11 +443,9 @@ def spec : EffectTargetKind → Spec
     { noun := s!"target enchantment with mana value {n} or greater" }
   | .noncreatureArtifact =>
     { noun := "target noncreature artifact" }
-  | .stackAbilityFromCreatureSource =>
-    { noun := "target activated or triggered ability you control from a creature source",
-      stackSpell := true }
-  | .stackAbilityFromArtifactSource =>
-    { noun := "target activated or triggered ability you control from an artifact source",
+  | .stackAbilityFromSource ty =>
+    let w := ty.oracleWord
+    { noun := s!"target activated or triggered ability you control from {indefinite w} {w} source",
       stackSpell := true }
   | .oppCreaturePowerAtMost n =>
     { noun := s!"target creature an opponent controls with power {n} or less" }
@@ -588,8 +586,8 @@ def closedKinds : List EffectTargetKind := [
   .upToOneCreatureThenPlayer,
   .attackingOrBlockingCreature,
   .noncreatureArtifact,
-  .stackAbilityFromCreatureSource,
-  .stackAbilityFromArtifactSource,
+  .stackAbilityFromSource .creature,
+  .stackAbilityFromSource .artifact,
   .oppCreatureDealtDamageThisTurn,
   .nonlandNontoken,
   .permanentCardInYourGraveyard,

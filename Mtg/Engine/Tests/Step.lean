@@ -139,7 +139,7 @@ def notedCopy : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant opp opp
   let host := named g "Grizzly Bears"
   let giant := named g "Hill Giant"
-  let g := { g with notedCopyObject := some giant, notedHostId := some host.id }
+  let g := g.changes #[.notedCopyObject (some giant), .notedHostId (some host.id)]
   g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
     (resolutionOverride := some (.becomeCopy .noted))
 
@@ -167,7 +167,7 @@ def notedMissing : Game :=
   (named g "Grizzly Bears").copyRestore.isNone && g.log.size == g0.log.size
 #guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy .source } ==
   "become a copy"
-#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some "Villain")) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some .villain)) } ==
   "become a copy"
 
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/
@@ -185,7 +185,7 @@ def copiedGraveyard : Game :=
   let tm := named copiedGraveyard "Taskmaster, Mercenary Mimic"
   tm.name == "Taskmaster, Mercenary Mimic" &&
     tm.printed.power == hillGiant.power &&
-    tm.subtypes == #["Human", "Mercenary", "Villain"]
+    tm.subtypes == #[.human, .mercenary, .villain]
 
 /- Mister Hyde's upkeep asks for a mode. The first mode puts a +1/+1 counter. -/
 def hydeAsks : Game :=
@@ -207,7 +207,7 @@ def hydePlusOne : Game :=
 does not. A land is not a legal object to blink. -/
 def harness (g : Game) : Game :=
   let stone := named g "The Mind Stone"
-  g.setObject { stone with status := { stone.status with harnessed := true } }
+  g.changeStatus stone.id (.harnessed true)
 
 def blinked : Game :=
   let g := harness (addPermanent afterDraw theMindStone me me)

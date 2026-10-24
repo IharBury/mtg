@@ -466,7 +466,7 @@ to it. -/
 
 #guard
   let g := addPermanent afterDraw grizzlyBears me me
-  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => { s with tapped := true })
+  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.tapped true)
   let g := resolved (castFra g tethermagesAdvantage [tgt g "Grizzly Bears"])
   let o := namedPermanent g "Grizzly Bears"
   g.power o == 4 && g.toughness o == 4 && !o.status.tapped && (g.currentKeywords o).reach

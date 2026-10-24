@@ -25,7 +25,7 @@ def cratermakerReady : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def cratermakerSource (g : Game) : GameObject :=
   namedPermanent g "Goblin Cratermaker"
@@ -201,7 +201,7 @@ def cratermakerDestroyReady : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
   let g := addPermanent g wayfarersBauble ⟨1⟩ ⟨1⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 #guard (namedPermanent cratermakerDestroyReady "Wayfarer's Bauble").isColorlessNonland
 #guard !(namedPermanent cratermakerDestroyReady "Goblin Cratermaker").isColorlessNonland
@@ -295,7 +295,7 @@ def giantReadyToAssign : Game := passBoth giantBlockedByTwoElves
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
   let giant := namedPermanent g "Hill Giant"
   g.hasTrample giant && g.canAssignCombatDamageToDefendingPlayer giant true &&
     g.combatDamageToAssign giant true == 3
@@ -403,13 +403,11 @@ def bearsBlockingTwoOgresReady : Game :=
   let g := passBoth g
   let g := mustApply g ⟨1⟩ (.declareBlockers #[])
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with
-    status := { bears.status with blocking := ogres.map (·.id) } }
+  let g := g.changeStatus bears.id (.blocking (ogres.map (·.id)))
   let g := Id.run do
     let mut g := g
     for o in ogres do
-      let a := g.object! o.id
-      g := g.setObject { a with status := { a.status with blocked := true } }
+      g := g.changeStatus o.id (.blocked true)
     return g
   passBoth g
 

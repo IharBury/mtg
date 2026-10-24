@@ -393,11 +393,11 @@ def spellEmpower (line : String) : Option (Nat × String) :=
       some (n, rest.trimAscii.copy)
 
 /-- `behold a Jace or pay {N}` as an additional cost. -/
-def beholdOrPay (line : String) : Option (String × Nat) :=
+def beholdOrPay (line : String) : Option (CardSubtype × Nat) :=
   let low := lowerAscii line
   if !(low.startsWith "as an additional cost") || !(low.contains "behold") then none
   else
-    let quality := if low.contains "jace" then "Jace" else "permanent"
+    let quality : CardSubtype := if low.contains "jace" then .jace else .goblin
     match low.splitOn "{" with
     | _ :: brace :: _ =>
       let digits := brace.takeWhile Char.isDigit
@@ -577,7 +577,7 @@ def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
       spellModes := es
       chooseOneOrBoth := oneOrBoth
       chooseBothIfTeamwork := teamwork
-      chooseTwoIfYouControlSubtype := twoIf }
+      chooseTwoIfYouControlSubtype := twoIf.bind CardSubtype.ofOracle? }
 
 def pushMana (c : CardDef) (t : ManaType) : CardDef :=
   { c with tapAddMana := c.tapAddMana.push t }
@@ -635,7 +635,7 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
       | some cost => (none, some cost)
       | none =>
         match splitNameCost costAndType with
-        | (name, some cost) => (some name, some cost)
+        | (name, some cost) => (CardSubtype.ofOracle? name, some cost)
         | _ => (none, none)
     match cost? with
     | none => none
@@ -689,7 +689,11 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
         let printed :=
           (raw.splitOn "if you control a ").getLastD ""
             |>.splitOn "." |>.headD "" |>.trimAscii.copy
-        some { c with costReductionIfYouControl := some (k, printed) }
+        if printed == "legendary creature" then
+          some { c with costReductionIfYouControlLegendary := k }
+        else
+          CardSubtype.ofOracle? printed |>.map fun sub =>
+            { c with costReductionIfYouControl := some (k, sub) }
   else if low.startsWith "this spell costs " && low.contains "creature card" && low.contains "graveyard" then
     match n with
     | none => none
@@ -704,7 +708,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "affinity for " then
     let t :=
       ((stripParentheticals ((raw.drop "Affinity for ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    some { c with affinityForSubtype := some t }
+    CardSubtype.ofOracle? t |>.map fun sub => { c with affinityForSubtype := some sub }
   else if low.contains "cascade" &&
       (((low.replace "," "").splitOn " ").filter (fun w => w != "")).all (fun w => w == "cascade") then
     let n := (low.splitOn "cascade").length - 1
@@ -734,7 +738,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with cantBeCountered := true }
   else if low.startsWith "you may cast this spell as though it had flash if you control a " then
     let t := (raw.splitOn "if you control a ").getLastD "" |>.replace "." "" |>.trimAscii.copy
-    some { c with flashIfYouControlSubtype := some t }
+    CardSubtype.ofOracle? t |>.map fun sub => { c with flashIfYouControlSubtype := some sub }
   else if low.startsWith "ward " || low.startsWith "ward{" then
     n.map fun k => { c with ward := some k }
   else if low.startsWith "flashback—" && low.contains ", discard a card" then
@@ -829,7 +833,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with powerPerMountain := k }
   else if low.contains "you may play an additional land" && low.contains "as long as you control another" then
     let t := (raw.splitOn "another ").getLastD "" |>.splitOn "," |>.headD "" |>.trimAscii.copy
-    some { c with extraLandIfOtherSubtype := some t }
+    CardSubtype.ofOracle? t |>.map fun sub => { c with extraLandIfOtherSubtype := some sub }
   else if low.contains "enters prepared" then
     some { c with entersPrepared := true }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
@@ -868,7 +872,8 @@ where
           match manaLetters sym.trimAscii.copy with
           | some [m] =>
             let subtype := (raw.splitOn "for each ").getLastD "" |>.splitOn " you control" |>.headD "" |>.trimAscii.copy
-            some { c with tapAddManaForEach := c.tapAddManaForEach.push { mana := m, subtype := subtype } }
+            CardSubtype.ofOracle? subtype |>.map fun sub =>
+              { c with tapAddManaForEach := c.tapAddManaForEach.push { mana := m, subtype := sub } }
           | _ => none
         | _ => none
     else if low.contains "activate only if this land entered this turn" then

@@ -100,8 +100,8 @@ open Mtg.Engine.Catalog
 #guard mentions elvishArchdruid.summary "Other Elf creatures"
 #guard mentions elvishArchdruid.summary "for each Elf"
 #guard elvishArchdruid.staticAbilities.size == 1
-#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
-#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
+#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
 #guard mentions mirkwoodElk.summary "trample"
 #guard mentions mirkwoodElk.summary "Elf card"
 #guard mirkwoodElk.keywords.trample
@@ -153,7 +153,7 @@ open Mtg.Engine.Catalog
 #guard mentions ologHaiCrusher.summary "can't block unless"
 #guard ologHaiCrusher.keywords.trample
 #guard ologHaiCrusher.staticAbilities.size == 1
-#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
+#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #[.goblin, .orc]]
 #guard mentions gandalfSparkStarter.summary "reach"
 #guard mentions gandalfSparkStarter.summary "divided as you choose"
 #guard gandalfSparkStarter.keywords.reach
@@ -238,7 +238,7 @@ open Mtg.Engine.Catalog
 #guard
   let c := creature "Silent Siege" ManaCost.empty #[] 0 5
     (keywords := Keyword.trample)
-    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (staticAbilities := #[.otherCreaturesHaveTrample #[.orc, .goblin]])
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   mentions c.abilitiesText "Other Orcs and Goblins" &&
     mentions c.abilitiesText "greatest power" &&
@@ -272,8 +272,8 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Archdruid" ManaCost.empty #["Elf", "Druid"] 2 2
-    (staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1])
-    (tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }])
+    (staticAbilities := #[.otherCreaturesGet #[.elf] 1 1])
+    (tapAddManaForEach := #[{ mana := .colored .green, subtype := .elf }])
   mentions c.abilitiesText "Other Elf creatures you control get +1/+1" &&
     mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
     !mentions c.abilitiesText "{T}: Add {G};" &&
@@ -341,7 +341,7 @@ open Mtg.Engine.Catalog
 #guard
   let c := card "Silent Crusher" #[.creature]
     (keywords := Keyword.trample)
-    (staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]])
+    (staticAbilities := #[.cantBlockUnlessYouControl #[.goblin, .orc]])
   mentions c.abilitiesText "can't block unless you control a Goblin or Orc" &&
     mentions c.summary "trample"
 

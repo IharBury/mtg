@@ -14,7 +14,7 @@ namespace Game
 /-- Mana value of other spells `p` has cast this turn. Copies that were not
 cast are not recorded. -/
 def otherCastManaValueThisTurn (g : Game) (p : PlayerId) : Nat :=
-  (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
+  (g.loggedCastManaValues p).foldl (· + ·) 0
 
 /-- Lands `p` currently controls (CR 305.1). -/
 def landsYouControl (g : Game) (p : PlayerId) : Nat :=
@@ -57,7 +57,7 @@ def hasCreaturesYouControlPower (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any StaticAbility.isCreaturesYouControlPower
 
 /-- Subtype whose count defines this creature's power, if any. -/
-def powerEqualSubtype? (o : GameObject) : Option String :=
+def powerEqualSubtype? (o : GameObject) : Option CardSubtype :=
   o.staticAbilities.foldl (fun acc ab =>
     match acc, ab with
     | none, .powerEqualSubtypeYouControl s => some s
@@ -89,7 +89,7 @@ def hasGraveyardCardTypesPT (o : GameObject) : Bool :=
 
 /-- Basic land types among lands `p` controls (domain; CR 305.6). -/
 def basicLandTypesAmong (g : Game) (p : PlayerId) : Nat :=
-  (#["Plains", "Island", "Swamp", "Mountain", "Forest"].filter (fun t =>
+  (#[CardSubtype.plains, .island, .swamp, .mountain, .forest].filter (fun t =>
     (g.permanentsOf p).any (fun o => o.printed.isLand && o.hasSubtype t))).size
 
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=

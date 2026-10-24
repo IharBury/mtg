@@ -54,10 +54,9 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
         let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
           if o.printed.isLand then acc + 1 else acc) 0
         if tapped && entered.printed.isLand && landCount >= n then
-          let g := { g with untapSearchedIfLands := none }
-          g.setObject { (g.object! newId) with status :=
-            { (g.object! newId).status with tapped := false } }
-            |>.logMsg s!"{(g.object! newId).name} is untapped"
+          let g := g.change (.untapSearchedIfLands none)
+          (g.record (GameEvent.untapped g.turnNumber entered.asEvent false)).logMsg
+            s!"{(g.object! newId).name} is untapped"
         else g
       | none => g
     let entered := g.object! newId
@@ -94,13 +93,12 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
     let (g, newId) := g.move id .exile none
     let g :=
       match source.bind g.findObject? with
-      | some src =>
-        g.setObject { src with linkedExile := src.linkedExile.push newId }
+      | some src => g.changeObject src.id (.pushLinkedExile newId)
       | none => g
     g.logMsg s!"{(g.player p).name} exiles {name}"
 
 /-- Behold `subtype`. If you do, untap the land this search just found. -/
-def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : String) : Game :=
+def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
   let g := g.beholdQuality p subtype
   if !g.qualityWasBeheld p subtype then g
   else
@@ -108,7 +106,7 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
     | some o =>
       if o.isOnBattlefield && o.status.tapped && o.status.stun == 0 &&
           !g.hostCantBecomeUntapped o then
-        let g := g.setObject { o with status := { o.status with tapped := false } }
+        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
         g.logMsg s!"{o.name} untaps"
       else g
     | none => g
@@ -116,35 +114,41 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
 /-- Run a search's post-shuffle action when the shuffle did not pause. -/
 def applySearchAfter (g : Game) : Game :=
   let after := g.afterRandom
-  let g := { g with afterRandom := .none }
+  let g := g.change (.afterRandom .none)
   match after with
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
   | .plusOne id => g.addPlusOneIfStillCreature id
-  | other => { g with afterRandom := other }
+  | .discardRandom p =>
+    let hand := (g.player p).hand
+    if hand.isEmpty then g
+    else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
+    else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
+  | other => g.change (.afterRandom other)
 
-/-- Shuffle, then run `onDone`. A `--norandom` pause keeps `onDone` until the
-host supplies the order. An as-enters choice already waiting is restored when
-the shuffle does not pause. -/
+/-- Shuffle, then run `onDone`. A random pause keeps `onDone` until the
+host supplies the order. An as-enters choice already waiting is preserved. -/
 def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
-  let saved := g.pending
-  let g := { g with pending := .none }
-  let g := g.requestShuffle p onDone
-  if g.pendingRandom?.isSome then g
-  else
+  if g.pending != .none then
+    let g := (g.change (.afterRandom onDone)).shuffleLibrary p
     let g := g.continueIfShuffled
-    let g := g.applySearchAfter
-    if g.pending == .none then { g with pending := saved } else g
+    g.applySearchAfter
+  else
+    let g := g.requestShuffle p onDone
+    if g.pendingRandom?.isSome then g
+    else
+      let g := g.continueIfShuffled
+      g.applySearchAfter
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
 def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
-  | some id => ({ g with plusOneAfterSearch := none }, .plusOne id)
+  | some id => (g.change (.plusOneAfterSearch none), .plusOne id)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
 def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
-  let g := { g with untapSearchedIfLands := none }
+  let g := g.change (.untapSearchedIfLands none)
   let (g, done) := g.searchDone p after
   g.shuffleThen p done
 
@@ -153,7 +157,7 @@ def applyWaitingPlusOne (g : Game) : Game :=
   match g.plusOneAfterSearch with
   | none => g
   | some id =>
-    addPlusOneIfStillCreature { g with plusOneAfterSearch := none } id
+    addPlusOneIfStillCreature (g.change (.plusOneAfterSearch none)) id
 
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.19b). -/
@@ -162,7 +166,9 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
   let noun := searchNoun kind
   if ids.isEmpty then
     let g := g.logMsg s!"{(g.player p).name} chooses not to find a {noun}"
-    if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
+    match dest with
+    | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
+    | _ => if shufflesWhenNoneFound dest then g.shuffleSearch p after else g.applyWaitingPlusOne
   else
     match dest with
     | .battlefield tapped =>
@@ -171,6 +177,9 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | .hand =>
       let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
       g.shuffleSearch p after
+    | .handThenDiscardRandom =>
+      let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
+      g.shuffleThen p (.discardRandom p)
     | .graveyard =>
       let g := ids.foldl (fun g id => g.placeSearchedGraveyard id) g
       g.shuffleSearch p after
@@ -214,12 +223,15 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
   let pl := g.player p
   let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
   if optional then
-    { g with pending := .fraChoice p (.maySearchLibrary eligible count dest after kind) }.logMsg
+    (g.change (.pending (.fraChoice p (.maySearchLibrary eligible count dest after kind)))).logMsg
       s!"{pl.name} may search for {kind}"
   else if eligible.isEmpty then
-    (g.logMsg s!"{pl.name} finds no {searchNoun kind}").shuffleSearch p after
+    let g := g.logMsg s!"{pl.name} finds no {searchNoun kind}"
+    match dest with
+    | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
+    | _ => g.shuffleSearch p after
   else
-    { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }.logMsg
+    (g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))).logMsg
       s!"{pl.name} searches for {kind}"
 
 /-- `p` may search for `count` basic land cards and put them onto the
@@ -258,7 +270,7 @@ def resolveLibrarySearchToHand (g : Game) (p : PlayerId)
 
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
 it into their hand, then shuffle (CR 701.19 / 702.29). -/
-def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
+def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : CardSubtype) : Game :=
   g.resolveLibrarySearchToHand p (fun c => c.hasSubtype landType) s!"{landType} card"
 
 /-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/
@@ -275,9 +287,7 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     let top := pl.library.back!
     let cardName := (g.object! top).name
     let (g, newId) := g.move top .exile none
-    let o := g.object! newId
-    let g := g.setObject { o with
-      playPermission := some { player := p, turnEndsRemaining := 2 } }
+    let g := g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
     g.logMsg
       s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
 

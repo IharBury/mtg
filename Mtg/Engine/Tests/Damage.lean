@@ -25,7 +25,7 @@ def flyerVsGandalf : Game :=
   let g := addPermanent g gandalfSparkStarter ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.setObject { smaug with status := { smaug.status with attacking := true } }
+  g.changeStatus smaug.id (.attacking true)
 
 #guard flyerVsGandalf.canBlock
   (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")
@@ -242,8 +242,7 @@ def gandalfLeftBeforeTrigger : Game :=
 #guard
   let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Velvetwing Butterflies"
-  let g := g.setObject { o with
-    status := { o.status with untilEotKeywords := Keyword.hexproof } }
+  let g := g.changeStatus o.id (.untilEotKeywords Keyword.hexproof)
   match g.apply ⟨0⟩
       (.divideDamage #[(Target.permanent (namedPermanent g "Velvetwing Butterflies").id, 3)]) with
   | .error msg => mentions msg "Illegal target"
@@ -273,7 +272,7 @@ def fireleaperAbility : ActivatedAbility :=
 def fireleaperReady : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 2
+  withRedMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 2
 
 def fireleaperSource (g : Game) : GameObject :=
   namedPermanent g "Goblin Fireleaper"
@@ -373,7 +372,7 @@ def prowlerAbility : ActivatedAbility :=
 /-- Prowler in play; a land drop is already used so the heuristic can activate. -/
 def prowlerReady : Game :=
   let g := addPermanent afterDraw desolationProwler ⟨0⟩ ⟨0⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def prowlerSource (g : Game) : GameObject :=
   namedPermanent g "Desolation Prowler"
@@ -444,17 +443,17 @@ def prowlerAtEndStep : Game := skipTo prowlerReady .end 80
 
 -- A player with 1 life cannot pay 2 life (CR 119.4).
 #guard
-  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 1 })
+  let g := prowlerReady.changePlayer ⟨0⟩ (.life 1)
   !g.canActivate ⟨0⟩ (prowlerSource g) prowlerAbility
 #guard
-  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 1 })
+  let g := prowlerReady.changePlayer ⟨0⟩ (.life 1)
   match g.activateAbility ⟨0⟩ (prowlerSource g).id 0 with
   | .error msg => mentions msg "cannot pay 2 life"
   | .ok _ => false
 
 -- Paying 2 life from 2 life is legal, then CR 704.5a ends the game.
 def prowlerPaysLastLife : Game :=
-  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  let g := prowlerReady.changePlayer ⟨0⟩ (.life 2)
   mustApply g ⟨0⟩ (.activate (prowlerSource g).id 0)
 
 #guard (prowlerPaysLastLife.player ⟨0⟩).life == 0
@@ -466,7 +465,7 @@ def prowlerPaysLastLife : Game :=
 
 -- The heuristic will not pay the last 2 life.
 #guard
-  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  let g := prowlerReady.changePlayer ⟨0⟩ (.life 2)
   match Agent.choose g ⟨0⟩ with
   | some (.activate _ 0) => false
   | _ => true
@@ -474,7 +473,7 @@ def prowlerPaysLastLife : Game :=
 /-- Lethal damage puts the dies trigger on the stack (CR 700.4 / 603.3d). -/
 def fireleaperDied : Game :=
   let o := namedPermanent fireleaperReady "Goblin Fireleaper"
-  let g := fireleaperReady.setObject { o with status := { o.status with damage := 1 } }
+  let g := fireleaperReady.changeStatus o.id (.damage 1)
   g.receivePriority ⟨0⟩
 
 #guard fireleaperDied.pending == .chooseTargets ⟨0⟩
@@ -504,8 +503,7 @@ def fireleaperDied : Game :=
 -- Hexproof on an opponent's creature is not a legal target (CR 702.11b).
 #guard
   let bears := namedPermanent fireleaperDied "Grizzly Bears"
-  let g := fireleaperDied.setObject { bears with
-    status := { bears.status with untilEotKeywords := Keyword.hexproof } }
+  let g := fireleaperDied.changeStatus bears.id (.untilEotKeywords Keyword.hexproof)
   match g.apply ⟨0⟩ (.target (Target.permanent bears.id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
@@ -538,7 +536,7 @@ def fireleaperDeathResolved : Game := passBoth fireleaperDeathTargeted
 /-- Pumped power is last known information when the Fireleaper dies (CR 113.7a). -/
 def fireleaperPumpedThenDied : Game :=
   let o := namedPermanent pumpedFireleaper "Goblin Fireleaper"
-  let g := pumpedFireleaper.setObject { o with status := { o.status with damage := 1 } }
+  let g := pumpedFireleaper.changeStatus o.id (.damage 1)
   let g := g.receivePriority ⟨0⟩
   let g := mustApply g ⟨0⟩
     (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
@@ -553,7 +551,7 @@ def fireleaperPumpedThenDied : Game :=
 def fireleaperDiedAlone : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Goblin Fireleaper"
-  let g := g.setObject { o with status := { o.status with damage := 1 } }
+  let g := g.changeStatus o.id (.damage 1)
   g.receivePriority ⟨0⟩
 
 #guard fireleaperDiedAlone.stack.isEmpty
@@ -632,7 +630,7 @@ def hunterSacrificesFireleaper : Game :=
   let g := addPermanent g goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addUntappedLand g mountain
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Snowslope Hunter").id 0)
   let g := mustApply g ⟨0⟩ .pay
   mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Goblin Fireleaper").id)

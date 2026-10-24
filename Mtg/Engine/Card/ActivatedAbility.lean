@@ -98,7 +98,9 @@ structure ActivationCost where
   /-- Exile this card from your graveyard. -/
   exileSourceFromGraveyard : Bool := false
   /-- Sacrifice another permanent you control of this subtype. -/
-  sacrificeAnotherSubtype : Option String := none
+  sacrificeAnotherSubtype : Option CardSubtype := none
+  /-- Sacrifice another creature you control. -/
+  sacrificeAnotherCreature : Bool := false
   /-- Discard a card (not necessarily this card). -/
   discardACard : Bool := false
   /-- Tap an untapped creature you control. -/
@@ -156,6 +158,7 @@ def toNotation (c : ActivationCost) : String :=
     (match c.sacrificeAnotherSubtype with
      | some t => [s!"Sacrifice another {t}"]
      | none => []) ++
+    (if c.sacrificeAnotherCreature then ["Sacrifice another creature"] else []) ++
     (if c.discardACard then ["Discard a card"] else []) ++
     (if c.sacrificeArtifactOrCreature then
       ["Sacrifice an artifact or creature"] else []) ++
@@ -220,7 +223,7 @@ structure ActivatedAbility where
   creature (e.g. Esquire of the King). -/
   costReductionIfYouControlLegendary : Nat := 0
   /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
-  equipSubtype : Option String := none
+  equipSubtype : Option CardSubtype := none
   /-- This ability costs this much generic mana less for each Equipment you
   control. -/
   costReductionPerEquipment : Nat := 0

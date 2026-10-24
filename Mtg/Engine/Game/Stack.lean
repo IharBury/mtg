@@ -40,7 +40,7 @@ structure StackEntry where
   (CR 115.1c / 601.2c). The current instance index is
   `targets.size + skippedOptionalSlots`. -/
   skippedOptionalSlots : Nat := 0
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
 inductive ProposalKind where
@@ -101,6 +101,6 @@ structure ProposedSpell where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

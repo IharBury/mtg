@@ -164,7 +164,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
     | .fraChoice p _ => who p
-    | .mayCastExiledElseDamage p _ _ => who p
+    | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
@@ -197,8 +197,7 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
           n := n + 1
     if n > 0 then
-      g := g.modifyPlayer p (fun pl =>
-        { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n })
+      g := g.changePlayer p (.addEaglesBirdsNextUpkeep n)
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g

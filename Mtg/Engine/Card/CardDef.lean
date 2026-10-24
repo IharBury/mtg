@@ -15,7 +15,7 @@ namespace Mtg.Engine
 /-- A `{T}: Add {M} for each [subtype] you control` mana ability (CR 106.4 / 605). -/
 structure TapAddForEach where
   mana : ManaType
-  subtype : String
+  subtype : CardSubtype
 deriving Repr, Inhabited, BEq
 
 namespace TapAddForEach
@@ -112,7 +112,10 @@ structure CardDef where
   costReductionIfTargetAttacking : Nat := 0
   /-- This spell costs this much generic mana less if you control a permanent
   of this subtype (e.g. Visions of Villainy, Truck Toss). -/
-  costReductionIfYouControl : Option (Nat × String) := none
+  costReductionIfYouControl : Option (Nat × CardSubtype) := none
+  /-- This spell costs this much generic mana less if you control a legendary
+  creature (e.g. Reality Fracture). -/
+  costReductionIfYouControlLegendary : Nat := 0
   /-- This spell costs this much generic mana less if your graveyard has at
   least this many creature cards (e.g. Punishing Punch). -/
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
@@ -153,7 +156,7 @@ structure CardDef where
   /-- This spell can't be countered. -/
   cantBeCountered : Bool := false
   /-- You may cast this as though it had flash if you control this subtype. -/
-  flashIfYouControlSubtype : Option String := none
+  flashIfYouControlSubtype : Option CardSubtype := none
   /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
   ward : Option Nat := none
   /-- Flashback cost (CR 702.34). -/
@@ -204,7 +207,7 @@ structure CardDef where
   /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
   chooseOneOrBoth : Bool := false
   /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
-  chooseTwoIfYouControlSubtype : Option String := none
+  chooseTwoIfYouControlSubtype : Option CardSubtype := none
   /-- `{T}: Add one mana of any color among legendary creatures and
   planeswalkers you control`. -/
   tapAddAnyColorAmongLegendaries : Bool := false
@@ -223,7 +226,7 @@ structure CardDef where
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
   /-- Affinity for this subtype (CR 702.40). -/
-  affinityForSubtype : Option String := none
+  affinityForSubtype : Option CardSubtype := none
   /-- This spell costs {X} less, where X is the greatest number of artifacts
   an opponent controls. -/
   costReductionEqualOppArtifacts : Bool := false
@@ -236,9 +239,9 @@ structure CardDef where
   /-- This gets +N/+0 for each Mountain you control. -/
   powerPerMountain : Nat := 0
   /-- You may play an additional land if you control another of this subtype. -/
-  extraLandIfOtherSubtype : Option String := none
+  extraLandIfOtherSubtype : Option CardSubtype := none
   /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
-  tapAddColorlessPerSubtype : Option String := none
+  tapAddColorlessPerSubtype : Option CardSubtype := none
   /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
@@ -311,7 +314,7 @@ structure CardDef where
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
   /-- Additional cost: behold this quality, or pay this much generic mana. -/
-  additionalCostBeholdOrPay : Option (String × Nat) := none
+  additionalCostBeholdOrPay : Option (CardSubtype × Nat) := none
   /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
   tapAddTogether : Array ManaType := #[]
   /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
@@ -325,7 +328,7 @@ structure CardDef where
   /-- Pay `cost`, `{T}`: add two mana in any combination of these colors. -/
   filterMana : Option (ManaCost × Array ManaType) := none
   /-- Enters tapped unless you control a land of one of these subtypes. -/
-  entersTappedUnlessAnySubtype : Array String := #[]
+  entersTappedUnlessAnySubtype : Array CardSubtype := #[]
   /-- Enters tapped unless you control at least this many basic lands. -/
   entersTappedUnlessNBasics : Option Nat := none
   /-- Enters tapped unless opponents control at least this many lands. -/
@@ -408,7 +411,7 @@ def colorIdentity (c : CardDef) : ColorSet :=
 def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
 
 /-- True when `s` is among this card's subtypes. -/
-def hasSubtype (c : CardDef) (s : Subtype) : Bool := c.subtypes.any (· == s)
+def hasSubtype (c : CardDef) (s : CardSubtype) : Bool := c.subtypes.any (· == s.englishName)
 
 /-- True when `s` is among this card's supertypes. -/
 def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
@@ -426,10 +429,10 @@ def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
-  c.isEnchantment && c.hasSubtype "Aura"
+  c.isEnchantment && c.hasSubtype .aura
 /-- Equipment subtype on an Artifact (CR 301.5). -/
 def isEquipment (c : CardDef) : Bool :=
-  c.isArtifact && c.hasSubtype "Equipment"
+  c.isArtifact && c.hasSubtype .equipment
 
 /-- Names a player may choose for “choose a card name”, including an
 Adventure face (Gatherer ruling on adventurer cards). -/
@@ -783,7 +786,7 @@ def sneakCost (c : CardDef) : Option ManaCost :=
 /-- Equip worthy: legendary non-Villain creature that's red or white. -/
 def isWorthy (c : CardDef) : Bool :=
   c.hasSupertype .legendary &&
-    !c.hasSubtype "Villain" &&
+    !c.hasSubtype .villain &&
     (c.colors.contains .red || c.colors.contains .white)
 
 /-- Equip worthy keyword on this Equipment (MSH). -/
@@ -876,11 +879,11 @@ def isBasicLandCard (c : CardDef) : Bool :=
   c.isLand && c.hasSupertype .basic
 
 /-- A land card with the given land type (CR 205.3i / 305.7). -/
-def isLandTypeCard (c : CardDef) (landType : String) : Bool :=
+def isLandTypeCard (c : CardDef) (landType : CardSubtype) : Bool :=
   c.isLand && c.hasSubtype landType
 
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
-  isLandTypeCard c "Forest"
+  isLandTypeCard c .forest
 
 end Mtg.Engine

@@ -108,7 +108,9 @@ Zone and hexproof are checked by the caller. -/
 def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (sourceId : Option ObjectId) (o : GameObject) : Bool :=
   let typeOk :=
-    f.types.isEmpty || f.types.any (objectHasCardType o) || (f.orLegendary && o.isLegendary)
+    (f.types.isEmpty && f.orSupertypes.isEmpty) ||
+      f.types.any (objectHasCardType o) || f.orSupertypes.any o.hasSupertype
+  let supertypeOk := f.supertypes.isEmpty || f.supertypes.any o.hasSupertype
   let colorOk := f.colors.isEmpty || f.colors.any (o.printed.colors.contains ·)
   let who := o.controller.getD o.owner
   let controllerOk :=
@@ -118,15 +120,13 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     | .opponent | .eachOpponent => who != caster
     | .specific idx => who.idx == idx
   let mv := g.objectManaValue o
-  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (g.hasSubtype o)
-  typeOk && colorOk && controllerOk && subtypeOk &&
-    (!f.nonland || !objectHasCardType o .land) &&
-    (!f.noncreature || !objectHasCardType o .creature) &&
+  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
+  typeOk && supertypeOk && colorOk && controllerOk && subtypeOk &&
+    f.nonSupertypes.all (fun s => !o.hasSupertype s) &&
+    f.nonTypes.all (fun t => !objectHasCardType o t) &&
     (!f.nonAura || !o.printed.isAura) &&
     (!f.nontoken || !o.printed.isToken) &&
     (!f.permanentCard || o.printed.isPermanentCard) &&
-    (!f.legendary || o.isLegendary) &&
-    (!f.nonlegendary || !o.isLegendary) &&
     (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
     (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&
     (!f.another || some o.id != sourceId) &&
@@ -135,7 +135,7 @@ def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
     (!f.attacking || o.status.attacking) &&
     (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
     (!f.attackedThisTurn || o.status.declaredAsAttackerThisTurn) &&
-    (!f.enteredThisTurn || o.status.enteredThisTurn) &&
+    (!f.enteredThisTurn || g.loggedEntered o.id) &&
     (!f.untapped || !o.status.tapped) &&
     (!f.nonattacking || !o.status.attacking) &&
     (!f.withHaste || g.hasHaste o) &&
@@ -196,7 +196,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       g.legalPermanentTargets caster (fun o =>
         o.isOnBattlefield && (o.isCreature || o.printed.isPlaneswalker || o.printed.isBattle))
   | .elfInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o "Elf")
+    g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o .elf)
   | .oppCreature =>
     g.legalOppCreatureTargets caster
   | .oppTappedCreature =>
@@ -269,7 +269,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalCreatureTargets caster (fun o => g.power o <= n)
   | .creatureYouControlAnySubtype subtypes =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy caster && subtypes.any (g.hasSubtype o))
+      o.controlledBy caster && subtypes.any (fun s => g.hasSubtype o s))
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
   | .creatureCardInYourGraveyard =>
@@ -320,10 +320,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .noncreatureArtifact =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && !o.isCreature)
-  | .stackAbilityFromCreatureSource =>
-    g.legalStackAbilityTargets caster (fun src => src.printed.isCreature)
-  | .stackAbilityFromArtifactSource =>
-    g.legalStackAbilityTargets caster (fun src => src.printed.isArtifact)
+  | .stackAbilityFromSource ty =>
+    g.legalStackAbilityTargets caster (fun src => src.printed.hasType ty)
   | .oppCreaturePowerAtMost n =>
     g.legalCreatureTargets caster (fun o =>
       g.power o <= n &&

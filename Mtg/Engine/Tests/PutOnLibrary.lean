@@ -42,7 +42,7 @@ def onBoard (g : Game) (name : String) : Bool :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def topName (g : Game) (p : PlayerId) : String :=
   match (g.player p).library.back? with
@@ -70,7 +70,7 @@ def board : Game :=
   addPermanent (addPermanent afterDraw titan caster caster) bear opp opp
 
 def noHand : Game :=
-  board.modifyPlayer caster fun pl => { pl with hand := #[] }
+  board.changePlayer caster (.hand #[])
 
 /- The announced permanent's owner puts it on top. An opponent's creature
 goes on that player's library. A missing target, a land, a player, and a

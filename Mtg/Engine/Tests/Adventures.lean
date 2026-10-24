@@ -306,7 +306,7 @@ def afterFirstForestForBeorn : Game :=
   mustApply beornTwoLandsSetup ⟨0⟩
     (.playLand (handCardNamed beornTwoLandsSetup ⟨0⟩ "Forest").id)
 
-#guard (afterFirstForestForBeorn.player ⟨0⟩).landsPlayedThisTurn == 1
+#guard afterFirstForestForBeorn.loggedLandsPlayed ⟨0⟩ == 1
 #guard !afterFirstForestForBeorn.canPlayLand ⟨0⟩
 
 def resolvedTillAfterLand : Game :=
@@ -322,7 +322,7 @@ def afterSecondForestForBeorn : Game :=
   mustApply resolvedTillAfterLand ⟨0⟩
     (.playLand (handCardNamed resolvedTillAfterLand ⟨0⟩ "Forest").id)
 
-#guard (afterSecondForestForBeorn.player ⟨0⟩).landsPlayedThisTurn == 2
+#guard afterSecondForestForBeorn.loggedLandsPlayed ⟨0⟩ == 2
 #guard !afterSecondForestForBeorn.canPlayLand ⟨0⟩
 #guard (afterSecondForestForBeorn.battlefield.filter (fun o => o.name == "Forest")).size == 2
 #guard
@@ -343,7 +343,7 @@ def beornPermissionLater : Game :=
 #guard beornPermissionLater.activePlayer == ⟨0⟩
 #guard beornPermissionLater.mayPlayFromExile ⟨0⟩ (exiledBeorn beornPermissionLater)
 #guard (beornPermissionLater.player ⟨0⟩).additionalLandsThisTurn == 0
-#guard (beornPermissionLater.player ⟨0⟩).landsPlayedThisTurn == 0
+#guard beornPermissionLater.loggedLandsPlayed ⟨0⟩ == 0
 #guard beornPermissionLater.landPlaysAllowed ⟨0⟩ == 1
 
 /-- Cast Beorn from exile as the creature (CR 715.3d). -/
@@ -506,7 +506,7 @@ def crusherBlocksOgre : Game :=
 def ogreVsCrusherTappedGoblinReadyToBlock : Game :=
   let g := ogreVsCrusherAndGoblinReadyToBlock
   let goblin := namedPermanent g "Raging Goblin"
-  g.setObject { goblin with status := { goblin.status with tapped := true } }
+  g.changeStatus goblin.id (.tapped true)
 
 #guard
   let g := ogreVsCrusherTappedGoblinReadyToBlock

@@ -141,7 +141,7 @@ def vraskaShock : Game := castShockAtNissa (addPermanent afterDraw vraskaSoulOfS
   topOfStack g == "Shock" &&
     (let s := namedPermanent g "Sculpture"
      s.printed.isArtifact && s.isCreature && s.printed.tapSacrificeAddAnyColor &&
-       g.hasSubtype s "Treasure")
+       g.hasSubtype s .treasure)
 #guard (fraRuling 887).comment.contains "resolves before the spell that caused it to trigger"
 
 /-- Ruling 848: Danitha's counter arrives before the spell resolves. -/
@@ -221,7 +221,7 @@ def tetsukoBoard : Game :=
   let g := passBoth g
   let g := mustApply g ⟨1⟩ (.declareBlockers #[((namedPermanent g "Gray Ogre").id,
     (namedPermanent g "Grizzly Bears").id)])
-  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => s.addPump (-1) 0)
+  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.addPump (-1) 0)
   (namedPermanent g "Grizzly Bears").status.blocked
 #guard (fraRuling 842).comment.contains "won't cause it to become unblocked"
 
@@ -258,8 +258,7 @@ def hallCopies (g : Game) (target : String) : Game :=
 /-- Lyra with two +1/+1 counters, tapped. -/
 def lyraWithCounters : Game :=
   let g := addPermanent afterDraw lyraArchangelOfDawn ⟨0⟩ ⟨0⟩
-  g.mapObjectStatus (namedPermanent g "Lyra, Archangel of Dawn") (fun s =>
-    { s.addPlusOnePlusOne 2 with tapped := true })
+  g.changeStatuses (namedPermanent g "Lyra, Archangel of Dawn").id #[.addPlusOnePlusOne 2, .tapped true]
 
 def hallAsLyra : Game := hallCopies lyraWithCounters "Lyra, Archangel of Dawn"
 

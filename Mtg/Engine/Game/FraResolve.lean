@@ -106,7 +106,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | none => g) g
   | .drawMilledThisTurn =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
-      g.draw controller (g.player pid).cardsMilledThisTurn) sourceId illegal
+      g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
     let creatures := g.battlefield.filter (·.isCreature)
     let g := creatures.foldl (fun g o =>
@@ -115,9 +115,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.empowerJace controller creatures.size
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
-    let before := (g.player controller).cardsDrawnThisTurn
+    let before := g.loggedDraws controller
     let g := g.draw controller n
-    let drawn := (g.player controller).cardsDrawnThisTurn - before
+    let drawn := g.loggedDraws controller - before
     g.loseLife controller drawn
   | .revealHandDiscardNonland permanentOnly =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
@@ -146,7 +146,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | none => g
   | .plusOneOnWizardTokensExceptRecent =>
     (g.permanentsOf controller).foldl (fun g o =>
-      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o "Wizard" then
+      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o .wizard then
         g.addPlusOnePlusOneTo o 1
       else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
@@ -161,7 +161,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
     | some o =>
-      let g := g.mapObjectStatus o (fun s => { s with losesAbilitiesUntilEot := true })
+      let g := g.createEffect (.losesAbilitiesUntilEot o.id)
       g.logMsg s!"{o.name} loses all abilities until end of turn"
   | .powerDamageFromTo fromIdx toIdx =>
     match g.legalPermanentAt? controller kind targets toIdx sourceId with
@@ -173,8 +173,9 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           (source := some striker)
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
+    let sid := sourceId.orElse (fun _ => g.resolvingSpell)
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      g.beginFraChoice o.owner (.topOrBottomDamage o.id 2)
+      g.beginFraChoice o.owner (.topOrBottomDamage o.id 2 sid)
         s!"{(g.player o.owner).name} may put {o.name} on top of their library") sourceId illegal
   | .entrustTheSpark =>
     if (g.permanentsOf controller).any (·.printed.isPlaneswalker) then
@@ -219,7 +220,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if mv ≤ n && !o.printed.isToken then
         let (g, back) := g.putOntoBattlefield exiled controller (tapped := true)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
-        let g := { g with delayedEndStepExiles := g.delayedEndStepExiles.push back }
+        let g := g.change (.pushDelayedEndStepExile back)
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .eachPlayerMayWheel n =>
@@ -229,8 +230,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       g.beginFraChoice p (.mayWheel n rest.toArray)
         s!"{(g.player p).name} may discard their hand and draw {n} cards"
   | .mountainsAddExtraRed =>
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with mountainExtraRedThisTurn := pl.mountainExtraRedThisTurn + 1 })
+    let g := g.createEffect (.mountainExtraRedThisTurn controller)
     g.logMsg s!"Until end of turn, whenever {(g.player controller).name} taps a Mountain for mana, they add an additional \{R}"
   | .searchLandToGraveyard =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
@@ -247,7 +247,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       sourceId illegal
   | .damageExileIfDies n =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
+      let g := g.createEffect (.exileIfDiesUntilEot o.id)
       g.dealDamageFrom srcName (g.object! o.id) n (source := src?)) sourceId illegal
   | .millMayPutPermanentGainLife n life =>
     let before := (g.player controller).graveyard.size
@@ -341,20 +341,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o => g.addPlusOnePlusOneTo o x
         | none => g) g
   | .searchCardThenDiscardRandom =>
-    let g := g.resolveLibrarySearchToHand controller (fun _ => true) "card"
-    let hand := (g.player controller).hand
-    if hand.isEmpty then g
-    else
-      let (rng, r) := g.rng.next
-      let g := { g with rng }
-      g.discardFromHandRandomly controller hand[(r.toNat % hand.size)]!
+    g.beginLibrarySearch controller (fun _ => true) "card" .handThenDiscardRandom
   | .grantFlashbackUntilEot =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         match g.findObject? id with
         | some o =>
-          (g.setObject { o with flashbackUntilEot := true }).logMsg
+          (g.createEffect (.flashbackUntilEot o.id)).logMsg
             s!"{o.name} gains flashback until end of turn"
         | none => g
       | _ => g) sourceId illegal
@@ -405,7 +399,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.applyFra controller effect .reflexiveReturnLandTapped #[] sourceId
   | .maySacrificeLandForHeartwoods =>
     if (g.permanentsOf controller).any (·.printed.isLand) then
-      g.beginFraChoice controller (.maySacrificeThen .land (.tappedHeartwoods 2) sourceId)
+      g.beginFraChoice controller (.maySacrificeThen #[.land] (.tappedHeartwoods 2) sourceId)
         s!"{(g.player controller).name} may sacrifice a land"
     else g
   | .uldarosCopies =>
@@ -434,10 +428,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- Permanent spells cast this way become tokens.
       let (g, copy) := g.allocObject { printed with isToken := printed.isPermanentCard }
         controller .exile (some controller)
-      let g := g.setObject { copy with
-        isCopy := true
-        playPermission := some { player := controller, turnEndsRemaining := 0
-                                 whileExiled := true, withoutManaCost := true, ignoreTiming := true } }
+      let g := g.changeObject copy.id (.isCopy true)
+      let g := g.createEffect (.playPermission copy.id {
+        player := controller, turnEndsRemaining := 0,
+        whileExiled := true, withoutManaCost := true, ignoreTiming := true })
       (g, cs.push copy.id)) (g, #[])
     if copies.isEmpty then g
     else
@@ -459,23 +453,25 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
       else
         let (g, copy) := g.allocObject spell.printed controller .stack (some controller)
-        let g := g.setObject { copy with
-          chosenX := spell.chosenX, isCopy := true, adventurerCard := spell.adventurerCard }
+        let g := g.changeObjects copy.id #[
+          .chosenX spell.chosenX, .isCopy true, .adventurerCard spell.adventurerCard]
         let g := g.putStackEntry controller copy.id
         let g :=
           match g.stack.find? (fun e => e.objectId == spell.id),
               g.stack.findIdx? (fun e => e.objectId == copy.id) with
           | some orig, some i =>
-            { g with stack := g.stack.set! i { g.stack[i]! with
-                targets := orig.targets, dividedDamage := orig.dividedDamage
-                chosenMode := orig.chosenMode, targetsAnnounced := true } }
+            g.changes #[
+              .stackEntry i (.targets orig.targets),
+              .stackEntry i (.dividedDamage orig.dividedDamage),
+              .stackEntry i (.chosenMode orig.chosenMode),
+              .stackEntry i (.targetsAnnounced true)]
           | _, _ => g
         g.logMsg s!"A copy of {spell.name} is created"
     | none => g.logMsg "The spell is no longer on the stack"
   | .eyeOfJace =>
     let g := g.beginSurveil controller 1
     match g.pending with
-    | .surveil .. => { g with fraAfterLook := some (controller, sourceId, .eyeOfJaceCheck) }
+    | .surveil .. => g.change (.fraAfterLook (some (controller, sourceId, .eyeOfJaceCheck)))
     | _ => g.applyFra controller effect .eyeOfJaceCheck targets sourceId
   | .eyeOfJaceCheck =>
     if (g.player controller).graveyard.size < 7 then g
@@ -517,7 +513,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .maySacrificeThenEdict =>
     if (g.permanentsOf controller).any (fun o => o.isCreature || o.printed.isPlaneswalker) then
       g.beginFraChoice controller
-        (.maySacrificeThen .creatureOrPlaneswalker .eachOpponentSacrificesCreature sourceId)
+        (.maySacrificeThen #[.creature, .planeswalker] .eachOpponentSacrificesCreature sourceId)
         s!"{(g.player controller).name} may sacrifice a creature or planeswalker"
     else g
   | .sourceGetsCausePower =>
@@ -539,14 +535,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         s!"{(g.player controller).name} discards a card"
   | .drawThenCountersPerDiscard =>
     let g := g.draw controller 1
-    let n := (g.player controller).cardsDiscardedThisTurn
+    let n := g.loggedDiscards controller
     match g.fraCause? with
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g
   | .kothGeomancer =>
     let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
     match g.fraCause? with
-    | some land => if g.hasSubtype land "Mountain" then g.addManaLogged controller #[.colored .red] else g
+    | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
     | none => g
   | .fblthpSearch =>
     let x := (sourceId.bind g.findObject?).bind (·.chosenX) |>.getD 0
@@ -594,7 +590,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
               !shielded then
             let n := g.countersYouPut o x (putter := some controller)
-            (g.mapObjectStatus o (fun s => { s with minusOneMinusOne := s.minusOneMinusOne + n })).logMsg
+            (g.changeStatus o.id (.addCounters .minusOneMinusOne n)).logMsg
               s!"{n} -1/-1 counter(s) are put on {o.name}"
           else g
         | none => g
@@ -632,8 +628,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else
         g.withLegalKindPermanent controller kind targets (fun g o =>
           let (g, ex) := g.move o.id .exile none
-          let src := g.object! src.id
-          let g := g.setObject { src with linkedExile := src.linkedExile.push ex }
+          let g := g.changeObject src.id (.pushLinkedExile ex)
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroyEachTarget =>

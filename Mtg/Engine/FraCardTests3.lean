@@ -63,7 +63,7 @@ def activationRejected (g : Game) (o : GameObject) (needle : String)
   | .ok _ => false
 
 def withLoyalty (g : Game) (name : String) (n : Nat) : Game :=
-  g.mapObjectStatus (namedPermanent g name) (fun s => { s with loyaltyCounters := n })
+  g.changeStatus (namedPermanent g name).id (.loyaltyCounters n)
 
 def pw (card : CardDef) (n : Nat) (g : Game := afterDraw) : Game :=
   withLoyalty (addPermanent g card me me) card.name n
@@ -111,8 +111,7 @@ def emrakulExiled : Game :=
 the ability ends once Emrakul is cast. -/
 #guard (fraRuling 729).comment.contains "while casting Emrakul from exile"
 #guard
-  let g := { emrakulExiled with players := emrakulExiled.players.map (fun pl =>
-    { pl with manaPool := {} }) }
+  let g := emrakulExiled.players.foldl (fun g pl => g.changePlayer pl.id (.manaPool {})) emrakulExiled
   let card := (g.objects.find? (fun o => o.zone == .exile && o.name == "Emrakul, the Exigent Doom")).get!
   let g := withMana g me .black 8
   let g := mustApply g me (.cast card.id)
@@ -224,10 +223,12 @@ creatures; {6} puts a counter on a legendary creature. -/
 
 /- Thalia, the Survivor: the opponent's noncreature spells cost {1} more. -/
 #guard
-  let g := addPermanent afterDraw thaliaTheSurvivor me me
-  let shockCard := (insertObject g shock opp (.hand opp)).objects.back!
-  (g.playManaCost { shockCard with controller := some opp } shock).manaValue == 2 &&
-    (g.playManaCost { shockCard with owner := me, controller := some me } shock).manaValue == 1
+  let g := insertObject (addPermanent afterDraw thaliaTheSurvivor me me) shock opp (.hand opp)
+  let shockCard := g.objects.back!
+  let gOpp := g.changeObject shockCard.id (.controller (some opp))
+  let gMe := g.changeObjects shockCard.id #[.owner me, .controller (some me)]
+  (gOpp.playManaCost (gOpp.object! shockCard.id) shock).manaValue == 2 &&
+    (gMe.playManaCost (gMe.object! shockCard.id) shock).manaValue == 1
 
 /- Yuriko, Blade of the Mighty: no spells or non-mana abilities in combat. -/
 #guard
@@ -254,7 +255,7 @@ artifact or creature each opponent controls; −6 draws three, then puts a
 +1/+1 counter on each creature you control per card in hand. -/
 #guard
   let g := resolved (loyaltyAbility (pw theTheoristJaceBeleren 3) "The Theorist, Jace Beleren" (.plus 1))
-  g.battlefield.any (fun o => o.printed.isToken && g.hasSubtype o "Illusion") &&
+  g.battlefield.any (fun o => o.printed.isToken && g.hasSubtype o .illusion) &&
     loyaltyOf g "The Theorist, Jace Beleren" == 4
 #guard
   let g := pw theTheoristJaceBeleren 3 withBears
@@ -293,7 +294,7 @@ artifact or creature each opponent controls; −6 draws three, then puts a
   let before := !g.canAttack (namedPermanent g "Surveillance Phantasm")
   let g := activateNamed g "Surveillance Phantasm" "Surveil"
   let g := resolved g
-  before && (g.player me).surveilledThisTurn && !((g.player me).scriedThisTurn) &&
+  before && g.loggedSurveilled me && !g.loggedScried me &&
     g.canAttack (namedPermanent g "Surveillance Phantasm")
 
 /- Paradox Shaper puts a card from your graveyard on the bottom of your
@@ -453,7 +454,7 @@ creature is exiled instead of dying. -/
 didn't discard two nonland cards. -/
 #guard
   let g0 := pw garrukVeiledButcher 5
-  let g := g0.modifyPlayer opp (fun pl => { pl with hand := #[] })
+  let g := g0.changePlayer opp (.hand #[])
   let g := addToHand (addToHand (addToHand g forest opp) forest opp) shock opp
   let before := handSize g me
   let g := settle (loyaltyAbility g "Garruk, Veiled Butcher" (.minus 3))
@@ -532,7 +533,7 @@ creature can attack. -/
 #guard
   let g := addPermanent afterDraw samutHazoretsChampion me me
   let g := enterPermanent g grizzlyBears me
-  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => { s with summoningSick := true })
+  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.summoningSick true)
   g.canAttack (namedPermanent g "Grizzly Bears")
 
 /- Tomik, Izzet Sparkmage: noncombat damage to an opponent or their
@@ -600,7 +601,7 @@ creature; it can't enchant a creature that isn't an artifact. -/
   let g := addPermanent afterDraw murmuringVolume me me
   let g := resolved (castFra g puppetCrafting [tgt g "Murmuring Volume"])
   let v := namedPermanent g "Murmuring Volume"
-  v.isCreature && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v "Construct"
+  v.isCreature && g.power v == 5 && g.toughness v == 5 && g.hasSubtype v .construct
 #guard castRejected withBears puppetCrafting [tgt withBears "Grizzly Bears"]
 #guard
   let g := addToGraveyard afterDraw puppetCrafting me
@@ -709,7 +710,7 @@ only if you've scried or surveilled this turn. -/
   activationRejected g (graveyardObj g me "Proctor of Potential") "Return"
 #guard
   let g := addToGraveyard afterDraw proctorOfPotential me
-  let g := g.modifyPlayer me (fun pl => { pl with scriedThisTurn := true })
+  let g := g.record (GameEvent.looked g.turnNumber me 1)
   let card := graveyardObj g me "Proctor of Potential"
   let g := resolved (activateId g card.id (abIdx g card "Return"))
   (namedPermanent g "Proctor of Potential").status.finality == 1
@@ -827,7 +828,7 @@ Immovable). -/
 Hunt. -/
 def equip (g : Game) (gear host : String) : Game :=
   let o := namedPermanent g gear
-  g.setObject { o with attachedTo := some (namedPermanent g host).id }
+  g.changeObject o.id (.attachedTo (some (namedPermanent g host).id))
 
 #guard
   let g := equip (addPermanent (addPermanent afterDraw huntersAxe me me) grizzlyBears me me) "Hunter's Axe" "Grizzly Bears"

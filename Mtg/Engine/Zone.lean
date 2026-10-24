@@ -24,6 +24,24 @@ deriving DecidableEq, Repr, Hashable, Inhabited, BEq
 instance : ToString ObjectId where
   toString o := s!"#{o.raw}"
 
+/-- Unique identity of an effect (one-shot per CR 610, or continuous per CR 611).
+Allocated independently of `ObjectId` so effect identifiers never interfere with
+object identifiers. -/
+structure EffectId where
+  raw : Nat
+deriving DecidableEq, Repr, Hashable, Inhabited, BEq
+
+instance : ToString EffectId where
+  toString e := s!"E#{e.raw}"
+
+/-- Identifier for a simultaneous batch of events (CR 603.2c / 608.2f). -/
+structure BatchId where
+  raw : Nat
+deriving DecidableEq, Repr, Hashable, Inhabited, BEq
+
+instance : ToString BatchId where
+  toString b := s!"batch#{b.raw}"
+
 /-- The zones of the game (CR 400.1). -/
 inductive Zone where
   /-- Per-player hidden zone; the player’s deck at the start of the game (CR 401). -/

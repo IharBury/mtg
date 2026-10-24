@@ -65,8 +65,8 @@ def sculptorEntered : Game := enterPermanent afterDraw jaceRealitySculptor ⟨0�
 
 #guard (namedPermanent sculptorEntered "Jace, Reality Sculptor").status.loyaltyCounters == 5
 #guard
-  let g := sculptorEntered.dealDamageToPermanent
-    (namedPermanent sculptorEntered "Jace, Reality Sculptor") 3
+  let j := namedPermanent sculptorEntered "Jace, Reality Sculptor"
+  let g := sculptorEntered.dealDamageToPermanent j 3 (source := some j.asEvent)
   (namedPermanent g "Jace, Reality Sculptor").status.loyaltyCounters == 2
 
 /-- A planeswalker with no loyalty counters is put into its owner's
@@ -325,7 +325,7 @@ def angelTokenCopy : Game × GameObject :=
 prepared, and its controller may still cast the copy. -/
 def angelNoLongerCreature : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.setObject { o with status := { o.status with returnedAsArtifact := true } }
+  preparedAngel.changeStatus o.id (.returnedAsArtifact true)
 
 #guard !(namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").isCreature
 #guard (namedPermanent angelNoLongerCreature "Blossom-Blessed Angel").status.prepared
@@ -345,7 +345,7 @@ def frogAngel : Game :=
 #guard (exiledCopies frogAngel "Seed Suture").size == 1
 #guard (exiledCopies frogAngel "Seed Suture").all (fun c =>
   c.printed.isSorcery && !c.printed.isCreature && c.printed.power.isNone &&
-    !c.printed.hasSubtype "Frog")
+    !c.printed.hasSubtype .frog)
 #guard (fraRuling 741).comment.contains "ignores copy exceptions"
 
 /- Ruling 742: the copy stays only while its permanent is on the
@@ -369,7 +369,10 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
   let g := enterPermanent afterDraw bloodlineRecollector ⟨0⟩
   let o := namedPermanent g "Bloodline Recollector"
   let g := if prepared then g.becomePrepared o else g
-  let g := { g with battlefieldCreaturesToGyThisTurn := (List.replicate deaths o.id).toArray }
+  let g := (List.range deaths).foldl (fun g _ =>
+    g.record (GameEvent.moved g.turnNumber
+      { id := some o.id, owner := ⟨0⟩, types := #[.creature] }
+      .battlefield (.graveyard ⟨0⟩))) g
   g.applyTriggeredAbility ⟨0⟩ recollectorTrigger (some o.id)
 
 #guard (exiledCopies (recollectorWithDeaths true 3) "Ancestral Craving").size == 1
@@ -389,7 +392,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
 the copy. -/
 def angelStolen : Game :=
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  preparedAngel.setObject { o with controller := some ⟨1⟩ }
+  preparedAngel.changeObject o.id (.controller (some ⟨1⟩))
 
 #guard !angelStolen.mayPlayFromExile ⟨0⟩ (seedSutureCopy angelStolen)
 #guard angelStolen.mayPlayFromExile ⟨1⟩ (seedSutureCopy angelStolen)
@@ -398,8 +401,7 @@ def angelStolen : Game :=
 /- Ruling 746: losing all abilities doesn't unprepare the creature. -/
 #guard
   let o := namedPermanent preparedAngel "Blossom-Blessed Angel"
-  let g := preparedAngel.setObject { o with status :=
-    { o.status with losesAbilitiesGrantedBy := #[o.id] } }
+  let g := preparedAngel.changeStatus o.id (.losesAbilitiesGrantedBy #[o.id])
   (namedPermanent g "Blossom-Blessed Angel").status.prepared &&
     (exiledCopies g "Seed Suture").size == 1
 #guard (fraRuling 746).comment.contains "it won't stop being prepared"

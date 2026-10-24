@@ -39,9 +39,9 @@ def entered (card : CardDef) : Game × ObjectId :=
 #guard realityFractureCommanderCards.size == 87
 #guard realityFractureCommanderCards.all (·.modellingError?.isNone)
 
-#guard glacialFortress.entersTappedUnlessAnySubtype == #["Plains", "Island"]
-#guard drownedCatacomb.entersTappedUnlessAnySubtype == #["Island", "Swamp"]
-#guard sulfurFalls.entersTappedUnlessAnySubtype == #["Island", "Mountain"]
+#guard glacialFortress.entersTappedUnlessAnySubtype == #[.plains, .island]
+#guard drownedCatacomb.entersTappedUnlessAnySubtype == #[.island, .swamp]
+#guard sulfurFalls.entersTappedUnlessAnySubtype == #[.island, .mountain]
 #guard fetidHeath.filterMana.isSome
 #guard reflectingPool.tapAddYouCouldProduce
 #guard fellwarStone.tapAddOppCouldProduce
@@ -115,7 +115,7 @@ def fiction : Game :=
 def faceDownAkroma : Game :=
   let g := addPermanent afterDraw akromaAngelOfFury ⟨0⟩ ⟨0⟩
   let o := findPerm g "Akroma, Angel of Fury"
-  g.setObject { o with status := { o.status with faceDown := true } }
+  g.changeStatus o.id (.faceDown true)
 
 #guard faceDownAkroma.power (findPerm faceDownAkroma "Akroma, Angel of Fury") == 2
 #guard faceDownAkroma.toughness (findPerm faceDownAkroma "Akroma, Angel of Fury") == 2
@@ -141,10 +141,10 @@ def reproach : Game :=
 
 #guard
   let (g, id) := entered serrasEmissary
-  (g.object! id).status.chosenCardType == some "Creature"
+  (g.object! id).status.chosenCardType == some .creature
 
 def monarchGinger : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with isMonarch := true })
+  let g := afterDraw.changePlayer ⟨0⟩ (.isMonarch true)
   g.applyFrc ⟨0⟩ {} .gingerbrute #[] none
 
 #guard monarchGinger.battlefield.any (fun o => o.name == "Gingerbrute" && o.printed.isToken)

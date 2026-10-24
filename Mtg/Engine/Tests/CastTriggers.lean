@@ -159,7 +159,7 @@ def titanLeftBeforeAttackTrigger : Game :=
 /-- Inferno Titan in play with {R} in the pool; a land drop is already used. -/
 def titanPumpReady : Game :=
   let g := addPermanent afterDraw infernoTitan ⟨0⟩ ⟨0⟩
-  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 1
+  withRedMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 1
 
 def titanSource (g : Game) : GameObject :=
   namedPermanent g "Inferno Titan"
@@ -251,7 +251,7 @@ def agentTitanOnly : Game :=
 /-- Guttersnipe in play with Lightning Bolt in hand and {R} in the pool. -/
 def guttersnipeBoltSetup : Game :=
   let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
 
 #guard guttersnipeBoltSetup.canCast ⟨0⟩
@@ -294,7 +294,7 @@ def guttersnipeBoltResolved : Game := passBoth guttersnipeTriggerResolved
 -- Casting a creature does not trigger Guttersnipe.
 def paidOgreWithGuttersnipe : Game :=
   let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   let g := withRedMana (addToHand g grayOgre ⟨0⟩) ⟨0⟩ 3
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gray Ogre").id)
   mustApply g ⟨0⟩ .pay
@@ -360,7 +360,7 @@ def guttersnipeGoneResolved : Game :=
 
 /-- Lethal Guttersnipe damage ends the game before the spell resolves. -/
 def guttersnipeLethal : Game :=
-  let g := paidGuttersnipeBolt.modifyPlayer ⟨1⟩ (fun pl => { pl with life := 2 })
+  let g := paidGuttersnipeBolt.changePlayer ⟨1⟩ (.life 2)
   passBoth g
 
 #guard guttersnipeLethal.over
@@ -664,7 +664,7 @@ def guardianAbility : ActivatedAbility :=
 /-- Guardian in play with {5}{G}{G} in the pool; a land drop is already used. -/
 def guardianReady : Game :=
   let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
-  withGreenMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 7
+  withGreenMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 7
 
 def guardianSource (g : Game) : GameObject :=
   namedPermanent g "Guardian of the Halls"
@@ -681,7 +681,7 @@ def guardianSource (g : Game) : GameObject :=
 #guard
   let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
   let g := withGreenMana
-    (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 6
+    (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 6
   !(g.player ⟨0⟩).manaPool.canPay guardianAbility.cost.mana
 
 -- The heuristic activates Guardian when {5}{G}{G} is available.
@@ -767,7 +767,7 @@ def guardianAtEndStep : Game := skipTo guardianReady .end 80
 /-- Two damage is lethal to the 2/2, but not after three +1/+1 counters. -/
 def guardianDiesFromTwoDamage : Game :=
   let o := namedPermanent guardianReady "Guardian of the Halls"
-  let g := guardianReady.setObject { o with status := { o.status with damage := 2 } }
+  let g := guardianReady.changeStatus o.id (.damage 2)
   g.receivePriority ⟨0⟩
 
 #guard !(guardianDiesFromTwoDamage.battlefield.any (fun o =>
@@ -777,8 +777,8 @@ def guardianDiesFromTwoDamage : Game :=
 
 def guardianSurvivesTwoDamage : Game :=
   let o := namedPermanent guardianResolved "Guardian of the Halls"
-  let g := guardianResolved.setObject { o with status := { o.status with
-    plusOnePlusOne := o.status.plusOnePlusOne, damage := 2 } }
+  let g := guardianResolved.changeStatuses o.id #[
+    .plusOnePlusOne o.status.plusOnePlusOne, .damage 2]
   g.receivePriority ⟨0⟩
 
 #guard guardianSurvivesTwoDamage.battlefield.any (fun o =>

@@ -66,7 +66,7 @@ structure Status where
   Lasting effects such as Beorn's Hospitality's activation do not end. -/
   additionalCreature : Bool := false
   /-- Subtypes granted by a lasting type-changing effect. -/
-  additionalSubtypes : Array String := #[]
+  additionalSubtypes : Array CardSubtype := #[]
   /-- Static abilities granted by a lasting effect (CR 611.2a). -/
   grantedStaticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities granted by a lasting effect (e.g. a Saga chapter
@@ -134,8 +134,6 @@ structure Status where
   /-- This permanent is a creature in addition to its other types until EOT
   (I Am Iron Man). -/
   additionalCreatureUntilEot : Bool := false
-  /-- This permanent entered the battlefield this turn. -/
-  enteredThisTurn : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
   harnessed : Bool := false
   /-- This permanent is currently showing its back face (MSH modal DFC). -/
@@ -165,7 +163,7 @@ structure Status where
   /-- Lifelink counters (Arwen, Mortal Queen). -/
   lifelinkCounters : Nat := 0
   /-- Creature type chosen as this permanent entered (Unexpected Party). -/
-  chosenCreatureType : Option String := none
+  chosenCreatureType : Option CardSubtype := none
   /-- Creatures this player controls cannot block this attacker this turn
   (The Black Gate). Cleared in cleanup. -/
   cantBeBlockedByPlayer : Option PlayerId := none
@@ -180,7 +178,7 @@ structure Status where
   dealtDamageThisTurn : Bool := false
   /-- Until end of turn, these replace existing creature types and keep
   noncreature subtypes (Iron Man Armor; MSH 88). -/
-  replacedCreatureTypesUntilEot : Option (Array String) := none
+  replacedCreatureTypesUntilEot : Option (Array CardSubtype) := none
   /-- Until end of turn, this creature gets +1/+1 for each artifact you
   control (Iron Man Armor). -/
   pumpPerArtifactUntilEot : Bool := false
@@ -235,18 +233,25 @@ structure Status where
   chosenName : Option String := none
   /-- Face down (morph, CR 702.37). A 2/2 creature with no abilities. -/
   faceDown : Bool := false
-  /-- Goaded for as long as this flag remains (CR 701.38). -/
+  /-- Goaded for as long as this flag remains (CR 701.15b). -/
   goaded : Bool := false
+  /-- Players currently goading this permanent (CR 701.15b). -/
+  goadedBy : Array PlayerId := #[]
+  /-- Players whose goad designation on this permanent ends as their next turn
+  begins (CR 701.15a). -/
+  goadedUntilNextTurnOf : Array PlayerId := #[]
   /-- Story counters (Staff of the Storyteller). -/
   story : Nat := 0
   /-- Time counters (impending, CR 702.176). -/
   time : Nat := 0
+  /-- Poison counters on a permanent (CR 122.1). -/
+  poison : Nat := 0
   /-- This permanent is not a creature (impending, until the last time counter). -/
   notACreature : Bool := false
   /-- Windcrag Siege chose Mardu. Jeskai is `false`. -/
   windcragMardu : Bool := true
   /-- Card type chosen as this permanent entered (Serra's Emissary). -/
-  chosenCardType : Option String := none
+  chosenCardType : Option CardType := none
   /-- This card may be cast from its owner's graveyard without paying its
   mana cost, ignoring timing, until end of turn. -/
   freeCastFromGraveyard : Bool := false
@@ -270,13 +275,6 @@ def setBasePower (s : Status) : Option Int := s.setBasePT.map (·.1)
 /-- Until-end-of-turn layer-7b base toughness, if set. -/
 def setBaseToughness (s : Status) : Option Int := s.setBasePT.map (·.2)
 
-/-- Mark `n` damage on this permanent (CR 120). `deathtouch` records that a
-source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
-def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
-  { s with
-    damage := s.damage + n
-    dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
-
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
   s.plusOnePlusOne > 0 || s.minusOneMinusOne > 0 || s.loyaltyCounters > 0 || s.hope > 0 ||
@@ -285,164 +283,29 @@ def hasCounters (s : Status) : Bool :=
     s.finality > 0 || s.plan > 0 || s.burden > 0 || s.quest > 0 || s.invasion > 0 ||
     s.influence > 0 || s.trampleCounters > 0 || s.indestructibleCounters > 0 ||
     s.lifelinkCounters > 0 || s.hone > 0 || s.shadow > 0 || s.lore > 0 ||
-    s.story > 0 || s.time > 0 ||
+    s.story > 0 || s.time > 0 || s.poison > 0 ||
     s.keywordCounters.any
 
-/-- This permanent with every counter removed. -/
-def withoutCounters (s : Status) : Status :=
-  { s with
-    plusOnePlusOne := 0, minusOneMinusOne := 0, loyaltyCounters := 0, hope := 0, charge := 0
-    stun := 0, shield := 0, finality := 0, plan := 0, burden := 0, quest := 0, invasion := 0
-    influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
-    hone := 0, shadow := 0, lore := 0, story := 0, time := 0, keywordCounters := {} }
-
-/-- Another counter of each kind already on this permanent (CR 701.34a).
-+1/+1 counters are added by the caller so their triggers apply. -/
-def proliferatedExceptPlusOne (s : Status) (extra : Nat := 0) : Status :=
-  let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
-  { s with
-    loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
-    minusOneMinusOne := inc s.minusOneMinusOne
-    stun := inc s.stun
-    shield := inc s.shield
-    finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
-    quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
-    trampleCounters := inc s.trampleCounters
-    indestructibleCounters := inc s.indestructibleCounters
-    lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-    lore := inc s.lore, story := inc s.story, time := inc s.time
-    keywordCounters := s.keywordCounters.incPresent extra }
-
-/-- Put the same number of each kind of counter `from` has, except +1/+1
-counters, which the caller adds so their triggers apply (Graft Surgeon). -/
-def addCountersExceptPlusOne (s «from» : Status) (extra : Nat := 0) : Status :=
-  let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
-  { s with
-    loyaltyCounters := s.loyaltyCounters + bump «from».loyaltyCounters
-    minusOneMinusOne := s.minusOneMinusOne + bump «from».minusOneMinusOne
-    hope := s.hope + bump «from».hope, charge := s.charge + bump «from».charge
-    stun := s.stun + bump «from».stun
-    shield := s.shield + bump «from».shield, finality := s.finality + bump «from».finality
-    plan := s.plan + bump «from».plan, burden := s.burden + bump «from».burden
-    quest := s.quest + bump «from».quest, invasion := s.invasion + bump «from».invasion
-    influence := s.influence + bump «from».influence
-    trampleCounters := s.trampleCounters + bump «from».trampleCounters
-    indestructibleCounters := s.indestructibleCounters + bump «from».indestructibleCounters
-    lifelinkCounters := s.lifelinkCounters + bump «from».lifelinkCounters
-    hone := s.hone + bump «from».hone, shadow := s.shadow + bump «from».shadow
-    lore := s.lore + bump «from».lore
-    story := s.story + bump «from».story, time := s.time + bump «from».time
-    keywordCounters := s.keywordCounters.add («from».keywordCounters.plusExtra extra) }
-
-/-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
-def addPump (s : Status) (p t : Int) : Status :=
-  { s with pump := (s.pump.1 + p, s.pump.2 + t) }
-
-/-- Put `n` +1/+1 counters on this permanent (CR 122.1). -/
-def addPlusOnePlusOne (s : Status) (n : Nat := 1) : Status :=
-  { s with plusOnePlusOne := s.plusOnePlusOne + n }
-
-/-- Put `n` counters of `kind` on this permanent (CR 122.1). -/
-def addCounters (s : Status) (kind : CounterKind) (n : Nat) : Status :=
-  let kw (f : KeywordCounters → KeywordCounters) : Status :=
-    { s with keywordCounters := f s.keywordCounters }
-  match kind with
-  | .plusOnePlusOne =>
-    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 }
-  | .minusOneMinusOne => { s with minusOneMinusOne := s.minusOneMinusOne + n }
-  | .loyalty => { s with loyaltyCounters := s.loyaltyCounters + n }
-  | .hope => { s with hope := s.hope + n }
-  | .charge => { s with charge := s.charge + n }
-  | .stun => { s with stun := s.stun + n }
-  | .shield => { s with shield := s.shield + n }
-  | .finality => { s with finality := s.finality + n }
-  | .plan => { s with plan := s.plan + n }
-  | .burden => { s with burden := s.burden + n }
-  | .quest => { s with quest := s.quest + n }
-  | .invasion => { s with invasion := s.invasion + n }
-  | .influence => { s with influence := s.influence + n }
-  | .trample => { s with trampleCounters := s.trampleCounters + n }
-  | .indestructible => { s with indestructibleCounters := s.indestructibleCounters + n }
-  | .lifelink => { s with lifelinkCounters := s.lifelinkCounters + n }
-  | .hone => { s with hone := s.hone + n }
-  | .shadow => { s with shadow := s.shadow + n }
-  | .lore => { s with lore := s.lore + n }
-  | .story => { s with story := s.story + n }
-  | .time => { s with time := s.time + n }
-  | .haste => kw fun k => { k with haste := k.haste + n }
-  | .vigilance => kw fun k => { k with vigilance := k.vigilance + n }
-  | .flying => kw fun k => { k with flying := k.flying + n }
-  | .menace => kw fun k => { k with menace := k.menace + n }
-  | .reach => kw fun k => { k with reach := k.reach + n }
-  | .deathtouch => kw fun k => { k with deathtouch := k.deathtouch + n }
-  | .firstStrike => kw fun k => { k with firstStrike := k.firstStrike + n }
-  | .doubleStrike => kw fun k => { k with doubleStrike := k.doubleStrike + n }
-
-/-- Union printed-style keyword grants that last until end of turn. -/
-def grantUntilEot (s : Status) (k : Keywords) : Status :=
-  { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
-
-/-- One until-EOT status field: how to tell it is set, and how to clear it.
-`clearsAtCleanup` / `clearedAtCleanup` fold this table so a new until-EOT
-field is one row rather than restated in both functions. -/
-structure UntilEotField where
-  isSet : Status → Bool
-  clear : Status → Status
-
-def untilEotFields : List UntilEotField := [
-  ⟨fun s => s.damage != 0, fun s => { s with damage := 0 }⟩,
-  ⟨fun s => s.pump != (0, 0), fun s => { s with pump := (0, 0) }⟩,
-  ⟨fun s => s.untilEotKeywords != Keywords.none,
-    fun s => { s with untilEotKeywords := Keywords.none }⟩,
-  ⟨fun s => s.untilEotLosesIndestructible,
-    fun s => { s with untilEotLosesIndestructible := false }⟩,
-  ⟨fun s => s.untilEotExileIfDies,
-    fun s => { s with untilEotExileIfDies := false }⟩,
-  ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,
-  ⟨fun s => s.additionalArtifactUntilEot,
-    fun s => { s with additionalArtifactUntilEot := false }⟩,
-  ⟨fun s => s.additionalCreatureUntilEot,
-    fun s => { s with additionalCreatureUntilEot := false }⟩,
-  ⟨fun s => s.cantBeBlockedByPlayer.isSome,
-    fun s => { s with cantBeBlockedByPlayer := none }⟩,
-  ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
-    fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
-  ⟨fun s => s.cantBlockUntilEot, fun s => { s with cantBlockUntilEot := false }⟩,
-  ⟨fun s => s.dealtDamageThisTurn,
-    fun s => { s with dealtDamageThisTurn := false }⟩,
-  ⟨fun s => s.replacedCreatureTypesUntilEot.isSome,
-    fun s => { s with replacedCreatureTypesUntilEot := none }⟩,
-  ⟨fun s => s.pumpPerArtifactUntilEot,
-    fun s => { s with pumpPerArtifactUntilEot := false }⟩,
-  ⟨fun s => s.ironFistTapGrants != 0,
-    fun s => { s with ironFistTapGrants := 0 }⟩,
-  ⟨fun s => s.losesAbilitiesUntilEot,
-    fun s => { s with losesAbilitiesUntilEot := false }⟩,
-  ⟨fun s => !s.grantedTriggersUntilEot.isEmpty,
-    fun s => { s with grantedTriggersUntilEot := #[] }⟩,
-  ⟨fun s => s.cardsInHandPowerUntilEot,
-    fun s => { s with cardsInHandPowerUntilEot := false }⟩,
-  ⟨fun s => s.firstStrikeOnYourTurn,
-    fun s => { s with firstStrikeOnYourTurn := false }⟩
-]
-
-/-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
-base P/T setting (CR 514.3). -/
+/-- True when cleanup must clear until-EOT pumps, keyword grants, or
+base P/T setting (CR 514.2 / 514.3). Marked damage is cleared separately via
+`DamageEvent.markedCleared`. -/
 def clearsAtCleanup (s : Status) : Bool :=
-  untilEotFields.any (·.isSet s)
-
-/-- Status after the cleanup step removes until-EOT effects (CR 514.3). -/
-def clearedAtCleanup (s : Status) : Status :=
-  untilEotFields.foldl (fun acc f => f.clear acc) s
+  s.pump != (0, 0) || s.untilEotKeywords != Keywords.none ||
+  s.untilEotLosesIndestructible || s.untilEotExileIfDies || s.setBasePT.isSome ||
+  s.additionalArtifactUntilEot || s.additionalCreatureUntilEot ||
+  s.cantBeBlockedByPlayer.isSome || s.cantBeBlockedExceptByHasteUntilEot ||
+  s.cantBlockUntilEot || s.dealtDamageThisTurn ||
+  s.replacedCreatureTypesUntilEot.isSome || s.pumpPerArtifactUntilEot ||
+  s.ironFistTapGrants != 0 || s.losesAbilitiesUntilEot ||
+  !s.grantedTriggersUntilEot.isEmpty || s.cardsInHandPowerUntilEot ||
+  s.firstStrikeOnYourTurn || s.combatDamageCreatesTreasure
 
 end Status
 
 #guard
   let s : Status := { pump := (1, 2), damage := 3, setBasePT := some (4, 4) }
   s.clearsAtCleanup && s.pumpPower == 1 && s.pumpToughness == 2 &&
-    s.setBasePower == some 4 &&
-    s.clearedAtCleanup.pump == (0, 0) && s.clearedAtCleanup.damage == 0 &&
-    s.clearedAtCleanup.setBasePT.isNone
+    s.setBasePower == some 4
 #guard !({} : Status).clearsAtCleanup
 
 end Mtg.Engine

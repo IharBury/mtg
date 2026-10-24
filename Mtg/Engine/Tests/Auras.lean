@@ -18,7 +18,7 @@ open Mtg.Engine.Catalog
 
 /-- Fill `p`'s mana pool with `n` mana of color `c`. -/
 def withMana (g : Game) (p : PlayerId) (c : Color) (n : Nat := 4) : Game :=
-  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored c) n })
+  g.changePlayer p (.addMana (.colored c) n)
 
 /-- Fill `p`'s mana pool with `n` green mana. -/
 def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
@@ -78,7 +78,7 @@ def proposedDecree : Game :=
 
 /-- Empty `p`'s hand and mark a land already played this turn. -/
 def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  (g.changePlayer p (.hand #[])).recordLandPlayed p
 
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
@@ -610,8 +610,9 @@ def agentGiftOnly : Game :=
 
 /-- Scrying 2 with one card looks at that card; an empty library still scries. -/
 def scryOneCard : Game :=
-  let g := { giftEntered with pending := .none, stack := #[] }
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := pl.library.extract (pl.library.size - 1) pl.library.size })
+  let g := giftEntered.changes #[.pending .none, .stack #[]]
+  let lib := (g.player ⟨0⟩).library
+  let g := g.changePlayer ⟨0⟩ (.library (lib.extract (lib.size - 1) lib.size))
   g.beginScry ⟨0⟩ 2
 
 #guard
@@ -620,8 +621,8 @@ def scryOneCard : Game :=
   | _ => false
 
 def scryEmpty : Game :=
-  let g := { giftEntered with pending := .none, stack := #[] }
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := giftEntered.changes #[.pending .none, .stack #[]]
+  let g := g.changePlayer ⟨0⟩ (.library #[])
   g.beginScry ⟨0⟩ 2
 
 #guard scryEmpty.pending == .none
@@ -801,7 +802,7 @@ def visionaryLeftBeforeTrigger : Game :=
 
 /-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
 def visionaryEmptyLib : Game :=
-  let g := visionaryEntered.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := visionaryEntered.changePlayer ⟨0⟩ (.library #[])
   passBoth g
 
 #guard visionaryEmptyLib.over
@@ -827,10 +828,10 @@ def agentVisionaryOnly : Game :=
 #guard isBasicLandCard forest
 #guard !isForestCard mountain
 #guard isBasicLandCard mountain
-#guard isLandTypeCard mountain "Mountain"
-#guard isLandTypeCard swamp "Swamp"
-#guard !isLandTypeCard mountain "Swamp"
-#guard !isLandTypeCard swamp "Mountain"
+#guard isLandTypeCard mountain .mountain
+#guard isLandTypeCard swamp .swamp
+#guard !isLandTypeCard mountain .swamp
+#guard !isLandTypeCard swamp .mountain
 
 /-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
 def tropicalIsland : CardDef :=
@@ -890,8 +891,8 @@ def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 #guard woodElvesResolved.battlefield.any (fun o => o.name == "Forest")
 #guard !(namedPermanent woodElvesResolved "Forest").status.tapped
 #guard !(namedPermanent woodElvesResolved "Forest").status.summoningSick
-#guard (woodElvesResolved.player ⟨0⟩).landsPlayedThisTurn ==
-  (woodElvesKnownLib.player ⟨0⟩).landsPlayedThisTurn
+#guard woodElvesResolved.loggedLandsPlayed ⟨0⟩ ==
+  woodElvesKnownLib.loggedLandsPlayed ⟨0⟩
 #guard woodElvesResolved.log.any (fun s =>
   mentions s "puts Forest onto the battlefield" && !mentions s "tapped")
 #guard woodElvesResolved.log.any (fun s => mentions s "shuffles their library")
@@ -914,10 +915,10 @@ def woodElvesResolved : Game := applyIdle (passBoth woodElvesKnownLib)
 -- Direct resolution of an enters-search trigger puts a Forest onto the battlefield.
 #guard
   let g := addToLibraryTop afterDraw forest ⟨0⟩
-  let beforeLands := (g.player ⟨0⟩).landsPlayedThisTurn
+  let beforeLands := g.loggedLandsPlayed ⟨0⟩
   let g := applyIdle (g.applyTriggeredAbility ⟨0⟩ .onEnterSearchForest none)
   g.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped) &&
-    (g.player ⟨0⟩).landsPlayedThisTurn == beforeLands &&
+    g.loggedLandsPlayed ⟨0⟩ == beforeLands &&
     g.log.any (fun s => mentions s "puts Forest onto the battlefield") &&
     g.log.any (fun s => mentions s "shuffles their library")
 

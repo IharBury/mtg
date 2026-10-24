@@ -31,9 +31,8 @@ def tamBoard : Game :=
   let g := addPermanent (afterDraw.empowerJace ⟨0⟩ 2) tamThePossibility ⟨0⟩ ⟨0⟩
   let g := enterPermanent g ajaniResolute ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s =>
-    { s.addPlusOnePlusOne 1 with shield := 1 })
-  let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with poison := 1 })
+  let g := g.changeStatuses (namedPermanent g "Grizzly Bears").id #[.addPlusOnePlusOne 1, .shield 1]
+  let g := g.changePlayer ⟨1⟩ (.poison 1)
   [Color.white, .blue, .black, .red, .green].foldl (fun g c => withMana g ⟨0⟩ c 1) g
 
 def tamActivated : Game :=
@@ -129,9 +128,8 @@ def winterConvoked : Game := mustApply winterProposed ⟨0⟩ (.choosePermanents
 
 /- A reversed cast untaps the convoking creatures (CR 733.1). -/
 #guard
-  let g := { winterConvoked with
-    proposedSpell := winterConvoked.proposedSpell.map (fun p =>
-      { p with cost := p.cost.addGeneric 9 }) }
+  let p := winterConvoked.proposedSpell.get!
+  let g := winterConvoked.changeProposal (.cost (p.cost.addGeneric 9))
   let g := mustApply g ⟨0⟩ .pay
   g.battlefield.all (fun o => o.name != "Cadet" || !o.status.tapped)
 

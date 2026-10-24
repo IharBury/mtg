@@ -139,7 +139,7 @@ def mountainThenPassageBauble : Game :=
   let g := addUntappedLand g mountain
   let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
   let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   mustApply g ⟨0⟩ (.activate (namedPermanent g "Wayfarer's Bauble").id 0)
 
 #guard
@@ -342,8 +342,7 @@ def pathmakerPumped : Game :=
 
 def pathmakerWithCounter : Game :=
   let o := namedPermanent pathmakerWithLands "Mirkwood Pathmaker"
-  pathmakerWithLands.setObject { o with
-    status := { o.status with plusOnePlusOne := 1 } }
+  pathmakerWithLands.changeStatus o.id (.plusOnePlusOne 1)
 
 #guard pathmakerWithCounter.power
   (namedPermanent pathmakerWithCounter "Mirkwood Pathmaker") == 3

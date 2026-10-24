@@ -38,15 +38,15 @@ def bauble : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl => { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 def namedId (g : Game) (ids : Array ObjectId) (name : String) : Option ObjectId :=
   ids.find? (fun id => (g.findObject? id).any (·.name == name))
@@ -69,7 +69,7 @@ def onBattlefield (g : Game) (name : String) : Bool :=
   g.objects.any (fun o => o.name == name && o.zone == .battlefield)
 
 def withRed (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .red) n })
+  g.changePlayer p (.addMana (.colored .red) n)
 
 /- One legendary Wizard makes the hand limit 2. Shock is offered; a
 mana value 4 sorcery is not. Declining leaves both in hand. -/
@@ -158,8 +158,9 @@ mana value 4 sorcery is not. Declining leaves both in hand. -/
 /- Declining the impulse returns every exiled card. Accepting casts the
 instant and bottoms only the cards that were not cast. -/
 #guard
-  let g := putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim
-  let g := { g with lastCombatDamagePlayer := some victim }
+  let g := addPermanent (putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim)
+    wizard caster caster
+  let g := g.noteCombatDamageTo victim (g.object! (permanentId g "Test Wizard").get!).asEvent
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let offered :=
     match g.pending with
@@ -174,8 +175,9 @@ instant and bottoms only the cards that were not cast. -/
     g.log.any (fun s => mentions s "face up")
 
 #guard
-  let g := putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim
-  let g := { g with lastCombatDamagePlayer := some victim }
+  let g := addPermanent (putOnLibrary (putOnLibrary afterDraw lightningBolt victim) mountain victim)
+    wizard caster caster
+  let g := g.noteCombatDamageTo victim (g.object! (permanentId g "Test Wizard").get!).asEvent
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let g := mustApply g caster .accept
   onStack g "Lightning Bolt" &&

@@ -154,7 +154,7 @@ burden counters. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let (g1, newId) := g0.move (pid g0 "Ring") (.graveyard caster) none
-  let g1 := g1.mapObjectStatus (anyObj g1 "Ring") (fun s => { s with burden := 2 })
+  let g1 := g1.changeStatus (anyObj g1 "Ring").id (.burden 2)
   let g := step g1 perBurden (some newId)
   lifeOf g caster == lifeOf g1 caster - 2
 
@@ -246,7 +246,7 @@ name both controllers. A hand names no player. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
   let g0 := addPermanent g0 (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents "Dragon")))
+  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents .dragon)))
   lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp - 1
 
 #guard

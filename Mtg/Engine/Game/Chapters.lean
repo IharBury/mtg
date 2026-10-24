@@ -18,18 +18,16 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
     else
       let landfall : TriggeredAbility :=
         .onLandYouControlEntersCreateTokens TokenKind.elf 1
-      let g := g.mapObjectStatus src (fun s =>
-        { s with grantedTriggeredAbilities :=
-          s.grantedTriggeredAbilities.push landfall })
+      let g := g.createEffect (.grantedTriggered src.id landfall false)
       g.logMsg s!"{src.name} gains landfall"
   | none => g
 
 /-- Elves the controller controls get +P/+0 and vigilance until end of turn. -/
 def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
   g.forEachControlledCreature controller fun g o =>
-    if g.hasSubtype o "Elf" then
+    if g.hasSubtype o .elf then
       let g := g.pumpPermanent o power 0
-      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.vigilance)
+      g.createEffect (.keywordsUntilEot o.id Keyword.vigilance)
         |>.logMsg s!"{o.name} gets {signedStat power}/+0 and gains vigilance until end of turn"
     else g
 
@@ -41,8 +39,7 @@ def grantHexproofWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
+      let g := g.createEffect (.hexproofWhileSource o.id sid)
       g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
       sourceId (some "The target is no longer legal")
 
@@ -54,8 +51,7 @@ def preventDamageWhileSource (g : Game) (controller : PlayerId)
   | none => g
   | some sid =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
+      let g := g.createEffect (.preventDamageWhileSource o.id sid)
       g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
       sourceId none
 
@@ -73,16 +69,14 @@ def returnLinkedExileToHand (g : Game) (sourceId : Option ObjectId) : Game :=
         let owner := card.owner
         let name := card.name
         let (g, _) := g.move eid (.hand owner) none
-        let src := g.object! src.id
-        let g := g.setObject { src with
-          linkedExile := src.linkedExile.filter (· != eid) }
+        let srcNow := g.object! src.id
+        let g := g.changeObject src.id (.linkedExile (srcNow.linkedExile.filter (· != eid)))
         g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
 
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
 def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
-  g.modifyPlayer controller (fun pl =>
-    { pl with attackPumpPerPlainsThisTurn := pl.attackPumpPerPlainsThisTurn + 1 })
+  g.createEffect (.attackPumpPerPlainsThisTurn controller 1)
     |>.logMsg
       s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
 
@@ -95,7 +89,7 @@ def treasureThenDragon (g : Game) (controller : PlayerId)
   | none => g
   | some src =>
     if !src.isOnBattlefield then g
-    else if g.countSubtype controller "Treasure" < 4 then g
+    else if g.countSubtype controller .treasure < 4 then g
     else
       let name := src.name
       let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"
@@ -116,10 +110,7 @@ def gainControlWhileSource (g : Game) (controller : PlayerId)
               if (g.player controller).lost then
                 g.logMsg s!"{o.name} does not change control (CR 800.4b)"
               else
-                g.setObject { o with
-                  controller := some controller
-                  controlChanged := true
-                  controlUntilSourceLeaves := some src.id }
+                g.createEffect (.control o.id controller false 0 (some src.id))
             g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
           else g
         | none => g
@@ -135,13 +126,13 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   match ch with
   | .dealDamageToOppCreature n =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
-      g.dealDamageToPermanent o n) sourceId (some "The target is no longer legal")
+      g.dealDamageToPermanent o n (source := (sourceId.bind g.findObject?).map g.damageSourceEvent))
+      sourceId (some "The target is no longer legal")
   | .destroyOppArtifact =>
     g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
       g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .addMana mana =>
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add mana })
+    g.changePlayer controller (.addMana mana 1)
       |>.logMsg s!"{(g.player controller).name} adds {mana}"
   | .searchBasicLandToHand =>
     g.resolveSearchBasicLandToHand controller
@@ -198,13 +189,15 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
   | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
     g.gainControlWhileSource controller sourceId targets
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+    let src? := sourceId.bind g.findObject?
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+        (source := src?.map g.damageSourceEvent)
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.dealDamageToPlayer pid x)
+      (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.findObject?))
       sourceId (some "The target is no longer legal")
   | .spell s =>
     g.applyEffect controller {
@@ -220,7 +213,7 @@ def interveningStillHolds (g : Game) (controller : PlayerId)
   let lifeOk :=
     match ab.timing.gainedLifeAtLeast with
     | none => true
-    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+    | some n => g.loggedLifeGained controller ≥ n
   let beginCombatFerocious :=
     match ab with
     | .triggered .yourBeginCombat _ opts =>

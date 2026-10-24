@@ -34,8 +34,7 @@ gains, so Ajani's first ability and the Pridemate token each trigger twice. -/
 def ajaniResoluteTwoLifelinkers : Game :=
   let g := enterPermanent afterDraw ajaniResolute ⟨0⟩
   let g := g.createKindTokens ⟨0⟩ .pridemate 1
-  let g := g.mapObjectStatus (namedPermanent g "Ajani's Pridemate") (fun s =>
-    { s with summoningSick := false })
+  let g := g.changeStatus (namedPermanent g "Ajani's Pridemate").id (.summoningSick false)
   let g := addPermanent (addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩
   let g := withLifelink (withLifelink g "Grizzly Bears") "Gray Ogre"
   resolveStack (attackWith g #["Grizzly Bears", "Gray Ogre"]) 30
@@ -48,8 +47,7 @@ def ajaniResoluteTwoLifelinkers : Game :=
 its counter arrives. -/
 #guard
   let g := afterDraw.createKindTokens ⟨0⟩ .pridemate 1
-  let g := g.mapObjectStatus (namedPermanent g "Ajani's Pridemate") (fun s =>
-    { s with summoningSick := false })
+  let g := g.changeStatus (namedPermanent g "Ajani's Pridemate").id (.summoningSick false)
   let g := addPermanent g crawWurm ⟨1⟩ ⟨1⟩
   let g := withLifelink g "Ajani's Pridemate"
   let g := attackWith g #["Ajani's Pridemate"] #[("Craw Wurm", "Ajani's Pridemate")]
@@ -59,8 +57,7 @@ its counter arrives. -/
 /- Ajani's −4 creates the Pridemate token. -/
 #guard
   let g := enterPermanent afterDraw ajaniResolute ⟨0⟩
-  let g := g.mapObjectStatus (namedPermanent g "Ajani Resolute") (fun s =>
-    { s with loyaltyCounters := 4 })
+  let g := g.changeStatus (namedPermanent g "Ajani Resolute").id (.loyaltyCounters 4)
   let g := resolveStack (mustApply g ⟨0⟩ (.activate (namedPermanent g "Ajani Resolute").id 1)) 20
   g.battlefield.any (fun o => o.name == "Ajani's Pridemate" && o.printed.isToken)
 
@@ -131,7 +128,7 @@ def krakenAtNissaUpkeep : Game :=
 #guard
   let g := krakenAtNissaUpkeep
   let t := namedPermanent g "Forest Tentacle"
-  t.controlledBy ⟨0⟩ && t.printed.isLand && t.isCreature && g.hasSubtype t "Forest" &&
+  t.controlledBy ⟨0⟩ && t.printed.isLand && t.isCreature && g.hasSubtype t .forest &&
     !t.printed.hasSupertype .basic && g.power t == 3
 #guard (fraRuling 802).comment.contains "isn't a basic land"
 
@@ -151,13 +148,12 @@ def rattlerActivated : Game :=
 /- Once the ability resolves, raising the power doesn't matter. -/
 #guard
   let g := passBoth rattlerActivated
-  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s => s.addPump 3 0)
+  let g := g.changeStatus (namedPermanent g "Grizzly Bears").id (.addPump 3 0)
   g.hasCantBeBlocked (namedPermanent g "Grizzly Bears")
 
 /- If the target's power rises above 2 first, the ability does nothing. -/
 #guard
-  let g := rattlerActivated.mapObjectStatus (namedPermanent rattlerActivated "Grizzly Bears")
-    (fun s => s.addPump 1 0)
+  let g := rattlerActivated.changeStatus (namedPermanent rattlerActivated "Grizzly Bears").id (.addPump 1 0)
   let g := passBoth g
   !g.hasCantBeBlocked (namedPermanent g "Grizzly Bears")
 #guard (fraRuling 783).comment.contains "the ability does nothing because the target is no longer legal"
@@ -231,8 +227,8 @@ def vraskaEnters (lands : Nat) : Game :=
 
 def futurescribeCombat (scried surveilled : Bool) : Game :=
   let g := addPermanent (addPermanent afterDraw desperateFuturescribe ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with scriedThisTurn := scried, surveilledThisTurn := surveilled })
+  let g := if scried then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1) else g
+  let g := if surveilled then g.record (GameEvent.looked g.turnNumber ⟨0⟩ 1 true) else g
   resolveStack (skipTo g .beginningOfCombat 80) 20
 
 /- Having scried and surveilled still gives only one counter. -/
@@ -244,13 +240,13 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
   o.status.plusOnePlusOne == 0 && o.status.pump == (1, 1)
 #guard (fraRuling 804).comment.contains "only one +1/+1 counter"
 
-/- Scrying sets only the scry flag. Surveilling sets only the surveil flag. Scry 0 sets neither. -/
-#guard (afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩ |>.surveilledThisTurn
-#guard !((afterDraw.beginSurveil ⟨0⟩ 1).player ⟨0⟩).scriedThisTurn
-#guard (afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩ |>.scriedThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 1).player ⟨0⟩).surveilledThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).scriedThisTurn
-#guard !((afterDraw.beginScry ⟨0⟩ 0).player ⟨0⟩).surveilledThisTurn
+/- Scrying records only a scry. Surveilling records only a surveil. Scry 0 records neither. -/
+#guard (afterDraw.beginSurveil ⟨0⟩ 1).loggedSurveilled ⟨0⟩
+#guard !((afterDraw.beginSurveil ⟨0⟩ 1).loggedScried ⟨0⟩)
+#guard (afterDraw.beginScry ⟨0⟩ 1).loggedScried ⟨0⟩
+#guard !((afterDraw.beginScry ⟨0⟩ 1).loggedSurveilled ⟨0⟩)
+#guard !((afterDraw.beginScry ⟨0⟩ 0).loggedScried ⟨0⟩)
+#guard !((afterDraw.beginScry ⟨0⟩ 0).loggedSurveilled ⟨0⟩)
 
 /-!
 ## The Theorist, Jace Beleren (ruling 770)
@@ -332,8 +328,7 @@ def chandraTokens (g : Game) (name : String) : Array GameObject :=
 787: counters and tapped status aren't copied. -/
 def facedOculus : Game :=
   let g := addPermanent afterDraw mindseekerOculus ⟨1⟩ ⟨1⟩
-  let g := g.mapObjectStatus (namedPermanent g "Mindseeker Oculus") (fun s =>
-    { s.addPlusOnePlusOne 2 with tapped := true })
+  let g := g.changeStatuses (namedPermanent g "Mindseeker Oculus").id #[.addPlusOnePlusOne 2, .tapped true]
   faceYourselfAt g
 
 #guard (chandraTokens facedOculus "Mindseeker Oculus").size == 1
@@ -347,7 +342,7 @@ def facedOculus : Game :=
 counters and dies as a 1/0. -/
 #guard
   let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
-  let g := g.mapObjectStatus (namedPermanent g "Guiding Hydra") (fun s => s.addPlusOnePlusOne 3)
+  let g := g.changeStatus (namedPermanent g "Guiding Hydra").id (.addPlusOnePlusOne 3)
   let g := faceYourselfAt g
   (chandraTokens g "Guiding Hydra").isEmpty && g.battlefield.any (fun o => o.name == "Guiding Hydra")
 #guard (fraRuling 785).comment.contains "X is considered to be 0"
@@ -357,7 +352,7 @@ what it is: a Cadet copy is a 2/2 Cadet. -/
 #guard
   let g := faceYourselfAt (afterDraw.createKindTokens ⟨1⟩ .cadet 1)
   (chandraTokens g "Cadet").size == 1 &&
-    (chandraTokens g "Cadet").all (fun o => g.power o == 2 && g.hasSubtype o "Wizard")
+    (chandraTokens g "Cadet").all (fun o => g.power o == 2 && g.hasSubtype o .wizard)
 #guard (fraRuling 786).comment.contains "copies the original characteristics of that token"
 #guard (fraRuling 789).comment.contains "enters the battlefield as whatever that creature copied"
 

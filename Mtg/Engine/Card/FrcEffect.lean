@@ -1,3 +1,5 @@
+import Mtg.Engine.TypeLine
+
 /-!
 # Reality Fracture Commander effects
 
@@ -57,7 +59,7 @@ inductive FrcEffect where
   | syntheticDestiny
   /-- Search for a basic land of one of `kinds`. `untapAt` untaps it when you
   control at least that many lands; `0` leaves it tapped. -/
-  | searchBasics (kinds : Array String) (untapAt : Nat)
+  | searchBasics (kinds : Array CardSubtype) (untapAt : Nat)
   /-- Put the targeted creature on the bottom. Its controller reveals until a
   creature and puts that card onto the battlefield. -/
   | proteus

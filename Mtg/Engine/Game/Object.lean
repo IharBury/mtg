@@ -12,6 +12,9 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
+set_option maxRecDepth 2048 in
+deriving instance BEq for CardDef
+
 /-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
 structure PlayPermission where
   /-- The player who may play the card. -/
@@ -31,7 +34,7 @@ structure PlayPermission where
   withoutManaCost : Bool := false
   /-- You may play this only while you control a permanent of this subtype
   (Flameshape). Checked as you begin to cast, not as the spell resolves. -/
-  requireSubtype : Option String := none
+  requireSubtype : Option CardSubtype := none
   /-- Timing restrictions based on card type are ignored (cast-as-it-resolves
   effects such as Glamdring, Gríma, and Gandalf). -/
   ignoreTiming : Bool := false
@@ -152,7 +155,7 @@ structure GameObject where
   /-- A control-changing effect lasts until this source leaves (Super Hero
   Civil War; MSH 143). -/
   controlUntilSourceLeaves : Option ObjectId := none
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
 structure CreatureCombatAssignment where
@@ -193,9 +196,12 @@ def types (o : GameObject) : Array CardType :=
     if ts.any (· == .artifact) then ts else ts.push .artifact
   else
     let asCreature :=
-      o.status.additionalCreature || o.status.additionalCreatureUntilEot
+      o.status.additionalCreature || o.status.additionalCreatureUntilEot ||
+        o.status.animatedConstruct55
     let ts :=
-      if asCreature && !o.printed.isCreature then
+      if o.status.notACreature then
+        o.printed.types.filter (· != .creature)
+      else if asCreature && !o.printed.isCreature then
         o.printed.types.push .creature
       else
         o.printed.types
@@ -204,24 +210,32 @@ def types (o : GameObject) : Array CardType :=
     else ts
 
 /-- Current subtypes, including those granted by a lasting type-changing effect. -/
-def subtypes (o : GameObject) : Array Subtype :=
-  if o.status.onlyFoodArtifact then #["Food"]
+def subtypes (o : GameObject) : Array CardSubtype :=
+  if o.status.onlyFoodArtifact then #[.food]
   else
+    let printed := CardSubtype.ofSubtypes o.printed.subtypes
     let added :=
-      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push "Construct"
+      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push .construct
       else o.status.additionalSubtypes
-    let extra := added.filter (fun s => !o.printed.subtypes.any (· == s))
-    let raw := o.printed.subtypes ++ extra
+    let extra := added.filter (fun s => !printed.any (· == s))
+    let raw := printed ++ extra
     match o.status.replacedCreatureTypesUntilEot with
     | none => raw
     | some types =>
-      let kept := raw.filter isNoncreatureSubtype
+      let kept := raw.filter CardSubtype.isNoncreature
       let added := types.filter (fun t => !kept.any (· == t))
       kept ++ added
 
+/-- Current supertypes of this object (CR 205.4). -/
+def supertypes (o : GameObject) : Array Supertype :=
+  o.printed.supertypes
+
+def hasSupertype (o : GameObject) (s : Supertype) : Bool :=
+  o.supertypes.any (· == s)
+
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
-  formatTypeLine o.printed.supertypes o.types o.subtypes
+  formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
 lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
@@ -256,15 +270,18 @@ def isCreature (o : GameObject) : Bool :=
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
-  o.printed.hasSupertype .legendary
+  o.hasSupertype .legendary
 
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
 
-def hasSubtype (o : GameObject) (s : String) : Bool :=
+def hasType (o : GameObject) (t : CardType) : Bool :=
+  o.types.any (· == t)
+
+def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||
-    (o.printed.keywords.changeling && !isNoncreatureSubtype s)
+    (o.printed.keywords.changeling && !s.isNoncreature)
 
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
@@ -332,16 +349,23 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
+  /-- Explicit causing player override (e.g. the attacked opponent for
+  `creaturesAttackYourOpponent`). -/
+  causeController : Option PlayerId := none
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
 def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
     (event : TriggerEvent) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
+    (lastKnownToughness : Option Int := none)
+    (causeId : Option ObjectId := none)
+    (cause : Option GameObject := none)
+    (checked : Bool := false) : Array WaitingTrigger :=
   source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
+    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
+      causeId, cause, checked })
 
 end Mtg.Engine

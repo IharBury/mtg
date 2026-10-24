@@ -39,21 +39,17 @@ def putSubtypeEnterTriggers (g : Game) (entered : GameObject) : Game :=
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
-  let pl := g.player caster
-  let spells := pl.spellsCastThisTurn + 1
-  let nonc :=
-    if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
-    else pl.noncreatureSpellsCastThisTurn + 1
-  let creat :=
-    if spell.printed.isCreature then pl.creatureSpellsCastThisTurn + 1
-    else pl.creatureSpellsCastThisTurn
-  let g := g.modifyPlayer caster (fun p =>
-    { p with
-      spellsCastThisTurn := spells
-      noncreatureSpellsCastThisTurn := nonc
-      creatureSpellsCastThisTurn := creat
-      castManaValuesThisTurn :=
-        p.castManaValuesThisTurn.push (g.objectManaValue spell) })
+  let fromZone :=
+    if spell.castFromGraveyard then Zone.graveyard spell.owner
+    else if spell.castFromHand then Zone.hand spell.owner
+    else Zone.exile
+  let happened :=
+    GameEvent.cast g.turnNumber caster spell.asEvent fromZone
+      (g.objectManaValue spell) spell.status.manaSpentToCast
+      spell.castFromGraveyard spell.teamworkPaid spell.giftPromisedTo.isSome
+  let g := g.record happened
+  let spells := g.loggedSpellsCast caster
+  let nonc := g.loggedNoncreatureSpells caster
   let g :=
     Id.run do
       let mut g := g
@@ -73,11 +69,14 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         "cast trigger"
     else g
   let g :=
-    if spell.printed.isInstantOrSorcery then
+    if happened.matchesTrigger caster spell.id .youCastInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery
     else g
   -- Reality Fracture cast triggers.
-  let g := g.putMatchingSourceTriggers caster spell (.fra .castThis)
+  let g :=
+    if happened.matchesTrigger caster spell.id (.fra .castThis) then
+      g.putMatchingSourceTriggers caster spell (.fra .castThis)
+    else g
   let mvCast := g.objectManaValue spell
   let g := (g.livingOpponents caster).foldl (fun g pl =>
     g.putFraEventTriggersWhere pl.id (fun
@@ -160,12 +159,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       if p == caster && spell.printed.isCreature &&
           (spell.printed.colors.contains .red ||
             spell.printed.colors.contains .green) then
-        { g with pendingFreeRGCreature := none }
+        g.expireEffect (.pendingFreeRGCreatureThisTurn p)
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
     | none => g
   let g :=
-    if spell.printed.hasSubtype "Villain" then
+    if spell.printed.hasSubtype .villain then
       g.putControlledTriggers caster .youCastVillain
     else g
   let targetsCreatureYouControl : Bool :=
@@ -233,58 +232,61 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- no costs are paid for it (rulings 843–846).
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
-      let g := g.modifyPlayer caster (fun pl =>
-        { pl with copyNextInstantSorceryThisTurn := pl.copyNextInstantSorceryThisTurn - 1 })
+      let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
-      let g := g.setObject { copy with
-        kicked := spell.kicked
-        giftPromisedTo := spell.giftPromisedTo
-        teamworkPaid := spell.teamworkPaid
-        chosenX := spell.chosenX
-        isCopy := true
-        adventurerCard := spell.adventurerCard }
+      let g := g.changeObjects copy.id #[
+        .kicked spell.kicked,
+        .giftPromisedTo spell.giftPromisedTo,
+        .teamworkPaid spell.teamworkPaid,
+        .chosenX spell.chosenX,
+        .isCopy true,
+        .adventurerCard spell.adventurerCard]
       let g := g.putStackEntry caster copy.id
       let g :=
         match g.stack.find? (fun e => e.objectId == spell.id),
             g.stack.findIdx? (fun e => e.objectId == copy.id) with
         | some orig, some i =>
-          { g with stack := g.stack.set! i { g.stack[i]! with
-              targets := orig.targets, dividedDamage := orig.dividedDamage
-              chosenMode := orig.chosenMode, targetsAnnounced := true } }
+          g.changes #[
+            .stackEntry i (.targets orig.targets),
+            .stackEntry i (.dividedDamage orig.dividedDamage),
+            .stackEntry i (.chosenMode orig.chosenMode),
+            .stackEntry i (.targetsAnnounced true)]
         | _, _ => g
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
-  -- ≤ Loki's power at cast time (last known if he already left).
-  let pw? :=
-    match g.pendingLokiCopy with
-    | none => none
-    | some (p, some id, fallback) =>
-      if p != caster then none
-      else
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield then some (g.power o) else some fallback
-        | none => some fallback
-    | some (p, none, fallback) =>
-      if p == caster then some fallback else none
-  match pw? with
-  | some pw =>
-    if spell.printed.isInstantOrSorcery && Int.ofNat mv <= pw then
+  -- ≤ Loki's power at cast time (last known if he already left). Each
+  -- activation is its own delayed trigger, so every matching pending effect
+  -- of the caster copies this spell and then ends under its own `EffectId`.
+  if !spell.printed.isInstantOrSorcery then g
+  else
+    let matching := g.activeEffects.filterMap (fun (eid, eff) =>
+      match eff with
+      | .pendingLokiCopy p src fallback =>
+        if p != caster then none
+        else
+          let pw :=
+            match src with
+            | some id =>
+              match g.findObject? id with
+              | some o => if o.isOnBattlefield then g.power o else fallback
+              | none => fallback
+            | none => fallback
+          if Int.ofNat mv <= pw then some eid else none
+      | _ => none)
+    matching.foldl (fun g eid =>
       let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
-      let g := g.setObject { copy with
-        chosenX := spell.chosenX
-        isCopy := true }
+      let g := g.changeObjects copy.id #[
+        .chosenX spell.chosenX,
+        .isCopy true]
       let g := g.putStackEntry caster copy.id
-      { g with pendingLokiCopy := none }
-        |>.logMsg s!"A copy of {spell.name} is created (Loki)"
-    else g
-  | none => g
+      let g := g.expireEffectById eid
+      g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
 def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
-  if !g.hasSubtype entering "Elf" then g
+  if !g.hasSubtype entering .elf then g
   else
     match entering.controller with
     | none => g
@@ -318,9 +320,13 @@ def extraPlusOneOnCreature (g : Game) (o : GameObject) (n : Nat) : Nat :=
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
-  let n := g.extraPlusOneOnCreature o n
-  let g := g.mapObjectStatus o (fun s =>
-    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
+  let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
+  let proposed :=
+    GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n
+  let n :=
+    if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
+  let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
+  let g := if n > 0 then g.record happened else g
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
@@ -331,7 +337,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let g :=
     match putter with
     | some q =>
-      if n > 0 then
+      if n > 0 && happened.matchesTrigger q o.id .youPutPlusOne then
         g.foldControlledPermanents q none fun g src =>
           -- Invisible Woman: one or more counters at once trigger once.
           let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
@@ -347,7 +353,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   | none => g
   | some p =>
     if n > 0 &&
-        (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc" || g.hasSubtype o "Army") then
+        (g.hasSubtype o .goblin || g.hasSubtype o .orc || g.hasSubtype o .army) then
       g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
     else g
 
@@ -368,8 +374,7 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
   | true, some n =>
     if n > 0 then
       let k := g.extraCountersOn o.controller n.toNat
-      let g := g.setObject { o with status :=
-        { o.status with loyaltyCounters := o.status.loyaltyCounters + k } }
+      let g := g.changeStatus o.id (.loyaltyCounters (o.status.loyaltyCounters + k))
       let g := match o.controller with
         | some p => g.queueLoyaltyPutTriggers p
         | none => g
@@ -383,14 +388,13 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
   if base == 0 then g
   else
     let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller base)
-    let g := g.setObject { o with status := o.status.addPlusOnePlusOne n }
+    let g := g.changeStatus o.id (.addPlusOnePlusOne n)
     g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
   if o.printed.entersWithIndestructibleCounter then
     let n := g.extraCountersOn o.controller 1
-    let g := g.setObject { o with status :=
-      { o.status with indestructibleCounters := o.status.indestructibleCounters + n } }
+    let g := g.changeStatus o.id (.indestructibleCounters (o.status.indestructibleCounters + n))
     g.logMsg s!"{o.name} enters with an indestructible counter"
   else g
 
@@ -399,7 +403,7 @@ def enterWithShield (g : Game) (o : GameObject) : Game :=
   if base == 0 then g
   else
     let n := g.extraCountersOn o.controller base
-    let g := g.setObject { o with status := { o.status with shield := o.status.shield + n } }
+    let g := g.changeStatus o.id (.shield (o.status.shield + n))
     g.logMsg s!"{o.name} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
@@ -409,8 +413,7 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
     let n := g.extraPlusOneOnCreature o (g.extraCountersOn o.controller (o.chosenX.getD 0))
     if n == 0 then g
     else
-      let g := g.setObject { o with status :=
-        { o.status with plusOnePlusOne := o.status.plusOnePlusOne + n } }
+      let g := g.changeStatus o.id (.plusOnePlusOne (o.status.plusOnePlusOne + n))
       g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g
 
@@ -419,7 +422,7 @@ def enterWithHope (g : Game) (o : GameObject) : Game :=
     match o.controller with
     | some p =>
       let n := g.extraCountersOn (some p) (g.countCreaturesControlledBy p)
-      let g := g.setObject { o with status := { o.status with hope := n } }
+      let g := g.changeStatus o.id (.hope n)
       g.logMsg s!"{o.name} enters with {n} hope counter(s)"
     | none => g
   else g
@@ -436,8 +439,12 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let g := g.enterWithShield (g.object! id)
   let g := g.enterWithXPlusOnes (g.object! id)
   let o := g.object! id
-  let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
-  let o := g.object! id
+  -- A zone change already recorded this arrival. Inserts that skip `move`
+  -- still have to leave an enters event, or “entered this turn” is invisible.
+  let g :=
+    if g.loggedEntered o.id then g
+    else
+      g.record (GameEvent.moved g.turnNumber o.asEvent .stack .battlefield)
   let g := if o.printed.entersPrepared then g.becomePrepared o else g
   g.enterWithHope (g.object! id)
 
@@ -446,7 +453,7 @@ triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   if (g.findObject? o.id).any (·.enterProcessed) then g else
   let g := match g.findObject? o.id with
-    | some x => g.setObject { x with enterProcessed := true }
+    | some x => g.changeObject x.id (.enterProcessed true)
     | none => g
   -- Storied is granted as the permanent enters, before SBA (legend rule /
   -- 0 toughness) and before enters triggers use the stack.
@@ -459,7 +466,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone then
       match o.controller with
       | some p =>
-        { g with pending := .fraChoice p (.chooseColor o.id) }.logMsg
+        (g.change (.pending (.fraChoice p (.chooseColor o.id)))).logMsg
           s!"{(g.player p).name} chooses a color for {o.name}"
       | none => g
     else g
@@ -469,7 +476,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.pending == .none then
       match o.controller with
       | some p =>
-        { g with pending := .fraChoice p (.entersCreatureType o.id) }.logMsg
+        (g.change (.pending (.fraChoice p (.entersCreatureType o.id)))).logMsg
           s!"{(g.player p).name} chooses a creature type for {o.name}"
       | none => g
     else g
@@ -478,7 +485,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     if o.printed.asEntersChooseOddEven && o.status.chosenOdd.isNone && g.pending == .none then
       match o.controller with
       | some p =>
-        { g with pending := .fraChoice p (.entersOddEven o.id) }.logMsg
+        (g.change (.pending (.fraChoice p (.entersOddEven o.id)))).logMsg
           s!"{(g.player p).name} chooses odd or even for {o.name}"
       | none => g
     else g
@@ -488,7 +495,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.pending == .none then
       match o.controller with
       | some p =>
-        { g with pending := .fraChoice p (.chooseCardName o.id) }.logMsg
+        (g.change (.pending (.fraChoice p (.chooseCardName o.id)))).logMsg
           s!"{(g.player p).name} chooses a nonland card name for {o.name}"
       | none => g
     else g
@@ -499,7 +506,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     | some n, some p =>
       if o.status.tapped || g.pending != Pending.none then g
       else
-        { g with pending := .fraChoice p (.payLifeOrEnterTapped o.id n) }.logMsg
+        (g.change (.pending (.fraChoice p (.payLifeOrEnterTapped o.id n)))).logMsg
           s!"{(g.player p).name} may pay {n} life, or {o.name} enters tapped"
     | _, _ => g
   let g := g.addLoreAsSagaEnters o
@@ -530,8 +537,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if entered.printed.isArtifact then
-        let g := g.modifyPlayer p (fun pl =>
-          { pl with artifactEnteredThisTurn := true })
         g.putControlledTriggersWithPrompt p .artifactYouControlEnters
       else g
     let g :=
@@ -542,20 +547,16 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       entered.subtypes.foldl (fun acc sub =>
         acc.putControlledTriggers p (.subtypeYouControlEnters sub)) g
     let g :=
-      if entered.isCreature && g.hasSubtype entered "Hero" then
-        g.modifyPlayer p (fun pl => { pl with heroEnteredThisTurn := true })
-      else g
-    let g :=
       if entered.printed.isEquipment then
         g.putControlledTriggers p .equipmentYouControlEnters
       else g
     let g :=
-      if g.hasSubtype entered "Villain" || entered.printed.isArtifact then
+      if g.hasSubtype entered .villain || entered.printed.isArtifact then
         g.putControlledTriggers p .anotherVillainOrArtifactEnters
           (excludeId := some entered.id)
       else g
     let g :=
-      if g.hasSubtype entered "Villain" then
+      if g.hasSubtype entered .villain then
         g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
           g.putMatchingSourceTriggers p o .anotherVillainEnters
             (cause := some entered))
@@ -566,7 +567,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
           g.putMatchingSourceTriggers p o .anotherArtifactEnters (cause := some entered))
       else g
     let g :=
-      if !entered.printed.isToken && g.hasSubtype entered "Hero" then
+      if !entered.printed.isToken && g.hasSubtype entered .hero then
         g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
           g.putMatchingSourceTriggers p o .anotherNontokenHeroEnters (cause := some entered))
       else g
@@ -617,7 +618,7 @@ def afterLandEnters (g : Game) (land : GameObject) : Game :=
 their enters triggers (CR 603.6a). -/
 def flushTokenEnters (g : Game) : Game :=
   let ids := g.pendingTokenEnters
-  let g := { g with pendingTokenEnters := #[] }
+  let g := g.change (.pendingTokenEnters #[])
   ids.foldl (fun g id =>
     match g.findObject? id with
     | some o =>
@@ -643,9 +644,12 @@ def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game 
         match o.printed.otherFace with
         | some back =>
           let shown := { back with otherFace := some { o.printed with otherFace := none } }
-          let g := g.setObject { o with
-            printed := shown
-            status := { o.status with transformed := true, cantTransform := true } }
+          let g := g.expirePrintedStaticEffects o
+          let g := g.changeObjects o.id #[
+            .printed shown,
+            .status (.transformed true),
+            .status (.cantTransform true)]
+          let g := g.createPrintedStaticEffects (g.object! o.id)
           g.logMsg s!"{shown.name} enters back face up (night / daybound)"
         | none => g
       else g

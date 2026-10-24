@@ -10,6 +10,12 @@ with spending restrictions (CR 106.10), and available-mana calculation.
 namespace Mtg.Engine
 namespace Game
 
+/-- Record that `p` has used a land play this turn, without putting a land
+onto the battlefield. Tests use this when the drop itself is not the action. -/
+def recordLandPlayed (g : Game) (p : PlayerId) : Game :=
+  g.record (GameEvent.playedLand g.turnNumber p
+    { controller := some p, owner := p, types := #[.land] })
+
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
     throw "Can't play a land now (CR 116.2a / 305.3)"
@@ -20,7 +26,7 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw s!"{card.name} is not a land"
   let (g, newId) := g.putOntoBattlefield id p
     (tapped := g.entersTapped p card.printed) (summoningSick := false)
-  let g := g.modifyPlayer p (fun pl => { pl with landsPlayedThisTurn := pl.landsPlayedThisTurn + 1 })
+  let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
   let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
   -- Lands have no summoning sickness. `entersTapped` overrides CR 110.5b.
   let g := g.afterLandEnters (g.object! newId)
@@ -37,7 +43,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
-def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+def countSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Nat :=
   (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
 
 /-- Greatest mana value among permanents `p` controls matching `pred`. -/

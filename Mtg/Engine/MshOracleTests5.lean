@@ -44,7 +44,7 @@ def ironManArtifactEnteredOk : Bool :=
      let stone := namedPermanent g "The Mind Stone"
      let g := g.afterPermanentEnters stone
      let (g, _) := g.move stone.id (.graveyard ⟨0⟩) none
-     (g.player ⟨0⟩).artifactEnteredThisTurn &&
+     g.loggedArtifactEntered ⟨0⟩ &&
        (let iron := namedPermanent g "Iron Man, Master of Machines"
         let g := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
         g.waitingTriggers.any (fun (t : WaitingTrigger) =>
@@ -60,7 +60,7 @@ def wreckingCrewPrintedOrderOk : Bool :=
   let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let crew := namedPermanent g "The Ruinous Wrecking Crew"
-  let g := g.mapObjectStatus crew (fun s => { s with chosenModes := #[2, 3] })
+  let g := g.changeStatus crew.id (.chosenModes #[2, 3])
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterChooseUpToXModes)
     (some crew.id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
@@ -77,7 +77,7 @@ def moleManPlayLandOk : Bool :=
   let land := namedGraveyardCard g ⟨0⟩ "Forest"
   g.mayPlayFromGraveyard ⟨0⟩ land &&
     g.canPlayLand ⟨0⟩ &&
-    (let gLate := { g with step := .beginningOfCombat }
+    (let gLate := g.change (.step .beginningOfCombat)
      !gLate.canPlayLand ⟨0⟩) &&
     (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
@@ -93,7 +93,7 @@ counters still apply. -/
 def moonGirlOverwriteOk : Bool :=
   let g := addPermanent afterDraw moonGirlAndDevilDinosaur ⟨0⟩ ⟨0⟩
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
-  let g := g.mapObjectStatus mg (fun s => { s with setBasePT := some (1, 1), pump := (1, 1) })
+  let g := g.changeStatuses mg.id #[.setBasePT (some (1, 1)), .pump (1, 1)]
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Moon Girl and Devil Dinosaur") 1
   let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawBecome66)
     (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
@@ -133,7 +133,7 @@ def arnimActivationLockOk : Bool :=
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.createTappedTokens .villain21menace 1) #[]
        (some arnim.id)
      g.battlefield.any (fun o =>
-       o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
+       o.printed.isToken && o.hasSubtype .villain && o.status.tapped)) &&
     (mshRuling 618).comment.contains "won't stop the ability from resolving"
 
 #guard arnimActivationLockOk
@@ -143,11 +143,11 @@ def tenRingsReplacementOk : Bool :=
   let g := addPermanent afterDraw theTenRings ⟨0⟩ ⟨0⟩
   let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
   let bot := namedPermanent g "Aerial Doombot"
-  let g := g.setObject { bot with printed :=
-    { bot.printed with drawTwoExceptFirstDrawStep := true } }
+  let g := g.changeObject bot.id (.printed
+    { bot.printed with drawTwoExceptFirstDrawStep := true })
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := { g with step := .end }
+  let g := g.change (.step .end)
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
     (mshRuling 650).comment.contains "replacement effects"
@@ -217,8 +217,8 @@ def castAsResolvesOk : Bool :=
   let giant := cosmicCubeLookedNamed g "Hill Giant"
   let land := cosmicCubeLookedNamed g "Mountain"
   let (gEx, card) := afterDraw.allocObject nightsWhisper ⟨1⟩ .exile none
-  let gEx := gEx.setObject { card with playPermission := some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  let gEx := gEx.changeObject card.id (.playPermission (some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
   let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
   match g.pending with
   | .mayCastFromLooked p ids maxMv =>
@@ -254,7 +254,7 @@ def cosmicCubeAuraSetup : Game :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := g.changeStatus bears.id (.attacking true)
   let g := addToLibraryTop g mountain ⟨0⟩
   addToLibraryTop g superSpeed ⟨0⟩
 
@@ -292,7 +292,7 @@ def cosmicCubeCastNonAuraEnchantmentOk : Bool :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := g.changeStatus bears.id (.attacking true)
   let g := addToLibraryTop g mountain ⟨0⟩
   let g := addToLibraryTop g doomReignsSupreme ⟨0⟩
   let cube := namedPermanent g "Cosmic Cube"

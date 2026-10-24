@@ -22,7 +22,7 @@ def creatureTokens (g : Game) (p : PlayerId) : Nat :=
   ((g.permanentsOf p).filter (fun o => o.isCreature && o.printed.isToken)).size
 
 def treasures (g : Game) (p : PlayerId) : Nat :=
-  ((g.permanentsOf p).filter (fun o => g.hasSubtype o "Treasure")).size
+  ((g.permanentsOf p).filter (fun o => g.hasSubtype o .treasure)).size
 
 /-! ## “This or another [subtype] you control enters” -/
 
@@ -151,7 +151,7 @@ a Hero. -/
   let g := addPermanent (addPermanent afterDraw thunderboltsConspiracy me me) aerialDoombot me me
   let g := settle (g.sacrificeToGraveyard (namedPermanent g "Aerial Doombot") "sacrificed")
   let bot := namedPermanent g "Aerial Doombot"
-  bot.status.finality == 1 && g.hasSubtype bot "Hero"
+  bot.status.finality == 1 && g.hasSubtype bot .hero
 
 /- Justice, Vance Astrovik gets a counter when another nonland permanent you
 control returns to hand. -/
@@ -163,7 +163,6 @@ control returns to hand. -/
 /- King T'Challa: when any player draws their second card each turn, you draw. -/
 #guard
   let g := addPermanent afterDraw kingTChalla me me
-  let g := g.modifyPlayer opp (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let before := handSize g me
   let g := settle (g.draw opp 2)
   handSize g me == before + 1
@@ -347,7 +346,7 @@ def roninBoard : Game :=
   let g := activateNamed g "The Shire" "Food"
   let g := resolved (pick g #[idOf g "Hill Giant"])
   (namedPermanent g "Hill Giant").status.tapped && !(namedPermanent g "Grizzly Bears").status.tapped &&
-    (g.permanentsOf me).any (fun o => g.hasSubtype o "Food")
+    (g.permanentsOf me).any (fun o => g.hasSubtype o .food)
 
 /- Tom, Bert, and William sacrifice another creature (not themselves) and draw
 cards equal to its power, then discard a card. -/
@@ -424,7 +423,7 @@ turn costs {0}; the next one costs its equip cost. -/
 #guard
   let g := addPermanent (addPermanent afterDraw kiliTheResourceful me me) grizzlyBears me me
   let g := addPermanent (addPermanent g huntersAxe me me) huntersAxe me me
-  let g := g.modifyPlayer me (fun pl => { pl with enduringStory := true })
+  let g := g.changePlayer me (.enduringStory true)
   let axes := ((g.permanentsOf me).filter (·.name == "Hunter's Axe")).map (·.id)
   let idx := abIdx g (g.object! axes[0]!) "Attach"
   let first := manaSpent g axes[0]! idx [tgt g "Grizzly Bears"]
@@ -828,7 +827,7 @@ def inLibrary (g : Game) (name : String) : Bool :=
   (g.player me).library.any (fun id => (g.object! id).name == name)
 
 def onlyLib (g : Game) (cards : Array CardDef) : Game :=
-  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
+  let g := g.changePlayer me (.library #[])
   cards.foldl (fun g c => addToLibraryTop g c me) g
 
 /-! ## Intervening “if” clauses (CR 603.4) -/
@@ -844,13 +843,13 @@ def onlyLib (g : Game) (cards : Array CardDef) : Game :=
 /- Lake-town Toymaker doesn't trigger unless you've drawn two cards. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let g := g.putControlledTriggers me .yourBeginCombat
   !g.waitingTriggers.any (·.source.name == "Lake-town Toymaker")
 /- After two draws, another creature gets +3/+0 and first strike. -/
 #guard
   let g := addPermanent (addPermanent afterDraw lakeTownToymaker me me) grizzlyBears me me
-  let g := g.modifyPlayer me (fun pl => { pl with cardsDrawnThisTurn := 2 })
+  let g := (g.record (GameEvent.drew g.turnNumber me ⟨61⟩ 1)).record
+    (GameEvent.drew g.turnNumber me ⟨62⟩ 2)
   let g := settle (passBoth (skipTo g .beginningOfCombat 80))
   power g "Grizzly Bears" == 5 &&
     g.hasFirstStrike (namedPermanent g "Grizzly Bears") &&
@@ -960,8 +959,7 @@ the other revealed cards on the bottom. The rest of the library stays. -/
     g.log.any (fun s => mentions s "No creature card was revealed")
 #guard
   let g := onlyLib (addPermanent afterDraw getawayBarrel me me) #[grizzlyBears, hillGiant, forest]
-  let g := { g with norandom := true }
-  let g := passBoth (fireTrigger g "Getaway Barrel")
+  let g := (fireTrigger g "Getaway Barrel").resolveTop
   let choosing :=
     match g.pending with
     | .resolveRandom (.chooseObject ids) => ids.size == 2
@@ -1030,7 +1028,7 @@ really scries, and the counters are put by the counter action. -/
     (some (idOf g "Orcrist, Goblin-cleaver"))
   let elf :=
     match g.pending with
-    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == "Elf")
+    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == CardSubtype.elf)
     | _ => none
   let g := mustApply g me (.chooseMode elf.get!)
   elf.isSome && treasures g me == 1
@@ -1064,7 +1062,7 @@ draw and create a Treasure. -/
 its graveyard ability asks to pay {1}{G}{U}. -/
 #guard
   let g := addPermanent afterDraw silvanReveler me me
-  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := g.changePlayer me (.hand #[])
   let g := onlyLib g #[forest]
   let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
     (some (idOf g "Silvan Reveler"))
@@ -1073,7 +1071,7 @@ its graveyard ability asks to pay {1}{G}{U}. -/
   onBattlefield g "Forest" && (namedPermanent g "Forest").status.tapped
 #guard
   let g := addPermanent afterDraw silvanReveler me me
-  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := g.changePlayer me (.hand #[])
   let g := onlyLib g #[lightningBolt]
   let g := g.applyTriggeredAbility me .onEnterLootLandEntersTapped
     (some (idOf g "Silvan Reveler"))
@@ -1098,7 +1096,7 @@ with fewer than three Bears draws nothing. -/
   let g := g.applyTriggeredAbility me .onYourBeginCombatTrampleCounterBecomeBear
     (some (idOf g "Beorn the Fierce")) #[.permanent (idOf g "Llanowar Elves")]
   let elf := namedPermanent g "Llanowar Elves"
-  g.hasSubtype elf "Bear" && elf.status.trampleCounters == 1 &&
+  g.hasSubtype elf .bear && elf.status.trampleCounters == 1 &&
     handSize g me == before + 2
 #guard
   let g := addPermanent afterDraw beornTheFierce me me
@@ -1167,15 +1165,13 @@ counter is removed. -/
 
 /-- Three seats. Witch-king attacks Liliana, who is not the seat opponent. -/
 def witchKingAttacksLiliana : Game :=
-  let liliana := { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Liliana" }
-  let g := { afterDraw with players := afterDraw.players.push liliana }
-  let g := g.modifyPlayer ⟨2⟩ (fun pl => { pl with hand := #[], library := #[], graveyard := #[] })
+  let liliana : Player := { id := ⟨2⟩, name := "Liliana" }
+  let g := afterDraw.change (.players (afterDraw.players.push liliana))
   let g := addPermanent g witchKingBringerOfRuin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨2⟩ ⟨2⟩
   let wk := namedPermanent g "Witch-king, Bringer of Ruin"
-  let g := g.setObject { wk with status :=
-    { wk.status with attacking := true, attackingWhom := some ⟨2⟩ } }
+  let g := g.changeStatuses wk.id #[.attacking true, .attackingWhom (some ⟨2⟩)]
   g.applyTriggeredAbility ⟨0⟩ .onAttackDefenderSacsLeastPower (some wk.id)
 
 /- Witch-king, Bringer of Ruin makes the player it is attacking sacrifice,
@@ -1191,7 +1187,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp (namedPermanent g "Gríma, Saruman's Footman").asEvent
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let offered :=
@@ -1208,7 +1204,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
 #guard
   let g := addPermanent afterDraw grimaSarumanSFootman me me
   let g := addToLibraryTop (addToLibraryTop g lightningBolt opp) mountain opp
-  let g := { g with lastCombatDamagePlayer := some opp }
+  let g := g.noteCombatDamageTo opp (namedPermanent g "Gríma, Saruman's Footman").asEvent
   let g := g.applyTriggeredAbility me .onCombatDamageImpulseInstantSorcery
     (some (idOf g "Gríma, Saruman's Footman"))
   let g := mustApply g me .accept
@@ -1257,7 +1253,7 @@ mills and loses life equal to the milled cards' mana values. -/
 Banishing Light under Lightning Bolt. The spell's mana value is 1. -/
 def sarumanMilled : Game :=
   let g := addPermanent afterDraw sarumanOfManyColors me me
-  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := g.changePlayer opp (.library #[])
   let g := addToLibraryTop (addToLibraryTop g banishingLight opp) lightningBolt opp
   g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
     (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
@@ -1308,7 +1304,7 @@ is optional. -/
   | none => false
 #guard
   let g := addPermanent afterDraw sarumanOfManyColors me me
-  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := g.changePlayer opp (.library #[])
   let g := g.applyTriggeredAbility me .onCastSecondSpellMillThenCopy
     (some (idOf g "Saruman of Many Colors")) (lastKnownPower := some 1)
   g.stack.isEmpty && g.pending == .none
@@ -1324,7 +1320,7 @@ is optional. -/
     g.log.any (fun s => mentions s "does not discard")
 #guard
   let g := addPermanent afterDraw sauronTheDarkLord me me
-  let g := g.modifyPlayer me (fun pl => { pl with hand := #[] })
+  let g := g.changePlayer me (.hand #[])
   let g := g.applyTriggeredAbility me (.onRingTemptsMayDiscardDraw 4)
     (some (idOf g "Sauron, the Dark Lord"))
   let g := mustApply g me .accept
@@ -1342,7 +1338,7 @@ him deal that much damage to each opponent. -/
 #guard
   let g := addPermanent afterDraw balinLoremaster me me
   let n := handSize g me
-  let g := g.modifyPlayer me (fun pl => { pl with enduringStory := true })
+  let g := g.changePlayer me (.enduringStory true)
   let g := g.applyTriggeredAbility me (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf")
     (some (idOf g "Balin, Loremaster"))
   let g := mustApply g me .accept
@@ -1354,8 +1350,7 @@ to you, then the Ring tempts you. -/
   let g := addPermanent afterDraw witchKingOfAngmar me me
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bears with status :=
-    { bears.status with combatDamageToPlayers := #[me] } }
+  let g := g.changeStatus bears.id (.combatDamageToPlayers #[me])
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   !onBattlefield g "Grizzly Bears" && onBattlefield g "Gray Ogre" &&
@@ -1365,10 +1360,8 @@ to you, then the Ring tempts you. -/
   let g := addPermanent (addPermanent g grizzlyBears opp opp) grayOgre opp opp
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.setObject { bears with status :=
-    { bears.status with combatDamageToPlayers := #[me] } }
-  let g := g.setObject { ogre with status :=
-    { ogre.status with combatDamageToPlayers := #[me] } }
+  let g := g.changeStatus bears.id (.combatDamageToPlayers #[me])
+  let g := g.changeStatus ogre.id (.combatDamageToPlayers #[me])
   let g := g.applyTriggeredAbility me .onCombatDamageToYouSacRingTempts
     (some (idOf g "Witch-king of Angmar"))
   let choosing :=
@@ -1423,9 +1416,8 @@ combat damage. -/
 
 /-- Aragorn's red-spell trigger aimed at a third player. -/
 def aragornDamagesLiliana : Game :=
-  let liliana := { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Liliana" }
-  let g := { afterDraw with players := afterDraw.players.push liliana }
-  let g := g.modifyPlayer ⟨2⟩ (fun pl => { pl with hand := #[], library := #[], graveyard := #[] })
+  let liliana : Player := { id := ⟨2⟩, name := "Liliana" }
+  let g := afterDraw.change (.players (afterDraw.players.push liliana))
   let g := addPermanent g aragornTheUniter ⟨0⟩ ⟨0⟩
   g.applyTriggeredAbility ⟨0⟩ (.onCastColorDamageOpponent .red 3)
     (some (idOf g "Aragorn, the Uniter")) #[Target.player ⟨2⟩]
@@ -1510,12 +1502,12 @@ ability may cast up to two of the exiled cards. -/
   let g := g.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 1)
     (some (idOf g "Doom Reigns Supreme"))
   life g opp == 19 && life g me == 21 &&
-    (g.player me).lifeGainedThisTurn == 1 &&
+    g.loggedLifeGained me == 1 &&
     (namedPermanent g "Doom Reigns Supreme").status.plan == 1 &&
     g.log.any (fun s => mentions s "gains 1 life")
 #guard
   let g := addPermanent afterDraw doomReignsSupreme me me
-  let g := g.modifyPlayer opp (fun pl => { pl with library := #[] })
+  let g := g.changePlayer opp (.library #[])
   let g := addToLibraryTop g grizzlyBears opp
   let g := addToLibraryTop g mountain opp
   let g := addToLibraryTop g forest opp
@@ -1570,8 +1562,8 @@ line is Human Mercenary Villain. -/
       (some (idOf g "Taskmaster, Mercenary Mimic")) #[Target.card bearId]
     let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
     tm.name == "Taskmaster, Mercenary Mimic" &&
-      tm.subtypes == #["Human", "Mercenary", "Villain"] &&
-      !tm.subtypes.contains "Bear" && g.power tm == 2
+      tm.subtypes == #[.human, .mercenary, .villain] &&
+      !tm.subtypes.contains .bear && g.power tm == 2
   | none => false
 
 /- Mister Hyde's upkeep ability asks which mode to use. -/
@@ -1590,7 +1582,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw theMindStone me me
   let stone := namedPermanent g "The Mind Stone"
-  let g := g.setObject { stone with status := { stone.status with harnessed := true } }
+  let g := g.changeStatus stone.id (.harnessed true)
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForKind me
     (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
@@ -1620,8 +1612,7 @@ line is Human Mercenary Villain. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
   let g := equip g "Enchanted River's Grasp" "Grizzly Bears"
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { host with status :=
-    { host.status with plusOnePlusOne := 2, stun := 1, minusOneMinusOne := 1 } }
+  let g := g.changeStatuses host.id #[.plusOnePlusOne 2, .stun 1, .minusOneMinusOne 1]
   let g := passBoth (fireTrigger g "Enchanted River's Grasp")
   let h := namedPermanent g "Grizzly Bears"
   h.status.tapped && h.status.plusOnePlusOne == 0 && h.status.stun == 0 &&
@@ -1631,7 +1622,7 @@ line is Human Mercenary Villain. -/
 #guard
   let g := addPermanent afterDraw desertWereWorm me me
   let w := namedPermanent g "Desert Were-Worm"
-  let g := g.setObject { w with status := { w.status with attacking := true, tapped := true } }
+  let g := g.changeStatuses w.id #[.attacking true, .tapped true]
   let g := passBoth (fireTrigger g "Desert Were-Worm")
   !(namedPermanent g "Desert Were-Worm").status.tapped && g.additionalCombatPhases == 1
 
@@ -1758,7 +1749,7 @@ four; the rest go to the bottom. -/
 #guard
   let g := fireTrigger (addPermanent afterDraw gandalfGoblinsBane me me) "Gandalf, Goblins' Bane"
   let g := passBoth g
-  life g opp == 19 && (g.player opp).dealtNoncombatDamageThisTurn
+  life g opp == 19 && g.loggedNoncombatDamage opp
 
 /- The Black Arrow destroys a Dragon it damaged, but not another creature. -/
 #guard
@@ -1903,14 +1894,14 @@ shuffles; Old Thrush's optional search does not shuffle when declined. -/
 #guard
   let g0 := addToHand afterDraw smaugWickedWorm me
   let n := g0.log.size
-  let g := g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+  let g := g0.beginLibrarySearch me (fun c => c.hasSubtype .dragon) "a Dragon card"
     .battlefieldFromHandOrLibrary (alsoHand := true)
   let g := mustApply g me (.choosePermanents #[(handObj g me "Smaug, Wicked Worm").id])
   onBattlefield g "Smaug, Wicked Worm" && !shuffledSince n g
 #guard
   let g0 := onlyLib afterDraw #[smaugWickedWorm]
   let n := g0.log.size
-  let g := applyIdle (g0.beginLibrarySearch me (fun c => c.hasSubtype "Dragon") "a Dragon card"
+  let g := applyIdle (g0.beginLibrarySearch me (fun c => c.hasSubtype .dragon) "a Dragon card"
     .battlefieldFromHandOrLibrary (alsoHand := true))
   onBattlefield g "Smaug, Wicked Worm" && shuffledSince n g
 

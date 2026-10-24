@@ -1,4 +1,5 @@
 import Mtg.Engine.Color
+import Mtg.Engine.TypeLine
 
 /-!
 # Mana (CR 106, 107.4, 202)
@@ -338,7 +339,7 @@ inductive FraManaUse where
   /-- Only casting Dragon spells (Desolation of Smaug). -/
   | dragonSpell
   /-- Only casting spells of this subtype. -/
-  | subtypeSpell (subtype : String)
+  | subtypeSpell (subtype : CardSubtype)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- What a payment is for, as far as `FraManaUse` restrictions care. The
@@ -346,15 +347,38 @@ default is an activated ability or another non-spell payment. -/
 structure ManaSpend where
   spell : Bool := false
   fromHand : Bool := false
-  planeswalker : Bool := false
-  noncreature : Bool := false
-  legendary : Bool := false
-  artifact : Bool := false
+  /-- Supertypes of the spell being cast. -/
+  supertypes : Array Supertype := #[]
+  /-- Card types of the spell being cast. -/
+  types : Array CardType := #[]
   /-- Subtypes of the spell being cast. -/
-  subtypes : Array String := #[]
+  subtypes : Array CardSubtype := #[]
   /-- Activating an equip ability. -/
   equip : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
+
+-- ManaSpend helpers.
+namespace ManaSpend
+
+def hasSupertype (s : ManaSpend) (sup : Supertype) : Bool :=
+  s.supertypes.any (· == sup)
+
+def legendary (s : ManaSpend) : Bool :=
+  s.hasSupertype .legendary
+
+def hasType (s : ManaSpend) (t : CardType) : Bool :=
+  s.types.any (· == t)
+
+def planeswalker (s : ManaSpend) : Bool :=
+  s.hasType .planeswalker
+
+def noncreature (s : ManaSpend) : Bool :=
+  !s.hasType .creature
+
+def artifact (s : ManaSpend) : Bool :=
+  s.hasType .artifact
+
+end ManaSpend
 
 /-- Whether mana restricted to `u` may pay for `s`. -/
 def FraManaUse.allows : FraManaUse → ManaSpend → Bool
@@ -364,11 +388,11 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .fromTreasure, _ => true
   | .legendarySpell, s => s.spell && s.legendary
   | .dwarfEquipmentSagaSpell, s =>
-    s.spell && (s.subtypes.contains "Dwarf" || s.subtypes.contains "Equipment" ||
-      s.subtypes.contains "Saga")
-  | .equipmentOrEquip, s => (s.spell && s.subtypes.contains "Equipment") || s.equip
+    s.spell && (s.subtypes.contains .dwarf || s.subtypes.contains .equipment ||
+      s.subtypes.contains .saga)
+  | .equipmentOrEquip, s => (s.spell && s.subtypes.contains .equipment) || s.equip
   | .artifactSpell, s => s.spell && s.artifact
-  | .dragonSpell, s => s.spell && s.subtypes.contains "Dragon"
+  | .dragonSpell, s => s.spell && s.subtypes.contains .dragon
   | .subtypeSpell sub, s => s.spell && s.subtypes.contains sub
 
 /-- Short label for a restriction in pool notation. -/
@@ -385,8 +409,8 @@ def FraManaUse.label : FraManaUse → String
   | .subtypeSpell sub => s!"{sub} spells"
 
 /-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
-def FraManaUse.forSubtype (subtype : String) : FraManaUse :=
-  if subtype == "Dragon" then .dragonSpell else .subtypeSpell subtype
+def FraManaUse.forSubtype (subtype : CardSubtype) : FraManaUse :=
+  if subtype == .dragon then .dragonSpell else .subtypeSpell subtype
 
 /-- Unspent mana a player currently has (CR 106.4). Restricted mana (CR 106.10)
 is a subset of the colored totals. -/

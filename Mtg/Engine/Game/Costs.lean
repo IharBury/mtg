@@ -37,8 +37,7 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   let whom := attacker.status.attackingWhom
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
-  let g := g.setObject { (g.object! spellId) with
-    sneakPaid := true, sneakAttackWhom := whom }
+  let g := g.changeObjects spellId #[.sneakPaid true, .sneakAttackWhom whom]
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
@@ -72,16 +71,16 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
   let paid :=
     match prop.kind, paid.findObject? prop.spellId with
-    | .spell, some o => paid.setObject { o with status := { o.status with manaSpentToCast := manaSpent } }
+    | .spell, some o => paid.changeStatus o.id (.manaSpentToCast manaSpent)
     | _, _ => paid
   let g :=
     match prop.kind, paid.findObject? prop.spellId with
     | .spell, some o =>
       if spent .legendarySpell then
-        (paid.setObject { o with treasureManaSpent := o.treasureManaSpent || spent .fromTreasure
-                                 uncounterableThisCast := true }).logMsg
-          s!"{o.name} can't be countered (Delighted Halfling)"
-      else paid.setObject { o with treasureManaSpent := spent .fromTreasure }
+        ((paid.changeObject o.id (.treasureManaSpent (o.treasureManaSpent || spent .fromTreasure)))
+          |>.createEffect (.uncounterableThisCast o.id))
+          |>.logMsg s!"{o.name} can't be countered (Delighted Halfling)"
+      else paid.changeObject o.id (.treasureManaSpent (spent .fromTreasure))
     | _, _ => paid
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
@@ -94,19 +93,15 @@ def finishProposedSpell (g : Game) : Except String Game := do
     | none => pure g
   match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard with
   | _, true, _ =>
-    let g := { g with
-      pending := .sacrificePermanent prop.caster prop.spellId
-      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.sacrificePermanent prop.caster prop.spellId), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
   | _, _, true =>
-    let g := { g with
-      pending := .discardForAdditionalCost prop.caster
-      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must discard a card"
   | _, _, _ =>
-    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
     return g.becomeCast prop.caster (g.object! prop.spellId)
 
 /-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
@@ -123,19 +118,24 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (start : ManaCost) : ManaCost :=
   let caster := card.controller.getD card.owner
   let afterDied :=
-    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+    if face.costReductionIfCreatureDied > 0 && g.loggedCreatureDeaths > 0 then
       start.reduceGeneric face.costReductionIfCreatureDied
     else start
   let afterControl :=
     match face.costReductionIfYouControl with
     | some (n, subtype) =>
       let controls :=
-        if subtype == "legendary creature" then
+        if false then
           (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary)
         else g.countSubtype caster subtype > 0
       if controls then afterDied.reduceGeneric n
       else afterDied
     | none => afterDied
+  let afterControl :=
+    if face.costReductionIfYouControlLegendary > 0 &&
+        (g.permanentsOf caster).any (fun o => o.isCreature && o.isLegendary) then
+      afterControl.reduceGeneric face.costReductionIfYouControlLegendary
+    else afterControl
   let afterGy :=
     match face.costReductionIfGyCreaturesAtLeast with
     | some (min, n) =>
@@ -166,8 +166,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
-      let st := if t == "Elves" then "Elf" else t
-      let n := g.countSubtype caster st
+      let n := g.countSubtype caster t
       afterGreatest.reduceGeneric n
     | none => afterGreatest
   let afterOpp :=
@@ -199,7 +198,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       afterOpp.reduceGeneric n
     else afterOpp
   let afterFirst :=
-    if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
+    if face.isCreature && g.loggedCreatureSpells caster == 0 then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           acc + o.printed.firstCreatureCostsLess) 0
@@ -249,7 +248,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
         | _ => acc) acc) 0
   let selfLess :=
     if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
-        (g.player caster).noncreatureSpellsCastThisTurn > 0 then 2
+        g.loggedNoncreatureSpells caster > 0 then 2
     else 0
   let pl := g.player caster
   let thisTurnLess :=
@@ -258,7 +257,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     (pl.supertypeSpellCostLessThisTurn.foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
   let sphinxLess :=
-    if face.hasSubtype "Sphinx" then
+    if face.hasSubtype .sphinx then
       let zone (o : GameObject) :=
         o.id != card.id && o.controlledBy caster &&
           (o.isOnBattlefield || o.zone == .command)
@@ -371,7 +370,7 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     | some x => cost.substituteX x
     | none => cost
   let firstEquipFree :=
-    ab.isEquip && g.hasEnduringStory p && (g.player p).equipActivationsThisTurn == 0 &&
+    ab.isEquip && g.hasEnduringStory p && g.loggedEquipActivations p == 0 &&
       (g.permanentsOf p).any (·.staticAbilities.any (· == .firstEquipFreeIfEnduringStory))
   let cost :=
     if firstEquipFree then ManaCost.empty
@@ -379,7 +378,7 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
       match source with
       | some o =>
         let afterEnter :=
-          if o.status.enteredThisTurn then
+          if g.loggedEntered o.id then
             ab.cost.mana.reduceByCost o.printed.manaCost
           else ab.cost.mana
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)

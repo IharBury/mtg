@@ -142,6 +142,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Stack`: Stack entries and proposed casts (CR 405 / 601)
 - `Pending`: Pending decisions
 - `Player`: Players, actions, and setup (CR 102 / 103)
+- `Event`: Game state changes recorded for the whole game (CR 603.2 / 614.1)
 - `Core`: Game state core
 - `Designations`: Player designations
 - `Phasing`: Attachments in play and phasing (CR 702.26)
@@ -194,12 +195,17 @@ namespace Mtg.Engine
 /-- Apply one legal action, or panic with the rules error. -/
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   match g.apply p a with
-  | .ok g' => g'
+  | .ok g' =>
+    match a with
+    | .supplyOrder _ | .supplyIndex _ => g'
+    | _ => g'.resolveRandom
   | .error e => panic! e
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 @[noinline] def applyIdle (g : Game) : Game :=
   match g.pending, g.actor with
+  | .resolveRandom _, _ =>
+    g.resolveRandom
   | .declareAttackers, some p =>
     mustApply g p (.declareAttackers #[])
   | .declareBlockers, some p =>
@@ -296,7 +302,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .decline
   | .mayHaveVillainConnive _ _ _, some p =>
     mustApply g p .decline
-  | .mayCastExiledElseDamage _ _ _, some p =>
+  | .mayCastExiledElseDamage .., some p =>
     mustApply g p .decline
   | .chooseProliferate _ _, some p =>
     mustApply g p (.targets #[])

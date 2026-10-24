@@ -25,7 +25,7 @@ def playersStillDecidingMulligan (g : Game) : Array PlayerId :=
   g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost && !pl.keptOpeningHand)
 
 def promptMulligan (g : Game) (p : PlayerId) : Game :=
-  { g with pending := .declareMulligan p }
+  g.change (.pending (.declareMulligan p))
     |>.logMsg s!"{g.player p |>.name} may keep or take a mulligan (CR 103.5)"
 
 /-- CR 103.5c / 903.12g: the first mulligan does not count in a multiplayer
@@ -42,7 +42,7 @@ def countedMulligans (g : Game) (p : PlayerId) : Nat :=
 def promptBottom (g : Game) (p : PlayerId) : Game :=
   let n := g.countedMulligans p
   let cards := if n == 1 then "1 card" else s!"{n} cards"
-  { g with pending := .putOnBottom p n }
+  g.change (.pending (.putOnBottom p n))
     |>.logMsg s!"{g.player p |>.name} puts {cards} on the bottom of their library (CR 103.5)"
 
 /-- Cards that may begin the game on the battlefield from an opening hand
@@ -71,14 +71,14 @@ card, or start the first turn when that was why the game was waiting. -/
 partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
   if rest.isEmpty then
     if g.awaitingOpeningBegin then
-      let g := { g with awaitingOpeningBegin := false }
+      let g := g.change (.awaitingOpeningBegin false)
       g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
         |>.beginTurn
     else g
   else
     match g.findObject? rest[0]! with
     | some o =>
-      { g with pending := .fraChoice o.owner (.mayBeginOnBattlefield rest) }
+      g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
         |>.logMsg s!"{(g.player o.owner).name} may begin the game with {o.name} on the battlefield"
     | none => g.continueOpeningBegin (rest.extract 1 rest.size)
 
@@ -90,12 +90,12 @@ def applyOpeningHandActions (g : Game) : Game :=
 /-- After every remaining player has kept, opening-hand actions resolve,
 then the starting player takes their first turn (CR 103.8 / MSH 84). -/
 def finishOpeningHands (g : Game) : Game :=
-  let g := { g with
-    pending := .none
-    mulliganToDeclare := #[]
-    willMulligan := #[]
-    mulliganToBottom := #[]
-    awaitingOpeningBegin := true }
+  let g := g.changes #[
+    .pending .none,
+    .mulliganToDeclare #[],
+    .willMulligan #[],
+    .mulliganToBottom #[],
+    .awaitingOpeningBegin true ]
   g.applyOpeningHandActions
 
 /-- Start (or restart) a CR 103.5 round: eligible players declare in turn
@@ -108,10 +108,10 @@ def beginMulliganRound (g : Game) : Game :=
       g.finishOpeningHands
     else
       promptMulligan
-        { g with
-          mulliganToDeclare := remaining
-          willMulligan := #[]
-          mulliganToBottom := #[] }
+        (g.changes #[
+          .mulliganToDeclare remaining,
+          .willMulligan #[],
+          .mulliganToBottom #[] ])
         remaining[0]!
 
 /-- Shuffle the cards in `p`'s hand back into their library (CR 103.5). -/
@@ -136,7 +136,7 @@ hand (CR 103.5). Bottoming is a later choice. -/
 def executeOneMulligan (g : Game) (p : PlayerId) : Game :=
   let n := (g.player p).mulligansTaken + 1
   let size := (g.player p).startingHandSize
-  let g := g.modifyPlayer p (fun pl => { pl with mulligansTaken := n })
+  let g := g.changePlayer p (.mulligansTaken n)
   let g := g.logMsg s!"{g.player p |>.name} takes a mulligan ({n})"
   let g := g.returnHandToLibrary p
   g.requestShuffle p (.draw p size) |>.continueIfShuffled
@@ -153,7 +153,7 @@ def skipFreeMulliganBottoms (g : Game) : Game :=
           s!"{g.player p |>.name} puts no cards on the bottom of their library (CR 103.5c)"
       else
         need := need.push p
-    return { g with mulliganToBottom := need }
+    return g.change (.mulliganToBottom need)
 
 /-- Take remaining declared mulligans, pausing if `--norandom` needs a
 library order. `mulliganToBottom` is the original simultaneous group. -/
@@ -170,7 +170,7 @@ partial def executeMulliganQueue (g : Game) (rest : Array PlayerId) : Game :=
     let g := g.executeOneMulligan p
     match g.pendingRandom? with
     | some _ =>
-      { g with afterRandom := .mulliganQueue p more }
+      g.change (.afterRandom (.mulliganQueue p more))
     | none =>
       executeMulliganQueue g more
 
@@ -186,7 +186,7 @@ def resolveDeclaredMulligans (g : Game) : Game :=
     if order.isEmpty then
       g.beginMulliganRound
     else
-      let g := { g with willMulligan := #[], mulliganToBottom := order }
+      let g := g.changes #[.pending .none, .willMulligan #[], .mulliganToBottom order]
       executeMulliganQueue g order
 
 /-- Remove `who` from a sequential CR 103.5 queue, then finish or prompt the
@@ -205,14 +205,14 @@ acts. When the round's declarations are complete, pending mulligans are taken
 together. -/
 def afterDeclaration (g : Game) (who : PlayerId) : Game :=
   g.advancePlayerQueue who g.mulliganToDeclare
-    (fun g rest => { g with mulliganToDeclare := rest })
+    (fun g rest => g.change (.mulliganToDeclare rest))
     (·.resolveDeclaredMulligans) (·.promptMulligan)
 
 /-- After `who` has put cards on the bottom, the next such player acts, or a
 new declaration round begins. -/
 def afterBottom (g : Game) (who : PlayerId) : Game :=
   g.advancePlayerQueue who g.mulliganToBottom
-    (fun g rest => { g with mulliganToBottom := rest })
+    (fun g rest => g.change (.mulliganToBottom rest))
     (·.beginMulliganRound) (·.promptBottom)
 
 end Game

@@ -69,20 +69,20 @@ def light : CardDef := {
 }
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ =>
+    #[.pushHand id])
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 /-- Replace `p`'s library. The last card is on top. -/
 def onlyLibrary (g : Game) (p : PlayerId) (cards : List CardDef) : Game :=
   cards.foldl (fun g c => putOnLibrary g c p)
-    (g.modifyPlayer p (fun pl => { pl with library := #[] }))
+    (g.changePlayer p (.library #[]))
 
 def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+  g.changePlayer p (.hand #[])
 
 def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).hand.any (fun id => (g.findObject? id).any (·.name == name))
@@ -134,7 +134,7 @@ def declineSearch (g : Game) : Game :=
 def withQuest (n : Nat) : Game :=
   let g := addPermanent afterDraw light caster caster
   let o := lastPermanent g
-  g.setObject { o with status := { o.status with quest := n } }
+  g.changeStatus o.id (.quest n)
 
 #guard isForestCard forest && isBasicLandCard forest
 #guard isBasicLandCard mountain && !isForestCard mountain
@@ -146,14 +146,14 @@ spending a land play. A Mountain stays in the library. The library is
 shuffled. An empty library finds nothing and still shuffles. -/
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain, forest]
-  let played := (g0.player caster).landsPlayedThisTurn
+  let played := g0.loggedLandsPlayed caster
   let before := g0.log.size
   let g := takeSearch (step g0 (.searchLibrary (.put .forest)))
   onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
     inLibrary g caster "Search Mountain" && !inLibrary g caster "Search Forest" &&
     !(permanent g "Search Forest").status.tapped &&
     !(permanent g "Search Forest").status.summoningSick &&
-    (g.player caster).landsPlayedThisTurn == played &&
+    g.loggedLandsPlayed caster == played &&
     shuffledSince before g &&
     logContains g "searches for a Forest card" &&
     logContains g "puts Search Forest onto the battlefield" &&

@@ -65,13 +65,13 @@ structure TriggerTiming where
   /-- Intervening “another creature you control with power ≤ n”. -/
   anotherCreaturePowerAtMost : Option Int := none
   /-- “This or another nontoken {subtype} you control enters”. -/
-  thisOrNontokenSubtype : Option String := none
+  thisOrNontokenSubtype : Option CardSubtype := none
   /-- Intervening “if you gained `n` or more life this turn”. -/
   gainedLifeAtLeast : Option Nat := none
   /-- “Another {subtype} or Equipment you control enters”. -/
-  anotherSubtypeOrEquipment : Option String := none
+  anotherSubtypeOrEquipment : Option CardSubtype := none
   /-- “This or another {subtype} you control enters”. -/
-  thisOrAnotherSubtype : Option String := none
+  thisOrAnotherSubtype : Option CardSubtype := none
 deriving Repr, Inhabited, BEq
 
 /-- Targeting and resolution for a printed Saga chapter (CR 714.3).
@@ -91,8 +91,8 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .grant .landfallCreateElf .source }
   | .elvesGetVigilance p =>
     { resolution := .sequence [
-        .pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")]),
-        .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype "Elf")])] }
+        .pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
+        .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
       resolution := .discard .chosenNonland }
@@ -111,7 +111,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
     { resolution := .draw (.fixed n) }
   | .searchBasicPlainsExileGainLife max life =>
     { resolution := .sequence [
-        .searchLibrary (.exile (.basicUpTo "Plains" max) .forLater .linked),
+        .searchLibrary (.exile (.basicUpTo .plains max) .forLater .linked),
         .gainLife (.fixed life)] }
   | .returnLinkedExileToHand =>
     { resolution := .returnToHand .linkedExile }
@@ -123,7 +123,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .treasureThenDragonIfFour =>
     { resolution := .sequence [
         .createTokens .treasure (.fixed 1) false,
-        .«if» ((.atLeast (.count (.youControl (.subtype "Treasure"))) (.fixed 4)))
+        .«if» ((.atLeast (.count (.youControl (.subtype .treasure))) (.fixed 4)))
           (.sacrifice (.sacrificedSource .isSacrificed) .noted),
         .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] }
   | .recruit =>
@@ -406,7 +406,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .dealDamage (.subtypeCount subtype) (.player .eachOpponent) }
   | .damageEqualTreasures =>
     { targeting := .of .playerOrCreature,
-      resolution := .dealDamage (.subtypeCount "Treasure") .target }
+      resolution := .dealDamage (.subtypeCount .treasure) .target }
   | .dealDamageDestroyIfSubtype n subtype =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
@@ -431,7 +431,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .putNonlandMvAtMostFromGy mv =>
     { targeting := .of (.filtered
         { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
-          zone := .anyGraveyard, permanentCard := true, nonland := true, mvAtMost := some mv })
+          zone := .anyGraveyard, permanentCard := true, nonTypes := #[.land], mvAtMost := some mv })
       allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
@@ -444,14 +444,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .trampleCounterBecomeBear =>
     { targeting := .of .creatureYouControl, allowsZeroTargets := true,
       resolution := .sequence
-        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))) (.draw (.fixed 2))] }
+        [.putCounters (.ofKind .trample) .permanent, .becomeBear, .«if» ((.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))) (.draw (.fixed 2))] }
   | .millThenSubtypeToHand n subtype =>
     { resolution := .sequence
         [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
     { targeting := .of (.filtered
         { noun := "for each opponent, up to one target nonland permanent that player controls"
-          nonland := true, controller := .eachOpponent })
+          nonTypes := #[.land], controller := .eachOpponent })
       allowsZeroTargets := true
       resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
   | .plusOneEqualLastKnownMv =>
@@ -519,7 +519,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .deal1ThenAmassOrcs =>
     { targeting := .of .playerOrCreature,
       resolution := .sequence
-        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) "Orc"] }
+        [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc] }
   | .untapAttackersExtraCombat _n =>
     { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] }
   | .eaglesCreateBirds =>
@@ -726,10 +726,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.draw (.fixed 1), .may (.put .landFromHand (how := .tapped)) (.sequence [])] }
   | .drawGainLifeIfAnotherHero =>
-    { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.gainLife (.fixed 2))] }
+    { resolution := .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))] }
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature,
-      resolution := .ifElse ((.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1)))
+      resolution := .ifElse ((.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)))
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
@@ -822,7 +822,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourEndStep]
       targeting := .of (.filtered {
         noun := "up to one other target nonland permanent you control"
-        nonland := true, controller := .you, another := true })
+        nonTypes := #[.land], controller := .you, another := true })
       allowsZeroTargets := true, maxTargets := 1
       resolution := .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
@@ -832,8 +832,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .counter .plusOnePlusOne (asEnters := true)]) }
   | .death .villainReturnAsHero =>
     { events := #[.villainYouControlDies]
-      resolution := .put (.cause (some "Villain")) .underOwner (.entering [
-        .additionalSubtype "Hero", .counter .finality]) }
+      resolution := .put (.cause (some .villain)) .underOwner (.entering [
+        .additionalSubtype .hero, .counter .finality]) }
   | .death .attackingReturnHand =>
     { events := #[.attackingCreatureYouControlDies]
       resolution := .returnToHand .cause }
@@ -999,7 +999,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.youCastNoncreature]
       targeting := .of (.filtered {
         noun := "another target nonland, nontoken permanent"
-        nonland := true, nontoken := true, another := true })
+        nonTypes := #[.land], nontoken := true, another := true })
       resolution := .exile .target .nextEndStep }
   | .casting .visionModes =>
     { events := #[.youCastNoncreature],
@@ -1037,7 +1037,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo }
   | .resource .drawIfAnotherHeroDamage =>
     { events := #[.youDraw], targeting := .of .opponent,
-      resolution := .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) }
+      resolution := .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent))) }
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
@@ -1111,8 +1111,8 @@ end SharedTrigger
     .loseAllAbilities, .keywords Keyword.haste,
     .counter .plusOnePlusOne (asEnters := true)])
 #guard (SharedTrigger.timing (.death .villainReturnAsHero)).resolution ==
-  .put (.cause (some "Villain")) .underOwner (.entering [
-    .additionalSubtype "Hero", .counter .finality])
+  .put (.cause (some .villain)) .underOwner (.entering [
+    .additionalSubtype .hero, .counter .finality])
 #guard (SharedTrigger.timing (.death .attackingReturnHand)).resolution ==
   .returnToHand .cause
 #guard (SharedTrigger.timing (.death .deathtouchOppSac)).resolution ==
@@ -1182,7 +1182,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
-  .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
+  .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
   .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==

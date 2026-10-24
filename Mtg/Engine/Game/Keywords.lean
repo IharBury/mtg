@@ -22,7 +22,7 @@ def enchantedCantAttackOrBlock (g : Game) (o : GameObject) : Bool :=
 
 /-- Whether `p` controls a Jace planeswalker. -/
 def controlsJacePlaneswalker (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun x => x.printed.isPlaneswalker && g.hasSubtype x "Jace")
+  (g.permanentsOf p).any (fun x => x.printed.isPlaneswalker && g.hasSubtype x .jace)
 
 /-- Keywords Reality Fracture static abilities grant `o`: its own conditional
 keywords, grants from permanents its controller controls, and grants from
@@ -43,7 +43,7 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         | .fra .powerAndFlyingIfSevenInGraveyard =>
           if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
         | .fra .flyingHasteIfOpponentDealtNoncombat =>
-          if (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
+          if (g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
             Keywords.merge acc (Keyword.flying.merge Keyword.haste)
           else acc
         | .fra .hexproofUntilCombatDamage =>
@@ -64,7 +64,7 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
           | .fra .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
           | .fra .otherCreaturesHaveTrample => grant (other && o.isCreature) Keyword.trample
           | .fra .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
-          | .fra .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
+          | .fra .thoptersHaveHaste => grant (g.hasSubtype o .thopter) Keyword.haste
           | .fra .artifactCreaturesHaveVigilance =>
             grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
           | _ => acc) acc) Keywords.none
@@ -84,14 +84,13 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
   match o.controller with
   | none => false
   | some p =>
-    let pl := g.player p
     (o.staticAbilities.any (· == .fra .attackDespiteDefenderIfScried) &&
-      (pl.scriedThisTurn || pl.surveilledThisTurn)) ||
+      (g.loggedScried p || g.loggedSurveilled p)) ||
     (g.permanentsOf p).any (·.staticAbilities.any (· == .fra .creaturesAttackDespiteDefender))
 
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
-def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
+def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array CardSubtype) : Bool :=
   (g.permanentsOf p).any (fun o => subtypes.any (g.hasSubtype o))
 
 /-- Whether `p` currently controls a legendary creature. -/
@@ -107,6 +106,11 @@ def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
 checked before the permanent enters, so lands or planeswalkers entering at
 the same time are not counted (rulings 808 / 809). -/
 def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+  let proposed := GameEvent.moved g.turnNumber
+    { controller := some p, owner := p, types := card.types
+      subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
+  if !proposed.watches .wouldEnterBattlefield then false
+  else
   card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
     (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
     (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
@@ -438,7 +442,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
     | none => g.defendingPlayer
   let islandwalkUnblockable :=
     g.hasIslandwalk attacker &&
-      (g.permanentsOf defender).any (fun o => g.hasSubtype o "Island")
+      (g.permanentsOf defender).any (fun o => g.hasSubtype o .island)
   blocker.isOnBattlefield && blocker.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty && !blocker.status.cantBlockUntilEot &&
@@ -477,7 +481,7 @@ def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
   isLordOf src target &&
   src.staticAbilities.any (fun ab =>
     match ab.trampleSubtypes? with
-    | some subtypes => subtypes.any (g.hasSubtype target)
+    | some subtypes => subtypes.any (fun s => g.hasSubtype target s)
     | none => false)
 
 /-- Lore counters among Sagas `p` controls. -/
@@ -556,7 +560,7 @@ def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
   let typeMatch (em : GameObject) :=
     em.printed.protectionFromChosenCardType &&
       match em.status.chosenCardType with
-      | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+      | some t => src.printed.hasType t
       | none => false
   colorBlock || typeMatch o ||
     match o.controller with
@@ -572,7 +576,7 @@ def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
       (g.permanentsOf target).any (fun em =>
         em.printed.protectionFromChosenCardType &&
           match em.status.chosenCardType with
-          | some t => src.printed.types.any (fun ty => CardType.englishName ty == t)
+          | some t => src.printed.hasType t
           | none => false)
   (caster == target || !g.playerHasHexproof target) &&
     !(g.player target).protectionFromEverything && !typeBlock
@@ -598,7 +602,7 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
     | none => false
     | some p =>
       (g.permanentsOf p).any (fun x =>
-        (x.isCreature && x.printed.isArtifact) || g.hasSubtype x "Plan")
+        (x.isCreature && x.printed.isArtifact) || g.hasSubtype x .plan)
 
 def hasIndestructible (g : Game) (o : GameObject) : Bool :=
   ((g.currentKeywords o).indestructible ||

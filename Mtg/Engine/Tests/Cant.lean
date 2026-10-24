@@ -46,7 +46,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def titan : CardDef := creature "Titan" ManaCost.empty #[] 4 4
 def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
@@ -229,7 +229,7 @@ not apply while that object is off the battlefield. -/
   let g0 := step board frozen (some (pid board "Titan"))
     #[Target.permanent (pid board "Bear")] (ab := spider)
   let (g, _) := g0.move (pid g0 "Titan") (.graveyard caster) none
-  (obj g "Bear").status.cantUntapGrantedBy == #[pid board "Titan"] &&
+  (obj g "Bear").status.cantUntapGrantedBy == #[] &&
     !g.hostCantBecomeUntapped (obj g "Bear")
 
 /- Tap, then that restriction, is the printed enter ability. -/

@@ -42,8 +42,8 @@ def planId (g : Game) : ObjectId :=
   | none => panic! "missing The Plan"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def stackEffect (g : Game) : Option Effect :=
   match g.stack.back? with
@@ -150,7 +150,7 @@ use `queueReflexive`. -/
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
-  let g0 := { planOnBoard with planWasSacrificed := true }
+  let g0 := planOnBoard.change (.planWasSacrificed true)
   let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 

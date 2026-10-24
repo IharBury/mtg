@@ -764,7 +764,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
-    | .mayCastExiledElseDamage p cardId n =>
+    | .mayCastExiledElseDamage p cardId n .. =>
       let name :=
         match g.findObject? cardId with
         | some o => o.nameWithToken
@@ -778,7 +778,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"
         | .mayWheel n _ => s!"may discard your hand and draw {n}"
         | .maySacrificePlaneswalker => "may sacrifice a planeswalker"
-        | .topOrBottomDamage id _ =>
+        | .topOrBottomDamage id .. =>
           let name := ((g.findObject? id).map (fun (o : GameObject) => o.nameWithToken)).getD "the card"
           s!"put {name} on top (and be dealt damage) or on the bottom"
         | .sphinxsApproach _ => "may exile five cards named Sphinx's Approach"

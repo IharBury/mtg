@@ -44,11 +44,11 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def markPrepared (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.setObject { o with status := { o.status with prepared := true } }
+  g.changeStatus o.id (.prepared true)
 
 def seed : AdventureFace := { name := "Seed" }
 
