@@ -529,6 +529,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
   | .payLifeOrEnterTapped id n, .accept =>
+    if (g.findObject? id).isNone then return g.finishFraChoice
     let g ← g.payLifeCost p n
     return (g.finishPlayLand p id (tapped := false)).finishFraChoice
   | .payLifeOrEnterTapped id _, .decline =>
@@ -1099,7 +1100,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if o.zone != .hand o.owner then pure g
           else
             let name := o.name
-            let (g, newId) := g.move id .battlefield (some o.owner)
+            let sick := !o.printed.isLand && !o.printed.keywords.haste
+            let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
             let g := g.logMsg s!"{name} begins the game on the battlefield"
             if g.pending != .none then pure g
             else pure (g.afterPermanentEnters (g.object! newId))

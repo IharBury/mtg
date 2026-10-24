@@ -1010,15 +1010,9 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
     if clearExileFields then
       g.changeObjects newId #[.playPermission none, .linkedExile #[]]
     else g
+  let sick := !land && !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)
-  let ret := g.object! retId
-  let g :=
-    if land then
-      if tapped then
-        g.changeStatus retId (.tapped true)
-      else g
-    else
-      g.changeStatus retId (.summoningSick (!ret.printed.keywords.haste))
+    (tapped := land && tapped) (summoningSick := sick)
   let g := g.logMsg s!"{name} {logText}"
   if land then g.afterLandEnters (g.object! retId)
   else g.afterPermanentEnters (g.object! retId)

@@ -59,6 +59,8 @@ structure EventObject where
   token              : Bool                        := false
   isCopy             : Bool                        := false
   changeling         : Bool                        := false
+  -- Arrival status, printed card, and stack-copy metadata carried so
+  -- `applyZoneEvent` reconstructs the `GameObject` without a follow-up `setObject`.
   summoningSick      : Bool                        := false
   attackingWhom      : Option PlayerId             := none
   returnedAsArtifact : Bool                        := false
@@ -1762,7 +1764,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .stepped .upkeep active, .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && before.token && owner == before.owner
+      you p && this before && before.token && owner == before.owner
     | .activated p _ true _, .youActivateLoyaltyAbility => you p
     | .activated p source false _, .youActivateCreatureAbility =>
       you p && source.creature

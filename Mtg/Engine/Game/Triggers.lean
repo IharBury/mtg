@@ -543,15 +543,12 @@ def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
     let p := o.controller.getD o.owner
     if g.events.reverse.any (fun happened =>
         happened.turn == g.turnNumber &&
-          (match happened.change with
-           | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) => before.id == some o.id
-           | _ => false) &&
           happened.matchesTrigger p o.id .youSacrificeToken) then
       g.putControlledTriggers p .youSacrificeToken
     else g
 
 /-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers
-(CR 701.17a). -/
+(CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   let actor := o.controller.getD o.owner
   let g := g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)

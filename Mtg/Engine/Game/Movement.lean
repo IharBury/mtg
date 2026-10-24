@@ -137,7 +137,7 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
 /-- `partial` because linked-exile returns recurse into `move` (CR 610.3). -/
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (controller : Option PlayerId := none)
-    (tapped : Bool := false) (summoningSick : Bool := false)
+    (tapped : Bool := false) (summoningSick : Bool := true)
     (attachedTo : Option ObjectId := none) (applyHope : Bool := true)
     (attacking : Bool := false) (attackingWhom : Option PlayerId := none)
     (returnedAsArtifact : Bool := false) (onlyFoodArtifact : Bool := false)

@@ -2532,7 +2532,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
       | some o =>
         let name := o.name
-        let (g, retId) := g.move id .battlefield (some o.owner) (tapped := true)
+        let (g, retId) := g.move id .battlefield (some o.owner) (tapped := true) (summoningSick := false)
         let g := g.logMsg s!"{name} is exiled, then returned tapped"
         g.afterLandEnters (g.object! retId)) g
   | .discardedLand, .tapped, _ =>
@@ -4019,6 +4019,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
   | .markRecentTokensAttacking =>
+    let dest := some g.defendingPlayer
+    let g :=
+      g.recentTokenIds.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          if o.status.attacking && o.status.attackingWhom == dest then g
+          else g.changeStatuses o.id #[.attacking true, .attackingWhom dest]
+        | none => g) g
     g.logMsg
       s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
   | .additionalCombatPhase =>
