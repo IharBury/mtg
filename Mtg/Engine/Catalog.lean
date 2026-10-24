@@ -82,6 +82,7 @@ rules text. -/
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (tokenDoubling : Bool := false)
@@ -101,120 +102,71 @@ rules text. -/
       colorIndicator isToken oracleText
   let parsed := { parseOracleCard! text with otherFace := otherFace }
   if (oracleText.trimAscii.copy).isEmpty then
-    let additionalCost : SpellAdditionalCost :=
-      if additionalCostSacrificeCreature then .sacrificeCreature
-      else if additionalCostSacrificeArtifactOrCreature then
-        .sacrificeArtifactOrCreature additionalCostOrPayGeneric
-      else match additionalCostDiscardOrPayGeneric with
-        | some n => .discardOrPay n
-        | none => .none
-    let spellCostReduction : SpellCostReduction :=
-      if costReductionEqualFlyingPower then .equalFlyingPower
-      else if costReductionEqualOppArtifacts then .equalOppArtifacts
-      else if costReductionIfCreatureDied != 0 then .ifCreatureDied costReductionIfCreatureDied
-      else if costReductionIfTargetDamaged != 0 then .ifTargetDamaged costReductionIfTargetDamaged
-      else if costReductionIfTargetTapped != 0 then .ifTargetTapped costReductionIfTargetTapped
-      else if costReductionIfTargetAttackingNontoken != 0 then
-        .ifTargetAttackingNontoken costReductionIfTargetAttackingNontoken
-      else if costReductionIfTargetAttacking != 0 then .ifTargetAttacking costReductionIfTargetAttacking
-      else match costReductionIfYouControl with
-        | some (n, s) => .ifYouControl n s
-        | none => match costReductionIfGyCreaturesAtLeast with
-          | some (min, n) => .ifGyCreaturesAtLeast min n
-          | none => .none
-    let entersTappedRule : EntersTappedRule :=
-      if entersTapped then .always
-      else if entersTappedUnlessLegendary then .unlessLegendary
-      else if entersTappedUnlessEquipment then .unlessEquipment
-      else match entersTappedUnlessPayLife with
-        | some n => .unlessPayLife n
-        | none => .untapped
-    let entersWithCounters : Option (CounterKind × NumberSelector) :=
-      if entersWithHopePerCreature then some (.hope, .count .creature)
-      else if entersWithShield != 0 then some (.shield, .fixed (Int.ofNat entersWithShield))
-      else none
-    let asEntersChoose : AsEntersChoice :=
-      if asEntersChooseCreatureType then .creatureType
-      else .none
-    let tapManaAbility : TapManaAbility :=
-      if !tapAddManaForEach.isEmpty then .forEach tapAddManaForEach
-      else if tapAddAnyColorEqualToPower then .anyColorEqualToPower
-      else if tapAddAnyColorForInstantOrSorcery then .anyColorForInstantOrSorcery
-      else if !tapAddOneOf.isEmpty then .oneOf tapAddOneOf
-      else if !tapAddOneOfIfEnteredOrBasic.isEmpty then
-        .oneOfIfEnteredOrBasic tapAddOneOfIfEnteredOrBasic
-      else if tapAddAnyColor then .anyColor
-      else if tapSacrificeAddAnyColor then .sacrificeAnyColor
-      else if tapAddAnyColorForLegendary then .anyColorForLegendary
-      else if !tapAddTwoAmong.isEmpty then .twoAmong tapAddTwoAmong
-      else if tapAddAnyColorAmongLegendaries then .anyColorAmongLegendaries
-      else if tapAddCommanderIdentity then .commanderIdentity false
-      else match tapAddRestricted with
-        | some (ts, r) => .restricted ts r
-        | none => match tapPayLifeAddOneOf with
-          | some (n, ts) => .payLifeOneOf n ts
-          | none => .none
-    let modalRule : ModalRule :=
-      if chooseOneOrBoth then .chooseOneOrBoth
-      else if chooseBothIfTeamwork then .chooseBothIfTeamwork
-      else match chooseTwoIfYouControlSubtype with
-        | some s => .chooseTwoIfYouControl s
-        | none => .chooseOne
-    let staticRule : CardStaticRule :=
-      if mayPlayLandsFromTop then .playLands
-      else if mayLookAtTopAnytime then .lookAnytime
-      else if foodAlsoCreatesTreasure then .foodAlsoCreatesTreasure
-      else if othersEnterWithPlusOneEqualToughness then .othersEnterWithPlusOneEqualToughness
-      else if powerPerMountain != 0 then .powerPerMountain powerPerMountain
-      else if tokenDoubling then .tokenDoubling drawTwoExceptFirstDrawStep
-      else if drawTwoExceptFirstDrawStep then .drawTwoExceptFirstDrawStep
-      else match extraLandIfOtherSubtype with
-        | some s => .extraLandIfOtherSubtype s
-        | none => .none
-    let castOption : SpellCastOption :=
-      if giftTreasure then .giftTreasure
-      else if cascade != 0 then .cascade cascade
-      else match flashback with
-        | some cost => .flashback cost
-        | none => match kicker with
-          | some cost => .kicker cost
-          | none => match teamwork with
-            | some n => .teamwork n
-            | none => match affinityForSubtype with
-              | some s => .affinity s
-              | none => .none
-    let castPermission : CastPermissionRule :=
-      if cantBeCountered then .cantBeCountered
-      else match flashIfYouControlSubtype with
-        | some s => .flashIfYouControl s
-        | none => .normal
-    let keywordRule : CardKeywordRule :=
-      match ward with
-      | some n => .ward n
-      | none => match crew with
-        | some n => .crew n
-        | none => .none
     { parsed with
       keywords
-      keywordRule
       spellEffect
       spellModes
-      modalRule
-      additionalCost
-      spellCostReduction
-      castOption
-      castPermission
+      additionalCostSacrificeArtifactOrCreature
+      additionalCostOrPayGeneric
+      additionalCostDiscardOrPayGeneric
+      costReductionIfCreatureDied
+      costReductionIfTargetDamaged
+      costReductionIfTargetTapped
+      costReductionIfTargetAttackingNontoken
+      costReductionIfTargetAttacking
+      costReductionIfYouControl
+      costReductionIfGyCreaturesAtLeast
       tapAddMana
-      tapManaAbility
-      entersTappedRule
-      entersWithCounters
-      asEntersChoose
+      tapAddManaForEach
+      tapAddAnyColorEqualToPower
+      tapAddAnyColorForInstantOrSorcery
+      entersWithHopePerCreature
+      entersTapped
+      tapAddOneOf
+      tapAddOneOfIfEnteredOrBasic
+      tapAddAnyColor
+      tapSacrificeAddAnyColor
+      cantBeCountered
+      flashIfYouControlSubtype
+      ward
+      flashback
+      entersTappedUnlessLegendary
+      entersTappedUnlessEquipment
+      tapAddAnyColorForLegendary
+      costReductionEqualFlyingPower
+      crew
+      tapAddTwoAmong
+      chooseOneOrBoth
+      chooseTwoIfYouControlSubtype
+      tapAddAnyColorAmongLegendaries
+      tapAddRestricted
+      tapPayLifeAddOneOf
+      entersTappedUnlessPayLife
+      tapAddCommanderIdentity
+      additionalCostSacrificeCreature
+      asEntersChooseCreatureType
       saga
+      affinityForSubtype
+      costReductionEqualOppArtifacts
+      giftTreasure
+      foodAlsoCreatesTreasure
+      othersEnterWithPlusOneEqualToughness
+      powerPerMountain
+      extraLandIfOtherSubtype
+      tapAddColorlessPerSubtype
+      cascade
+      kicker
+      tokenDoubling
+      drawTwoExceptFirstDrawStep
       staticAbilities
       triggeredAbilities
       activatedAbilities
-      staticRule
-      adventure }
+      adventure
+      teamwork
+      chooseBothIfTeamwork
+      entersWithShield
+      mayLookAtTopAnytime
+      mayPlayLandsFromTop }
   else
     parsed
 
@@ -294,6 +246,7 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
@@ -324,6 +277,7 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
+    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
@@ -354,6 +308,7 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
@@ -378,6 +333,7 @@ def forest : CardDef :=
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
+    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
@@ -793,31 +749,36 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
     (onlyIfGyCreaturesAtLeast : Nat := 0)
     (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none) :
-    ActivatedAbility :=
-  OracleActivate.activated effect mana
-    (tap := tap) (sacrificeSource := sacrificeSource)
-    (sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact)
-    (onlyAsSorcery := onlyAsSorcery) (onlyDuringYourTurn := onlyDuringYourTurn)
-    (onceEachTurn := onceEachTurn) (otherModes := otherModes) (payLife := payLife)
-    (activateFromGraveyard := activateFromGraveyard) (activateFromHand := activateFromHand)
-    (onlyIfYouControlLegendary := onlyIfYouControlLegendary) (discardSource := discardSource)
-    (costReductionIfYouControlLegendary := costReductionIfYouControlLegendary)
-    (equipSubtype := equipSubtype) (sacrificeAnotherSubtype := sacrificeAnotherSubtype)
-    (discardACard := discardACard) (costReductionPerEquipment := costReductionPerEquipment)
-    (tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl)
-    (onlyIfYouAttackedWithTwoOrMore := onlyIfYouAttackedWithTwoOrMore)
-    (removeIndestructibleCounter := removeIndestructibleCounter)
-    (sacrificeLegendaryArtifact := sacrificeLegendaryArtifact)
-    (discardLegendarySameName := discardLegendarySameName)
-    (sacrificeArtifact := sacrificeArtifact) (powerUp := powerUp) (equipWorthy := equipWorthy)
-    (sacrificeArtifactOrCreature := sacrificeArtifactOrCreature)
-    (sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland)
-    (removeAnyNumberPlusOne := removeAnyNumberPlusOne)
-    (putStunCounterOnSource := putStunCounterOnSource)
-    (sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource)
-    (onlyIfYouControlCreatureToughnessAtLeast := onlyIfYouControlCreatureToughnessAtLeast)
-    (onlyIfGyCreaturesAtLeast := onlyIfGyCreaturesAtLeast)
-    (costReductionIfTargetPowerAtMost := costReductionIfTargetPowerAtMost)
+    ActivatedAbility := {
+  cost := {
+    mana := mana
+    tap := tap
+    sacrificeSource := sacrificeSource
+    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
+    payLife := payLife
+    discardSource := discardSource
+    sacrificeAnotherSubtype := sacrificeAnotherSubtype
+    discardACard := discardACard
+    tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
+    removeIndestructibleCounter := removeIndestructibleCounter
+    sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
+    discardLegendarySameName := discardLegendarySameName
+    sacrificeArtifact := sacrificeArtifact
+    sacrificeArtifactOrCreature := sacrificeArtifactOrCreature
+    sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland
+    removeAnyNumberPlusOne := removeAnyNumberPlusOne
+    putStunCounterOnSource := putStunCounterOnSource
+    sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
+  }
+  effect := effect
+  otherModes := otherModes
+  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
+  costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
+  onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
+  onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
+  costReductionIfTargetPowerAtMost
+}
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
@@ -863,7 +824,7 @@ def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (additionalCostSacrificeCreature : Bool := false) : AdventureFace := {
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
   spellEffect := some spellEffect,
-  additionalCost := if additionalCostSacrificeCreature then .sacrificeCreature else .none
+  additionalCostSacrificeCreature
 }
 
 /-- A red instant that deals `amount` damage to any target. -/

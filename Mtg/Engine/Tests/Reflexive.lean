@@ -74,7 +74,7 @@ use `queueReflexive`. -/
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard (TriggeredAbility.sagaChapter 1 Effect.chapterGrantAttackPumpPerPlainsThisTurn).resolution ==
+#guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
 
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0
@@ -150,7 +150,7 @@ use `queueReflexive`. -/
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
-  let g0 := { planOnBoard with thisWay := { planOnBoard.thisWay with planWasSacrificed := true } }
+  let g0 := { planOnBoard with planWasSacrificed := true }
   let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 
@@ -184,7 +184,7 @@ use `queueReflexive`. -/
   match stackEffect g with
   | some eff =>
     match eff.resolution with
-    | .mayCast .milledSpell .causingSpell .withoutPaying _ =>
+    | .sarumanExileCopyMayCast =>
       logContains g "reflexive ability is put on the stack"
     | _ => false
   | none => false

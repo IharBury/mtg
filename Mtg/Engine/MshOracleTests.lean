@@ -154,7 +154,7 @@ def teamworkPaidOk : Bool :=
 /-- Ruling 365: a copy of a teamwork spell is also cast using teamwork. -/
 def teamworkCopyOk : Bool :=
   let (g, src) := afterDraw.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.setObject { src with castState := { src.castState with teamworkPaid := true } }
+  let g := g.setObject { src with teamworkPaid := true }
   let g := g.copyStackSpell (g.object! src.id) ⟨0⟩
   let copies := g.objects.filter (fun o =>
     o.name == "Helicarrier Strike" && o.zone == .stack && o.isCopy)
@@ -1391,11 +1391,11 @@ def illegalTargetDoesNothingOk : Bool :=
       gone
   let gAbsorb :=
     let g := addPermanent gGone absorbingMan ⟨0⟩ ⟨0⟩
-    g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan)
+    g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan)
       (some (namedPermanent g "Absorbing Man").id) gone
   let gTask :=
     let g := addPermanent gGone taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
-    g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
+    g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
       (some (namedPermanent g "Taskmaster, Mercenary Mimic").id) gone
   (gDepower.player ⟨0⟩).hand.size == hand0 &&
     (gHour.player ⟨0⟩).library.size == lib0 &&
@@ -1968,9 +1968,9 @@ def absorbingManCopyOk : Bool :=
   let doom := namedPermanent g "Doctor Doom"
   let before := g.waitingTriggers.size
   let rejected :=
-    g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
+    g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
       #[Target.permanent doom.id]
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyAbsorbingMan) (some am.id)
     #[Target.permanent land.id]
   let am := namedPermanent g "Absorbing Man"
   !(namedPermanent rejected "Absorbing Man").printed.isLand &&
@@ -1992,7 +1992,7 @@ def taskmasterCopyOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyTaskmaster) (some tm.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyTaskmaster) (some tm.id)
     #[Target.permanent giant.id]
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
   tm.printed.name == "Taskmaster, Mercenary Mimic" &&
@@ -2004,7 +2004,7 @@ def taskmasterCopyOk : Bool :=
      let (g2, _) := g2.move giant.id (.graveyard ⟨1⟩) none
      let gy := namedGraveyardCard g2 ⟨1⟩ "Hill Giant"
      let tm := namedPermanent g2 "Taskmaster, Mercenary Mimic"
-     let g2 := g2.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
+     let g2 := g2.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
        (some tm.id) #[Target.card gy.id]
      (namedPermanent g2 "Taskmaster, Mercenary Mimic").printed.power ==
        hillGiant.power) &&
@@ -2074,7 +2074,7 @@ def sheHulkDamageOnceOk : Bool :=
   let she := namedPermanent g "The Sensational She-Hulk"
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.mapObjectStatus giant (·.setCounter .indestructible 1)
+  let g := g.mapObjectStatus giant (fun s => { s with indestructibleCounters := 1 })
   let giant := namedPermanent g "Hill Giant"
   let g := g.markDamageOn bears 3 "Bears are dealt 3 damage"
   g.waitingTriggers.any (fun t =>
@@ -2481,7 +2481,7 @@ def mightyThorBlinkOk : Bool :=
   let land := namedPermanent g "Mountain"
   let gTok := g.setObject { bears with printed := { bears.printed with isToken := true } }
   let tok := namedPermanent gTok "Grizzly Bears"
-  let kind := Effect.thisAttackBlinkNontoken.targeting.kind
+  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some thor.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent stone.id) &&
@@ -2521,7 +2521,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.mapObjectStatus bears (fun s => { s with untilEotKeywords := kw })
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := Effect.enterOrAttackCopyKeywords.targeting.kind
+  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some adaptoid.id)
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
@@ -2568,13 +2568,13 @@ def hulklingComparesCauseOk : Bool :=
     (some hulkling.id) #[]
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.setObject { ab with triggerCause := { id := some bot.id } }
+     let g := g.setObject { ab with fraCauseId := some bot.id }
      let g := { g with resolvingAbility := some ab.id }
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
     (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-     let g := g.setObject { ab with triggerCause := { id := some giant.id } }
+     let g := g.setObject { ab with fraCauseId := some giant.id }
      let g := { g with resolvingAbility := some ab.id }
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
@@ -2585,7 +2585,7 @@ def hulklingComparesCauseOk : Bool :=
      let gy := g.object! (g.followMoved giantId)
      gy.lastKnownPower == some 1 && gy.lastKnownToughness == some 1 &&
        (let (g, ab) := g.allocStackAbility hulkling ⟨0⟩
-        let g := g.setObject { ab with triggerCause := { id := some giantId } }
+        let g := g.setObject { ab with fraCauseId := some giantId }
         let g := { g with resolvingAbility := some ab.id }
         let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
@@ -2615,7 +2615,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let g := g.applyPermanentAction giant .tap
   let cap := namedPermanent g "Captain America, Living Legend"
   let (g, ab) := g.allocStackAbility cap ⟨0⟩
-  let g := g.setObject { ab with triggerCause := { id := some bears.id } }
+  let g := g.setObject { ab with fraCauseId := some bears.id }
   let g := { g with resolvingAbility := some ab.id }
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
@@ -2687,7 +2687,7 @@ def swordsmanAttachTargetsOk : Bool :=
   let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
   let bow := namedPermanent g "Hawkeye's Bow"
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := Effect.watchVillainAttachEquipment.targeting.kind
+  let kind := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.kind
   let equip := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 0) (some sw.id)
   let creatures := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 1) (some sw.id)
   kind == .upToOneEquipmentThenCreatureYouControl &&
@@ -2722,7 +2722,7 @@ def ultronMayPayCopyOk : Bool :=
   let ultron := namedPermanent g "Ultron, Artificial Malevolence"
   let stone := namedPermanent g "The Mind Stone"
   let (g, ab) := g.allocStackAbility ultron ⟨0⟩
-  let g := g.setObject { ab with triggerCause := { id := some stone.id } }
+  let g := g.setObject { ab with fraCauseId := some stone.id }
   let g := { g with resolvingAbility := some ab.id }
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
@@ -2783,7 +2783,7 @@ def shieldTapsDefendingPlayerOk : Bool :=
   let shield := namedPermanent g "Captain America's Shield"
   let giant := namedPermanent g "Hill Giant"
   let ogre := namedPermanent g "Gray Ogre"
-  let kind := Effect.watchEquippedAttacksTap.targeting.kind
+  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some shield.id)
   kind == .defendingPlayerCreature &&
     legal.contains (Target.permanent ogre.id) &&
@@ -2835,7 +2835,7 @@ def daredevilMayDeclineOk : Bool :=
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let top := (g.player ⟨0⟩).library.size
   let dd := namedPermanent g "Daredevil, Man Without Fear"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump)
     (some dd.id)
   match g.pending with
   | .fraChoice _ (.daredevilMayExile _) =>
@@ -2851,14 +2851,14 @@ choices reset as the turn ends. -/
 def visionModeChoiceOk : Bool :=
   let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
   let vis := namedPermanent g "The Vision"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
   match g.pending with
   | .fraChoice _ (.visionMode _ available) =>
     available == #[0, 1, 2] &&
       (let g := mustApply g ⟨0⟩ (.chooseMode 0)
        let vis := namedPermanent g "The Vision"
        g.hasDoubleStrike vis && vis.status.modesChosenThisTurn == #[0] &&
-         (let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
+         (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
           match g.pending with
           | .fraChoice _ (.visionMode _ available) =>
             available == #[1, 2] &&
@@ -2867,7 +2867,7 @@ def visionModeChoiceOk : Bool :=
                g.hasIndestructible vis &&
                  (let g := g.clearTurnActivations
                   (namedPermanent g "The Vision").status.modesChosenThisTurn.isEmpty &&
-                    (let g := g.applyTriggeredAbility ⟨0⟩
+                    (let g := g.applyModeledTrigger ⟨0⟩
                        (.onCasting Effect.castingVisionModes) (some vis.id)
                      match g.pending with
                      | .fraChoice _ (.visionMode _ available) => available == #[0, 1, 2]
@@ -2881,7 +2881,7 @@ def visionModeChoiceOk : Bool :=
 def msMarvelUntilEndOfTurnOk : Bool :=
   let g := addPermanent afterDraw msMarvelKamalaKhan ⟨0⟩ ⟨0⟩
   let marvel := namedPermanent g "Ms. Marvel, Kamala Khan"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDrawPowerEqualHand)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDrawPowerEqualHand)
     (some marvel.id)
   let marvel := namedPermanent g "Ms. Marvel, Kamala Khan"
   let fromHand := Int.ofNat (g.player ⟨0⟩).hand.size
@@ -2904,20 +2904,20 @@ def thorSpellManaValueOk : Bool :=
   let (g, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let (g, ab) := g.allocStackAbility thor ⟨0⟩
-  let g := g.setObject { ab with triggerCause := { id := some spell.id } }
+  let g := g.setObject { ab with fraCauseId := some spell.id }
   let g := { g with resolvingAbility := some ab.id }
   let life0 := (g.player ⟨1⟩).life
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
     (some thor.id) #[Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == life0 - (5 : Int) &&
     (let (g, _) := g.move spell.id (.graveyard ⟨0⟩) none
      let gy := g.object! (g.followMoved spell.id)
      gy.chosenX == some 3 &&
        (let (g, ab2) := g.allocStackAbility thor ⟨0⟩
-        let g := g.setObject { ab2 with triggerCause := { id := some spell.id } }
+        let g := g.setObject { ab2 with fraCauseId := some spell.id }
         let g := { g with resolvingAbility := some ab2.id }
         let life1 := (g.player ⟨1⟩).life
-        let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
+        let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
           (some thor.id) #[Target.player ⟨1⟩]
         (g.player ⟨1⟩).life == life1 - (5 : Int)))
 
@@ -2935,15 +2935,15 @@ def namorTriggeringSpellOk : Bool :=
   let merfolk (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.hasSubtype "Merfolk")).size
   let (gBlue, ab) := g.allocStackAbility namor ⟨0⟩
-  let gBlue := gBlue.setObject { ab with triggerCause := { id := some aura.id } }
+  let gBlue := gBlue.setObject { ab with fraCauseId := some aura.id }
   let gBlue := { gBlue with resolvingAbility := some ab.id }
-  let gBlue := gBlue.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
+  let gBlue := gBlue.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
     (some namor.id)
   merfolk gBlue == 2 &&
     (let (gRed, ab) := g.allocStackAbility namor ⟨0⟩
-     let gRed := gRed.setObject { ab with triggerCause := { id := some bolt.id } }
+     let gRed := gRed.setObject { ab with fraCauseId := some bolt.id }
      let gRed := { gRed with resolvingAbility := some ab.id }
-     let gRed := gRed.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
+     let gRed := gRed.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
        (some namor.id)
      merfolk gRed == 0 && logContains gRed "No blue mana symbols")
 
@@ -2961,17 +2961,17 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let g := g.setObject { giant with printed := { giant.printed with isToken := true } }
   let giant := namedPermanent g "Hill Giant"
-  let kind := Effect.castingExileFlicker.targeting.kind
+  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some wiccan.id)
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent wiccan.id) &&
     !legal.contains (Target.permanent land.id) &&
     !legal.contains (Target.permanent giant.id) &&
-    (let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingExileFlicker)
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingExileFlicker)
         (some wiccan.id) #[Target.permanent bears.id]
      !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
        g.delayedEndStepReturns.size == 1) &&
-    (let gMiss := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingExileFlicker)
+    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingExileFlicker)
         (some wiccan.id) #[Target.permanent giant.id]
      gMiss.battlefield.any (fun o => o.name == "Hill Giant") &&
        logContains gMiss "no longer legal")
@@ -2988,15 +2988,15 @@ def quakeTapsCreatureOrLandOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let feast := namedPermanent g "Heroic Feast"
-  let kind := Effect.castingTapCreatureOrLand.targeting.kind
+  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.kind
   let legal := g.legalTargetsForKind ⟨0⟩ kind (some quake.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent land.id) &&
     !legal.contains (Target.permanent feast.id) &&
-    (let gLand := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
+    (let gLand := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
         (some quake.id) #[Target.permanent land.id]
      (namedPermanent gLand "Mountain").status.tapped) &&
-    (let gMiss := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
+    (let gMiss := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingTapCreatureOrLand)
         (some quake.id) #[Target.permanent feast.id]
      !(namedPermanent gMiss "Heroic Feast").status.tapped &&
        logContains gMiss "no longer legal")
@@ -3008,8 +3008,8 @@ def moonstoneMayExileOk : Bool :=
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g lightningBolt ⟨0⟩
   let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDiscardExilePlay)
-    none #[] (lastKnownPower := some (Int.ofNat bolt.id.raw)) (sourceName := "Moonstone")
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDiscardExilePlay)
+    none #[] "Moonstone" (some (Int.ofNat bolt.id.raw))
   match g.pending with
   | .fraChoice _ (.moonstoneMayExile _) =>
     let kept := mustApply g ⟨0⟩ .decline
@@ -3032,16 +3032,19 @@ def heroicFeastUpToLifeOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
   let bounds :=
-    match heroicFeast.triggeredAbilities.find? (·.firesOn .youGainLife) with
+    match heroicFeast.triggeredAbilities.find? (fun ab =>
+      match ab.shared with
+      | .resource .gainLifePlusOnes => true
+      | _ => false) with
     | none => false
     | some abil =>
       let (_, obj) := g.allocStackAbility feast ⟨0⟩
         (triggeredAbility := some abil) (lastKnownPower := some 1)
       g.announcedTargetBounds obj == (0, 1)
   bounds &&
-    (let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceGainLifePlusOnes)
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceGainLifePlusOnes)
         (some feast.id) #[Target.permanent bears.id, Target.permanent giant.id]
-        (lastKnownPower := some 1) (sourceName := "Heroic Feast")
+        "Heroic Feast" (some 1)
      (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
        (namedPermanent g "Hill Giant").status.plusOnePlusOne == 0)
 
@@ -3052,7 +3055,7 @@ def hellcatEntersWithCounterOk : Bool :=
   let g := addPermanent afterDraw hellcatUndyingVigilante ⟨0⟩ ⟨0⟩
   let old := (namedPermanent g "Hellcat, Undying Vigilante").id
   let g := g.destroyPermanent (namedPermanent g "Hellcat, Undying Vigilante")
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some old)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some old)
   let cat := namedPermanent g "Hellcat, Undying Vigilante"
   cat.status.plusOnePlusOne == 1 && g.hasHaste cat &&
     logContains g "enters with"
@@ -3439,7 +3442,8 @@ def avengersLandSearchOk : Bool :=
     | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) =>
       let kept := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
       let land := namedPermanent kept "Forest"
-      let kept := kept.mapObjectStatus land (·.setCounter .indestructible 1)
+      let kept := kept.setObject { land with status :=
+        { land.status with indestructibleCounters := 1 } }
       let kept := kept.applyEffect ⟨0⟩ Effect.destroyLandSearchBasic
         #[Target.permanent (namedPermanent kept "Forest").id]
       kept.battlefield.any (fun o => o.name == "Forest") &&
@@ -3570,8 +3574,8 @@ def tooEvilTeamworkEntersOk : Bool :=
         #[Target.card bear.id]
      let returned := namedPermanent gBear "Grizzly Bears"
      returned.status.enteredThisTurn) &&
-    (let gb := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
-     let paid := g.setObject { gb with castState := { gb.castState with teamworkPaid := true } }
+    (let paid := g.setObject { (namedGraveyardCard g ⟨0⟩ "Grizzly Bears") with
+        teamworkPaid := true }
      let paid := { paid with resolvingSpell := some bear.id }
      let paid := paid.applyEffect ⟨0⟩ (Effect.returnGyCreatureMvAtMostOrAny 4)
        #[Target.card dino.id]
@@ -3597,7 +3601,7 @@ def cruelAllianceTeamworkOk : Bool :=
     (let gMiss := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
         #[Target.permanent giant.id]
      gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
-    (let paid := g.setObject { bears with castState := { bears.castState with teamworkPaid := true } }
+    (let paid := g.setObject { bears with teamworkPaid := true }
      let paid := { paid with resolvingSpell := some bears.id }
      let wide := paid.legalTargetsForKind ⟨0⟩ kind
      wide.contains (Target.permanent giant.id) &&
@@ -3642,8 +3646,7 @@ def callForthCountsOtherSpellsOk : Bool :=
      (namedPermanent dealt0 "Hill Giant").status.damage == 0) &&
     (let gCopy := addPermanent afterDraw hillGiant ⟨1⟩ ⟨1⟩
      let (gCopy, spellC) := gCopy.allocObject callForthTheTempest ⟨0⟩ .stack (some ⟨0⟩)
-     let curC := gCopy.object! spellC.id
-     let gCopy := gCopy.setObject { curC with castState := { curC.castState with isCopy := true } }
+     let gCopy := gCopy.setObject { (gCopy.object! spellC.id) with isCopy := true }
      let gCopy := gCopy.modifyPlayer ⟨0⟩ (fun pl => { pl with castManaValuesThisTurn := #[2] })
      let gCopy := { gCopy with resolvingSpell := some spellC.id }
      let dealtC := gCopy.applyEffect ⟨0⟩ Effect.damageOppCreaturesEqualOtherSpellsMv #[]
@@ -3764,8 +3767,7 @@ def earthsMightiestChoosesOk : Bool :=
        | _ => false) &&
       (let two := addToLibraryTop base hillGiant ⟨0⟩
        let (two, spell) := two.allocObject earthSMightiestHeroes ⟨0⟩ .stack (some ⟨0⟩)
-       let curS := two.object! spell.id
-       let two := two.setObject { curS with castState := { curS.castState with teamworkPaid := true } }
+       let two := two.setObject { (two.object! spell.id) with teamworkPaid := true }
        let two := { two with resolvingSpell := some spell.id }
        let gTeam := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
        match gTeam.pending with
@@ -4267,7 +4269,7 @@ def unrecognizedIsNotExtraLandOk : Bool :=
   let e : Effect := { resolution := .unrecognized }
   let before := (afterDraw.player ⟨0⟩).additionalLandsThisTurn
   let g := afterDraw.applyEffect ⟨0⟩ e #[]
-  e.resolution == .unrecognized &&
+  e.spellResolution == .unrecognized &&
     (g.player ⟨0⟩).additionalLandsThisTurn == before &&
     (let g2 := afterDraw.applyEffect ⟨0⟩ Effect.playAdditionalLandThisTurn #[]
      (g2.player ⟨0⟩).additionalLandsThisTurn == before + 1)
@@ -4460,7 +4462,7 @@ def hostKeywordChecksOk : Bool :=
   let armed := namedPermanent g3 "Grizzly Bears"
   let g3 := g3.setObject { armed with status :=
     { armed.status with attacking := true, attackingWhom := some ⟨1⟩ } }
-  let g3 := { g3 with combat := { g3.combat with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] } }
+  let g3 := { g3 with assignedCombatDamage := #[{ source := armed.id, toPlayer := 3 }] }
   let g3 := g3.dealAssignedCombatDamage
   g.hasMenace mail && g.power mail == 3 &&
     g2.hasIndestructible coat &&
@@ -4530,7 +4532,7 @@ def quicksilverMayStayInHandOk : Bool :=
 def prowessPrintedPlusGrantedOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let printedOnly := { host with printed := { host.printed with keywordRule := .prowess 2 } }
+  let printedOnly := { host with printed := { host.printed with prowessInstances := 2 } }
   let g1 := g.setObject printedOnly
   let both := { printedOnly with status :=
     { printedOnly.status with untilEotKeywords := Keyword.prowess } }
@@ -4540,7 +4542,7 @@ def prowessPrintedPlusGrantedOk : Bool :=
   let gStaff := gStaff.attachSourceTo (namedPermanent gStaff "Wizard's Staff")
     (namedPermanent gStaff "Grizzly Bears")
   let armed := namedPermanent gStaff "Grizzly Bears"
-  let armed := { armed with printed := { armed.printed with keywordRule := .prowess 1 } }
+  let armed := { armed with printed := { armed.printed with prowessInstances := 1 } }
   let gStaff := gStaff.setObject armed
   (g1.prowessTriggers (g1.object! host.id)).size == 2 &&
     (g2.prowessTriggers (g2.object! host.id)).size == 3 &&

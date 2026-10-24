@@ -11,155 +11,108 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
-set_option synthInstance.maxSize 1024
-
-/-- Shared spell-resolution context (controller and announced targets) for a
-pending `unlessPays`, `may`, or `or` choice (CR 608.2c). -/
-abbrev SpellResolutionContext := StackEntry
-
-/-- Shared ability context for a triggered ability whose resolution is paused on
-a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2),
-context a `NumberSelector` or `PlayerSelector` is read in (`TriggerRead`), or
-stashed spell effect/alternatives (`UnlessPaysRest`, `MayEffectRest`, `SpellOrRest`,
-CR 118.12 / 608.2c). -/
-abbrev TriggerResolutionContext := StackEntry
-
-/-- Continuation state for a triggered ability whose resolution is paused on
-a pending choice (`sequence`, `or`, or `chooseModes`, CR 603.3 / CR 608.2). -/
-abbrev TriggerSequenceRest := TriggerResolutionContext
+/-- Later steps of a trigger `sequence`, waiting until the pending choice
+opened by an earlier step finishes. They run before any player receives
+priority, so they stay part of that resolution. -/
+structure TriggerSequenceRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  steps : List TriggeredAbility.TriggerResolution := []
+deriving Repr, Inhabited
 
 /-- A pending `TriggerResolution.or`. The controller chooses one alternative,
 then that step resolves with this ability context. -/
-abbrev TriggerOrRest := TriggerResolutionContext
+structure TriggerOrRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  alternatives : Array TriggeredAbility.TriggerResolution := #[]
+deriving Repr, Inhabited
 
 /-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
 The chosen index resolves with this ability context. -/
-abbrev ChooseModesRest := TriggerResolutionContext
+structure ChooseModesRest where
+  controller : PlayerId
+  ability : TriggeredAbility
+  sourceId : Option ObjectId := none
+  targets : Array Target := #[]
+  dividedDamage : Array Nat := #[]
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  sourceName : String := "This creature"
+  cardPower : Option Nat := none
+  modes : List TriggeredAbility.TriggerResolution := []
+  how : TriggeredAbility.TriggerModeHow := .oneUnused
+deriving Repr, Inhabited
 
-/-- Delayed triggered ability waiting to fire at the beginning of the next end
-step (CR 603.7). -/
-abbrev DelayedEndStepTrigger := CopyDuration
-
-namespace DelayedEndStepTrigger
-
-@[match_pattern] abbrev delayedEndStepKind (id : ObjectId := ⟨0⟩) (controller : PlayerId := ⟨0⟩) (count : Nat := 0)
-    (exileOrSac : Bool := false) (sacFlag : Bool := false) (fromGy : Bool := false) (destiny : Bool := false)
-    (b5 : Bool := false) : DelayedEndStepTrigger :=
-  .copyDurationKind id controller count 0 #[] exileOrSac sacFlag fromGy destiny b5
-@[match_pattern] abbrev returnExiled (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 false false false false false
-@[match_pattern] abbrev exilePermanent (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 true false false false false
-@[match_pattern] abbrev sacrificePermanent (id : ObjectId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id ⟨0⟩ 0 false false false false true
-@[match_pattern] abbrev returnFromGraveyard (id : ObjectId) (controller : PlayerId) : DelayedEndStepTrigger :=
-  .delayedEndStepKind id controller 0 false false true false false
-@[match_pattern] abbrev syntheticDestiny (controller : PlayerId) (count : Nat) : DelayedEndStepTrigger :=
-  .delayedEndStepKind ⟨0⟩ controller count false false false true false
-
-end DelayedEndStepTrigger
-
-namespace CopyDuration
-export DelayedEndStepTrigger (delayedEndStepKind returnExiled exilePermanent sacrificePermanent returnFromGraveyard syntheticDestiny)
-end CopyDuration
-
-/-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6), multi-card
-or conditional discard requirement (`DiscardRequirement`, CR 701.8), extra
-turns and player-control effects (`TurnControlState`, CR 500.7 / CR 720),
-pending trigger/scry/combat/batch state (`TriggerMayBranch`, `AfterScrySurveil`,
-`CombatPhaseState`, `BatchMoveState`, `LastTriggerEvent`), or demo player/script/flag
-state (`DemoPlayer`, `InputScript`, `DemoFlagValues`). -/
-structure MulliganState where
+structure Game where
+  players : Array Player
+  objects : Array GameObject
+  stack : Array StackEntry := #[]
+  activePlayer : PlayerId := ⟨0⟩
+  priority : PlayerId := ⟨0⟩
+  step : Step := .untap
+  turnNumber : Nat := 1
+  startingPlayer : PlayerId := ⟨0⟩
+  isFirstTurn : Bool := true
+  pending : Pending := .none
+  nextObjectId : Nat := 0
+  timestamp : Nat := 0
+  rng : Rng := Rng.ofSeed 1
+  /-- When true, random events become `Pending.resolveRandom` instead of
+  using `rng`. -/
+  norandom : Bool := false
+  /-- Continuation after a `--norandom` result is applied. -/
+  afterRandom : AfterRandom := .none
+  result : Option GameResult := none
+  log : Array String := #[]
+  format : Format := .constructed
+  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
+  brawl : Bool := false
+  consecutivePasses : Nat := 0
+  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
+  cleanupGivesPriority : Bool := false
+  /-- Until-end-of-turn continuous effect: creatures without flying can't
+  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
+  creaturesWithoutFlyingCantBlock : Bool := false
+  /-- A creature went to a graveyard from the battlefield this turn
+  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
+  creatureDiedThisTurn : Bool := false
+  /-- Spell or ability proposed and waiting for mana abilities / payment
+  (CR 601.2f–h / 602.2b). -/
+  proposedSpell : Option ProposedSpell := none
   /-- Opening hands are kept and a “may begin on the battlefield” choice is
-  still unfinished (CR 103.6). -/
+  still unfinished. The first turn starts when that choice ends. -/
   awaitingOpeningBegin : Bool := false
   /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
-  toDeclare : Array PlayerId := #[]
+  mulliganToDeclare : Array PlayerId := #[]
   /-- Players who declared they will mulligan this round; taken together after
   every remaining player has declared (CR 103.5). -/
   willMulligan : Array PlayerId := #[]
   /-- Players who still must put cards on the bottom after simultaneous mulligans. -/
-  toBottom : Array PlayerId := #[]
-  /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
-  card finishes the requirement early. -/
-  thirstDiscardsLeft : Nat := 0
-  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
-  thirstDiscardType : CardType := .artifact
-  /-- Remaining discards for a required multi-card discard such as “discard
-  two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
-  early. -/
-  pendingDiscardsLeft : Nat := 0
-  /-- Put a +1/+1 counter on this permanent after the current discard choices
-  finish (Ninja of the Hand). -/
-  plusOneAfterDiscards : Option ObjectId := none
-  /-- Extra turns to take before the next player in turn order (Kang). -/
-  extraTurns : Array PlayerId := #[]
-  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
-  powerUpsForbidden : Bool := false
-  /-- Player-controlling effect: (you, the player you control). Last created
-  wins (MSH 259). -/
-  playerControl : Option (PlayerId × PlayerId) := none
-  /-- If the controlled player skips their next turn, control applies to the
-  next turn they actually take (MSH 221). -/
-  controlOnNextTakenTurn : Bool := false
-  name : String := ""
-  deck : (Color ⊕ String) × Bool × Bool × Bool := (.inl .white, false, false, false)
-  flags : List String := []
-  commands : List String := []
-  interactive : Bool := false
-  multiplayer : Bool := false
-  playerView : Bool := false
-  norandom : Bool := false
-  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
-  constructed : Bool := false
-  rawSeed : Option UInt64 := none
-  rawFuel : Option Nat := none
-  inputFile : Option String := none
-  outputFile : Option String := none
-  /-- Replay `--input` and require a finished legal game. -/
-  check : Bool := false
-  names : Array String := #[]
-  decks : Array ((Color ⊕ String) × Bool × Bool × Bool) := #[]
-  decidesName : Option String := none
-  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
-  modeSet : Bool := false
-  onAccept : Option TriggeredAbility.TriggerResolution := none
-  onDecline : Option TriggeredAbility.TriggerResolution := none
-  context : Option TriggerSequenceRest := none
-  /-- Flattened steps of the `mayThen` conditional waiting in
-  `triggerSequenceRest`. Declining the optional action drops this many. -/
-  drop : Nat := 0
-  /-- After an optional `mayThen` action cannot be performed, the sequence
-  fold skips this many following steps. -/
-  skip : Nat := 0
-  /-- Conditional of the `mayThen` currently offered. The optional action
-  reads it for its log and which choice to open. -/
-  conditional : Option TriggeredAbility.TriggerResolution := none
-  /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
-  resumes the conditional. -/
-  resume : Bool := false
-  /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
-  pendingDrawAfterScry : Option (PlayerId × Nat) := none
-  /-- After Palantír of Orthanc finishes scrying, this opponent may have
-  the controller draw. Stores controller, opponent, and the Palantír. -/
-  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
-  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
-  its controller, source, and what to do. -/
-  fraAfterLook : Option (PlayerId × Option ObjectId × Resolution) := none
-  /-- The following `surveil` returns a card with mana value at most the life
-  gained this turn (ruling 750). -/
-  armSurveilReturn : Bool := false
-  /-- After the pending surveil, a card with mana value at most this put into
-  the graveyard goes to its owner's hand (Enlightened Confidant). -/
-  surveilReturnMvAtMost : Option Nat := none
-  /-- A noncreature, nonland card put into the graveyard by the pending
-  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
-  surveilReturnNoncreatureNonland : Bool := false
+  mulliganToBottom : Array PlayerId := #[]
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Defending players who still must declare blockers, in APNAP order
   (CR 509.1 / 802). -/
   blockersQueue : Array PlayerId := #[]
+  /-- Triggered abilities waiting to be put onto the stack the next time a
+  player would receive priority (CR 603.3 / 603.3b). Distinguished by
+  `WaitingTrigger.event`. -/
+  waitingTriggers : Array WaitingTrigger := #[]
   /-- True after a first-strike combat damage step has been dealt this combat
   (CR 702.7b). Cleared when combat ends. -/
   firstStrikeDamageDone : Bool := false
@@ -169,10 +122,182 @@ structure MulliganState where
   /-- Creatures that assigned first-strike combat damage this combat. They
   assign regular damage only if they have double strike (Okoye; MSH 173). -/
   firstStrikeAssignedThisCombat : Array ObjectId := #[]
-  /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
-  additionalCombatPhases : Nat := 0
-  /-- Enrage triggers that will grant an additional combat when they resolve. -/
-  enrageGrantsAdditionalCombat : Nat := 0
+  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  isNight : Bool := false
+  /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
+  pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
+  may put that land onto the battlefield tapped (Silvan Reveler). The
+  player who discarded it, and the card. -/
+  discardedCardThisWay : Option (PlayerId × ObjectId) := none
+  /-- After Palantír of Orthanc finishes scrying, this opponent may have
+  the controller draw. Stores controller, opponent, and the Palantír. -/
+  palantirAfterScry : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- Last-known status of objects that left the battlefield, newest last
+  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
+  lastKnownStatus : Array (ObjectId × Status) := #[]
+  /-- The spell whose effect is currently resolving (CR 608.2). -/
+  resolvingSpell : Option ObjectId := none
+  /-- The activated or triggered ability currently resolving. -/
+  resolvingAbility : Option ObjectId := none
+  /-- Where recently moved objects went (old id, new id), most recent last. -/
+  movedTo : Array (ObjectId × ObjectId) := #[]
+  /-- Tokens created by the most recent `createKindTokens` call, so a following
+  sequence step can haste them or leave them out of a plus-one. -/
+  recentTokenIds : Array ObjectId := #[]
+  /-- Creatures that died this turn, tokens included. -/
+  creatureDeathsThisTurn : Nat := 0
+  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
+  its controller, source, and what to do. -/
+  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
+  /-- Copies a player may still cast without paying their mana costs as an
+  ability resolves, with the mana value left (Uldaros Theorix). -/
+  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
+  /-- Spells exiled by a resolving ability that may still be cast without
+  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
+  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
+  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
+  permanent (Proft, Consulting Detective). -/
+  mayPayAlsoPlusOneOn : Option ObjectId := none
+  /-- Humans chosen for the current “tap any number of Humans” step.
+  `.draw (amount := .forEachTappedHuman)` draws this many cards. -/
+  humansTappedThisWay : Nat := 0
+  /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`.
+  `.gainLife .forEachDestroyedThisWay` gains this much life. -/
+  permanentsDestroyedThisWay : Nat := 0
+  /-- A hope counter was removed by the current `removeCounters .hope .source` step.
+  `«if» .removedHope` draws a card when this is set. -/
+  removedHopeThisWay : Bool := false
+  /-- The permanent marked by the current `dealDamage` step when it notes
+  `.markedPermanent`. `«if» (.dealtDamageToSubtype _)` destroys it when it
+  has the subtype. -/
+  permanentDealtDamageThisWay : Option ObjectId := none
+  /-- A permanent was returned to its owner's hand by the current
+  `returnToHand` step when it notes `.returnedPermanent`.
+  `«if» .returnedPermanent` puts a +1/+1 counter on the source when this is set. -/
+  returnedPermanentThisWay : Bool := false
+  /-- Ordinal recorded by the current `noteResolveThisTurn` step.
+  `«if» (.nthResolve _)` reads it and a finished sequence clears it. -/
+  nthResolveThisWay : Option Nat := none
+  /-- The current sequence step asked the rest of the sequence not to run
+  (the source had already left, or no mana was spent). -/
+  skipTriggerSequenceRest : Bool := false
+  /-- Excess damage noted by `dealDamage` with `.excess` for the following
+  amass step. -/
+  excessDamageThisWay : Nat := 0
+  /-- `.destroy .target (note := .forAmass)` chose a legal target. The controller,
+  amount, and whether you controlled it feed the following amass and draw steps. -/
+  destroyedForAmassThisWay : Bool := false
+  amassControllerThisWay : Option PlayerId := none
+  amassAmountThisWay : Nat := 0
+  amassYouControlledThisWay : Bool := false
+  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
+  milledIdsThisWay : Array ObjectId := #[]
+  /-- Cards `revealLibrary` just showed. A following step reads them. -/
+  revealedIdsThisWay : Array ObjectId := #[]
+  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
+  opponentsMilledThisWay : Bool := false
+  /-- Palantír finished putting an influence counter; the following step offers
+  the opponent's draw choice. Controller, opponent, and the Palantír. -/
+  palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
+  /-- `revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`
+  stored the impulse. The following `.mayCast .impulse` offers the cast. -/
+  grimaImpulseReady : Bool := false
+  grimaImpulseVictim : Option PlayerId := none
+  grimaImpulseFound : Option ObjectId := none
+  grimaImpulseOthers : Array ObjectId := #[]
+  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
+  planWasSacrificed : Bool := false
+  /-- `sacrifice .you .source .noted` sacrificed the source. -/
+  sourceWasSacrificed : Bool := false
+  /-- Lands exiled by `exile .landsYouControl .forLater .lands`.
+  `.put .notedLands (how := .tapped)` returns them. -/
+  exiledIdsThisWay : Array ObjectId := #[]
+  /-- Creature exiled by `exile .target .untilSourceLeaves .copyAndHost`, copied by the next step.
+  The object is the one from before it moved. -/
+  notedCopyObject : Option GameObject := none
+  notedHostId : Option ObjectId := none
+  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
+  handDiscardedThisWay : Option Nat := none
+  /-- Source of the Balin ability, for the damage step after the discard. -/
+  notedSourceThisWay : Option ObjectId := none
+  /-- Creature that received Equipment from `attach .anyYouControl .target`. -/
+  equipmentAttachedHost : Option ObjectId := none
+  /-- A count captured before a later step could change it (invasion counters,
+  cards discarded). -/
+  notedCountThisWay : Nat := 0
+  /-- Token created for the following attach or counter step. -/
+  createdTokenThisWay : Option ObjectId := none
+  /-- Artifact put from hand by `.put .artifactFromHand (note := .forAttach)`,
+  and the creature `attach .putArtifact .notedHost` attaches it to when it
+  is Equipment. -/
+  putArtifactThisWay : Option (ObjectId × ObjectId) := none
+  /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
+  playExiledThisWay : Option ObjectId := none
+  /-- The following `surveil` returns a card with mana value at most the life
+  gained this turn (ruling 750). -/
+  armSurveilReturn : Bool := false
+  /-- Later steps of a trigger `sequence`, waiting on the pending choice an
+  earlier step opened. -/
+  triggerSequenceRest : Option TriggerSequenceRest := none
+  /-- Flattened steps of the `mayThen` conditional waiting in
+  `triggerSequenceRest`. Declining the optional action drops this many. -/
+  mayThenDrop : Nat := 0
+  /-- After an optional `mayThen` action cannot be performed, the sequence
+  fold skips this many following steps. -/
+  mayThenSkip : Nat := 0
+  /-- Conditional of the `mayThen` currently offered. The optional action
+  reads it for its log and which choice to open. -/
+  mayThenConditional : Option TriggeredAbility.TriggerResolution := none
+  /-- Accepting `Pending.mayResolve` applies this trigger resolution.
+  The ability context is `mayContext`. -/
+  mayOnAccept : Option TriggeredAbility.TriggerResolution := none
+  /-- Declining `Pending.mayResolve` applies this trigger resolution
+  instead of `mayOnAccept`. -/
+  mayOnDecline : Option TriggeredAbility.TriggerResolution := none
+  /-- Ability context for `mayOnAccept` and `mayOnDecline`. -/
+  mayContext : Option TriggerSequenceRest := none
+  /-- Power of the creature sacrificed for
+  `putCounters .plusOneSacrificedPower`. -/
+  sacrificedPowerThisWay : Option Nat := none
+  /-- An artifact-or-discard cost accepted a `mayThen`. The action handler
+  resumes the conditional. -/
+  mayThenResume : Bool := false
+  /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
+  that index. -/
+  triggerOr : Option TriggerOrRest := none
+  /-- Context for a pending Alliance or Gollum mode choice. `chooseMode`
+  applies that index of `modes`. -/
+  chooseModesRest : Option ChooseModesRest := none
+  /-- Declining `payOrLetCounter` resolves this effect instead of countering.
+  The caster is `unlessPaysController`; `unlessPaysTargets` are the targets
+  announced for that effect. -/
+  unlessPaysInstead : Option Effect := none
+  unlessPaysController : PlayerId := ⟨0⟩
+  unlessPaysTargets : Array Target := #[]
+  /-- The payer left without paying (CR 800.4f). `flushUnlessPays` resolves
+  `unlessPaysInstead`. -/
+  unlessPaysDue : Bool := false
+  /-- Accepting `mayResolve` resolves this effect. The controller is
+  `mayController`; `mayTargets` are the targets announced for that effect. -/
+  mayEffect : Option Effect := none
+  mayController : PlayerId := ⟨0⟩
+  mayTargets : Array Target := #[]
+  /-- Alternatives for a pending `SpellResolution.or`. `chooseTop` applies
+  the first and `chooseBottom` the second. `chooseMode` applies that index.
+  Library top and bottom are stored in that order when `spellOrLibrary`. -/
+  spellOr : Array Effect := #[]
+  spellOrController : PlayerId := ⟨0⟩
+  spellOrTargets : Array Target := #[]
+  /-- `chooseTop` and `chooseBottom` name the library side, not list order
+  written by the card. The stashed effects are still top then bottom. -/
+  spellOrLibrary : Bool := false
+  /-- After the pending surveil, a card with mana value at most this put into
+  the graveyard goes to its owner's hand (Enlightened Confidant). -/
+  surveilReturnMvAtMost : Option Nat := none
+  /-- A noncreature, nonland card put into the graveyard by the pending
+  surveil goes to its owner's hand (Chandra, Chill of Compliance). -/
+  surveilReturnNoncreatureNonland : Bool := false
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
   batch, so simultaneous deaths still see those sources (Gatherer).
   Objects are stored so a source that also dies still applies (CR 614.6). -/
@@ -188,351 +313,90 @@ structure MulliganState where
   /-- Player most recently dealt combat damage by a creature whose
   combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
   lastCombatDamagePlayer : Option PlayerId := none
+  /-- True while a spell is being cast from the top of a library
+  (Elven Chorus cannot show the new top until that finishes). -/
+  castingFromTop : Bool := false
+  /-- Creature cards that went from the battlefield to a graveyard this turn
+  (Supper for Spiders). Cleared as the turn ends. -/
+  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
   /-- Most recent life loss amount, for “mills that many” triggers. -/
   lastLifeLost : Option (PlayerId × Nat) := none
   /-- Most recent noncombat damage marked on a permanent. -/
   lastNoncombatDamage : Option (ObjectId × Nat) := none
-  /-- Most recent creature that became tapped (Captain America, Living Legend). -/
-  lastBecameTapped : Option ObjectId := none
-  /-- Most recent attacking creature that died (new GY object id; Ares). -/
-  lastDiedAttacker : Option ObjectId := none
-deriving Repr, Inhabited
-
-instance : BEq MulliganState where
-  beq a b := a.name == b.name && a.deck == b.deck
-
-/-- Stashed effect or alternatives for a pending `unlessPays`, `may`, or `or` choice (CR 118.12 / 608.2c). -/
-abbrev UnlessPaysRest := TriggerResolutionContext
-
-/-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-abbrev MayEffectRest := TriggerResolutionContext
-
-/-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-abbrev SpellOrRest := TriggerResolutionContext
-
-/-- Pending `TriggerResolution.may` or `mayThen` branch choice (CR 603.3 / 608.2c). -/
-abbrev TriggerMayBranch := MulliganState
-
-/-- Follow-up action after a library search completes (CR 701.23). -/
-abbrev AfterLibrarySearch := CopyDuration
-
-namespace AfterLibrarySearch
-
-@[match_pattern] abbrev afterSearchKind (id : ObjectId := ⟨0⟩) (minLands : Nat := 0) (plusOne : Bool := false) (untapLands : Bool := false) : AfterLibrarySearch :=
-  .copyDurationKind id ⟨0⟩ minLands 0 #[] plusOne untapLands false false false
-@[match_pattern] abbrev none : AfterLibrarySearch :=
-  .afterSearchKind ⟨0⟩ 0 false false
-@[match_pattern] abbrev plusOneOn (id : ObjectId) : AfterLibrarySearch :=
-  .afterSearchKind id 0 true false
-@[match_pattern] abbrev untapSearchedIfLands (minLands : Nat) : AfterLibrarySearch :=
-  .afterSearchKind ⟨0⟩ minLands false true
-
-end AfterLibrarySearch
-
-namespace CopyDuration
-export AfterLibrarySearch (afterSearchKind none plusOneOn untapSearchedIfLands)
-end CopyDuration
-
-/-- Combat phase state: damage assignment, blockers queue, first-strike tracking,
-and additional combat phases (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
-abbrev CombatPhaseState := TriggerMayBranch
-
-/-- State for a pending `TriggerResolution.mayThen` ("you may ... If you do, ...")
-branch in a trigger sequence (CR 603.3 / CR 608.2c). -/
-abbrev MayThenState := TriggerMayBranch
-
-/-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
-abbrev AfterScrySurveil := TriggerMayBranch
-
-/-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
-abbrev DiscardRequirement := MulliganState
-
-/-- Simultaneous zone-change batch state for replacement effects and batch triggers
-(CR 614.6 / CR 603.2c). -/
-abbrev BatchMoveState := TriggerMayBranch
-
-/-- Most recent event parameters read by triggered abilities ("that player",
-"that much", "that creature", CR 603.2 / CR 608.2c). -/
-abbrev LastTriggerEvent := TriggerMayBranch
-
-/-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
-abbrev TurnControlState := MulliganState
-
-/-- Cross-step resolution notes ("this way", "that card", "those cards", CR 608.2c / CR 608.2h). -/
-abbrev ResolutionNotes := ProposedSpell
-
-set_option maxHeartbeats 800000 in
-structure Game where
-  activePlayer : PlayerId := ⟨0⟩
-  priority : PlayerId := ⟨0⟩
-  step : Step := .untap
-  turnNumber : Nat := 1
-  startingPlayer : PlayerId := ⟨0⟩
-  isFirstTurn : Bool := true
-  consecutivePasses : Nat := 0
-  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
-  cleanupGivesPriority : Bool := false
-  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
-  isNight : Bool := false
-  /-- Until-end-of-turn continuous effect: creatures without flying can't
-  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
-  creaturesWithoutFlyingCantBlock : Bool := false
-  /-- Until EOT, this player's creatures with toughness greater than power
-  assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
-  assignCombatDamageEqualToughness : Option PlayerId := none
-  /-- A creature went to a graveyard from the battlefield this turn
-  (used by cost reductions such as Dreaded Bat-Cloud). Cleared as the turn ends. -/
-  creatureDiedThisTurn : Bool := false
-  /-- Creatures that died this turn, tokens included. -/
-  creatureDeathsThisTurn : Nat := 0
-  /-- Creature cards that went from the battlefield to a graveyard this turn
-  (Supper for Spiders). Cleared as the turn ends. -/
-  battlefieldCreaturesToGyThisTurn : Array ObjectId := #[]
-  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
-  sheHulkDamageUsedThisTurn : Bool := false
-  /-- World War Hulk chapter I: the next red or green creature spell this
-  player casts this turn may be cast without paying its mana cost (MSH 343). -/
-  pendingFreeRGCreature : Option PlayerId := none
-  /-- Continuation after a `--norandom` result is applied. -/
-  afterRandom : AfterRandom := .none
-  /-- Follow-up actions after a pending scry or surveil completes (CR 701.18 / CR 701.42). -/
-  afterScrySurveil : AfterScrySurveil := {}
-  /-- The spell whose effect is currently resolving (CR 608.2). -/
-  resolvingSpell : Option ObjectId := none
-  /-- The activated or triggered ability currently resolving. -/
-  resolvingAbility : Option ObjectId := none
-  /-- Damage assigned to each target of the resolving divided-damage ability
-  (CR 601.2d). -/
-  resolvingDivision : Array Nat := #[]
-  /-- Copies a player may still cast without paying their mana costs as an
-  ability resolves, with the mana value left (Uldaros Theorix). -/
-  pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
-  /-- Spells exiled by a resolving ability that may still be cast without
-  paying their mana costs, and how many casts remain (Doom Reigns Supreme). -/
-  pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat) := none
-  /-- Paying the pending “you may pay” cost also puts a +1/+1 counter on this
-  permanent (Proft, Consulting Detective). -/
-  mayPayAlsoPlusOneOn : Option ObjectId := none
-  /-- Later steps of a trigger `sequence`, waiting on the pending choice an
-  earlier step opened. -/
-  triggerSequenceRest : Option TriggerSequenceRest := none
-  /-- State for a pending `TriggerResolution.mayThen` branch (CR 603.3 / CR 608.2c). -/
-  mayThen : MayThenState := {}
-  /-- Pending `TriggerResolution.may` branch choice (CR 603.3 / 608.2c). -/
-  triggerMayBranch : TriggerMayBranch := {}
-  /-- Alternatives for a pending `TriggerResolution.or`. `chooseMode` applies
-  that index. -/
-  triggerOr : Option TriggerOrRest := none
-  /-- Context for a pending Alliance or Gollum mode choice. `chooseMode`
-  applies that index of `modes`. -/
-  chooseModesRest : Option ChooseModesRest := none
-  /-- Stashed effect for a pending `unlessPays` (CR 118.12 / 608.2c). -/
-  unlessPays : UnlessPaysRest := {}
-  /-- Stashed effect for a pending `SpellResolution.may` (CR 608.2c). -/
-  mayEffectState : MayEffectRest := {}
-  /-- Stashed alternatives for a pending `SpellResolution.or` (CR 608.2c). -/
-  spellOrState : SpellOrRest := {}
+  /-- Cards in exile that return at the beginning of the next end step
+  (Roll-Roll-Roll-Roll and similar delayed blinks). -/
+  delayedEndStepReturns : Array ObjectId := #[]
+  /-- Extra turns to take before the next player in turn order (Kang). -/
+  extraTurns : Array PlayerId := #[]
+  /-- Power-up abilities can't be activated during this extra turn (Kang). -/
+  powerUpsForbidden : Bool := false
+  /-- Permanents exiled at the beginning of the next end step (Vindictive
+  Triumph). -/
+  delayedEndStepExiles : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
-  /-- Multi-card or conditional discard requirement in progress (CR 701.8). -/
-  discardReq : DiscardRequirement := {}
-  /-- Follow-up action after a library search completes (CR 701.23). -/
-  afterLibrarySearch : AfterLibrarySearch := .none
-  /-- Ward payments still to announce after the current one (CR 702.21). -/
-  wardQueue : Array WardObligation := #[]
-  /-- Triggered abilities waiting to be put onto the stack the next time a
-  player would receive priority (CR 603.3 / 603.3b). Distinguished by
-  `WaitingTrigger.event`. -/
-  waitingTriggers : Array WaitingTrigger := #[]
-  /-- Cross-step resolution notes ("this way", CR 608.2c / CR 608.2h). -/
-  thisWay : ResolutionNotes := {}
-  /-- Last-known status of objects that left the battlefield, newest last
-  (CR 113.7a / 608.2h). Only the most recent entries are kept. -/
-  lastKnownStatus : Array (ObjectId × Status) := #[]
-  /-- Where recently moved objects went (old id, new id), most recent last. -/
-  movedTo : Array (ObjectId × ObjectId) := #[]
-  /-- Tokens created by the most recent `createKindTokens` call, so a following
-  sequence step can haste them or leave them out of a plus-one. -/
-  recentTokenIds : Array ObjectId := #[]
-  /-- Simultaneous zone-change batch state (CR 614.6 / CR 603.2c). -/
-  batchMove : BatchMoveState := {}
-  /-- Most recent event parameters read by triggered abilities (CR 603.2 / CR 608.2c). -/
-  lastEvent : LastTriggerEvent := {}
-  /-- True while a spell is being cast from the top of a library
-  (Elven Chorus cannot show the new top until that finishes). -/
-  castingFromTop : Bool := false
-  /-- Delayed triggered abilities waiting to fire at the beginning of the next
-  end step (CR 603.7). -/
-  delayedEndStep : Array DelayedEndStepTrigger := #[]
+  /-- Put a +1/+1 counter on this permanent after the current discard choices
+  finish (Ninja of the Hand). -/
+  plusOneAfterDiscards : Option ObjectId := none
+  /-- Most recent creature that became tapped (Captain America, Living Legend). -/
+  lastBecameTapped : Option ObjectId := none
+  /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
+  additionalCombatPhases : Nat := 0
+  /-- Enrage triggers that will grant an additional combat when they resolve. -/
+  enrageGrantsAdditionalCombat : Nat := 0
+  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
+  sheHulkDamageUsedThisTurn : Bool := false
+  /-- Damage assigned to each target of the resolving divided-damage ability
+(CR 601.2d). -/
+  resolvingDivision : Array Nat := #[]
   /-- Tokens created since enters triggers were last processed. -/
   pendingTokenEnters : Array ObjectId := #[]
+  /-- Player-controlling effect: (you, the player you control). Last created
+  wins (MSH 259). -/
+  playerControl : Option (PlayerId × PlayerId) := none
+  /-- If the controlled player skips their next turn, control applies to the
+  next turn they actually take (MSH 221). -/
+  controlOnNextTakenTurn : Bool := false
   /-- Loki delayed copy: (controller, Loki's id if still known, last-known
   power). Compared at cast time (MSH 109). -/
   pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
+  /-- Until EOT, this player's creatures with toughness greater than power
+  assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
+  assignCombatDamageEqualToughness : Option PlayerId := none
+  /-- Most recent attacking creature that died (new GY object id; Ares). -/
+  lastDiedAttacker : Option ObjectId := none
+  /-- World War Hulk chapter I: the next red or green creature spell this
+  player casts this turn may be cast without paying its mana cost (MSH 343). -/
+  pendingFreeRGCreature : Option PlayerId := none
+  /-- After the current library search shuffles, put a +1/+1 counter on this
+  creature if it is still a creature (Restorative Technique). -/
+  plusOneAfterSearch : Option ObjectId := none
+  /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
+  card finishes the requirement early. -/
+  thirstDiscardsLeft : Nat := 0
+  /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
+  thirstDiscardType : CardType := .artifact
+  /-- Remaining discards for a required multi-card discard such as “discard
+  two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
+  early. -/
+  pendingDiscardsLeft : Nat := 0
+  /-- Ward payments still to announce after the current one (CR 702.21). -/
+  wardQueue : Array WardObligation := #[]
+  /-- Permanents sacrificed at the beginning of the next end step. -/
+  delayedEndStepSacrifices : Array ObjectId := #[]
+  /-- Graveyard cards that return under a chosen player at the next end step. -/
+  delayedGraveReturns : Array (ObjectId × PlayerId) := #[]
+  /-- At the next end step, reveal this many creature cards (Synthetic Destiny). -/
+  delayedSynthetic : Array (PlayerId × Nat) := #[]
+  /-- After the current search, untap the land if its controller has this many lands. -/
+  untapSearchedIfLands : Option Nat := none
   /-- Players who created one or more creature tokens since the last priority. -/
   pendingCreatureTokenCreators : Array PlayerId := #[]
   /-- Lands tapped for commander-identity mana that scries a matching creature. -/
   ancestryLandsTapped : Array ObjectId := #[]
-  players : Array Player
-  objects : Array GameObject
-  stack : Array StackEntry := #[]
-  pending : Pending := .none
-  nextObjectId : Nat := 0
-  timestamp : Nat := 0
-  rng : Rng := Rng.ofSeed 1
-  /-- When true, random events become `Pending.resolveRandom` instead of
-  using `rng`. -/
-  norandom : Bool := false
-  result : Option GameResult := none
-  log : Array String := #[]
-  format : Format := .constructed
-  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
-  brawl : Bool := false
-  /-- Spell or ability proposed and waiting for mana abilities / payment
-  (CR 601.2f–h / 602.2b). -/
-  proposedSpell : Option ProposedSpell := none
-  /-- Pre-game mulligan and opening-hand state (CR 103.5 / CR 103.6). -/
-  mulligan : MulliganState := {}
-  /-- Combat phase state (CR 508 / CR 509 / CR 510 / CR 702.7b). -/
-  combat : CombatPhaseState := {}
-  /-- Extra turns and player-control effects (CR 500.7 / CR 720). -/
-  turnControl : TurnControlState := {}
 deriving Repr, Inhabited
 
 namespace Game
-
-def awaitingOpeningBegin (g : Game) : Bool := g.mulligan.awaitingOpeningBegin
-def mulliganToDeclare (g : Game) : Array PlayerId := g.mulligan.toDeclare
-def willMulligan (g : Game) : Array PlayerId := g.mulligan.willMulligan
-def mulliganToBottom (g : Game) : Array PlayerId := g.mulligan.toBottom
-
-def discardedCardThisWay (g : Game) : Option (PlayerId × ObjectId) := g.thisWay.discardedCardThisWay
-def humansTappedThisWay (g : Game) : Nat := g.thisWay.humansTappedThisWay
-def permanentsDestroyedThisWay (g : Game) : Nat := g.thisWay.permanentsDestroyedThisWay
-def removedHopeThisWay (g : Game) : Bool := g.thisWay.removedHopeThisWay
-def permanentDealtDamageThisWay (g : Game) : Option ObjectId := g.thisWay.permanentDealtDamageThisWay
-def returnedPermanentThisWay (g : Game) : Bool := g.thisWay.returnedPermanentThisWay
-def nthResolveThisWay (g : Game) : Option Nat := g.thisWay.nthResolveThisWay
-def skipTriggerSequenceRest (g : Game) : Bool := g.thisWay.skipTriggerSequenceRest
-def excessDamageThisWay (g : Game) : Nat := g.thisWay.excessDamageThisWay
-def destroyedForAmassThisWay (g : Game) : Bool := g.thisWay.destroyedForAmassThisWay
-def amassControllerThisWay (g : Game) : Option PlayerId := g.thisWay.amassControllerThisWay
-def amassAmountThisWay (g : Game) : Nat := g.thisWay.amassAmountThisWay
-def amassYouControlledThisWay (g : Game) : Bool := g.thisWay.amassYouControlledThisWay
-def milledIdsThisWay (g : Game) : Array ObjectId := g.thisWay.milledIdsThisWay
-def revealedIdsThisWay (g : Game) : Array ObjectId := g.thisWay.revealedIdsThisWay
-def opponentsMilledThisWay (g : Game) : Bool := g.thisWay.opponentsMilledThisWay
-def palantirChoiceReady (g : Game) : Option (PlayerId × PlayerId × ObjectId) := g.thisWay.palantirChoiceReady
-def grimaImpulseReady (g : Game) : Bool := g.thisWay.grimaImpulseReady
-def grimaImpulseVictim (g : Game) : Option PlayerId := g.thisWay.grimaImpulseVictim
-def grimaImpulseFound (g : Game) : Option ObjectId := g.thisWay.grimaImpulseFound
-def grimaImpulseOthers (g : Game) : Array ObjectId := g.thisWay.grimaImpulseOthers
-def planWasSacrificed (g : Game) : Bool := g.thisWay.planWasSacrificed
-def sourceWasSacrificed (g : Game) : Bool := g.thisWay.sourceWasSacrificed
-def exiledIdsThisWay (g : Game) : Array ObjectId := g.thisWay.exiledIdsThisWay
-def notedCopyObject (g : Game) : Option GameObject := g.thisWay.notedCopyObject
-def notedHostId (g : Game) : Option ObjectId := g.thisWay.notedHostId
-def handDiscardedThisWay (g : Game) : Option Nat := g.thisWay.handDiscardedThisWay
-def notedSourceThisWay (g : Game) : Option ObjectId := g.thisWay.notedSourceThisWay
-def equipmentAttachedHost (g : Game) : Option ObjectId := g.thisWay.equipmentAttachedHost
-def notedCountThisWay (g : Game) : Nat := g.thisWay.notedCountThisWay
-def createdTokenThisWay (g : Game) : Option ObjectId := g.thisWay.createdTokenThisWay
-def putArtifactThisWay (g : Game) : Option (ObjectId × ObjectId) := g.thisWay.putArtifactThisWay
-def playExiledThisWay (g : Game) : Option ObjectId := g.thisWay.playExiledThisWay
-def sacrificedPowerThisWay (g : Game) : Option Nat := g.thisWay.sacrificedPowerThisWay
-
-def assignedCombatDamage (g : Game) : Array CreatureCombatAssignment := g.combat.assignedCombatDamage
-def blockersQueue (g : Game) : Array PlayerId := g.combat.blockersQueue
-def firstStrikeDamageDone (g : Game) : Bool := g.combat.firstStrikeDamageDone
-def pendingRegularCombatDamage (g : Game) : Bool := g.combat.pendingRegularCombatDamage
-def firstStrikeAssignedThisCombat (g : Game) : Array ObjectId := g.combat.firstStrikeAssignedThisCombat
-def additionalCombatPhases (g : Game) : Nat := g.combat.additionalCombatPhases
-def enrageGrantsAdditionalCombat (g : Game) : Nat := g.combat.enrageGrantsAdditionalCombat
-
-def mayThenDrop (g : Game) : Nat := g.mayThen.drop
-def mayThenSkip (g : Game) : Nat := g.mayThen.skip
-def mayThenConditional (g : Game) : Option TriggeredAbility.TriggerResolution := g.mayThen.conditional
-def mayThenResume (g : Game) : Bool := g.mayThen.resume
-
-def pendingDrawAfterScry (g : Game) : Option (PlayerId × Nat) := g.afterScrySurveil.pendingDrawAfterScry
-def palantirAfterScry (g : Game) : Option (PlayerId × PlayerId × ObjectId) := g.afterScrySurveil.palantirAfterScry
-def fraAfterLook (g : Game) : Option (PlayerId × Option ObjectId × Resolution) := g.afterScrySurveil.fraAfterLook
-def armSurveilReturn (g : Game) : Bool := g.afterScrySurveil.armSurveilReturn
-def surveilReturnMvAtMost (g : Game) : Option Nat := g.afterScrySurveil.surveilReturnMvAtMost
-def surveilReturnNoncreatureNonland (g : Game) : Bool := g.afterScrySurveil.surveilReturnNoncreatureNonland
-
-def thirstDiscardsLeft (g : Game) : Nat := g.discardReq.thirstDiscardsLeft
-def thirstDiscardType (g : Game) : CardType := g.discardReq.thirstDiscardType
-def pendingDiscardsLeft (g : Game) : Nat := g.discardReq.pendingDiscardsLeft
-def plusOneAfterDiscards (g : Game) : Option ObjectId := g.discardReq.plusOneAfterDiscards
-
-def lockedDeathReplacements (g : Game) : Option (Array GameObject) := g.batchMove.lockedDeathReplacements
-def suppressOthersDie (g : Game) : Bool := g.batchMove.suppressOthersDie
-def suppressCreatureCardsToGy (g : Game) : Bool := g.batchMove.suppressCreatureCardsToGy
-
-def lastCombatDamagePlayer (g : Game) : Option PlayerId := g.lastEvent.lastCombatDamagePlayer
-def lastLifeLost (g : Game) : Option (PlayerId × Nat) := g.lastEvent.lastLifeLost
-def lastNoncombatDamage (g : Game) : Option (ObjectId × Nat) := g.lastEvent.lastNoncombatDamage
-def lastBecameTapped (g : Game) : Option ObjectId := g.lastEvent.lastBecameTapped
-def lastDiedAttacker (g : Game) : Option ObjectId := g.lastEvent.lastDiedAttacker
-
-def extraTurns (g : Game) : Array PlayerId := g.turnControl.extraTurns
-def powerUpsForbidden (g : Game) : Bool := g.turnControl.powerUpsForbidden
-def playerControl (g : Game) : Option (PlayerId × PlayerId) := g.turnControl.playerControl
-def controlOnNextTakenTurn (g : Game) : Bool := g.turnControl.controlOnNextTakenTurn
-
-def mayOnAccept (g : Game) : Option TriggeredAbility.TriggerResolution := g.triggerMayBranch.onAccept
-def mayOnDecline (g : Game) : Option TriggeredAbility.TriggerResolution := g.triggerMayBranch.onDecline
-def mayContext (g : Game) : Option TriggerSequenceRest := g.triggerMayBranch.context
-
-def unlessPaysInstead (g : Game) : Option Effect := g.unlessPays.effect
-def unlessPaysController (g : Game) : PlayerId := g.unlessPays.controller
-def unlessPaysTargets (g : Game) : Array Target := g.unlessPays.targets
-def unlessPaysDue (g : Game) : Bool := g.unlessPays.due
-
-def mayEffect (g : Game) : Option Effect := g.mayEffectState.effect
-def mayController (g : Game) : PlayerId := g.mayEffectState.controller
-def mayTargets (g : Game) : Array Target := g.mayEffectState.targets
-
-def spellOr (g : Game) : Array Effect := g.spellOrState.effects
-def spellOrController (g : Game) : PlayerId := g.spellOrState.controller
-def spellOrTargets (g : Game) : Array Target := g.spellOrState.targets
-def spellOrLibrary (g : Game) : Bool := g.spellOrState.isLibrary
-
-def delayedEndStepReturns (g : Game) : Array ObjectId :=
-  g.delayedEndStep.filterMap fun
-    | .returnExiled id => some id
-    | _ => none
-
-def delayedEndStepExiles (g : Game) : Array ObjectId :=
-  g.delayedEndStep.filterMap fun
-    | .exilePermanent id => some id
-    | _ => none
-
-def delayedEndStepSacrifices (g : Game) : Array ObjectId :=
-  g.delayedEndStep.filterMap fun
-    | .sacrificePermanent id => some id
-    | _ => none
-
-def delayedGraveReturns (g : Game) : Array (ObjectId × PlayerId) :=
-  g.delayedEndStep.filterMap fun
-    | .returnFromGraveyard id p => some (id, p)
-    | _ => none
-
-def delayedSynthetic (g : Game) : Array (PlayerId × Nat) :=
-  g.delayedEndStep.filterMap fun
-    | .syntheticDestiny p n => some (p, n)
-    | _ => none
-
-def plusOneAfterSearch (g : Game) : Option ObjectId :=
-  match g.afterLibrarySearch with
-  | .plusOneOn id => some id
-  | _ => none
-
-def untapSearchedIfLands (g : Game) : Option Nat :=
-  match g.afterLibrarySearch with
-  | .untapSearchedIfLands n => some n
-  | _ => none
 
 def logMsg (g : Game) (msg : String) : Game :=
   { g with log := g.log.push msg }
@@ -540,15 +404,15 @@ def logMsg (g : Game) (msg : String) : Game :=
 /-- Drop a stashed `unlessPays` effect. Paying, or countering for real,
 clears it; leaving without paying sets `unlessPaysDue` instead. -/
 def clearUnlessPays (g : Game) : Game :=
-  { g with unlessPays := {} }
+  { g with unlessPaysInstead := none, unlessPaysDue := false, unlessPaysTargets := #[] }
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=
-  { g with mayEffectState := {} }
+  { g with mayEffect := none, mayTargets := #[] }
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
-  { g with spellOrState := {} }
+  { g with spellOr := #[], spellOrTargets := #[], spellOrLibrary := false }
 
 def over (g : Game) : Bool := g.result.isSome
 
@@ -719,7 +583,10 @@ def restoreCopy (g : Game) (o : GameObject) : Game :=
     let copied := o.printed.name
     g.setObject { o with
       printed := card
-      copyEffect := none }
+      copyRestore := none
+      copyUntilEot := false
+      copyUntilNextTurn := false
+      copyUntilSourceLeaves := none }
     |>.logMsg s!"{card.name} is no longer a copy of {copied}"
 
 /-- Restore copy effects on battlefield objects that satisfy `p`. -/
@@ -764,8 +631,7 @@ remains the active player on their turn (MSH 300) and still controls their
 permanents (MSH 358). -/
 def setPlayerControl (g : Game) (you them : PlayerId) : Game :=
   let g :=
-    { g with turnControl := { g.turnControl with
-      playerControl := some (you, them), controlOnNextTakenTurn := false } }
+    { g with playerControl := some (you, them), controlOnNextTakenTurn := false }
       |>.logMsg
         s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
   match (g.player them).teammate with

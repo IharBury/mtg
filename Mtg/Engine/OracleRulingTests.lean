@@ -2689,7 +2689,7 @@ def cavernHoardResolveCount : Game :=
   let g := addPermanent afterDraw cavernHoardDragon ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
   let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
-  let g := { g with lastEvent := { g.lastEvent with lastCombatDamagePlayer := some ⟨1⟩ } }
+  let g := { g with lastCombatDamagePlayer := some ⟨1⟩ }
   let t := namedPermanent g "Treasure"
   let g := (g.move t.id (.graveyard ⟨1⟩) none).1
   g.applyTriggeredAbility ⟨0⟩
@@ -2986,8 +2986,8 @@ def linkedExileTwoCards : Game :=
   let ogre := namedPermanent g "Gray Ogre"
   let (g, bEx) := g.move bear.id .exile none
   let (g, oEx) := g.move ogre.id .exile none
-  let fh := namedPermanent g "Fiend Hunter"
-  g.setObject { fh with exileLinks := { fh.exileLinks with linkedExile := #[bEx, oEx] } }
+  g.setObject { (namedPermanent g "Fiend Hunter") with
+    linkedExile := #[bEx, oEx] }
 
 def linkedExileTwoCardsOk : Bool :=
   let hunter := namedPermanent linkedExileTwoCards "Fiend Hunter"
@@ -3027,7 +3027,7 @@ def celebrateLeavesBeforeExileOk : Bool :=
 def copyOfKickedPermanentOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.setObject { bear with castState := { bear.castState with kicked := true } }
+  let g := g.setObject { bear with kicked := true }
   let src := namedPermanent g "Grizzly Bears"
   let (_g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
   src.kicked && !tok.kicked && tok.printed.isToken &&
@@ -3275,8 +3275,7 @@ def delightedCopyCanBeCounteredOk : Bool :=
   let g := addToHand afterDraw tomBombadil ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Tom Bombadil"
   let (g, sid) := g.move card.id .stack (some ⟨0⟩)
-  let cur := g.object! sid
-  let g := g.setObject { cur with castState := { cur.castState with uncounterableThisCast := true } }
+  let g := g.setObject { (g.object! sid) with uncounterableThisCast := true }
   let spell := g.object! sid
   let g := g.copyStackSpell spell ⟨0⟩
   let copy :=
@@ -4474,7 +4473,7 @@ def uncastCopyCeasesOk : Bool :=
   let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
   let (g, eid) := g.move bolt.id .exile none
   let o := g.object! eid
-  let g := g.setObject { o with castState := { o.castState with isCopy := true } }
+  let g := g.setObject { o with isCopy := true }
   let g := g.ceaseUncastCopies
   !(g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt")) &&
     g.log.any (fun s => mentions s "ceases to exist") &&

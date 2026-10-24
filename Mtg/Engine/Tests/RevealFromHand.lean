@@ -262,7 +262,7 @@ exiles the chosen creature. -/
 
 #guard TriggeredAbility.resolutionPhrase { resolution := exileUntil } ==
   "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-#guard TriggeredAbility.resolutionPhrase klawAbility.timing ==
+#guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.enter .revealDiscardFromHand)) ==
   "target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .revealFromHand .hand (.discard (.cards 1 (.target .opponent))) } ==
@@ -277,11 +277,11 @@ exiles the chosen creature. -/
 #guard TriggeredAbility.toNotation klawAbility ==
   "When this permanent enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."
 
-#guard Effect.enterRevealHandExileUntilLeaves.resolution ==
+#guard (SharedTrigger.timing (.enter .revealHandExileUntilLeaves)).resolution ==
   exileUntil
-#guard Effect.enterRevealDiscardFromHand.resolution ==
+#guard (SharedTrigger.timing (.enter .revealDiscardFromHand)).resolution ==
   countedDiscard
-#guard Effect.enterRevealHandExileUntilLeaves.allowsZeroTargets
-#guard !Effect.enterRevealDiscardFromHand.allowsZeroTargets
+#guard (SharedTrigger.timing (.enter .revealHandExileUntilLeaves)).allowsZeroTargets
+#guard !(SharedTrigger.timing (.enter .revealDiscardFromHand)).allowsZeroTargets
 
 end Mtg.Engine.RevealFromHandTests

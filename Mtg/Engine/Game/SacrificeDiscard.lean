@@ -69,7 +69,7 @@ this twice does not queue two discards; it would replace the pending choice. -/
 def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
     Game :=
   let g :=
-    if count > 1 then { g with discardReq := { g.discardReq with pendingDiscardsLeft := count } } else g
+    if count > 1 then { g with pendingDiscardsLeft := count } else g
   match g.nextActorWithHandCard players with
   | none =>
     let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
@@ -80,7 +80,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
         { g with conniveSource := none }.logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    let g := { g with pending := .none, discardReq := { g.discardReq with thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 } }
+    let g := { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
     -- A following +1/+1 counter, or the rest of a trigger sequence, waits
     -- until the caller finishes the discards.
     if g.plusOneAfterDiscards.isSome || g.triggerSequenceRest.isSome then g
@@ -182,7 +182,7 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
 conditional does the draw, so this only records that the cost was paid. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if g.mayThenDrop > 0 then
-    { g with pending := .none, mayThen := { g.mayThen with resume := true } }
+    { g with pending := .none, mayThenResume := true }
   else
     let g := { g with pending := .none }
     g.draw p n |>.receivePriority g.activePlayer
@@ -203,7 +203,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
       match prop.kind with
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
-      | _ =>
+      | .activatedAbility =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
     | none =>
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }

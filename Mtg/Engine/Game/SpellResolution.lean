@@ -54,7 +54,11 @@ Applied to Reality Fracture triggered abilities, each target checked against
 its own instance of “target”. -/
 def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
-  let isFra := obj.abilityEffect.isSome || !t.opts.printed.isEmpty
+  let isFra :=
+    obj.abilityEffect.isSome ||
+      match t.effect.resolution with
+      | .sequence rs => rs.any Resolution.isFra
+      | r => r.isFra || !t.opts.printed.isEmpty
   let e := obj.abilityEffect.getD t.effect
   let kind := e.targetKind
   isFra && !targets.isEmpty &&
@@ -104,8 +108,8 @@ def resolveTop (g : Game) : Game :=
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
         let g := { g with resolvingAbility := none }
         let g := g.ceaseToExist obj.id
-        match t.sagaChapterNumber? with
-        | some n =>
+        match t.shared with
+        | .chapter n _ =>
           match obj.sourceId.bind g.findObject? with
           | some src =>
             match src.printed.saga, src.controller with
@@ -113,7 +117,7 @@ def resolveTop (g : Game) : Game :=
               if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
             | _, _ => g
           | none => g
-        | none => g
+        | _ => g
       else
         -- CR 608.2b: an instant or sorcery whose targets are all illegal
         -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
@@ -189,9 +193,7 @@ def resolveTop (g : Game) : Game :=
             (summoningSick := sick)
           -- The permanent remembers X (CR 107.3m) and whether it was cast.
           let o := g.object! newId
-          let g := g.setObject { o with
-            chosenX := obj.chosenX
-            castState := { o.castState with wasCast := !obj.isCopy } }
+          let g := g.setObject { o with chosenX := obj.chosenX, wasCast := !obj.isCopy }
           let o := g.object! newId
           let g :=
             if sneak then

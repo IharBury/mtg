@@ -41,68 +41,38 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfGyCreaturesAtLeast : Nat := 0)
     (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none)
     (loyalty : Option LoyaltySymbol := none) :
-    ActivatedAbility :=
-  let picks : Array CostPick :=
-    (if discardACard then #[CostPick.discardACard] else #[]) ++
-    (if discardLegendarySameName then #[CostPick.discardLegendarySameName] else #[]) ++
-    (if sacrificeLegendaryArtifact then #[CostPick.sacrificeLegendaryArtifact] else #[]) ++
-    (if sacrificeArtifact then #[CostPick.sacrificeArtifact] else #[]) ++
-    (if sacrificeArtifactOrCreature then #[CostPick.sacrificeArtifactOrCreature] else #[]) ++
-    (if sacrificeArtifactOrDiscardNonland then #[CostPick.sacrificeArtifactOrDiscardNonland] else #[]) ++
-    (if sacrificeEquipmentAttachedToSource then #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
-    (if tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
-    (match sacrificeAnotherSubtype with
-     | some t => #[CostPick.sacrificeAnotherSubtype t]
-     | none => #[])
-  let condition : ActivationCondition :=
-    if onlyIfYouControlLegendary then .youControlLegendary
-    else if onlyIfYouAttackedWithTwoOrMore then .youAttackedWithTwoOrMore
-    else if onlyIfOpponentDealtNoncombatDamage then .opponentDealtNoncombatDamage
-    else if onlyIfYouControlCreatureToughnessAtLeast != 0 then
-      .youControlCreatureToughnessAtLeast onlyIfYouControlCreatureToughnessAtLeast
-    else if onlyIfGyCreaturesAtLeast != 0 then
-      .gyCreaturesAtLeast onlyIfGyCreaturesAtLeast
-    else .none
-  let extra : ExtraActivationCost :=
-    if sacrificeAnotherCreatureOrArtifact then .sacrificeAnotherCreatureOrArtifact
-    else if exileSourceFromGraveyard then .exileSourceFromGraveyard
-    else if removeIndestructibleCounter then .removeCounter .indestructible
-    else if removeAnyNumberPlusOne then .removeAnyNumberPlusOne
-    else if putStunCounterOnSource then .putStunCounterOnSource
-    else .none
-  let costReduction : ActivationCostReduction :=
-    if costReductionIfYouControlLegendary != 0 then
-      .ifYouControlLegendary costReductionIfYouControlLegendary
-    else if costReductionPerEquipment != 0 then
-      .perEquipment costReductionPerEquipment
-    else match costReductionIfTargetPowerAtMost with
-      | some (n, p) => .ifTargetPowerAtMost n p
-      | none => .none
-  let equipRestriction : EquipRestriction :=
-    if equipWorthy then .worthy
-    else match equipSubtype with
-      | some s => .subtype s
-      | none => .none
-  {
-    cost := {
-      mana := mana
-      tap := tap
-      loyalty := loyalty
-      sacrificeSource := sacrificeSource
-      payLife := payLife
-      discardSource := discardSource
-      picks := picks
-      extra := extra
-    }
-    condition := condition
-    costReduction := costReduction
-    effect := effect
-    otherModes := otherModes
-    onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
-    activateFromGraveyard, activateFromHand
-    equipRestriction := equipRestriction
-    powerUp
+    ActivatedAbility := {
+  cost := {
+    mana := mana
+    tap := tap
+    loyalty := loyalty
+    sacrificeSource := sacrificeSource
+    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
+    payLife := payLife
+    discardSource := discardSource
+    exileSourceFromGraveyard := exileSourceFromGraveyard
+    sacrificeAnotherSubtype := sacrificeAnotherSubtype
+    discardACard := discardACard
+    tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
+    removeIndestructibleCounter := removeIndestructibleCounter
+    sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
+    discardLegendarySameName := discardLegendarySameName
+    sacrificeArtifact := sacrificeArtifact
+    sacrificeArtifactOrCreature := sacrificeArtifactOrCreature
+    sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland
+    removeAnyNumberPlusOne := removeAnyNumberPlusOne
+    putStunCounterOnSource := putStunCounterOnSource
+    sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
+  effect := effect
+  otherModes := otherModes
+  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
+  costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
+  onlyIfYouAttackedWithTwoOrMore, onlyIfOpponentDealtNoncombatDamage, powerUp, equipWorthy
+  onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
+  costReductionIfTargetPowerAtMost
+}
 
 /-- Equip `mana`, only as a sorcery. -/
 def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=

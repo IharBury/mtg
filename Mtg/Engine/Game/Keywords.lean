@@ -36,17 +36,17 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
       let gy := (g.player p).graveyard.size
       let self := o.staticAbilities.foldl (fun acc ab =>
         match ab with
-        | .firstStrikeDuringYourTurn =>
+        | .fra .firstStrikeDuringYourTurn =>
           if g.activePlayer == p then Keywords.merge acc Keyword.firstStrike else acc
-        | .vigilanceIfJace =>
+        | .fra .vigilanceIfJace =>
           if g.controlsJacePlaneswalker p then Keywords.merge acc Keyword.vigilance else acc
-        | .powerAndFlyingIfSevenInGraveyard =>
+        | .fra .powerAndFlyingIfSevenInGraveyard =>
           if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
-        | .flyingHasteIfOpponentDealtNoncombat =>
+        | .fra .flyingHasteIfOpponentDealtNoncombat =>
           if (g.livingOpponents p).any (·.dealtNoncombatDamageThisTurn) then
             Keywords.merge acc (Keyword.flying.merge Keyword.haste)
           else acc
-        | .hexproofUntilCombatDamage =>
+        | .fra .hexproofUntilCombatDamage =>
           if o.status.dealtCombatDamage then acc else Keywords.merge acc Keyword.hexproof
         | _ => acc) Keywords.none
       let team := (g.permanentsOf p).foldl (fun acc src =>
@@ -54,21 +54,18 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         src.staticAbilities.foldl (fun acc ab =>
           let grant (cond : Bool) (k : Keywords) := if cond then Keywords.merge acc k else acc
           match ab with
-          | .ability (.creaturesYouControlHave k subtypes otherOnly) =>
-            if otherOnly && !subtypes.isEmpty then acc
-            else
-              let ok :=
-                (!otherOnly || other) &&
-                  (if subtypes.isEmpty then o.isCreature else subtypes.any (g.hasSubtype o))
-              grant ok k
-          | .plusOneCreaturesHaveVigilance =>
+          | .fra .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
+          | .fra .plusOneCreaturesHaveVigilance =>
             grant (o.isCreature && o.status.plusOnePlusOne > 0) Keyword.vigilance
-          | .creatureTokensGetOneAndVigilance =>
+          | .fra .creatureTokensGetOneAndVigilance =>
             grant (o.isCreature && o.printed.isToken) Keyword.vigilance
-          | .otherPlusOneCreaturesHaveHaste =>
+          | .fra .otherPlusOneCreaturesHaveHaste =>
             grant (other && o.isCreature && o.status.plusOnePlusOne > 0) Keyword.haste
-          | .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
-          | .artifactCreaturesHaveVigilance =>
+          | .fra .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
+          | .fra .otherCreaturesHaveTrample => grant (other && o.isCreature) Keyword.trample
+          | .fra .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
+          | .fra .thoptersHaveHaste => grant (g.hasSubtype o "Thopter") Keyword.haste
+          | .fra .artifactCreaturesHaveVigilance =>
             grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
           | _ => acc) acc) Keywords.none
       let attached := g.battlefield.foldl (fun acc a =>
@@ -76,8 +73,8 @@ def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
         else
           a.staticAbilities.foldl (fun acc ab =>
             match ab with
-            | .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
-            | .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
+            | .fra .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
+            | .fra .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
             | _ => acc) acc) Keywords.none
       Keywords.mergeAll #[self, team, attached]
 
@@ -97,10 +94,6 @@ def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
   (g.permanentsOf p).any (fun o => subtypes.any (g.hasSubtype o))
 
-/-- Permanents `p` currently controls with this subtype. -/
-def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
-  (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
-
 /-- Whether `p` currently controls a legendary creature. -/
 def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
@@ -109,6 +102,30 @@ def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
 /-- Whether `p` currently controls an Equipment. -/
 def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => o.printed.isEquipment)
+
+/-- Whether this face should enter tapped given the controller's board. It is
+checked before the permanent enters, so lands or planeswalkers entering at
+the same time are not counted (rulings 808 / 809). -/
+def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+  card.entersTapped || card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
+    (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
+    (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
+    (card.entersTappedUnlessPlaneswalker &&
+      !(g.permanentsOf p).any (·.printed.isPlaneswalker)) ||
+    (card.entersTappedUnlessTwoOtherLands &&
+      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2) ||
+    (!card.entersTappedUnlessAnySubtype.isEmpty &&
+      !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
+    (match card.entersTappedUnlessNBasics with
+     | some n =>
+       ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size < n
+     | none => false) ||
+    (match card.entersTappedUnlessOppLands with
+     | some n =>
+       let nOpp := (g.livingOpponents p).foldl (fun acc pl =>
+         acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0
+       nOpp < n
+     | none => false)
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
 a blocker (CR 509.1b). Checked only when declaring blockers. -/
@@ -138,7 +155,8 @@ def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
   g.battlefield.any (fun aura =>
     aura.attachedTo == some o.id &&
       aura.staticAbilities.any (fun
-        | .ability (.enchantedLosesAbilitiesNoUntap _) => true
+        | .enchantedLosesAbilitiesDoesntUntap => true
+        | .enchantedLosesAbilitiesCantUntap => true
         | _ => false))
 
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)
@@ -173,13 +191,6 @@ def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
       match ab with
       | .flyingIfPlusOneThisTurn =>
         if o.status.gotPlusOneThisTurn then Keywords.merge acc Keyword.flying else acc
-      | .ability (.keywordIfYouControlOtherSubtype k t) =>
-        if o.isOnBattlefield &&
-            (match o.controller with
-             | some p => (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)
-             | none => false) then
-          Keywords.merge acc k
-        else acc
       | _ => acc) Keywords.none
   let fromTeam :=
     match o.controller with
@@ -237,7 +248,16 @@ def currentKeywords (g : Game) (o : GameObject) : Keywords :=
 /-- Haste from printed text, attachments, enduring story, counters, or
 “haste as long as you control another …”. Lost abilities are omitted. -/
 def hasHaste (g : Game) (o : GameObject) : Bool :=
-  (g.currentKeywords o).haste
+  (g.currentKeywords o).haste ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.hasteIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
 
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
@@ -278,143 +298,21 @@ def hasVigilance (g : Game) (o : GameObject) : Bool :=
 def hasFlying (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.flying)
 
-/-- Loyalty counters among Jace planeswalkers `p` controls. -/
-def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).foldl (fun acc o =>
-    if o.printed.isPlaneswalker && g.hasSubtype o "Jace" then acc + o.status.loyaltyCounters
-    else acc) 0
-
-/-- Evaluate a `NumberSelector` on `p`'s board state (CR 107.1 / 601.2f). -/
-def boardNumber (g : Game) (p : PlayerId) (amount : NumberSelector)
-    (target : Option GameObject := none) : Option Int :=
-  match amount with
-  | .fixed n => some n
-  | .count .landsYouControl => some (Int.ofNat (g.landsYouControl p))
-  | .basicLandsYouControl =>
-    some (Int.ofNat ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size)
-  | .opponentLands =>
-    some (Int.ofNat ((g.livingOpponents p).foldl (fun acc pl =>
-      acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0))
-  | .count .planeswalkersYouControl =>
-    some (Int.ofNat ((g.permanentsOf p).filter (·.printed.isPlaneswalker)).size)
-  | .count .equipmentYouControl =>
-    some (Int.ofNat ((g.permanentsOf p).filter (·.printed.isEquipment)).size)
-  | .creaturesDiedThisTurn =>
-    some (Int.ofNat (Nat.max g.creatureDeathsThisTurn (if g.creatureDiedThisTurn then 1 else 0)))
-  | .cardsDrawnThisTurn =>
-    some (Int.ofNat (g.player p).cardsDrawnThisTurn)
-  | .subtypeCount st =>
-    let n :=
-      if st == "legendary creature" then
-        ((g.permanentsOf p).filter (fun o => o.isCreature && o.isLegendary)).size
-      else if st == "Equipment" then
-        ((g.permanentsOf p).filter (·.printed.isEquipment)).size
-      else
-        g.countSubtype p (if st == "Elves" then "Elf" else st)
-    some (Int.ofNat n)
-  | .totalFlyingPower =>
-    some (Int.ofNat ((g.permanentsOf p).foldl (fun acc o =>
-      if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0))
-  | .greatestPower =>
-    some (Int.ofNat ((g.creaturesControlledBy p).foldl (fun acc o => Nat.max acc (g.power o).toNat) 0))
-  | .greatestToughness =>
-    some (Int.ofNat ((g.creaturesControlledBy p).foldl (fun acc o => Nat.max acc (g.toughness o).toNat) 0))
-  | .oppArtifacts =>
-    some (Int.ofNat (g.players.foldl (fun acc pl =>
-      if pl.id == p || pl.lost then acc
-      else max acc ((g.permanentsOf pl.id).filter (·.printed.isArtifact)).size) 0))
-  | .targetPlusOneCounters =>
-    target.map (fun o => Int.ofNat o.status.plusOnePlusOne)
-  | _ => none
-
-/-- Evaluate a `ConditionSelector` on `p`'s board state (CR 601.2 / 602.5b / 603.4 / 614.1c). -/
-partial def boardConditionHolds (g : Game) (p : PlayerId) (cond : ConditionSelector)
-    (target : Option GameObject := none) (source : Option GameObject := none)
-    (causeStatus : Option Status := none) : Bool :=
-  let pl := g.player p
-  match cond with
-  | .none => true
-  | .not inner => !g.boardConditionHolds p inner target source causeStatus
-  | .or conds => conds.any (fun c => g.boardConditionHolds p c target source causeStatus)
-  | .atLeast left right =>
-    match g.boardNumber p left target, g.boardNumber p right target with
-    | some a, some b => a ≥ b
-    | _, _ => false
-  | .youControlLegendary => g.controlsLegendaryCreature p
-  | .youControlSubtype st =>
-    if st == "legendary creature" then g.controlsLegendaryCreature p
-    else if st == "Equipment" then g.controlsEquipment p
-    else g.controlsAnySubtype p #[st]
-  | .youControlAnySubtype sts => g.controlsAnySubtype p sts
-  | .youControlCreatureWithPower n => g.greatestPowerAmongCreatures p ≥ n
-  | .youControlCreatureToughnessAtLeast n =>
-    (g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= (n : Int))
-  | .state (.graveyardAtLeast n creaturesOnly) =>
-    (if creaturesOnly then
-      pl.graveyard.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
-    else pl.graveyard).size ≥ n
-  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
-  | .state (.sourceOrigin wasCast) =>
-    if wasCast then source.any (·.wasCast) else !(source.any (·.printed.isToken))
-  | .state (.objectHadCounters onSource) =>
-    if onSource then source.any (fun o => (g.findObject? o.id).any (·.status.hasCounters))
-    else causeStatus.any (·.hasCounters)
-  | .state (.targetState tapped) =>
-    target.any (fun o => if tapped then o.status.tapped else o.status.damage > 0)
-  | .state (.targetAttacking nontokenOnly) =>
-    target.any (fun o => o.status.attacking && (!nontokenOnly || !o.printed.isToken))
-  | .targetPowerAtMost most => target.any (fun o => o.isCreature && g.power o ≤ most)
-  | .anotherCreaturePowerAtMost n => target.all (fun o => g.power o ≤ n)
-  | .turnHistory (.scriedThisTurn surveil) =>
-    if surveil then pl.surveilledThisTurn else pl.scriedThisTurn
-  | .youAttackedWithTwoOrMore => pl.creaturesAttackedWithThisTurn ≥ 2
-  | .turnHistory (.opponentDealtNoncombatDamage lastTurn) =>
-    (g.livingOpponents p).any (fun q =>
-      if lastTurn then q.dealtNoncombatDamageLastTurn else q.dealtNoncombatDamageThisTurn)
-  | .castNoSpellThisTurn => pl.spellsCastThisTurn == 0
-  | .activatedLoyaltyThisTurn => pl.activatedLoyaltyThisTurn
-  | .gainedLifeAtLeast n => pl.lifeGainedThisTurn ≥ n
-  | _ => false
-
-/-- Generic mana subtracted from a spell or activated ability cost by `r`
-(CR 601.2f / 602.2b). When `target` is `none`, target-dependent reductions
-evaluate to `0`; when `target` is `some o`, only target-dependent reductions
-evaluate. -/
-def costReductionAmount (g : Game) (p : PlayerId) (r : CostReduction)
-    (target : Option GameObject := none) : Nat :=
-  let isTargetCond : ConditionSelector → Bool
-    | .state (.targetState _) | .state (.targetAttacking _) | .targetPowerAtMost _ => true
-    | _ => false
-  let isTargetNumber : NumberSelector → Bool
-    | .targetPlusOneCounters => true
-    | _ => false
-  match r with
-  | .none => 0
-  | .when n cond =>
-    if isTargetCond cond != target.isSome then 0
-    else if g.boardConditionHolds p cond (target := target) then n else 0
-  | .byAmount amount perUnit =>
-    if isTargetNumber amount != target.isSome then 0
-    else
-      match g.boardNumber p amount (target := target) with
-      | some k => k.toNat * perUnit
-      | none => 0
-  | _ => 0
-
-/-- Whether this face should enter tapped given the controller's board. It is
-checked before the permanent enters, so lands or planeswalkers entering at
-the same time are not counted (rulings 808 / 809). -/
-def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
-  card.staticAbilities.any (· == .fra .entersTappedChooseColor) ||
-    match card.entersTappedRule with
-    | .untapped | .unlessPayLife _ => false
-    | .always => true
-    | .unless cond => !g.boardConditionHolds p cond
-    | _ => false
+/-- Okoye: attacking creature tokens you control have first strike. -/
+def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.status.attacking && o.printed.isToken &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any (fun
+          | .attackingTokensHave k => k.firstStrike
+          | _ => false))
 
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
 def hasFirstStrike (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike)
+  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike) ||
+    g.okoyeGrantsFirstStrike o
 
 /-- Whether `o` has double strike (CR 702.4). -/
 def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
@@ -470,13 +368,29 @@ def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has lifelink, printed, granted until end of turn, or from a
 lifelink counter (CR 702.15). -/
 def hasLifelink (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.lifelink)
+  o.status.lifelinkCounters > 0 ||
+  g.hasKeyword o (·.lifelink) ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.lifelinkIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
 
 /-- Whether `o` has menace, printed or granted until end of turn (CR 702.111).
 Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (g : Game) (o : GameObject) : Bool :=
-  (g.currentKeywords o).menace
+  (g.currentKeywords o).menace ||
+  (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any StaticAbility.creaturesWithPlusOneHaveMenace))
 
 /-- Minimum number of creatures required to block `o`, or `0` if unrestricted.
 Menace is 2; Troll of Khazad-dûm is 3. -/
@@ -576,13 +490,21 @@ def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
 def sagaChapterPending (g : Game) (id : ObjectId) : Bool :=
   let waiting :=
     g.waitingTriggers.any (fun wt =>
-      wt.source.id == id && wt.ability.sagaChapterNumber?.isSome)
+      wt.source.id == id &&
+        match wt.ability.shared with
+        | .chapter .. => true
+        | _ => false)
   let stacked :=
     g.stack.any (fun e =>
       match g.findObject? e.objectId with
       | some o =>
         o.sourceId == some id &&
-          o.triggeredAbility.any (·.sagaChapterNumber?.isSome)
+          match o.triggeredAbility with
+          | some t =>
+            match t.shared with
+            | .chapter .. => true
+            | _ => false
+          | none => false
       | none => false)
   waiting || stacked
 
@@ -680,6 +602,7 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
 
 def hasIndestructible (g : Game) (o : GameObject) : Bool :=
   ((g.currentKeywords o).indestructible ||
+    o.status.indestructibleCounters > 0 ||
     g.loreThresholdProtection o ||
     g.leftoverIndestructible o) &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
@@ -703,6 +626,7 @@ def equippedCreatesCombatTreasures (g : Game) (o : GameObject) : Bool :=
 /-- Whether `o` has trample, printed, granted, or from a lord (CR 702.19). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
   (g.currentKeywords o).trample ||
+  o.status.trampleCounters > 0 ||
   (o.isOnBattlefield && g.battlefield.any (fun src => g.grantsTrampleTo src o)) ||
   g.equippedCreatesCombatTreasures o
 

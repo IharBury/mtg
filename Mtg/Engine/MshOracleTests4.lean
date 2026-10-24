@@ -74,8 +74,8 @@ def mjolnirCombatDivideOk : Bool :=
   let g := g.attachSourceTo hammer ogre
   let g := g.setObject { ogre with status :=
     { ogre.status with attacking := true, blocked := true, attackingWhom := some ⟨1⟩ } }
-  let g := { g with combat := { g.combat with assignedCombatDamage :=
-    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }] } }
+  let g := { g with assignedCombatDamage :=
+    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }] }
   let g := g.dealAssignedCombatDamage
   (namedPermanent g "Hill Giant").status.damage == 2 &&
     (g.player ⟨1⟩).life == 20 - 4
@@ -275,7 +275,7 @@ def visionModesExhaustedOk : Bool :=
   let vis := namedPermanent g "The Vision"
   let g := g.mapObjectStatus vis (fun s => { s with modesChosenThisTurn := #[0, 1, 2] })
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes)
     (some (namedPermanent g "The Vision").id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     logContains g "removed from the stack" &&
@@ -306,14 +306,14 @@ def hydeMustRemoveOk : Bool :=
   let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
   let g := g.addPlusOnePlusOneTo hyde 1
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
     (some (namedPermanent g "Mister Hyde, Monster Within").id) #[]
-    (lastKnownPower := some (1 : Int)) (sourceName := "Mister Hyde, Monster Within")
+    "Mister Hyde, Monster Within" (some (1 : Int))
   logContains g "must remove a counter" &&
     (let hyde := namedPermanent g "Mister Hyde, Monster Within"
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
        (some hyde.id) #[Target.permanent hyde.id]
-       (lastKnownPower := some (1 : Int)) (sourceName := "Mister Hyde, Monster Within")
+       "Mister Hyde, Monster Within" (some (1 : Int))
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
        (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 584).comment.contains "must remove a counter"
@@ -324,14 +324,14 @@ def hydeMustRemoveOk : Bool :=
 def humanTorchInterveningOk : Bool :=
   let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
   let torch := namedPermanent g "Human Torch, Johnny Storm"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
     #[Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == 20 &&
     logContains g "has no effect" &&
     (let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
      let g := addPermanent g colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
      let torch := namedPermanent g "Human Torch, Johnny Storm"
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
        #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life == 19) &&
     (mshRuling 585).comment.contains "won't trigger"

@@ -60,12 +60,12 @@ Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
   match e.resolution with
-  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
+  | .eaglesAreComing =>
     { e with
       targeting := .of (.filtered
         { noun := "any number of target creatures you own", types := #[.creature], ownedByYou := true })
       allowsZeroTargets := true, maxTargets := 100 }
-  | .grant .phaseOutKicker .target => { e with targeting := .of .player }
+  | .phaseOutKicker => { e with targeting := .of .player }
   | _ => e
 
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2).
@@ -310,8 +310,8 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       | some ab =>
         let n := ab.targeting.targetCount
         let lifeTargets :=
-          match ab.effect.resolution with
-          | .putCounters _ .eachUpToLastKnown => true
+          match ab.shared with
+          | .resource .gainLifePlusOnes => true
           | _ => false
         let maxN :=
           if lifeTargets then (obj.lastKnownPower.getD 0).toNat
@@ -395,7 +395,7 @@ def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
     if legal.contains player then some player else legal[0]?
   | .last => legal.back?
   | .ownThenOpponent => own <|> opp
-  | _ =>
+  | .selfPlayer =>
     let player := Target.player p
     if legal.contains player then some player else legal[0]?
 

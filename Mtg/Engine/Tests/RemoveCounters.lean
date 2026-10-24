@@ -108,7 +108,7 @@ source, and a source that has left, remove nothing. -/
 
 #guard
   let base := addPermanent afterDraw dawn caster caster
-  let g0 := { base with thisWay := { base.thisWay with removedHopeThisWay := true } }
+  let g0 := { base with removedHopeThisWay := true }
   let g := step g0 hopeFromSource (some (pid g0 "Dawn"))
   (obj g "Dawn").status.hope == 0 && !g.removedHopeThisWay &&
     g.log == g0.log
@@ -122,7 +122,7 @@ source, and a source that has left, remove nothing. -/
     !(logContains g "loses a hope counter")
 
 #guard
-  let g0 := { afterDraw with thisWay := { afterDraw.thisWay with removedHopeThisWay := true } }
+  let g0 := { afterDraw with removedHopeThisWay := true }
   let g := step g0 hopeFromSource
   !g.removedHopeThisWay && logContains g "no longer in play"
 
@@ -207,7 +207,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with thisWay := { g0.thisWay with removedHopeThisWay := false } }
+  let g0 := { g0 with removedHopeThisWay := false }
   let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
   crossed.removedHopeThisWay && (obj crossed "Bear").status.hope == 0 &&
     (obj crossed "Bear").status.plusOnePlusOne == 2 &&
@@ -219,7 +219,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with thisWay := { g0.thisWay with removedHopeThisWay := true } }
+  let g0 := { g0 with removedHopeThisWay := true }
   let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
   swapped.removedHopeThisWay && stillLoaded (obj swapped "Bear").status &&
     (obj swapped "Grasp").status.hope == 0 &&
@@ -231,7 +231,7 @@ not announced clears the note and removes nothing. -/
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := { g0 with thisWay := { g0.thisWay with removedHopeThisWay := true } }
+  let g0 := { g0 with removedHopeThisWay := true }
   let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
   !other.removedHopeThisWay && stillLoaded (obj other "Bear").status &&
     (obj other "Grasp").status.hope == 2 && other.log == g0.log

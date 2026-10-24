@@ -55,17 +55,17 @@ def onBoard (g : Game) (name : String) : Bool :=
   .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)
 
 #guard toString (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  Effect.stepEnchantedControllerDraws.phrase
+  TriggeredAbility.stepSentence .enchantedControllerDraws
 #guard toString (TriggeredAbility.onStep Effect.stepDrawToTen) ==
-  Effect.stepDrawToTen.phrase
+  TriggeredAbility.stepSentence .drawToTen
 #guard toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan) ==
-  Effect.stepCopyAbsorbingMan.phrase
+  TriggeredAbility.stepSentence .copyAbsorbingMan
 #guard toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster) ==
-  Effect.stepCopyTaskmaster.phrase
+  TriggeredAbility.stepSentence .copyTaskmaster
 #guard toString (TriggeredAbility.onStep Effect.stepHydeChoose) ==
-  Effect.stepHydeChoose.phrase
+  TriggeredAbility.stepSentence .hydeChoose
 #guard toString (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
-  Effect.stepHarnessedFlicker.phrase
+  TriggeredAbility.stepSentence .harnessedFlicker
 
 /- The enchanted creature's controller draws. The Aura's controller does not.
 Nothing enchanted draws nothing. -/
@@ -139,7 +139,7 @@ def notedCopy : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant opp opp
   let host := named g "Grizzly Bears"
   let giant := named g "Hill Giant"
-  let g := { g with thisWay := { g.thisWay with notedCopyObject := some giant, notedHostId := some host.id } }
+  let g := { g with notedCopyObject := some giant, notedHostId := some host.id }
   g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
     (resolutionOverride := some (.becomeCopy .noted))
 

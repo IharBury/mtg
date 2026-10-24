@@ -131,25 +131,16 @@ deciding player (heuristic) chooses to go first.
 "
 
 /-- A Welcome Deck color or a path to a text deck list. -/
-abbrev DemoDeck := (Color ⊕ String) × Bool × Bool × Bool
+inductive DemoDeck where
+  | welcome (color : Color)
+  | file (path : String)
+deriving Repr, Inhabited, DecidableEq
 
-namespace DemoDeck
-
-@[match_pattern] abbrev demoDeckKind (k : Color ⊕ String := .inl .white) (turnScoped : Bool := false)
-    (combatOrAttackers : Bool := false) (isIgnore : Bool := false) : DemoDeck :=
-  (k, turnScoped, combatOrAttackers, isIgnore)
-
-@[match_pattern] abbrev welcome (color : Color) : DemoDeck := demoDeckKind (.inl color) false false false
-@[match_pattern] abbrev file (path : String) : DemoDeck := demoDeckKind (.inr path) false false false
-
-end DemoDeck
-
-@[match_pattern] abbrev _root_.Prod.welcome := DemoDeck.welcome
-@[match_pattern] abbrev _root_.Prod.file := DemoDeck.file
-
-/-- A named player and the deck they sit with, an `--input` script (`InputScript`),
-or raw CLI flag values (`DemoFlagValues`). -/
-abbrev DemoPlayer := MulliganState
+/-- A named player and the deck they sit with. -/
+structure DemoPlayer where
+  name : String
+  deck : DemoDeck
+deriving Repr, Inhabited, DecidableEq
 
 /-- Default table: Chandra (red) and Nissa (green). -/
 def defaultDemoPlayers : Array DemoPlayer := #[
@@ -161,7 +152,7 @@ def defaultDemoPlayers : Array DemoPlayer := #[
 def cardsFor (d : DemoDeck) : Array CardDef :=
   match d with
   | .welcome c => hobbitDeck c
-  | _ => #[]
+  | .file _ => #[]
 
 /-- Seat list from named players. File decks resolve later via `loadSeats`. -/
 def seatsFromPlayers (players : Array DemoPlayer) : Array Seat :=
@@ -362,7 +353,6 @@ def randomPromptBlock (g : Game) : Option String :=
       some "Coin toss: flip heads  or  flip tails  (also random 0 / random 1)"
     else
       some s!"Choose a number from 0 to {n - 1}: random <n>"
-  | some _ => none
 
 /-- Pending cost, combat-damage assignment, legend-rule, trigger order, or
 a `--norandom` result. -/
@@ -398,7 +388,6 @@ def deckAssignmentLine (p : DemoPlayer) : String :=
   match p.deck with
   | .welcome c => s!"{p.name} uses the {c.englishName} Hobbit Welcome Deck."
   | .file path => s!"{p.name} uses the deck list {path}."
-  | _ => ""
 
 def printDeckAssignments (players : Array DemoPlayer) : IO Unit := do
   for p in players do
@@ -417,7 +406,6 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
       | .error e => return .error e
       | .ok (cards, sideboard) =>
         seats := seats.push { name := p.name, deck := cards, sideboard }
-    | _ => pure ()
   return .ok seats
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
@@ -1263,12 +1251,10 @@ def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | _, [] => g.apply p .keep
   | _, _ => throw keepUsage
 
-/-- Game after `autopay` or a pass-until shortcut (`PassUntilResult`), and the
-lines that produced it. -/
-abbrev AutopayResult := Game × Array String
-
-abbrev _root_.Prod.game (r : AutopayResult) : Game := r.1
-abbrev _root_.Prod.commands (r : AutopayResult) : Array String := r.2
+/-- Game after `autopay`, and the `tap`/`pay` lines that produced it. -/
+structure AutopayResult where
+  game : Game
+  commands : Array String
 
 /-- Accepted `tap` line for one mana ability so `--output` can replay it. -/
 def tapCommand (id : ObjectId) (m : ManaType) : String :=
@@ -1306,10 +1292,10 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
           if !canPayProposed g p prop then
             throw s!"{(g.player p).name} cannot pay {prop.cost}"
           let g ← g.apply p .pay
-          return (g, cmds.push "pay")
+          return { game := g, commands := cmds.push "pay" }
         | none =>
           let g ← g.apply p .pay
-          return (g, cmds.push "pay")
+          return { game := g, commands := cmds.push "pay" }
       | _ =>
         match g.proposedSpell with
         | some prop => throw s!"{(g.player p).name} cannot pay {prop.cost}"
@@ -1395,25 +1381,17 @@ def hasLegalBlock (g : Game) : Bool :=
       eligible >= max 1 (g.minBlockersRequired attacker))
 
 /-- Target a pass-until shortcut stops at. -/
-abbrev PassUntilTarget := DemoDeck
-
-namespace PassUntilTarget
-
-@[match_pattern] abbrev passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false) : PassUntilTarget :=
-  DemoDeck.demoDeckKind (.inl .white) turnScoped combatOrAttackers false
-@[match_pattern] abbrev nextTurnCombat : PassUntilTarget := .passUntilTargetKind true true
-@[match_pattern] abbrev nextTurnMain : PassUntilTarget := .passUntilTargetKind true false
-@[match_pattern] abbrev nextMain : PassUntilTarget := .passUntilTargetKind false false
-@[match_pattern] abbrev nextDeclareAttackers : PassUntilTarget := .passUntilTargetKind false true
-
-end PassUntilTarget
-
-namespace DemoDeck
-export PassUntilTarget (passUntilTargetKind nextTurnCombat nextTurnMain nextMain nextDeclareAttackers)
-end DemoDeck
+inductive PassUntilTarget where
+  | nextTurnCombat
+  | nextTurnMain
+  | nextMain
+  | nextDeclareAttackers
+deriving DecidableEq, Repr
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
-abbrev PassUntilResult := AutopayResult
+structure PassUntilResult where
+  game : Game
+  commands : Array String
 
 def yourTurnUsage : String := "usage: your turn"
 def myTurnUsage : String := "usage: my turn"
@@ -1436,7 +1414,6 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
   | .nextDeclareAttackers =>
     g.step == .declareAttackers &&
       !(g.turnNumber == startTurn && g.step == startStep)
-  | _ => false
 
 /-- `your turn`, `my turn`, and `main phase` declare no attackers even when
 creatures can attack. `attack step` still stops so attackers can be chosen. -/
@@ -1475,38 +1452,27 @@ def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
 def passUntilFuel : Nat := 200
 
 /-- Kind of pending pass-until goal stored by the console and `--check` replay. -/
-abbrev PassUntilKind := DemoDeck
-
-namespace PassUntilKind
-
-@[match_pattern] abbrev ignore : PassUntilKind := DemoDeck.demoDeckKind (.inl .white) false false true
-@[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := target
-
-end PassUntilKind
-
-namespace DemoDeck
-export PassUntilKind (ignore named)
-end DemoDeck
-
-@[match_pattern] abbrev _root_.Prod.ignore : PassUntilKind := PassUntilKind.ignore
-@[match_pattern] abbrev _root_.Prod.named := PassUntilKind.named
+inductive PassUntilKind where
+  | named (target : PassUntilTarget)
+  | ignore
+deriving DecidableEq, Repr
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/
-abbrev PassUntilGoal := PlayerId × Nat × Step × PassUntilKind
+structure PassUntilGoal where
+  issuer : PlayerId
+  startTurn : Nat
+  startStep : Step
+  kind : PassUntilKind
+deriving DecidableEq, Repr
 
-abbrev _root_.Prod.issuer (goal : PassUntilGoal) : PlayerId := goal.1
-abbrev _root_.Prod.startTurn (goal : PassUntilGoal) : Nat := goal.2.1
-abbrev _root_.Prod.startStep (goal : PassUntilGoal) : Step := goal.2.2.1
-abbrev _root_.Prod.kind (goal : PassUntilGoal) : PassUntilKind := goal.2.2.2
-
-abbrev _root_.Prod.uninterruptible (goal : PassUntilGoal) : Bool :=
+def PassUntilGoal.uninterruptible (goal : PassUntilGoal) : Bool :=
   match goal.kind with
   | .ignore => true
   | .named _ => false
 
 def passUntilGoalAt (g : Game) (p : PlayerId) (kind : PassUntilKind) : PassUntilGoal :=
-  (p, g.turnNumber, g.step, kind)
+  { issuer := p, startTurn := g.turnNumber, startStep := g.step, kind }
 
 def ignoreUsage : String := "usage: ignore"
 
@@ -1517,8 +1483,8 @@ def reachedIgnore (g : Game) (goal : PassUntilGoal) : Bool :=
 
 def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
   match goal.kind with
-  | .ignore => reachedIgnore g goal
   | .named t => reachedPassUntil g goal.startTurn goal.startStep t
+  | .ignore => reachedIgnore g goal
 
 /-- Only issue pass-until commands as `issuer`; other players may still act. -/
 def issuerPassUntilCommand? (g : Game) (issuer : PlayerId)
@@ -1537,15 +1503,15 @@ def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal)
     (forceEmptyCombat := false) : Option String :=
   match goal.kind with
-  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
   | .named t =>
     issuerPassUntilCommand? g goal.issuer forceEmptyCombat
       (alwaysNoAttack := passUntilSkipsAttackers t)
+  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
 
 /-- Error when `passUntilFuel` runs out before this goal is reached. -/
 def PassUntilKind.fuelError : PassUntilKind → String
-  | .ignore => "Could not finish passing to your next main phase"
   | .named _ => "Could not finish passing to that step"
+  | .ignore => "Could not finish passing to your next main phase"
 
 /-- Keep issuing the goal's commands (`pass`, and empty combat declarations
 where the goal allows them) until the goal is reached, the game ends, or no
@@ -1556,25 +1522,25 @@ def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
     (cmds : Array String) (forceEmptyCombat := false) :
     Except String PassUntilResult :=
   match fuel with
-  | 0 => throw (PassUntilKind.fuelError goal.kind)
+  | 0 => throw goal.kind.fuelError
   | n + 1 =>
     if g.over || reachedPassUntilGoal g goal then
-      .ok (g, cmds)
+      .ok { game := g, commands := cmds }
     else
       match passUntilGoalCommand? g goal forceEmptyCombat with
       | none =>
         match goal.kind with
-        | .ignore => .ok (g, cmds)
         | .named _ =>
           if cmds.isEmpty then
             .error "A player must take an action other than pass"
           else
-            .ok (g, cmds)
+            .ok { game := g, commands := cmds }
+        | .ignore => .ok { game := g, commands := cmds }
       | some line =>
         match applyPassUntilLine g line with
         | .error e =>
           if cmds.isEmpty then .error e
-          else .ok (g, cmds)
+          else .ok { game := g, commands := cmds }
         | .ok g' => applyPassUntilGoalSteps g' goal n (cmds.push line) forceEmptyCombat
 
 def applyPassUntil (g : Game) (p : PlayerId) (target : PassUntilTarget)
@@ -1811,7 +1777,9 @@ def isFlagLine (s : String) : Bool :=
   s.startsWith "--"
 
 /-- Flags and remaining commands from an `--input` file. -/
-abbrev InputScript := MulliganState
+structure InputScript where
+  flags : List String
+  commands : List String
 
 /-- Split trimmed non-empty lines into flag lines and commands. -/
 def inputScriptFromLines (lines : Array String) : InputScript :=
@@ -1952,14 +1920,14 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
 def describeCheckResult (g : Game) : String :=
   match g.result with
   | some (.won p) => s!"Winner: {g.player p |>.name}"
-  | some _ => "The game is a draw."
+  | some .draw => "The game is a draw."
   | none => "Game is not complete"
 
 /-- Print the finished game's result: the winner or a draw. -/
 def printResult (g : Game) : IO Unit :=
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
-  | some _ => IO.println "The game is a draw."
+  | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
 /-- Write a command to `--output` only when it was accepted as a game action
@@ -2546,26 +2514,41 @@ def parseDemoDeck (token : String) : Except String DemoDeck :=
     else
       .error s!"Unknown Welcome Deck: {token} (white, blue, black, red, or green, or a deck list file)"
 
-abbrev DemoOptions :=
-  Bool × Bool × Bool × Bool × Bool × UInt64 × Nat × Option String × Option String × Bool ×
-    Array DemoPlayer × Option Nat
+structure DemoOptions where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  norandom : Bool
+  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
+  constructed : Bool
+  seed : UInt64
+  fuel : Nat
+  inputFile : Option String
+  outputFile : Option String
+  /-- Replay `--input` and require a finished legal game. -/
+  check : Bool
+  players : Array DemoPlayer
+  /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
+  decides : Option Nat
 
-abbrev _root_.Prod.interactive (o : DemoOptions) : Bool := o.1
-abbrev _root_.Prod.multiplayer (o : DemoOptions) : Bool := o.2.1
-abbrev _root_.Prod.playerView (o : DemoOptions) : Bool := o.2.2.1
-abbrev _root_.Prod.norandom (o : DemoOptions) : Bool := o.2.2.2.1
-abbrev _root_.Prod.constructed (o : DemoOptions) : Bool := o.2.2.2.2.1
-abbrev _root_.Prod.seed (o : DemoOptions) : UInt64 := o.2.2.2.2.2.1
-abbrev _root_.Prod.fuel (o : DemoOptions) : Nat := o.2.2.2.2.2.2.1
-abbrev _root_.Prod.inputFile (o : DemoOptions) : Option String := o.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.outputFile (o : DemoOptions) : Option String := o.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.check (o : DemoOptions) : Bool := o.2.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.players (o : DemoOptions) : Array DemoPlayer := o.2.2.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.decides (o : DemoOptions) : Option Nat := o.2.2.2.2.2.2.2.2.2.2.2
-
-/-- Raw flag values before player-name validation. `rawSeed` / `rawFuel` are `none`
+/-- Raw flag values before player-name validation. `seed` / `fuel` are `none`
 until those flags appear, so input-file flags can fill the defaults. -/
-abbrev DemoFlagValues := MulliganState
+structure DemoFlagValues where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  norandom : Bool
+  constructed : Bool
+  seed : Option UInt64
+  fuel : Option Nat
+  inputFile : Option String
+  outputFile : Option String
+  check : Bool
+  names : Array String
+  decks : Array DemoDeck
+  decidesName : Option String
+  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
+  modeSet : Bool
 
 /-- Parse flag tokens without checking that `--input` / `--visible` have a mode. -/
 def parseFlagList (args : List String) : Except String DemoFlagValues :=
@@ -2675,8 +2658,8 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
       playerView := playerView
       norandom := norandom
       constructed := constructed
-      rawSeed := seed
-      rawFuel := fuel
+      seed := seed
+      fuel := fuel
       inputFile := inputFile
       outputFile := outputFile
       check := check
@@ -2697,14 +2680,14 @@ def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
     playerView := cli.playerView || file.playerView
     norandom := cli.norandom || file.norandom
     constructed := cli.constructed || file.constructed
-    rawSeed :=
-      match file.rawSeed with
+    seed :=
+      match file.seed with
       | some s => some s
-      | none => cli.rawSeed
-    rawFuel :=
-      match file.rawFuel with
+      | none => cli.seed
+    fuel :=
+      match file.fuel with
       | some n => some n
-      | none => cli.rawFuel
+      | none => cli.fuel
     inputFile := cli.inputFile
     outputFile := cli.outputFile
     check := cli.check || file.check
@@ -2735,18 +2718,42 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
     match playersFromFlags v.names v.decks with
     | .error e => .error e
     | .ok players =>
-      let seed := v.rawSeed.getD 20260807
-      let fuel := v.rawFuel.getD 800
+      let seed := v.seed.getD 20260807
+      let fuel := v.fuel.getD 800
       match v.decidesName with
       | none =>
-        .ok (interactive, multiplayer, v.playerView, v.norandom, v.constructed,
-          seed, fuel, v.inputFile, v.outputFile, v.check, players, none)
+        .ok {
+          interactive := interactive
+          multiplayer := multiplayer
+          playerView := v.playerView
+          norandom := v.norandom
+          constructed := v.constructed
+          seed := seed
+          fuel := fuel
+          inputFile := v.inputFile
+          outputFile := v.outputFile
+          check := v.check
+          players := players
+          decides := none
+        }
       | some name =>
         match parsePlayerName (seatsFromPlayers players) name with
         | .error e => .error e
         | .ok i =>
-          .ok (interactive, multiplayer, v.playerView, v.norandom, v.constructed,
-            seed, fuel, v.inputFile, v.outputFile, v.check, players, some i)
+          .ok {
+            interactive := interactive
+            multiplayer := multiplayer
+            playerView := v.playerView
+            norandom := v.norandom
+            constructed := v.constructed
+            seed := seed
+            fuel := fuel
+            inputFile := v.inputFile
+            outputFile := v.outputFile
+            check := v.check
+            players := players
+            decides := some i
+          }
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   match parseFlagList args with

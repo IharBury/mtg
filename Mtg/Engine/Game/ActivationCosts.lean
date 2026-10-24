@@ -15,8 +15,8 @@ namespace Game
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{o.name} has no indestructible counter"
-  let g := g.mapObjectStatus o (fun s =>
-    s.setCounter .indestructible (s.indestructibleCounters - 1))
+  let g := g.setObject { o with status :=
+    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
   return g.logMsg s!"{o.name} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
@@ -50,28 +50,27 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : ObjectId) (pick : CostP
   match pick with
   | .sacrificeAnotherSubtype t =>
     perm && other && (if t == "Creature" then o.isCreature else g.hasSubtype o t)
-  | .sacrificeArtifactChoice legendary false =>
-    perm && artifact && (!legendary || o.isLegendary)
-  | .sacrificeArtifactChoice false true =>
-    perm && other && artifact
-  | .sacrificeArtifactChoice true true =>
-    perm && o.printed.isEquipment && o.attachedTo == some sourceId
-  | .sacrificeTwoKindChoice false land =>
-    perm && (artifact || (if land then o.printed.isLand else o.isCreature))
-  | .sacrificeTwoKindChoice true false =>
+  | .sacrificeArtifact => perm && artifact
+  | .sacrificeLegendaryArtifact => perm && artifact && o.isLegendary
+  | .sacrificeArtifactOrCreature => perm && (artifact || o.isCreature)
+  | .sacrificeAnotherArtifact => perm && other && artifact
+  | .sacrificeAnotherCreatureOrPlaneswalker =>
     perm && other && (o.isCreature || o.printed.isPlaneswalker)
-  | .sacrificeTwoKindChoice true true =>
+  | .sacrificeArtifactOrLand => perm && (artifact || o.printed.isLand)
+  | .sacrificeEquipmentAttachedToSource =>
+    perm && o.printed.isEquipment && o.attachedTo == some sourceId
+  | .sacrificeArtifactOrDiscardNonland =>
     (perm && artifact) || (inHand && !o.printed.isLand)
-  | .discardChoice nonland false =>
-    inHand && (!nonland || !o.printed.isLand)
-  | .discardChoice sameName true =>
+  | .discardACard => inHand
+  | .discardNonland => inHand && !o.printed.isLand
+  | .discardLegendaryCard => inHand && o.isLegendary
+  | .discardLegendarySameName =>
     inHand && o.isLegendary &&
-      (!sameName || (g.permanentsOf p).any (fun x => x.isLegendary && x.name == o.name))
+      (g.permanentsOf p).any (fun x => x.isLegendary && x.name == o.name)
   | .exileAnotherCreatureCardFromGraveyard =>
     other && o.owner == p && o.zone == .graveyard p && o.printed.isCreature
-  | .tapChoice twoArtifacts =>
-    perm && !o.status.tapped && (if twoArtifacts then artifact else o.isCreature)
-  | _ => false
+  | .tapUntappedCreature => perm && o.isCreature && !o.status.tapped
+  | .tapTwoUntappedArtifacts => perm && artifact && !o.status.tapped
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
 permanents first). -/
@@ -115,7 +114,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
         let records :=
           o.isCreature && (g.findObject? abilityId).any (fun ab =>
             (ab.abilityEffect.map (·.resolution)) ==
-              some (.sequence [.draw .lastKnownPower, .discard (.cards 1)]))
+              some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
         let pw := g.power o
         g := g.sacrificeToGraveyard o s!"{name} sacrifices {o.name}"
         if records then

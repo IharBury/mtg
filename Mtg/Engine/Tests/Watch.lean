@@ -46,7 +46,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
   .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
-  .sequence [.pump (.fixed 2) (.fixed 2) .source, .may (.grant .newTargets .causingSpell) (.sequence []) .ifYouDo]
+  .sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
@@ -97,11 +97,11 @@ def onWatch (e : Effect) : TriggeredAbility :=
     .«if» .enrageGrantsCombat .additionalCombatPhase]
 
 #guard toString (onWatch Effect.watchJusticeBounce) ==
-  Effect.watchJusticeBounce.phrase
+  TriggeredAbility.watchSentence .justiceBounce
 #guard toString (onWatch Effect.watchHulk) ==
-  Effect.watchHulk.phrase
+  TriggeredAbility.watchSentence .hulk
 #guard toString (onWatch Effect.watchHawkeyeModes) ==
-  Effect.watchHawkeyeModes.phrase
+  TriggeredAbility.watchSentence .hawkeyeModes
 #guard Effect.watchHulk.resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
