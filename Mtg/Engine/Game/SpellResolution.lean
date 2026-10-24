@@ -37,15 +37,14 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
 permission to cast the permanent (CR 715.3d). -/
 def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
   let orig := obj.adventurerCard.getD obj.printed
-  let g := g.setObject { obj with printed := orig, adventurerCard := none }
+  let g := g.changeObjects obj.id #[.printed orig, .adventurerCard none]
   let obj := g.object! obj.id
   let (g, newId) := g.move obj.id .exile none
   let o := g.object! newId
-  let g := g.setObject { o with
-    playPermission := some {
+  let g := g.createEffect (.playPermission o.id {
       player := entry.controller
       turnEndsRemaining := 0
-      fromAdventure := true } }
+      fromAdventure := true })
   g.logMsg
     s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
 
@@ -54,7 +53,11 @@ Applied to Reality Fracture triggered abilities, each target checked against
 its own instance of “target”. -/
 def fraAbilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
     (t : TriggeredAbility) (targets : Array Target) : Bool :=
-  let isFra := obj.abilityEffect.isSome || !t.opts.printed.isEmpty
+  let isFra :=
+    obj.abilityEffect.isSome ||
+      match t.effect.resolution with
+      | .sequence rs => rs.any Resolution.isFra
+      | r => r.isFra || !t.opts.printed.isEmpty
   let e := obj.abilityEffect.getD t.effect
   let kind := e.targetKind
   isFra && !targets.isEmpty &&
@@ -66,12 +69,12 @@ def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
     let entry := g.stack.back!
-    let g := { g with stack := g.stack.pop }
+    let g := g.change .popStack
     match g.findObject? entry.objectId with
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := { g with resolvingAbility := some obj.id, resolvingDivision := entry.dividedDamage }
+        let g := g.changes #[.resolvingAbility (some obj.id), .resolvingDivision entry.dividedDamage]
         let g :=
           match obj.triggeredAbility with
           | some t =>
@@ -86,12 +89,12 @@ def resolveTop (g : Game) : Game :=
           | none =>
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
               obj.lastKnownPower (obj.chosenX.getD 0)
-        let g := { g with resolvingAbility := none, resolvingDivision := #[] }
+        let g := g.changes #[.resolvingAbility none, .resolvingDivision #[]]
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then
         let srcName := obj.printed.name.replace "'s ability" ""
-        let g := { g with resolvingAbility := some obj.id }
+        let g := g.change (.resolvingAbility (some obj.id))
         let g :=
           if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
@@ -102,10 +105,10 @@ def resolveTop (g : Game) : Game :=
               entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
               (resolutionOverride := obj.reflexiveResolution)
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
-        let g := { g with resolvingAbility := none }
+        let g := g.change (.resolvingAbility none)
         let g := g.ceaseToExist obj.id
-        match t.sagaChapterNumber? with
-        | some n =>
+        match t.shared with
+        | .chapter n _ =>
           match obj.sourceId.bind g.findObject? with
           | some src =>
             match src.printed.saga, src.controller with
@@ -113,7 +116,7 @@ def resolveTop (g : Game) : Game :=
               if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
             | _, _ => g
           | none => g
-        | none => g
+        | _ => g
       else
         -- CR 608.2b: an instant or sorcery whose targets are all illegal
         -- doesn't resolve, so none of its effects happen (rulings 734 / 749).
@@ -143,8 +146,9 @@ def resolveTop (g : Game) : Game :=
             g.logMsg s!"{obj.name} is exiled (flashback)"
           else
             -- An Adventure that doesn't resolve isn't exiled (ruling 5).
-            let g := g.setObject { obj with
-              printed := obj.adventurerCard.getD obj.printed, adventurerCard := none }
+            let g := g.changeObjects obj.id #[
+              .printed (obj.adventurerCard.getD obj.printed),
+              .adventurerCard none]
             g.moveToOwnerGraveyard (g.object! obj.id) s!"{obj.name} goes to the graveyard"
         else
         let g :=
@@ -158,7 +162,7 @@ def resolveTop (g : Game) : Game :=
               (obj.printed.spellModes[·]?)
         -- Several chosen modes resolve in printed order, each with the targets
         -- announced for its own instances of “target” (CR 700.2 / 608.2c).
-        let g := { g with resolvingSpell := some obj.id }
+        let g := g.change (.resolvingSpell (some obj.id))
         let (g, _) := modeEffects.foldl (fun (acc : Game × Array Target) e =>
           let (g, rest) := acc
           let n := Nat.min rest.size
@@ -171,7 +175,7 @@ def resolveTop (g : Game) : Game :=
             (giftPromised := obj.giftPromisedTo.isSome)
             (chosenX := obj.chosenX.getD 0)
           (g, rest.extract n rest.size)) (g, entry.targets)
-        let g := { g with resolvingSpell := none }
+        let g := g.change (.resolvingSpell none)
         let g :=
           match obj.printed.empowerJace with
           | some n => g.empowerJace entry.controller n
@@ -188,16 +192,10 @@ def resolveTop (g : Game) : Game :=
             (tapped := sneak || g.entersTapped entry.controller obj.printed)
             (summoningSick := sick)
           -- The permanent remembers X (CR 107.3m) and whether it was cast.
-          let o := g.object! newId
-          let g := g.setObject { o with
-            chosenX := obj.chosenX
-            castState := { o.castState with wasCast := !obj.isCopy } }
-          let o := g.object! newId
+          let g := g.changeObjects newId #[.chosenX obj.chosenX, .wasCast (!obj.isCopy)]
           let g :=
             if sneak then
-              g.setObject { o with status := { o.status with
-                attacking := true
-                attackingWhom := sneakWhom } }
+              g.changeStatuses newId #[.attacking true, .attackingWhom sneakWhom]
             else g
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"

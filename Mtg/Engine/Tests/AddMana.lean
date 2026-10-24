@@ -30,7 +30,7 @@ def plotOf (g : Game) : GameObject :=
 
 def withCharge (n : Nat) : Game :=
   let g := addPermanent afterDraw plot caster caster
-  g.mapObjectStatus (plotOf g) (fun s => { s with charge := n })
+  g.changeStatus (plotOf g).id (.charge n)
 
 def addStep (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) : Game :=

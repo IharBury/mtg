@@ -56,8 +56,7 @@ def named (g : Game) (name : String) : GameObject :=
   | none => panic! s!"missing {name}"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ => #[.pushGraveyard id])
 
 /- No legendary creature fails the printed check. One succeeds, and two
 succeeds at a higher count. The threshold can be another count. -/
@@ -69,7 +68,7 @@ succeeds at a higher count. The threshold can be another count. -/
   let g := addPermanent g bear caster caster
   let g := addPermanent g bear caster caster
   let (g, vsBears) :=
-    holds g (.atLeast (.count .legendaryCreaturesYouControl) (.subtypeCount "Bear"))
+    holds g (.atLeast (.count .legendaryCreaturesYouControl) (.subtypeCount .bear))
   let g := addPermanent g hero caster caster
   let (_, twoHeroes) := holds g (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 2))
   !no && one && !two && !vsBears && twoHeroes &&
@@ -109,17 +108,17 @@ four others. The cause's id is the last-known power. -/
   let (g, enough) := holds g (.atLeast (.count .forestsExceptCause) (.fixed 4)) (lastKnownPower := power)
   let g := addPermanent g forest caster caster
   let (_, fiveOthers) :=
-    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount "Forest")) (lastKnownPower := power)
+    holds g (.atLeast (.count .forestsExceptCause) (.subtypeCount .forest)) (lastKnownPower := power)
   !four && reported && enough && !fiveOthers
 
 /- Bears and any other subtype use the permanents you control. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let g := addPermanent g bear caster caster
-  let (g, two) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 2))
-  let (g, three) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 3))
+  let (g, two) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 2))
+  let (g, three) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 3))
   let g := addPermanent g isle caster caster
-  let (_, isle) := holds g (.atLeast (.count (.youControl (.subtype "Bear"))) (.fixed 2))
+  let (_, isle) := holds g (.atLeast (.count (.youControl (.subtype .bear))) (.fixed 2))
   two && !three && isle
 
 /- Quest counters are counted on the source. A missing source is reported. -/
@@ -127,7 +126,7 @@ four others. The cause's id is the last-known power. -/
   let g := addPermanent afterDraw questCard caster caster
   let src := named g "Count Quest"
   let (g, zero) := holds g (.atLeast (.count .questCounters) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus src (fun s => { s with quest := 6 })
+  let g := g.changeStatus src.id (.quest 6)
   let (g, six) := holds g (.atLeast (.count .questCounters) (.fixed 6)) (some src.id)
   let (g, seven) := holds g (.atLeast (.count .questCounters) (.fixed 7)) (some src.id)
   let (g, missing) := holds g (.atLeast (.count .questCounters) (.fixed 0)) none
@@ -138,10 +137,10 @@ four others. The cause's id is the last-known power. -/
   let g := addPermanent afterDraw hero caster caster
   let src := named g "Count Hero"
   let (g, only) :=
-    holds g (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (some src.id)
+    holds g (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (some src.id)
   let g := addPermanent g hero caster caster
   let (_, another) :=
-    holds g (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (some src.id)
+    holds g (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (some src.id)
   !only && another
 
 /- The equipped creature must be a legendary creature you control. -/
@@ -177,10 +176,10 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
   let (g, idle) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus src (fun s => { s with attacking := true })
+  let g := g.changeStatus src.id (.attacking true)
   let (g, attacking) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (some src.id)
   let (g, unharnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
-  let g := g.mapObjectStatus (named g "Count Bear") (fun s => { s with harnessed := true })
+  let g := g.changeStatus (named g "Count Bear").id (.harnessed true)
   let (g, harnessed) := holds g (.atLeast (.count .harnessedSource) (.fixed 1)) (some src.id)
   let (_, gone) := holds g (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) none
   !idle && attacking && !unharnessed && logContains g "not harnessed" && harnessed && !gone
@@ -191,12 +190,12 @@ A harnessed source is reported when it is not. -/
   let g := addPermanent g bear caster caster
   let eq := named g "Count Sword"
   let host := named g "Count Bear"
-  let g := { g with thisWay := { g.thisWay with putArtifactThisWay := some (eq.id, host.id) } }
+  let g := g.change (.putArtifactThisWay (some (eq.id, host.id)))
   let (g, equip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   let kept := g.putArtifactThisWay.isSome
   let g := addPermanent g isle caster caster
   let land := named g "Count Isle"
-  let g := { g with thisWay := { g.thisWay with putArtifactThisWay := some (land.id, host.id) } }
+  let g := g.change (.putArtifactThisWay (some (land.id, host.id)))
   let (g, notEquip) := holds g (.atLeast (.count .putEquipment) (.fixed 1))
   equip && kept && !notEquip && g.putArtifactThisWay.isNone
 
@@ -210,11 +209,11 @@ is reported. -/
   let other := (g.battlefield.filter (·.name == "Count Hero"))[1]!
   let bear := named g "Count Bear"
   let ab := TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
-  let (g, heroTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, heroTarget) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent other.id] (ab := ab)
-  let (g, self) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, self) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent src.id] (ab := ab)
-  let (g, bearTarget) := holds g (.atLeast (.count (.target (.anotherSubtype "Hero"))) (.fixed 1))
+  let (g, bearTarget) := holds g (.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
   let (g, creature) := holds g (.atLeast (.count (.target .creature)) (.fixed 1))
     (some src.id) #[Target.permanent bear.id] (ab := ab)
@@ -239,7 +238,7 @@ is reported. -/
     (some src.id) #[Target.permanent other.id] (ab := ab)
   let (_, otherRestr) := holds g (.atLeast (.count (.target .source)) (.fixed 1))
     (some src.id) #[Target.permanent other.id] (ab := ab)
-  let (_, bareHero) := holds g (.atLeast (.count (.anotherSubtype "Hero")) (.fixed 1))
+  let (_, bareHero) := holds g (.atLeast (.count (.anotherSubtype .hero)) (.fixed 1))
     (some src.id) #[Target.permanent src.id] (ab := ab)
   wrapped && bare && !otherRestr && !bareHero &&
     (.target : TriggeredAbility.ObjectSelector) == .target .any &&
@@ -252,9 +251,10 @@ power. A number that cannot be read does not hold. -/
   let (_, same) := holds afterDraw (.atLeast (.fixed 2) (.fixed 2))
   let (_, negative) := holds afterDraw (.atLeast (.fixed (-1)) (.fixed (-3)))
   let (_, unread) := holds afterDraw (.atLeast .double (.fixed 0))
-  let g := afterDraw.modifyPlayer caster (fun pl => { pl with cardsDrawnThisTurn := 0 })
+  let g := afterDraw
   let (g, drawnNone) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 1))
-  let g := g.modifyPlayer caster (fun pl => { pl with cardsDrawnThisTurn := 2 })
+  let g := (g.record (GameEvent.drew g.turnNumber caster ⟨11⟩ 1)).record
+    (GameEvent.drew g.turnNumber caster ⟨12⟩ 2)
   let (g, drawnTwo) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 2))
   let (g, drawnThree) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 3))
   let (g, loyaltyMissing) := holds g (.atLeast .lastKnownPower (.fixed 2))
@@ -267,10 +267,9 @@ power. A number that cannot be read does not hold. -/
 
 /- A library with a card, and an empty library. -/
 #guard
-  let filled := afterDraw.modifyPlayer caster (fun pl =>
-    { pl with library := pl.library.push ⟨0⟩ })
+  let filled := afterDraw.changePlayer caster (.pushLibrary ⟨0⟩)
   let (g, has) := holds filled (.atLeast .libraryCards (.fixed 1))
-  let emptied := g.modifyPlayer caster (fun pl => { pl with library := #[] })
+  let emptied := g.changePlayer caster (.library #[])
   let (g, empty) := holds emptied (.atLeast .libraryCards (.fixed 1))
   let (_, negated) := holds emptied (.not (.atLeast .libraryCards (.fixed 1)))
   has && !empty && negated && g.log.size == emptied.log.size
@@ -307,10 +306,10 @@ union. -/
   let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
   let names (what : TriggeredAbility.ObjectSelector) : Option (Array String) :=
     (g.permanentsNamed ctx what).map (·.map (·.name))
-  let heroes := .intersection [.creaturesYouControl, .youControl (.subtype "Hero")]
-  let bearsAndHeroes := .union [.youControl (.subtype "Bear"), .youControl (.subtype "Hero")]
+  let heroes := .intersection [.creaturesYouControl, .youControl (.subtype .hero)]
+  let bearsAndHeroes := .union [.youControl (.subtype .bear), .youControl (.subtype .hero)]
   let others := .intersection
-    [.creaturesYouControl, .union [.othersOfSubtype "Bear", .othersOfSubtype "Hero"]]
+    [.creaturesYouControl, .union [.othersOfSubtype .bear, .othersOfSubtype .hero]]
   let attacking := .intersection [.source, .attackingCreatures]
   names heroes == some #["Count Hero"] &&
     names bearsAndHeroes == some #["Count Bear", "Count Bear", "Count Hero"] &&
@@ -331,14 +330,14 @@ creatures. Pumping creatures of a subtype leaves the other permanents. -/
 #guard
   let g := addPermanent afterDraw bear caster caster
   let src := named g "Count Bear"
-  let g := g.mapObjectStatus src (fun s => { s with attacking := true })
+  let g := g.changeStatus src.id (.attacking true)
   let g := addPermanent g hero caster caster
-  let g := g.mapObjectStatus (named g "Count Hero") (fun s => { s with attacking := true })
+  let g := g.changeStatus (named g "Count Hero").id (.attacking true)
   let ctx : Game.TriggerRead := { controller := caster, sourceId := some src.id }
   let attacking := .intersection [.source, .attackingCreatures]
   let pumped := g.applyTriggeredAbility caster (.onEnterDraw 1) (some src.id)
     (resolutionOverride := some (.pump (.fixed 1) (.fixed 0)
-      (.intersection [.creaturesYouControl, .youControl (.subtype "Hero")])))
+      (.intersection [.creaturesYouControl, .youControl (.subtype .hero)])))
   g.countNamed ctx attacking == some 1 &&
     g.countNamed ctx (.union [.source, .attackingCreatures]) == some 2 &&
     (named pumped "Count Hero").status.pumpPower == 1 &&

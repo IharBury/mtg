@@ -10,27 +10,58 @@ resolution helpers that return owned creatures or destroy the rest.
 namespace Mtg.Engine
 namespace Game
 
-private def applyCastAction (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
-  match g.pending with
-  | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
-  | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
-  | .mayPutArtifactFromHand .. => do
-    let g ← g.choosePutArtifactFromHand p id
-    return g.resumeSequenceThenPriority
-  | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
-  | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
-  | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
-  | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
-  | _ => g.castSpell p id
-
-private def applyActionPart1 (g : Game) (p : PlayerId) (a : @& Action) : Except String Game :=
-  match a with
+def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
+  | .pass => g.pass p
+  | .playLand id => g.playLand p id
+  | .tapForMana id m => g.tapForMana p id m
+  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
+  | .cast id =>
+    match g.pending with
+    | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
+    | .mayPutLandFromHand _ => g.putLandFromHandTapped p id
+    | .mayPutArtifactFromHand .. => do
+      let g ← g.choosePutArtifactFromHand p id
+      return g.resumeSequenceThenPriority
+    | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
+    | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
+    | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
+    | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
+    | _ => g.castSpell p id
+  | .castAdventure id => g.castSpell p id true
+  | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
+  | .chooseMode idx =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.mode idx)
+    | .chooseTriggerOr _ => g.chooseTriggerOr p idx
+    | .chooseLibraryPlacement _ _ =>
+      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
+    | _ => g.announceMode p idx
+  | .chooseX n => g.announceX p n
+  | .target t => g.announceTarget p t
+  | .targets ts =>
+    match g.pending with
+    | .chooseProliferate .. => g.finishProliferate p ts
+    | _ => g.announceTargets p ts
+  | .divideDamage as => g.announceDividedDamage p as
+  | .activate id idx => g.activateAbility p id idx
+  | .pay => g.pay p
+  | .sacrifice id => do
+    let g ← g.sacrificeForActivation p id
+    return if g.mayThenResume then g.acceptMayThen else g
+  | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
+  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
+  | .declareBlockers as => g.declareBlockers p as
+  | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
+  | .keepLegend id => g.keepLegend p id
+  | .stackTriggers ids => g.stackTriggers p ids
   | .takeMulligan => g.takeMulligan p
-  | .arrayObjectAction ids _ true supplyRandom false =>
-    if supplyRandom then g.supplyOrder ids else g.putCardsOnBottom p ids
-  | .arrayObjectAction top rest _ surveil true =>
-    if surveil then g.finishSurveil p top rest else g.finishScry p top rest
+  | .putOnBottom ids => g.putCardsOnBottom p ids
+  | .scry top bottom => g.finishScry p top bottom
+  | .surveil top graveyard => g.finishSurveil p top graveyard
+  | .discard id => do
+    let g ← g.discardForDraw p id
+    return if g.mayThenResume then g.acceptMayThen else g
   | .decline =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline
@@ -45,60 +76,27 @@ private def applyActionPart1 (g : Game) (p : PlayerId) (a : @& Action) : Except 
     match g.pending with
     | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
     | _ => g.payGeneric p
-  | .chooseLibrarySide top =>
+  | .chooseTop =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (if top then .accept else .decline)
-    | _ => g.chooseLibrarySide p top
-  | .arrayObjectAction ids _ false stackTriggers false =>
-    if stackTriggers then g.stackTriggers p ids
-    else
-      match g.pending with
-      | .fraChoice .. => g.answerFraChoice p (.objects ids)
-      | .activateManaAbilities _ => g.convoke p ids
-      | _ => g.choosePermanents p ids
-  | .announceOptionalCost pay teamwork =>
-    if teamwork then g.announceTeamwork p pay else g.announceKicker p pay
-  | .optionalDesignation to _ false => g.announceGift p to
-  | .optionalDesignation _ id true => g.announceRingBearer p id
-  | .booleanOrConcede _ _ _ true => return g.concede p
+    | .fraChoice .. => g.answerFraChoice p .accept
+    | _ => g.chooseLibrarySide p true
+  | .chooseBottom =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p .decline
+    | _ => g.chooseLibrarySide p false
+  | .choosePermanents ids =>
+    match g.pending with
+    | .fraChoice .. => g.answerFraChoice p (.objects ids)
+    | .activateManaAbilities _ => g.convoke p ids
+    | _ => g.choosePermanents p ids
+  | .announceKicker kick => g.announceKicker p kick
+  | .announceGift to => g.announceGift p to
+  | .announceTeamwork pay => g.announceTeamwork p pay
+  | .chooseRingBearer id => g.announceRingBearer p id
+  | .concede => return g.concede p
+  | .supplyOrder ids => g.supplyOrder ids
+  | .supplyIndex i => g.supplyIndex i
   | .chooseName name => g.answerFraChoice p (.name name)
-  | _ => throw "Unrecognized action"
-
-def applyAction (g : Game) (p : PlayerId) (a : @& Action) : Except String Game :=
-  match a with
-  | .pass => g.pass p
-  | .playLandOrKeepLegend id keepLegend =>
-    if keepLegend then g.keepLegend p id else g.playLand p id
-  | .tapForMana id m => g.tapForMana p id m
-  | .activateManaAbility id idx mana costIds => g.activateManaAbility p id idx mana costIds
-  | .cast id => applyCastAction g p id
-  | .castAdventure id => g.castSpell p id true
-  | .activateOrSneak id _ attackerId true => g.castSpell p id (sneakAttacker := some attackerId)
-  | .chooseNat idx true _ =>
-    match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (.mode idx)
-    | .chooseTriggerOr _ => g.chooseTriggerOr p idx
-    | .chooseLibraryPlacement _ _ =>
-      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
-    | _ => g.announceMode p idx
-  | .chooseNumber n supplyRandom =>
-    if supplyRandom then g.supplyIndex n else g.announceX p n
-  | .target t => g.announceTarget p t
-  | .targets ts =>
-    match g.pending with
-    | .chooseProliferate .. => g.finishProliferate p ts
-    | _ => g.announceTargets p ts
-  | .divideDamage as => g.announceDividedDamage p as
-  | .activateOrSneak id idx _ false => g.activateAbility p id idx
-  | .pay => g.pay p
-  | .objectAction id _ true discard => do
-    let g ← if discard then g.discardForDraw p id else g.sacrificeForActivation p id
-    return if g.mayThenResume then g.acceptMayThen else g
-  | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
-  | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
-  | .declareBlockers as => g.declareBlockers p as
-  | .assignCombatDamage asgns => g.announceCombatDamage p asgns
-  | a => applyActionPart1 g p a
 
 
 /-- Apply an action, then process entering for tokens it created (CR 603.6a)
@@ -126,8 +124,47 @@ def actor (g : Game) : Option PlayerId :=
     match g.pending with
     | .declareAttackers => who g.activePlayer
     | .declareBlockers => who g.currentBlockersPlayer
-    | .turnCombat (.playerBooleanStep p _ _) | .putOnBottom p _
-    | .chooseLegend p _ _ | .cast p _ | .resolve p _ | .fraChoice p _ => who p
+    | .activateManaAbilities caster => who caster
+    | .chooseMode p => who p
+    | .chooseX p => who p
+    | .chooseTargets p => who p
+    | .sacrificePermanent p _ => who p
+    | .discardForAdditionalCost p => who p
+    | .sacrificeCreature p => who p
+    | .declareMulligan p => who p
+    | .putOnBottom p _ => who p
+    | .scry p _ => who p
+    | .surveil p _ => who p
+    | .mayDiscardDraw p _ => who p
+    | .chooseAdditionalCost p => who p
+    | .chooseSacrificeCreature p _ _ => who p
+    | .chooseDiscardCard p _ => who p
+    | .assignCombatDamage p _ => who p
+    | .chooseLegend p _ _ => who p
+    | .chooseTriggerToStack p => who p
+    | .mayPayGeneric p _ => who p
+    | .chooseLibraryPlacement p _ => who p
+    | .mayAttachEquipment p _ => who p
+    | .mayResolve p => who p
+    | .tapHumans p => who p
+    | .payOrLetCounter p _ _ => who p
+    | .payWard p _ _ => who p
+    | .recruitDiscard p => who p
+    | .chooseKicker p => who p
+    | .chooseGift p => who p
+    | .chooseTeamwork p => who p
+    | .chooseTeamworkCreatures p _ => who p
+    | .chooseRingBearer p => who p
+    | .maySacrificeAnotherBolg p _ => who p
+    | .mayCastFromLooked p _ _ => who p
+    | .mayPutLandFromHand p => who p
+    | .chooseTriggerOr p => who p
+    | .maySacArtifactOrDiscard p _ => who p
+    | .mayPutArtifactFromHand p _ => who p
+    | .mayHaveVillainConnive p _ _ => who p
+    | .chooseProliferate p _ => who p
+    | .fraChoice p _ => who p
+    | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
@@ -136,11 +173,10 @@ def actor (g : Game) : Option PlayerId :=
         | .library p | .hand p | .graveyard p => some p
         | _ =>
           if g.players.isEmpty then none else some g.startingPlayer
-      | .chooseObject _ | .chooseIndex _ | _ =>
+      | .chooseObject _ | .chooseIndex _ =>
         if g.players.isEmpty then none else some g.startingPlayer
     | .none =>
       if g.playersReceivePriority then some g.priority else none
-    | _ => none
 
 /-- Return owned creatures to hand and schedule that many Bird Soldiers
 for the next upkeep (The Eagles Are Coming!). Tokens returned this way
@@ -161,8 +197,7 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
           n := n + 1
     if n > 0 then
-      g := g.modifyPlayer p (fun pl =>
-        { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n })
+      g := g.changePlayer p (.addEaglesBirdsNextUpkeep n)
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g

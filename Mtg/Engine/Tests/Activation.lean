@@ -23,7 +23,7 @@ def baubleReady : Game :=
   let g := addUntappedLand g mountain
   let g := addUntappedLand g mountain
   let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def baubleSource (g : Game) : GameObject :=
   namedPermanent g "Wayfarer's Bauble"
@@ -129,7 +129,7 @@ def resolvedBauble : Game := applyIdle (passBoth paidBauble)
 #guard resolvedBauble.log.any (fun s => mentions s "shuffles their library")
 
 -- Lands put onto the battlefield this way are not a land drop (CR 305.3).
-#guard (resolvedBauble.player ⟨0⟩).landsPlayedThisTurn == 1
+#guard resolvedBauble.loggedLandsPlayed ⟨0⟩ == 1
 
 /-- Snowslope Hunter plus fodder and a known library top, in the precombat main. -/
 def hunterReady : Game :=
@@ -139,7 +139,7 @@ def hunterReady : Game :=
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let g := addUntappedLand g mountain
   let g := addToLibraryTop g lightningBolt ⟨0⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 def hunterSource (g : Game) : GameObject :=
   namedPermanent g "Snowslope Hunter"
@@ -317,7 +317,7 @@ def exiledMountain (g : Game) : GameObject :=
 def playedExiledLand : Game :=
   mustApply resolvedHunterLand ⟨0⟩ (.playLand (exiledMountain resolvedHunterLand).id)
 
-#guard (playedExiledLand.player ⟨0⟩).landsPlayedThisTurn == 1
+#guard playedExiledLand.loggedLandsPlayed ⟨0⟩ == 1
 #guard playedExiledLand.battlefield.any (fun o => o.name == "Mountain")
 #guard playedExiledLand.log.any (fun s => mentions s "plays Mountain")
 #guard !(playedExiledLand.objects.any (fun o => o.zone == .exile && o.name == "Mountain"))
@@ -395,7 +395,7 @@ def hunterEmptyLibrary : Game :=
   let g := skipTo started .precombatMain 80
   let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  g.changePlayer ⟨0⟩ (.library #[])
 
 def resolvedHunterEmpty : Game :=
   passBoth (completeHunterActivation hunterEmptyLibrary "Raging Goblin")

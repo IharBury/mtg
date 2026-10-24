@@ -24,67 +24,62 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
     life := 20
     startingLife := 20
   }
-  let g := { g with players := g.players.push player }
+  let g := g.change (.players (g.players.push player))
   return Id.run do
     let mut g := g
     for card in seat.deck do
       let (g', obj) := g.allocObject card pid (.library pid)
       g := g'
-      g := g.modifyPlayer pid (fun pl => { pl with library := pl.library.push obj.id })
+      g := g.changePlayer pid (.pushLibrary obj.id)
     -- CR 400.11b: sideboard cards are outside the game. They become objects
     -- only when an effect reaches outside the game.
-    g := g.modifyPlayer pid (fun pl => { pl with sideboard := seat.sideboard })
+    g := g.changePlayer pid (.sideboard seat.sideboard)
     return g
 
-def start (cfg : StartConfig) : Except String Game := do
+def startWithRng (cfg : StartConfig) : Except String (Game × Rng) := do
   if cfg.seats.size < 2 then
     throw "A game needs at least two players (CR 100.1)"
-  let mut g : Game := {
-    players := #[]
-    objects := #[]
-    rng := Rng.ofSeed cfg.seed
-    format := cfg.format
-    brawl := cfg.brawl
-    norandom := cfg.norandom
-  }
+  let mut g : Game := ({} : Game).changes #[
+    .format cfg.format,
+    .brawl cfg.brawl ]
   for i in [0:cfg.seats.size] do
     g ← materializeSeat g i cfg.seats[i]!
+  let rng := Rng.ofSeed cfg.seed
   -- Determine starting player (CR 103.1).
-  match cfg.startingPlayer with
-  | none =>
-    if cfg.norandom then
-      g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
-      g := { g with
-        pending := .resolveRandom (.chooseIndex g.players.size)
-        afterRandom := .setStartingPlayer 0 }
-      return g.logMsg
-        "Choose who takes the first turn (CR 103.1); the engine will not roll"
-    else
-      let (rng, r) := g.rng.next
-      let startIdx := r.toNat % g.players.size
+  let (rng, g1) :=
+    match cfg.startingPlayer with
+    | none =>
+      if cfg.norandom then
+        let g1 := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+        let g1 := g1.changes #[
+          .pending (.resolveRandom (.chooseIndex g1.players.size)),
+          .afterRandom (.setStartingPlayer 0) ]
+        let g1 := g1.logMsg
+          "Choose who takes the first turn (CR 103.1); the engine will not roll"
+        (rng, g1)
+      else
+        let (rng, r) := rng.next
+        let startIdx := r.toNat % g.players.size
+        let sp : PlayerId := ⟨startIdx⟩
+        let g1 := g.changes #[.startingPlayer sp, .activePlayer sp, .priority sp]
+        let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+        let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"
+        (rng, g1.continueOpeningShuffles 0)
+    | some i =>
+      let startIdx := i % g.players.size
       let sp : PlayerId := ⟨startIdx⟩
-      g := { g with rng := rng, startingPlayer := sp, activePlayer := sp, priority := sp }
-      g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
-      g := g.logMsg s!"Starting player: {g.player sp |>.name}"
-      for pl in g.players do
-        g := g.shuffleLibrary pl.id
-      for pl in g.players do
-        g := g.draw pl.id (g.player pl.id).startingHandSize
-      return g.beginMulliganRound
-  | some i =>
-    let startIdx := i % g.players.size
-    let sp : PlayerId := ⟨startIdx⟩
-    g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
-    g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
-    g := g.logMsg s!"Starting player: {g.player sp |>.name}"
-    if cfg.norandom then
-      return g.continueOpeningShuffles 0
-    else
-      for pl in g.players do
-        g := g.shuffleLibrary pl.id
-      for pl in g.players do
-        g := g.draw pl.id (g.player pl.id).startingHandSize
-      return g.beginMulliganRound
+      let g1 := g.changes #[.startingPlayer sp, .activePlayer sp, .priority sp]
+      let g1 := g1.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+      let g1 := g1.logMsg s!"Starting player: {g1.player sp |>.name}"
+      (rng, g1.continueOpeningShuffles 0)
+  if cfg.norandom then
+    return (g1, rng)
+  else
+    let (rng, g2) := g1.resolvePendingRandom rng
+    return (g2, rng)
+
+def start (cfg : StartConfig) : Except String Game :=
+  (·.1) <$> startWithRng cfg
 
 end Start
 

@@ -10,23 +10,23 @@ including create-multipliers and Food/Treasure replacement effects.
 namespace Mtg.Engine
 namespace Game
 
-/-- A Treasure token (CR 111 / 701.42). -/
+/-- A Treasure token (CR 111.10a). -/
 def treasureToken : CardDef := {
   name := "Treasure"
   types := #[.artifact]
   subtypes := #["Treasure"]
-  tapManaAbility := .sacrificeAnyColor
+  tapSacrificeAddAnyColor := true
   isToken := true
 }
 
 /-- A creature token. `color` is the color indicator (CR 202.2e). -/
-def creatureToken (name : String) (subtypes : Array String)
+def creatureToken (name : String) (subtypes : Array CardSubtype)
     (power toughness : Int) (color : Option Color := none)
     (keywords : Keywords := Keywords.none)
     (types : Array CardType := #[.creature]) : CardDef := {
   name
   types
-  subtypes
+  subtypes := subtypes.map CardSubtype.englishName
   power := some power
   toughness := some toughness
   colorIndicator := color.map ColorSet.singleton
@@ -36,11 +36,11 @@ def creatureToken (name : String) (subtypes : Array String)
 
 /-- A 5/5 red Dragon creature token with flying. -/
 def dragon55flyingToken : CardDef :=
-  creatureToken "Dragon" #["Dragon"] 5 5 (some .red) (keywords := Keyword.flying)
+  creatureToken "Dragon" #[.dragon] 5 5 (some .red) (keywords := Keyword.flying)
 
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
-  creatureToken "Human Soldier" #["Human", "Soldier"] 1 1 (some .white)
+  creatureToken "Human Soldier" #[.human, .soldier] 1 1 (some .white)
 
 /-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
 Only weavers already on the battlefield before timestamp `asOf` apply
@@ -63,8 +63,8 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
   let n := g.hopeCountersOnEnter o asOf
   if n == 0 then g
   else
-    let o := { o with status := o.status.addPlusOnePlusOne n }
-    (g.setObject o).logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
+    let g := g.changeStatus o.id (.addPlusOnePlusOne n)
+    g.logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
 
 /-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
 that must let enters-the-battlefield triggers see the token (amass, recruit)
@@ -81,8 +81,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let asOf := g.timestamp
     let (g, obj) := g.allocObject printed controller .battlefield (some controller)
       (status := { tapped := tapped, summoningSick := sick })
+    let g := g.record (GameEvent.created g.turnNumber controller obj.asEvent)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
-    let g := { g with pendingTokenEnters := g.pendingTokenEnters.push obj.id }
+    let g := g.change (.pushPendingTokenEnter obj.id)
     let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
     -- Storied is not a trigger; an artifact token can be the third permanent.
     let g := g.refreshEnduringStory
@@ -121,10 +122,23 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     g.createOneToken controller printed (tapped := tapped)
   else
     let original := printed
-    let printed := g.replaceArtifactTokenWithDragon controller printed
-    let copies := g.tokenCreateMultiplier controller
+    let proposed := GameEvent.created g.turnNumber controller {
+      controller := some controller, owner := controller, token := true
+      types := printed.types
+      subtypes := CardSubtype.ofSubtypes printed.subtypes, changeling := printed.keywords.changeling }
+    let printed :=
+      if proposed.watches .wouldCreateToken then
+        g.replaceArtifactTokenWithDragon controller printed
+      else printed
+    let copies :=
+      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
     let extraTreasure :=
-      if original.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+      if proposed.watches .wouldCreateToken &&
+          match proposed.change with
+          | .rules (.effectApplied _ (.created _ object)) => object.hasSubtype .food
+          | _ => false then
+        g.foodTreasureReplacements controller
+      else 0
     Id.run do
       let mut g := g
       let mut last : Option GameObject := none
@@ -156,10 +170,10 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
     return g
 
 /-- A 0/0 black Army creature token of the given subtype (amass). -/
-def armyToken (subtype : String) : CardDef := {
+def armyToken (subtype : CardSubtype) : CardDef := {
   name := s!"{subtype} Army"
   types := #[.creature]
-  subtypes := #[subtype, "Army"]
+  subtypes := #[subtype.englishName, "Army"]
   power := some 0
   toughness := some 0
   colorIndicator := some (ColorSet.singleton .black)
@@ -167,13 +181,13 @@ def armyToken (subtype : String) : CardDef := {
 }
 
 /-- A 0/0 black Goblin Army creature token (amass Goblins). -/
-def goblinArmyToken : CardDef := armyToken "Goblin"
+def goblinArmyToken : CardDef := armyToken .goblin
 
 /-- A 0/0 black Orc Army creature token (amass Orcs). -/
-def orcArmyToken : CardDef := armyToken "Orc"
+def orcArmyToken : CardDef := armyToken .orc
 
 /-- A 0/0 black Zombie Army creature token (amass Zombies). -/
-def zombieArmyToken : CardDef := armyToken "Zombie"
+def zombieArmyToken : CardDef := armyToken .zombie
 
 /-- A Food token (CR 111 / 701.34). -/
 def foodToken : CardDef := {
@@ -188,32 +202,32 @@ def foodToken : CardDef := {
 }
 
 def wolfToken : CardDef :=
-  creatureToken "Wolf" #["Wolf"] 2 2 (some .green)
+  creatureToken "Wolf" #[.wolf] 2 2 (some .green)
 
 def dwarfToken : CardDef :=
-  creatureToken "Dwarf" #["Dwarf"] 2 2 (some .red)
+  creatureToken "Dwarf" #[.dwarf] 2 2 (some .red)
 
 def bearToken : CardDef :=
-  creatureToken "Bear" #["Bear"] 2 2 (some .green)
+  creatureToken "Bear" #[.bear] 2 2 (some .green)
 
 def elfToken : CardDef :=
-  creatureToken "Elf" #["Elf"] 1 1 (some .green)
+  creatureToken "Elf" #[.elf] 1 1 (some .green)
 
 /-- A 1/1 white Spirit creature token with flying. -/
 def spiritToken : CardDef :=
-  creatureToken "Spirit" #["Spirit"] 1 1 (some .white) Keyword.flying
+  creatureToken "Spirit" #[.spirit] 1 1 (some .white) Keyword.flying
 
 /-- A 4/4 white Bird Soldier creature token with flying. -/
 def birdSoldierToken : CardDef :=
-  creatureToken "Bird Soldier" #["Bird", "Soldier"] 4 4 (some .white) Keyword.flying
+  creatureToken "Bird Soldier" #[.bird, .soldier] 4 4 (some .white) Keyword.flying
 
 /-- A 6/6 red Dragon creature token with flying. -/
 def dragonToken : CardDef :=
-  creatureToken "Dragon" #["Dragon"] 6 6 (some .red) Keyword.flying
+  creatureToken "Dragon" #[.dragon] 6 6 (some .red) Keyword.flying
 
 /-- A 3/1 colorless Wall artifact creature token with defender. -/
 def wallToken : CardDef :=
-  creatureToken "Stone Boulder" #["Wall"] 3 1 none Keyword.defender
+  creatureToken "Stone Boulder" #[.wall] 3 1 none Keyword.defender
     (types := #[.artifact, .creature])
 
 /-- A colorless Equipment artifact token named Axe. -/
@@ -244,45 +258,45 @@ def clueToken : CardDef := {
 
 /-- A 3/2 white Hero creature token with vigilance. -/
 def hero32vigilanceToken : CardDef :=
-  creatureToken "Hero" #["Hero"] 3 2 (some .white) Keyword.vigilance
+  creatureToken "Hero" #[.hero] 3 2 (some .white) Keyword.vigilance
 
 /-- A 2/1 black Villain creature token with menace. -/
 def villain21menaceToken : CardDef :=
-  creatureToken "Villain" #["Villain"] 2 1 (some .black) Keyword.menace
+  creatureToken "Villain" #[.villain] 2 1 (some .black) Keyword.menace
 
 /-- A 2/2 colorless Robot Villain artifact creature token. -/
 def robotVillain22Token : CardDef :=
-  creatureToken "Robot Villain" #["Robot", "Villain"] 2 2 none
+  creatureToken "Robot Villain" #[.robot, .villain] 2 2 none
     (types := #[.artifact, .creature])
 
 /-- A 6/5 blue Leviathan creature token with hexproof. -/
 def leviathan65hexproofToken : CardDef :=
-  creatureToken "Leviathan" #["Leviathan"] 6 5 (some .blue) Keyword.hexproof
+  creatureToken "Leviathan" #[.leviathan] 6 5 (some .blue) Keyword.hexproof
 
 /-- A 1/1 white Soldier creature token. -/
 def soldier11whiteToken : CardDef :=
-  creatureToken "Soldier" #["Soldier"] 1 1 (some .white)
+  creatureToken "Soldier" #[.soldier] 1 1 (some .white)
 
 /-- A 1/1 green Squirrel creature token. -/
 def squirrel11greenToken : CardDef :=
-  creatureToken "Squirrel" #["Squirrel"] 1 1 (some .green)
+  creatureToken "Squirrel" #[.squirrel] 1 1 (some .green)
 
 /-- A 0/4 colorless Wall creature token with defender. -/
 def wall04defenderToken : CardDef :=
-  creatureToken "Wall" #["Wall"] 0 4 none Keyword.defender
+  creatureToken "Wall" #[.wall] 0 4 none Keyword.defender
 
 /-- A 3/3 colorless Robot Villain artifact creature token named Doombot. -/
 def doombotToken : CardDef :=
-  creatureToken "Doombot" #["Robot", "Villain"] 3 3 none
+  creatureToken "Doombot" #[.robot, .villain] 3 3 none
     (types := #[.artifact, .creature])
 
 /-- A 1/1 green Insect creature token. -/
 def insect11greenToken : CardDef :=
-  creatureToken "Insect" #["Insect"] 1 1 (some .green)
+  creatureToken "Insect" #[.insect] 1 1 (some .green)
 
 /-- A 1/1 green Minion creature token named Moloid. -/
 def moloidToken : CardDef :=
-  creatureToken "Moloid" #["Minion"] 1 1 (some .green)
+  creatureToken "Moloid" #[.minion] 1 1 (some .green)
 
 /-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
 def alien11redHasteToken : CardDef := {
@@ -310,7 +324,7 @@ def vibraniumToken : CardDef := {
 
 /-- A 2/2 colorless Wizard Soldier creature token named Cadet (FRA). -/
 def cadetToken : CardDef :=
-  creatureToken "Cadet" #["Wizard", "Soldier"] 2 2 none
+  creatureToken "Cadet" #[.wizard, .soldier] 2 2 none
 
 /-- A red and green Heartwood artifact token. `{T}: Add {R} or {G}`. -/
 def heartwoodToken : CardDef := {
@@ -318,7 +332,7 @@ def heartwoodToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Heartwood"]
   colorIndicator := some ((ColorSet.singleton .red).insert .green)
-  tapManaAbility := .oneOf #[ManaType.colored .red, ManaType.colored .green]
+  tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
   isToken := true
 }
 
@@ -349,9 +363,9 @@ def jacePlaneswalkerToken : CardDef := {
 
 /-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
 def sculptureToken : CardDef :=
-  { creatureToken "Sculpture" #["Sculpture", "Treasure"] 1 1 none
+  { creatureToken "Sculpture" #[.sculpture, .treasure] 1 1 none
       (types := #[.artifact, .creature]) with
-    tapManaAbility := .sacrificeAnyColor }
+    tapSacrificeAddAnyColor := true }
 
 /-- A legendary 3/3 green Dog creature token named Mowu. -/
 def mowuToken : CardDef := {
@@ -367,24 +381,24 @@ def mowuToken : CardDef := {
 
 /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate. -/
 def pridemateToken : CardDef :=
-  { creatureToken "Ajani's Pridemate" #["Cat", "Soldier"] 2 2 (some .white) with
+  { creatureToken "Ajani's Pridemate" #[.cat, .soldier] 2 2 (some .white) with
     triggeredAbilities := #[TriggeredAbility.onGainLifePlusOne] }
 
 /-- A 3/3 green Forest Tentacle land creature token. It isn't basic (ruling
 802); the Forest type gives it `{T}: Add {G}`. -/
 def forestTentacleToken : CardDef :=
-  creatureToken "Forest Tentacle" #["Forest", "Tentacle"] 3 3 (some .green)
+  creatureToken "Forest Tentacle" #[.forest, .tentacle] 3 3 (some .green)
     (types := #[.land, .creature])
 
 /-- A 4/4 green Beast creature token with trample. -/
 def beast44trampleToken : CardDef :=
-  creatureToken "Beast" #["Beast"] 4 4 (some .green) (keywords := Keyword.trample)
+  creatureToken "Beast" #[.beast] 4 4 (some .green) (keywords := Keyword.trample)
 
 /-- Jace planeswalker tokens `controller` controls. Nontoken Jace
 planeswalkers don't count, but a token copy of one does (ruling 733). -/
 def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject :=
   (g.permanentsOf controller).filter (fun o =>
-    o.printed.isPlaneswalker && o.hasSubtype "Jace" && o.printed.isToken)
+    o.printed.isPlaneswalker && o.hasSubtype .jace && o.printed.isToken)
 
 /-- Queue “whenever you put one or more loyalty counters on a planeswalker”
 for `p` (Inspired Tethermage). Entering with loyalty counters counts
@@ -392,7 +406,7 @@ for `p` (Inspired Tethermage). Entering with loyalty counters counts
 def queueLoyaltyPutTriggers (g : Game) (p : PlayerId) : Game :=
   let wts := (g.permanentsOf p).foldl (fun acc o =>
     acc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
-  { g with waitingTriggers := g.waitingTriggers ++ wts }
+  g.change (.enqueueWaitingTriggers wts)
 
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
@@ -419,62 +433,15 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   | none => g.logMsg "Empower Jace creates no token"
   | some o =>
     let k := g.countersYouPut o n (putter := some controller)
-    let g := g.setObject { o with status :=
-      { o.status with loyaltyCounters := o.status.loyaltyCounters + k } }
-    let g := if k > 0 then g.queueLoyaltyPutTriggers controller else g
+    let g :=
+      if k > 0 then
+        (g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)).queueLoyaltyPutTriggers
+          controller
+      else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
-/-- Named MSH tokens that carry extra rules text. -/
-def zabuToken : CardDef :=
-  { (creatureToken "Zabu" #["Cat"] 2 2 (some .green)) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne] }
-
-def redwingToken : CardDef :=
-  { (creatureToken "Redwing" #["Bird", "Scout"] 1 1 (some .blue) Keyword.flying) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.onAttackScry 1] }
-
-def theVoidToken : CardDef :=
-  { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
-      ((Keyword.flying).merge Keyword.indestructible)) with
-    supertypes := #[.legendary]
-    staticAbilities := #[.attacksEachCombatIfAble] }
-
-def galactusAttackTrigger : Effect := {
-  targeting := .of (.filtered { noun := "target land", types := #[.land] })
-  resolution := .onPermanent .destroy
-  phrase := "Whenever Galactus attacks, destroy target land."
-}
-
-def galactusToken : CardDef :=
-  { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
-      ((Keyword.flying).merge Keyword.trample)) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
-
-def tigerGodToken : CardDef :=
-  { (creatureToken "The Tiger God" #["Cat", "God"] 4 4 (some .green)) with
-    supertypes := #[.legendary]
-    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
-
-def sturdyShieldToken : CardDef :=
-  { name := "Sturdy Shield"
-    types := #[.artifact]
-    subtypes := #["Equipment"]
-    staticAbilities := #[.equippedCreatureGets 1 2]
-    activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 2 }
-        effect := Effect.attachToTargetCreatureYouControl
-        onlyAsSorcery := true }]
-    isToken := true }
-
-/-- 1/1 blue Merfolk creature token (Namora / similar leftover cast triggers). -/
-def merfolk11blueToken : CardDef :=
-  creatureToken "Merfolk" #["Merfolk"] 1 1 (some .blue)
-
 /-- Printed characteristics for a `TokenKind`. -/
-def tokenPrinted (k : TokenKind) (size : Nat := 0) : CardDef :=
+def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
   | .treasure => treasureToken
   | .food => foodToken
@@ -510,72 +477,26 @@ def tokenPrinted (k : TokenKind) (size : Nat := 0) : CardDef :=
   | .dragon55flying => dragon55flyingToken
   | .forestTentacle => forestTentacleToken
   | .thopter =>
-    creatureToken "Thopter" #["Thopter"] 1 1 (keywords := Keyword.flying)
+    creatureToken "Thopter" #[.thopter] 1 1 (keywords := Keyword.flying)
       (types := #[.artifact, .creature])
-  | .angel33blue => creatureToken "Angel" #["Angel"] 3 3 (some .blue) (keywords := Keyword.flying)
-  | .illusion11blue => creatureToken "Illusion" #["Illusion"] 1 1 (some .blue)
+  | .angel33blue => creatureToken "Angel" #[.angel] 3 3 (some .blue) (keywords := Keyword.flying)
+  | .illusion11blue => creatureToken "Illusion" #[.illusion] 1 1 (some .blue)
   | .leviathan88hexproof =>
-    creatureToken "Leviathan" #["Leviathan"] 8 8 (some .blue) (keywords := Keyword.hexproof)
-  | .axe => axeToken
-  | .zabu => zabuToken
-  | .theVoid => theVoidToken
-  | .redwing => redwingToken
-  | .alien => alien11redHasteToken
-  | .sturdyShield => sturdyShieldToken
-  | .galactus => galactusToken
-  | .merfolk => merfolk11blueToken
-  | .tigerGod => tigerGodToken
-  | .citizen =>
-    { creatureToken "Citizen" #["Citizen"] 1 1 with
-      colorIndicator := some (ColorSet.ofList [.green, .white]) }
-  | .warrior => creatureToken "Warrior" #["Warrior"] 1 1 (some .white)
-  | .insect => creatureToken "Insect" #["Insect"] 2 1 (some .white) (keywords := Keyword.flying)
-  | .myr => creatureToken "Myr" #["Myr"] 1 1 (types := #[.artifact, .creature])
-  | .kobold => creatureToken "Kobolds of Kher Keep" #["Kobold"] 0 1 (some .red)
-  | .mite =>
-    { creatureToken "Phyrexian Mite" #["Phyrexian", "Mite"] 1 1
-        (types := #[.artifact, .creature]) with
-      keywordRule := .toxic 1 true }
-  | .shark => creatureToken "Shark" #["Shark"] (Int.ofNat size) (Int.ofNat size) (some .blue) (keywords := Keyword.flying)
-  | .gingerbrute =>
-    { creatureToken "Gingerbrute" #["Food", "Golem"] 1 1
-        (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
-      activatedAbilities := #[
-        { effect := { resolution := .cant (.beBlockedExceptByHaste .source), phrase := "This token can't be blocked this turn except by creatures with haste." }
-          cost := { mana := ManaCost.ofGeneric 1 } },
-        { effect := Effect.gainLife 3
-          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
-  | .angel => creatureToken "Angel" #["Angel"] 4 4 (some .white) (keywords := Keyword.flying)
-  | .human => creatureToken "Human" #["Human"] 1 1 (some .white)
-  | .goblin => creatureToken "Goblin" #["Goblin"] 1 1 (some .red)
-  | .map => {
-      name := "Map"
-      types := #[.artifact]
-      isToken := true
-      activatedAbilities := #[
-        { effect := { resolution := .grant .explored .source, phrase := "You explore." }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
-  | .rogue => creatureToken "Rogue" #["Rogue"] 2 2 (some .black)
-  | _ => {
-      name := "Incubator"
-      types := #[.artifact]
-      isToken := true
-      activatedAbilities := #[
-        { effect := { resolution := .grant .transformedIncubator .source, phrase := "Transform this token." }
-          cost := { mana := ManaCost.ofGeneric 2 } } ] }
+    creatureToken "Leviathan" #[.leviathan] 8 8 (some .blue) (keywords := Keyword.hexproof)
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
-    (n : Nat := 1) (tapped := false) (attacking := false) (size : Nat := 0) : Game :=
+    (n : Nat) (tapped := false) (attacking := false) : Game :=
   if (g.player controller).lost then
-    if n == 0 then { g with recentTokenIds := #[] }
-    else { g with recentTokenIds := #[] }.logMsg "no token is created (CR 800.4b)"
+    let g := g.change (.recentTokenIds #[])
+    if n == 0 then g
+    else g.logMsg "no token is created (CR 800.4b)"
   else
   Id.run do
     let mut g := g
     let mut ids : Array ObjectId := #[]
     let dest := if attacking then some g.defendingPlayer else none
-    let printed := tokenPrinted kind size
+    let printed := tokenPrinted kind
     let creature :=
       printed.isCreature || (g.replaceArtifactTokenWithDragon controller printed).isCreature
     for _ in [0:n] do
@@ -583,11 +504,10 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
       g := g'
       ids := ids.push obj.id
       if attacking then
-        g := g.setObject { (g.object! obj.id) with
-          status := { (g.object! obj.id).status with
-            attacking := true
-            attackingWhom := dest } }
-    g := { g with recentTokenIds := ids }
+        g := g.changeStatuses obj.id #[
+          .attacking true,
+          .attackingWhom dest]
+    g := g.change (.recentTokenIds ids)
     if n > 0 && creature then
       g := g.noteCreatureTokenEvent controller
     return g

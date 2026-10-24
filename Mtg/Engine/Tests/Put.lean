@@ -36,12 +36,12 @@ def sword : CardDef :=
   equipment "Test Sword" (ManaCost.ofGeneric 1) "" (ManaCost.ofGeneric 2)
 
 def putInHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ =>
+    #[.pushHand id])
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def putInExile (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   insertObject g card p .exile
@@ -73,8 +73,8 @@ returns nothing. -/
   let src := onBoard g "Test Hunter"
   match bearId, beastId, src with
   | some bearId, some beastId, some src =>
-    let g := g.setObject { src with exileLinks :=
-      { src.exileLinks with leaveTriggerExile := #[bearId], linkedExile := #[beastId] } }
+    let g := g.changeObjects src.id
+      #[.leaveTriggerExile #[bearId], .linkedExile #[beastId]]
     let g := g.applyTriggeredAbility caster .onLeaveReturnExiled (some src.id)
     match onBoard g "Test Bear", onBoard g "Costly Beast", onBoard g "Test Hunter" with
     | some bear, some beast, some _ =>
@@ -157,7 +157,7 @@ nothing. -/
   | none => false
   | some land =>
     let (g, eid) := g.move land.id .exile none
-    let g := putStep { g with thisWay := { g.thisWay with exiledIdsThisWay := #[eid] } }
+    let g := putStep (g.change (.exiledIdsThisWay #[eid]))
       (.put .notedLands (how := .tapped))
     match onBoard g "Test Isle" with
     | some o =>
@@ -176,7 +176,7 @@ do not. -/
   match idNamed g (g.player caster).graveyard "Test Isle" with
   | none => false
   | some id =>
-    let g := putStep { g with thisWay := { g.thisWay with discardedCardThisWay := some (caster, id) } }
+    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
       (.put .discardedLand (how := .tapped))
     match onBoard g "Test Isle" with
     | some o =>
@@ -189,7 +189,7 @@ do not. -/
   match idNamed g (g.player caster).graveyard "Test Bear" with
   | none => false
   | some id =>
-    let g := putStep { g with thisWay := { g.thisWay with discardedCardThisWay := some (caster, id) } }
+    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
       (.put .discardedLand (how := .tapped))
     (onBoard g "Test Bear").isNone && g.discardedCardThisWay.isNone &&
       (g.player caster).graveyard.contains id
@@ -325,7 +325,7 @@ put nothing. The top card of the library enters. -/
     { resolution := .put .source .underOwner (.entering [.loseAllAbilities]) } ==
   "return this from its owner's graveyard to the battlefield under its owner's control"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .put (.cause (some "Villain")) .underOwner } ==
+    { resolution := .put (.cause (some .villain)) .underOwner } ==
   "return it to the battlefield under its owner's control"
 #guard TriggeredAbility.resolutionPhrase { resolution := .put .landFromHand (how := .tapped) } ==
   "put a land card from your hand onto the battlefield tapped"

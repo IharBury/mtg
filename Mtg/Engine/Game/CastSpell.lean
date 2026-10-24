@@ -19,28 +19,28 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     (needsAdditionalCost : Bool := false) (needsKicker : Bool := false)
     (needsGift : Bool := false) (needsTeamwork : Bool := false) : Game :=
   if prop.cost.containsX then
-    let g := { g with pending := .chooseX p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseX p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   else if needsMode then
-    let g := { g with pending := .chooseMode p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseMode p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose a mode ({modeCitation})"
   else if needsAdditionalCost then
-    let g := { g with pending := .chooseAdditionalCost p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseAdditionalCost p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose an additional cost (CR 601.2b)"
   else if needsKicker then
-    let g := { g with pending := .chooseKicker p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseKicker p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
   else if needsGift then
-    let g := { g with pending := .chooseGift p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseGift p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
   else if needsTeamwork then
-    let g := { g with pending := .chooseTeamwork p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseTeamwork p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may pay a teamwork cost (CR 702.194 / 601.2b)"
   else if needsTarget then
-    let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
   else
-    let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.activateManaAbilities p), .proposedSpell (some prop)]
     g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false)
@@ -144,28 +144,23 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g :=
     match original.playPermission.bind (·.prepareSource) with
     | some src =>
-      let o := g.object! newId
-      let g := g.setObject { o with castState :=
-        { o.castState with isCopy := true, isPreparedSpell := true } }
+      let g := g.changeObjects newId #[.isCopy true, .isPreparedSpell true]
       match g.findObject? src with
       | some perm =>
-        (g.setObject { perm with status := { perm.status with prepared := false } }).logMsg
+        (g.changeStatus src (.prepared false)).logMsg
           s!"{perm.name} is no longer prepared"
       | none => g
     | none => g
-  let g := { g with castingFromTop := fromTop || g.castingFromTop }
+  let g := g.change (.castingFromTop (fromTop || g.castingFromTop))
   let g :=
     if asAdventure then
-      let o := g.object! newId
-      g.setObject { o with printed := face, adventurerCard := some original.printed }
+      g.changeObjects newId #[.printed face, .adventurerCard (some original.printed)]
     else g
   let g :=
     if fromGraveyard then
-      let o := g.object! newId
-      g.setObject { o with castState := { o.castState with castFromGraveyard := true } }
+      g.changeObject newId (.castFromGraveyard true)
     else if original.zone == .hand original.owner then
-      let o := g.object! newId
-      g.setObject { o with castState := { o.castState with castFromHand := true } }
+      g.changeObject newId (.castFromHand true)
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
@@ -221,15 +216,15 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         | throw "No such mode (CR 601.2b)"
       if !g.modeIsChoosable p chosen then
         throw "That mode requires a target (CR 700.2d)"
-      let some obj := g.findObject? prop.spellId | throw "The ability left the stack"
-      let g := g.setObject { obj with abilityEffect := some chosen }
+      let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
+      let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let g := g.logMsg
         s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
       if chosen.requiresTarget then
-        let g := { g with pending := .chooseTargets p }
+        let g := g.change (.pending (.chooseTargets p))
         return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
       return g.afterTargetsChosen
-    | _ =>
+    | .spell =>
       let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
       if !spell.printed.isModal then
         throw "That spell is not modal (CR 700.2)"
@@ -246,7 +241,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let more := (List.range spell.printed.spellModes.size).any (fun i =>
         !chosen.contains i && g.spellModeIsChoosable p spell.printed.spellModes[i]!)
       if chosen.size < g.maxModesFor p spell.printed && more then
-        let g := { g with pending := .chooseMode p }
+        let g := g.change (.pending (.chooseMode p))
         return g.logMsg s!"{(g.player p).name} may choose another mode, or decline (CR 700.2)"
       return g.afterModesChosen p
   | _ => throw "Not time to choose a mode (CR 601.2b)"
@@ -255,19 +250,24 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
 record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
 def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
   let k := (sym.counters).getD 0
-  let n := ((o.status.loyaltyCounters : Int) + k).toNat
-  let g := g.setObject { o with status := { o.status with
-    loyaltyCounters := n
-    loyaltyActivatedThisTurn := true } }
+  let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
+  let g :=
+    if k != 0 then
+      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0)
+        (cause := some (.costPayment .loyalty (o.controller.getD o.owner) (some o.id))))
+    else g
   let g := match o.controller with
     | some p =>
-      let g := g.modifyPlayer p (fun pl => { pl with activatedLoyaltyThisTurn := true })
+      let happened := GameEvent.activated g.turnNumber p o.asEvent true
+      let g := g.record happened
       let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
       -- Gideon, the Oathless: an opponent activating a loyalty ability.
       (g.livingOpponents p).foldl (fun g opp =>
         g.foldControlledPermanents opp.id none fun g src =>
-          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
-            (cause := some o)) g
+          if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
+            g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
+              (cause := some o)
+          else g) g
     | none => g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
@@ -281,16 +281,18 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
   let removed := match sym.counters with
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
+  let happened := GameEvent.activated g.turnNumber p
+    { controller := some p, owner := p } true
+  if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
+  else
   g.foldControlledPermanents p none fun g o =>
-    let isDrawIfRemovedTwo (ab : TriggeredAbility) : Bool :=
-      match ab.effect.resolution with
-      | .«if» (.atLeast .lastKnownPower (.fixed 2)) (.draw (.fixed 1) _) => true
-      | _ => false
     let waiting :=
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        !isDrawIfRemovedTwo wt.ability || removed ≥ 2)).map (fun wt =>
-        if isDrawIfRemovedTwo wt.ability then
-          { wt with lastKnownPower := some (Int.ofNat removed) }
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
+        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
+          WaitingTrigger.mk wt.controller wt.source wt.ability wt.event
+            (some (Int.ofNat removed)) wt.lastKnownToughness wt.causeId wt.cause
+            wt.causeController wt.checked
         else wt)
     g.enqueueWaitingTriggers waiting
 
@@ -304,9 +306,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       throw s!"Only {(g.player caster).name} may choose a value for X (CR 601.2b)"
     let some prop := g.proposedSpell
       | throw "No spell or ability is waiting for X (CR 601.2b)"
-    let some obj := g.findObject? prop.spellId
+    let some _obj := g.findObject? prop.spellId
       | throw "The spell or ability left the stack"
-    let g := g.setObject { obj with chosenX := some x }
+    let g := g.changeObject prop.spellId (.chosenX (some x))
     let g ←
       if prop.loyaltyX then
         let some src := prop.sourceId.bind g.findObject?
@@ -329,8 +331,8 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         let spell := g.object! prop.spellId
         g.playManaCost spell spell.printed
       | _, _, _ => prop.cost.substituteX x
-    let prop := { prop with cost }
-    let g := { g with proposedSpell := some prop }
+    let g := g.changeProposal (.cost cost)
+    let prop := g.proposedSpell.getD prop
     let g := g.logMsg
       s!"{(g.player p).name} chooses X = {x} (CR 107.3a / 601.2b)"
     let pl := g.player p
@@ -345,7 +347,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         | some ab => ab.effect.requiresTarget
         | none => false
       return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
-    | _ =>
+    | .spell =>
       let spell := g.object! prop.spellId
       let face := spell.printed
       return g.enterProposalWindow p pl prop face.isModal
@@ -362,9 +364,9 @@ process (remaining waiting triggers, then SBAs). -/
 def afterTriggerTargetsChosen (g : Game) : Game :=
   match g.triggerNeedingTargets with
   | some _ =>
-    promptTriggerTargetsIfNeeded { g with pending := .none }
+    promptTriggerTargetsIfNeeded (g.change (.pending .none))
   | none =>
-    let g := { g with pending := .none }.promptNextWard
+    let g := (g.change (.pending .none)).promptNextWard
     if g.pending != .none then g
     else receivePriority g g.activePlayer false
 
@@ -385,7 +387,7 @@ def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
   let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
     if o.controller != some p && o.isOnBattlefield then
       (g.wardCostsOn o).foldl (fun g cost =>
-        { g with wardQueue := g.wardQueue.push { player := p, spellId := obj.id, cost } }) g
+        g.change (.enqueueWard #[{ player := p, spellId := obj.id, cost }])) g
     else g)
   g.afterTriggerTargetsChosen
 
@@ -479,7 +481,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
       if g.currentTargetSlot obj < kind.spec.slots.size then
-        return { (g.markTargetsAnnounced obj.id false) with pending := .chooseTargets p }
+        return (g.markTargetsAnnounced obj.id false).change (.pending (.chooseTargets p))
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
       return g.finishTriggerTargets p obj

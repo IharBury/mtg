@@ -12,57 +12,17 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
-/-- Duration of a temporary copy effect on a permanent (CR 707 / CR 613.2). -/
-abbrev CopyDuration :=
-  ObjectId × PlayerId × Nat × Nat × Array ManaType ×
-    Bool × Bool × Bool × Bool × Bool ×
-    Option ObjectId × String × Array PlayerId × Array ObjectId × Option Zone
+set_option maxRecDepth 2048 in
+deriving instance BEq for CardDef
 
-namespace CopyDuration
-
-@[match_pattern] abbrev copyDurationKind (source : ObjectId := ⟨0⟩) (player : PlayerId := ⟨0⟩)
-    (n : Nat := 0) (paid : Nat := 0) (types : Array ManaType := #[])
-    (untilEotFlag : Bool := false) (untilNextTurnFlag : Bool := false)
-    (untilSourceFlag : Bool := false) (b4 : Bool := false) (b5 : Bool := false)
-    (sourceIdOpt : Option ObjectId := Option.none) (subtype : String := "")
-    (rest : Array PlayerId := #[]) (ids : Array ObjectId := #[])
-    (destOpt : Option Zone := Option.none) : CopyDuration :=
-  (source, player, n, paid, types, untilEotFlag, untilNextTurnFlag, untilSourceFlag, b4, b5,
-    sourceIdOpt, subtype, rest, ids, destOpt)
-
-@[match_pattern] abbrev permanent : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false false false false false
-@[match_pattern] abbrev untilEot : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] true false false false false
-@[match_pattern] abbrev untilNextTurn : CopyDuration :=
-  .copyDurationKind ⟨0⟩ ⟨0⟩ 0 0 #[] false true false false false
-@[match_pattern] abbrev untilSourceLeaves (source : ObjectId) : CopyDuration :=
-  .copyDurationKind source ⟨0⟩ 0 0 #[] false false true false false
-
-end CopyDuration
-
-/-- The mana a mana ability adds (CR 106.1). -/
-abbrev Game.ManaOutput := CopyDuration
-
-instance : BEq CardDef where
-  beq a b := a.name == b.name
-
-/-- Permission to play a card from exile (CR 701.14 / 715.3d), snapshot of
-the object whose event caused a triggered ability to trigger (`TriggerCause`,
-CR 603.2 / CR 603.7c / CR 608.2c), spell cast-origin, additional-cost-paid,
-and linked-exile metadata (`CastOriginState`, `AdditionalCostPaidState`,
-`LinkedExileState`, CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706), how one
-attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
-CR 510.1), an active temporary copy effect on a permanent (`CopyEffect`,
-CR 707 / CR 613.2), a seat at the table before objects are created (`Seat`,
-CR 103), or a mana ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
+/-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
 structure PlayPermission where
   /-- The player who may play the card. -/
-  player : PlayerId := ⟨0⟩
+  player : PlayerId
   /-- Remaining endings of `player`'s turns before the permission expires.
   Granted as 2 during that player's turn so it lasts until the end of their
   next turn. Ignored when `fromAdventure` is true. -/
-  turnEndsRemaining : Nat := 0
+  turnEndsRemaining : Nat
   /-- CR 715.3d permission from resolving an Adventure: lasts while the card
   remains exiled, and the card cannot be recast as an Adventure this way. -/
   fromAdventure : Bool := false
@@ -74,7 +34,7 @@ structure PlayPermission where
   withoutManaCost : Bool := false
   /-- You may play this only while you control a permanent of this subtype
   (Flameshape). Checked as you begin to cast, not as the spell resolves. -/
-  requireSubtype : Option String := none
+  requireSubtype : Option CardSubtype := none
   /-- Timing restrictions based on card type are ignored (cast-as-it-resolves
   effects such as Glamdring, Gríma, and Gandalf). -/
   ignoreTiming : Bool := false
@@ -84,120 +44,13 @@ structure PlayPermission where
   prepareSource : Option ObjectId := none
   /-- Cast by paying life equal to mana value instead of the mana cost. -/
   payLifeEqualManaValue : Bool := false
-  id : Option ObjectId := none
-  controller : Option PlayerId := none
-  power : Option Int := none
-  status : Option Status := none
-  ids : Array ObjectId := #[]
-  boardTitle : String := ""
-  label : String := ""
-  detail : Option String := none
-  hiddenActivity : String := ""
-  /-- This spell's kicker cost was paid (CR 702.32). -/
-  kicked : Bool := false
-  /-- This spell's teamwork cost was paid (CR 702.194). -/
-  teamworkPaid : Bool := false
-  /-- This creature spell's sneak cost was paid (MSH sneak). -/
-  sneakPaid : Bool := false
-  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
-  sneakAttackWhom : Option PlayerId := none
-  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
-  giftPromisedTo : Option PlayerId := none
-  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
-  legendary spell, so it can't be countered. Copies do not inherit this. -/
-  uncounterableThisCast : Bool := false
-  /-- Mana from a Treasure was spent to cast this spell. -/
-  treasureManaSpent : Bool := false
-  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
-  castFromGraveyard : Bool := false
-  /-- An instant or sorcery cast this way is exiled instead of being put into
-  its owner's graveyard (Bilbo, Thief in the Night). -/
-  exileInstantSorceryInstead : Bool := false
-  /-- This spell was cast from its owner's hand. -/
-  castFromHand : Bool := false
-  /-- This permanent entered the battlefield as a spell that was cast
-  (“if you cast it”). -/
-  wasCast : Bool := false
-  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
-  spell”). -/
-  isPreparedSpell : Bool := false
-  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
-  isCopy : Bool := false
-  /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
-  linkedExile : Array ObjectId := #[]
-  /-- Zone a linked-exiled card returns to when the source leaves
-  (Cloak and Dagger; MSH 234). `none` means the battlefield. -/
-  returnToZone : Option Zone := none
-  /-- Cards this permanent exiled that a leave trigger may return (Fiend
-  Hunter). Unlike `linkedExile`, these do not return automatically. -/
-  leaveTriggerExile : Array ObjectId := #[]
-  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
-  boastExiled : Array ObjectId := #[]
-  source : ObjectId := ⟨0⟩
-  /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
-  blocking (CR 510.1d). -/
-  toCreatures : Array (ObjectId × Int) := #[]
-  /-- Leftover assigned to the defending player (unblocked or trample). -/
-  toPlayer : Int := 0
-  restore : CardDef := default
-  duration : CopyDuration := .permanent
-  name : String := ""
-  deck : Array CardDef := #[]
-  /-- Cards outside the game the player may use, such as a sideboard
-  (CR 400.11b). -/
-  sideboard : Array CardDef := #[]
-  output : Game.ManaOutput := .permanent
-  tap : Bool := true
-  cost : ManaCost := ManaCost.empty
-  payLife : Nat := 0
-  sacrificeSelf : Bool := false
-  /-- Costs paid with objects the player chooses (Bolg's Company). -/
-  picks : Array CostPick := #[]
-  restriction : ManaRestriction := .none
-  /-- Index among `activatedAbilitiesOf` when this is an activated ability
-  printed with a full cost. -/
-  activatedIdx : Option Nat := none
-  onceEachTurn : Bool := false
-  /-- Damage this ability deals to its controller as it resolves. -/
-  damageYou : Nat := 0
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
-instance : BEq PlayPermission where
-  beq a b :=
-    a.source == b.source && a.toCreatures == b.toCreatures && a.toPlayer == b.toPlayer &&
-    a.player == b.player && a.turnEndsRemaining == b.turnEndsRemaining &&
-    a.fromAdventure == b.fromAdventure && a.whileExiled == b.whileExiled &&
-    a.anyMana == b.anyMana && a.withoutManaCost == b.withoutManaCost &&
-    a.requireSubtype == b.requireSubtype && a.ignoreTiming == b.ignoreTiming &&
-    a.faceDown == b.faceDown && a.prepareSource == b.prepareSource &&
-    a.payLifeEqualManaValue == b.payLifeEqualManaValue &&
-    a.ids == b.ids && a.boardTitle == b.boardTitle && a.label == b.label &&
-    a.detail == b.detail && a.hiddenActivity == b.hiddenActivity
-
-/-- Snapshot of the object whose event caused a triggered ability to trigger
-(CR 603.2 / CR 603.7c / CR 608.2c). -/
-abbrev TriggerCause := PlayPermission
-
-/-- Active temporary copy effect on a permanent, storing the original printed
-characteristics to restore when `duration` expires (CR 707 / CR 613.2), a
-seat at the table before objects are created (`Seat`, CR 103), or a mana
-ability of a permanent (`ManaAbilityDef`, CR 605.1a). -/
-abbrev CopyEffect := PlayPermission
-
-/-- Spell cast-origin, additional-cost-paid (`AdditionalCostPaidState`), and
-linked-exile (`LinkedExileState`) metadata (CR 406.6 / CR 601.2 / CR 610.3 / CR 702 / CR 706),
-how one attacking or blocking creature assigns its combat damage (`CreatureCombatAssignment`,
-CR 510.1), or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
-abbrev CastOriginState := PlayPermission
-
-abbrev AdditionalCostPaidState := CastOriginState
-
-/-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
-abbrev LinkedExileState := CastOriginState
-
-set_option maxHeartbeats 800000 in
 /-- An object currently in the game (CR 109). -/
 structure GameObject where
+  id : ObjectId
+  printed : CardDef
+  owner : PlayerId
   controller : Option PlayerId := none
   /-- Controller as this object last existed on the battlefield (CR 608.2c).
   Zone changes clear `controller`; this keeps “its controller” readable. -/
@@ -207,9 +60,9 @@ structure GameObject where
   defaultController : Option PlayerId := none
   /-- True while a control-changing effect is applying (CR 800.4a). -/
   controlChanged : Bool := false
-  /-- A control-changing effect lasts until this source leaves (Super Hero
-  Civil War; MSH 143). -/
-  controlUntilSourceLeaves : Option ObjectId := none
+  zone : Zone
+  status : Status := {}
+  timestamp : Nat := 0
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
   abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
@@ -225,16 +78,39 @@ structure GameObject where
   lastKnownToughness : Option Int := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
+  /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
+  attachedTo : Option ObjectId := none
   /-- Normal characteristics of an adventurer card, set while the spell is on
   the stack as an Adventure (CR 715.3b). -/
   adventurerCard : Option CardDef := none
-  /-- Cards in exile linked to this object (CR 610.3 / CR 406.6). -/
-  exileLinks : LinkedExileState := {}
-  /-- Spell cast-origin and additional-cost-paid metadata (CR 601.2 / CR 702 / CR 706). -/
-  castState : CastOriginState := {}
-  /-- For a triggered ability on the stack: snapshot of the object whose event
-  caused it to trigger (CR 603.2 / CR 603.7c / CR 608.2c). -/
-  triggerCause : TriggerCause := {}
+  /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
+  linkedExile : Array ObjectId := #[]
+  /-- Zone a linked-exiled card returns to when the source leaves
+  (Cloak and Dagger; MSH 234). `none` means the battlefield. -/
+  returnToZone : Option Zone := none
+  /-- Cards this permanent exiled that a leave trigger may return (Fiend
+  Hunter). Unlike `linkedExile`, these do not return automatically. -/
+  leaveTriggerExile : Array ObjectId := #[]
+  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
+  castFromGraveyard : Bool := false
+  /-- An instant or sorcery cast this way is exiled instead of being put into
+  its owner's graveyard (Bilbo, Thief in the Night). -/
+  exileInstantSorceryInstead : Bool := false
+  /-- This spell was cast from its owner's hand. -/
+  castFromHand : Bool := false
+  /-- This permanent entered the battlefield as a spell that was cast
+  (“if you cast it”). -/
+  wasCast : Bool := false
+  /-- This spell is a copy of a prepare spell cast from exile (a “prepared
+  spell”). -/
+  isPreparedSpell : Bool := false
+  /-- For a triggered ability on the stack: the object whose event caused it,
+  that object's controller, and its power as the ability triggered. -/
+  fraCauseId : Option ObjectId := none
+  fraCauseController : Option PlayerId := none
+  fraCausePower : Option Int := none
+  /-- The causing object's status (its counters) as it last existed. -/
+  fraCauseStatus : Option Status := none
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none
@@ -244,70 +120,54 @@ structure GameObject where
   /-- The instant or sorcery card in a graveyard has flashback until end of
   turn, with its mana cost as the flashback cost (Stingcaster Mage). -/
   flashbackUntilEot : Bool := false
+  /-- This spell's kicker cost was paid (CR 702.32). -/
+  kicked : Bool := false
+  /-- This spell's teamwork cost was paid (CR 702.194). -/
+  teamworkPaid : Bool := false
+  /-- This creature spell's sneak cost was paid (MSH sneak). -/
+  sneakPaid : Bool := false
+  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
+  sneakAttackWhom : Option PlayerId := none
+  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
+  giftPromisedTo : Option PlayerId := none
+  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
+  isCopy : Bool := false
+  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
+  legendary spell, so it can't be countered. Copies do not inherit this. -/
+  uncounterableThisCast : Bool := false
+  /-- Cards exiled to pay this boast activation (Baron Helmut Zemo; MSH 227). -/
+  boastExiled : Array ObjectId := #[]
   /-- Its entering has been processed (enters triggers queued). -/
   enterProcessed : Bool := false
+  /-- Mana from a Treasure was spent to cast this spell. -/
+  treasureManaSpent : Bool := false
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
-  /-- Active temporary copy effect on this permanent (CR 707 / CR 613.2). -/
-  copyEffect : Option CopyEffect := none
-  id : ObjectId
-  printed : CardDef
-  owner : PlayerId
-  zone : Zone
-  status : Status := {}
-  timestamp : Nat := 0
-  /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
-  attachedTo : Option ObjectId := none
-deriving Repr, Inhabited
+  /-- Printed card to restore when a copy effect ends (CR 707 / MSH). -/
+  copyRestore : Option CardDef := none
+  /-- The current copy effect lasts until end of turn. -/
+  copyUntilEot : Bool := false
+  /-- The current copy effect lasts until this controller's next turn. -/
+  copyUntilNextTurn : Bool := false
+  /-- The current copy effect lasts until this source leaves the battlefield. -/
+  copyUntilSourceLeaves : Option ObjectId := none
+  /-- A control-changing effect lasts until this source leaves (Super Hero
+  Civil War; MSH 143). -/
+  controlUntilSourceLeaves : Option ObjectId := none
+deriving Repr, Inhabited, BEq
 
-/-- How one attacking or blocking creature assigns its combat damage (CR 510.1),
-or a queued ward obligation waiting to be announced (`WardObligation`, CR 702.21). -/
-abbrev CreatureCombatAssignment := CastOriginState
+/-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
+structure CreatureCombatAssignment where
+  source : ObjectId
+  /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
+  blocking (CR 510.1d). -/
+  toCreatures : Array (ObjectId × Int) := #[]
+  /-- Leftover assigned to the defending player (unblocked or trample). -/
+  toPlayer : Int := 0
+deriving Repr, Inhabited, BEq
 
 namespace GameObject
-
-def linkedExile (o : GameObject) : Array ObjectId := o.exileLinks.linkedExile
-def returnToZone (o : GameObject) : Option Zone := o.exileLinks.returnToZone
-def leaveTriggerExile (o : GameObject) : Array ObjectId := o.exileLinks.leaveTriggerExile
-def boastExiled (o : GameObject) : Array ObjectId := o.exileLinks.boastExiled
-
-def castFromGraveyard (o : GameObject) : Bool := o.castState.castFromGraveyard
-def exileInstantSorceryInstead (o : GameObject) : Bool := o.castState.exileInstantSorceryInstead
-def castFromHand (o : GameObject) : Bool := o.castState.castFromHand
-def wasCast (o : GameObject) : Bool := o.castState.wasCast
-def isPreparedSpell (o : GameObject) : Bool := o.castState.isPreparedSpell
-def kicked (o : GameObject) : Bool := o.castState.kicked
-def teamworkPaid (o : GameObject) : Bool := o.castState.teamworkPaid
-def sneakPaid (o : GameObject) : Bool := o.castState.sneakPaid
-def sneakAttackWhom (o : GameObject) : Option PlayerId := o.castState.sneakAttackWhom
-def giftPromisedTo (o : GameObject) : Option PlayerId := o.castState.giftPromisedTo
-def isCopy (o : GameObject) : Bool := o.castState.isCopy
-def uncounterableThisCast (o : GameObject) : Bool := o.castState.uncounterableThisCast
-def treasureManaSpent (o : GameObject) : Bool := o.castState.treasureManaSpent
-
-def fraCauseId (o : GameObject) : Option ObjectId := o.triggerCause.id
-def fraCauseController (o : GameObject) : Option PlayerId := o.triggerCause.controller
-def fraCausePower (o : GameObject) : Option Int := o.triggerCause.power
-def fraCauseStatus (o : GameObject) : Option Status := o.triggerCause.status
-
-def copyRestore (o : GameObject) : Option CardDef :=
-  o.copyEffect.map (·.restore)
-
-def copyUntilEot (o : GameObject) : Bool :=
-  match o.copyEffect with
-  | some c => c.duration == .untilEot
-  | none => false
-
-def copyUntilNextTurn (o : GameObject) : Bool :=
-  match o.copyEffect with
-  | some c => c.duration == .untilNextTurn
-  | none => false
-
-def copyUntilSourceLeaves (o : GameObject) : Option ObjectId :=
-  match o.copyEffect with
-  | some { duration := .untilSourceLeaves src, .. } => some src
-  | _ => none
 
 def name (o : GameObject) : String := o.printed.name
 
@@ -336,9 +196,12 @@ def types (o : GameObject) : Array CardType :=
     if ts.any (· == .artifact) then ts else ts.push .artifact
   else
     let asCreature :=
-      o.status.additionalCreature || o.status.additionalCreatureUntilEot
+      o.status.additionalCreature || o.status.additionalCreatureUntilEot ||
+        o.status.animatedConstruct55
     let ts :=
-      if asCreature && !o.printed.isCreature then
+      if o.status.notACreature then
+        o.printed.types.filter (· != .creature)
+      else if asCreature && !o.printed.isCreature then
         o.printed.types.push .creature
       else
         o.printed.types
@@ -347,24 +210,32 @@ def types (o : GameObject) : Array CardType :=
     else ts
 
 /-- Current subtypes, including those granted by a lasting type-changing effect. -/
-def subtypes (o : GameObject) : Array Subtype :=
-  if o.status.onlyFoodArtifact then #["Food"]
+def subtypes (o : GameObject) : Array CardSubtype :=
+  if o.status.onlyFoodArtifact then #[.food]
   else
+    let printed := CardSubtype.ofSubtypes o.printed.subtypes
     let added :=
-      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push "Construct"
+      if o.status.animatedConstruct55 then o.status.additionalSubtypes.push .construct
       else o.status.additionalSubtypes
-    let extra := added.filter (fun s => !o.printed.subtypes.any (· == s))
-    let raw := o.printed.subtypes ++ extra
+    let extra := added.filter (fun s => !printed.any (· == s))
+    let raw := printed ++ extra
     match o.status.replacedCreatureTypesUntilEot with
     | none => raw
     | some types =>
-      let kept := raw.filter isNoncreatureSubtype
+      let kept := raw.filter CardSubtype.isNoncreature
       let added := types.filter (fun t => !kept.any (· == t))
       kept ++ added
 
+/-- Current supertypes of this object (CR 205.4). -/
+def supertypes (o : GameObject) : Array Supertype :=
+  o.printed.supertypes
+
+def hasSupertype (o : GameObject) (s : Supertype) : Bool :=
+  o.supertypes.any (· == s)
+
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
-  formatTypeLine o.printed.supertypes o.types o.subtypes
+  formatTypeLine o.supertypes o.types (o.subtypes.map CardSubtype.englishName)
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
 lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
@@ -399,15 +270,18 @@ def isCreature (o : GameObject) : Bool :=
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
-  o.printed.hasSupertype .legendary
+  o.hasSupertype .legendary
 
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
 
-def hasSubtype (o : GameObject) (s : String) : Bool :=
+def hasType (o : GameObject) (t : CardType) : Bool :=
+  o.types.any (· == t)
+
+def hasSubtype (o : GameObject) (s : CardSubtype) : Bool :=
   o.subtypes.any (· == s) ||
-    (o.printed.keywords.changeling && !isNoncreatureSubtype s)
+    (o.printed.keywords.changeling && !s.isNoncreature)
 
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
@@ -457,20 +331,15 @@ def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a
-player would receive priority (CR 603.3 / 603.3b), game start configuration
-(`StartConfig`, CR 103), a spell or ability on the stack (`StackEntry`, CR 405),
-or shared spell/ability/choice resolution context (`SpellResolutionContext`,
-`TriggerResolutionContext`, `TriggerSequenceRest`, `TriggerOrRest`,
-`ChooseModesRest`, `TriggerRead`, `UnlessPaysRest`, `MayEffectRest`,
-`SpellOrRest`, CR 118.12 / 603.3 / 608.2). `source` is a snapshot of
+player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
 the permanent as it existed when the trigger event occurred. `lastKnownPower`
 is last-known power for dies triggers (CR 113.7a) and the number of cards
 looked at for “whenever you scry” (CR 701.20). `lastKnownToughness` is
 last-known toughness for attack triggers that copy P/T (CR 113.7a). -/
 structure WaitingTrigger where
-  controller : PlayerId := ⟨0⟩
-  source : GameObject := default
-  ability : TriggeredAbility := default
+  controller : PlayerId
+  source : GameObject
+  ability : TriggeredAbility
   /-- Event this ability is waiting to be put on the stack for. -/
   event : TriggerEvent := .dying
   lastKnownPower : Option Int := none
@@ -480,57 +349,23 @@ structure WaitingTrigger where
   causeId : Option ObjectId := none
   /-- The causing object as it was when the ability triggered. -/
   cause : Option GameObject := none
+  /-- Explicit causing player override (e.g. the attacked opponent for
+  `creaturesAttackYourOpponent`). -/
+  causeController : Option PlayerId := none
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false
-  seats : Array CopyEffect := #[]
-  format : Format := .constructed
-  /-- CR 903.12 Brawl option. The first mulligan is free (CR 103.5c / 903.12g). -/
-  brawl : Bool := false
-  seed : UInt64 := 20260807
-  /-- Index into `seats`. `none` means the RNG chooses. -/
-  startingPlayer : Option Nat := none
-  /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
-  norandom : Bool := false
-  objectId : ObjectId := ⟨0⟩
-  targets : Array (PlayerId ⊕ (ObjectId × Bool)) := #[]
-  /-- Damage assigned to each target of a “divided as you choose” effect
-  (CR 601.2d). Parallel to `targets`. -/
-  dividedDamage : Array Nat := #[]
-  /-- Set once targets (including choosing zero) have been announced
-  (CR 603.3d / 601.2c). -/
-  targetsAnnounced : Bool := false
-  /-- Chosen mode index for a modal spell (CR 700.2). -/
-  chosenMode : Option Nat := none
-  /-- Further modes chosen with `chosenMode` (“choose one or both”). -/
-  extraModes : Array Nat := #[]
-  /-- Optional “up to one” slots that were skipped while announcing
-  (CR 115.1c / 601.2c). The current instance index is
-  `targets.size + skippedOptionalSlots`. -/
-  skippedOptionalSlots : Nat := 0
-  sourceId : Option ObjectId := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  sequencedCardPower : Option Nat := none
-  steps : List TriggeredAbility.TriggerResolution := []
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-  effect : Option Effect := none
-  /-- The payer left without paying (CR 800.4f). -/
-  due : Bool := false
-  effects : Array Effect := #[]
-  isLibrary : Bool := false
-  player : PlayerId := ⟨0⟩
-  spellId : ObjectId := ⟨0⟩
-  cost : CopyDuration := .permanent
-deriving Repr, Inhabited
+deriving Repr, Inhabited, BEq
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
 def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
     (event : TriggerEvent) (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
+    (lastKnownToughness : Option Int := none)
+    (causeId : Option ObjectId := none)
+    (cause : Option GameObject := none)
+    (checked : Bool := false) : Array WaitingTrigger :=
   source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
+    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
+      causeId, cause, checked })
 
 end Mtg.Engine

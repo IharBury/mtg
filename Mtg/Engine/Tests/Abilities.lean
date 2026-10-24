@@ -21,10 +21,10 @@ open Mtg.Engine.Catalog
 
 /-- Empty `p`'s hand so injected spells are the only playable cards. -/
 def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+  g.changePlayer p (.hand #[])
 
 def readyMain (g : Game) : Game :=
-  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  g.recordLandPlayed ⟨0⟩
 
 /-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
 def sentriesDied : Game :=
@@ -69,7 +69,7 @@ def beeOtherDied : Game :=
 #guard beeOtherDied.stack.size == 1
 #guard (beeOtherDied.object! beeOtherDied.stack.back!.objectId).triggeredAbility ==
   some (.onOneOrMoreOtherCreaturesDieScry 1)
-#guard beeOtherDied.creatureDiedThisTurn
+#guard beeOtherDied.loggedCreatureDeaths > 0
 
 def beeScrying : Game := passBoth beeOtherDied
 
@@ -83,7 +83,7 @@ def beeScrying : Game := passBoth beeOtherDied
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
-  g.stack.isEmpty && g.creatureDiedThisTurn
+  g.stack.isEmpty && g.loggedCreatureDeaths > 0
 
 #guard
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
@@ -294,7 +294,9 @@ def batCloudFull : Game :=
   withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
 
 def batCloudReduced : Game :=
-  { batCloudFull with creatureDiedThisTurn := true }
+  batCloudFull.record (GameEvent.moved batCloudFull.turnNumber
+    { id := some ⟨73⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.creature] }
+    .battlefield (.graveyard ⟨1⟩))
 
 #guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")
 #guard
@@ -316,13 +318,13 @@ def batCloudReduced : Game :=
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  g.creatureDiedThisTurn
+  g.loggedCreatureDeaths > 0
 #guard
   let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Hill Giant"
-  let g := g.setObject { o with status := { o.status with untilEotExileIfDies := true } }
+  let g := g.changeStatus o.id (.untilEotExileIfDies true)
   let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
-  !g.creatureDiedThisTurn
+  g.loggedCreatureDeaths == 0
 
 
 /-- Languish: all creatures get -4 / -4. -/
@@ -389,7 +391,7 @@ def shadowResolved : Game :=
 
 def shadowCastOgre : Game :=
   let g := readyMain (emptyHand shadowResolved ⟨0⟩)
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with manaPool := {} })
+  let g := g.changePlayer ⟨0⟩ (.manaPool {})
   let g := withGreenMana g ⟨0⟩ 3
   match g.objects.find? (fun o => o.name == "Gray Ogre" && o.zone == .exile) with
   | none => panic! "expected Gray Ogre in exile"
@@ -585,7 +587,7 @@ def downfallSetup (damaged : Bool) : Game :=
   let g :=
     if damaged then
       let o := namedPermanent g "Grizzly Bears"
-      g.setObject { o with status := { o.status with damage := 1 } }
+      g.changeStatus o.id (.damage 1)
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
   withBlackMana (addToHand g bitterDownfall ⟨0⟩) ⟨0⟩ 4
@@ -824,7 +826,7 @@ def frozenInIceTapOk : Bool :=
 def superSuitUntapOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.mapObjectStatus host (fun s => { s with tapped := true })
+  let g := g.changeStatus host.id (.tapped true)
   let g := addPermanent g superSuit ⟨0⟩ ⟨0⟩
   let eq := namedPermanent g "Super Suit"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterAttachThen .untap)
@@ -933,8 +935,8 @@ def antManArmyTreasureOk : Bool :=
   let army := namedPermanent g "Ant-Man's Army"
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterCreateFoodOrTreasure (some army.id)
   let g := mustApply g ⟨0⟩ (.chooseMode 1)
-  g.battlefield.any (fun o => o.hasSubtype "Treasure") &&
-    !g.battlefield.any (fun o => o.hasSubtype "Food" && o.printed.isToken)
+  g.battlefield.any (fun o => o.hasSubtype .treasure) &&
+    !g.battlefield.any (fun o => o.hasSubtype .food && o.printed.isToken)
 
 #guard antManArmyTreasureOk
 
@@ -1008,7 +1010,7 @@ def hydraTroopersMillOk : Bool :=
   let lib0 := (g.player ⟨0⟩).library.size
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
   (g.player ⟨0⟩).library.size == lib0 - 2 &&
-    !(g.battlefield.any (fun o => o.printed.isToken && o.hasSubtype "Villain"))
+    !(g.battlefield.any (fun o => o.printed.isToken && o.hasSubtype .villain))
 
 #guard hydraTroopersMillOk
 
@@ -1021,7 +1023,7 @@ def hydraTroopersVillainOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onEnterVillainIfGyElseMill (some troopers.id)
   (g.player ⟨0⟩).library.size == lib0 &&
     (g.battlefield.any (fun o =>
-      o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped &&
+      o.printed.isToken && o.hasSubtype .villain && o.status.tapped &&
         g.power o == 2 && g.toughness o == 1))
 
 #guard hydraTroopersVillainOk

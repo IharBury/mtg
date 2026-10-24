@@ -20,16 +20,16 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
     o.staticAbilities.any (fun
       | .flashIfOpponentCastThisTurn => true
       | _ => false)) &&
-    (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
+    (g.livingOpponents p).any (fun pl => g.loggedSpellsCast pl.id > 0)
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
   let hasConditionalFlash :=
-    match face.castPermission with
-    | .flashIf cond => g.boardConditionHolds p cond
-    | _ => false
+    match face.flashIfYouControlSubtype with
+    | some t => g.controlsAnySubtype p #[t]
+    | none => false
   let radagastFlash :=
-    face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
+    face.isCreature && g.loggedCreatureSpells p == 0 &&
       (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
   (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
@@ -82,7 +82,7 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 alternative). Mana abilities are not activated here. -/
 def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (available : ManaPool) : Bool :=
-  let allowElf := o.hasSubtype "Elf"
+  let allowElf := o.hasSubtype .elf
   let free := o.playPermission.any (·.withoutManaCost)
   let payExtra (n : Nat) : Bool :=
     if free then
@@ -135,27 +135,18 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
-/-- Object whose types decide subtype / creature-source restrictions. -/
-def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
-  match prop.kind with
-  | .spell => g.findObject? prop.spellId
-  | _ =>
-    match prop.sourceId.bind g.findObject? with
-    | some src => some src
-    | none => some prop.original
-
-/-- Whether paying this proposed spell or ability may spend `subtype`-restricted
-mana (CR 106.6 / 106.10): `subtype` spells, and activated abilities of `subtype`
-sources (including changeling and cards in any zone). -/
-def proposedAllowsSubtypeRestricted (g : Game) (prop : ProposedSpell) (subtype : String) : Bool :=
-  match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o subtype
-  | none => false
-
 /-- Whether paying this proposed spell or ability may spend Elf-restricted mana
 (CR 106.10): Elf spells, and activated abilities of Elf sources. -/
-abbrev proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  g.proposedAllowsSubtypeRestricted prop "Elf"
+def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.kind with
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o => g.hasSubtype o .elf
+    | none => false
+  | .activatedAbility =>
+    match prop.sourceId.bind g.findObject? with
+    | some src => g.hasSubtype src .elf
+    | none => g.hasSubtype prop.original .elf
 
 /-- Whether paying this proposed spell may spend instant/sorcery-restricted mana. -/
 def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
@@ -164,25 +155,38 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? prop.spellId with
     | some o => o.printed.isInstantOrSorcery
     | none => false
-  | _ => false
+  | .activatedAbility => false
+
+/-- Object whose types decide Hero / Villain / creature-source restrictions. -/
+def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
+  match prop.kind with
+  | .spell => g.findObject? prop.spellId
+  | .activatedAbility =>
+    match prop.sourceId.bind g.findObject? with
+    | some src => some src
+    | none => some prop.original
 
 /-- Whether paying this proposed spell or ability may spend Hero-restricted
 mana (MSH 72): Hero spells, and activated abilities of Hero sources
 (including changeling and cards in any zone). -/
-abbrev proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  g.proposedAllowsSubtypeRestricted prop "Hero"
+def proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match g.proposedRestrictionSource prop with
+  | some o => g.hasSubtype o .hero
+  | none => false
 
 /-- Whether paying this proposed spell or ability may spend Villain-restricted
 mana (MSH 73): Villain spells, and activated abilities of Villain sources. -/
-abbrev proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  g.proposedAllowsSubtypeRestricted prop "Villain"
+def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match g.proposedRestrictionSource prop with
+  | some o => g.hasSubtype o .villain
+  | none => false
 
 /-- Whether paying this proposed activation may spend creature-restricted mana
 (MSH 75). Casting a creature spell does not qualify. -/
 def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .spell => false
-  | _ =>
+  | .activatedAbility =>
     match g.proposedRestrictionSource prop with
     | some o => o.printed.isCreature || o.isCreature
     | none => false
@@ -193,35 +197,32 @@ activated ability. -/
 def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.kind with
   | .activatedAbility => true
-  | _ =>
+  | .spell =>
     match g.findObject? prop.spellId with
     | some o => o.printed.isArtifact
     | none => false
 
 /-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
-  let sourceSubtypes :=
-    match g.proposedRestrictionSource prop with
-    | some o => g.currentSubtypes o ++ g.auraAddedTypes o
-    | none => #[]
   match prop.kind with
-  | .activatedAbility =>
-    { equip := prop.activation.any (·.isEquip), sourceSubtypes }
-  | _ =>
+  | .activatedAbility => { equip := prop.activation.any (·.isEquip) }
+  | .spell =>
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
-        planeswalker := o.printed.isPlaneswalker, noncreature := !o.printed.isCreature
-        legendary := o.isLegendary, artifact := o.printed.isArtifact
-        subtypes := o.printed.subtypes, sourceSubtypes }
-    | none => { sourceSubtypes }
+        supertypes := o.supertypes
+        types := o.printed.types
+        subtypes := CardSubtype.ofSubtypes o.printed.subtypes }
+    | none => {}
 
 /-- Whether mana with restriction `r` may be spent on `prop` (CR 106.10). -/
 def restrictionAllowsProposed (g : Game) (r : ManaRestriction) (prop : ProposedSpell) : Bool :=
   match r with
   | .none => true
-  | .subtypeSpellOrAbility sub => g.proposedAllowsSubtypeRestricted prop sub
+  | .elf => g.proposedAllowsElfRestricted prop
   | .instantOrSorcery => g.proposedAllowsInstRestricted prop
+  | .hero => g.proposedAllowsHeroRestricted prop
+  | .villain => g.proposedAllowsVillainRestricted prop
   | .cantNonartifact => g.proposedAllowsCantNonartifact prop
   | .creatureSource => g.proposedAllowsCreatureRestricted prop
   | .fra u => u.allows (g.proposedManaSpend prop)
@@ -250,15 +251,19 @@ def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) 
 
 /-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
 cost (CR 106.10). -/
-abbrev ManaAllowances := ManaSpend
+structure ManaAllowances where
+  hero : Bool := false
+  villain : Bool := false
+  cantNonartifact : Bool := false
+  creature : Bool := false
+  spend : ManaSpend := {}
+deriving Inhabited
 
 /-- What restricted mana may pay for `prop`. -/
 def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
-  { g.proposedManaSpend prop with
-    hero := g.proposedAllowsHeroRestricted prop
-    villain := g.proposedAllowsVillainRestricted prop
+  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
     cantNonartifact := g.proposedAllowsCantNonartifact prop
-    creature := g.proposedAllowsCreatureRestricted prop }
+    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
 
 /-- Whether some assignment of types from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
@@ -358,7 +363,9 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
       allowCreatureRestricted spend with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
-    return g.setPlayer { pl with manaPool := pool }
+    let spent := cost.manaValue
+    return (g.changePlayer p (.manaPool pool)).record
+      (GameEvent.spentMana g.turnNumber p spent)
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=
@@ -368,46 +375,44 @@ def reverseProposedSpell (g : Game) : Game :=
     Id.run do
       let mut g := g
       let name := (g.player prop.caster).name
-      let objects := g.objects.filter (fun o => o.id != prop.spellId)
-      let objects :=
-        match prop.kind with
-        | .spell => objects.push prop.original
-        | _ => objects
-      g := { g with
-        objects := objects
-        stack := prop.stackBefore
-        pending := .none
-        proposedSpell := none
-        castingFromTop := false }
-      g := g.modifyPlayer prop.caster (fun pl =>
-        { pl with hand := prop.handBefore, manaPool := prop.manaBefore })
+      g := g.change (.removeObject prop.spellId)
+      if prop.kind == .spell then
+        g := g.change (.setObject prop.original)
+      g := g.changes #[
+        .stack prop.stackBefore,
+        .pending .none,
+        .proposedSpell none,
+        .castingFromTop false
+      ]
+      g := g.changePlayers prop.caster #[.hand prop.handBefore, .manaPool prop.manaBefore]
       for id in prop.tapped do
-        if let some o := g.findObject? id then
-          g := g.setObject { o with status := { o.status with tapped := false } }
+        if (g.findObject? id).isSome then
+          g := g.changeStatus id (.tapped false)
       -- Undo unpreparing the permanent whose prepare-spell copy was proposed.
       match prop.kind, (prop.original.playPermission.bind (·.prepareSource)).bind g.findObject? with
       | .spell, some src =>
-        g := g.setObject { src with status := { src.status with prepared := true } }
+        g := g.changeStatus src.id (.prepared true)
       | _, _ => pure ()
       -- Undo a paid loyalty cost (CR 606.4 / 733.1).
       match prop.kind, prop.sourceId.bind g.findObject?,
           (prop.activation.bind (·.cost.loyalty)).bind (·.counters) with
       | .activatedAbility, some src, some k =>
-        g := g.setObject { src with status := { src.status with
-          loyaltyCounters := ((src.status.loyaltyCounters : Int) - k).toNat
-          loyaltyActivatedThisTurn := false } }
+        g := g.changeStatuses src.id #[
+          .loyaltyCounters ((src.status.loyaltyCounters : Int) - k).toNat,
+          .loyaltyActivatedThisTurn false
+        ]
       | _, _, _ => pure ()
       match prop.kind, prop.sourceId.bind g.findObject?, prop.activation.any (·.exhaust) with
       | .activatedAbility, some src, true =>
-        g := g.setObject { src with status := { src.status with exhaustUsed := false } }
+        g := g.changeStatus src.id (.exhaustUsed false)
       | _, _, _ => pure ()
       let reversed :=
         match prop.kind with
         | .spell => "the casting is reversed (CR 601.2 / 733.1)"
-        | _ => "the activation is reversed (CR 602.2 / 733.1)"
+        | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
       g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
       -- The player who had priority retains it (CR 733.2).
-      return { g with priority := prop.caster, consecutivePasses := 0 }
+      return g.changes #[.priority prop.caster, .consecutivePasses 0]
 
 /-- Fold `f` over each targeted permanent that still exists. Non-permanent
 targets are skipped. `unique` visits a permanent only once even when it is
@@ -455,9 +460,9 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
         acc := acc.push (.discardOrPay n)
       | .wardPoisonCounters _ =>
         acc := acc.push .fivePoison
-      | .wardDiscardCard =>
+      | .fra .wardDiscardCard =>
         acc := acc.push .discardCard
-      | .wardSacrificeThreePermanents =>
+      | .fra .wardSacrificeThreePermanents =>
         acc := acc.push (.sacrificePermanents 3 0)
       | _ =>
         match ab.grantedWard? with
@@ -521,19 +526,16 @@ def promptNextWard (g : Game) : Game :=
           s!"{who} may discard a card or the spell is countered (ward)"
         | .sacrificePermanents n _ =>
           s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
-        | _ => ""
-      { g with pending := .payWard w.player w.spellId w.cost, wardQueue := rest
-        }.logMsg msg
+      (g.changes #[.pending (.payWard w.player w.spellId w.cost), .wardQueue rest]).logMsg msg
   | _ => g
 
 /-- Drop ward obligations whose spell has left the stack, then prompt. -/
 def afterWardResolved (g : Game) : Game :=
-  let g := { g with pending := .none }
-  let g := { g with
-    wardQueue := g.wardQueue.filter (fun w =>
-      match g.findObject? w.spellId with
-      | some o => o.zone == Zone.stack
-      | none => false) }
+  let kept := g.wardQueue.filter (fun w =>
+    match g.findObject? w.spellId with
+    | some o => o.zone == Zone.stack
+    | none => false)
+  let g := g.changes #[.pending .none, .wardQueue kept]
   let g := g.promptNextWard
   if g.pending != .none then g
   else if g.triggerNeedingTargets.isSome then g.promptTriggerTargetsIfNeeded
@@ -546,33 +548,33 @@ def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
   let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
     if o.controller != some caster && o.isOnBattlefield then
       (g.wardCostsOn o).foldl (fun g cost =>
-        { g with wardQueue := g.wardQueue.push { player := caster, spellId, cost } }) g
+        g.change (.enqueueWard #[{ player := caster, spellId, cost }])) g
     else g)
   g.promptNextWard
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
-  let g := { g with castingFromTop := false }
+  let g := g.change (.castingFromTop false)
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
   let ancestry := g.ancestryLandsTapped
-  let g := { g with ancestryLandsTapped := #[] }
+  let g := g.change (.ancestryLandsTapped #[])
   let g :=
     if spell.printed.isCreature &&
         ancestry.any (fun id => (g.findObject? id).any (·.printed.commanderIdentityScryCreature)) &&
-        spell.printed.subtypes.any ((g.player p).commanderCreatureTypes.contains) then
+        (CardSubtype.ofSubtypes spell.printed.subtypes).any ((g.player p).commanderCreatureTypes.contains) then
       g.beginScry p 1
     else g
   -- Emrakul, the Exigent Doom: the granted mana ability lasts until the card
   -- is cast from exile, so it can help pay for that spell (ruling 729).
   let g := g.battlefield.foldl (fun g land =>
-    let kept := land.status.colorlessGrantUntilCast.filter (fun cid => g.followMoved cid != spell.id)
-    if kept.size == land.status.colorlessGrantUntilCast.size then g
-    else g.setObject { land with status := { land.status with colorlessGrantUntilCast := kept } }) g
+    land.status.colorlessGrantUntilCast.foldl (fun g cid =>
+      if g.followMoved cid == spell.id then
+        g.expireEffect (.colorlessGrantUntilCast land.id cid)
+      else g) g) g
   -- Theorist's Proxy: the next spell this player casts this turn.
   let g :=
     if (g.player p).nextSpellCantBeCountered && !spell.isCopy then
-      let g := g.modifyPlayer p (fun pl => { pl with nextSpellCantBeCountered := false })
-      let cur := g.object! spell.id
-      (g.setObject { cur with castState := { cur.castState with uncounterableThisCast := true } }).logMsg
+      let g := g.expireEffect (.nextSpellCantBeCounteredThisTurn p)
+      (g.createEffect (.uncounterableThisCast spell.id)).logMsg
         s!"{spell.name} can't be countered"
     else g
   let g :=
@@ -599,11 +601,11 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
             o.zone == Zone.exile && !o.printed.isLand))
-        let g := { g with pendingMayCastFromExile := none }
+        let g := g.change (.pendingMayCastFromExile none)
         if q != p || alive.isEmpty || left == 0 then g
         else
-          { g with pending := .fraChoice q (.mayCastUpToFromExile alive left) }
-            |>.logMsg s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+          (g.change (.pending (.fraChoice q (.mayCastUpToFromExile alive left)))).logMsg
+            s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
     | none => g
   -- Uldaros Theorix: offer the remaining copies until none can be cast.
   let g :=
@@ -616,9 +618,9 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
         if castable.isEmpty || castsLeft == 0 then
           let g := alive.foldl (fun g id => g.ceaseToExist id) g
-          { g with pendingFreeCopies := none }
+          g.change (.pendingFreeCopies none)
         else
-          { g with pending := .fraChoice q (.castCopiesFree alive budget castsLeft) }
+          g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
     | none => g
   if g.pending != .none then g else g.receivePriority p
 
@@ -640,13 +642,27 @@ def lockInTargetCostReduction (g : Game) : Game :=
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
-          let nBase :=
-            match prop.kind with
-            | .spell => g.costReductionAmount prop.caster face.spellCostReduction (some o)
-            | _ =>
-              match prop.activation with
-              | some ab => g.costReductionAmount prop.caster ab.costReduction (some o)
-              | none => 0
+          let isSpell := prop.kind == .spell
+          let nDamaged :=
+            if isSpell && face.costReductionIfTargetDamaged > 0 && o.status.damage > 0 then
+              face.costReductionIfTargetDamaged
+            else 0
+          let nTapped :=
+            if isSpell && face.costReductionIfTargetTapped > 0 && o.status.tapped then
+              face.costReductionIfTargetTapped
+            else 0
+          let nAttacking :=
+            if !isSpell || !o.status.attacking then 0
+            else if face.costReductionIfTargetAttackingNontoken > 0 then
+              if o.printed.isToken then 0 else face.costReductionIfTargetAttackingNontoken
+            else face.costReductionIfTargetAttacking
+          let nCounters :=
+            if prop.activation.any (·.costLessPerPlusOneOnTarget) then o.status.plusOnePlusOne
+            else 0
+          let nPower :=
+            match prop.activation.bind (·.costReductionIfTargetPowerAtMost) with
+            | some (k, most) => if o.isCreature && g.power o ≤ most then k else 0
+            | none => 0
           let nEquip :=
             if prop.activation.any (·.isEquip) && o.controlledBy prop.caster then
               o.staticAbilities.foldl (fun acc ab =>
@@ -654,11 +670,9 @@ def lockInTargetCostReduction (g : Game) : Game :=
                 | .equipAbilitiesTargetingThisCostLess k => acc + k
                 | _ => acc) 0
             else 0
-          let n := nBase + nEquip
+          let n := nDamaged + nTapped + nAttacking + nCounters + nPower + nEquip
           if n == 0 then g
-          else
-            { g with proposedSpell := some { prop with
-              cost := ManaCost.afterReduction prop.cost (prop.cost.reduceGeneric n) } }
+          else g.changeProposal (.reduceCostBy (ManaCost.ofGeneric n))
         | none => g
       | _ => g
 
@@ -667,7 +681,11 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   let activation := activation <|> g.proposedSpell.bind (·.activation)
   let g :=
     if activation.any (·.isEquip) then
-      g.modifyPlayer p (fun pl => { pl with equipActivationsThisTurn := pl.equipActivationsThisTurn + 1 })
+      let source :=
+        match sourceId.bind g.findObject? with
+        | some src => src.asEvent
+        | none => { controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
+      g.record (GameEvent.activated g.turnNumber p source false true)
     else g
   let g :=
     match sourceId with
@@ -681,15 +699,15 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           | none =>
             src.printed.activatedAbilities.any (·.powerUp)
         let idx := activation.bind (fun ab => (g.activatedAbilitiesOf src).findIdx? (· == ab))
-        let g := g.setObject { src with status := { src.status with
-          abilitiesActivatedThisTurn :=
-            match idx with
-            | some i => src.status.abilitiesActivatedThisTurn.push i
-            | none => src.status.abilitiesActivatedThisTurn
-          activationsThisTurn := src.status.activationsThisTurn + 1
-          powerUpUsed := src.status.powerUpUsed || powerUp
-          powerUpActivations :=
-            src.status.powerUpActivations + (if powerUp then 1 else 0) } }
+        let base : Array StatusChange := #[
+          .incActivationsThisTurn,
+          .powerUpUsed (src.status.powerUpUsed || powerUp),
+          .powerUpActivations (src.status.powerUpActivations + (if powerUp then 1 else 0))
+        ]
+        let g := g.changeStatuses src.id (
+          match idx with
+          | some i => base.push (.pushAbilitiesActivated i)
+          | none => base)
         let src := g.object! sid
         if src.isCreature then
           g.putControlledTriggers p .youActivateCreatureAbility
@@ -712,12 +730,10 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
   let g ← g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
   if prop.needsSacrificeOther then
-    let g := { g with
-      pending := .sacrificePermanent prop.caster sid
-      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.sacrificePermanent prop.caster sid), .consecutivePasses 0]
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
-  let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+  let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
   return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
@@ -726,8 +742,7 @@ def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick)
     Except String Game := do
   match picks[0]?, prop.sourceId with
   | some pick, some sid =>
-    let g := { g with pending := .fraChoice prop.caster (.costPicks sid picks paid)
-                      consecutivePasses := 0 }
+    let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
     return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
   | _, _ => g.completeActivation prop
 
@@ -754,15 +769,15 @@ def afterTargetsChosen (g : Game) : Game :=
     | some prop =>
       if prop.cost.includesManaPayment || prop.needsSacrificeOther ||
           prop.needsDiscardCard then
-        { g with pending := .activateManaAbilities prop.caster }
-          |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
+        (g.change (.pending (.activateManaAbilities prop.caster))).logMsg
+          s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
       else if prop.kind == .activatedAbility then
         match g.beginActivationPayment prop with
         | .ok g => g
         | .error _ => g.reverseProposedSpell
       else
         let spell := g.object! prop.spellId
-        let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+        let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
         g.becomeCast prop.caster spell
 
 /-- Whether the proposed spell or ability still needs targets announced (CR 601.2c). -/
@@ -775,7 +790,7 @@ def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
       match g.currentSpellEffect o with
       | some e => e.requiresTarget
       | none => o.printed.requiresTarget || o.printed.isAura
-    | _ =>
+    | .activatedAbility =>
       match o.abilityEffect with
       | some e => e.requiresTarget
       | none => false
@@ -787,8 +802,8 @@ def afterAdditionalCostAnnounced (g : Game) : Game :=
   | none => g
   | some prop =>
     if g.proposedNeedsTarget prop then
-      { g with pending := .chooseTargets prop.caster }
-        |>.logMsg s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
+      (g.change (.pending (.chooseTargets prop.caster))).logMsg
+        s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
     else
       g.afterTargetsChosen
 
@@ -814,17 +829,14 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
             if legal.any (fun t => t == neu) then
               out := out.set! j neu
           return out
-      { g with stack := g.stack.set! i { e with targets := merged } }
-        |>.logMsg "New targets are chosen for the spell"
+      (g.changeStackEntry i (.targets merged)).logMsg "New targets are chosen for the spell"
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat := #[]) : Game :=
-  match g.stack.findIdx? (fun e => e.objectId == objectId) with
-  | none => g
-  | some i =>
-    { g with stack := g.stack.set! i { g.stack[i]! with
-        targets := targets, dividedDamage := dividedDamage, targetsAnnounced := true } }
+  let g := g.changeStackEntryById objectId (.targets targets)
+  let g := g.changeStackEntryById objectId (.dividedDamage dividedDamage)
+  g.changeStackEntryById objectId (.targetsAnnounced true)
 
 /-- Write `targets` onto the stack entry for the proposed spell. -/
 def setProposedTargets (g : Game) (targets : Array Target) : Game :=
@@ -833,24 +845,19 @@ def setProposedTargets (g : Game) (targets : Array Target) : Game :=
   | some prop => g.setStackEntryTargets prop.spellId targets
 
 /-- How many modes `p` may choose for `face` (CR 700.2): two for “choose one
-or both” and for “choose two if …” while that condition holds. -/
+or both” and for “choose two if you control a [subtype]” while they do. -/
 def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
-  match face.modalRule with
-  | .chooseOne => 1
-  | .chooseOneOrBoth => 2
-  | .chooseTwoIf cond => if g.boardConditionHolds p cond then 2 else 1
-  | _ => 1
+  if face.chooseOneOrBoth then 2
+  else
+    match face.chooseTwoIfYouControlSubtype with
+    | some s => if (g.permanentsOf p).any (fun o => g.hasSubtype o s) then 2 else 1
+    | none => 1
 
 /-- Add `mode` to the proposed spell's chosen modes. -/
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=
   match g.proposedSpell with
   | none => g
-  | some prop =>
-    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
-    | none => g
-    | some i =>
-      { g with stack := g.stack.set! i { g.stack[i]! with
-          extraModes := g.stack[i]!.extraModes.push mode } }
+  | some prop => g.changeStackEntryById prop.spellId (.pushExtraMode mode)
 
 /-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
 then targets (CR 601.2b–c). -/
@@ -859,15 +866,15 @@ def afterModesChosen (g : Game) (p : PlayerId) : Game :=
   | some prop, some spell =>
     let face := spell.printed
     if face.announcesAdditionalCost then
-      { g with pending := .chooseAdditionalCost p }.logMsg
+      (g.change (.pending (.chooseAdditionalCost p))).logMsg
         s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
     else if face.kicker.isSome && !prop.kickerAnnounced then
-      { g with pending := .chooseKicker p }.logMsg
+      (g.change (.pending (.chooseKicker p))).logMsg
         s!"{(g.player p).name} may kick the spell (CR 702.32 / 601.2b)"
     else if face.giftTreasure && !prop.giftAnnounced then
-      { g with pending := .chooseGift p }.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+      (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
     else if face.teamwork.isSome && !prop.teamworkAnnounced then
-      { g with pending := .chooseTeamwork p }.logMsg
+      (g.change (.pending (.chooseTeamwork p))).logMsg
         s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
     else g.afterAdditionalCostAnnounced
   | _, _ => g
@@ -876,11 +883,7 @@ def afterModesChosen (g : Game) (p : PlayerId) : Game :=
 def setProposedMode (g : Game) (mode : Nat) : Game :=
   match g.proposedSpell with
   | none => g
-  | some prop =>
-    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
-    | none => g
-    | some i =>
-      { g with stack := g.stack.set! i { g.stack[i]! with chosenMode := some mode } }
+  | some prop => g.changeStackEntryById prop.spellId (.chosenMode (some mode))
 
 
 end Game

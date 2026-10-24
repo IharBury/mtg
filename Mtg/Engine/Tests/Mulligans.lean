@@ -127,7 +127,7 @@ def afterChandraBottomsBothMulligan : Game :=
 
 /-- The seventh mulligan leaves a zero-card hand; further mulligans are illegal. -/
 def seventhMulligan : Game :=
-  let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 6 })
+  let g := drawnHands.changePlayer ⟨0⟩ (.mulligansTaken 6)
   let g := mustApply g ⟨0⟩ .takeMulligan
   mustApply g ⟨1⟩ .keep
 
@@ -142,7 +142,7 @@ def afterZeroHand : Game :=
 #guard afterZeroHand.step == .upkeep
 
 #guard
-  let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 7 })
+  let g := drawnHands.changePlayer ⟨0⟩ (.mulligansTaken 7)
   match g.apply ⟨0⟩ .takeMulligan with
   | .error msg => mentions msg "zero cards"
   | .ok _ => false
@@ -210,7 +210,7 @@ def afterThreeSecondMulligan : Game :=
 
 /-- In multiplayer, one extra mulligan is legal before the zero-card limit. -/
 def eighthMultiplayerMulligan : Game :=
-  let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 7 })
+  let g := threeDrawnHands.changePlayer ⟨0⟩ (.mulligansTaken 7)
   let g := mustApply g ⟨0⟩ .takeMulligan
   let g := mustApply g ⟨1⟩ .keep
   mustApply g ⟨2⟩ .keep
@@ -316,7 +316,7 @@ def threeSplitCombatDone : Game :=
 #guard (threeSplitCombatDone.player ⟨0⟩).life == 20
 
 #guard
-  let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 8 })
+  let g := threeDrawnHands.changePlayer ⟨0⟩ (.mulligansTaken 8)
   match g.apply ⟨0⟩ .takeMulligan with
   | .error msg => mentions msg "zero cards"
   | .ok _ => false

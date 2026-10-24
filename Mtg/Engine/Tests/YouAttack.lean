@@ -52,11 +52,11 @@ do not carry `YouAttackLeftover`. The printed sentence stays the Oracle line. -/
   .revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)
 
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness) ==
-  Effect.youAttackingPay2LifeToughness.phrase
+  TriggeredAbility.youAttackingSentence .pay2LifeToughness
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) ==
-  Effect.youAttackingExileTopHeroPump.phrase
+  TriggeredAbility.youAttackingSentence .exileTopHeroPump
 #guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast) ==
-  Effect.youAttackingLookSixCast.phrase
+  TriggeredAbility.youAttackingSentence .lookSixCast
 
 /- The Kingpin may pay 2 life. Declining and being unable to pay leave
 power and combat damage alone. Paying does not change power; a 1/5 assigns
@@ -65,8 +65,8 @@ def kingpinBoard : Game :=
   let g := addPermanent afterDraw theKingpinOfCrime me me
   let g := addPermanent g grizzlyBears me me
   let kp := named g "The Kingpin of Crime"
-  g.setObject { kp with status := { kp.status with
-    attacking := true, attackingWhom := some opp, summoningSick := false } }
+  g.changeStatuses kp.id #[
+    .attacking true, .attackingWhom (some opp), .summoningSick false]
 
 def kingpinOffer : Game :=
   let kp := named kingpinBoard "The Kingpin of Crime"
@@ -100,7 +100,7 @@ def kingpinPays : Game :=
     kingpinPays.assignCombatDamageEqualToughness == some me
 
 def kingpinCantPay : Game :=
-  let g := kingpinBoard.modifyPlayer me (fun pl => { pl with life := 1 })
+  let g := kingpinBoard.changePlayer me (.life 1)
   let kp := named g "The Kingpin of Crime"
   resolve g (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness)
     (some kp.id)
@@ -172,7 +172,7 @@ def daredevilLeft : Game :=
 
 def daredevilEmpty : Game :=
   let g := addPermanent afterDraw daredevilManWithoutFear me me
-  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
+  let g := g.changePlayer me (.library #[])
   let dd := named g "Daredevil, Man Without Fear"
   let g := resolve g
     (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
@@ -191,8 +191,8 @@ def cubeBoard (attacking : Bool) : Game :=
   let g := addPermanent g grizzlyBears me me
   if attacking then
     let bears := named g "Grizzly Bears"
-    g.setObject { bears with status := { bears.status with
-      attacking := true, attackingWhom := some opp } }
+    g.changeStatuses bears.id #[
+      .attacking true, .attackingWhom (some opp)]
   else g
 
 def cubeLook (attacking : Bool) : Game :=
@@ -223,7 +223,7 @@ def cubeAttacking : Game := cubeLook true
 
 def cubeEmpty : Game :=
   let g := cubeBoard true
-  let g := g.modifyPlayer me (fun pl => { pl with library := #[] })
+  let g := g.changePlayer me (.library #[])
   let cube := named g "Cosmic Cube"
   resolve g (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast)
     (some cube.id)

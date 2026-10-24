@@ -41,7 +41,7 @@ def handSize (g : Game) : Nat :=
 
 def attach (g : Game) (aura host : String) : Game :=
   let a := obj g aura
-  g.setObject { a with attachedTo := some (pid g host) }
+  g.changeObject a.id (.attachedTo (some (pid g host)))
 
 def folk : CardDef := creature "Townsfolk" ManaCost.empty #["Human"] 1 1
 def scout : CardDef := creature "Scout" ManaCost.empty #["Human"] 1 1
@@ -67,7 +67,7 @@ def village : Game :=
   addPermanent g bear caster caster
 
 def offered : Game :=
-  step { village with thisWay := { village.thisWay with humansTappedThisWay := 4 } } humansDraw
+  step (village.change (.humansTappedThisWay 4)) humansDraw
 
 def rejects (g : Game) (ids : Array ObjectId) (needle : String) : Bool :=
   match g.choosePermanents caster ids with
@@ -124,7 +124,7 @@ A choice that is not an untapped Human you control is refused. -/
   rejects g #[pid g "Foe"] "not an untapped Human"
 #guard
   let towns := obj offered "Townsfolk"
-  let g := offered.setObject { towns with status := { towns.status with tapped := true } }
+  let g := offered.changeStatus towns.id (.tapped true)
   rejects g #[pid g "Townsfolk"] "not an untapped Human"
 #guard rejects offered #[pid offered "Townsfolk", pid offered "Townsfolk"] "Duplicate card"
 #guard
@@ -144,7 +144,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let bear0 := obj g0 "Bear"
-  let g0 := g0.setObject { bear0 with status := { bear0.status with hope := 2 } }
+  let g0 := g0.changeStatus bear0.id (.hope 2)
   let g := step g0 enchantedRemove (some (pid g0 "Grasp"))
   (obj g "Bear").status.tapped && (obj g "Bear").status.hope == 0 &&
     !(obj g "Grasp").status.tapped &&
@@ -169,14 +169,14 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let bear0 := obj g0 "Bear"
-  let g0 := g0.setObject { bear0 with status := { bear0.status with tapped := true } }
+  let g0 := g0.changeStatus bear0.id (.tapped true)
   let g := step g0 (.tap .enchanted) (some (pid g0 "Grasp"))
   (obj g "Bear").status.tapped && logContains g "already tapped"
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let bear0 := obj g0 "Bear"
-  let g0 := g0.setObject { bear0 with status := { bear0.status with hope := 2 } }
+  let g0 := g0.changeStatus bear0.id (.hope 2)
   let g := step g0 enchantedRemove (some (pid g0 "Grasp"))
   !(obj g "Bear").status.tapped && (obj g "Bear").status.hope == 2 &&
     logContains g "Nothing is enchanted"
@@ -186,7 +186,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear"
   let aura := obj g0 "Grasp"
-  let g0 := g0.setObject { aura with attachedTo := some ⟨99999⟩ }
+  let g0 := g0.changeObject aura.id (.attachedTo (some ⟨99999⟩))
   let g := step g0 (.tap .enchanted) (some (pid g0 "Grasp"))
   !(obj g "Bear").status.tapped && logContains g "Nothing is enchanted"
 
@@ -201,7 +201,7 @@ has left is still tapped. An already tapped host stays tapped. -/
     "Grasp" "Bear"
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
   let aura := anyObj g1 "Grasp"
-  let g1 := g1.setObject { aura with attachedTo := some bearId }
+  let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
   let g := step g1 (.tap .enchanted) (some aura.id)
   (anyObj g "Bear").status.tapped && logContains g "becomes tapped"
 
@@ -225,7 +225,7 @@ source to still be there. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let hawk0 := obj g0 "Hawk"
-  let g0 := g0.setObject { hawk0 with status := { hawk0.status with tapped := true } }
+  let g0 := g0.changeStatus hawk0.id (.tapped true)
   let g := step g0 (.tap (.target .ifPresent)) (some (pid g0 "Wasp"))
     #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && logContains g "already tapped"
@@ -280,7 +280,7 @@ source to still be there. -/
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw == humansDraw
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters == enchantedRemove
-#guard Effect.enterTapLoseAbilitiesWhileSource.resolution == targetLose
+#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution == targetLose
 #guard (SharedTrigger.timing .tapHumansDraw).resolution == humansDraw
 #guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution == enchantedRemove
 

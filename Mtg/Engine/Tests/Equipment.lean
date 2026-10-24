@@ -118,8 +118,8 @@ def spearDiscardedForest : Game :=
 
 /-- An empty hand skips the optional discard; no draw. -/
 def spearEmptyHand : Game :=
-  let g := { spearEntered with pending := .none, stack := #[] }
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  let g := spearEntered.changes #[.pending .none, .stack #[]]
+  let g := g.changePlayer ⟨0⟩ (.hand #[])
   g.beginMayDiscardDraw ⟨0⟩ 2
 
 #guard spearEmptyHand.pending == .none
@@ -129,7 +129,7 @@ def spearEmptyHand : Game :=
 def spearReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withRedMana g ⟨0⟩ 3
 
 def spearEquipAbility : ActivatedAbility :=
@@ -516,7 +516,7 @@ def bladeSacrificesFireleaper : Game :=
 def bladeReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g crudeBentBlade ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withBlackMana g ⟨0⟩ 2
 
 def bladeEquipAbility : ActivatedAbility :=
@@ -668,7 +668,7 @@ def dunedainReady : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g esquireOfTheKing ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 3
 
 #guard dunedainBlade.activatedAbilities.size == 2
@@ -717,7 +717,7 @@ def dunedainEquippedHuman : Game :=
 def dunedainBearOnly : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 3
 
 #guard !(dunedainBearOnly.canActivate ⟨0⟩
@@ -745,7 +745,7 @@ def dunedainAgentChoosesEquip : Bool :=
 def dunedainHumanCheap : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
   let g := addPermanent g esquireOfTheKing ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 1
 
 def dunedainAgentChoosesEquipHuman : Bool :=
@@ -892,10 +892,7 @@ def hospitalityTargetGone : Game :=
 def hospitalityAnimateSetup : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
-  g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with
-      manaPool := pl.manaPool.add (.colored .green) 7
-      landsPlayedThisTurn := 1 })
+  (g.changePlayer ⟨0⟩ (.addMana (.colored .green) 7)).recordLandPlayed ⟨0⟩
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
@@ -921,7 +918,7 @@ def animatedHospitality : Game := passBoth paidHospitalityAnimate
 
 #guard animatedHospitality.stack.isEmpty
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").isCreature
-#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype "Bear"
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype .bear
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").printed.isEnchantment
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .creature)
 #guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .enchantment)
@@ -965,11 +962,10 @@ def hospitalitySelfLandfall : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
   let g := addForests g ⟨0⟩ 3
   let o := namedPermanent g "Beorn's Hospitality"
-  let g := g.setObject { o with
-    status := { o.status with
-      additionalCreature := true
-      additionalSubtypes := #["Bear"]
-      grantedStaticAbilities := #[.powerToughnessEqualLandsYouControl] } }
+  let g := g.changeStatuses o.id #[
+    .additionalCreature true,
+    .additionalSubtypes #[.bear],
+    .grantedStaticAbilities #[.powerToughnessEqualLandsYouControl]]
   let g := addToHand g forest ⟨0⟩
   let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
   let g := mustApply g ⟨0⟩

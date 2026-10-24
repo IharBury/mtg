@@ -31,8 +31,14 @@ def withSpent (spent : Nat) : Game :=
   let g := addPermanent afterDraw pebble caster caster
   let src := pebbleOf g
   let (g, ab) := g.allocStackAbility src caster
-  let g := g.setObject { ab with triggerCause := { status := some { manaSpentToCast := spent } } }
-  { g with resolvingAbility := some ab.id }
+  let causeId : ObjectId := ⟨911⟩
+  let g := g.record (GameEvent.cast g.turnNumber caster
+    { id := some causeId, controller := some caster, owner := caster } (.hand caster)
+    (manaSpent := spent))
+  let g := g.changeObjects ab.id #[
+    .fraCauseId (some causeId),
+    .fraCauseStatus (some { manaSpentToCast := spent })]
+  g.change (.resolvingAbility (some ab.id))
 
 def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
   g.applyTriggeredAbility caster (.onEnterDraw 1) none
@@ -47,13 +53,13 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 /- Each Human tapped by the previous step is one card. Zero taps draw nothing. -/
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with humansTappedThisWay := 2 } }
+  let g := drawStep (afterDraw.change (.humansTappedThisWay 2))
     (.draw .forEachTappedHuman)
   handSize g caster == before + 2 && g.humansTappedThisWay == 0
 
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with humansTappedThisWay := 0 } }
+  let g := drawStep (afterDraw.change (.humansTappedThisWay 0))
     (.draw .forEachTappedHuman)
   handSize g caster == before && g.humansTappedThisWay == 0
 
@@ -72,7 +78,7 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 /- The discarded-hand note is the draw count. A declined discard draws nothing. -/
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep { afterDraw with thisWay := { afterDraw.thisWay with handDiscardedThisWay := some 3 } }
+  let g := drawStep (afterDraw.change (.handDiscardedThisWay (some 3)))
     (.draw .discardedHand)
   handSize g caster == before + 3
 
@@ -98,7 +104,7 @@ the rest of the sequence. -/
 #guard
   let g0 := addPermanent afterDraw pebble caster caster
   let sid := (pebbleOf g0).id
-  let g := drawStep { g0 with thisWay := { g0.thisWay with palantirChoiceReady := some (caster, opponent, sid) } }
+  let g := drawStep (g0.change (.palantirChoiceReady (some (caster, opponent, sid))))
     (.draw (.fixed 1) (who := .opponentHasYou))
   match g.pending with
   | .fraChoice p (.palantirMayDraw c id) =>

@@ -63,7 +63,7 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
         s!"{(g.player p).name} sacrifices {o.name} (least power)"
     | none =>
       let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
-      { g with pending := .fraChoice p (.sacrificeLeastPower ids) }.logMsg
+      (g.change (.pending (.fraChoice p (.sacrificeLeastPower ids)))).logMsg
         s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
 
 /-- Modes in `all` that have not yet been chosen. -/
@@ -101,13 +101,13 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
   match g.findObject? sourceId with
   | none => g
   | some src =>
-    let g := g.setObject { src with status := { src.status with chosenOdd := some odd } }
+    let g := g.changeStatus sourceId (.chosenOdd (some odd))
     g.logMsg
       (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
 
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
-def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
+def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
   let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
   let hasHand :=
     (g.player p).hand.any (fun id =>
@@ -115,25 +115,24 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with beheldQualities := pl.beheldQualities.push quality })
+    let g := g.changePlayer p (.pushBeheldQuality quality)
+    let g := g.record (GameEvent.beheld g.turnNumber p quality)
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
 
 /-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
-def qualityWasBeheld (g : Game) (p : PlayerId) (quality : String) : Bool :=
+def qualityWasBeheld (g : Game) (p : PlayerId) (quality : CardSubtype) : Bool :=
   (g.player p).beheldQualities.contains quality
 
 /-- Choose a creature type as this permanent enters. The static pump applies
 immediately; no player may act between the choice and the bonus. -/
-def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : String) :
+def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : CardSubtype) :
     Game :=
   match g.findObject? sourceId with
   | none => g
   | some src =>
-    let g := g.setObject { src with status :=
-      { src.status with chosenCreatureType := some creatureType } }
+    let g := g.changeStatus sourceId (.chosenCreatureType (some creatureType))
     g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
 
 /-- Draw one card for each graveyard with seven or more cards. -/
@@ -196,8 +195,7 @@ def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
       if !o.isOnBattlefield then
         g.logMsg "The target is no longer legal"
       else
-        let g := g.setObject { o with status :=
-          { o.status with cantBeBlockedByPlayer := some chosen } }
+        let g := g.createEffect (.cantBeBlockedByPlayerUntilEot attackerId chosen)
         g.logMsg
           s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
 
@@ -212,9 +210,8 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
       if o.zone != .graveyard o.owner then acc
       else
         let (acc, newId) := acc.move id .battlefield (some controller)
-        let o := acc.object! newId
-        let acc := acc.setObject { o with status :=
-          { o.status with onlyFoodArtifact := true, summoningSick := true } }
+        let acc := acc.createEffect (.onlyFoodArtifact newId)
+        let acc := acc.changeStatus newId (.summoningSick true)
         let acc := acc.afterPermanentEnters (acc.object! newId)
         let o := acc.object! newId
         acc.logMsg s!"{o.name} returns as a Food artifact") g
@@ -222,7 +219,7 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
 /-- Exile the top `n` cards face down. They may be played while exiled if you
 control `subtype`. Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
-    (subtype : String) : Game :=
+    (subtype : CardSubtype) : Game :=
   Id.run do
     let mut g := g
     for _ in List.range n do
@@ -234,14 +231,12 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
         let cardName := (g.object! top).name
         let (g', newId) := g.move top .exile none
         g := g'
-        let o := g.object! newId
-        g := g.setObject { o with
-          playPermission := some {
+        g := g.createEffect (.playPermission newId {
             player := p
             turnEndsRemaining := 0
             whileExiled := true
             requireSubtype := some subtype
-            faceDown := true } }
+            faceDown := true })
         g := g.logMsg s!"{pl.name} exiles a card face down"
         let _ := cardName
     return g
@@ -411,8 +406,7 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
   | some o =>
     let name := o.name
     let (g, newId) := g.move id .exile none
-    let o := g.object! newId
-    let g := g.setObject { o with playPermission := none, adventurerCard := none }
+    let g := g.changeObjects newId #[.playPermission none, .adventurerCard none]
     g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
@@ -430,8 +424,8 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
     : Game × GameObject :=
   let (g, tok) := g.createToken controller src.printed
-  let tok := { tok with castState := { tok.castState with kicked := false } }
-  (g.setObject tok, tok)
+  let g := g.changeObject tok.id (.kicked false)
+  (g, g.object! tok.id)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

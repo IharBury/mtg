@@ -40,7 +40,7 @@ def archAlone : Game := addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩
 #guard archAndBears.power (namedPermanent archAndBears "Grizzly Bears") == 2
 #guard archAndOppElves.power (namedPermanent archAndOppElves "Llanowar Elves") == 1
 #guard archAlone.power (namedPermanent archAlone "Elvish Archdruid") == 2
-#guard archAndElves.countSubtype ⟨0⟩ "Elf" == 2
+#guard archAndElves.countSubtype ⟨0⟩ .elf == 2
 #guard archAndElves.countCreaturesControlledBy ⟨0⟩ == 2
 #guard archAndOppElves.countCreaturesControlledBy ⟨0⟩ == 1
 #guard (archAndElves.pickTeamworkCreatures ⟨0⟩ 2).size == 1
@@ -129,7 +129,7 @@ def tappedArchAndOppElves : Game :=
 -- Summoning sickness still stops the mana ability (CR 302.6).
 #guard
   let o := namedPermanent archAlone "Elvish Archdruid"
-  let g := archAlone.setObject { o with status := { o.status with summoningSick := true } }
+  let g := archAlone.changeStatus o.id (.summoningSick true)
   match g.tapForMana ⟨0⟩ o.id (.colored .green) with
   | .error msg => mentions msg "summoning sickness"
   | .ok _ => false
@@ -169,7 +169,7 @@ def elkSetup : Game :=
 #guard elkSetup.canCast ⟨0⟩ (handCardNamed elkSetup ⟨0⟩ "Mirkwood Elk")
 #guard elkSetup.asSorcery? ⟨0⟩
 #guard mirkwoodElk.hasSorcerySpeed
-#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype "Elf"
+#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype .elf
 #guard (elkSetup.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).contains
   (Target.card (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").id)
 
@@ -537,8 +537,8 @@ def celebornGiftPumped : Game := passBoth celebornGiftScried
 /-- Scry 2 with one card in the library looks at one card, so +1/+1. -/
 def celebornScryOneOfTwo : Game :=
   let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with library := pl.library.extract (pl.library.size - 1) pl.library.size })
+  let lib := (g.player ⟨0⟩).library
+  let g := g.changePlayer ⟨0⟩ (.library (lib.extract (lib.size - 1) lib.size))
   keepScry (passBoth g)
 
 #guard celebornScryOneOfTwo.stack.size == 1
@@ -553,7 +553,7 @@ def celebornScryOneOfTwoPumped : Game := passBoth celebornScryOneOfTwo
 /-- An empty library still scries; Celeborn gets +0/+0. -/
 def celebornEmptyScry : Game :=
   let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  let g := g.changePlayer ⟨0⟩ (.library #[])
   passBoth g
 
 #guard celebornEmptyScry.pending == .none
@@ -808,7 +808,7 @@ def weavemasterPaysGrowth : Game :=
 /-- Summoning sickness still stops the mana ability (CR 302.6). -/
 def weavemasterSick : Game :=
   let o := namedPermanent weavemasterReady "Woodland Weavemaster"
-  weavemasterReady.setObject { o with status := { o.status with summoningSick := true } }
+  weavemasterReady.changeStatus o.id (.summoningSick true)
 
 #guard
   match weavemasterSick.tapForMana ⟨0⟩

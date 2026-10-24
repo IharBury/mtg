@@ -39,7 +39,7 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceDiscardExilePlay) ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  .«if» (.atLeast (.count (.othersOfSubtype "Hero")) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
+  .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawBecome66) ==
   .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
@@ -55,34 +55,34 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
   .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
 
-#guard Effect.resourcePlusOneCreateInsectOnce.onceEachTurn
-#guard Effect.resourcePlusOneOnThisOnce.onceEachTurn
-#guard Effect.resourceGainLifePlusOnes.allowsZeroTargets
-#guard Effect.resourceDrawIfAnotherHeroDamage.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).allowsZeroTargets
+#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).targeting.kind ==
   .opponent
-#guard Effect.resourceSecondDrawPlusOneTarget.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).targeting.kind ==
   .creature
-#guard Effect.resourceGainLifePlusOnes.targeting.kind ==
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).targeting.kind ==
   .creatureYouControl
 
 #guard toString (resource Effect.resourceDiscardExilePlay) ==
-  Effect.resourceDiscardExilePlay.phrase
+  TriggeredAbility.resourceSentence .discardExilePlay
 #guard toString (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  Effect.resourceDrawIfAnotherHeroDamage.phrase
+  TriggeredAbility.resourceSentence .drawIfAnotherHeroDamage
 #guard toString (resource Effect.resourceSecondDrawBecome66) ==
-  Effect.resourceSecondDrawBecome66.phrase
+  TriggeredAbility.resourceSentence .secondDrawBecome66
 #guard toString (resource Effect.resourceSecondDrawPlusOneTarget) ==
-  Effect.resourceSecondDrawPlusOneTarget.phrase
+  TriggeredAbility.resourceSentence .secondDrawPlusOneTarget
 #guard toString (resource Effect.resourceSecondDrawDrain) ==
-  Effect.resourceSecondDrawDrain.phrase
+  TriggeredAbility.resourceSentence .secondDrawDrain
 #guard toString (resource Effect.resourceGainLifePlusOnes) ==
-  Effect.resourceGainLifePlusOnes.phrase
+  TriggeredAbility.resourceSentence .gainLifePlusOnes
 #guard toString (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  Effect.resourcePlusOneCreateInsectOnce.phrase
+  TriggeredAbility.resourceSentence .plusOneCreateInsectOnce
 #guard toString (resource Effect.resourcePlusOneOnThisOnce) ==
-  Effect.resourcePlusOneOnThisOnce.phrase
+  TriggeredAbility.resourceSentence .plusOneOnThisOnce
 #guard toString (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  Effect.resourcePlusOneOnHeroesCreateWall.phrase
+  TriggeredAbility.resourceSentence .plusOneOnHeroesCreateWall
 
 /- Moonstone may exile the discarded card. Declining leaves it in the graveyard. -/
 def moonstoneBoard : Game :=
@@ -154,8 +154,8 @@ def moonGirl : Game :=
 
 def moonOverwrite : Game :=
   let src := named moonBoard "Moon Girl and Devil Dinosaur"
-  let g := moonBoard.mapObjectStatus src (fun s =>
-    { s with setBasePT := some (1, 1), pump := (1, 1) })
+  let g := moonBoard.changeStatuses src.id #[
+    .setBasePT (some (1, 1)), .pump (1, 1)]
   let g := g.addPlusOnePlusOneTo (named g "Moon Girl and Devil Dinosaur") 1
   resolve g (resource Effect.resourceSecondDrawBecome66)
     (some (named g "Moon Girl and Devil Dinosaur").id)

@@ -40,15 +40,15 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def attacking (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.setObject { o with status := { o.status with attacking := true } }
+  g.changeStatus o.id (.attacking true)
 
 def attach (g : Game) (equip host : String) : Game :=
   let eq := obj g equip
-  g.setObject { eq with attachedTo := some (pid g host) }
+  g.changeObject eq.id (.attachedTo (some (pid g host)))
 
 def cast (g : Game) (name : String) : Game :=
   let o := anyObj g name
-  g.setObject { o with castState := { o.castState with wasCast := true } }
+  g.changeObject o.id (.wasCast true)
 
 def strikes (g : Game) (name : String) : Bool :=
   g.hasDoubleStrike (obj g name)
@@ -101,7 +101,7 @@ left the battlefield does not count. -/
   let rider : CardDef := creature "Rider" ManaCost.empty #[] 2 2
   let g0 := attacking (addPermanent battle rider caster caster) "Rider"
   let riderObj := obj g0 "Rider"
-  let g0 := g0.setObject { riderObj with attachedTo := some (pid g0 "Cub") }
+  let g0 := g0.changeObject riderObj.id (.attachedTo (some (pid g0 "Cub")))
   let g := step g0 doubleStrike
   !strikes g "Rider" && !strikes g "Cub" && !strikes g "Bear"
 

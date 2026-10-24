@@ -35,17 +35,14 @@ def tokensNamed (g : Game) (name : String) : Nat :=
 def withCause (g : Game) (source : GameObject) (spell : CardDef)
     (targets : Array Target := #[]) (x : Option Nat := none) : Game :=
   let (g, spellObj) := g.allocObject spell me .stack (some me)
-  let spellObj := { spellObj with chosenX := x }
-  let g := g.setObject spellObj
+  let g := g.changeObject spellObj.id (.chosenX x)
   let g := g.putStackEntry me spellObj.id
   let g :=
     if targets.isEmpty then g
-    else
-      { g with stack := g.stack.map fun e =>
-          if e.objectId == spellObj.id then { e with targets } else e }
+    else g.changeStackEntryById spellObj.id (.targets targets)
   let (g, ab) := g.allocStackAbility source me
-  let g := g.setObject { ab with triggerCause := { id := some spellObj.id } }
-  { g with resolvingAbility := some ab.id }
+  let g := g.changeObject ab.id (.fraCauseId (some spellObj.id))
+  g.change (.resolvingAbility (some ab.id))
 
 def casting (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onCasting e
@@ -55,7 +52,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingVillainToken) ==
   .createTokens .villain21menace (.fixed 1) false
 #guard TriggeredAbility.resolution (casting Effect.castingMerfolkFromBlue) ==
-  .createTokens .merfolk .blueManaSymbols false
+  .createTokens .treasure .blueManaSymbols false .merfolk
 #guard TriggeredAbility.resolution (casting Effect.castingMayPayHasteUnblockable) ==
   .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneEachOther) ==
@@ -77,38 +74,38 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingTargetsGainFlying) ==
   .grant (.keywords Keyword.flying) .spellTargets
 #guard TriggeredAbility.resolution (casting Effect.castingCopyIfArtifactOrLand) ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .becomeCopy .causingSpell]
+  .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]
 #guard TriggeredAbility.resolution (casting Effect.castingTapCreatureOrLand) ==
   .tap .target
 
 #guard toString (casting Effect.castingVillainToken) ==
-  Effect.castingVillainToken.phrase
+  TriggeredAbility.castingSentence .villainToken
 #guard toString (casting Effect.castingMerfolkFromBlue) ==
-  Effect.castingMerfolkFromBlue.phrase
+  TriggeredAbility.castingSentence .merfolkFromBlue
 #guard toString (casting Effect.castingMayPayHasteUnblockable) ==
-  Effect.castingMayPayHasteUnblockable.phrase
+  TriggeredAbility.castingSentence .mayPayHasteUnblockable
 #guard toString (casting Effect.castingPlusOneEachOther) ==
-  Effect.castingPlusOneEachOther.phrase
+  TriggeredAbility.castingSentence .plusOneEachOther
 #guard toString (casting Effect.castingExileFlicker) ==
-  Effect.castingExileFlicker.phrase
+  TriggeredAbility.castingSentence .exileFlicker
 #guard toString (casting Effect.castingVisionModes) ==
-  Effect.castingVisionModes.phrase
+  TriggeredAbility.castingSentence .visionModes
 #guard toString (casting Effect.castingDamageEqualMv) ==
-  Effect.castingDamageEqualMv.phrase
+  TriggeredAbility.castingSentence .damageEqualMv
 #guard toString (casting Effect.castingDrawPowerEqualHand) ==
-  Effect.castingDrawPowerEqualHand.phrase
+  TriggeredAbility.castingSentence .drawPowerEqualHand
 #guard toString (casting Effect.castingPlusOneThis) ==
-  Effect.castingPlusOneThis.phrase
+  TriggeredAbility.castingSentence .plusOneThis
 #guard toString (casting Effect.castingPlusOneScry) ==
-  Effect.castingPlusOneScry.phrase
+  TriggeredAbility.castingSentence .plusOneScry
 #guard toString (casting Effect.castingIronFistTap) ==
-  Effect.castingIronFistTap.phrase
+  TriggeredAbility.castingSentence .ironFistTap
 #guard toString (casting Effect.castingTargetsGainFlying) ==
-  Effect.castingTargetsGainFlying.phrase
+  TriggeredAbility.castingSentence .targetsGainFlying
 #guard toString (casting Effect.castingCopyIfArtifactOrLand) ==
-  Effect.castingCopyIfArtifactOrLand.phrase
+  TriggeredAbility.castingSentence .copyIfArtifactOrLand
 #guard toString (casting Effect.castingTapCreatureOrLand) ==
-  Effect.castingTapCreatureOrLand.phrase
+  TriggeredAbility.castingSentence .tapCreatureOrLand
 
 /- A Villain spell creates one 2/1 Villain token with menace. -/
 def villainBoard : Game :=
@@ -165,8 +162,7 @@ def speedDeclines : Game :=
   logContains speedDeclines "isn't paid"
 
 def speedPays : Game :=
-  let g := speedOffer.modifyPlayer me (fun pl =>
-    { pl with manaPool := pl.manaPool.add (.colored .green) 1 })
+  let g := speedOffer.changePlayer me (.addMana (.colored .green) 1)
   let g := mustApply g me .accept
   g.applyModeledReflexive #[Target.permanent (named g "Volcanic Villain").id]
 
@@ -195,7 +191,7 @@ def wiccanBoard : Game :=
   let g := addPermanent g grizzlyBears me me
   let g := addPermanent g hillGiant me me
   let giant := named g "Hill Giant"
-  g.setObject { giant with printed := { giant.printed with isToken := true } }
+  g.changeObject giant.id (.printed { giant.printed with isToken := true })
 
 def wiccanExiles : Game :=
   let src := named wiccanBoard "Wiccan, Rising Magician"
@@ -246,7 +242,7 @@ def visionDraw : Game :=
 def visionExhausted : Game :=
   let g := visionBoard
   let src := named g "The Vision"
-  let g := g.mapObjectStatus src (fun s => { s with modesChosenThisTurn := #[0, 1, 2] })
+  let g := g.changeStatus src.id (.modesChosenThisTurn #[0, 1, 2])
   resolve g (casting Effect.castingVisionModes) (some (named g "The Vision").id)
 
 #guard (visionExhausted.player me).hand.size == (visionBoard.player me).hand.size &&

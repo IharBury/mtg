@@ -11,66 +11,45 @@ name.
 namespace Mtg.Engine
 
 /-- How a deck is validated before a game begins. -/
-abbrev Format := EntersTappedRule
+inductive Format where
+  /-- CR 100.2a: minimum 60, four-of except basic lands. -/
+  | constructed
+  /-- CR 100.2b: minimum 40, duplicates unrestricted. -/
+  | limited
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Format
 
-@[match_pattern] abbrev formatKind (isConstructed : Bool := false) : Format :=
-  .entersTappedKind Option.none Option.none isConstructed false false false
-/-- CR 100.2a: minimum 60, four-of except basic lands. -/
-@[match_pattern] abbrev constructed : Format := .formatKind true
-/-- CR 100.2b: minimum 40, duplicates unrestricted. -/
-@[match_pattern] abbrev limited : Format := .formatKind false
-
 def minDeckSize : Format → Nat
   | .constructed => 60
-  | _ => 40
+  | .limited => 40
 
 def englishName : Format → String
   | .constructed => "constructed"
-  | _ => "limited"
+  | .limited => "limited"
 
 instance : ToString Format where
   toString := englishName
 
 end Format
 
-namespace EntersTappedRule
-export Format (formatKind constructed limited)
-end EntersTappedRule
-
-namespace CardStaticRule
-export Format (formatKind constructed limited)
-end CardStaticRule
-
-abbrev DeckError := CardKeywordRule
+inductive DeckError where
+  | tooSmall (got required : Nat)
+  | tooManyCopies (cardName : String) (got : Nat)
+deriving Repr
 
 namespace DeckError
-
-@[match_pattern] abbrev tooSmall (got required : Nat) : DeckError :=
-  .cardKeywordRuleKind (some got) Option.none Option.none Option.none (some required) false false false false false false
-@[match_pattern] abbrev tooManyCopies (cardName : String) (got : Nat) : DeckError :=
-  .cardKeywordRuleKind (some got) (some cardName) Option.none Option.none Option.none true false false false false false
 
 def message : DeckError → String
   | .tooSmall got required =>
     s!"Deck has {got} cards; minimum is {required}"
   | .tooManyCopies cardName got =>
     s!"Deck has {got} copies of {cardName}; constructed maximum is 4"
-  | _ => ""
 
 instance : ToString DeckError where
   toString := message
 
 end DeckError
-
-namespace CardKeywordRule
-export DeckError (tooSmall tooManyCopies)
-end CardKeywordRule
-
-namespace CardStaticRule
-export DeckError (tooSmall tooManyCopies)
-end CardStaticRule
 
 /-- Count copies of each English name. -/
 def countNames (cards : Array CardDef) : List (String × Nat) :=

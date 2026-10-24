@@ -81,6 +81,7 @@ def parsedTwoAmountsSameSource : Bool :=
         match g.apply ⟨2⟩ .keep with
         | .error _ => false
         | .ok g =>
+          let g := g.resolveRandom
           g.pending == .declareMulligan ⟨0⟩ &&
           (g.player ⟨0⟩).hand.size == 7 &&
           (g.player ⟨0⟩).mulligansTaken == 1 &&
@@ -228,7 +229,7 @@ Nissa (CR 506.3). -/
 #guard
   let g := Tests.giantReadyToAssign
   let giant := Tests.namedPermanent g "Hill Giant"
-  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let g := g.changeStatus giant.id (.grantUntilEot Keyword.trample)
   let giant := Tests.namedPermanent g "Hill Giant"
   let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
   match applyAssign g ⟨0⟩
@@ -565,7 +566,7 @@ Nissa (CR 506.3). -/
 
 #guard isPassShortcutCmd "attack" ["step"]
 
-#guard !reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+#guard !reachedPassUntil (Tests.afterDraw.change (.step .declareAttackers))
   Tests.afterDraw.turnNumber .declareAttackers .nextDeclareAttackers
 
 #guard isPassSequenceCommand "pass" []
@@ -944,11 +945,9 @@ Nissa (CR 506.3). -/
 
 
 #guard
-  let g := { Tests.readyToDeclareBlockers with
-    objects := Tests.readyToDeclareBlockers.objects.map (fun o =>
-      if o.controlledBy ⟨1⟩ then
-        { o with status := { o.status with tapped := true } }
-      else o) }
+  let g := Tests.readyToDeclareBlockers.objects.foldl (fun g o =>
+    if o.controlledBy ⟨1⟩ then g.changeStatus o.id (.tapped true) else g)
+    Tests.readyToDeclareBlockers
   shouldAutoNoBlock g []
 
 #guard shouldAutoTarget Tests.proposedSmite []

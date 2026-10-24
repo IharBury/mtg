@@ -12,39 +12,24 @@ namespace Mtg.Engine
 
 /-- Card types, exactly the list in CR 205.2a / 300.1. -/
 inductive CardType where
-  | cardTypeKind (k0 : Option (Option (Option Bool)) := none) (k1 : Option Bool := none)
-      (isSupertype : Bool := false) (n : Nat := 0) (s : String := "")
-      (b1 : Bool := false) (b2 : Bool := false) (b3 : Bool := false)
-      (b4 : Bool := false) (b5 : Bool := false) (b6 : Bool := false)
-      (b7 : Bool := false) (b8 : Bool := false) (b9 : Bool := false)
+  | artifact
+  | battle
+  | creature
+  | enchantment
+  | instant
+  | land
+  | planeswalker
+  | sorcery
+  | kindred
+  | dungeon
+  | plane
+  | phenomenon
+  | vanguard
+  | scheme
+  | conspiracy
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CardType
-
-@[match_pattern] abbrev artifact : CardType := .cardTypeKind none none false
-@[match_pattern] abbrev battle : CardType := .cardTypeKind none (some false) false
-@[match_pattern] abbrev creature : CardType := .cardTypeKind none (some true) false
-@[match_pattern] abbrev enchantment : CardType := .cardTypeKind (some none) none false
-@[match_pattern] abbrev instant : CardType := .cardTypeKind (some none) (some false) false
-@[match_pattern] abbrev land : CardType := .cardTypeKind (some none) (some true) false
-@[match_pattern] abbrev planeswalker : CardType := .cardTypeKind (some (some none)) none false
-@[match_pattern] abbrev sorcery : CardType := .cardTypeKind (some (some none)) (some false) false
-@[match_pattern] abbrev kindred : CardType := .cardTypeKind (some (some none)) (some true) false
-@[match_pattern] abbrev dungeon : CardType := .cardTypeKind (some (some (some false))) none false
-@[match_pattern] abbrev plane : CardType := .cardTypeKind (some (some (some false))) (some false) false
-@[match_pattern] abbrev phenomenon : CardType := .cardTypeKind (some (some (some false))) (some true) false
-@[match_pattern] abbrev vanguard : CardType := .cardTypeKind (some (some (some true))) none false
-@[match_pattern] abbrev scheme : CardType := .cardTypeKind (some (some (some true))) (some false) false
-@[match_pattern] abbrev conspiracy : CardType := .cardTypeKind (some (some (some true))) (some true) false
-@[match_pattern] abbrev supertypeKind (k : Option (Option (Option Bool)) := none) : CardType :=
-  .cardTypeKind k none true
-@[match_pattern] abbrev basic : CardType := .supertypeKind none
-@[match_pattern] abbrev legendary : CardType := .supertypeKind (some none)
-@[match_pattern] abbrev ongoing : CardType := .supertypeKind (some (some none))
-@[match_pattern] abbrev snow : CardType := .supertypeKind (some (some (some false)))
-@[match_pattern] abbrev world : CardType := .supertypeKind (some (some (some true)))
-@[match_pattern] abbrev spell : CardType := .instant
-@[match_pattern] abbrev planar : CardType := .plane
 
 def englishName : CardType → String
   | .artifact => "Artifact"
@@ -62,12 +47,6 @@ def englishName : CardType → String
   | .vanguard => "Vanguard"
   | .scheme => "Scheme"
   | .conspiracy => "Conspiracy"
-  | .basic => "Basic"
-  | .legendary => "Legendary"
-  | .ongoing => "Ongoing"
-  | .snow => "Snow"
-  | .world => "World"
-  | _ => ""
 
 /-- Lowercase Oracle word (`artifact`, `creature`). -/
 def oracleWord (t : CardType) : String :=
@@ -93,7 +72,6 @@ def pluralName : CardType → String
   | .scheme => "schemes"
   | .sorcery => "sorceries"
   | .vanguard => "vanguards"
-  | _ => ""
 
 /-- Every card type in CR 205.2a, in that order. -/
 def all : List CardType := [
@@ -120,23 +98,29 @@ def isInstantOrSorcery : CardType → Bool
 end CardType
 
 /-- Supertypes (CR 205.4). -/
-abbrev Supertype := CardType
+inductive Supertype where
+  | basic
+  | legendary
+  | ongoing
+  | snow
+  | world
+deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Supertype
 
-@[match_pattern] abbrev supertypeKind (k : Option (Option (Option Bool)) := none) : Supertype :=
-  CardType.supertypeKind k
-@[match_pattern] abbrev basic : Supertype := CardType.basic
-@[match_pattern] abbrev legendary : Supertype := CardType.legendary
-@[match_pattern] abbrev ongoing : Supertype := CardType.ongoing
-@[match_pattern] abbrev snow : Supertype := CardType.snow
-@[match_pattern] abbrev world : Supertype := CardType.world
-
-def englishName : Supertype → String := CardType.englishName
+def englishName : Supertype → String
+  | .basic => "Basic"
+  | .legendary => "Legendary"
+  | .ongoing => "Ongoing"
+  | .snow => "Snow"
+  | .world => "World"
 
 /-- Lowercase Oracle word (`legendary`, `basic`). -/
 def oracleWord (s : Supertype) : String :=
   s.englishName.map Char.toLower
+
+instance : ToString Supertype where
+  toString := englishName
 
 /-- Every supertype in CR 205.4a, in that order. -/
 def all : List Supertype :=
@@ -159,21 +143,17 @@ def basicLandTypes : List Subtype :=
 /-- Which card type a CR 205.3 subtype belongs to.
 `spell` is shared by instants and sorceries (205.3k). `creature` is shared by
 creatures and kindreds (205.3m). -/
-abbrev SubtypeClass := CardType
-
-namespace SubtypeClass
-
-@[match_pattern] abbrev artifact : SubtypeClass := CardType.artifact
-@[match_pattern] abbrev enchantment : SubtypeClass := CardType.enchantment
-@[match_pattern] abbrev land : SubtypeClass := CardType.land
-@[match_pattern] abbrev planeswalker : SubtypeClass := CardType.planeswalker
-@[match_pattern] abbrev spell : SubtypeClass := CardType.instant
-@[match_pattern] abbrev creature : SubtypeClass := CardType.creature
-@[match_pattern] abbrev planar : SubtypeClass := CardType.plane
-@[match_pattern] abbrev dungeon : SubtypeClass := CardType.dungeon
-@[match_pattern] abbrev battle : SubtypeClass := CardType.battle
-
-end SubtypeClass
+inductive SubtypeClass where
+  | artifact
+  | enchantment
+  | land
+  | planeswalker
+  | spell
+  | creature
+  | planar
+  | dungeon
+  | battle
+deriving DecidableEq, Repr, Inhabited, BEq
 
 def artifactTypes : List String := [
   "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",
@@ -297,61 +277,562 @@ def battleTypes : List String := [
   "Siege"
 ]
 
-/-- One known subtype from CR 205.3g–q, one unique official Oracle ruling
-(`OracleRuling`), keyword counters on a permanent (`KeywordCounters`, CR 122.1b),
-what a payment is for and restricted mana allowances (`ManaSpend`, `ManaAllowances`,
-CR 106.10), or unspent mana a player currently has (`ManaPool`, CR 106.4). -/
-structure KnownSubtype where
-  name : String := ""
-  plural : String := ""
-  kind : SubtypeClass := .creature
-  /-- 1-based index in `uniqueOracleRulings`. -/
-  id : Nat := 0
-  /-- Official Wizards judge ruling (Gatherer / Scryfall `wotc`), not
-  printed Oracle text. -/
-  comment : String := ""
-  /-- Cards this comment applies to. Rulings are issued by judges; they
-  are not printed on the cards. -/
-  cards : Array String := #[]
-  /-- Distinct set codes among those cards (`hob` / `hoc` / `msh` / `fra`). -/
-  sets : Array String := #[]
-  haste : Nat := 0
-  vigilance : Nat := 0
-  flying : Nat := 0
-  menace : Nat := 0
-  reach : Nat := 0
-  deathtouch : Nat := 0
-  firstStrike : Nat := 0
-  doubleStrike : Nat := 0
-  trample : Nat := 0
-  indestructible : Nat := 0
-  lifelink : Nat := 0
-  spell : Bool := false
-  fromHand : Bool := false
-  planeswalker : Bool := false
-  noncreature : Bool := false
-  legendary : Bool := false
-  artifact : Bool := false
-  /-- Subtypes of the spell being cast. -/
-  subtypes : Array String := #[]
-  /-- Subtypes of the spell or ability source. -/
-  sourceSubtypes : Array String := #[]
-  /-- Activating an equip ability. -/
-  equip : Bool := false
-  hero : Bool := false
-  villain : Bool := false
-  cantNonartifact : Bool := false
-  creature : Bool := false
-  white : Nat := 0
-  blue : Nat := 0
-  black : Nat := 0
-  red : Nat := 0
-  green : Nat := 0
-  colorless : Nat := 0
-  /-- One entry per mana with a spending restriction (CR 106.6 / 106.10). These
-  are included in the totals above. -/
-  restricted : Array (Option Color × CardType) := #[]
+/-- Card subtypes from CR 205.3g–q, one constructor per subtype. -/
+inductive CardSubtype where
+  | attraction
+  | blood
+  | bobblehead
+  | book
+  | clue
+  | contraption
+  | equipment
+  | food
+  | fortification
+  | gold
+  | heartwood
+  | incubator
+  | infinity
+  | junk
+  | lander
+  | map
+  | mutagen
+  | powerstone
+  | spacecraft
+  | stone
+  | treasure
+  | vehicle
+  | vibranium
+  | aura
+  | background
+  | cartouche
+  | case
+  | «class»
+  | curse
+  | plan
+  | role
+  | room
+  | rune
+  | saga
+  | shard
+  | shrine
+  | cave
+  | desert
+  | forest
+  | gate
+  | island
+  | lair
+  | locus
+  | mine
+  | mountain
+  | plains
+  | planet
+  | powerPlant
+  | sphere
+  | swamp
+  | tower
+  | town
+  | urzas
+  | ajani
+  | aminatou
+  | angrath
+  | arlinn
+  | ashiok
+  | bahamut
+  | basri
+  | bolas
+  | calix
+  | chandra
+  | comet
+  | dack
+  | dakkon
+  | daretti
+  | davriel
+  | dellian
+  | dihada
+  | domri
+  | dovin
+  | ellywick
+  | elminster
+  | elspeth
+  | estrid
+  | freyalise
+  | garruk
+  | gideon
+  | grist
+  | guff
+  | huatli
+  | jace
+  | jared
+  | jaya
+  | jeska
+  | kaito
+  | karn
+  | kasmina
+  | kaya
+  | kiora
+  | koth
+  | liliana
+  | lolth
+  | lukka
+  | minsc
+  | mordenkainen
+  | nahiri
+  | narset
+  | niko
+  | nissa
+  | nixilis
+  | oko
+  | quintorius
+  | ral
+  | rowan
+  | saheeli
+  | samut
+  | sarkhan
+  | serra
+  | sivitri
+  | sorin
+  | szat
+  | tamiyo
+  | tasha
+  | teferi
+  | teyo
+  | tezzeret
+  | tibalt
+  | tyvar
+  | ugin
+  | urza
+  | venser
+  | vivien
+  | vraska
+  | vronos
+  | will
+  | windgrace
+  | wrenn
+  | xenagos
+  | yanggu
+  | yanling
+  | zariel
+  | adventure
+  | arcane
+  | lesson
+  | omen
+  | trap
+  | timeLord
+  | advisor
+  | aetherborn
+  | alien
+  | ally
+  | angel
+  | antelope
+  | ape
+  | archer
+  | archon
+  | armadillo
+  | army
+  | artificer
+  | assassin
+  | assemblyWorker
+  | astartes
+  | atog
+  | aurochs
+  | avatar
+  | azra
+  | badger
+  | balloon
+  | barbarian
+  | bard
+  | basilisk
+  | bat
+  | bear
+  | beast
+  | beaver
+  | beeble
+  | beholder
+  | berserker
+  | bird
+  | bison
+  | blinkmoth
+  | boar
+  | bringer
+  | brushwagg
+  | camarid
+  | camel
+  | capybara
+  | caribou
+  | carrier
+  | cat
+  | centaur
+  | child
+  | chimera
+  | citizen
+  | cleric
+  | clown
+  | cockatrice
+  | construct
+  | coward
+  | coyote
+  | crab
+  | crocodile
+  | ctan
+  | custodes
+  | cyberman
+  | cyclops
+  | dalek
+  | dauthi
+  | demigod
+  | demon
+  | deserter
+  | detective
+  | devil
+  | dinosaur
+  | djinn
+  | doctor
+  | dog
+  | dragon
+  | drake
+  | dreadnought
+  | drix
+  | drone
+  | druid
+  | dryad
+  | dwarf
+  | echidna
+  | efreet
+  | egg
+  | elder
+  | eldrazi
+  | elemental
+  | elephant
+  | elf
+  | elk
+  | employee
+  | eternal
+  | eye
+  | faerie
+  | ferret
+  | fish
+  | flagbearer
+  | fox
+  | fractal
+  | frog
+  | fungus
+  | gamer
+  | gamma
+  | gargoyle
+  | germ
+  | giant
+  | giraffe
+  | gith
+  | glimmer
+  | gnoll
+  | gnome
+  | goat
+  | goblin
+  | god
+  | golem
+  | gorgon
+  | graveborn
+  | gremlin
+  | griffin
+  | guest
+  | hag
+  | halfling
+  | hamster
+  | harpy
+  | hedgehog
+  | hellion
+  | hero
+  | hippo
+  | hippogriff
+  | homarid
+  | homunculus
+  | horror
+  | horse
+  | human
+  | hydra
+  | hyena
+  | illusion
+  | imp
+  | incarnation
+  | inhuman
+  | inkling
+  | inquisitor
+  | insect
+  | jackal
+  | jellyfish
+  | juggernaut
+  | kangaroo
+  | kavu
+  | kirin
+  | kithkin
+  | knight
+  | kobold
+  | kor
+  | kraken
+  | kree
+  | llama
+  | lamia
+  | lammasu
+  | leech
+  | lemur
+  | leviathan
+  | lhurgoyf
+  | licid
+  | lizard
+  | lobster
+  | manticore
+  | masticore
+  | mercenary
+  | merfolk
+  | metathran
+  | minion
+  | minotaur
+  | mite
+  | mole
+  | monger
+  | mongoose
+  | monk
+  | monkey
+  | moogle
+  | moonfolk
+  | mount
+  | mouse
+  | mutant
+  | myr
+  | mystic
+  | nautilus
+  | necron
+  | nephilim
+  | nightmare
+  | nightstalker
+  | ninja
+  | noble
+  | noggle
+  | nomad
+  | nymph
+  | octopus
+  | ogre
+  | ooze
+  | orb
+  | orc
+  | orgg
+  | otter
+  | ouphe
+  | ox
+  | oyster
+  | pangolin
+  | peasant
+  | pegasus
+  | pentavite
+  | performer
+  | pest
+  | phelddagrif
+  | phoenix
+  | phyrexian
+  | pilot
+  | pincher
+  | pirate
+  | plant
+  | platypus
+  | porcupine
+  | possum
+  | praetor
+  | primarch
+  | prism
+  | processor
+  | qu
+  | rabbit
+  | raccoon
+  | ranger
+  | rat
+  | rebel
+  | reflection
+  | rhino
+  | rigger
+  | robot
+  | rogue
+  | sable
+  | salamander
+  | samurai
+  | sand
+  | saproling
+  | satyr
+  | scarecrow
+  | scientist
+  | scion
+  | scorpion
+  | scout
+  | sculpture
+  | seal
+  | serf
+  | serpent
+  | servo
+  | shade
+  | shaman
+  | shapeshifter
+  | shark
+  | sheep
+  | shiar
+  | siren
+  | skeleton
+  | skrull
+  | skunk
+  | slith
+  | sliver
+  | sloth
+  | slug
+  | snail
+  | snake
+  | soldier
+  | soltari
+  | sorcerer
+  | spawn
+  | specter
+  | spellshaper
+  | sphinx
+  | spider
+  | spike
+  | spirit
+  | splinter
+  | sponge
+  | spy
+  | squid
+  | squirrel
+  | starfish
+  | surrakar
+  | survivor
+  | symbiote
+  | synth
+  | tentacle
+  | tetravite
+  | thalakos
+  | thopter
+  | thrull
+  | tiefling
+  | toy
+  | treefolk
+  | trilobite
+  | triskelavite
+  | troll
+  | turtle
+  | tyranid
+  | unicorn
+  | utrom
+  | vampire
+  | varmint
+  | vedalken
+  | villain
+  | volver
+  | wall
+  | walrus
+  | warlock
+  | warrior
+  | weasel
+  | weird
+  | werewolf
+  | whale
+  | wizard
+  | wolf
+  | wolverine
+  | wombat
+  | worm
+  | wraith
+  | wurm
+  | yeti
+  | zombie
+  | zubera
+  | theAbyss
+  | alara
+  | alfavaMetraxis
+  | amonkhet
+  | androzaniMinor
+  | antausia
+  | apalapucia
+  | arcavios
+  | arkhos
+  | avishkar
+  | azgol
+  | belenon
+  | bolassMeditationRealm
+  | capenna
+  | cridhe
+  | theDalekAsylum
+  | darillium
+  | dominaria
+  | earth
+  | echoir
+  | eldraine
+  | equilor
+  | ergamon
+  | fabacin
+  | fiora
+  | gallifrey
+  | gargantikar
+  | gobakhan
+  | horseheadNebula
+  | ikoria
+  | innistrad
+  | iquatana
+  | ir
+  | ixalan
+  | kaldheim
+  | kamigawa
+  | kandoka
+  | karsus
+  | kephalai
+  | kinshala
+  | kolbahan
+  | kylem
+  | kyneth
+  | theLibrary
+  | lorwyn
+  | luvion
+  | mars
+  | mercadia
+  | mirrodin
+  | moag
+  | mongseng
+  | moon
+  | muraganda
+  | necros
+  | newEarth
+  | newPhyrexia
+  | outsideMuttersSpiral
+  | phyrexia
+  | pyrulea
+  | rabiah
+  | rath
+  | ravnica
+  | regatha
+  | segovia
+  | serrasRealm
+  | shadowmoor
+  | shandalar
+  | shenmeng
+  | skaro
+  | tarkir
+  | theros
+  | time
+  | trenzalore
+  | ulgrotha
+  | unknownPlanet
+  | valla
+  | vryn
+  | wildfire
+  | xerex
+  | zendikar
+  | zhalfir
+  | undercity
+  | siege
 deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- One known subtype from CR 205.3g–q. -/
+structure KnownSubtype where
+  subtype : CardSubtype := .attraction
+  name : String
+  plural : String
+  kind : SubtypeClass
+deriving Repr, Inhabited
 
 /-- Fold curly apostrophes to `'` and lowercase. Apostrophes stay, so `Urza`
 and `Urza's` remain different subtypes. -/
@@ -431,6 +912,10 @@ def subtypeEntries : List KnownSubtype :=
     subtypesOf .battle battleTypes
   raw.foldl (fun acc e =>
     if acc.any (·.name == e.name) then acc else acc ++ [e]) []
+    |>.zipIdx.map fun (e, i) => { e with subtype := CardSubtype.ofNat i }
+
+def subtypeEntryArray : Array KnownSubtype :=
+  subtypeEntries.toArray
 
 /-- Singular and plural spellings, apostrophes kept. -/
 def subtypeByKey : Thunk (Std.HashMap String KnownSubtype) :=
@@ -451,6 +936,57 @@ def subtypeByStrippedApostrophe : Thunk (Std.HashMap String KnownSubtype) :=
         m.insert (subtypeKeyStripped e.plural) e
       else m)
       ({} : Std.HashMap String KnownSubtype)
+
+namespace CardSubtype
+
+def entry (s : CardSubtype) : KnownSubtype :=
+  subtypeEntryArray[s.ctorIdx]!
+
+def englishName (s : CardSubtype) : String :=
+  s.entry.name
+
+def pluralName (s : CardSubtype) : String :=
+  s.entry.plural
+
+def kind (s : CardSubtype) : SubtypeClass :=
+  s.entry.kind
+
+def isCreatureType (s : CardSubtype) : Bool :=
+  s.kind == .creature
+
+def isNoncreature (s : CardSubtype) : Bool :=
+  s.kind != .creature
+
+instance : ToString CardSubtype where
+  toString := englishName
+
+instance : Coe CardSubtype String where
+  coe := englishName
+
+/-- Every subtype in CR 205.3g–q, in that order. -/
+def all : List CardSubtype :=
+  subtypeEntries.map (·.subtype)
+
+/-- Canonical `CardSubtype` for a printed singular or plural subtype, in any
+case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
+def ofOracle? (s : String) : Option CardSubtype :=
+  let kept := subtypeKey s
+  if !kept.toList.any (· == '\'') then
+    match (subtypeByStrippedApostrophe.get).get? (subtypeKeyStripped s) with
+    | some e => some e.subtype
+    | none => (subtypeByKey.get).get? kept |>.map (·.subtype)
+  else
+    (subtypeByKey.get).get? kept |>.map (·.subtype)
+
+/-- Canonical `CardSubtype` for `s`, or `fallback` when `s` is not a subtype. -/
+def ofOracleD (s : String) (fallback : CardSubtype := .goblin) : CardSubtype :=
+  (ofOracle? s).getD fallback
+
+/-- Known `CardSubtype`s in `subtypes`, in order. -/
+def ofSubtypes (subtypes : Array String) : Array CardSubtype :=
+  subtypes.filterMap ofOracle?
+
+end CardSubtype
 
 /-- Canonical singular name for a printed singular or plural subtype, in any
 case. A missing apostrophe still finds `C'tan`, `Shi'ar`, and `Urza's`. -/
@@ -718,5 +1254,28 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard splitPrintedSubtypes #[.land] "Urza\u2019s Power-Plant" == #["Urza's", "Power-Plant"]
 #guard splitPrintedSubtypes #[.creature] "C\u2019tan" == #["C'tan"]
 #guard splitPrintedSubtypes #[.creature] "Shi'ar" == #["Shi'ar"]
+
+#guard CardSubtype.all.length == 545
+#guard CardSubtype.all.all fun s =>
+  let expected := (subtypeKeyStripped s.englishName).replace " " "" |>.replace "-" ""
+  let actual := ((reprStr s).splitOn ".").getLast! |>.replace "«" "" |>.replace "»" "" |>.map Char.toLower
+  expected == actual &&
+    CardSubtype.ofOracle? s.englishName == some s &&
+    (s.englishName == "Urza" || CardSubtype.ofOracle? s.pluralName == some s)
+#guard CardSubtype.ofOracle? "ELVES" == some .elf
+#guard CardSubtype.ofOracle? "time lords" == some .timeLord
+#guard CardSubtype.ofOracle? "URZA'S" == some .urzas
+#guard CardSubtype.ofOracle? "Urza" == some .urza
+#guard CardSubtype.ofOracle? "c'tan" == some .ctan
+#guard CardSubtype.ofOracle? "Shi'ar" == some .shiar
+#guard CardSubtype.ofOracle? "bolass meditation realm" == some .bolassMeditationRealm
+#guard CardSubtype.ofOracle? "power-plant" == some .powerPlant
+#guard CardSubtype.ofOracle? "assembly-workers" == some .assemblyWorker
+#guard CardSubtype.ofOracle? "Class" == some .«class»
+#guard CardSubtype.ofOracle? "siege" == some .siege
+#guard CardSubtype.ofOracle? "undercity" == some .undercity
+#guard CardSubtype.timeLord.isCreatureType
+#guard !CardSubtype.timeLord.isNoncreature
+#guard CardSubtype.equipment.isNoncreature
 
 end Mtg.Engine

@@ -1,5 +1,5 @@
 import Mtg.Engine.Game.Decisions
-import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.FraHelpers
 
 /-!
 # Reality Fracture choices
@@ -15,33 +15,13 @@ namespace Mtg.Engine
 namespace Game
 
 /-- An answer to a `FraChoice`. -/
-abbrev FraAnswer := AfterRandom
-
-namespace FraAnswer
-
-@[match_pattern] abbrev fraAnswerKind (ids : Array ObjectId := #[]) (idx : Nat := 0) (nameStr : String := "")
-    (accepted : Bool := false) (objectsFlag : Bool := false) (modeFlag : Bool := false) (nameFlag : Bool := false) : FraAnswer :=
-  AfterRandom.afterRandomKind ⟨0⟩ idx ⟨0⟩ Option.none nameStr #[] ids Option.none accepted objectsFlag modeFlag nameFlag false
-@[match_pattern] abbrev accept : FraAnswer :=
-  .fraAnswerKind #[] 0 "" true false false false
-@[match_pattern] abbrev decline : FraAnswer :=
-  .fraAnswerKind #[] 0 "" false false false false
-@[match_pattern] abbrev objects (ids : Array ObjectId) : FraAnswer :=
-  .fraAnswerKind ids 0 "" false true false false
-@[match_pattern] abbrev mode (idx : Nat) : FraAnswer :=
-  .fraAnswerKind #[] idx "" false false true false
-@[match_pattern] abbrev name (nameStr : String) : FraAnswer :=
-  .fraAnswerKind #[] 0 nameStr false false false true
-
-end FraAnswer
-
-namespace _root_.Mtg.Engine.AfterRandom
-export FraAnswer (fraAnswerKind accept decline objects mode name)
-end _root_.Mtg.Engine.AfterRandom
-
-namespace _root_.Mtg.Engine.CopyDuration
-export FraAnswer (fraAnswerKind accept decline objects mode name)
-end _root_.Mtg.Engine.CopyDuration
+inductive FraAnswer where
+  | accept
+  | decline
+  | objects (ids : Array ObjectId)
+  | mode (idx : Nat)
+  | name (name : String)
+deriving Repr, BEq
 
 /-- Clear the choice and let the game continue. A trigger sequence that paused
 on this choice runs its remaining steps first. -/
@@ -87,18 +67,17 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
   let (g, newId) := g.move id .stack (some p)
-  let cur := g.object! newId
-  let g := g.setObject { cur with castState := { cur.castState with isCopy := true } }
+  let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
-  let g := { g with pending := .none, pendingFreeCopies := some (p, rest, budget - mv, castsLeft - 1) }
+  let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let prop : ProposedSpell := {
     caster := p, cost := ManaCost.empty, spellId := newId, original := card
     handBefore := (g.player p).hand, stackBefore, manaBefore := pool }
   if face.isModal then
-    return { g with pending := .chooseMode p, proposedSpell := some prop }
+    return g.changes #[.pending (.chooseMode p), .proposedSpell (some prop)]
   else if face.requiresTarget then
-    return { g with pending := .chooseTargets p, proposedSpell := some prop }
+    return g.changes #[.pending (.chooseTargets p), .proposedSpell (some prop)]
   else
     return g.becomeCast p (g.object! newId)
 
@@ -118,7 +97,7 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
     if m == 0 then "Net — Target creature can't block this turn"
     else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
     else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution := .chooseModes [] (.hawkeyeIndices sorted.toList)
+  { targeting, resolution := .hawkeyeArrows sorted.toList
     phrase := String.intercalate ". " names }
 
 /-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
@@ -136,8 +115,11 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false
 
-private def answerFraChoicePart1a (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
+def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
+  let .fraChoice q choice := g.pending | throw "Nothing to choose now"
+  if p != q then
+    throw s!"Only {(g.player q).name} may choose"
+  let g := g.change (.pending .none)
   match choice, answer with
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
@@ -167,20 +149,21 @@ private def answerFraChoicePart1a (g : Game) (p : PlayerId) (choice : @& FraChoi
   | .maySacrificePlaneswalker, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishFraChoice
   | .maySacrificePlaneswalker, _ => throw "Choose a planeswalker to sacrifice, or decline"
-  | .topOrBottomDamage id damage, .accept | .topOrBottomDamage id damage, .decline =>
+  | .topOrBottomDamage id damage sid, .accept | .topOrBottomDamage id damage sid, .decline =>
     match g.findObject? id with
     | none => return g.finishFraChoice
     | some o =>
       if !o.isOnBattlefield then return g.finishFraChoice
       else
         let owner := o.owner
+        let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
         let (g, newId) := g.move id (.library owner) none
         if answer == .accept then
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on top of their library"
-          return (g.dealDamageToPlayer owner damage).finishFraChoice
+          return (g.dealDamageToPlayer owner damage (source := src?)).finishFraChoice
         else
-          let g := g.modifyPlayer owner (fun pl =>
-            { pl with library := #[newId] ++ pl.library.filter (· != newId) })
+          let pl := g.player owner
+          let g := g.changePlayer owner (.library (#[newId] ++ pl.library.filter (· != newId)))
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on the bottom of their library"
           return g.finishFraChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
@@ -192,7 +175,7 @@ private def answerFraChoicePart1a (g : Game) (p : PlayerId) (choice : @& FraChoi
       let (g, _) := g.move id .exile none
       g) g
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
-    let g := g.resolveSearchLibrary p (fun c => c.isCreature && c.hasSubtype "Sphinx") false
+    let g := g.resolveSearchLibrary p (fun c => c.isCreature && c.hasSubtype .sphinx) false
       "Sphinx creature card"
     return g.finishFraChoice
   | .sphinxsApproach _, .decline => return g.finishFraChoice
@@ -217,13 +200,15 @@ private def answerFraChoicePart1a (g : Game) (p : PlayerId) (choice : @& FraChoi
     let g := g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
     return g.finishFraChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
-  | _, _ => throw "Nothing to choose now"
-
-private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
+  | .mayPutMilledPermanent ids life, .objects #[id] =>
+    if !ids.contains id then throw "Choose a permanent card milled this way"
+    let g := g.returnToHand id p
+    return (g.gainLife p life).finishFraChoice
+  | .mayPutMilledPermanent _ life, .decline =>
+    return (g.gainLife p life).finishFraChoice
+  | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
   | .mayThen next sourceId, .accept =>
-    return (g.applyFra p default next #[] sourceId).finishFraChoice
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayThen .., .decline => return g.finishFraChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
@@ -231,20 +216,20 @@ private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoi
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    return (g.applyFra p default next #[] sourceId).finishFraChoice
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
   | .mayPayThen .., _ => throw "Pay or decline"
   | .mayDiscardThen next sourceId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
-    return (g.applyFra p default next #[] sourceId).finishFraChoice
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .mayDiscardThen .., .decline => return g.finishFraChoice
   | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
-  | .discardThen causeId, .objects #[id] =>
+  | .discardThen _ _ causeId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g := g.draw p 1
-    let n := (g.player p).cardsDiscardedThisTurn
+    let n := g.loggedDiscards p
     let g :=
       match causeId.bind (fun c => g.findObject? (g.followMoved c)) with
       | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
@@ -258,41 +243,29 @@ private def answerFraChoicePart1b (g : Game) (p : PlayerId) (choice : @& FraChoi
       throw s!"Choose {need} different cards from your hand"
     let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
     let g := ids.foldl (fun g id => g.discardFromHand p id) g
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     let g :=
       if nonland == 0 then g
       else
         g.putReflexiveTrigger p sourceId
           { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonland
-            allowsZeroTargets := true, resolution := .putCounters (.ofKind .stun 1) (.creaturesControlledBy .eachOpponent)
+            allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
             phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
     return g.finishFraChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
-  | .maySacrificeThen kind next sourceId, .objects #[id] =>
+  | .maySacrificeThen types next sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
-    let ok :=
-      o.isOnBattlefield && o.controlledBy p &&
-        match kind with
-        | .land => o.printed.isLand
-        | .creatureOrPlaneswalker => o.isCreature || o.printed.isPlaneswalker
-        | .creature => o.isCreature
-        | _ => false
+    let ok := o.isOnBattlefield && o.controlledBy p && types.any o.hasType
     if !ok then throw s!"Can't sacrifice {o.name}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
-    return (g.applyFra p default next #[] sourceId).finishFraChoice
+    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
   | .maySacrificeThen .., .decline => return g.finishFraChoice
   | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
-  | choice, answer => answerFraChoicePart1a g p choice answer
-
-private def answerFraChoicePart1c (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .mayMovePlusOne sourceId, .accept =>
     match g.findObject? sourceId with
     | some o =>
       if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
-        let g := (g.setObject { o with status := { o.status with
-          plusOnePlusOne := o.status.plusOnePlusOne - 1 } }).logMsg
+        let g := (g.changeStatus o.id (.plusOnePlusOne (o.status.plusOnePlusOne - 1))).logMsg
           s!"A +1/+1 counter is removed from {o.name}"
         let g := (g.creaturesControlledBy p).foldl (fun g c =>
           if c.id == o.id then g else g.addPlusOnePlusOneTo (g.object! c.id) 1) g
@@ -305,13 +278,13 @@ private def answerFraChoicePart1c (g : Game) (p : PlayerId) (choice : @& FraChoi
     if !(g.revealedHandChoices victim false).contains id then throw "Choose a nonland card"
     let name := (g.object! id).name
     let (g, ex) := g.move id .exile none
-    let g := g.setObject { (g.object! ex) with exiledBy := sourceId }
+    let g := g.changeObject ex (.exiledBy sourceId)
     return (g.logMsg s!"{(g.player p).name} exiles {name} from {(g.player victim).name}'s hand").finishFraChoice
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
     let g := ids.foldl (fun g id =>
       if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
-    return { g with pendingFreeCopies := none }.finishFraChoice
+    return (g.change (.pendingFreeCopies none)).finishFraChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
@@ -336,11 +309,11 @@ private def answerFraChoicePart1c (g : Game) (p : PlayerId) (choice : @& FraChoi
     let anyLeft := (List.range modes.size).any (fun i =>
       !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
     if left > 0 && anyLeft then
-      return { g with pending := .fraChoice p (.triggerModes objId left chosen) }
+      return g.change (.pending (.fraChoice p (.triggerModes objId left chosen)))
     match combineTriggerModes modes chosen with
     | none => return g.finishFraChoice
     | some eff =>
-      let g := g.setObject { obj with abilityEffect := some eff }
+      let g := g.changeObject obj.id (.abilityEffect (some eff))
       return g.finishFraChoice
   | .triggerModes .., _ => throw "Choose a mode"
   | .chooseKeyword id options, .mode idx =>
@@ -357,15 +330,10 @@ private def answerFraChoicePart1c (g : Game) (p : PlayerId) (choice : @& FraChoi
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
     match g.findObject? id with
     | some o =>
-      let g := g.mapObjectStatus o (fun s => { s with chosenColor := some c })
+      let g := g.changeStatus o.id (.chosenColor (some c))
       return (g.logMsg s!"{(g.player p).name} chooses {c.englishName} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseColor _, _ => throw "Choose a color"
-  | choice, answer => answerFraChoicePart1b g p choice answer
-
-def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
     if !o.isOnBattlefield || !o.isCreature || !o.controlledBy p then
@@ -387,9 +355,9 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
       if !src.isOnBattlefield || !dst.isOnBattlefield then return g.finishFraChoice
       else
         let moved := src.status
-        let g := g.setObject { src with status := src.status.withoutCounters }
+        let g := g.changeStatus src.id .withoutCounters
         let dst := g.object! toId
-        let g := g.setObject { dst with status := dst.status.addCountersExceptPlusOne moved }
+        let g := g.changeStatus dst.id (.addCountersExceptPlusOne moved)
         let g :=
           if moved.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! toId) moved.plusOnePlusOne
           else g
@@ -402,7 +370,7 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
       throw s!"{nm} isn't the name of a nonland card (CR 201.3)"
     match g.findObject? id with
     | some o =>
-      let g := g.mapObjectStatus o (fun s => { s with chosenName := some nm })
+      let g := g.changeStatus o.id (.chosenName (some nm))
       return (g.logMsg s!"{(g.player p).name} chooses {nm} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseCardName _, _ => throw "Name a nonland card"
@@ -434,13 +402,14 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     throw "Part of the cost is already paid; the activation can't be cancelled"
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
   | .chooseCreatureType types, .mode idx =>
-    let some t := types[idx]? | throw "No such creature type"
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    let some sub := types[idx]? | throw "No such creature type"
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, .name t =>
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o t)).size
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
+    let some sub := CardSubtype.ofOracle? t | throw "Choose a creature type"
+    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, _ => throw "Choose a creature type"
   | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
@@ -450,7 +419,7 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     let pw := (g.power o).toNat
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     if g.mayThenDrop > 0 then
-      return { g with thisWay := { g.thisWay with sacrificedPowerThisWay := some pw } }.acceptMayThen
+      return (g.change (.sacrificedPowerThisWay (some pw))).acceptMayThen
     else
       let g :=
         match g.findObject? sourceId with
@@ -476,11 +445,6 @@ def answerFraChoicePart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
-  | choice, answer => answerFraChoicePart1c g p choice answer
-
-def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .maySacrificeThese n ids, .objects chosen =>
     if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
         !chosen.all (ids.contains ·) then
@@ -523,7 +487,7 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
+      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
   | .mayPaySymbolsThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
@@ -541,7 +505,7 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
           attached := attached + 1
       | none => pure ()
     if attached > 0 && host.isOnBattlefield then
-      g := { g with thisWay := { g.thisWay with equipmentAttachedHost := some hostId } }
+      g := g.change (.equipmentAttachedHost (some hostId))
     return g.finishFraChoice
   | .attachAnyEquipment .., .decline => return g.finishFraChoice
   | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
@@ -554,16 +518,15 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
+      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
   | .mayPayPickThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
   | .addManaColors left use, .mode idx =>
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with manaPool := pl.manaPool.add (.colored c) (fra := some use) })
+    let g := g.changePlayer p (.addMana (.colored c) 1 (fra := some use))
     let g := g.logMsg s!"{(g.player p).name} adds {ManaType.colored c} ({use.label})"
-    if left > 1 then return { g with pending := .fraChoice p (.addManaColors (left - 1) use) }
+    if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
   | .payLifeOrEnterTapped _ n, .accept =>
@@ -572,7 +535,7 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .payLifeOrEnterTapped id _, .decline =>
     match g.findObject? id with
     | some o =>
-      let g := g.setObject { o with status := { o.status with tapped := true } }
+      let g := g.changeStatus o.id (.tapped true)
       return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
     | none => return g.finishFraChoice
   | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
@@ -601,7 +564,7 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        let g := g.setObject { o with status := { o.status with setBasePT := some (pw, tw) } }
+        let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
         return (g.logMsg s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn").finishFraChoice
       else return g.finishFraChoice
     | none => return g.finishFraChoice
@@ -648,11 +611,6 @@ def answerFraChoicePart2 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .nickFuryMayTransform _ rest, .decline =>
     return (g.putRestOnBottomRandom p rest).finishFraChoice
   | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
-  | _, _ => answerFraChoicePart1 g p choice answer
-
-def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .orderLibraryBottom ids, .objects ordered =>
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
         !ordered.all (ids.contains ·) then
@@ -676,7 +634,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default (.queueReflexive (.mshReflexive kind times)) #[] sourceId).finishFraChoice
+      return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
   | .mayPayManaForReflexive .., .decline =>
     let g := g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger."
     if g.mayThenDrop > 0 then return g.declineMayThen
@@ -690,7 +648,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
         if g.mayThenDrop > 0 then
           return g.acceptMayThen
         else
-          return (g.applyFra p default next #[] (some sourceId)).finishFraChoice
+          return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
       else throw s!"{o.name} can't be tapped"
     | none => throw "The source is gone"
   | .mayTapSourceThen .., .decline =>
@@ -701,7 +659,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2)"
     let chosen := chosen.push idx
     if chosen.size < left && chosen.size < 3 then
-      return { g with pending := .fraChoice p (.hawkeyeModes left chosen sourceId) }
+      return g.change (.pending (.fraChoice p (.hawkeyeModes left chosen sourceId)))
     return (g.putReflexiveTrigger p sourceId (hawkeyeArrowsEffect chosen)).finishFraChoice
   | .hawkeyeModes _ chosen sourceId, .decline =>
     if chosen.isEmpty then return g.finishFraChoice
@@ -720,7 +678,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
       (g, acc.2.push ex)) (g, #[])
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
     let g := match g.findObject? abilityId with
-      | some ab => g.setObject { ab with exileLinks := { ab.exileLinks with boastExiled := exiled } }
+      | some ab => g.changeObject ab.id (.boastExiled exiled)
       | none => g
     let g := match g.findObject? sourceId with
       | some src => g.markBoastUsed src
@@ -734,12 +692,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
   | .mayCastCascade cardId others, .accept =>
     let g := g.castAsPartOfResolution p cardId
     let msg := s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
-    let g :=
-      if g.pending == .none then g.requestOrderInto others (.library p) msg
-      else if g.norandom then g.moveIdsInOrder others (.library p) |>.logMsg msg
-      else
-        let (rng, ordered) := g.rng.shuffle others
-        { g with rng := rng }.moveIdsInOrder ordered (.library p) |>.logMsg msg
+    let g := g.requestOrderInto others (.library p) msg
     return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
     return (g.requestOrderInto (others.push cardId) (.library p)
@@ -757,12 +710,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
     let pile := others ++ uncast
     let msg :=
       s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-    let g :=
-      if g.pending == .none then g.requestOrderInto pile (.library victim) msg
-      else if g.norandom then g.moveIdsInOrder pile (.library victim) |>.logMsg msg
-      else
-        let (rng, ordered) := g.rng.shuffle pile
-        { g with rng := rng }.moveIdsInOrder ordered (.library victim) |>.logMsg msg
+    let g := g.requestOrderInto pile (.library victim) msg
     return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
     return (g.requestOrderInto (others.push cardId) (.library victim)
@@ -803,7 +751,7 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
           let (acc, _) := acc.move id (.graveyard o.owner) none
           acc) g
     let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
-    let g := { g with thisWay := { g.thisWay with handDiscardedThisWay := some n, notedSourceThisWay := sourceId } }
+    let g := g.changes #[.handDiscardedThisWay (some n), .notedSourceThisWay sourceId]
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
     return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
@@ -825,11 +773,6 @@ def answerFraChoicePart2b (g : Game) (p : PlayerId) (choice : @& FraChoice) (ans
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     return (g.beginSacDamagers controller rest).finishFraChoice
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
-  | _, _ => answerFraChoicePart2 g p choice answer
-
-def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -848,13 +791,13 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     let g := g.castAsPartOfResolution p id
     let cast := (g.findObject? (g.followMoved id)).any (·.zone == .stack)
     if !cast || left <= 1 || rest.isEmpty then
-      return { g with pendingMayCastFromExile := none }.finishFraChoice
+      return (g.change (.pendingMayCastFromExile none)).finishFraChoice
     else if g.pending != .none then
-      return { g with pendingMayCastFromExile := some (p, rest, left - 1) }.finishFraChoice
+      return (g.change (.pendingMayCastFromExile (some (p, rest, left - 1)))).finishFraChoice
     else
-      return { g with pending := .fraChoice p (.mayCastUpToFromExile rest (left - 1)) }
+      return g.change (.pending (.fraChoice p (.mayCastUpToFromExile rest (left - 1))))
   | .mayCastUpToFromExile _ _, .decline =>
-    return ({ g with pendingMayCastFromExile := none }
+    return ((g.change (.pendingMayCastFromExile none))
       |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
   | .mayCastUpToFromExile .., _ => throw "Choose a spell to cast, or decline"
   | .hydeMode sourceId, .mode 0 =>
@@ -867,7 +810,7 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     else if ids.size == 1 then
       return (g.applyHydeMode p (some sourceId) 1 #[Target.permanent ids[0]!]).finishFraChoice
     else
-      return { g with pending := .fraChoice p (.hydeRemoveCounter ids) }
+      return g.change (.pending (.fraChoice p (.hydeRemoveCounter ids)))
   | .hydeMode _, _ => throw "Choose mode 0 or 1"
   | .hydeRemoveCounter ids, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature with a counter"
@@ -906,9 +849,7 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
       if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
       let name := o.name
       let (g, newId) := g.move o.id .exile none
-      let o := g.object! newId
-      return (g.setObject { o with
-          playPermission := some { player := p, turnEndsRemaining := 2 } }
+      return (g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
         |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
     | none => return g.finishFraChoice
   | .moonstoneMayExile _, .decline =>
@@ -949,7 +890,7 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
     if !ids.contains id then throw "That card can't be put onto the battlefield"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o "Hero" then
+    if o.zone != .hand p || !o.printed.isCreature || !g.hasSubtype o .hero then
       throw s!"{o.name} is not a Hero creature card in your hand"
     let (g, newId) := g.putOntoBattlefield id p
     return (g.afterPermanentEnters (g.object! newId)).finishFraChoice
@@ -961,12 +902,12 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishFraChoice
   | .oddOrEvenDestroy _, _ => throw "Choose even (0) or odd (1)"
   | .visionQuestZones lib gy x, .accept =>
-    return { g with pending := .fraChoice p (.visionQuestPick (lib ++ gy) x true) }
+    return g.change (.pending (.fraChoice p (.visionQuestPick (lib ++ gy) x true)))
   | .visionQuestZones _ gy x, .decline =>
     if gy.isEmpty then
       return (g.logMsg s!"{(g.player p).name} finds no artifact creature card").finishFraChoice
     else
-      return { g with pending := .fraChoice p (.visionQuestPick gy x false) }
+      return g.change (.pending (.fraChoice p (.visionQuestPick gy x false)))
   | .visionQuestZones .., _ => throw "Search your library as well (accept), or only your graveyard (decline)"
   | .visionQuestPick ids x shuffle, .objects #[id] =>
     if !ids.contains id then throw "That card can't be found"
@@ -976,7 +917,7 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
   | .visionQuestPick .., _ => throw "Choose an artifact creature, or decline to find nothing"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2
-    return ({ g with assignCombatDamageEqualToughness := some p }
+    return ((g.createEffect (.assignCombatDamageEqualToughnessUntilEot p))
       |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishFraChoice
   | .kingpinMayPay2Life, .decline =>
     return (g.logMsg "The Kingpin's cost wasn't paid").finishFraChoice
@@ -993,10 +934,11 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     return (g.offerSpellRetarget p spellId (index + 1)).finishFraChoice
   | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
-    let g := { g with sheHulkDamageUsedThisTurn := true }
+    let g := g.record (GameEvent.sheHulkDealtDamage g.turnNumber p)
     let g :=
       g.withLegalKindTarget p .playerOrCreature #[target]
-        (fun g tgt => g.dealDamageToTarget tgt amount) sourceId none
+        (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.findObject?))
+        sourceId none
     return (g.logMsg "The Sensational She-Hulk deals damage (only once each turn)").finishFraChoice
   | .sheHulkMayDamage .., .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishFraChoice
@@ -1017,11 +959,6 @@ def answerFraChoicePart3 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
         acc + (g.object! id).printed.manaValue) 0
     return (g.loseLife p mv).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
-  | _, _ => answerFraChoicePart2b g p choice answer
-
-def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answer : @& FraAnswer) :
-    Except String Game := do
-  match choice, answer with
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     let some o := g.findObject? id | throw "no such object"
@@ -1051,7 +988,7 @@ def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
         (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleSearch p after
       return g.finishFraChoice
     else
-      return { g with pending := .fraChoice p (.searchLibrary eligible count dest after kind) }
+      return g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))
   | .maySearchLibrary .., .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't search their library").finishFraChoice
   | .maySearchLibrary .., _ => throw "Search (accept), or decline"
@@ -1077,13 +1014,14 @@ def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     return (g.applyRiddlesPiles controller faceUp faceDown true).finishFraChoice
   | .riddlesChoosePile .., _ => throw "Choose the face-up pile (accept) or the face-down pile (decline)"
   | .palisadeCreatureType types, .mode idx =>
-    let some t := types[idx]? | throw "No such creature type"
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
-    return (g.returnCreaturesNotOfType t).finishFraChoice
+    let some sub := types[idx]? | throw "No such creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
+    return (g.returnCreaturesNotOfType sub).finishFraChoice
   | .palisadeCreatureType types, .name t =>
-    if !types.contains t then throw "Choose an existing creature type"
-    let g := g.logMsg s!"{(g.player p).name} chooses {t}"
-    return (g.returnCreaturesNotOfType t).finishFraChoice
+    let some sub := CardSubtype.ofOracle? t | throw "Choose an existing creature type"
+    if !types.contains sub then throw "Choose an existing creature type"
+    let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
+    return (g.returnCreaturesNotOfType sub).finishFraChoice
   | .palisadeCreatureType _, _ => throw "Choose a creature type"
   | .worldsPutCreatures eligible rest exiled chosen sourceId, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
@@ -1136,20 +1074,21 @@ def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     let g := g.foldPermanentTargets #[t] (fun g o =>
       if o.controller != some p && o.isOnBattlefield then
         (g.wardCostsOn o).foldl (fun g cost =>
-          { g with wardQueue := g.wardQueue.push { player := p, spellId := c, cost } }) g
+          g.change (.enqueueWard #[{ player := p, spellId := c, cost }])) g
       else g)
     let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
     let rest := copies.extract 1 copies.size
     if rest.isEmpty then return g.promptNextWard.finishFraChoice
-    return { g with pending := .fraChoice p (.newTargetsForCopies rest) }
+    return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
   | .newTargetsForCopies copies, .decline =>
     let rest := copies.extract 1 copies.size
     if rest.isEmpty then return g.promptNextWard.finishFraChoice
-    return { g with pending := .fraChoice p (.newTargetsForCopies rest) }
+    return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
   | .newTargetsForCopies .., _ => throw "Choose a new target for the copy, or decline to keep it"
   | .entersCreatureType id, .name t =>
-    if !isCreatureType t then throw s!"{t} is not a creature type"
-    return (g.chooseCreatureTypeAsEnters id t).finishFraChoice
+    let some sub := (CardSubtype.ofOracle? t).filter CardSubtype.isCreatureType
+      | throw s!"{t} is not a creature type"
+    return (g.chooseCreatureTypeAsEnters id sub).finishFraChoice
   | .entersCreatureType _, _ => throw "Name a creature type"
   | .entersOddEven id, .mode 0 =>
     return (g.chooseGollumParity id false).finishFraChoice
@@ -1184,100 +1123,91 @@ def answerFraChoicePart4 (g : Game) (p : PlayerId) (choice : @& FraChoice) (answ
     return (g.continueOpeningBegin (ids.extract 1 ids.size)).finishFraChoice
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
-  | _, _ =>
-    answerFraChoicePart3 g p choice answer
 
-def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
-  let .fraChoice q choice := g.pending | throw "Nothing to choose now"
-  if p != q then
-    throw s!"Only {(g.player q).name} may choose"
-  let g := { g with pending := .none }
-  answerFraChoicePart4 g p choice answer
-
-
-private def mkDecline : Action := .decline
-private def mkAccept : Action := .accept
-private def mkChoosePermanents (ids : Array ObjectId) : Action := .choosePermanents ids
-private def mkChooseMode (m : Nat) : Action := .chooseMode m
-private def mkCast (id : ObjectId) : Action := .cast id
-private def mkChooseName (s : String) : Action := .chooseName s
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
-private def defaultFraActionPart1a (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
+def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
-    mkChoosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
-  | .mayWheel .. => mkDecline
-  | .maySacrificePlaneswalker => mkDecline
-  | .topOrBottomDamage .. => mkDecline
-  | .sphinxsApproach _ => mkAccept
+    .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
+  | .mayWheel .. => .decline
+  | .maySacrificePlaneswalker => .decline
+  | .topOrBottomDamage .. => .decline
+  | .sphinxsApproach _ => .accept
   | .extrapolateReveal =>
     let picks := (g.outsideCards p).foldl (fun (acc : Array GameObject) o =>
       if acc.size < 2 && !acc.any (·.name == o.name) then acc.push o else acc) #[]
-    mkChoosePermanents (picks.map (·.id))
-  | .extrapolatePick _ ids => mkChoosePermanents (ids.extract 0 1)
-  | .mayThen .. | .mayMoveAllCounters .. | .mayDrawThenDiscard ..
-  | .mayCreateTokens .. | .mayBecomeBasePT .. | .mayTapSourceThen ..
-  | .mayCastCascade .. | .visionQuestZones .. | .riddlesChoosePile .. => mkAccept
+    .choosePermanents (picks.map (·.id))
+  | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
+  | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
+  | .mayThen .. => .accept
   | .mayPayThen n .. =>
-    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then mkAccept else mkDecline
-  | .discardThen .. | .discardThenDraw => mkChoosePermanents ((g.player p).hand.extract 0 1)
-  | .discardThenStun n _ => mkChoosePermanents ((g.player p).hand.extract 0 n)
+    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
+  | .mayDiscardThen .. => .decline
+  | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
+  | .maySacrificeThen .. => .decline
+  | .mayMovePlusOne _ => .decline
   | .exileFromRevealedHand victim _ =>
-    mkChoosePermanents ((g.revealedHandChoices victim false).extract 0 1)
-  | .allianceMode _ available | .gollumMode _ available | .visionMode _ available =>
+    .choosePermanents ((g.revealedHandChoices victim false).extract 0 1)
+  | .castCopiesFree .. => .decline
+  | .allianceMode _ available =>
     match available[0]? with
-    | some m => mkChooseMode m
-    | none => mkDecline
-  | _ => mkDecline
-
-private def defaultFraActionPart1b (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
-  match choice with
+    | some m => .chooseMode m
+    | none => .decline
+  | .gollumMode _ available =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
   | .triggerModes objId _ chosen =>
     match g.findObject? objId with
-    | none => mkDecline
+    | none => .decline
     | some obj =>
       let modes := g.triggerModesOf obj
       match (List.range modes.size).find? (fun i =>
           !chosen.contains i && modes[i]?.any (g.triggerModeChoosable p obj)) with
-      | some i => mkChooseMode i
-      | none => mkDecline
-  | .chooseKeyword .. | .chooseColor _ | .chooseCreatureType _
-  | .addManaColors .. | .blackGatePlayer .. | .hydeMode _
-  | .oddOrEvenDestroy _ | .palisadeCreatureType _ | .entersOddEven _ => mkChooseMode 0
+      | some i => .chooseMode i
+      | none => .decline
+  | .chooseKeyword .. => .chooseMode 0
+  | .chooseColor _ => .chooseMode 0
   | .sacrificeCreatureEach .. =>
-    mkChoosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
-  | .discardTwo .. => mkChoosePermanents ((g.player p).hand.extract 0 2)
-  | choice => defaultFraActionPart1a g p choice
-
-private def defaultFraActionPart1 (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
-  match choice with
+    .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
+  | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
+  | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
       (fun a b => g.power a > g.power b)
     let (picked, _) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
       if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
-    mkChoosePermanents picked
+    .choosePermanents picked
   | .costPicks sourceId picks _ =>
     match picks[0]? with
     | some pick =>
-      mkChoosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
-    | none => mkDecline
-  | .mayPaySymbolsThen symbols .. | .mayPayManaForReflexive symbols _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := symbols } then mkAccept else mkDecline
-  | .attachAnyEquipment _ eligible => mkChoosePermanents eligible
-  | .chooseCreatureFrom ids _ | .sacrificeDamager ids .. => mkChoosePermanents (ids.extract 0 1)
-  | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then mkAccept else mkDecline
+      .choosePermanents ((g.costPickCandidates p sourceId pick).extract 0 pick.count)
+    | none => .decline
+  | .mayPayPickThen .. => .decline
+  | .chooseCreatureType _ => .chooseMode 0
+  | .maySacrificeAnotherCreatureForPower _ => .decline
+  | .maySacrificeAnotherForDrawTreasure _ => .decline
+  | .maySacrificeThese _ _ => .decline
+  | .mayDiscardThese _ _ => .decline
+  | .mayPaySymbolsThen symbols .. =>
+    if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
+  | .attachAnyEquipment _ eligible => .choosePermanents eligible
+  | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
+  | .addManaColors .. => .chooseMode 0
+  | .payLifeOrEnterTapped _ n => if (g.player p).life > (n : Int) then .accept else .decline
   | .mayPayExtort _ =>
-    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then mkAccept else mkDecline
+    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
+  | .mayDrawThenDiscard .. => .accept
+  | .mayCreateTokens .. => .accept
+  | .mayBecomeBasePT .. => .accept
   | .mayRevealToHand _ eligible _ =>
-    if eligible.isEmpty then mkDecline else mkChoosePermanents (eligible.extract 0 1)
-  | .arrangeCards ids _ => mkChoosePermanents ids
-  | choice => defaultFraActionPart1b g p choice
-
-def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action :=
-  match choice with
+    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 1)
+  | .nickFuryPut _ _ => .decline
+  | .nickFuryMayTransform _ _ => .decline
+  | .orderLibraryBottom ids => .choosePermanents ids
   | .chooseCards ids max purpose =>
     match purpose with
     | .amassArmy .. =>
@@ -1291,65 +1221,103 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : @& FraChoice) : Action 
             | none => some id
           | some b, none => some b) none
       match best with
-      | some id => mkChoosePermanents #[id]
-      | none => mkDecline
+      | some id => .choosePermanents #[id]
+      | none => .decline
     | .toHand true =>
-      if ids.isEmpty then mkDecline else mkChoosePermanents (ids.extract 0 1)
-    | .toHand false => mkChoosePermanents (ids.extract 0 max)
-    | .creaturesToBattlefield | .landsTappedGainLife _ => mkChoosePermanents ids
+      if ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
+    | .toHand false => .choosePermanents (ids.extract 0 max)
+    | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents ids
     | .keepDestroyRest =>
       let yours := ids.filter (fun id => (g.findObject? id).any (·.controlledBy p))
       let pick := if yours.isEmpty then ids else yours
-      mkChoosePermanents (pick.extract 0 max)
-    | _ => mkDecline
+      .choosePermanents (pick.extract 0 max)
+  | .blackGatePlayer _ _ => .chooseMode 0
   | .sacrificeNontokenEach .. =>
-    mkChoosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
+    .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
+  | .mayPayManaForReflexive cost _ _ _ =>
+    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
+  | .mayTapSourceThen .. => .accept
   | .hawkeyeModes _ chosen _ =>
     match [1, 0, 2].find? (!chosen.contains ·) with
-    | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then mkDecline
-      else mkChooseMode m
-    | none => mkDecline
+    | some m => if m == 0 && (g.legalTargetsForKind p .creature none).isEmpty then .decline
+      else .chooseMode m
+    | none => .decline
+  | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .mayCastCascade .. => .accept
+  | .mayCastGrima .. => .decline
+  | .palantirMayDraw .. => .decline
+  | .mayCastCopy _ => .decline
+  | .mayDiscardHandBalin _ => .decline
+  | .mayDiscardHandDrawFixed _ => .decline
+  | .sacrificeDamager ids .. => .choosePermanents (ids.extract 0 1)
+  | .mayCastInstantSorceryFromHand _ => .decline
+  | .mayCastUpToFromExile _ _ => .decline
+  | .hydeMode _ => .chooseMode 0
+  | .hydeRemoveCounter ids => .choosePermanents (ids.extract 0 1)
+  | .sheHulkMayDamage .. => .decline
+  | .widowMayCounter .. => .decline
+  | .ultronMayPay _ => .decline
+  | .visionMode _ available =>
+    match available[0]? with
+    | some m => .chooseMode m
+    | none => .decline
+  | .moonstoneMayExile _ => .decline
   | .tricksterLibrary .. => .chooseTop
+  | .mayTakeMilled _ _ => .decline
+  | .mayDrawThenEachOpponentDraws _ => .decline
+  | .mayPutHeroFromHandOrDraw _ => .decline
+  | .oddOrEvenDestroy _ => .chooseMode 0
+  | .visionQuestZones _ _ _ => .accept
   | .visionQuestPick ids _ _ =>
     match ids[0]? with
-    | some id => mkChoosePermanents #[id]
-    | none => mkDecline
+    | some id => .choosePermanents #[id]
+    | none => .decline
+  | .kingpinMayPay2Life => .decline
+  | .daredevilMayExile _ => .decline
+  | .mayChangeSpellTarget .. => .decline
   | .mayCastCards eligible withoutPaying _ =>
     if withoutPaying then
       match eligible[0]? with
-      | some id => mkCast id
-      | none => mkDecline
+      | some id => .cast id
+      | none => .decline
     else
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
           (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
-      | some id => mkCast id
-      | none => mkDecline
+      | some id => .cast id
+      | none => .decline
   | .mayCastFromGraveyard eligible =>
     match eligible.find? (fun id =>
       (g.findObject? id).any (fun o =>
         (g.player p).manaPool.canPay (g.playManaCost o o.printed))) with
-    | some id => mkCast id
-    | none => mkDecline
+    | some id => .cast id
+    | none => .decline
   | .maySearchLibrary eligible .. =>
-    if eligible.isEmpty then mkDecline else mkAccept
+    if eligible.isEmpty then .decline else .accept
   | .searchLibrary eligible count .. =>
-    if eligible.isEmpty then mkDecline else mkChoosePermanents (eligible.extract 0 count)
+    if eligible.isEmpty then .decline else .choosePermanents (eligible.extract 0 count)
+  | .newTargetsForCopies _ => .decline
+  | .riddlesSplit looked => .choosePermanents looked
+  | .riddlesChoosePile .. => .accept
+  | .palisadeCreatureType _ => .chooseMode 0
+  | .worldsPutCreatures .. => .decline
+  | .revealPutCreatures .. => .decline
   | .zemoBoastExile .. =>
-    mkChoosePermanents ((g.player p).graveyard.filter (fun id =>
+    .choosePermanents ((g.player p).graveyard.filter (fun id =>
       (g.findObject? id).any (·.printed.colors.contains .black)))
   | .chooseCardName _ =>
     -- Name a nonland card an opponent owns, else any nonland card.
     let opp := g.objects.find? (fun o => o.owner != p && !o.printed.isLand)
     let any := g.knownCardFaces.find? (fun c => !c.isLand)
-    mkChooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
+    .chooseName ((opp.map (·.name)).getD ((any.map (·.name)).getD ""))
   | .entersCreatureType _ =>
     let yours :=
       (g.permanentsOf p).foldl (fun acc o =>
         o.subtypes.foldl (fun acc s =>
-          if isCreatureType s && !acc.contains s then acc.push s else acc) acc) #[]
-    mkChooseName (yours[0]?.getD "Human")
-  | choice => defaultFraActionPart1 g p choice
+          if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
+    .chooseName (yours[0]?.getD CardSubtype.human).englishName
+  | .entersOddEven _ => .chooseMode 0
+  | .mayBeginOnBattlefield _ => .decline
 
 end Game
 end Mtg.Engine

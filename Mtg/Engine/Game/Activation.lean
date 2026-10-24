@@ -13,36 +13,30 @@ namespace Game
 /-- Jace's Machinations lets `p` activate loyalty abilities of Jace
 planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype "Jace"
+  (g.player p).jaceLoyaltyAtInstantSpeed && o.printed.isPlaneswalker && o.hasSubtype .jace
 
-/-- Whether an “Activate only if …” condition holds (CR 602.5b). -/
-def activationConditionHolds (g : Game) (p : PlayerId) (cond : ActivationCondition) : Bool :=
-  g.boardConditionHolds p cond
+/-- Loyalty counters among Jace planeswalkers `p` controls. -/
+def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.isPlaneswalker && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
+    else acc) 0
 
-abbrev fraActivationConditionHolds := activationConditionHolds
+/-- Whether a Reality Fracture “Activate only if …” condition holds. -/
+def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
+  | .none => true
+  | .scriedOrSurveilledThisTurn =>
+    g.loggedScried p || g.loggedSurveilled p
+  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
+  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
 
-/-- Validate an “Activate only if …” restriction (CR 602.5b). -/
-def validateActivationCondition (g : Game) (p : PlayerId) (o : GameObject)
-    (cond : ActivationCondition) : Except String Unit := do
-  if !g.activationConditionHolds p cond then
-    match cond with
-    | .youControlLegendary =>
-      throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
-    | .youAttackedWithTwoOrMore =>
-      throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
-    | .opponentDealtNoncombatDamage =>
-      throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
-    | .youControlCreatureToughnessAtLeast n =>
-      throw s!"{o.name}'s ability can be activated only if you control a creature with toughness {n} or greater"
-    | .gyCreaturesAtLeast n =>
-      throw s!"{o.name}'s ability can be activated only if there are {n} or more creature cards in your graveyard"
-    | _ =>
-      throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
-
-/-- Whether `p` can pay the additional non-mana part of `o`'s activation cost. -/
-def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : ExtraActivationCost) : Bool :=
+/-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
+def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : FraCost) : Bool :=
   match c with
   | .none => true
+  | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
+  | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
+  | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
+    g.costPicksPayable p o.id (costPicksOf { cost := { fra := c }, effect := default })
   | .exileSourceFromHand => o.zone == .hand o.owner
   | .exileSource => o.isOnBattlefield
   | .zemoBoast =>
@@ -51,7 +45,6 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (c : ExtraActivatio
   | .crew n =>
     ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
       (fun acc c => acc + (g.power c).toNat) 0 ≥ n
-  | _ => true
 
 /-- “For each opponent, up to one target … that player controls” as one
 optional target slot per opponent (CR 601.2c). -/
@@ -86,18 +79,19 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw s!"{o.name} is not on the battlefield"
     if !o.controlledBy p then
       throw "You don't control that permanent"
-  match ab.condition with
-  | .youControlLegendary | .youAttackedWithTwoOrMore | .opponentDealtNoncombatDamage =>
-    g.validateActivationCondition p o ab.condition
-  | _ => pure ()
+  if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
+    throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
+  if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
+    throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
+  if ab.onlyIfOpponentDealtNoncombatDamage &&
+      !(g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
+    throw s!"{o.name}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
   if ab.exhaust && o.status.exhaustUsed then
     throw s!"{o.name}'s exhaust ability can be activated only once (CR 702.177)"
-  match ab.condition with
-  | .scriedOrSurveilledThisTurn | .graveyardAtLeast _ | .jaceLoyaltyAtLeast _ =>
-    g.validateActivationCondition p o ab.condition
-  | _ => pure ()
+  if !g.fraActivationConditionHolds p ab.fraCondition then
+    throw s!"{o.name}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
   if ab.cost.fra == .zemoBoast && !g.canActivateBoast o then
     throw s!"{o.name}'s boast ability can be activated only if it attacked this turn and only once each turn"
   if !g.canPayFraCost p o ab.cost.fra then
@@ -145,10 +139,18 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name} is already tapped"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
-  match ab.condition with
-  | .youControlCreatureToughnessAtLeast _ | .gyCreaturesAtLeast _ =>
-    g.validateActivationCondition p o ab.condition
-  | _ => pure ()
+  if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
+      !(g.permanentsOf p).any (fun x =>
+        x.isCreature && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
+    throw s!"{o.name}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
+  if ab.onlyIfGyCreaturesAtLeast != 0 then
+    let gy :=
+      (g.player p).graveyard.filter (fun id =>
+        match g.findObject? id with
+        | some c => c.printed.isCreature
+        | none => false) |>.size
+    if gy < ab.onlyIfGyCreaturesAtLeast then
+      throw s!"{o.name}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
   if !g.abilityCanChooseTarget p ab then
     throw s!"{o.name}'s ability requires a target"
 
@@ -168,9 +170,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       match pl.manaPool.pay? cost with
       | none => throw s!"{pl.name} cannot pay {cost}"
       | some pool =>
-        return (g.setPlayer { pl with manaPool := pool }).setObject
-          { o with status := { o.status with faceDown := false } }
-          |>.logMsg s!"{pl.name} turns {o.name} face up"
+        let g := (g.changePlayer p (.manaPool pool)).changeStatus o.id (.faceDown false)
+        let g := g.createPrintedStaticEffects (g.object! o.id)
+        return g.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
@@ -195,8 +197,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     | none => g
   let g :=
     if ab.exhaust then
-      let o := g.object! id
-      g.setObject { o with status := { o.status with exhaustUsed := true } }
+      g.changeStatus id (.exhaustUsed true)
     else g
   let o := g.object! id
   let pl := g.player p
@@ -206,12 +207,14 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
+  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
+  let g := g.record happened
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if ab.cost.fra == .zemoBoast then
-    return { g with pending := .fraChoice p (.zemoBoastExile newId id) }.logMsg
+    return (g.change (.pending (.fraChoice p (.zemoBoastExile newId id)))).logMsg
       s!"{pl.name} chooses black cards to exile from their graveyard"
   if let .crew n := ab.cost.fra then
-    return { g with pending := .fraChoice p (.crew newId id n) }.logMsg
+    return (g.change (.pending (.fraChoice p (.crew newId id n)))).logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
@@ -242,10 +245,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       !ab.cost.removeAnyNumberPlusOne &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
       !ab.cost.sacrificeAnotherCreatureOrArtifact then
-    let g := { g with proposedSpell := some prop }
+    let g := g.change (.proposedSpell (some prop))
     return (← g.beginActivationPayment prop)
   if loyaltyX || ab.cost.removeAnyNumberPlusOne then
-    let g := { g with pending := .chooseX p, proposedSpell := some prop }
+    let g := g.changes #[.pending (.chooseX p), .proposedSpell (some prop)]
     return g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 

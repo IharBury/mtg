@@ -10,69 +10,25 @@ the `Action` interface players use to act.
 
 namespace Mtg.Engine
 
-abbrev GameResult := Target
+inductive GameResult where
+  | won (player : PlayerId)
+  | draw
+deriving DecidableEq, Repr, Inhabited, BEq
 
-namespace GameResult
-
-@[match_pattern] abbrev won (player : PlayerId) : GameResult := .targetKind (.inl player)
-@[match_pattern] abbrev draw : GameResult := .targetKind (.inr (⟨0⟩, false))
-
-end GameResult
-
-namespace Target
-export GameResult (won draw)
-end Target
-
-/-- Per-turn player tracking state, reset as the turn ends (CR 119 / CR 504 / CR 508 / CR 514.3 / CR 601.2f / CR 603.2 / CR 701). -/
-abbrev PlayerTurnState := PermanentTurnState
-
-set_option maxHeartbeats 800000 in
-structure Player extends PermanentTurnState where
-  /-- True when this player has a commander (Commander / Oathbreaker). -/
-  hasCommander : Bool := false
-  /-- Combined color identity of this player's commander(s). Empty when they
-  have no commander or the commander is colorless (CR 903.4). -/
-  commanderColorIdentity : ColorSet := {}
-  /-- Qualities beheld this game (Elven Passage and similar). A later zone
-  change of the revealed card or chosen permanent does not un-behold. -/
-  beheldQualities : Array String := #[]
-  /-- Two-Headed Giant teammate (MSH 57 / 236). -/
-  teammate : Option PlayerId := none
-  /-- Creature types of this player's commander, for Path of Ancestry. -/
-  commanderCreatureTypes : Array String := #[]
-  /-- Storied: enduring story for the rest of the game. -/
-  enduringStory : Bool := false
-  /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
-  theRingAbilities : Nat := 0
-  /-- Current Ring-bearer, if any. -/
-  ringBearerId : Option ObjectId := none
-  /-- Ascend: the city's blessing for the rest of the game. -/
-  citysBlessing : Bool := false
-  /-- Protection from everything until this player's next turn
-  (e.g. The One Ring). -/
-  protectionFromEverything : Bool := false
-  /-- Bird Soldier tokens to create at the beginning of the next upkeep
-  (The Eagles Are Coming!). -/
-  eaglesBirdsNextUpkeep : Nat := 0
-  /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
-  lifeLocked : Bool := false
-  /-- The legend rule doesn't apply to permanents this player controls this
-  turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
-  legendRuleOffThisTurn : Bool := false
-  /-- This player is the monarch (CR 722). -/
-  isMonarch : Bool := false
-  /-- This player's life total can't change until their next turn. -/
-  lifeCantChange : Bool := false
-  library : Array ObjectId := #[]
-  hand : Array ObjectId := #[]
-  graveyard : Array ObjectId := #[]
-  /-- Sideboard cards not yet brought into play as objects outside the game
-  (CR 400.11b). -/
-  sideboard : Array CardDef := #[]
+structure Player where
+  id : PlayerId
+  name : String
+  life : Int := 20
   startingLife : Int := 20
   maxHandSize : Nat := 7
   /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
   startingHandSize : Nat := 7
+  manaPool : ManaPool := {}
+  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
+  additionalLandsThisTurn : Nat := 0
+  poison : Nat := 0
+  /-- Non-poison counters on this player (CR 122.1). -/
+  counters : Array (CounterKind × Nat) := #[]
   lost : Bool := false
   /-- CR 800.4a has already been performed for this player. -/
   leftTheGame : Bool := false
@@ -82,167 +38,213 @@ structure Player extends PermanentTurnState where
   mulligansTaken : Nat := 0
   /-- Set once this player declines further mulligans (CR 103.5). -/
   keptOpeningHand : Bool := false
-  id : PlayerId
-  name : String
-  life : Int := 20
-  manaPool : ManaPool := {}
-  landsPlayedThisTurn : Nat := 0
-  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
-  additionalLandsThisTurn : Nat := 0
-  poison : Nat := 0
-deriving Repr, Inhabited
+  library : Array ObjectId := #[]
+  hand : Array ObjectId := #[]
+  graveyard : Array ObjectId := #[]
+  /-- Storied: enduring story for the rest of the game. -/
+  enduringStory : Bool := false
+  /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
+  theRingAbilities : Nat := 0
+  /-- Current Ring-bearer, if any. -/
+  ringBearerId : Option ObjectId := none
+  /-- Ascend: the city's blessing for the rest of the game. -/
+  citysBlessing : Bool := false
+  /-- True when this player has a commander (Commander / Oathbreaker). -/
+  hasCommander : Bool := false
+  /-- Combined color identity of this player's commander(s). Empty when they
+  have no commander or the commander is colorless (CR 903.4). -/
+  commanderColorIdentity : ColorSet := {}
+  /-- Protection from everything until this player's next turn
+  (e.g. The One Ring). -/
+  protectionFromEverything : Bool := false
+  /-- Bird Soldier tokens to create at the beginning of the next upkeep
+  (The Eagles Are Coming!). -/
+  eaglesBirdsNextUpkeep : Nat := 0
+  /-- Qualities beheld this game (Elven Passage and similar). A later zone
+  change of the revealed card or chosen permanent does not un-behold. -/
+  beheldQualities : Array CardSubtype := #[]
+  /-- Players can't cast spells this turn (Bilbo's Gambit). -/
+  cantCastSpellsThisTurn : Bool := false
+  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
+  still waiting to fire (Roads Go Ever, Ever On). -/
+  attackPumpPerPlainsThisTurn : Nat := 0
+  /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
+  lifeLocked : Bool := false
+  /-- Generic mana less to cast spells of each of these types this turn
+  (Armor Wars II). -/
+  typeSpellCostLessThisTurn : Array (CardType × Nat) := #[]
+  /-- Generic mana less to cast spells of each of these supertypes this turn. -/
+  supertypeSpellCostLessThisTurn : Array (Supertype × Nat) := #[]
+  /-- Until end of turn, loyalty abilities of Jace planeswalkers this player
+  controls may be activated any time they could cast an instant (Jace's
+  Machinations). Each permanent is still limited to one per turn (ruling 766). -/
+  jaceLoyaltyAtInstantSpeed : Bool := false
+  /-- The legend rule doesn't apply to permanents this player controls this
+  turn (Hall of Echoes). Ends in cleanup with the copy effect (ruling 817). -/
+  legendRuleOffThisTurn : Bool := false
+  /-- Instant or sorcery spells this player casts this turn that are copied
+  (Way of the Cryomancer). -/
+  copyNextInstantSorceryThisTurn : Nat := 0
+  /-- Sideboard cards not yet brought into play as objects outside the game
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+  /-- Until end of turn, each Mountain this player taps for mana adds this
+  many additional {R} (Molten Tide). -/
+  mountainExtraRedThisTurn : Nat := 0
+  /-- The next spell this player casts this turn can't be countered
+  (Theorist's Proxy). -/
+  nextSpellCantBeCountered : Bool := false
+  /-- Two-Headed Giant teammate (MSH 57 / 236). -/
+  teammate : Option PlayerId := none
+  /-- This player is the monarch (CR 722). -/
+  isMonarch : Bool := false
+  /-- This player's life total can't change until their next turn. -/
+  lifeCantChange : Bool := false
+  /-- Creatures this player controls can't attack Jace planeswalkers this turn. -/
+  cantAttackJaces : Bool := false
+  /-- Creature types of this player's commander, for Path of Ancestry. -/
+  commanderCreatureTypes : Array CardSubtype := #[]
+deriving Repr, Inhabited, BEq
 
 namespace Player
 
-def typeSpellCostLessThisTurn (pl : Player) : Array (CardType × Nat) :=
-  pl.spellsCostLessThisTurn.filterMap fun
-    | (.cardType ty, n) => some (ty, n)
-    | _ => none
-
-def supertypeSpellCostLessThisTurn (pl : Player) : Array (Supertype × Nat) :=
-  pl.spellsCostLessThisTurn.filterMap fun
-    | (.supertype s, n) => some (s, n)
-    | _ => none
-
-/-- True when this player has per-turn tracking state to reset at the end of a turn. -/
-def hasTurnStateToClear (pl : Player) : Bool :=
-  pl.toPermanentTurnState != {}
-
-/-- Player with per-turn tracking fields reset as the turn ends. -/
-def clearedAtEndOfTurn (pl : Player) : Player :=
-  { pl with toPermanentTurnState := { dealtNoncombatDamageLastTurn := pl.dealtNoncombatDamageThisTurn } }
+/-- Number of counters of `kind` on `pl` (CR 122.1). -/
+def counterCount (pl : Player) (kind : CounterKind) : Nat :=
+  match kind with
+  | .poison => pl.poison
+  | _ =>
+    match pl.counters.find? (·.1 == kind) with
+    | some (_, n) => n
+    | none => 0
 
 end Player
 
 /-- A seat at the table before objects are created. -/
-abbrev Seat := CopyEffect
+structure Seat where
+  name : String
+  deck : Array CardDef
+  /-- Cards outside the game the player may use, such as a sideboard
+  (CR 400.11b). -/
+  sideboard : Array CardDef := #[]
+deriving Repr, Inhabited
 
-abbrev StartConfig := WaitingTrigger
+structure StartConfig where
+  seats : Array Seat
+  format : Format := .constructed
+  /-- CR 903.12 Brawl option. The first mulligan is free (CR 103.5c / 903.12g). -/
+  brawl : Bool := false
+  seed : UInt64 := 20260807
+  /-- Index into `seats`. `none` means the RNG chooses. -/
+  startingPlayer : Option Nat := none
+  /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
+  norandom : Bool := false
 
-abbrev Action := LibraryChoice
-
-namespace Action
-
-@[match_pattern] abbrev actionKind (n : Nat := 0) (nameOpt : Option String := none)
-    (id : ObjectId := ⟨0⟩) (attackerId : ObjectId := ⟨0⟩)
-    (to : Option PlayerId := none) (optId : Option ObjectId := none)
-    (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none)
-    (ids : Array ObjectId := #[]) (rest : Array ObjectId := #[])
-    (manaOpt : Option ManaType := none) (manaArrOpt : Option (Array ManaType) := none)
-    (divOpt : Option (Array (Target × Nat)) := none)
-    (eachOpt : Option (Array (Option PlayerId)) := none)
-    (pwOpt : Option (Array (Option ObjectId)) := none)
-    (blockOpt : Option (Array (ObjectId × ObjectId)) := none)
-    (combatOpt : Option (Array CreatureCombatAssignment) := none)
-    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-    (b5 : Bool := false) (b6 : Bool := false)
-    (isSingleObj : Bool := false) (isArrayObj : Bool := false) : Action :=
-  LibraryChoice.libraryChoiceKind ids rest #[] id attackerId ⟨0⟩ n 0 0 0 #[] optId none to none none nameOpt none none #[] targetOpt none #[] #[] none #[] none alt1 alt2 alt3 alt4 b5 b6 isSingleObj isArrayObj false false tsOpt manaOpt manaArrOpt divOpt eachOpt pwOpt blockOpt combatOpt
-
-@[match_pattern] abbrev simpleOrNatAction (n : Nat := 0) (nameOpt : Option String := none)
-    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false) (alt4 : Bool := false)
-    (natChoice : Bool := false) (boolOrConcede : Bool := false) : Action :=
-  .actionKind n nameOpt ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none none none alt1 alt2 alt3 alt4 natChoice boolOrConcede false false
-@[match_pattern] abbrev singleObjectOrDesignationAction (id : ObjectId := ⟨0⟩) (abilityIdx : Nat := 0)
-    (attackerId : ObjectId := ⟨0⟩) (to : Option PlayerId := none) (optId : Option ObjectId := none)
-    (alt1 : Bool := false) (alt2 : Bool := false) (alt3 : Bool := false)
-    (actOrSneak : Bool := false) (designation : Bool := false) : Action :=
-  .actionKind abilityIdx none id attackerId to optId none none #[] #[] none none none none none none none alt1 alt2 alt3 actOrSneak designation false true false
-@[match_pattern] abbrev announceTargetAction (targetOpt : Option Target := none) (tsOpt : Option (Array Target) := none) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none targetOpt tsOpt #[] #[] none none none none none none none false false false false false false false false
-@[match_pattern] abbrev arrayObjectAction (ids : Array ObjectId) (rest : Array ObjectId := #[]) (order : Bool := false) (flag : Bool := false) (lookLibrary : Bool := false) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none ids rest none none none none none none none order flag lookLibrary false false false false true
-@[match_pattern] abbrev tapForMana (id : ObjectId) (mana : ManaType) : Action :=
-  .actionKind 0 none id ⟨0⟩ none none none none #[] #[] (some mana) none none none none none none false false false false false false false false
-@[match_pattern] abbrev activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
-    (costIds : Array ObjectId := #[]) : Action :=
-  .actionKind idx none id ⟨0⟩ none none none none costIds #[] none (some mana) none none none none none false false false false false false false false
-@[match_pattern] abbrev divideDamage (assignments : Array (Target × Nat)) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none (some assignments) none none none none false false false false false false false false
-@[match_pattern] abbrev declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
-    (each : Array (Option PlayerId) := #[])
-    (planeswalkers : Array (Option ObjectId) := #[]) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ defender none none none ids #[] none none none (some each) (some planeswalkers) none none false false false false false false false false
-@[match_pattern] abbrev declareBlockers (assignments : Array (ObjectId × ObjectId)) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none (some assignments) none false false false false false false false false
-@[match_pattern] abbrev assignCombatDamage (assignments : Array CreatureCombatAssignment) : Action :=
-  .actionKind 0 none ⟨0⟩ ⟨0⟩ none none none none #[] #[] none none none none none none (some assignments) false false false false false false false false
-
-@[match_pattern] abbrev stepOrResponse (alt1 : Bool := false) (alt2 : Bool := false) (response : Bool := false) : Action :=
-  .simpleOrNatAction 0 none alt1 alt2 response false false false
-@[match_pattern] abbrev chooseNat (n : Nat) (mode : Bool := false) (supplyRandom : Bool := false) : Action :=
-  .simpleOrNatAction n none mode supplyRandom false false true false
-@[match_pattern] abbrev booleanOrConcede (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) (concede : Bool := false) : Action :=
-  .simpleOrNatAction 0 none flag optionalCost teamworkOrAdditional concede false true
-@[match_pattern] abbrev chooseName (name : String) : Action :=
-  .simpleOrNatAction 0 (some name) false false false false false false
-@[match_pattern] abbrev objectAction (id : ObjectId) (cast : Bool := false) (sacOrDiscard : Bool := false) (flag : Bool := false) : Action :=
-  .singleObjectOrDesignationAction id 0 ⟨0⟩ none none cast sacOrDiscard flag false false
-@[match_pattern] abbrev activateOrSneak (id : ObjectId) (abilityIdx : Nat := 0) (attackerId : ObjectId := ⟨0⟩) (sneak : Bool := false) : Action :=
-  .singleObjectOrDesignationAction id abilityIdx attackerId none none sneak false false true false
-@[match_pattern] abbrev optionalDesignation (to : Option PlayerId := none) (id : Option ObjectId := none) (ringBearer : Bool := false) : Action :=
-  .singleObjectOrDesignationAction ⟨0⟩ 0 ⟨0⟩ to id ringBearer false false false true
-
-@[match_pattern] abbrev stepAction (pay : Bool := false) (keep : Bool := false) : Action := .stepOrResponse pay keep false
-@[match_pattern] abbrev pass : Action := .stepOrResponse false false false
-@[match_pattern] abbrev pay : Action := .stepOrResponse true false false
-@[match_pattern] abbrev keep : Action := .stepOrResponse false true false
-@[match_pattern] abbrev takeMulligan : Action := .stepOrResponse true true false
-@[match_pattern] abbrev choiceResponse (accept : Bool := false) (villainConnive : Bool := false) : Action :=
-  .stepOrResponse accept villainConnive true
-@[match_pattern] abbrev decline : Action := .stepOrResponse false false true
-@[match_pattern] abbrev accept : Action := .stepOrResponse true false true
-@[match_pattern] abbrev haveVillainConnive : Action := .stepOrResponse false true true
-@[match_pattern] abbrev payGeneric : Action := .stepOrResponse true true true
-@[match_pattern] abbrev concede : Action := .booleanOrConcede false false false true
-@[match_pattern] abbrev playLandOrKeepLegend (id : ObjectId) (keepLegend : Bool := false) : Action :=
-  .objectAction id false false keepLegend
-@[match_pattern] abbrev playLand (id : ObjectId) : Action := .playLandOrKeepLegend id false
-@[match_pattern] abbrev keepLegend (id : ObjectId) : Action := .playLandOrKeepLegend id true
-@[match_pattern] abbrev castCard (id : ObjectId) (adventure : Bool := false) : Action :=
-  .objectAction id true false adventure
-@[match_pattern] abbrev cast (id : ObjectId) : Action := .castCard id false
-@[match_pattern] abbrev castAdventure (id : ObjectId) : Action := .castCard id true
-@[match_pattern] abbrev activate (id : ObjectId) (abilityIdx : Nat) : Action := .activateOrSneak id abilityIdx ⟨0⟩ false
-@[match_pattern] abbrev castWithSneak (id attackerId : ObjectId) : Action := .activateOrSneak id 0 attackerId true
-@[match_pattern] abbrev target (t : Target) : Action := .announceTargetAction (some t) none
-@[match_pattern] abbrev targets (ts : Array Target) : Action := .announceTargetAction none (some ts)
-@[match_pattern] abbrev chooseMode (idx : Nat) : Action := .chooseNat idx true false
-@[match_pattern] abbrev chooseNumber (n : Nat) (supplyRandom : Bool := false) : Action :=
-  .chooseNat n false supplyRandom
-@[match_pattern] abbrev chooseX (n : Nat) : Action := .chooseNumber n false
-@[match_pattern] abbrev supplyIndex (i : Nat) : Action := .chooseNumber i true
-@[match_pattern] abbrev sacrificeOrDiscard (id : ObjectId) (discard : Bool := false) : Action :=
-  .objectAction id false true discard
-@[match_pattern] abbrev sacrifice (id : ObjectId) : Action := .sacrificeOrDiscard id false
-@[match_pattern] abbrev discard (id : ObjectId) : Action := .sacrificeOrDiscard id true
-@[match_pattern] abbrev selectOrOrderObjects (ids : Array ObjectId) (order : Bool := false) (flag : Bool := false) : Action :=
-  .arrayObjectAction ids #[] order flag false
-@[match_pattern] abbrev chooseObjects (ids : Array ObjectId) (stackTriggers : Bool := false) : Action :=
-  .arrayObjectAction ids #[] false stackTriggers false
-@[match_pattern] abbrev choosePermanents (ids : Array ObjectId) : Action := .chooseObjects ids false
-@[match_pattern] abbrev stackTriggers (ids : Array ObjectId) : Action := .chooseObjects ids true
-@[match_pattern] abbrev orderCards (ids : Array ObjectId) (supplyRandom : Bool := false) : Action :=
-  .arrayObjectAction ids #[] true supplyRandom false
-@[match_pattern] abbrev putOnBottom (ids : Array ObjectId) : Action := .orderCards ids false
-@[match_pattern] abbrev supplyOrder (ids : Array ObjectId) : Action := .orderCards ids true
-@[match_pattern] abbrev lookLibrary (top rest : Array ObjectId) (surveil : Bool := false) : Action :=
-  .arrayObjectAction top rest false surveil true
-@[match_pattern] abbrev scry (top bottom : Array ObjectId) : Action := .lookLibrary top bottom false
-@[match_pattern] abbrev surveil (top graveyard : Array ObjectId) : Action := .lookLibrary top graveyard true
-@[match_pattern] abbrev booleanChoice (flag : Bool := true) (optionalCost : Bool := false) (teamworkOrAdditional : Bool := false) : Action :=
-  .booleanOrConcede flag optionalCost teamworkOrAdditional false
-@[match_pattern] abbrev chooseLibrarySide (top : Bool := true) : Action := .booleanChoice top false false
-@[match_pattern] abbrev chooseTop : Action := .chooseLibrarySide true
-@[match_pattern] abbrev chooseBottom : Action := .chooseLibrarySide false
-@[match_pattern] abbrev chooseAdditionalCost (payGeneric : Bool) : Action := .booleanChoice payGeneric false true
-@[match_pattern] abbrev announceOptionalCost (pay : Bool) (teamwork : Bool := false) : Action :=
-  .booleanChoice pay true teamwork
-@[match_pattern] abbrev announceKicker (kick : Bool) : Action := .announceOptionalCost kick false
-@[match_pattern] abbrev announceTeamwork (pay : Bool) : Action := .announceOptionalCost pay true
-@[match_pattern] abbrev announceGift (to : Option PlayerId) : Action := .optionalDesignation to none false
-@[match_pattern] abbrev chooseRingBearer (id : Option ObjectId) : Action := .optionalDesignation none id true
-
-end Action
+inductive Action where
+  | pass
+  | playLand (id : ObjectId)
+  | tapForMana (id : ObjectId) (mana : ManaType)
+  /-- Activate mana ability `idx` of `id` (CR 605.3), adding exactly `mana`
+  and paying costs that need chosen objects with `costIds`, in order. -/
+  | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
+      (costIds : Array ObjectId := #[])
+  | cast (id : ObjectId)
+  /-- Cast this adventurer card as its Adventure (CR 715.3). -/
+  | castAdventure (id : ObjectId)
+  /-- Cast this card for its sneak cost, returning the unblocked attacker
+  `attackerId` you control to hand as part of the cost (MSH sneak). -/
+  | castWithSneak (id attackerId : ObjectId)
+  /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
+  | chooseMode (idx : Nat)
+  /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/
+  | chooseX (n : Nat)
+  /-- Announce a target for the current instance of the word “target”
+  (CR 601.2c). For a divided-damage ability, assigns all remaining damage
+  to this one target (CR 601.2d). For “one or two target creatures”, this
+  chooses exactly that one creature. -/
+  | target (t : Target)
+  /-- Announce every target of one instance of the word “target” together
+  (CR 601.2c), e.g. both creatures of “one or two target creatures”. -/
+  | targets (ts : Array Target)
+  /-- Announce every target of one instance of the word “target” on a
+  “divided as you choose” effect, together with the damage assigned to each
+  (CR 601.2c / 601.2d). -/
+  | divideDamage (assignments : Array (Target × Nat))
+  /-- Activate a non-mana activated ability of a permanent (CR 602). -/
+  | activate (id : ObjectId) (abilityIdx : Nat)
+  /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
+  | pay
+  /-- After `pay`, sacrifice an artifact or creature to finish paying
+  (CR 601.2h / 602.2b), a creature a resolved trigger requires, or a creature
+  as a resolving effect. -/
+  | sacrifice (id : ObjectId)
+  /-- Choose to pay extra generic mana rather than the non-mana option
+  (sacrifice or discard) as an additional cost (CR 601.2b). `true` pays
+  the generic alternative; `false` sacrifices or discards. -/
+  | chooseAdditionalCost (payGeneric : Bool)
+  /-- `defender` is the destination when `each` is omitted or an entry is
+  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1).
+  `planeswalkers[i]`, when set, is the planeswalker `ids[i]` attacks instead
+  (CR 506.3 / 508.1b). -/
+  | declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
+      (each : Array (Option PlayerId) := #[])
+      (planeswalkers : Array (Option ObjectId) := #[])
+  | declareBlockers (assignments : Array (ObjectId × ObjectId))
+  /-- Announce combat damage assignment (CR 510.1). Omitted sources use a
+  legal default; listed sources must divide their power among legal creature
+  recipients (and leftover to the defending player only with trample). -/
+  | assignCombatDamage (assignments : Array CreatureCombatAssignment)
+  /-- Keep this hand as the opening hand (CR 103.5). -/
+  | keep
+  /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
+  | keepLegend (id : ObjectId)
+  /-- Put waiting triggered abilities on the stack in this source order
+  (first listed is put first, so it is farthest from the top) (CR 603.3b). -/
+  | stackTriggers (ids : Array ObjectId)
+  /-- Declare a London mulligan; it is taken after every remaining player has
+  declared (CR 103.5). -/
+  | takeMulligan
+  /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
+  | putOnBottom (ids : Array ObjectId)
+  /-- Finish scrying: `top` (last = new top) go on top of the library in that
+  order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
+  | scry (top : Array ObjectId) (bottom : Array ObjectId)
+  /-- Finish surveilling: `top` (last = new top) go on top of the library in
+  that order; `graveyard` go to the graveyard in that order (CR 701.25). -/
+  | surveil (top : Array ObjectId) (graveyard : Array ObjectId)
+  /-- Discard this card from hand; if a pending “may discard, then draw” is
+  waiting, draw afterward (CR 701.9). -/
+  | discard (id : ObjectId)
+  /-- Decline an optional “you may discard a card”, or choose no target for an
+  “up to one” trigger (CR 608.2d / 601.2c). -/
+  | decline
+  /-- Agree to an optional action offered while an effect resolves. -/
+  | accept
+  /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
+  | haveVillainConnive
+  /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
+  | payGeneric
+  /-- Put the pending card on top of its owner's library. -/
+  | chooseTop
+  /-- Put the pending card on the bottom of its owner's library. -/
+  | chooseBottom
+  /-- Attach this Equipment, or tap these Humans. -/
+  | choosePermanents (ids : Array ObjectId)
+  /-- Pay (`true`) or decline (`false`) the optional kicker cost. -/
+  | announceKicker (kick : Bool)
+  /-- Promise a gift to this opponent, or `none` to decline. -/
+  | announceGift (to : Option PlayerId)
+  /-- Pay (`true`) or decline (`false`) the optional teamwork cost. -/
+  | announceTeamwork (pay : Bool)
+  /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
+  | chooseRingBearer (id : Option ObjectId)
+  | concede
+  /-- Supply the order or chosen object for a pending random event
+  (`--norandom`). An empty list keeps the current order of a shuffle. -/
+  | supplyOrder (ids : Array ObjectId)
+  /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
+  | supplyIndex (i : Nat)
+  /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
+  | chooseName (name : String)
+deriving Repr
 
 end Mtg.Engine

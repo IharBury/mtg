@@ -42,8 +42,8 @@ def planId (g : Game) : ObjectId :=
   | none => panic! "missing The Plan"
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 def stackEffect (g : Game) : Option Effect :=
   match g.stack.back? with
@@ -74,7 +74,7 @@ use `queueReflexive`. -/
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard (TriggeredAbility.sagaChapter 1 Effect.chapterGrantAttackPumpPerPlainsThisTurn).resolution ==
+#guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
 
 #guard TriggeredAbility.TriggerReflexiveKind.toNat .grantIndestructible == 0
@@ -150,7 +150,7 @@ use `queueReflexive`. -/
 
 /- The note alone, without a sacrifice, queues the modeled reflexive once. -/
 #guard
-  let g0 := { planOnBoard with thisWay := { planOnBoard.thisWay with planWasSacrificed := true } }
+  let g0 := planOnBoard.change (.planWasSacrificed true)
   let g := step g0 (.«if» .planWasSacrificed (.queueReflexive (.gainControl .duringNextTurn)))
   !g.planWasSacrificed && g.hasModeledReflexiveOnStack
 
@@ -184,7 +184,7 @@ use `queueReflexive`. -/
   match stackEffect g with
   | some eff =>
     match eff.resolution with
-    | .mayCast .milledSpell .causingSpell .withoutPaying _ =>
+    | .sarumanExileCopyMayCast =>
       logContains g "reflexive ability is put on the stack"
     | _ => false
   | none => false

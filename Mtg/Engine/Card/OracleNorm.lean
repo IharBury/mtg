@@ -468,30 +468,28 @@ where
     dropLeadingThis (collapseWs (keepSignificant (normalizePhrases (replaceNumberWords s))))
 
 /-- A stored Oracle line with the normal forms it has on a card whose name does
-not occur in it. -/
-abbrev NormLine := String × String × String × String
-
-abbrev _root_.Prod.raw (n : NormLine) : String := n.1
-abbrev _root_.Prod.base (n : NormLine) : String := n.2.1
-abbrev _root_.Prod.unit (n : NormLine) : String := n.2.2.1
-abbrev _root_.Prod.structural (n : NormLine) : String := n.2.2.2
+not occur in it. They are computed once instead of for every card. -/
+structure NormLine where
+  raw : String
+  /-- `prepareBase raw`, where a name alias would be found. -/
+  base : String
+  unit : String
+  structural : String
 
 def NormLine.of (raw : String) : NormLine :=
   let base := prepareBase raw
   let prepared := foldSelfReferences base
-  (raw, base, normalizeUnit.unitTail prepared, normalizeStructural.structuralTail prepared)
+  { raw, base
+    unit := normalizeUnit.unitTail prepared
+    structural := normalizeStructural.structuralTail prepared }
 
 /-- `normalizeUnit cardName n.raw`, where `keys` is `nameKeys cardName`. -/
-def _root_.Prod.unitFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+def NormLine.unitFor (n : NormLine) (cardName : String) (keys : List String) : String :=
   if mentionsNameKey keys n.base then normalizeUnit cardName n.raw else n.unit
 
 /-- `normalizeStructural cardName n.raw`, where `keys` is `nameKeys cardName`. -/
-def _root_.Prod.structuralFor (n : NormLine) (cardName : String) (keys : List String) : String :=
+def NormLine.structuralFor (n : NormLine) (cardName : String) (keys : List String) : String :=
   if mentionsNameKey keys n.base then normalizeStructural cardName n.raw else n.structural
-
-namespace NormLine
-export _root_.Prod (unitFor structuralFor)
-end NormLine
 
 /-- True when `line` is a Gatherer Adventure type line. -/
 def isAdventureTypeLine (s : String) : Bool :=

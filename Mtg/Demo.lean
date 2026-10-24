@@ -131,25 +131,16 @@ deciding player (heuristic) chooses to go first.
 "
 
 /-- A Welcome Deck color or a path to a text deck list. -/
-abbrev DemoDeck := (Color ⊕ String) × Bool × Bool × Bool
+inductive DemoDeck where
+  | welcome (color : Color)
+  | file (path : String)
+deriving Repr, Inhabited, DecidableEq
 
-namespace DemoDeck
-
-@[match_pattern] abbrev demoDeckKind (k : Color ⊕ String := .inl .white) (turnScoped : Bool := false)
-    (combatOrAttackers : Bool := false) (isIgnore : Bool := false) : DemoDeck :=
-  (k, turnScoped, combatOrAttackers, isIgnore)
-
-@[match_pattern] abbrev welcome (color : Color) : DemoDeck := demoDeckKind (.inl color) false false false
-@[match_pattern] abbrev file (path : String) : DemoDeck := demoDeckKind (.inr path) false false false
-
-end DemoDeck
-
-@[match_pattern] abbrev _root_.Prod.welcome := DemoDeck.welcome
-@[match_pattern] abbrev _root_.Prod.file := DemoDeck.file
-
-/-- A named player and the deck they sit with, an `--input` script (`InputScript`),
-or raw CLI flag values (`DemoFlagValues`). -/
-abbrev DemoPlayer := MulliganState
+/-- A named player and the deck they sit with. -/
+structure DemoPlayer where
+  name : String
+  deck : DemoDeck
+deriving Repr, Inhabited, DecidableEq
 
 /-- Default table: Chandra (red) and Nissa (green). -/
 def defaultDemoPlayers : Array DemoPlayer := #[
@@ -161,7 +152,7 @@ def defaultDemoPlayers : Array DemoPlayer := #[
 def cardsFor (d : DemoDeck) : Array CardDef :=
   match d with
   | .welcome c => hobbitDeck c
-  | _ => #[]
+  | .file _ => #[]
 
 /-- Seat list from named players. File decks resolve later via `loadSeats`. -/
 def seatsFromPlayers (players : Array DemoPlayer) : Array Seat :=
@@ -362,7 +353,6 @@ def randomPromptBlock (g : Game) : Option String :=
       some "Coin toss: flip heads  or  flip tails  (also random 0 / random 1)"
     else
       some s!"Choose a number from 0 to {n - 1}: random <n>"
-  | some _ => none
 
 /-- Pending cost, combat-damage assignment, legend-rule, trigger order, or
 a `--norandom` result. -/
@@ -398,7 +388,6 @@ def deckAssignmentLine (p : DemoPlayer) : String :=
   match p.deck with
   | .welcome c => s!"{p.name} uses the {c.englishName} Hobbit Welcome Deck."
   | .file path => s!"{p.name} uses the deck list {path}."
-  | _ => ""
 
 def printDeckAssignments (players : Array DemoPlayer) : IO Unit := do
   for p in players do
@@ -417,18 +406,23 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
       | .error e => return .error e
       | .ok (cards, sideboard) =>
         seats := seats.push { name := p.name, deck := cards, sideboard }
-    | _ => pure ()
   return .ok seats
+
+/-- Create the demo game and RNG after the starting player is known (CR 103.1). -/
+def startGameWithRng (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO (Game × Rng) := do
+  match Start.startWithRng { seats, format := demoFormat constructed, seed, startingPlayer, norandom } with
+  | .error e =>
+    IO.eprintln s!"Failed to start game: {e}"
+    throw (IO.userError e)
+  | .ok (g, rng) => return (g, rng)
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
 def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (seats : Array Seat := demoSeats) (norandom : Bool := false)
-    (constructed : Bool := false) : IO Game := do
-  match Start.start { seats, format := demoFormat constructed, seed, startingPlayer, norandom } with
-  | .error e =>
-    IO.eprintln s!"Failed to start game: {e}"
-    throw (IO.userError e)
-  | .ok g => return g
+    (constructed : Bool := false) : IO Game :=
+  (·.1) <$> startGameWithRng seed startingPlayer seats norandom constructed
 
 /-- Print the opening log and board after the game has started. -/
 def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
@@ -436,16 +430,23 @@ def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   printState g viewer
   printPendingPrompt g
 
+/-- Start a demo game, print the opening snapshot, and return the game and RNG. -/
+def startDemoWithRng (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (viewer : Option PlayerId := none)
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO (Game × Rng) := do
+  let (g, rng) ← startGameWithRng seed startingPlayer seats norandom constructed
+  printOpening g viewer
+  return (g, rng)
+
 /-- Start a demo game and print the opening snapshot. The starting player is
 the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
     (seats : Array Seat := demoSeats) (norandom : Bool := false)
-    (constructed : Bool := false) : IO Game := do
-  let g ← startGame seed startingPlayer seats norandom constructed
-  printOpening g viewer
-  return g
+    (constructed : Bool := false) : IO Game :=
+  (·.1) <$> startDemoWithRng seed startingPlayer viewer seats norandom constructed
 
 def helpInteractive (controlAll : Bool := false)
     (you : String := "the first player") : String :=
@@ -768,7 +769,10 @@ def pushCombatAmount (acc : Array CreatureCombatAssignment) (src tgt : ObjectId)
   | none => acc.push { source := src, toCreatures := #[(tgt, amt)] }
   | some i =>
     let a := acc[i]!
-    acc.set! i { a with toCreatures := a.toCreatures.push (tgt, amt) }
+    acc.set! i {
+      source := a.source
+      toCreatures := a.toCreatures.push (tgt, amt)
+      toPlayer := a.toPlayer }
 
 /-- Add `amt` from `src` to the defending player. -/
 def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectId) (amt : Int) :
@@ -777,7 +781,10 @@ def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectI
   | none => acc.push { source := src, toPlayer := amt }
   | some i =>
     let a := acc[i]!
-    acc.set! i { a with toPlayer := a.toPlayer + amt }
+    acc.set! i {
+      source := a.source
+      toCreatures := a.toCreatures
+      toPlayer := a.toPlayer + amt }
 
 /-- True when `token` names the defending player, or `opponent` while the
 attacking player is assigning (CR 510.1a / 702.19). -/
@@ -1263,12 +1270,10 @@ def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | _, [] => g.apply p .keep
   | _, _ => throw keepUsage
 
-/-- Game after `autopay` or a pass-until shortcut (`PassUntilResult`), and the
-lines that produced it. -/
-abbrev AutopayResult := Game × Array String
-
-abbrev _root_.Prod.game (r : AutopayResult) : Game := r.1
-abbrev _root_.Prod.commands (r : AutopayResult) : Array String := r.2
+/-- Game after `autopay`, and the `tap`/`pay` lines that produced it. -/
+structure AutopayResult where
+  game : Game
+  commands : Array String
 
 /-- Accepted `tap` line for one mana ability so `--output` can replay it. -/
 def tapCommand (id : ObjectId) (m : ManaType) : String :=
@@ -1306,10 +1311,10 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
           if !canPayProposed g p prop then
             throw s!"{(g.player p).name} cannot pay {prop.cost}"
           let g ← g.apply p .pay
-          return (g, cmds.push "pay")
+          return { game := g, commands := cmds.push "pay" }
         | none =>
           let g ← g.apply p .pay
-          return (g, cmds.push "pay")
+          return { game := g, commands := cmds.push "pay" }
       | _ =>
         match g.proposedSpell with
         | some prop => throw s!"{(g.player p).name} cannot pay {prop.cost}"
@@ -1395,25 +1400,17 @@ def hasLegalBlock (g : Game) : Bool :=
       eligible >= max 1 (g.minBlockersRequired attacker))
 
 /-- Target a pass-until shortcut stops at. -/
-abbrev PassUntilTarget := DemoDeck
-
-namespace PassUntilTarget
-
-@[match_pattern] abbrev passUntilTargetKind (turnScoped : Bool := false) (combatOrAttackers : Bool := false) : PassUntilTarget :=
-  DemoDeck.demoDeckKind (.inl .white) turnScoped combatOrAttackers false
-@[match_pattern] abbrev nextTurnCombat : PassUntilTarget := .passUntilTargetKind true true
-@[match_pattern] abbrev nextTurnMain : PassUntilTarget := .passUntilTargetKind true false
-@[match_pattern] abbrev nextMain : PassUntilTarget := .passUntilTargetKind false false
-@[match_pattern] abbrev nextDeclareAttackers : PassUntilTarget := .passUntilTargetKind false true
-
-end PassUntilTarget
-
-namespace DemoDeck
-export PassUntilTarget (passUntilTargetKind nextTurnCombat nextTurnMain nextMain nextDeclareAttackers)
-end DemoDeck
+inductive PassUntilTarget where
+  | nextTurnCombat
+  | nextTurnMain
+  | nextMain
+  | nextDeclareAttackers
+deriving DecidableEq, Repr
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
-abbrev PassUntilResult := AutopayResult
+structure PassUntilResult where
+  game : Game
+  commands : Array String
 
 def yourTurnUsage : String := "usage: your turn"
 def myTurnUsage : String := "usage: my turn"
@@ -1436,7 +1433,6 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
   | .nextDeclareAttackers =>
     g.step == .declareAttackers &&
       !(g.turnNumber == startTurn && g.step == startStep)
-  | _ => false
 
 /-- `your turn`, `my turn`, and `main phase` declare no attackers even when
 creatures can attack. `attack step` still stops so attackers can be chosen. -/
@@ -1475,38 +1471,27 @@ def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
 def passUntilFuel : Nat := 200
 
 /-- Kind of pending pass-until goal stored by the console and `--check` replay. -/
-abbrev PassUntilKind := DemoDeck
-
-namespace PassUntilKind
-
-@[match_pattern] abbrev ignore : PassUntilKind := DemoDeck.demoDeckKind (.inl .white) false false true
-@[match_pattern] abbrev named (target : PassUntilTarget) : PassUntilKind := target
-
-end PassUntilKind
-
-namespace DemoDeck
-export PassUntilKind (ignore named)
-end DemoDeck
-
-@[match_pattern] abbrev _root_.Prod.ignore : PassUntilKind := PassUntilKind.ignore
-@[match_pattern] abbrev _root_.Prod.named := PassUntilKind.named
+inductive PassUntilKind where
+  | named (target : PassUntilTarget)
+  | ignore
+deriving DecidableEq, Repr
 
 /-- A shortcut that stays active until its target, unless an interruptible
 goal is cancelled by another player's non-pass action. -/
-abbrev PassUntilGoal := PlayerId × Nat × Step × PassUntilKind
+structure PassUntilGoal where
+  issuer : PlayerId
+  startTurn : Nat
+  startStep : Step
+  kind : PassUntilKind
+deriving DecidableEq, Repr
 
-abbrev _root_.Prod.issuer (goal : PassUntilGoal) : PlayerId := goal.1
-abbrev _root_.Prod.startTurn (goal : PassUntilGoal) : Nat := goal.2.1
-abbrev _root_.Prod.startStep (goal : PassUntilGoal) : Step := goal.2.2.1
-abbrev _root_.Prod.kind (goal : PassUntilGoal) : PassUntilKind := goal.2.2.2
-
-abbrev _root_.Prod.uninterruptible (goal : PassUntilGoal) : Bool :=
+def PassUntilGoal.uninterruptible (goal : PassUntilGoal) : Bool :=
   match goal.kind with
   | .ignore => true
   | .named _ => false
 
 def passUntilGoalAt (g : Game) (p : PlayerId) (kind : PassUntilKind) : PassUntilGoal :=
-  (p, g.turnNumber, g.step, kind)
+  { issuer := p, startTurn := g.turnNumber, startStep := g.step, kind }
 
 def ignoreUsage : String := "usage: ignore"
 
@@ -1517,8 +1502,8 @@ def reachedIgnore (g : Game) (goal : PassUntilGoal) : Bool :=
 
 def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
   match goal.kind with
-  | .ignore => reachedIgnore g goal
   | .named t => reachedPassUntil g goal.startTurn goal.startStep t
+  | .ignore => reachedIgnore g goal
 
 /-- Only issue pass-until commands as `issuer`; other players may still act. -/
 def issuerPassUntilCommand? (g : Game) (issuer : PlayerId)
@@ -1537,15 +1522,15 @@ def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal)
     (forceEmptyCombat := false) : Option String :=
   match goal.kind with
-  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
   | .named t =>
     issuerPassUntilCommand? g goal.issuer forceEmptyCombat
       (alwaysNoAttack := passUntilSkipsAttackers t)
+  | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
 
 /-- Error when `passUntilFuel` runs out before this goal is reached. -/
 def PassUntilKind.fuelError : PassUntilKind → String
-  | .ignore => "Could not finish passing to your next main phase"
   | .named _ => "Could not finish passing to that step"
+  | .ignore => "Could not finish passing to your next main phase"
 
 /-- Keep issuing the goal's commands (`pass`, and empty combat declarations
 where the goal allows them) until the goal is reached, the game ends, or no
@@ -1556,25 +1541,25 @@ def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
     (cmds : Array String) (forceEmptyCombat := false) :
     Except String PassUntilResult :=
   match fuel with
-  | 0 => throw (PassUntilKind.fuelError goal.kind)
+  | 0 => throw goal.kind.fuelError
   | n + 1 =>
     if g.over || reachedPassUntilGoal g goal then
-      .ok (g, cmds)
+      .ok { game := g, commands := cmds }
     else
       match passUntilGoalCommand? g goal forceEmptyCombat with
       | none =>
         match goal.kind with
-        | .ignore => .ok (g, cmds)
         | .named _ =>
           if cmds.isEmpty then
             .error "A player must take an action other than pass"
           else
-            .ok (g, cmds)
+            .ok { game := g, commands := cmds }
+        | .ignore => .ok { game := g, commands := cmds }
       | some line =>
         match applyPassUntilLine g line with
         | .error e =>
           if cmds.isEmpty then .error e
-          else .ok (g, cmds)
+          else .ok { game := g, commands := cmds }
         | .ok g' => applyPassUntilGoalSteps g' goal n (cmds.push line) forceEmptyCombat
 
 def applyPassUntil (g : Game) (p : PlayerId) (target : PassUntilTarget)
@@ -1811,7 +1796,9 @@ def isFlagLine (s : String) : Bool :=
   s.startsWith "--"
 
 /-- Flags and remaining commands from an `--input` file. -/
-abbrev InputScript := MulliganState
+structure InputScript where
+  flags : List String
+  commands : List String
 
 /-- Split trimmed non-empty lines into flag lines and commands. -/
 def inputScriptFromLines (lines : Array String) : InputScript :=
@@ -1897,17 +1884,19 @@ commands after the game ends, `quit`, or an unfinished game. Pass-until
 shortcuts stay active: other players' pass sequences do not cancel them,
 and `ignore` is never cancelled. -/
 def replayCompleteGameGo (g : Game) (commands : List String)
-    (goals : Array PassUntilGoal) (fuel : Nat) : Except String Game :=
+    (goals : Array PassUntilGoal) (fuel : Nat)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : Except String Game :=
   match fuel with
   | 0 => .error "Could not finish replay"
   | n + 1 =>
+    let (rng, g) := if norandom then (rng, g) else g.resolvePendingRandom rng
     let goals := activePassUntilGoals g goals
     if g.over then
       match commands with
       | [] => .ok g
       | line :: rest =>
         if isCheckSkipCommand ((line.splitOn " ").headD "") then
-          replayCompleteGameGo g rest goals n
+          replayCompleteGameGo g rest goals n norandom rng
         else
           .error s!"Unused command after the game ended: {line}"
     else
@@ -1919,7 +1908,9 @@ def replayCompleteGameGo (g : Game) (commands : List String)
       | some line =>
         match applyPassUntilLine g line with
         | .error e => .error s!"Invalid command `{line}`: {e}"
-        | .ok g' => replayCompleteGameGo g' commands goals n
+        | .ok g' =>
+          let (rng, g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          replayCompleteGameGo g' commands goals n norandom rng
       | none =>
         match commands with
         | [] => .error "Game is not complete"
@@ -1927,7 +1918,7 @@ def replayCompleteGameGo (g : Game) (commands : List String)
           let cmd := (line.splitOn " ").headD ""
           let args := (line.splitOn " ").drop 1
           if isCheckSkipCommand cmd then
-            replayCompleteGameGo g rest goals n
+            replayCompleteGameGo g rest goals n norandom rng
           else if cmd == "quit" || cmd == "exit" then
             .error "Game is not complete"
           else if cmd == "first" then
@@ -1940,26 +1931,28 @@ def replayCompleteGameGo (g : Game) (commands : List String)
               match applyLoggedAction g cmd args line accept with
               | .error e => .error s!"Invalid command `{line}`: {e}"
               | .ok (g', _) =>
+                let (rng, g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
                 replayCompleteGameGo g' rest
-                  (goalsAfterCommand g g' actor cmd args goals) n
+                  (goalsAfterCommand g g' actor cmd args goals) n norandom rng
 
 /-- Replay scripted game-state commands. Fails on an illegal command, leftover
 commands after the game ends, `quit`, or an unfinished game. -/
-def replayCompleteGame (g : Game) (commands : List String) : Except String Game :=
-  replayCompleteGameGo g commands #[] (commands.length * 8 + passUntilFuel)
+def replayCompleteGame (g : Game) (commands : List String)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : Except String Game :=
+  replayCompleteGameGo g commands #[] (commands.length * 8 + passUntilFuel) norandom rng
 
 /-- One-line result used by `--check`. -/
 def describeCheckResult (g : Game) : String :=
   match g.result with
   | some (.won p) => s!"Winner: {g.player p |>.name}"
-  | some _ => "The game is a draw."
+  | some .draw => "The game is a draw."
   | none => "Game is not complete"
 
 /-- Print the finished game's result: the winner or a draw. -/
 def printResult (g : Game) : IO Unit :=
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
-  | some _ => IO.println "The game is a draw."
+  | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
 /-- Write a command to `--output` only when it was accepted as a game action
@@ -2036,7 +2029,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
     let canCast := playable.any (fun o =>
       g.canCast p o &&
         available.canPay o.printed.manaCost
-          (allowElfRestricted := o.hasSubtype "Elf") &&
+          (allowElfRestricted := o.hasSubtype .elf) &&
         g.canPayAnnouncedAdditional p o available)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
@@ -2047,7 +2040,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       (g.activatedAbilitiesOf o).any (fun ab =>
         g.canActivate p o ab &&
           (g.availableManaExcept p (if ab.cost.tap then some o.id else none)).canPay
-            ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf")))
+            ab.cost.mana (allowElfRestricted := o.hasSubtype .elf)))
     canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
 
 /-- Whether bit `i` of `mask` is set. -/
@@ -2312,9 +2305,11 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
 
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     (controlAll : Bool := false) (pending : List String := [])
-    (output : Option IO.FS.Handle := none) (sameFile : Bool := false) :
+    (output : Option IO.FS.Handle := none) (sameFile : Bool := false)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) :
     IO Unit := do
   let mut g := g
+  let mut rng := rng
   let mut seen := g.log.size
   let mut playerView := startVisible
   let mut lastActor : Option PlayerId := g.actor
@@ -2324,6 +2319,12 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   let youName := (g.player you).name
   IO.println (helpInteractive controlAll youName)
   while !g.over do
+    if !norandom && g.pendingRandom?.isSome then
+      let (rng', g') := g.resolvePendingRandom rng
+      rng := rng'
+      seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+      g := g'
+      continue
     -- Interactive: let the heuristic play every other seat until you must act.
     if !controlAll then
       while !g.over && g.pendingRandom?.isNone &&
@@ -2350,6 +2351,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           IO.println s!"{actorName} could not act: {e}"
           break
         | .ok g' =>
+          let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          rng := rng'
           seen ← refreshAfterStep g g' seen (humanView playerView)
           g := g'
     if g.over then break
@@ -2366,6 +2369,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       | .error e =>
         IO.println s!"{actorDisplayName g} could not automatically target: {e}"
       | .ok (g', line) =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #[line]
         g := g'
       continue
@@ -2374,6 +2379,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       | .error e =>
         IO.println s!"{actorDisplayName g} could not automatically pay: {e}"
       | .ok (g', cmds) =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll cmds
         g := g'
       continue
@@ -2382,6 +2389,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p (.declareAttackers #[]) "declare no attackers" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noattack"]
         g := g'
       continue
@@ -2390,6 +2399,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p (.declareBlockers #[]) "declare no blockers" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noblock"]
         g := g'
       continue
@@ -2402,8 +2413,10 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         passUntilGoals := passUntilGoals.filter (fun existing => existing != goal)
       | .ok r =>
         if !r.commands.isEmpty then
-          seen ← recordAndRefresh output sameFile g r.game seen playerView controlAll r.commands
-          g := r.game
+          let (rng', g') := if norandom then (rng, r.game) else r.game.resolvePendingRandom rng
+          rng := rng'
+          seen ← recordAndRefresh output sameFile g g' seen playerView controlAll r.commands
+          g := g'
           continue
     | none => pure ()
     if shouldAutoPass g pending then
@@ -2411,6 +2424,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyAutoAction g p .pass "pass" with
       | .error e => IO.println e
       | .ok g' =>
+        let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+        rng := rng'
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["pass"]
         g := g'
       continue
@@ -2464,6 +2479,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         match applyLoggedAction g cmd args line accept with
         | .error e => IO.println s!"! {e}"
         | .ok (g', recorded) =>
+          let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+          rng := rng'
           for rec in recorded do
             recordAcceptedCommand output sameFile fromInput rec
           seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
@@ -2478,12 +2495,20 @@ supplies the result from `--input` or the console. -/
 partial def runAuto (g : Game) (fuel : Nat)
     (pending : List String := [])
     (output : Option IO.FS.Handle := none)
-    (sameFile : Bool := false) : IO Unit := do
+    (sameFile : Bool := false)
+    (norandom : Bool := false) (rng : Rng := Rng.ofSeed 1) : IO Unit := do
   let mut g := g
+  let mut rng := rng
   let mut seen := g.log.size
   let mut remaining := fuel
   let mut pending := pending
   while remaining > 0 && !g.over do
+    if !norandom && g.pendingRandom?.isSome then
+      let (rng', g') := g.resolvePendingRandom rng
+      rng := rng'
+      seen ← refreshAfterStep g g' seen
+      g := g'
+      continue
     if g.pendingRandom?.isSome then
       IO.print "mtg> "
       (← IO.getStdout).flush
@@ -2515,6 +2540,8 @@ partial def runAuto (g : Game) (fuel : Nat)
       IO.println s!"Agent stopped: {e}"
       break
     | .ok g' =>
+      let (rng', g') := if norandom then (rng, g') else g'.resolvePendingRandom rng
+      rng := rng'
       seen ← refreshAfterStep g g' seen
       g := g'
   printState g
@@ -2546,26 +2573,41 @@ def parseDemoDeck (token : String) : Except String DemoDeck :=
     else
       .error s!"Unknown Welcome Deck: {token} (white, blue, black, red, or green, or a deck list file)"
 
-abbrev DemoOptions :=
-  Bool × Bool × Bool × Bool × Bool × UInt64 × Nat × Option String × Option String × Bool ×
-    Array DemoPlayer × Option Nat
+structure DemoOptions where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  norandom : Bool
+  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
+  constructed : Bool
+  seed : UInt64
+  fuel : Nat
+  inputFile : Option String
+  outputFile : Option String
+  /-- Replay `--input` and require a finished legal game. -/
+  check : Bool
+  players : Array DemoPlayer
+  /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
+  decides : Option Nat
 
-abbrev _root_.Prod.interactive (o : DemoOptions) : Bool := o.1
-abbrev _root_.Prod.multiplayer (o : DemoOptions) : Bool := o.2.1
-abbrev _root_.Prod.playerView (o : DemoOptions) : Bool := o.2.2.1
-abbrev _root_.Prod.norandom (o : DemoOptions) : Bool := o.2.2.2.1
-abbrev _root_.Prod.constructed (o : DemoOptions) : Bool := o.2.2.2.2.1
-abbrev _root_.Prod.seed (o : DemoOptions) : UInt64 := o.2.2.2.2.2.1
-abbrev _root_.Prod.fuel (o : DemoOptions) : Nat := o.2.2.2.2.2.2.1
-abbrev _root_.Prod.inputFile (o : DemoOptions) : Option String := o.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.outputFile (o : DemoOptions) : Option String := o.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.check (o : DemoOptions) : Bool := o.2.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.players (o : DemoOptions) : Array DemoPlayer := o.2.2.2.2.2.2.2.2.2.2.1
-abbrev _root_.Prod.decides (o : DemoOptions) : Option Nat := o.2.2.2.2.2.2.2.2.2.2.2
-
-/-- Raw flag values before player-name validation. `rawSeed` / `rawFuel` are `none`
+/-- Raw flag values before player-name validation. `seed` / `fuel` are `none`
 until those flags appear, so input-file flags can fill the defaults. -/
-abbrev DemoFlagValues := MulliganState
+structure DemoFlagValues where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  norandom : Bool
+  constructed : Bool
+  seed : Option UInt64
+  fuel : Option Nat
+  inputFile : Option String
+  outputFile : Option String
+  check : Bool
+  names : Array String
+  decks : Array DemoDeck
+  decidesName : Option String
+  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
+  modeSet : Bool
 
 /-- Parse flag tokens without checking that `--input` / `--visible` have a mode. -/
 def parseFlagList (args : List String) : Except String DemoFlagValues :=
@@ -2675,8 +2717,8 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
       playerView := playerView
       norandom := norandom
       constructed := constructed
-      rawSeed := seed
-      rawFuel := fuel
+      seed := seed
+      fuel := fuel
       inputFile := inputFile
       outputFile := outputFile
       check := check
@@ -2697,14 +2739,14 @@ def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
     playerView := cli.playerView || file.playerView
     norandom := cli.norandom || file.norandom
     constructed := cli.constructed || file.constructed
-    rawSeed :=
-      match file.rawSeed with
+    seed :=
+      match file.seed with
       | some s => some s
-      | none => cli.rawSeed
-    rawFuel :=
-      match file.rawFuel with
+      | none => cli.seed
+    fuel :=
+      match file.fuel with
       | some n => some n
-      | none => cli.rawFuel
+      | none => cli.fuel
     inputFile := cli.inputFile
     outputFile := cli.outputFile
     check := cli.check || file.check
@@ -2735,18 +2777,42 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
     match playersFromFlags v.names v.decks with
     | .error e => .error e
     | .ok players =>
-      let seed := v.rawSeed.getD 20260807
-      let fuel := v.rawFuel.getD 800
+      let seed := v.seed.getD 20260807
+      let fuel := v.fuel.getD 800
       match v.decidesName with
       | none =>
-        .ok (interactive, multiplayer, v.playerView, v.norandom, v.constructed,
-          seed, fuel, v.inputFile, v.outputFile, v.check, players, none)
+        .ok {
+          interactive := interactive
+          multiplayer := multiplayer
+          playerView := v.playerView
+          norandom := v.norandom
+          constructed := v.constructed
+          seed := seed
+          fuel := fuel
+          inputFile := v.inputFile
+          outputFile := v.outputFile
+          check := v.check
+          players := players
+          decides := none
+        }
       | some name =>
         match parsePlayerName (seatsFromPlayers players) name with
         | .error e => .error e
         | .ok i =>
-          .ok (interactive, multiplayer, v.playerView, v.norandom, v.constructed,
-            seed, fuel, v.inputFile, v.outputFile, v.check, players, some i)
+          .ok {
+            interactive := interactive
+            multiplayer := multiplayer
+            playerView := v.playerView
+            norandom := v.norandom
+            constructed := v.constructed
+            seed := seed
+            fuel := fuel
+            inputFile := v.inputFile
+            outputFile := v.outputFile
+            check := v.check
+            players := players
+            decides := some i
+          }
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   match parseFlagList args with
@@ -2769,13 +2835,13 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   let decider := assignDecider opt.players opt.seed opt.decides
   let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
   let (startIdx, rest) ← takeStartingPlayer seats humanChooses decider commands
-  let g ← Start.start {
+  let (g, rng) ← Start.startWithRng {
     seats
     format := demoFormat opt.constructed
     seed := opt.seed
     startingPlayer := some startIdx
     norandom := opt.norandom }
-  replayCompleteGame g rest
+  replayCompleteGame g rest opt.norandom rng
 
 /-- Usage for reporting who was chosen at random to decide (CR 103.1). -/
 def decidesUsage (players : Array DemoPlayer) : String :=
@@ -2883,15 +2949,16 @@ def main (args : List String) : IO UInt32 := do
                       pure (some (decider, pending))) with
                   | none => return 0
                   | some (startIdx, pending) =>
-                    let g ← startGame opt.seed (some startIdx) seats opt.norandom
+                    let (g, rng) ← startGameWithRng opt.seed (some startIdx) seats opt.norandom
                       opt.constructed
                     printOpening g (currentView g opt.playerView opt.multiplayer)
                     interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                      opt.norandom rng
                     return 0
                 else
-                  let g ←
-                    startDemo opt.seed (some decider) (seats := seats)
+                  let (g, rng) ←
+                    startDemoWithRng opt.seed (some decider) (seats := seats)
                       (norandom := opt.norandom)
                       (constructed := opt.constructed)
-                  runAuto g opt.fuel pending output sameFile
+                  runAuto g opt.fuel pending output sameFile opt.norandom rng
                   return 0

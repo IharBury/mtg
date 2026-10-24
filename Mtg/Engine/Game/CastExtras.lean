@@ -17,16 +17,16 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if pl.hand.isEmpty then
     g.logMsg s!"{pl.name} has no card to discard"
   else
-    { g with pending := .mayDiscardDraw p n }.logMsg
-      s!"{pl.name} may discard a card. If they do, they draw {n}"
+    g.change (.pending (.mayDiscardDraw p n))
+      |>.logMsg s!"{pl.name} may discard a card. If they do, they draw {n}"
 
 /-- Start “sacrifices a creature of their choice” for `p` (CR 701.17 / 608.2d). -/
 def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
   if (g.sacrificeCreatureChoices p).isEmpty then
     g.logMsg s!"{(g.player p).name} has no creature to sacrifice"
   else
-    { g with pending := .sacrificeCreature p }.logMsg
-      s!"{(g.player p).name} must sacrifice a creature of their choice"
+    g.change (.pending (.sacrificeCreature p))
+      |>.logMsg s!"{(g.player p).name} must sacrifice a creature of their choice"
 
 /-- Apply `f` if the trigger's source is still on the battlefield. -/
 def withTriggerSource (g : Game) (sourceId : Option ObjectId)
@@ -52,7 +52,7 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
   let pl := g.player p
   let nextAbilities := min 4 (pl.theRingAbilities + 1)
   let gainedEmblem := pl.theRingAbilities == 0
-  let g := g.modifyPlayer p (fun pl => { pl with theRingAbilities := nextAbilities })
+  let g := g.changePlayer p (.theRingAbilities nextAbilities)
   let g :=
     if gainedEmblem then
       g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
@@ -113,8 +113,8 @@ def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
         s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
     | some card =>
       let others := exiled.filter (· != card.id)
-      return { g with pending := .fraChoice p (.mayCastCascade card.id others) }.logMsg
-        s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+      return g.change (.pending (.fraChoice p (.mayCastCascade card.id others)))
+        |>.logMsg s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
 
 /-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
 def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
@@ -122,25 +122,21 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   if prop.kicked && kick then
     throw "The kicker ability doesn't let you pay a kicker cost more than once"
   if !kick then
-    return { g with proposedSpell := some { prop with
-      kicked := false, kickerAnnounced := true } }
+    return g.changeProposals #[.kicked false, .kickerAnnounced true]
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
   let face := spell.printed
   match face.morph, face.impending, face.kicker with
   | some alt, _, none =>
-    let g := g.setObject { spell with status := { spell.status with faceDown := true } }
+    let g := g.changeStatus spell.id (.faceDown true)
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
-    return { g with proposedSpell := some { prop with
-      kicked := true, kickerAnnounced := true, cost } }
+    return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, some (n, alt), none =>
-    let g := g.setObject { spell with status :=
-      { spell.status with time := n, notACreature := true } }
+    let g := g.changeStatus spell.id (.time n)
     let cost := ManaCost.afterReduction alt (g.applyCastCostReductions spell face alt)
-    return { g with proposedSpell := some { prop with
-      kicked := true, kickerAnnounced := true, cost } }
+    return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
-    let g := g.setObject { spell with castState := { spell.castState with kicked := true } }
+    let g := g.changeObject spell.id (.kicked true)
     let start :=
       if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
         ManaCost.empty
@@ -148,10 +144,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     let cost :=
       ManaCost.afterReduction face.manaCost
         (g.applyCastCostReductions spell face (start.addCost kicker))
-    return { g with proposedSpell := some { prop with
-      kicked := true
-      kickerAnnounced := true
-      cost } }
+    return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/
 def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game := do
@@ -159,19 +152,18 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
   if prop.giftTo.isSome && to.isSome then
     throw "You can't pay a gift cost more than once"
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  let g := g.setObject { spell with castState := { spell.castState with giftPromisedTo := to } }
-  return { g with proposedSpell := some { prop with
-    giftTo := to, giftAnnounced := true } }
+  let g := g.changeObject spell.id (.giftPromisedTo to)
+  return g.changeProposals #[.giftTo to, .giftAnnounced true]
 
 /-- Continue the proposal window after kicker / gift announcements. -/
 def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
     if spell.printed.giftTreasure && !prop.giftAnnounced then
-      let g := { g with pending := .chooseGift p }
+      let g := g.change (.pending (.chooseGift p))
       g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
     else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
-      let g := { g with pending := .chooseTeamwork p }
+      let g := g.change (.pending (.chooseTeamwork p))
       g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
     else
       g.afterAdditionalCostAnnounced
@@ -216,17 +208,15 @@ def announceTeamwork (g : Game) (p : PlayerId) (pay : Bool) : Except String Game
       throw s!"Only {(g.player caster).name} may announce teamwork"
     let some prop := g.proposedSpell | throw "No spell is waiting for teamwork"
     if !pay then
-      let g := { g with proposedSpell := some { prop with
-        teamworkPaid := false, teamworkAnnounced := true } }
+      let g := g.changeProposals #[.teamworkPaid false, .teamworkAnnounced true]
       let g := g.logMsg s!"{(g.player p).name} does not pay a teamwork cost"
       return g.afterOptionalAdditionalCost p
     match prop.original.printed.teamwork.orElse (fun () =>
         (g.findObject? prop.spellId).bind (fun o => o.printed.teamwork)) with
     | none => throw "That spell has no teamwork"
     | some need =>
-      let g := { g with
-        pending := .chooseTeamworkCreatures p need
-        proposedSpell := some { prop with teamworkAnnounced := true } }
+      let g := g.change (.pending (.chooseTeamworkCreatures p need))
+        |>.changeProposal (.teamworkAnnounced true)
       return g.logMsg
         s!"{(g.player p).name} chooses creatures to tap for teamwork {need}"
   | _ => throw "Not time to announce teamwork"
@@ -274,10 +264,9 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         g := g.applyPermanentAction o .tap
         g := g.putMatchingSourceTriggers p (g.object! id) .tappedForTeamwork
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    g := g.setObject { spell with castState := { spell.castState with teamworkPaid := true } }
-    g := { g with
-      pending := .none
-      proposedSpell := some { prop with teamworkPaid := true, teamworkAnnounced := true } }
+    g := g.changeObject spell.id (.teamworkPaid true)
+    g := g.change (.pending .none)
+      |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true]
     g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"
     -- “If this spell was cast using teamwork, choose both instead.”
     if spell.printed.chooseBothIfTeamwork then
@@ -297,7 +286,7 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
     let choices := g.ringBearerChoices p
     if id.isNone && !choices.isEmpty then
       throw "You must choose a creature if you control one"
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     return g.temptWithTheRing p id
   | _ => throw "Not time to choose a Ring-bearer"
 
@@ -305,7 +294,7 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
 shuffle, and gain `life`. -/
 def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
     (sourceId : Option ObjectId) (max life : Nat) : Game :=
-  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype "Plains")
+  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype .plains)
     "a basic Plains card" (.exileLinked sourceId) (count := max)
     (after := some (.gainLife life))
 
@@ -333,7 +322,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
 def exileUntilNextEndStep (g : Game) (o : GameObject) : Game :=
   let name := o.name
   let (g, newId) := g.move o.id .exile none
-  let g := { g with delayedEndStep := g.delayedEndStep.push (.returnExiled newId) }
+  let g := g.change (.pushDelayedEndStepReturn newId)
   g.logMsg s!"{name} is exiled until the beginning of the next end step"
 
 /-- Put a land from `p`'s hand onto the battlefield tapped (H.E.R.B.I.E.). -/
@@ -350,7 +339,7 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     if !land.printed.isLand then
       throw s!"{land.name} is not a land card"
     let (g, newId) := g.putOntoBattlefield id p (tapped := true) (summoningSick := false)
-    let g := { g with pending := .none }
+    let g := g.change (.pending .none)
     return g.afterLandEnters (g.object! newId) |>.receivePriority g.activePlayer
   | _ => throw "Not time to put a land from hand onto the battlefield"
 

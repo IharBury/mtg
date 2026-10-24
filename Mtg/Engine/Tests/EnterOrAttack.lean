@@ -40,9 +40,9 @@ carry `EnterOrAttackLeftover`. The printed sentence stays the Oracle line. -/
   .createTokens .squirrel11green (.fixed 1) false
 
 #guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords) ==
-  Effect.enterOrAttackCopyKeywords.phrase
+  TriggeredAbility.enterOrAttackSentence .copyKeywords
 #guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) ==
-  Effect.enterOrAttackCreateSquirrel.phrase
+  TriggeredAbility.enterOrAttackSentence .createSquirrel
 
 /- A creature with no extra keywords gives Super-Adaptoid nothing.
 Double strike does not also grant first strike. Targeting itself is illegal.
@@ -64,8 +64,7 @@ def doubleStrikeOnly : Game :=
   let g := addPermanent afterDraw superAdaptoid me me
   let g := addPermanent g grizzlyBears me me
   let bears := named g "Grizzly Bears"
-  let g := g.mapObjectStatus bears (fun s =>
-    { s with untilEotKeywords := Keyword.doubleStrike })
+  let g := g.changeStatus bears.id (.untilEotKeywords Keyword.doubleStrike)
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
@@ -92,8 +91,7 @@ def sourceLeft : Game :=
   let g := addPermanent g grizzlyBears me me
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
-  let g := g.mapObjectStatus bears (fun s =>
-    { s with untilEotKeywords := Keyword.haste })
+  let g := g.changeStatus bears.id (.untilEotKeywords Keyword.haste)
   let (g, _) := g.move adaptoid.id (.graveyard me) none
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
     (some adaptoid.id) #[Target.permanent bears.id]
@@ -113,7 +111,7 @@ def oneSquirrel : Game :=
   let tok := named oneSquirrel "Squirrel"
   squirrels oneSquirrel == 1 && tok.printed.isToken && tok.controller == some me &&
     tok.printed.power == some 1 && tok.printed.toughness == some 1 &&
-    tok.subtypes.contains "Squirrel"
+    tok.subtypes.contains .squirrel
 
 def squirrelSourceLeft : Game :=
   let g := addPermanent afterDraw theUnbeatableSquirrelGirl me me

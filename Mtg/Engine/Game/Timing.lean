@@ -11,8 +11,6 @@ graveyard, or the top of the library (CR 118.12 / 400.7).
 namespace Mtg.Engine
 namespace Game
 
-set_option synthInstance.maxSize 1024
-
 /-- CR 100.1b: a multiplayer game begins with more than two players. -/
 def isMultiplayer (g : Game) : Bool :=
   g.players.size > 2
@@ -60,7 +58,10 @@ effect adds mana. -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
   !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
     match ab.effect.resolution with
-    | .addMana .. => true
+    | .addMana _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
+    | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
+    | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
+    | .addFourAnyCombination | .addTwoAnyColorEquipment => true
     | _ => false
 
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
@@ -84,7 +85,7 @@ def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
 
 /-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
-  g.asSorcery? p && (g.player p).landsPlayedThisTurn < g.landPlaysAllowed p
+  g.asSorcery? p && g.loggedLandsPlayed p < g.landPlaysAllowed p
 
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -113,10 +114,8 @@ def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
     match o.exiledBy.bind g.findObject? with
     | some src =>
-      src.isOnBattlefield && src.controlledBy p &&
-        match src.printed.castPermission with
-        | .castExiledIf cond => g.boardConditionHolds p cond
-        | _ => false
+      src.isOnBattlefield && src.controlledBy p && src.printed.castExiledWithSevenInGraveyard &&
+        (g.player p).graveyard.size ≥ 7
     | none => false
 
 /-- Cards in exile that `p` currently may play. -/

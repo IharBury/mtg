@@ -6,14 +6,16 @@ import Mtg.Engine.Game.Player
 import Mtg.Engine.Game.Core
 import Mtg.Engine.Game.Designations
 import Mtg.Engine.Game.Phasing
+import Mtg.Engine.Game.BasePT
 import Mtg.Engine.Game.Allocation
 import Mtg.Engine.Game.Tokens
 import Mtg.Engine.Game.Attachments
-import Mtg.Engine.Game.PowerToughness
+import Mtg.Engine.Game.StatBonuses
 import Mtg.Engine.Game.Movement
 import Mtg.Engine.Game.Leaving
 import Mtg.Engine.Game.Library
 import Mtg.Engine.Game.Keywords
+import Mtg.Engine.Game.PowerToughness
 import Mtg.Engine.Game.CombatAssignment
 import Mtg.Engine.Game.StateBasedActions
 import Mtg.Engine.Game.Timing
@@ -34,8 +36,13 @@ import Mtg.Engine.Game.LibrarySearch
 import Mtg.Engine.Game.ResolutionHelpers
 import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
+import Mtg.Engine.Game.FraHelpers
+import Mtg.Engine.Game.FraAbilities
+import Mtg.Engine.Game.FraResolve
+import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
+import Mtg.Engine.Game.Chapters
 import Mtg.Engine.Game.TriggeredAbilities
 import Mtg.Engine.Game.SpellResolution
 import Mtg.Engine.Game.Combat
@@ -43,7 +50,6 @@ import Mtg.Engine.Game.Turns
 import Mtg.Engine.Game.PriorityActions
 import Mtg.Engine.Game.Mulligans
 import Mtg.Engine.Game.Decisions
-import Mtg.Engine.Game.FraChoices
 import Mtg.Engine.Game.Actions
 import Mtg.Engine.Game.Start
 
@@ -136,17 +142,20 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `Stack`: Stack entries and proposed casts (CR 405 / 601)
 - `Pending`: Pending decisions
 - `Player`: Players, actions, and setup (CR 102 / 103)
+- `Event`: Game state changes recorded for the whole game (CR 603.2 / 614.1)
 - `Core`: Game state core
 - `Designations`: Player designations
 - `Phasing`: Attachments in play and phasing (CR 702.26)
+- `BasePT`: Characteristic-defining P/T (CR 604.3)
 - `Allocation`: Object allocation
 - `Tokens`: Tokens (CR 111)
 - `Attachments`: Attach and unattach (CR 701.3)
-- `PowerToughness`: Characteristic-defining P/T, continuous stat bonuses, and current P/T (CR 604.3 / 613.4)
+- `StatBonuses`: Continuous stat bonuses (CR 613)
 - `Movement`: Zone changes (CR 400)
 - `Leaving`: Game end and leaving the game (CR 104 / 800.4)
 - `Library`: Draws, shuffles, and library order (CR 121)
 - `Keywords`: Current keywords (CR 613.1f)
+- `PowerToughness`: Current power and toughness (CR 613.4)
 - `CombatAssignment`: Combat damage assignment (CR 510.1)
 - `StateBasedActions`: State-based actions (CR 704)
 - `Timing`: Priority and play timing (CR 117 / 116.2a)
@@ -169,6 +178,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ModeledTriggers`: Modeled trigger resolution
 - `EffectResolution`: Unified effect resolution (CR 608)
 - `CastExtras`: Optional costs, cascade, and the Ring
+- `Chapters`: Saga chapter resolution (CR 714.3)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)
 - `Combat`: Combat (CR 506–510)
@@ -185,85 +195,57 @@ namespace Mtg.Engine
 /-- Apply one legal action, or panic with the rules error. -/
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   match g.apply p a with
-  | .ok g' => g'
+  | .ok g' =>
+    match a with
+    | .supplyOrder _ | .supplyIndex _ => g'
+    | _ => g'.resolveRandom
   | .error e => panic! e
-
-private def mustDecline (g : Game) (p : PlayerId) : Game :=
-  mustApply g p .decline
-
-private def applyIdleResolve (g : Game) (p q : PlayerId) (choice : @& ResolvePending) : Game :=
-  match choice with
-  | .lookLibrary n surveil =>
-    mustApply g p (.lookLibrary (g.scryLookedIds p n) #[] surveil)
-  | .chooseSacrificeCreature _ _ =>
-    match (g.creaturesControlledBy q)[0]? with
-    | none => panic! "no creature to sacrifice"
-    | some o => mustApply g q (.sacrifice o.id)
-  | .chooseDiscardCard _ =>
-    match (g.player q).hand.back? with
-    | none => panic! "no card to discard"
-    | some id => mustApply g q (.discard id)
-  | .sacrificeCreature =>
-    match (g.sacrificeCreatureChoices p)[0]? with
-    | some sac => mustApply g p (.sacrifice sac.id)
-    | none => panic! "expected a creature to sacrifice"
-  | .chooseLibraryPlacement _ =>
-    mustApply g p .chooseBottom
-  | .recruitDiscard =>
-    match (g.player p).hand.back? with
-    | none => panic! "no card to discard for recruit"
-    | some id => mustApply g p (.discard id)
-  | .chooseTriggerOr =>
-    mustApply g p (.chooseMode 0)
-  | .chooseProliferate _ =>
-    mustApply g p (.targets #[])
-  | .mayCostDraw .. | .mayPayGeneric ..
-  | .mayAttachEquipment .. | .mayPutArtifactFromHand ..
-  | .mayResolve | .tapHumans
-  | .payOrLetCounter .. | .mayCastExiledElseDamage ..
-  | .payWard .. | .maySacrificeAnotherBolg ..
-  | .mayCastFromLooked .. | .mayPutLandFromHand
-  | .mayHaveVillainConnive .. =>
-    mustDecline g p
-  | _ =>
-    mustApply g p .pass
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 @[noinline] def applyIdle (g : Game) : Game :=
-  match g.actor with
-  | none => panic! s!"no actor at {g.step}"
-  | some p =>
-  match g.pending with
-  | .declareAttackers =>
+  match g.pending, g.actor with
+  | .resolveRandom _, _ =>
+    g.resolveRandom
+  | .declareAttackers, some p =>
     mustApply g p (.declareAttackers #[])
-  | .declareBlockers =>
+  | .declareBlockers, some p =>
     mustApply g p (.declareBlockers #[])
-  | .declareMulligan _ =>
+  | .declareMulligan _, some p =>
     mustApply g p .keep
-  | .putOnBottom _ n =>
+  | .putOnBottom _ n, some p =>
     mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
-  | .assignCombatDamage _ _ =>
-    mustApply g p (.assignCombatDamage #[])
-  | .chooseLegend _ _ ids =>
-    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
-  | .chooseTriggerToStack q =>
-    mustApply g q (.stackTriggers (g.defaultTriggerSourceIds q))
-  | .chooseX _ =>
-    mustApply g p (.chooseX 0)
-  | .chooseTeamwork _ =>
+  | .scry _ n, some p =>
+    mustApply g p (.scry (g.scryLookedIds p n) #[])
+  | .surveil _ n, some p =>
+    mustApply g p (.surveil (g.scryLookedIds p n) #[])
+  | .mayDiscardDraw _ _, some p =>
+    mustApply g p .decline
+  | .chooseTeamwork _, some p =>
     mustApply g p (.announceTeamwork false)
-  | .chooseTeamworkCreatures _ need =>
+  | .chooseTeamworkCreatures _ need, some p =>
     mustApply g p (.choosePermanents (g.pickTeamworkCreatures p need))
-  | .chooseAdditionalCost _ =>
+  | .chooseAdditionalCost _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
     | some prop =>
       mustApply g p (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
-  | .discardForAdditionalCost q =>
-    match (g.player q).hand.back? with
+  | .discardForAdditionalCost p, some _ =>
+    match (g.player p).hand.back? with
     | none => panic! "no card to discard as an additional cost"
-    | some id => mustApply g q (.discard id)
-  | .chooseMode _ =>
+    | some id => mustApply g p (.discard id)
+  | .chooseSacrificeCreature p _ _, some _ =>
+    match (g.creaturesControlledBy p)[0]? with
+    | none => panic! "no creature to sacrifice"
+    | some o => mustApply g p (.sacrifice o.id)
+  | .chooseDiscardCard p _, some _ =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard"
+    | some id => mustApply g p (.discard id)
+  | .sacrificeCreature _, some p =>
+    match (g.sacrificeCreatureChoices p)[0]? with
+    | some sac => mustApply g p (.sacrifice sac.id)
+    | none => panic! "expected a creature to sacrifice"
+  | .chooseMode _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell or ability while choosing a mode"
     | some prop =>
@@ -272,35 +254,78 @@ private def applyIdleResolve (g : Game) (p q : PlayerId) (choice : @& ResolvePen
         match g.defaultAbilityMode p prop.abilityModes with
         | none => panic! "no legal mode (CR 601.2b)"
         | some idx => mustApply g p (.chooseMode idx)
-      | _ =>
+      | .spell =>
         match g.findObject? prop.spellId with
         | none => panic! "expected a proposed spell while choosing a mode"
         | some spell =>
-          if !(g.chosenModesOf spell).isEmpty then mustDecline g p else
+          if !(g.chosenModesOf spell).isEmpty then mustApply g p .decline else
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g p (.chooseMode i)
-  | .chooseTargets _ =>
+  | .chooseX _, some p =>
+    mustApply g p (.chooseX 0)
+  | .assignCombatDamage _ _, some p =>
+    mustApply g p (.assignCombatDamage #[])
+  | .chooseLegend _ _ ids, some p =>
+    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
+  | .chooseTriggerToStack p, some _ =>
+    mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
+  | .mayPayGeneric _ _, some p =>
+    mustApply g p .decline
+  | .chooseLibraryPlacement _ _, some p =>
+    mustApply g p .chooseBottom
+  | .mayAttachEquipment _ _, some p =>
+    mustApply g p .decline
+  | .mayResolve _, some p =>
+    mustApply g p .decline
+  | .tapHumans _, some p =>
+    mustApply g p .decline
+  | .payOrLetCounter _ _ _, some p =>
+    mustApply g p .decline
+  | .payWard _ _ _, some p =>
+    mustApply g p .decline
+  | .recruitDiscard _, some p =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard for recruit"
+    | some id => mustApply g p (.discard id)
+  | .maySacrificeAnotherBolg _ _, some p =>
+    mustApply g p .decline
+  | .mayCastFromLooked _ _ _, some p =>
+    mustApply g p .decline
+  | .mayPutLandFromHand _, some p =>
+    mustApply g p .decline
+  | .chooseTriggerOr _, some p =>
+    mustApply g p (.chooseMode 0)
+  | .maySacArtifactOrDiscard _ _, some p =>
+    mustApply g p .decline
+  | .mayPutArtifactFromHand _ _, some p =>
+    mustApply g p .decline
+  | .mayHaveVillainConnive _ _ _, some p =>
+    mustApply g p .decline
+  | .mayCastExiledElseDamage .., some p =>
+    mustApply g p .decline
+  | .chooseProliferate _ _, some p =>
+    mustApply g p (.targets #[])
+  | .fraChoice _ choice, some p =>
+    mustApply g p (g.defaultFraAction p choice)
+  | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
     | some spell =>
       match g.defaultTarget p spell with
       | some t => mustApply g p (.target t)
       | none =>
-        if g.canSkipCurrentOptionalSlot spell then mustDecline g p
-        else if g.canFinishOptionalTargets spell then mustDecline g p
+        if g.canSkipCurrentOptionalSlot spell then mustApply g p .decline
+        else if g.canFinishOptionalTargets spell then mustApply g p .decline
         else
           match spell.triggeredAbility with
           | some ab =>
-            if ab.allowsZeroTargets then mustDecline g p
+            if ab.allowsZeroTargets then mustApply g p .decline
             else panic! "no legal target (CR 601.2c)"
           | none => panic! "no legal target (CR 601.2c)"
-  | .fraChoice _ choice =>
-    mustApply g p (g.defaultFraAction p choice)
-  | .resolve q choice =>
-    applyIdleResolve g p q choice
-  | _ =>
+  | _, some p =>
     mustApply g p .pass
+  | _, none => panic! s!"no actor at {g.step}"
 
 /-- Advance by idle actions until `g` is in `st` with no pending choice. -/
 @[noinline] def skipTo (g : Game) (st : Step) : Nat → Game

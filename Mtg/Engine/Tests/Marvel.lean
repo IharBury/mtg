@@ -31,7 +31,7 @@ open Mtg.Engine.Catalog
 (CR 702.193b). `{4}{W}` minus Brave Brawler's `{1}{W}` is `{3}`. -/
 def brawlerEntered : Game := mshEnter afterDraw braveBrawler
 
-#guard (namedPermanent brawlerEntered "Brave Brawler").status.enteredThisTurn
+#guard brawlerEntered.loggedEntered (namedPermanent brawlerEntered "Brave Brawler").id
 #guard
   let o := namedPermanent brawlerEntered "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
@@ -42,7 +42,7 @@ def brawlerEntered : Game := mshEnter afterDraw braveBrawler
 /-- Without the enters-this-turn flag the power-up cost is printed. -/
 def brawlerNoEnterFlag : Game := addPermanent afterDraw braveBrawler ⟨0⟩ ⟨0⟩
 
-#guard !(namedPermanent brawlerNoEnterFlag "Brave Brawler").status.enteredThisTurn
+#guard !brawlerNoEnterFlag.loggedEntered (namedPermanent brawlerNoEnterFlag "Brave Brawler").id
 #guard
   let o := namedPermanent brawlerNoEnterFlag "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
@@ -162,8 +162,7 @@ def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
 def pantherCombatDraw : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Black Panther, Hope Enduring"
-  let g := g.setObject { o with status := { o.status with
-    attacking := true, summoningSick := false } }
+  let g := g.changeStatuses o.id #[.attacking true, .summoningSick false]
   settle g.combatDamage 24
 
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
@@ -181,7 +180,7 @@ def pantherCombatDraw : Game :=
 
 def hiddenLairEntered : Game := mshEnter afterDraw hiddenLair
 
-#guard (namedPermanent hiddenLairEntered "Hidden Lair").status.enteredThisTurn
+#guard hiddenLairEntered.loggedEntered (namedPermanent hiddenLairEntered "Hidden Lair").id
 #guard
   hiddenLairEntered.manaAbilitiesOf (namedPermanent hiddenLairEntered "Hidden Lair") ==
     #[.colorless, .colored .blue, .colored .black]
@@ -197,7 +196,7 @@ def hiddenLairTappedBlue : Game :=
 /-- Without entering this turn or a basic, Hidden Lair taps only for `{C}`. -/
 def hiddenLairStuck : Game := addPermanent afterDraw hiddenLair ⟨0⟩ ⟨0⟩
 
-#guard !(namedPermanent hiddenLairStuck "Hidden Lair").status.enteredThisTurn
+#guard !hiddenLairStuck.loggedEntered (namedPermanent hiddenLairStuck "Hidden Lair").id
 #guard
   hiddenLairStuck.manaAbilitiesOf (namedPermanent hiddenLairStuck "Hidden Lair") ==
     #[.colorless]
@@ -329,7 +328,7 @@ def staturePumpedInCombat : Game :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Stature, Size Shifter"
-  let g := g.setObject { o with status := { o.status with plusOnePlusOne := 3 } }
+  let g := g.changeStatus o.id (.plusOnePlusOne 3)
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
     (.declareAttackers #[(namedPermanent g "Stature, Size Shifter").id])
@@ -346,7 +345,7 @@ def staturePumpedInCombat : Game :=
 /-- Stature in play with enough blue to activate `{X}{U}{U}` at X = 3. -/
 def statureReady : Game :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
-  withBlueMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 5
+  withBlueMana (g.recordLandPlayed ⟨0⟩) ⟨0⟩ 5
 
 def proposedStature : Game :=
   mustApply statureReady ⟨0⟩ (.activate (namedPermanent statureReady "Stature, Size Shifter").id 0)
@@ -394,7 +393,7 @@ def staturePowerUpResolved : Game := passBoth paidStature
 /-- Entered this turn, `{X}{U}{U}` minus `{U}` is `{X}{U}`. -/
 def statureEntered : Game := mshEnter afterDraw statureSizeShifter
 
-#guard (namedPermanent statureEntered "Stature, Size Shifter").status.enteredThisTurn
+#guard statureEntered.loggedEntered (namedPermanent statureEntered "Stature, Size Shifter").id
 #guard
   let o := namedPermanent statureEntered "Stature, Size Shifter"
   let ab := o.printed.activatedAbilities[0]!
@@ -513,7 +512,7 @@ def bilboRingEquipped : Game :=
   (namedPermanent bilboRingEquipped "Grizzly Bears")
 
 def bilboRingOnNissaTurn : Game :=
-  { bilboRingEquipped with activePlayer := ⟨1⟩ }
+  bilboRingEquipped.change (.activePlayer ⟨1⟩)
 
 #guard !bilboRingOnNissaTurn.hasHexproof
   (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
@@ -549,7 +548,8 @@ def myPreciousEquipped : Game :=
 /-- Black Panther prevents all damage that would be dealt to him. -/
 def pantherDamagePrevented : Game :=
   let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
-  g.dealDamageToPermanent (namedPermanent g "Black Panther, Hope Enduring") 3
+  let p := namedPermanent g "Black Panther, Hope Enduring"
+  g.dealDamageToPermanent p 3 (source := some p.asEvent)
 
 #guard (namedPermanent pantherDamagePrevented "Black Panther, Hope Enduring").status.damage == 0
 #guard pantherDamagePrevented.log.any (fun s => mentions s "prevented")
@@ -617,8 +617,9 @@ def gandalfWardPending : Game :=
   | _ => false
 
 def gandalfWardPaid : Game :=
-  let g := gandalfWardPending.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with manaPool := { pl.manaPool with colorless := 3 } })
+  let pl := gandalfWardPending.player ⟨0⟩
+  let g := gandalfWardPending.changePlayer ⟨0⟩
+    (.manaPool (pl.manaPool.set .colorless 3))
   mustApply g ⟨0⟩ .payGeneric
 
 #guard gandalfWardPaid.stack.any (fun e =>
@@ -761,8 +762,8 @@ def titaniaFreeCastReady : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
   let g := addToHand (addToHand g titaniaRuggedRumbler ⟨0⟩) forest ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Titania, Rugged Rumbler"
-  g.setObject { card with playPermission := some {
-    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  g.changeObject card.id (.playPermission (some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true }))
 
 def titaniaFreeCastViaDiscard : Game :=
   let g := mustApply titaniaFreeCastReady ⟨0⟩
@@ -808,12 +809,20 @@ def chorusGrantsAnyColor : Game :=
   (chorusGrantsAnyColor.manaAbilitiesOf
     (namedPermanent chorusGrantsAnyColor "Grizzly Bears")).contains (.colored .red)
 
-/-- Colleen Wing: +1/+1 and scry from the trigger resolution, not from
+/-- `applyModeledTrigger` resolves leftover constructors, not Oracle text.
+A shared `.draw` trigger must not draw via a `toNotation` fallback. -/
+def applyModeledTriggerIgnoresDrawText : Game :=
+  afterDraw.applyModeledTrigger ⟨0⟩ (.onEnterDraw 1) none
+
+#guard (applyModeledTriggerIgnoresDrawText.player ⟨0⟩).hand.size ==
+  (afterDraw.player ⟨0⟩).hand.size
+
+/-- Colleen Wing: +1/+1 and scry from the leftover constructor, not from
 parsing “put a +1/+1 counter” ahead of “Scry”. -/
 def colleenWingPlusOneScry : Game :=
   let g := addPermanent afterDraw colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Colleen Wing, Street Samurai"
-  g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingPlusOneScry) (some src.id)
+  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneScry) (some src.id)
 
 #guard (namedPermanent colleenWingPlusOneScry "Colleen Wing, Street Samurai").status.plusOnePlusOne == 1
 #guard
@@ -828,7 +837,7 @@ def enchantedControllerDrawsForHost : Game :=
   let host := namedPermanent g "Grizzly Bears"
   let aura := namedPermanent g "Super Intelligence"
   let g := g.attachSourceTo aura host
-  g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepEnchantedControllerDraws)
+  g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepEnchantedControllerDraws)
     (some (namedPermanent g "Super Intelligence").id)
 
 #guard (enchantedControllerDrawsForHost.player ⟨1⟩).hand.size ==
@@ -850,7 +859,7 @@ def lukeCageAttacksAlone : Game :=
 def mockingbirdPlusOneThis : Game :=
   let g := addPermanent afterDraw mockingbirdAceAgent ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Mockingbird, Ace Agent"
-  g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingPlusOneThis) (some src.id)
+  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneThis) (some src.id)
 
 #guard (namedPermanent mockingbirdPlusOneThis "Mockingbird, Ace Agent").status.plusOnePlusOne == 1
 
@@ -865,12 +874,12 @@ def nontokenHeroModalPump : Game :=
     #[] (some 1)
 
 #guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
-  o.printed.isToken && o.printed.hasSubtype "Soldier")).size == 1
+  o.printed.isToken && o.printed.hasSubtype .soldier)).size == 1
 #guard (namedPermanent nontokenHeroModalPump "Grizzly Bears").status.pump == (1, 1)
 
 /-- Second-draw drain leftover: each opponent loses 1 and you gain 1. -/
 def secondDrawDrain : Game :=
-  afterDraw.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceSecondDrawDrain) none
+  afterDraw.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawDrain) none
 
 #guard (secondDrawDrain.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + 1
 #guard (secondDrawDrain.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 1
@@ -881,7 +890,7 @@ def hellcatReturns : Game :=
   let g := addPermanent afterDraw hellcatUndyingVigilante ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Hellcat, Undying Vigilante"
   let (g, gyId) := g.move src.id (.graveyard ⟨0⟩) none
-  g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some gyId)
+  g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some gyId)
 
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").isOnBattlefield
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1
@@ -908,7 +917,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  g.setObject { smaug with status := { smaug.status with attacking := true } }
+  g.changeStatus smaug.id (.attacking true)
 
 #guard flyerVsHawkeyeBow.canBlock
   (namedPermanent flyerVsHawkeyeBow "Grizzly Bears")
@@ -917,7 +926,7 @@ def flyerVsHawkeyeBow : Game :=
   let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
-  let g := g.setObject { smaug with status := { smaug.status with attacking := true } }
+  let g := g.changeStatus smaug.id (.attacking true)
   !g.canBlock (namedPermanent g "Grizzly Bears")
     (namedPermanent g "Smaug, the Great Calamity")
 
@@ -1015,7 +1024,7 @@ def hawkeyeBowManaTap : Game :=
 def hawkeyeBowReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := g.recordLandPlayed ⟨0⟩
   withRedMana g ⟨0⟩ 1
 
 def hawkeyeBowEquippedViaEquip : Game :=

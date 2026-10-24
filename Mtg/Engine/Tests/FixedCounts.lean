@@ -76,38 +76,38 @@ the token and puts no loyalty. -/
 
 /- Looking at the top card offers the reveal. Another count looks at that many. -/
 #guard
-  let g := step afterDraw (.revealLibrary (.topNumber (.fixed 1)) (.returnToHand (.lookedTypes #["Creature"])))
+  let g := step afterDraw (.lookAtTopRevealTypes (.fixed 1) #["Creature"])
   match g.pending with
   | .fraChoice p _ => p == caster
   | _ => false
 
 #guard
-  let g := step afterDraw (.revealLibrary (.topNumber .perOtherCreature) (.returnToHand (.lookedTypes #["Creature"])))
+  let g := step afterDraw (.lookAtTopRevealTypes .perOtherCreature #["Creature"])
   match g.pending with
   | .fraChoice p _ => p == caster && logContains g "looks at the top 0"
   | _ => false
 
 #guard
   let g0 := addPermanent afterDraw bear caster caster
-  let g := step g0 (.revealLibrary (.topNumber .perOtherCreature) (.returnToHand (.lookedTypes #["Creature"])))
+  let g := step g0 (.lookAtTopRevealTypes .perOtherCreature #["Creature"])
   match g.pending with
   | .fraChoice p _ => p == caster && logContains g "looks at the top 1"
   | _ => false
 
 #guard (SharedTrigger.timing (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])).resolution ==
-  .revealLibrary (.topNumber (.fixed 4)) (.returnToHand (.lookedTypes #["Dwarf", "Equipment"]))
+  .lookAtTopRevealTypes (.fixed 4) #["Dwarf", "Equipment"]
 
 /- The source may become 3/3. Another count is the base that is offered. -/
 #guard
   let g0 := addPermanent afterDraw bear caster caster
-  let g := step g0 (.may (.setBasePT (.fixed 3) (.fixed 3) .source) (.sequence [])) (some (bearOf g0).id)
+  let g := step g0 (.becomePT (.fixed 3) (.fixed 3)) (some (bearOf g0).id)
   match g.pending with
   | .fraChoice p (.mayBecomeBasePT id 3 3) => p == caster && id == (bearOf g0).id
   | _ => false
 
 #guard
   let g0 := addPermanent afterDraw bear caster caster
-  let g := step g0 (.may (.setBasePT .perOtherCreature (.fixed 3) .source) (.sequence [])) (some (bearOf g0).id)
+  let g := step g0 (.becomePT .perOtherCreature (.fixed 3)) (some (bearOf g0).id)
   match g.pending with
   | .fraChoice p (.mayBecomeBasePT id 0 3) => p == caster && id == (bearOf g0).id
   | _ => false
@@ -118,12 +118,12 @@ the token and puts no loyalty. -/
     match g0.battlefield.find? (·.name == "Count Bear") with
     | some o => o.id
     | none => panic! "missing Count Bear"
-  let g := step g0 (.may (.setBasePT .perOtherCreature (.fixed 3) .source) (.sequence [])) (some source)
+  let g := step g0 (.becomePT .perOtherCreature (.fixed 3)) (some source)
   match g.pending with
   | .fraChoice _ (.mayBecomeBasePT _ 1 3) => true
   | _ => false
 
 #guard (SharedTrigger.timing (.becomePT 1 1)).resolution ==
-  .may (.setBasePT (.fixed 1) (.fixed 1) .source) (.sequence [])
+  .becomePT (.fixed 1) (.fixed 1)
 
 end Mtg.Engine.FixedCountTests

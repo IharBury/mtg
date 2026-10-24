@@ -128,15 +128,15 @@ def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
 /-- Put `card` into the game as a new object and optionally update its owner. -/
 def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
     (controller : Option PlayerId := none) (status : Status := {})
-    (updateOwner : ObjectId → Player → Player := fun _ pl => pl) : Game :=
+    (updateOwner : ObjectId → Player → Array PlayerChange := fun _ _ => #[]) : Game :=
   let (g, obj) := g.allocObject card owner zone controller status
-  g.modifyPlayer owner (updateOwner obj.id)
+  g.changePlayers owner (updateOwner obj.id (g.player owner))
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
   let status : Status :=
-    ({ summoningSick := false } : Status).setCounter .indestructible
-      (if card.entersWithIndestructibleCounter then 1 else 0)
+    { summoningSick := false
+      indestructibleCounters := if card.entersWithIndestructibleCounter then 1 else 0 }
   insertObject g card owner .battlefield (some controller) status
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/
@@ -172,14 +172,14 @@ is no longer tapped. -/
 /-- Changing control does not move the permanent off the battlefield. -/
 @[irreducible, noinline] def afterControlChange : Game :=
   let o := lastPermanent withMountain
-  withMountain.setObject { o with controller := some ⟨1⟩ }
+  withMountain.changeObject o.id (.controller (some ⟨1⟩))
 
 /-- Nissa's permanent entered first; Chandra still has a later Forest. -/
 @[irreducible, noinline] def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
 
 @[irreducible, noinline] def uncontrolledPermanent : Game :=
   let o := lastPermanent withMountain
-  withMountain.setObject { o with controller := none }
+  withMountain.changeObject o.id (.controller none)
 
 @[irreducible, noinline] def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 @[irreducible, noinline] def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩

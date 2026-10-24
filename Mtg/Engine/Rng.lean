@@ -1,5 +1,3 @@
-import Mtg.Engine.Color
-
 /-!
 # Deterministic RNG
 
@@ -9,7 +7,9 @@ A tiny xorshift64 generator used to shuffle libraries (CR 103.3) without
 
 namespace Mtg.Engine
 
-abbrev Rng := ColorSet
+structure Rng where
+  state : UInt64
+deriving Repr, Inhabited, BEq
 
 namespace Rng
 

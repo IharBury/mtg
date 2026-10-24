@@ -96,7 +96,7 @@ open Mtg.Demo.Render
 
 -- `ignore` is not cancelled when the other player uses `main phase`.
 
-#guard describeCheckResult { Tests.started with result := some (.won ⟨0⟩) } == "Winner: Chandra"
+#guard describeCheckResult (Tests.started.change (.result (some (.won ⟨0⟩)))) == "Winner: Chandra"
 
 #guard shouldWriteOutput false false true "first"
 
@@ -116,17 +116,15 @@ open Mtg.Demo.Render
 #guard shouldAutoPass Tests.started []
 
 #guard
-  let g := { Tests.readyToDeclareAttackers with
-    objects := Tests.readyToDeclareAttackers.objects.map (fun o =>
-      { o with status := { o.status with tapped := true } }) }
+  let g := Tests.readyToDeclareAttackers.objects.foldl
+    (fun g o => g.changeStatus o.id (.tapped true))
+    Tests.readyToDeclareAttackers
   shouldAutoNoAttack g []
 
 #guard
-  let g := { Tests.readyToDeclareBlockers with
-    objects := Tests.readyToDeclareBlockers.objects.map (fun o =>
-      if o.controlledBy ⟨1⟩ then
-        { o with status := { o.status with tapped := true } }
-      else o) }
+  let g := Tests.readyToDeclareBlockers.objects.foldl (fun g o =>
+    if o.controlledBy ⟨1⟩ then g.changeStatus o.id (.tapped true) else g)
+    Tests.readyToDeclareBlockers
   !shouldAutoNoBlock g ["noblock"]
 
 #guard !shouldAutoTarget Tests.proposedSmite ["target opponent"]

@@ -115,9 +115,8 @@ def threeLeftPlayerTriggerSkipped : Game :=
 def threeNoCombatToLeftPlayer : Bool :=
   let g := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.setObject { ogre with status := { ogre.status with
-    attacking := true, attackingWhom := some ⟨1⟩ } }
-  let g := g.setPlayer { (g.player ⟨1⟩) with lost := true, leftTheGame := true }
+  let g := g.changeStatuses ogre.id #[.attacking true, .attackingWhom (some ⟨1⟩)]
+  let g := g.changePlayers ⟨1⟩ #[.lost true, .leftTheGame true]
   let asgn := g.defaultCombatAssignment (namedPermanent g "Gray Ogre") true #[]
   asgn.toPlayer == 0
 
@@ -128,7 +127,7 @@ def threeUnpaidCostCounters : Game :=
   let g := addToHand threeStarted lightningBolt ⟨1⟩
   let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
   let (g, newId) := g.move bolt.id .stack (some ⟨1⟩)
-  let g := { g with pending := .payOrLetCounter ⟨0⟩ 3 newId }
+  let g := g.change (.pending (.payOrLetCounter ⟨0⟩ 3 newId))
   g.playerLeavesGame ⟨0⟩
 
 #guard !threeUnpaidCostCounters.stack.any (fun e =>
@@ -139,8 +138,7 @@ def threeUnpaidCostCounters : Game :=
 /-- After Chandra leaves during her turn, Nissa takes the next turn and the
 until-next-turn effect still lasts (CR 800.4j / 800.4m). -/
 def threeAfterLeftPlayerCurrentTurn : Game :=
-  let g := threeStarted.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with protectionFromEverything := true })
+  let g := threeStarted.createEffect (.protectionFromEverything ⟨0⟩)
   let g := mustApply g ⟨0⟩ .concede
   passBoth (skipTo g .end 200)
 

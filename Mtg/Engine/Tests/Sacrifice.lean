@@ -69,7 +69,7 @@ selector that is not a sacrifice, leave the permanent where it is. -/
     !(logContains g "sacrifices Sacrifice Relic")
 
 #guard
-  let g := step { withRelic with thisWay := { withRelic.thisWay with sourceWasSacrificed := true } } (.sacrifice .source)
+  let g := step (withRelic.change (.sourceWasSacrificed true)) (.sacrifice .source)
   onBoard g "Sacrifice Relic" && g.sourceWasSacrificed &&
     logContains g "The ability's source is no longer in play"
 
@@ -96,7 +96,7 @@ selector that is not a sacrifice, leave the permanent where it is. -/
     logContains g "Sacrifice Relic is sacrificed"
 
 #guard
-  let g := step { withRelic with thisWay := { withRelic.thisWay with sourceWasSacrificed := true } }
+  let g := step (withRelic.change (.sourceWasSacrificed true))
     (.sacrifice .source .noted)
   !g.sourceWasSacrificed && onBoard g "Sacrifice Relic" &&
     logContains g "The ability's source is no longer in play"
@@ -167,9 +167,8 @@ No creatures there is reported. A tied choice is still a choice. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw attacker caster caster) fodder caster caster
   let sid := pid g0 "Sacrifice Attacker"
-  let src := g0.object! sid
-  let g0 := g0.setObject { src with status := { src.status with
-    attacking := true, attackingWhom := some caster } }
+  let g0 := g0.changeStatuses sid #[
+    .attacking true, .attackingWhom (some caster)]
   let g := step g0 (.sacrifice .leastPower) (some sid)
   onBoard g "Sacrifice Attacker" && !onBoard g "Sacrifice Fodder" &&
     inGraveyard g caster "Sacrifice Fodder" &&

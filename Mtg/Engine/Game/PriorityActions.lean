@@ -29,7 +29,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
   | .payWard q _ .fivePoison =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
-    let g := g.modifyPlayer p (fun pl => { pl with poison := pl.poison + 5 })
+    let g := g.record
+      (GameEvent.poisoned g.turnNumber p 5 (cause := some (.costPayment .ward p)))
     let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
     return g.afterWardResolved
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
@@ -73,11 +74,10 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
     match spell.printed.additionalCostBeholdOrPay with
     | some (quality, n) =>
       if payGeneric then
-        let prop := { prop with
-          cost := prop.cost.addGeneric n
-          needsSacrificeOther := false
-          needsDiscardCard := false }
-        let g := { g with proposedSpell := some prop }
+        let g := g.changeProposals #[
+          .addGenericCost n,
+          .needsSacrificeOther false,
+          .needsDiscardCard false ]
         let g := g.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
@@ -91,41 +91,37 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           spell.printed.additionalCostDiscardOrPayGeneric with
     | some n, _ =>
       if payGeneric then
-        let prop := { prop with
-          cost := prop.cost.addGeneric n
-          needsSacrificeOther := false
-          needsDiscardCard := false }
-        let g := { g with proposedSpell := some prop }
+        let g := g.changeProposals #[
+          .addGenericCost n,
+          .needsSacrificeOther false,
+          .needsDiscardCard false ]
         let g := g.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
       else
         if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
           throw s!"{spell.name} requires sacrificing an artifact or creature"
-        let prop := { prop with
-          needsSacrificeOther := true
-          needsDiscardCard := false }
-        let g := { g with proposedSpell := some prop }
+        let g := g.changeProposals #[
+          .needsSacrificeOther true,
+          .needsDiscardCard false ]
         let g := g.logMsg
           s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
     | none, some n =>
       if payGeneric then
-        let prop := { prop with
-          cost := prop.cost.addGeneric n
-          needsSacrificeOther := false
-          needsDiscardCard := false }
-        let g := { g with proposedSpell := some prop }
+        let g := g.changeProposals #[
+          .addGenericCost n,
+          .needsSacrificeOther false,
+          .needsDiscardCard false ]
         let g := g.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
       else
         if (g.player p).hand.isEmpty then
           throw s!"{spell.name} requires discarding a card"
-        let prop := { prop with
-          needsSacrificeOther := false
-          needsDiscardCard := true }
-        let g := { g with proposedSpell := some prop }
+        let g := g.changeProposals #[
+          .needsSacrificeOther false,
+          .needsDiscardCard true ]
         let g := g.logMsg
           s!"{(g.player p).name} chooses to discard a card as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
@@ -142,7 +138,7 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.priority != p then
     throw "You don't have priority"
   let g := g.logMsg s!"{g.player p |>.name} passes priority"
-  let g := { g with consecutivePasses := g.consecutivePasses + 1 }
+  let g := g.change (.consecutivePasses (g.consecutivePasses + 1))
   if g.consecutivePasses ≥ g.livingPlayers.size then
     if !g.stack.isEmpty then
       let g := g.resolveTop.flushTokenEnters
@@ -152,13 +148,13 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
     else
       return g.advanceStep
   else
-    return { g with priority := g.nextLiving p }
+    return g.change (.priority (g.nextLiving p))
 
 def concede (g : Game) (p : PlayerId) : Game :=
   if (g.player p).lost then g
   else
     let pl := g.player p
-    let g := g.setPlayer { pl with lost := true }
+    let g := g.changePlayer p (.lost true)
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
     match g.decideGameIfFinished with
     | some finished => finished

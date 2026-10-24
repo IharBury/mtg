@@ -42,21 +42,21 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
     .loseAllAbilities, .keywords Keyword.haste,
     .counter .plusOnePlusOne (asEnters := true)])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  .put (.cause (some "Villain")) .underOwner (.entering [
-    .additionalSubtype "Hero", .counter .finality])
+  .put (.cause (some .villain)) .underOwner (.entering [
+    .additionalSubtype .hero, .counter .finality])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
   .returnToHand .cause
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
   .sacrifice .chosenNontokenCreature
 
 #guard toString (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
-  Effect.deathHellcatReturn.phrase
+  TriggeredAbility.deathSentence .hellcatReturn
 #guard toString (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  Effect.deathVillainReturnAsHero.phrase
+  TriggeredAbility.deathSentence .villainReturnAsHero
 #guard toString (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  Effect.deathAttackingReturnHand.phrase
+  TriggeredAbility.deathSentence .attackingReturnHand
 #guard toString (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  Effect.deathDeathtouchOppSac.phrase
+  TriggeredAbility.deathSentence .deathtouchOppSac
 
 /- Hellcat returns with a +1/+1 counter, haste, and no abilities.
 A Hellcat still on the battlefield is reported and stays there. -/
@@ -97,7 +97,7 @@ def villainReturns : Game :=
 #guard
   let o := named villainReturns "Agents of HYDRA"
   onBoard villainReturns "Agents of HYDRA" &&
-    villainReturns.hasSubtype o "Hero" && o.status.finality == 1 &&
+    villainReturns.hasSubtype o .hero && o.status.finality == 1 &&
     logContains villainReturns "finality counter"
 
 def bearStays : Game :=
@@ -116,8 +116,7 @@ A creature that was not attacking is reported and stays in the graveyard. -/
 def attackerReturns : Game :=
   let g := addPermanent afterDraw aresGodOfWar me me
   let ares := named g "Ares, God of War"
-  let g := g.setObject { ares with status := { ares.status with
-    attacking := true, attackingWhom := some opp } }
+  let g := g.changeStatuses ares.id #[.attacking true, .attackingWhom (some opp)]
   let (g, _) := g.move (named g "Ares, God of War").id (.graveyard me) none
   resolve g (TriggeredAbility.onDeath Effect.deathAttackingReturnHand)
 

@@ -110,7 +110,7 @@ def afterBolt : Game :=
 def attackingGoblin : Game :=
   let g := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
   let o := lastPermanent g
-  g.setObject { o with status := { o.status with attacking := true } }
+  g.changeStatus o.id (.attacking true)
 
 def afterCombatDamage : Game := attackingGoblin.combatDamage
 
@@ -121,17 +121,17 @@ def afterCombatDamage : Game := attackingGoblin.combatDamage
 
 /-- Put `card` into `p`'s hand without drawing. -/
 def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.hand p) none {} (fun id pl => { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id _ => #[.pushHand id])
 
 /-- Put `card` into `p`'s graveyard. -/
 def addToGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.graveyard p) none {} (fun id pl =>
-    { pl with graveyard := pl.graveyard.push id })
+  insertObject g card p (.graveyard p) none {} (fun id _ =>
+    #[.pushGraveyard id])
 
 /-- Put `card` on top of `p`'s library (the back of the library array). -/
 def addToLibraryTop (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  insertObject g card p (.library p) none {} (fun id pl =>
-    { pl with library := pl.library.push id })
+  insertObject g card p (.library p) none {} (fun id _ =>
+    #[.pushLibrary id])
 
 /-- Propose a spell (CR 601.2a) and announce its target (CR 601.2c). -/
 def proposeTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t : Target) : Game :=

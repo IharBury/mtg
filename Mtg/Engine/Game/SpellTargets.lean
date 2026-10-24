@@ -60,12 +60,12 @@ Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
   match e.resolution with
-  | .returnToHand .ownedCreaturesKicker .delayedBirds =>
+  | .eaglesAreComing =>
     { e with
       targeting := .of (.filtered
         { noun := "any number of target creatures you own", types := #[.creature], ownedByYou := true })
       allowsZeroTargets := true, maxTargets := 100 }
-  | .grant .phaseOutKicker .target => { e with targeting := .of .player }
+  | .phaseOutKicker => { e with targeting := .of .player }
   | _ => e
 
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2).
@@ -212,19 +212,13 @@ def currentTargetSlot (g : Game) (obj : GameObject) : Nat :=
 /-- Skip the current optional “up to one” instance without announcing a
 target (CR 115.1c / 601.2c). -/
 def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
-  match g.stack.findIdx? (fun e => e.objectId == objectId) with
-  | none => g
-  | some i =>
-    { g with stack := g.stack.set! i { g.stack[i]! with
-        skippedOptionalSlots := g.stack[i]!.skippedOptionalSlots + 1 } }
+  g.changeStackEntryById objectId .incSkippedOptionalSlots
 
 /-- Record whether every instance of “target” on this stack object has been
 announced. A triggered ability with several instances stays unfinished until
 the last one is chosen or skipped (CR 603.3d). -/
 def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :=
-  match g.stack.findIdx? (fun e => e.objectId == objectId) with
-  | none => g
-  | some i => { g with stack := g.stack.set! i { g.stack[i]! with targetsAnnounced := done } }
+  g.changeStackEntryById objectId (.targetsAnnounced done)
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
@@ -310,8 +304,8 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       | some ab =>
         let n := ab.targeting.targetCount
         let lifeTargets :=
-          match ab.effect.resolution with
-          | .putCounters _ .eachUpToLastKnown => true
+          match ab.shared with
+          | .resource .gainLifePlusOnes => true
           | _ => false
         let maxN :=
           if lifeTargets then (obj.lastKnownPower.getD 0).toNat
@@ -395,7 +389,7 @@ def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
     if legal.contains player then some player else legal[0]?
   | .last => legal.back?
   | .ownThenOpponent => own <|> opp
-  | _ =>
+  | .selfPlayer =>
     let player := Target.player p
     if legal.contains player then some player else legal[0]?
 

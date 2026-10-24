@@ -51,8 +51,7 @@ def mjolnirDoubleOk : Bool :=
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.dealDamageFrom ogre.name bears 2 (source := some (namedPermanent g "Gray Ogre"))
      (namedPermanent g "Grizzly Bears").status.damage == 8) &&
-    (let gPrev := g.mapObjectStatus ogre (fun s =>
-        { s with preventDamageGrantedBy := #[ogre.id] })
+    (let gPrev := g.changeStatus ogre.id (.preventDamageGrantedBy #[ogre.id])
      let gPrev := gPrev.dealDamageFrom ogre.name (namedPermanent gPrev "Grizzly Bears") 2
        (source := some (namedPermanent gPrev "Gray Ogre"))
      (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
@@ -72,10 +71,9 @@ def mjolnirCombatDivideOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let giant := namedPermanent g "Hill Giant"
   let g := g.attachSourceTo hammer ogre
-  let g := g.setObject { ogre with status :=
-    { ogre.status with attacking := true, blocked := true, attackingWhom := some ⟨1⟩ } }
-  let g := { g with combat := { g.combat with assignedCombatDamage :=
-    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }] } }
+  let g := g.changeStatuses ogre.id #[.attacking true, .blocked true, .attackingWhom (some ⟨1⟩)]
+  let g := g.change (.assignedCombatDamage
+    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }])
   let g := g.dealAssignedCombatDamage
   (namedPermanent g "Hill Giant").status.damage == 2 &&
     (g.player ⟨1⟩).life == 20 - 4
@@ -180,8 +178,7 @@ def klawRevealAllOk : Bool :=
 def ultronAfterEnterOk : Bool :=
   let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
   let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with manaPool := pl.manaPool.add .colorless 2 })
+  let g := g.changePlayer ⟨0⟩ (.addMana .colorless 2)
   let stone := namedPermanent g "The Mind Stone"
   let before :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
@@ -248,7 +245,7 @@ def zemoBoastThisActivationOk : Bool :=
   let g := addToGraveyard (addToGraveyard g heavyWhisper ⟨0⟩) heavyWhisper ⟨0⟩
   let g := addToGraveyard g nightsWhisper ⟨0⟩
   let zemo := namedPermanent g "Baron Helmut Zemo"
-  let g := g.mapObjectStatus zemo (fun s => { s with declaredAsAttackerThisTurn := true })
+  let g := g.changeStatus zemo.id (.declaredAsAttackerThisTurn true)
   let gy := (g.player ⟨0⟩).graveyard.filter (fun id => (g.object! id).printed.manaCost.symbols.size == 8)
   let idx := (g.activatedAbilitiesOf zemo).size - 1
   let g := mustApply g ⟨0⟩ (.activate zemo.id idx)
@@ -273,9 +270,9 @@ def zemoBoastThisActivationOk : Bool :=
 def visionModesExhaustedOk : Bool :=
   let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
   let vis := namedPermanent g "The Vision"
-  let g := g.mapObjectStatus vis (fun s => { s with modesChosenThisTurn := #[0, 1, 2] })
+  let g := g.changeStatus vis.id (.modesChosenThisTurn #[0, 1, 2])
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes)
     (some (namedPermanent g "The Vision").id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     logContains g "removed from the stack" &&
@@ -306,14 +303,14 @@ def hydeMustRemoveOk : Bool :=
   let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
   let g := g.addPlusOnePlusOneTo hyde 1
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
     (some (namedPermanent g "Mister Hyde, Monster Within").id) #[]
-    (lastKnownPower := some (1 : Int)) (sourceName := "Mister Hyde, Monster Within")
+    "Mister Hyde, Monster Within" (some (1 : Int))
   logContains g "must remove a counter" &&
     (let hyde := namedPermanent g "Mister Hyde, Monster Within"
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
        (some hyde.id) #[Target.permanent hyde.id]
-       (lastKnownPower := some (1 : Int)) (sourceName := "Mister Hyde, Monster Within")
+       "Mister Hyde, Monster Within" (some (1 : Int))
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
        (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 584).comment.contains "must remove a counter"
@@ -324,14 +321,14 @@ def hydeMustRemoveOk : Bool :=
 def humanTorchInterveningOk : Bool :=
   let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
   let torch := namedPermanent g "Human Torch, Johnny Storm"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
     #[Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == 20 &&
     logContains g "has no effect" &&
     (let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
      let g := addPermanent g colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
      let torch := namedPermanent g "Human Torch, Johnny Storm"
-     let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
        #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life == 19) &&
     (mshRuling 585).comment.contains "won't trigger"
@@ -345,11 +342,11 @@ def reptilLastResolvesOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
-    r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
+    r.hasSubtype .dinosaur && !r.hasSubtype .human &&
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 6 6 Keyword.trample) #[] (some r.id)
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
-       r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
+       r.hasSubtype .dinosaur && !r.hasSubtype .human) &&
     (mshRuling 587).comment.contains "last one to resolve" &&
     (mshRuling 627).comment.contains "overwrite all previous effects"
 
@@ -369,7 +366,7 @@ def ironManArmorUnattachOk : Bool :=
      let armor := namedPermanent g "Iron Man Armor"
      armor.attachedTo.isNone &&
        armor.isCreature &&
-       armor.hasSubtype "Equipment" &&
+       armor.hasSubtype .equipment &&
        (mshRuling 593).comment.contains "become unattached")
 
 #guard ironManArmorUnattachOk

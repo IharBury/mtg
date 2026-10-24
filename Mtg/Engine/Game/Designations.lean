@@ -18,7 +18,7 @@ def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
 artifact, and a Saga. -/
 def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
-    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype .saga)
 
 /-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
 def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
@@ -32,10 +32,10 @@ def controlsStoried (g : Game) (p : PlayerId) : Bool :=
 is never removed. Not a triggered ability. -/
 def grantDesignationIfNeeded (g : Game) (p : PlayerId)
     (already : Player → Bool) (qualifies : Game → PlayerId → Bool)
-    (set : Player → Player) (msg : String) : Game :=
+    (change : PlayerChange) (msg : String) : Game :=
   if already (g.player p) then g
   else if qualifies g p then
-    g.modifyPlayer p set |>.logMsg s!"{(g.player p).name} {msg}"
+    g.changePlayer p change |>.logMsg s!"{(g.player p).name} {msg}"
   else g
 
 /-- Grant an enduring story if `p` now qualifies. The designation is on the
@@ -43,7 +43,7 @@ player and is never removed. Not a triggered ability. -/
 def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
   g.grantDesignationIfNeeded p (·.enduringStory)
     (fun g p => g.controlsStoried p && g.storiedPermanentCount p ≥ 3)
-    (fun pl => { pl with enduringStory := true })
+    (.enduringStory true)
     "has an enduring story"
 
 /-- Grant an enduring story to every player who now qualifies. -/
@@ -71,17 +71,17 @@ def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId) : Game :=
   let g :=
     g.objects.foldl (fun acc o =>
       if o.status.ringBearer && o.controlledBy p then
-        acc.setObject { o with status := { o.status with ringBearer := false } }
+        acc.changeStatus o.id (.ringBearer false)
       else acc) g
   match chosen with
   | none =>
-    g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
+    g.changePlayer p (.ringBearerId none)
   | some id =>
     match g.findObject? id with
-    | none => g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
-    | some o =>
-      let g := g.setObject { o with status := { o.status with ringBearer := true } }
-      g.modifyPlayer p (fun pl => { pl with ringBearerId := some id })
+    | none => g.changePlayer p (.ringBearerId none)
+    | some _ =>
+      let g := g.changeStatus id (.ringBearer true)
+      g.changePlayer p (.ringBearerId (some id))
 
 /-- Whether `p` currently has the city's blessing. -/
 def hasCitysBlessing (g : Game) (p : PlayerId) : Bool :=
@@ -108,7 +108,7 @@ player and is never removed. Not a triggered ability. -/
 def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
   g.grantDesignationIfNeeded p (·.citysBlessing)
     (fun g p => g.controlsAscend p && g.permanentCount p ≥ 10)
-    (fun pl => { pl with citysBlessing := true })
+    (.citysBlessing true)
     "has the city's blessing"
 
 /-- Grant the city's blessing to every player who now qualifies. -/
@@ -117,14 +117,10 @@ def refreshCitysBlessing (g : Game) : Game :=
 
 /-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
 def putShadowCounter (g : Game) (o : GameObject) : Game :=
-  let extra :=
-    if o.status.additionalSubtypes.any (· == "Wraith") then o.status.additionalSubtypes
-    else o.status.additionalSubtypes.push "Wraith"
   let n := g.countersYouPut o 1
-  g.setObject { o with status := { o.status with
-    shadow := o.status.shadow + n
-    additionalSubtypes := extra } }
-    |>.logMsg s!"{o.name} gets a shadow counter"
+  let g := g.changeStatus o.id (.shadow (o.status.shadow + n))
+  let g := g.createEffect (.additionalSubtype o.id .wraith true)
+  g.logMsg s!"{o.name} gets a shadow counter"
 
 end Game
 end Mtg.Engine

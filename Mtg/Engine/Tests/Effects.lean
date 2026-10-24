@@ -87,7 +87,7 @@ def hunterVsToken : Game :=
   let g := addPermanent started duskwatchHunter ⟨0⟩ ⟨0⟩
   let (g, _) := g.createToken ⟨1⟩ Catalog.humanSoldierToken
   let o := namedPermanent g "Duskwatch Hunter"
-  g.setObject { o with status := { o.status with attacking := true } }
+  g.changeStatus o.id (.attacking true)
 
 #guard
   !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
@@ -100,8 +100,8 @@ def flunkiesAmass : Game :=
 
 #guard
   let army := namedPermanent flunkiesAmass "Goblin Army"
-  army.printed.isToken && flunkiesAmass.hasSubtype army "Goblin" &&
-    flunkiesAmass.hasSubtype army "Army" &&
+  army.printed.isToken && flunkiesAmass.hasSubtype army .goblin &&
+    flunkiesAmass.hasSubtype army .army &&
     army.status.plusOnePlusOne == 1
 
 /-- A second amass puts counters on the existing Army. -/
@@ -170,7 +170,7 @@ def riderKeepsWithLegend : Game :=
 def dawnLastHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.setObject { dawn with status := { dawn.status with hope := 1 } }
+  let g := g.changeStatus dawn.id (.hope 1)
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -187,7 +187,7 @@ def dawnLastHope : Game :=
 def dawnKeepsHope : Game :=
   let g := addPermanent started dawnOfANewAge ⟨0⟩ ⟨0⟩
   let dawn := namedPermanent g "Dawn of a New Age"
-  let g := g.setObject { dawn with status := { dawn.status with hope := 2 } }
+  let g := g.changeStatus dawn.id (.hope 2)
   g.applyTriggeredAbility ⟨0⟩ .onYourEndStepRemoveHopeDrawSac (some dawn.id)
 
 #guard
@@ -313,8 +313,8 @@ def ownerShuffleSourceSetup : Game :=
   addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨0⟩
 
 def ownerShuffleSourceResolved : Game :=
-  ownerShuffleSourceSetup.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
-    (some (namedPermanent ownerShuffleSourceSetup "Gandalf, Wandering Wizard").id)
+  (ownerShuffleSourceSetup.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent ownerShuffleSourceSetup "Gandalf, Wandering Wizard").id)).resolveRandom
 
 #guard
   !ownerShuffleSourceResolved.battlefield.any (fun o =>
@@ -329,8 +329,8 @@ def ownerShuffleSourceResolved : Game :=
 /-- The printed owner draws even when another player controls the source. -/
 def ownerShuffleSourceStolen : Game :=
   let g := addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨1⟩
-  g.applyAbilityEffect ⟨1⟩ (Effect.ownerShuffleSourceDraw 3) #[]
-    (some (namedPermanent g "Gandalf, Wandering Wizard").id)
+  (g.applyAbilityEffect ⟨1⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent g "Gandalf, Wandering Wizard").id)).resolveRandom
 
 #guard
   (ownerShuffleSourceStolen.player ⟨0⟩).hand.size ==
@@ -350,9 +350,9 @@ def ownerShuffleSourceGone : Game :=
     (ownerShuffleSourceGone.player ⟨0⟩).hand.size ==
       (afterDraw.player ⟨0⟩).hand.size
 
-/-- `--norandom` shuffles first; the draw waits for the supplied order. -/
+/-- Shuffling pauses for a random order; the draw waits for the supplied order. -/
 def ownerShuffleSourceNorandomPending : Game :=
-  let g := addPermanent { afterDraw with norandom := true } gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨0⟩
   g.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
     (some (namedPermanent g "Gandalf, Wandering Wizard").id)
 
@@ -506,8 +506,8 @@ def becomeWolfWithLandsPT : Game :=
   g.applyAbilityEffect ⟨0⟩ (Effect.becomeSubtypeWithLandsPT "Wolf") #[] (some src.id)
 
 #guard
-  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Wolf" &&
-    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Bear" &&
+  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .wolf &&
+    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype .bear &&
     (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").isCreature
 
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
@@ -586,7 +586,7 @@ def oriClears : Game :=
     (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
   let g := addPermanent g (artifact "Shielded Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
   let shielded := namedPermanent g "Shielded Relic"
-  let g := g.setObject { shielded with status := { shielded.status with shield := 1 } }
+  let g := g.changeStatus shielded.id (.shield 1)
   let g := addPermanent g (artifactCreature "Opp Construct" ManaCost.empty #[] 1 1) ⟨1⟩ ⟨1⟩
   g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
     (some (namedPermanent g "Ori, Plate Stacker").id)
@@ -692,7 +692,7 @@ def arrowShielded : Game :=
   let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
   let g := addPermanent g (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) ⟨1⟩ ⟨1⟩
   let wyrm := namedPermanent g "Wyrm"
-  let g := g.setObject { wyrm with status := { wyrm.status with shield := 1 } }
+  let g := g.changeStatus wyrm.id (.shield 1)
   let arrow := namedPermanent g "The Black Arrow"
   let wyrm := namedPermanent g "Wyrm"
   g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
@@ -962,7 +962,7 @@ def thranduilSource (g : Game) : GameObject :=
 
 def thranduilReady : Game :=
   withGreenMana
-    (thranduilWithGuardianGy.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 }))
+    (thranduilWithGuardianGy.recordLandPlayed ⟨0⟩)
     ⟨0⟩ 7
 
 #guard thranduilReady.canActivate ⟨0⟩ (thranduilSource thranduilReady)
@@ -1380,7 +1380,7 @@ def ifDwarfPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
+      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
@@ -1390,7 +1390,7 @@ def ifScoutPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Scout") (.onPermanent (.pump 3 0))))
+      (.«if» (.subtype .scout) (.onPermanent (.pump 3 0))))
     #[Target.permanent id]
 
 #guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
@@ -1400,7 +1400,7 @@ def ifDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.onPermanent (.pump 1 1))))
+      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
     #[Target.permanent id]
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
@@ -1454,7 +1454,7 @@ def mayIfDwarfAsked : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
+      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1471,7 +1471,7 @@ def mayIfDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype "Dwarf") (.may (.gainLife 2) (.sequence []))))
+      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
     #[Target.permanent id]
 
 #guard
@@ -1485,7 +1485,7 @@ def ifElseDwarfGainsLife : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
+      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1497,7 +1497,7 @@ def ifElseBearDraws : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype "Dwarf") (.gainLife 3) (.draw 1)))
+      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
     #[Target.permanent id]
 
 #guard
@@ -1580,7 +1580,7 @@ def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .creature) (.putCounters (.ofKind kind n) .creatureTargets) (maxTargets := 2))
+    (Effect.mkSpell (.of .creature) (.countersOnCreatureTargets kind n) (maxTargets := 2))
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1613,7 +1613,7 @@ def plusOneCreatureAndLife : Game :=
 #guard
   (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.plusOnePlusOne == 1 &&
     (namedPermanent plusOneCreatureAndLife "Grizzly Bears").status.gotPlusOneThisTurn &&
-    (plusOneCreatureAndLife.player ⟨0⟩).lifeGainedThisTurn == 2
+    plusOneCreatureAndLife.loggedLifeGained ⟨0⟩ == 2
 
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
@@ -1621,9 +1621,9 @@ def plusOneCreatureAndLife : Game :=
     (Effect.plusOneUpToOneAndPlayerGainsLife 1 .minusOneMinusOne)
     #[Target.player ⟨0⟩]
   (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
-    (g.player ⟨0⟩).lifeGainedThisTurn == 1
+    g.loggedLifeGained ⟨0⟩ == 1
 
-/-- `.firstTargetCreatureYouControl` puts counters only on the first creature you control.
+/-- `.firstYouControl` puts counters only on the first creature you control.
 A later opposing creature is left alone. +1/+1 still uses the counter triggers. -/
 def countersOnFirstYouControl : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
@@ -1631,7 +1631,7 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.putCounters (.ofKind .plusOnePlusOne 2) .firstTargetCreatureYouControl))
+      (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl))
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1645,18 +1645,18 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   let g := g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.putCounters (.ofKind .stun 2) .firstTargetCreatureYouControl))
+      (.countersOnCreatureTargets .stun 2 .firstYouControl))
     #[Target.permanent bears.id, Target.permanent baloth.id]
   (namedPermanent g "Grizzly Bears").status.stun == 2 &&
     (namedPermanent g "Rumbling Baloth").status.stun == 0
 
-/- A first target you do not control is illegal for `.firstTargetCreatureYouControl`. -/
+/- A first target you do not control is illegal for `.firstYouControl`. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creature)
-      (.putCounters (.ofKind .stun 1) .firstTargetCreatureYouControl))
+      (.countersOnCreatureTargets .stun 1 .firstYouControl))
     #[Target.permanent bears.id]
   (namedPermanent g "Grizzly Bears").status.stun == 0
 
@@ -1691,7 +1691,7 @@ The counters still land. The same check is `Effect.fight`. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.mapObjectStatus baloth (·.grantUntilEot Keyword.hexproof)
+  let g := g.changeStatus baloth.id (.grantUntilEot Keyword.hexproof)
   let fought := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
     #[Target.permanent bears.id, Target.permanent baloth.id]
   let alone := g.applyEffect ⟨0⟩ Effect.fight
@@ -1775,7 +1775,7 @@ def controllerOfBearLosesTwo : Game :=
 `oneOf` asks for one instant or sorcery, `upTo` may take lands, and `allOf`
 moves every instant or sorcery without a choice. -/
 def millLibrary : Game :=
-  afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[], hand := #[] })
+  afterDraw.changePlayers ⟨0⟩ #[.library #[], .hand #[]]
 
 def millOneInstantOrSorcery : Game :=
   let g := addToLibraryTop (addToLibraryTop millLibrary mountain ⟨0⟩) lightningBolt ⟨0⟩
@@ -1847,7 +1847,7 @@ def eachCreatureTakesOne : Game :=
 
 def nonGoblinsTakeThree : Game :=
   bearAndGoblin.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.dealDamage (.fixed 3) (.nonSubtypeCreatures "Goblin"))) #[]
+    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype .goblin))) #[]
 
 #guard
   (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&

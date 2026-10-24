@@ -36,17 +36,23 @@ def withSpent (spent : Nat) : Game :=
   let g := addPermanent afterDraw pebble caster caster
   let src := pebbleOf g
   let (g, ab) := g.allocStackAbility src caster
-  let g := g.setObject { ab with triggerCause := { status := some { manaSpentToCast := spent } } }
-  { g with resolvingAbility := some ab.id }
+  let causeId : ObjectId := ⟨910⟩
+  let g := g.record (GameEvent.cast g.turnNumber caster
+    { id := some causeId, controller := some caster, owner := caster } (.hand caster)
+    (manaSpent := spent))
+  let g := g.changeObjects ab.id #[
+    .fraCauseId (some causeId),
+    .fraCauseStatus (some { manaSpentToCast := spent })]
+  g.change (.resolvingAbility (some ab.id))
 
 def emptyHand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+  g.changePlayer p (.hand #[])
 
 /- The controller discards the printed count. One card leaves the hand.
 An empty hand skips the choice. The discarded-land note is cleared. -/
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
-  let g0 := step { afterDraw with thisWay := { afterDraw.thisWay with discardedCardThisWay := some (caster, marked) } } .discard
+  let g0 := step (afterDraw.change (.discardedCardThisWay (some (caster, marked)))) .discard
   match g0.pending with
   | .chooseDiscardCard p _ =>
     p == caster && g0.discardedCardThisWay.isNone &&
@@ -150,7 +156,7 @@ the source. Declining is the choice, not an immediate discard. -/
 Spending none discards nothing and leaves an earlier note alone. -/
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
-  let g0 := { withSpent 3 with thisWay := { (withSpent 3).thisWay with discardedCardThisWay := some (caster, marked) } }
+  let g0 := (withSpent 3).change (.discardedCardThisWay (some (caster, marked)))
   let g := step g0 (.«if» .manaSpent (.discard (.cards 2)))
   g.pendingDiscardsLeft == 2 && g.discardedCardThisWay.isNone &&
     match g.pending with
@@ -159,7 +165,7 @@ Spending none discards nothing and leaves an earlier note alone. -/
 
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
-  let g0 := { withSpent 0 with thisWay := { (withSpent 0).thisWay with discardedCardThisWay := some (caster, marked) } }
+  let g0 := (withSpent 0).change (.discardedCardThisWay (some (caster, marked)))
   let g := step g0 (.«if» .manaSpent (.discard (.cards 2)))
   g.pending == g0.pending && handSize g caster == handSize g0 caster &&
     g.discardedCardThisWay == some (caster, marked) &&
@@ -197,7 +203,7 @@ Spending none discards nothing and leaves an earlier note alone. -/
 /- A combination that is not printed discards nothing. -/
 #guard
   let marked := ((afterDraw.player caster).hand[0]?).getD ⟨0⟩
-  let g0 := { afterDraw with thisWay := { afterDraw.thisWay with discardedCardThisWay := some (caster, marked) } }
+  let g0 := afterDraw.change (.discardedCardThisWay (some (caster, marked)))
   let g := step g0 (.discard .source)
     (targets := #[Target.player opp])
   g.pending == g0.pending && handSize g caster == handSize g0 caster &&
