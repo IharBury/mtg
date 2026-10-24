@@ -324,6 +324,7 @@ structure EventObject where
   supertypes : Array Supertype
   types : Array CardType
   subtypes : Array CardSubtype
+  keywords : Keywords
   toxic : Nat := 0
   -- characteristics to add
   name : String
@@ -332,7 +333,6 @@ structure EventObject where
   power : Option Int
   toughness : Option Int
   loyalty : Option Nat
-  keywords : Keywords
   staticAbilities : Array StaticAbility
   -- status to add (not characteristics, 109.3)
   zone : Zone
@@ -348,8 +348,8 @@ structure EventObject where
 deriving Repr, Inhabited, BEq
 ```
 
-`owner`, `controller`, and `toxic` already exist, and `id` is `Option ObjectId` (populated as `some o.id` by `GameObject.asEvent` and `Game.snapshot`, and `none` for proposed or unattributed events). The builder becomes
-`Game.snapshot (g : Game) (o : GameObject) : EventObject` (subsuming `Game.damageSourceEvent`), because power,
+`owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
+`Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
 toughness, colors, and granted abilities depend on the game.
 
 ### 2.4 Zone changes
@@ -425,9 +425,9 @@ inductive PermanentEvent where
   | designation (object : EventObject) (d : PermanentDesignation) (gained : Bool)       -- goaded 701.15b, ring-bearer, …
 ```
 
-`CounterTarget` is an object or a player, so poison counters (122.1f) and other
-player counters (`Player.counters`, e.g. energy/experience/rad) are counter
-events too. The +1/+1 / −1/−1 annihilation SBA (704.5q) is two
+`CounterTarget` is an object or a player, so poison counters (122.1f, stored on
+`Player.poison`) and any non-poison `CounterKind` on a player (stored in
+`Player.counters`) are counter events too. The +1/+1 / −1/−1 annihilation SBA (704.5q) is two
 `counters … (removed n)` events with `cause := .stateBased .counterAnnihilation`.
 `PermanentDesignation.goaded` carries `(byPlayer : PlayerId) (untilNextTurn : Bool := true)`,
 covering both standard CR 701.15a goad and indefinite goad (e.g. Dack Fayden).
@@ -855,7 +855,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Continuous-effect mirrors → layers** | `pump : Int × Int`, `untilTurnOfPump : Array (PlayerId × Int × Int)`, `pumpPerArtifactUntilEot : Bool`, `setBasePT : Option (Int × Int)`, `cardsInHandPowerUntilEot : Bool`, `untilEotKeywords : Keywords`, `firstStrikeOnYourTurn : Bool`, `untilEotLosesIndestructible : Bool`, `additionalCreature : Bool`, `additionalCreatureUntilEot : Bool`, `additionalArtifactUntilEot : Bool`, `additionalSubtypes : Array CardSubtype`, `replacedCreatureTypesUntilEot : Option (Array CardSubtype)`, `onlyFoodArtifact : Bool`, `returnedAsArtifact : Bool`, `notACreature : Bool`, `animatedConstruct55 : Bool`, `grantedStaticAbilities : Array StaticAbility`, `grantedTriggeredAbilities : Array TriggeredAbility`, `grantedTriggersUntilEot : Array TriggeredAbility`, `ironFistTapGrants : Nat`, `combatDamageCreatesTreasure : Bool`, `losesAbilitiesUntilEot : Bool`, `losesAbilitiesGrantedBy : Array ObjectId`, `hexproofGrantedBy : Array ObjectId`, `cantBeBlockedByPlayer : Option PlayerId`, `cantBeBlockedExceptByHasteUntilEot : Bool`, `cantBlockUntilEot : Bool`, `controlUntilEot : Bool`, `controlTurnEndsLeft : Nat` | `ContinuousEffectSpec.layered` / `.gameRule`. |
 | **Replacement/prevention mirrors** | `untilEotExileIfDies : Bool`, `preventDamageGrantedBy : Array ObjectId`, `cantUntapGrantedBy : Array ObjectId`, `cantTransform : Bool` | `ContinuousEffectSpec.replacement` / `.prevention` (or a rule spec for "can't"). |
 | **Permission mirrors** | `freeCastFromGraveyard : Bool`, `colorlessGrantUntilCast : Array ObjectId` | `ContinuousEffectSpec.permission`. |
-| **Designation** | `goaded : Bool`, `goadedBy : Array PlayerId`, `goadedUntilNextTurnOf : Array PlayerId`, `monstrous : Bool`, `renowned : Bool`, `suspected : Bool`, `saddled : Bool` | `PermanentEvent.designation` (701.15b, 701.37, 701.38, 701.60, 702.171); until-next-turn goads expire via `Game.expireGoadedFor` as the goading player's next turn begins, while `untilNextTurn := false` goads persist for the rest of the game. |
+| **Designation** | `goaded : Bool`, `goadedBy : Array PlayerId`, `goadedUntilNextTurnOf : Array PlayerId` | `PermanentEvent.designation (.goaded byPlayer untilNextTurn)` (701.15b); until-next-turn goads expire via `Game.expireGoadedFor` as the goading player's next turn begins, while `untilNextTurn := false` goads persist for the rest of the game (`ringBearer`, `isCommander`, `prepared`, and `harnessed` also write through `PermanentEvent.designation`). |
 
 #### `GameObject` ([`Object.lean`](Mtg/Engine/Game/Object.lean))
 
@@ -952,14 +952,19 @@ Tests: `Tests/Tap.lean`, `Untap.lean`, `GainLife.lean`, `LoseLife.lean`,
    `allocId` / `bumpTime` / `replaceObject` / `push*` / `removeFromZoneList`
    calls from `Game.move`, `createToken`, and the copy paths, and remove
    `.moved`, `.sacrificed`, and `.created` from `OneShotEffect`.
-2. Move enters-with counters, enters-tapped status writes (`Entering.lean`,
-   `Tokens.lean`, `EffectResolution.lean`, `FraChoices.lean`,
-   `ModeledTriggers.lean`, `TriggeredAbilities.lean`), and as-enters choices
-   (`enterWithLoyalty`, `enterWithPlusOnes`, `enterWithIndestructibleCounter`,
-   `enterWithShield`, `enterWithXPlusOnes`, `enterWithHope`, prepared,
-   impending time counters) into the construction of `moved.after` /
-   `created.object` and `entersWith` (614.1c / 614.12 / 306.5b / 714.3a). Add
-   the "counters put" projection that includes `entersWith` (122.6).
+2. Move enters-with counters, enters-tapped status writes (`Movement.lean` via
+   `putOntoBattlefield` and its callers in `LandsAndMana.lean`,
+   `SpellResolution.lean`, `LibrarySearch.lean`, `CastExtras.lean`,
+   `ResolutionEffects.lean`, `EffectResolution.lean`, `FraHelpers.lean`,
+   `FraResolve.lean`, and `TriggeredAbilities.lean`; direct post-entry `.tapped`
+   writes in `Entering.lean` for the pay-life-or-enter-tapped choice,
+   `EffectResolution.lean`, `FraChoices.lean`, `ModeledTriggers.lean`, and
+   `TriggeredAbilities.lean`; and token construction in `Tokens.lean`), and
+   as-enters choices (`enterWithLoyalty`, `enterWithPlusOnes`,
+   `enterWithIndestructibleCounter`, `enterWithShield`, `enterWithXPlusOnes`,
+   `enterWithHope`, prepared, impending time counters) into the construction of
+   `moved.after` / `created.object` and `entersWith` (614.1c / 614.12 / 306.5b /
+   714.3a). Add the "counters put" projection that includes `entersWith` (122.6).
 3. Make the draw a `moved` with `verb := .draw nth firstOfOwnDrawStep`; drop
    `OneShotEffect.drew` with the pre-move id. Re-point `GameEvent.draws`,
    `drewFirstOfDrawStep`, and the draw triggers at the new verb.
