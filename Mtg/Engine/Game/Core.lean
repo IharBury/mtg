@@ -1387,47 +1387,49 @@ def applyEffectUpdated (g : Game) (effectId : EffectId) (eff : ContinuousEffect)
 
 /-- Apply one `PermanentEvent` in isolation (CR 110.5, 122, 701.3, 701.26). -/
 def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
+  let findEventIdx? (object : EventObject) : Option Nat :=
+    object.id.bind (fun id => g.objects.findIdx? (·.id == id))
   match e with
   | .tapped object _ =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       let s := { o.status with tapped := true, becameTappedThisTurn := true }
       { g with objects := g.objects.set! i { o with status := s } }
     | none => g
   | .untapped object =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       let s := { o.status with tapped := false }
       { g with objects := g.objects.set! i { o with status := s } }
     | none => g
   | .phasedOut object _ =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := true } } }
     | none => g
   | .phasedIn object _ =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false } } }
     | none => g
   | .transformed object nowBackFace =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with status := { o.status with transformed := nowBackFace } } }
     | none => g
   | .turnedFaceUp object =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with status := { o.status with faceDown := false } } }
     | none => g
   | .turnedFaceDown object =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with status := { o.status with faceDown := true } } }
@@ -1455,7 +1457,7 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
       { g with players := g.players.set! p.idx { pl with counters } }
     else g
   | .counters (.object object) kind delta _ =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       let sc :=
@@ -1465,25 +1467,25 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
       { g with objects := g.objects.set! i { o with status := o.status.applyChange sc } }
     | none => g
   | .attached attachment host _ =>
-    match g.objects.findIdx? (·.id == attachment.id) with
+    match findEventIdx? attachment with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with attachedTo := some host } }
     | none => g
   | .unattached attachment _ =>
-    match g.objects.findIdx? (·.id == attachment.id) with
+    match findEventIdx? attachment with
     | some i =>
       let o := g.objects[i]!
       { g with objects := g.objects.set! i { o with attachedTo := none } }
     | none => g
   | .controlChanged object fromPlayer toPlayer =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       let defaultCtrl := o.defaultController.getD o.owner
       let hasActiveCtrl := g.activeEffects.any (fun (_, e) =>
         match e with
-        | .control oid _ _ _ _ => oid == object.id
+        | .control oid _ _ _ _ => some oid == object.id
         | _ => false)
       let changed :=
         if hasActiveCtrl || toPlayer != defaultCtrl then
@@ -1497,7 +1499,7 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
               controlChanged := changed } }
     | none => g
   | .designation object d gained =>
-    match g.objects.findIdx? (·.id == object.id) with
+    match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
       let s :=
@@ -2317,7 +2319,7 @@ def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
       dealt || pkts.any (fun pkt =>
         pkt.amount > 0 && pkt.source.keywords.deathtouch &&
           match pkt.recipient with
-          | .permanent c => c.id == id
+          | .permanent c => c.id == some id
           | _ => false)
     | _ => dealt) false
 

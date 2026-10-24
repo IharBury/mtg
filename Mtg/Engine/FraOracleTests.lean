@@ -371,7 +371,7 @@ def recollectorWithDeaths (prepared : Bool) (deaths : Nat) : Game :=
   let g := if prepared then g.becomePrepared o else g
   let g := (List.range deaths).foldl (fun g _ =>
     g.record (GameEvent.moved g.turnNumber
-      { id := o.id, owner := ⟨0⟩, types := #[.creature] }
+      { id := some o.id, owner := ⟨0⟩, types := #[.creature] }
       .battlefield (.graveyard ⟨0⟩))) g
   g.applyTriggeredAbility ⟨0⟩ recollectorTrigger (some o.id)
 

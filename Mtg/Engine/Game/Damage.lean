@@ -72,21 +72,8 @@ source that moved zones before its ability resolved (CR 113.7a). -/
 def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
   g.resolvingMovedDamageSource?.map g.damageSourceEvent
 
-/-- Reserved `ObjectId` for damage dealt in a unit-test helper without a source
-object. Chosen outside the sequential ids handed out by `allocId` (`0, 1, …`)
-so it never collides with any object in `g.objects`. -/
-def unattributedDamageSourceId : ObjectId :=
-  ⟨UInt64.size⟩
-
-/-- Unattributed damage source snapshot used only when a damage helper is called
-outside spell or ability resolution without an explicit `source`. Its id is
-`unattributedDamageSourceId`, outside the sequential ids handed out by `allocId`,
-so it never collides with any object in `g.objects`. -/
-def unattributedDamageSource : EventObject :=
-  { id := unattributedDamageSourceId }
-
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
-(CR 702.12b / 701.8b). If it would die this turn under an exile replacement,
+(CR 701.8b / 702.12b). If it would die this turn under an exile replacement,
 `move` sends it to exile instead of the graveyard (CR 614.1). -/
 def destroyPermanent (g : Game) (o : GameObject) : Game :=
   if o.status.shield > 0 then
@@ -120,7 +107,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
   let srcEvent : EventObject :=
-    let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD unattributedDamageSource
+    let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
   let healsOther :=
     o.printed.staticAbilities.any (fun
@@ -317,8 +304,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
     let srcEvent :=
-      ((source.map g.damageSourceEvent).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD
-        unattributedDamageSource
+      ((source.map g.damageSourceEvent).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false
     let g := if n > 0 then g.record happened else g
     let g :=

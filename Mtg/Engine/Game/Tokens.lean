@@ -123,7 +123,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
   else
     let original := printed
     let proposed := GameEvent.created g.turnNumber controller {
-      id := ⟨0⟩, controller := some controller, owner := controller, token := true
+      controller := some controller, owner := controller, token := true
       types := printed.types
       subtypes := CardSubtype.ofSubtypes printed.subtypes, changeling := printed.keywords.changeling }
     let printed :=

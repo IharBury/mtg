@@ -2878,7 +2878,7 @@ def andurilOnOwnLegendOk : Bool :=
 def queenAfterFirstNoncreature : Game :=
   let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
   let g := g.record (GameEvent.cast g.turnNumber ⟨1⟩
-    { id := ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
+    { id := some ⟨71⟩, controller := some ⟨1⟩, owner := ⟨1⟩, types := #[.instant] }
     (.hand ⟨1⟩))
   let g := addToHand g lightningBolt ⟨1⟩
   let bolt :=
@@ -3225,7 +3225,7 @@ def radagastCastIsFirstOk : Bool :=
   let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
   let g := g.record (GameEvent.cast g.turnNumber ⟨0⟩
-    { id := ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
+    { id := some ⟨72⟩, controller := some ⟨0⟩, owner := ⟨0⟩, types := #[.creature] }
     (.hand ⟨0⟩))
   let cost := g.playManaCost card grizzlyBears
   cost == ManaCost.ofGenericAndColor 1 .green &&
@@ -3970,7 +3970,7 @@ def mirkwoodElkZeroPowerOk : Bool :=
 
 def spellsBeforeLothoCountOk : Bool :=
   let g := afterDraw.record (GameEvent.cast afterDraw.turnNumber ⟨0⟩
-    { id := ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
+    { id := some ⟨71⟩, controller := some ⟨0⟩, owner := ⟨0⟩ } (.hand ⟨0⟩))
   g.loggedSpellsCast ⟨0⟩ == 1 &&
     (ruling 267).comment.contains "Spells that were cast before Lotho"
 

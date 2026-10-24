@@ -38,7 +38,7 @@ def withSpent (spent : Nat) : Game :=
   let (g, ab) := g.allocStackAbility src caster
   let causeId : ObjectId := ⟨910⟩
   let g := g.record (GameEvent.cast g.turnNumber caster
-    { id := causeId, controller := some caster, owner := caster } (.hand caster)
+    { id := some causeId, controller := some caster, owner := caster } (.hand caster)
     (manaSpent := spent))
   let g := g.changeObjects ab.id #[
     .fraCauseId (some causeId),

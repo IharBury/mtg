@@ -282,7 +282,7 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
     | some k => if k < 0 then (-k).toNat else 0
     | none => 0
   let happened := GameEvent.activated g.turnNumber p
-    { id := ⟨0⟩, controller := some p, owner := p } true
+    { controller := some p, owner := p } true
   if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
   else
   g.foldControlledPermanents p none fun g o =>

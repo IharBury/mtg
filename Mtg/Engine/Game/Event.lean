@@ -20,7 +20,7 @@ namespace Mtg.Engine
 /-- The object a `GameEvent` is about, as it existed when the change happened
 (CR 113.7a). Subtypes include those granted at that moment. -/
 structure EventObject where
-  id : ObjectId
+  id : Option ObjectId := none
   controller : Option PlayerId := none
   owner : PlayerId := ⟨0⟩
   token : Bool := false
@@ -104,7 +104,7 @@ end EventObject
 
 /-- This object as it is now, for a `GameEvent` (CR 113.7a). -/
 def GameObject.asEvent (o : GameObject) : EventObject :=
-  { id := o.id
+  { id := some o.id
     controller := o.controller
     owner := o.owner
     token := o.printed.isToken
@@ -1213,7 +1213,7 @@ def created (turn : Nat) (player : PlayerId) (object : EventObject)
 /-- `object` changed controller from `fromPlayer` to `toPlayer` (CR 110.2 / 613.1b). -/
 def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.controlChanged { id := object } fromPlayer toPlayer)) cause
+  rulesOrUnclassified turn (.permanent (.controlChanged { id := some object } fromPlayer toPlayer)) cause
 
 /-- The step or phase changed. -/
 def stepped (turn : Nat) (step : Step) (active : PlayerId) : GameEvent :=
@@ -1238,7 +1238,7 @@ def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
 def attached (turn : Nat) (object host : ObjectId)
     (previous : Option ObjectId := none)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.attached { id := object } host previous)) cause
+  rulesOrUnclassified turn (.permanent (.attached { id := some object } host previous)) cause
 
 /-- `attachment` became unattached from `fromHost` (CR 701.3d / 704.5n / 704.5p). -/
 def unattached (turn : Nat) (attachment : EventObject) (fromHost : ObjectId)
@@ -1399,9 +1399,9 @@ An event this change does not describe does not match. -/
 def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     (te : TriggerEvent) : Bool :=
   let you (p : PlayerId) : Bool := p == listener
-  let this (o : EventObject) : Bool := o.id == sourceId
+  let this (o : EventObject) : Bool := o.id == some sourceId
   let yours (o : EventObject) : Bool := o.controller == some listener
-  let other (o : EventObject) : Bool := o.id != sourceId
+  let other (o : EventObject) : Bool := o.id != some sourceId
   match e.change with
   | .engine _ => false
   | .rules r =>
@@ -1664,16 +1664,16 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
     match e.change with
-    | .rules (.cast _ s _ _ spent _ _ _) => if s.id == spell then max n spent else n
+    | .rules (.cast _ s _ _ spent _ _ _) => if s.id == some spell then max n spent else n
     | _ => n) 0
 
 /-- Same event, naming the object id it has after the zone change (CR 400.7). -/
 def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
   match e.change with
   | .rules (.effectApplied eid (.moved object fromZone toZone sacrificed discarded)) =>
-    { e with change := .rules (.effectApplied eid (.moved { object with id := id } fromZone toZone sacrificed discarded)) }
+    { e with change := .rules (.effectApplied eid (.moved { object with id := some id } fromZone toZone sacrificed discarded)) }
   | .rules (.effectApplied eid (.created player object)) =>
-    { e with change := .rules (.effectApplied eid (.created player { object with id := id })) }
+    { e with change := .rules (.effectApplied eid (.created player { object with id := some id })) }
   | _ => e
 
 /-- Creature spells `p` cast on `turn`. -/
@@ -1784,7 +1784,11 @@ def creaturesToGraveyard (events : Array GameEvent) (turn : Nat) : Array ObjectI
     else
       match e.change with
       | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) =>
-        if object.creature then acc.push object.id else acc
+        if object.creature then
+          match object.id with
+          | some id => acc.push id
+          | none => acc
+        else acc
       | _ => acc) #[]
 
 /-- Graveyard id of the most recent attacking creature that died. -/
@@ -1792,14 +1796,14 @@ def lastDiedAttacker (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
     | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) =>
-      if object.creature && object.attacking then some object.id else acc
+      if object.creature && object.attacking then object.id <|> acc else acc
     | _ => acc) none
 
 /-- Id of the permanent that most recently became tapped. -/
 def lastBecameTapped (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.permanent (.tapped object _)) => some object.id
+    | .rules (.permanent (.tapped object _)) => object.id <|> acc
     | _ => acc) none
 
 /-- Player most recently dealt combat damage. -/
@@ -1826,29 +1830,29 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.effectApplied _ (.moved object _ .battlefield _ _)) => object.id == id
-      | .rules (.effectApplied _ (.created _ object)) => object.id == id
+      | .rules (.effectApplied _ (.moved object _ .battlefield _ _)) => object.id == some id
+      | .rules (.effectApplied _ (.created _ object)) => object.id == some id
       | _ => false
 
 /-- The cast of `spell` was from a graveyard. -/
 def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ true _ _) => s.id == spell
+    | .rules (.cast _ s _ _ _ true _ _) => s.id == some spell
     | _ => false
 
 /-- A gift was promised as `spell` was cast. -/
 def giftPromised (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ _ _ true) => s.id == spell
+    | .rules (.cast _ s _ _ _ _ _ true) => s.id == some spell
     | _ => false
 
 /-- `spell` was cast using teamwork. -/
 def teamwork (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ _ true _) => s.id == spell
+    | .rules (.cast _ s _ _ _ _ true _) => s.id == some spell
     | _ => false
 
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,

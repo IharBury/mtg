@@ -58,7 +58,7 @@ turn counter is cleared. -/
   let g := quiet afterDraw
   let (_, no) := holds g .artifactEnteredThisTurn
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
+    { id := some ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
   let g := g.record entered
   let (_, yes) := holds g .artifactEnteredThisTurn
   !no && yes && entered.watches .wouldEnterBattlefield
@@ -67,9 +67,9 @@ turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
   let attack := GameEvent.attacked g.turnNumber me
-    { id := ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
+    { id := some ⟨5⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.hero] } ⟨1⟩
   let entered := GameEvent.moved g.turnNumber
-    { id := ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
+    { id := some ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
   let g := (g.record attack).record entered
   let (_, yes) := holds g (.attackedWithSubtype .hero)
   let (_, no) := holds g (.attackedWithSubtype .goblin)
@@ -85,7 +85,7 @@ instead. -/
 #guard
   let second := GameEvent.drew 1 me ⟨1⟩ 2
   let death := GameEvent.moved 1
-    { id := ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
+    { id := some ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
   let exiled := death.withDestination .exile false
   second.matchesTrigger me ⟨0⟩ .youDraw &&
     second.matchesTrigger me ⟨0⟩ .youDrawSecondCard &&
@@ -645,7 +645,7 @@ marked damage does not end the CR 704.5h window). -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let dtSource : EventObject := { id := ⟨999⟩, keywords := { deathtouch := true } }
+  let dtSource : EventObject := { keywords := { deathtouch := true } }
   let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource b.asEvent 1 false)
   let g1 := gDealtOnly.applyChange (.rules (.damage (.marked b.id 1)))
   let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
@@ -697,7 +697,10 @@ in isolation (CR 701.3 / 110.2 / 701.15b). -/
      let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
      let gNoDt := gDt.markDamageOn c 1 "1 damage"
      let gWithDt := gDt.markDamageOn c 1 "1 deathtouch damage" (deathtouch := true)
-     gDt.objects.all (·.id != Game.unattributedDamageSourceId) &&
+     (gNoDt.events.any fun e =>
+       match e.change with
+       | .rules (.damage (.dealt pkts)) => pkts.any (·.source.id.isNone)
+       | _ => false) &&
        !gNoDt.deathtouchDealtSinceLastSba c.id &&
        gWithDt.deathtouchDealtSinceLastSba c.id) &&
     heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
