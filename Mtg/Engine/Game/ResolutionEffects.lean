@@ -579,14 +579,20 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Extort is paid: each opponent loses 1 life and `controller` gains the
 life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
 def extortDrain (g : Game) (controller : PlayerId) : Game :=
+  let (g, cause?) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+      (g, some c)
+    | none => (g, none)
   let (g, lost) :=
     (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
       let before := (acc.1.player pl.id).life
-      let g := acc.1.loseLife pl.id 1
+      let g := acc.1.loseLife pl.id 1 (cause := cause?)
       let after := (g.player pl.id).life
       let delta := if before > after then (before - after).toNat else 0
       (g, acc.2 + delta)) (g, 0)
-  g.gainLife controller lost |>.logMsg "Extort is paid"
+  g.gainLife controller lost (cause := cause?) |>.logMsg "Extort is paid"
 
 /-- A stack object to stand for `sourceId` as an ability's source. -/
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
@@ -833,10 +839,18 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       sourceId illegal
   | 10 =>
     let legal := g.legalTargetsForKind controller tkind sourceId
+    let (g, cause?) : Game × Option EventCause :=
+      if targets.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     (List.range targets.size).foldl (fun g i =>
       let tgt := targets[i]!
       if legal.contains tgt then
-        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
+        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?) (cause := cause?)
       else g.illegalAbilityTarget tgt) g
   | 11 =>
     let legal := g.legalTargetsForKind controller tkind sourceId

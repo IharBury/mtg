@@ -148,7 +148,16 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.amassGoblins controller n
   | .opponentLosesYouGain n =>
     g.withLegalKindPlayer controller .opponent targets
-      (fun g pid => g.loseLife pid n |>.gainLife controller n)
+      (fun g pid =>
+        let (g, cause?) : Game × Option EventCause :=
+          if n == 0 then (g, none)
+          else
+            match g.currentResolvingContext? with
+            | some (src, ctrl) =>
+              let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+              (g, some c)
+            | none => (g, none)
+        g.loseLife pid n (cause := cause?) |>.gainLife controller n (cause := cause?))
       sourceId (some "The target is no longer legal")
   | .grantHexproofWhileRemains =>
     g.grantHexproofWhileSource controller sourceId targets .creatureYouControl
@@ -190,10 +199,18 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.gainControlWhileSource controller sourceId targets
   | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
     let src? := sourceId.bind g.findObject?
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-        (source := src?.map g.snapshot)
-    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
+        (source := src?.map g.snapshot) (cause := cause?)
+    g.dealDamageToEachOpponent controller n (source := src?) (cause := cause?)
   | .dealXDamageToTargetOpponentGreatestArtifactMv =>
     let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
     g.withLegalKindPlayer controller .opponent targets

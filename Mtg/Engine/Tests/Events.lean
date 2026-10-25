@@ -2096,6 +2096,49 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
+  let lifelinkHero : CardDef :=
+    { hero with name := "Lifelink Hero", keywords := Keyword.lifelink }
+  let gDmgSetup0 := addPermanent (addPermanent g0 lifelinkHero me me) bear opp opp
+  let lh := (gDmgSetup0.battlefield.filter (·.name == "Lifelink Hero"))[0]!
+  let oppBear := (gDmgSetup0.battlefield.filter (fun o => o.name == bear.name && o.controlledBy opp))[0]!
+  let gDmgSetup := quiet gDmgSetup0
+  let gDmgPermRaw := gDmgSetup.dealDamageFrom lh.name oppBear 1 (source := some lh)
+  let dmgPermRawCauses :=
+    gDmgPermRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDmgPermRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.dealDamageFrom lh.name oppBear 1 (source := some lh))
+  let dmgPermResCauses :=
+    gDmgPermRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDmgPlayerRaw := gDmgSetup.dealDamageToPlayer opp 2 (source := some lh)
+  let dmgPlayerRawCauses :=
+    gDmgPlayerRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDmgPlayerRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.dealDamageToPlayer opp 2 (source := some lh))
+  let dmgPlayerResCauses :=
+    gDmgPlayerRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gSweepRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.applyTriggeredAbility me (.onEnterDraw 1) (some lh.id)
+        (resolutionOverride := some (.dealDamage (.fixed 1) (.eachNonSubtypeAndOpponents .dragon))))
+  let sweepResCauses :=
+    gSweepRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -2142,7 +2185,20 @@ across all constituent moves, transforms, and continuous-effect creations
     (balinResCauses.extract handSize (handSize * 2)).all (· == balinResCauses[handSize]!) &&
     balinResCauses[0]! != balinResCauses[handSize]! &&
     armorEmptyMoves.isEmpty &&
-    (gArmorEmptyDone.player me).drewFromEmpty
+    (gArmorEmptyDone.player me).drewFromEmpty &&
+    dmgPermRawCauses.size == 3 &&
+    dmgPermRawCauses.all (· == .unclassified) &&
+    dmgPermResCauses.size == 3 &&
+    dmgPermResCauses.all (· == dmgPermResCauses[0]!) &&
+    (match dmgPermResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    dmgPlayerRawCauses.size == 3 &&
+    dmgPlayerRawCauses.all (· == .unclassified) &&
+    dmgPlayerResCauses.size == 3 &&
+    dmgPlayerResCauses.all (· == dmgPlayerResCauses[0]!) &&
+    (match dmgPlayerResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    sweepResCauses.size >= 6 &&
+    sweepResCauses.all (· == sweepResCauses[0]!) &&
+    (match sweepResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

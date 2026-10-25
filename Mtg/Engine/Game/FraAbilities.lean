@@ -271,9 +271,17 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .damageEachCreatureExceptYourTokens n =>
     let victims := g.battlefield.filter (fun o =>
       o.isCreature && !(o.printed.isToken && o.controlledBy controller))
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || victims.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     victims.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) else g
+      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) (cause := cause?) else g
       | none => g) g
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
@@ -309,15 +317,23 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       g.beginFraChoice controller (.maySacrificeThen #[.creature] .beastToken sourceId)
         s!"{(g.player controller).name} may sacrifice a creature"
   | .damageUpToOneAndPlayer n =>
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || targets.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     targets.foldl (fun g t =>
       match t with
       | Target.permanent id =>
         if g.targetLegalAt controller kind 0 t sourceId then
-          g.dealDamageFrom srcName (g.object! id) n (source := src?)
+          g.dealDamageFrom srcName (g.object! id) n (source := src?) (cause := cause?)
         else g.illegalAbilityTarget t
       | Target.player pid =>
         if g.targetLegalAt controller kind 1 t sourceId then
-          g.dealDamageToPlayer pid n (source := src?)
+          g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
         else g.illegalAbilityTarget t
       | _ => g) g
   | .beastToken => g.createKindTokens controller .beast44trample 1

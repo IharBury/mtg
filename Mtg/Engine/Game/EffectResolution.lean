@@ -126,14 +126,14 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     match (g.player controller).library.back? with
     | none =>
-      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+      some (g.dealDamageToEachOpponent controller n (source := src?))
     | some top =>
       let (g, id) := g.move top .exile none
       let card := g.object! id
       let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
       if card.printed.isLand then
         -- Ruling 855: a land can't be cast, so the damage is dealt.
-        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+        some (g.dealDamageToEachOpponent controller n (source := src?))
       else
         some ((g.change (.pending (.mayCastExiledElseDamage controller id n sid))).logMsg
           s!"{(g.player controller).name} may cast {card.name}")
@@ -221,7 +221,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
   | .damageEachOpponent n =>
     let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
-    some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+    some (g.dealDamageToEachOpponent controller n (source := src?))
   | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.createEffect (.jaceLoyaltyAtInstantSpeedThisTurn controller)
@@ -1136,12 +1136,20 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .targetPlayersGainLife n =>
     Id.run do
       let playerLegal := g.legalTargetsForAtomicKind controller .player none
+      let (g, cause?) : Game × Option EventCause :=
+        if n == 0 || targets.isEmpty then (g, none)
+        else
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+            (g, some c)
+          | none => (g, none)
       let mut g := g
       for t in targets do
         match t with
         | Target.player pid =>
           if playerLegal.contains t then
-            g := g.gainLife pid n
+            g := g.gainLife pid n (cause := cause?)
           else
             g := g.illegalAbilityTarget t
         | _ => pure ()
@@ -1379,8 +1387,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       let teamwork := g.resolvingTeamworkPaid
       if o.isOnBattlefield && o.isCreature &&
           (teamwork || o.printed.manaValue ≤ n) then
-        let (g, _) := g.move o.id .exile none
-        if teamwork then g.gainLife controller life else g
+        let (g, cause?) : Game × Option EventCause :=
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+            (g, some c)
+          | none => (g, none)
+        let (g, _) := g.move o.id .exile none (cause := cause?)
+        if teamwork then g.gainLife controller life (cause := cause?) else g
       else g.logMsg "The target is no longer legal")
       none (some "The target is no longer legal")
   | .returnGyCreatureMvAtMostOrAny n =>
@@ -1478,7 +1492,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.changes #[.thirstDiscardsLeft n, .thirstDiscardType ty]
     g.beginDiscardCards #[controller]
   | .loseLife (.fixed n) .eachOpponent =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
+    g.loseLifeEachOpponent controller n.toNat
   | .plusOneOnEachYouControl n which =>
     let exclude :=
       match which with
@@ -1872,7 +1886,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           g.putShadowCounter o) sourceId (some "The target is no longer legal")
       | .damageEachOpponent n =>
         let src? := sourceId.bind g.findObject?
-        g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
+        g.dealDamageToEachOpponent controller n (source := src?)
       | .chooseTwoDestroyRest =>
         let creatures := (g.battlefield.filter (·.isCreature)).map (·.id)
         g.offerCardChoice controller creatures 2 .keepDestroyRest

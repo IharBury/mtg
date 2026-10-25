@@ -37,9 +37,23 @@ def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
 /-- Deal `n` damage to each opponent of `controller`, then `controller` gains
 `n` life. -/
 def drainOpponents (g : Game) (controller : PlayerId) (n : Nat)
-    (source : Option GameObject := none) : Game :=
-  let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := source))
-  g.gainLife controller n
+    (source : Option GameObject := none)
+    (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause
+            (ctrl.orElse (fun _ => some controller))
+            (src.orElse (fun _ => source.map (·.id)))
+          (g, some c)
+        | none => (g, none)
+  let g := g.dealDamageToEachOpponent controller n (source := source) (cause := cause)
+  g.gainLife controller n (cause := cause)
 
 /-- Grant `k` to `o` until end of turn, logged. -/
 def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Keywords) : Game :=

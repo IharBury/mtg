@@ -809,8 +809,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
       (some "The target is no longer legal")
   | (.resource .secondDrawDrain) =>
-    let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
-    g.gainLife controller 1
+    g.eachOpponentLosesYouGain controller 1
   | (.resource .gainLifePlusOnes) =>
     g.putPlusOnesUpToLastKnown controller targets lastKnownPower
   | (.resource .plusOneOnThisOnce) =>
@@ -860,7 +859,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "0/4 colorless Wall" then
     g.createKindTokens controller .wall04defender 1
   else if text.contains "each opponent loses" then
-    g.forEachOpponent controller (fun g pid => g.loseLife pid 2)
+    g.loseLifeEachOpponent controller 2
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>

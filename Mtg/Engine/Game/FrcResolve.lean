@@ -391,11 +391,16 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .nivPay =>
     let n := g.knownN
     if (g.player controller).life > Int.ofNat n && n > 0 then
-      (g.loseLife controller n).draw controller n
+      let (g, cause?) : Game × Option EventCause :=
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
+      (g.loseLife controller n (cause := cause?)).draw controller n (cause := cause?)
     else g.logMsg s!"{pl.name} declines to pay {n} life"
   | .nivDrain =>
-    let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
-    g.gainLife controller 1
+    g.eachOpponentLosesYouGain controller 1
   | .obEnter =>
     let ids := g.battlefield.filter (fun o =>
       o.isCreature && o.status.tapped &&
@@ -575,8 +580,14 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         g.createEffect (.keywordsUntilEot art.id Keyword.haste)
           |>.logMsg s!"{art.name} has haste until end of turn"
   | .despair =>
+    let (g, cause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+        (g, some c)
+      | none => (g, none)
     g.forEachOpponent controller fun g pid =>
-      g.loseLife pid (g.loggedLifeLost pid)
+      g.loseLife pid (g.loggedLifeLost pid) (cause := cause?)
   | .dreadUpkeep =>
     (g.loseLife controller 1).amassZombies controller 1
   | .dreadLink =>

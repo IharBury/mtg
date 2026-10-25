@@ -594,7 +594,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to cast"
     let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     let g := g.logMsg s!"{(g.player p).name} doesn't cast the exiled card"
-    let g := g.forEachOpponent p (fun g pid => g.dealDamageToPlayer pid n (source := src?))
+    let g := g.dealDamageToEachOpponent p n (source := src?)
     let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | .mayDiscardDraw q _ =>

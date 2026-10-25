@@ -49,7 +49,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
   | .damageEachPlayer n =>
-    g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
+    g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?) (cause := cause?)) g
   | .damageSourceAt index n =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | some o => g.dealDamageFrom srcName o n (source := src?)
@@ -153,9 +161,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let victims := g.battlefield.filter (fun o =>
       (o.isCreature || o.printed.isPlaneswalker) && o.controller.isSome &&
         !o.controlledBy controller)
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || victims.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     victims.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => g.dealDamageFrom srcName o n (source := src?)
+      | some o => g.dealDamageFrom srcName o n (source := src?) (cause := cause?)
       | none => g) g
   | .loseAbilitiesAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
@@ -385,8 +401,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .causeDealsDamageToEachOpponent n =>
     let cause := g.fraCause?
     let name := (cause.map (·.name)).getD "The creature"
+    let (g, evCause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     g.forEachOpponent controller (fun g pid =>
-      (g.dealDamageToPlayer pid n (source := cause)).logMsg s!"{name} deals {n} damage")
+      (g.dealDamageToPlayer pid n (source := cause) (cause := evCause?)).logMsg s!"{name} deals {n} damage")
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
@@ -507,8 +531,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | some o =>
         if !o.isOnBattlefield then g
         else
-          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
-          g.drainOpponents controller 2 (some o)
+          let (g, cause?) : Game × Option EventCause :=
+            match g.currentResolvingContext? with
+            | some (src, ctrl) =>
+              let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+              (g, some c)
+            | none => (g, none)
+          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}" (cause := cause?)
+          g.drainOpponents controller 2 (some o) (cause := cause?)
       | none => g
   | .loyaltyOnEachPlaneswalkerYouControl => g.loyaltyOnEachPlaneswalkerOf controller
   | .causeGains k =>
@@ -567,7 +597,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g
   | .kothGeomancer =>
-    let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
+    let g := g.dealDamageToEachOpponent controller 1 (source := src?)
     match g.fraCause? with
     | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
     | none => g

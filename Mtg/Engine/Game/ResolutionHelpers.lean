@@ -99,9 +99,10 @@ def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbi
 /-- Deal `n` damage to a still-legal target of `kind`. -/
 def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
-    (missing : Option String := none) : Game :=
+    (missing : Option String := none)
+    (cause : Option EventCause := none) : Game :=
   g.withLegalKindTarget controller kind targets
-    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?))
+    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?) (cause := cause))
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
@@ -294,14 +295,27 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (pred : GameObject → Bool := fun _ => true)
-    (source : Option EventObject := none) : Game :=
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   g.foldBattlefield (fun o => o.isCreature && pred o)
-    (fun g o => g.dealDamageToPermanent o n (source := source))
+    (fun g o => g.dealDamageToPermanent o n (source := source) (cause := cause))
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
 def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
-    (source : Option EventObject := none) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source)
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source) (cause := cause)
 
 end Game
 end Mtg.Engine
