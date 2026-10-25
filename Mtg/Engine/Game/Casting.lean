@@ -619,7 +619,8 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
         if castable.isEmpty || castsLeft == 0 then
-          let g := alive.foldl (fun g id => g.ceaseToExist id) g
+          let g := alive.foldl (fun g id =>
+            g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
           g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))

@@ -215,12 +215,14 @@ order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let happened := GameEvent.looked g.turnNumber p count true n
-  let g := if n == 0 then g else g.record happened
-  let g :=
-    if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
-    else g.queueScryOrSurveilTriggers p
-  if count == 0 then
+  if n == 0 then
+    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  else if count == 0 then
+    let happened := GameEvent.looked g.turnNumber p 0 true n
+    let g := g.record happened
+    let g :=
+      if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
+      else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
     (g.change (.pending (.surveil p count))).logMsg

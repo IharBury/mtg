@@ -623,7 +623,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | some o =>
       let counters := o.status.plusOnePlusOne
-      let g := g.expirePrintedStaticEffects o
+      let transformCause :=
+        g.currentResolvingContext?.map (fun (src, ctrl) =>
+          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+      let g := g.expirePrintedStaticEffects o (cause := transformCause)
       let g := g.changeObject o.id (.printed
         { creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
           name := "Phyrexian" })
@@ -659,9 +662,10 @@ def applyDelayedSynthetic (g : Game) : Game :=
   let synth := g.delayedSynthetic
   let g := g.change (.delayedSynthetic #[])
   synth.foldl (fun g (who, n) =>
-    let (g, hits, rest) := g.revealUntil who (·.isCreature) n
-    let g := g.putHits who hits
-    g.restBottom who rest true) g
+    g.withResolvingContext none who (fun g =>
+      let (g, hits, rest) := g.revealUntil who (·.isCreature) n
+      let g := g.putHits who hits
+      g.restBottom who rest true)) g
 
 end Game
 end Mtg.Engine

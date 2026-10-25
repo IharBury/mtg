@@ -60,7 +60,7 @@ def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effec
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
   let modes := g.triggerModesOf obj
   if !modes.any (g.triggerModeChoosable p obj) then
-    let g := g.ceaseToExist obj.id (cause := some (.gameRule .leavingZone))
+    let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
     g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
   else
     let what := if count == 2 then "two modes" else "a mode"
@@ -821,6 +821,10 @@ After that batch, check state-based actions again. Repeat until idle, then
 batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
   let g :=
+    if g.pending == .none && g.afterRandom == .none && g.resolvingContext.isSome then
+      g.change (.resolvingContext none)
+    else g
+  let g :=
     if g.pendingCreatureTokenCreators.isEmpty then g
     else
       let ps := g.pendingCreatureTokenCreators
@@ -924,11 +928,13 @@ Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let happened := GameEvent.looked g.turnNumber p count false n
-  let g := if n == 0 then g else g.record happened
-  let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
-  let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
-  if count == 0 then
+  if n == 0 then
+    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  else if count == 0 then
+    let happened := GameEvent.looked g.turnNumber p 0 false n
+    let g := g.record happened
+    let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p 0
+    let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
     (g.changes #[.pending (.scry p count), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"

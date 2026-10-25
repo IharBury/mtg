@@ -155,7 +155,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
   if (g.player p).lost then g
   else
     let pl := g.player p
-    let g := g.changePlayer p (.lost true)
+    let g := g.record (GameEvent.playerLost g.turnNumber p (cause := some (.gameRule .playerLeftGame)))
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
     match g.decideGameIfFinished with
     | some finished => finished

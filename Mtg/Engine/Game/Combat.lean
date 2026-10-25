@@ -477,9 +477,10 @@ def clearCombat (g : Game) : Game :=
       .pendingRegularCombatDamage false,
       .firstStrikeAssignedThisCombat #[],
       .blockersQueue #[] ]
+    let cause := some (EventCause.turnBased .removeFromCombatAtEndOfCombat)
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
-        g := g.changeStatus o.id .clearCombat
+        g := g.record (GameEvent.removedFromCombat g.turnNumber o.asEvent (cause := cause))
     return g
 
 end Game

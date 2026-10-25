@@ -73,6 +73,7 @@ def resolveTop (g : Game) : Game :=
     match g.findObject? entry.objectId with
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
+      g.withResolvingContext (obj.sourceId.orElse (fun _ => some obj.id)) entry.controller fun g =>
       if let some e := obj.abilityEffect then
         let g := g.changes #[.resolvingAbility (some obj.id), .resolvingDivision entry.dividedDamage]
         let g :=
@@ -140,7 +141,7 @@ def resolveTop (g : Game) : Game :=
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
           let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
           if obj.isCopy then
-            (g.ceaseToExist obj.id (cause := finishCause)).logMsg
+            (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
           else if obj.castFromGraveyard then
             let (g, _) := g.move obj.id .exile none (cause := finishCause)
@@ -204,7 +205,7 @@ def resolveTop (g : Game) : Game :=
         else
           let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
           if obj.isCopy then
-            (g.ceaseToExist obj.id (cause := finishCause)).logMsg
+            (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
           else if obj.castFromGraveyard then
             let (g, _) := g.move obj.id .exile none

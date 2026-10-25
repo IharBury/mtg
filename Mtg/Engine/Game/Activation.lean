@@ -167,14 +167,14 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     match o.printed.morph with
     | some cost =>
       let pl := g.player p
-      match pl.manaPool.pay? cost with
-      | none => throw s!"{pl.name} cannot pay {cost}"
-      | some pool =>
-        let g := (g.changePlayer p (.manaPool pool)).record
-          (GameEvent.turnedFaceUp g.turnNumber o.asEvent
-            (cause := some (.specialAction .turnFaceUp p)))
-        let g := g.createPrintedStaticEffects (g.object! o.id)
-        return g.logMsg s!"{pl.name} turns {o.name} face up"
+      if !pl.manaPool.canPay cost then
+        throw s!"{pl.name} cannot pay {cost}"
+      let g ← g.payCost p cost (forObject := some o.id)
+      let g := g.record
+        (GameEvent.turnedFaceUp g.turnNumber (g.object! o.id).asEvent
+          (cause := some (.specialAction .turnFaceUp p)))
+      let g := g.createPrintedStaticEffects (g.object! o.id)
+      return g.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then

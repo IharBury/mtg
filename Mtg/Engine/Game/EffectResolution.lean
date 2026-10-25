@@ -510,6 +510,11 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
 /-- One more counter of each kind already on the target (Powerful Broker). -/
 def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
   g.withLegalKindTarget controller .permanentOrPlayer targets (fun g t =>
+    let (src, ctrl) :=
+      match g.currentResolvingContext? with
+      | some (s, c) => (s, c.orElse (fun _ => some controller))
+      | none => (none, some controller)
+    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
     match t with
     | Target.permanent id =>
       match g.findObject? id with
@@ -520,14 +525,15 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
           let g :=
             if plus > 0 then g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) else g
           let g := g.changeStatus id (.proliferatedExceptPlusOne extra)
-          (g.record (GameEvent.proliferated g.turnNumber controller)).logMsg
+          (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[id]) (cause := cause))).logMsg
             s!"{o.name} gets another counter of each kind"
         else g.logMsg s!"{o.name} has no counters"
       | none => g.logMsg "The target is no longer legal"
     | Target.player pid =>
       let pl := g.player pid
       if pl.poison > 0 then
-        g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller))
+        let g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller) (cause := cause))
+        (g.record (GameEvent.proliferated g.turnNumber controller (players := #[pid]) (cause := cause)))
           |>.logMsg s!"{pl.name} gets a poison counter"
       else g.logMsg s!"{pl.name} has no counters"
     | Target.card _ => g.logMsg "The target is no longer legal") none
@@ -1784,9 +1790,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             match o.printed.otherFace with
             | none => g.logMsg s!"{o.name} has no other face"
             | some face =>
-              let g := g.expirePrintedStaticEffects o
+              let transformCause :=
+                g.currentResolvingContext?.map (fun (src, ctrl) =>
+                  .oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+              let g := g.expirePrintedStaticEffects o (cause := transformCause)
               let g := g.record
-                (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed))
+                (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed)
+                  (cause := transformCause))
               let g := g.createPrintedStaticEffects (g.object! o.id)
               g.logMsg s!"{o.name} transforms into {face.name}"
       | .drawX =>

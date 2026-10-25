@@ -19,26 +19,25 @@ def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
   g.attachmentsOfId host.id
 
 /-- Remove `o` from combat (CR 506.4). -/
-def removeFromCombat (g : Game) (o : GameObject) : Game :=
-  let g := g.changeStatus o.id .clearCombat
-  g.objects.foldl (fun acc x =>
-    if x.status.blocking.any (· == o.id) then
-      acc.changeStatus x.id (.removeBlocking o.id)
-    else acc) g
+def removeFromCombat (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
+  if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked ||
+      g.objects.any (fun x => x.status.blocking.any (· == o.id)) then
+    g.record (GameEvent.removedFromCombat g.turnNumber o.asEvent (cause := cause))
+  else g
 
 /-- Phase `o` out, along with Auras and Equipment attached to it. Does not
 trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
 def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if o.status.phasedOut || o.zone != .battlefield then g
   else
-    let g := g.removeFromCombat o
+    let g := g.removeFromCombat o (cause := cause)
     let o := g.object! o.id
     let g := g.expirePrintedStaticEffects o (cause := cause)
     let g := g.record (GameEvent.phasedOut g.turnNumber o.asEvent false (cause := cause))
     let g := g.logMsg s!"{o.name} phases out"
     (g.attachmentsOf o).foldl (fun acc att =>
       let att := acc.object! att.id
-      let acc := acc.removeFromCombat att
+      let acc := acc.removeFromCombat att (cause := cause)
       let att := acc.object! att.id
       let acc := acc.expirePrintedStaticEffects att (cause := cause)
       acc.record (GameEvent.phasedOut acc.turnNumber att.asEvent true (cause := cause))

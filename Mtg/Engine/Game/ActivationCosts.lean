@@ -205,7 +205,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let g' :=
         if n > 0 then
           g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .stun n
-            (cause := some (.costPayment .removeCounters p forObject)))
+            (cause := some (.costPayment .putCounters p forObject)))
         else g
       g := g'.logMsg s!"{(g.player p).name} puts a stun counter on {src.name}"
     if a.cost.removeAnyNumberPlusOne then

@@ -290,7 +290,7 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
 def ceaseUncastCopies (g : Game) : Game :=
   g.objects.foldl (fun acc o =>
     if o.isCopy && o.zone != .stack && o.zone != .battlefield then
-      let acc := acc.ceaseToExist o.id
+      let acc := acc.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
       acc.logMsg s!"{o.name} ceases to exist"
     else acc) g
 

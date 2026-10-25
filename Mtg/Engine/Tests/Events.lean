@@ -249,7 +249,7 @@ do not mint `EffectId`s. -/
     (cause := some (.costPayment .tap me)))
   let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false
     (cause := some (.turnBased .untapAll)))
-  let g7 := g6.createTreasureTokens me 1
+  let g7 := g6.withResolvingContext (some b.id) me (fun g => g.createTreasureTokens me 1)
   let g8 := ((g7.record (GameEvent.looked g7.turnNumber me 2)).record
     (GameEvent.resolved g7.turnNumber me 1)).record
     (GameEvent.proliferated g7.turnNumber me)
@@ -306,7 +306,8 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
   let createdPairs := GameEvent.createdEffectsWithId g1.events
   let appliedPairsBeforeToken := GameEvent.oneShotEffectsWithId g1.events
   -- Now create a token (which increments `nextObjectId` via `ZoneEvent.created`) and a one-shot look effect.
-  let g2 := (g1.createTreasureTokens me 1).record (GameEvent.looked g1.turnNumber me 1)
+  let g2 := (g1.withResolvingContext (some b.id) me (fun g => g.createTreasureTokens me 1)).record
+    (GameEvent.looked g1.turnNumber me 1)
   let appliedPairs := GameEvent.oneShotEffectsWithId g2.events
   let objIdIncremented := g2.nextObjectId == objIdBefore + 1
   -- Expire until-end-of-turn continuous effects during cleanup.
@@ -939,11 +940,16 @@ events. -/
     tok.status.attackingWhom == some opp
 
 /- Phase 3: `PlayerEvent` (`.scried`, `.surveilled`, `.beheld`, `.proliferated`,
-`.sheHulkDealtDamage`), `StackObjectEvent` (`.resolved`), and `PermanentEvent`
-(`.phasedOut`, `.phasedIn`, `.transformed`, `.turnedFaceUp`) record directly as
-`RulesEvent`s with classified `EventCause`s, and `applyPlayerEvent` updates
-`beheldQualities` in isolation (CR 608 / 701.22 / 701.25 / 701.27 / 701.28 /
-701.34 / 701.62 / 702.26). -/
+`.sheHulkDealtDamage`, `.manaEmptied`, `.lost`, `.leftGame`), `StackObjectEvent`
+(`.resolved`), and `PermanentEvent` (`.phasedOut`, `.phasedIn`, `.transformed`,
+`.turnedFaceUp`, `.removedFromCombat`) record directly as `RulesEvent`s with
+classified `EventCause`s; `applyPlayerEvent` and `applyPermanentEvent` update
+game state in isolation; finished scry/surveil/proliferate populate their
+chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
+"this turn" expiry has cause `.turnBased .cleanupClear`; and an effect-behold
+(`beholdAndMaybeUntap`) has cause `.oneShotEffect` rather than `.costPayment`
+(CR 500.5 / 511.3 / 514.2 / 608 / 610 / 701.22 / 701.25 / 701.27 / 701.34 /
+701.62 / 702.26 / 704.5a–c). -/
 #guard
   let dfcBear : CardDef :=
     { bear with
@@ -954,19 +960,35 @@ events. -/
   let g1 := g0.beholdQuality me .bear (cause := some (.costPayment .behold me (some b.id)))
   let g2 := g1.phaseOut (g1.object! b.id) (cause := some (.turnBased .phaseInOut))
   let g3 := g2.phaseInControlled me
-  let g4 := g3.record (GameEvent.transformed g3.turnNumber (g3.object! b.id).asEvent true)
-  let g5 := ((g4.record (GameEvent.looked g4.turnNumber me 2)).record
-    (GameEvent.looked g4.turnNumber me 1 true)).record
-    (GameEvent.resolved g4.turnNumber me 1)
+  let g4 := g3.record (GameEvent.transformed g3.turnNumber (g3.object! b.id).asEvent true
+    (cause := some (.oneShotEffect ⟨g3.nextEffectId⟩ (some b.id) (some me))))
+  let g5 := g4.record (GameEvent.resolved g4.turnNumber me 1)
+  let gPump := (quiet g0).withResolvingContext (some b.id) me (fun g =>
+    g.createEffect (.pump b.id 2 2))
+  let gCleanup := ((quiet gPump).clearEOT).clearTurnActivations
+  let gBeholdEff := ((quiet g0).becomeTapped (g0.object! b.id)
+    (cause := some (.oneShotEffect ⟨g0.nextEffectId⟩ (some b.id) (some me)))).beholdAndMaybeUntap me b.id .bear
+  let gScry0 := (quiet afterDraw).beginScry me 2
+  let looked := gScry0.scryLookedIds me 2
+  let topChoice := #[looked[0]!]
+  let botChoice := #[looked[1]!]
+  let gScryDone :=
+    match gScry0.finishScry me topChoice botChoice with
+    | .ok g => g
+    | .error _ => gScry0
+  let libAfter := (gScryDone.player me).library
+  let gMana := ((quiet afterDraw).changePlayer me (.addMana (.colored .red) 2)).emptyManaPools
+  let gCombat := ((quiet g0).changeStatus b.id (.attacking true)).clearCombat
   g1.qualityWasBeheld me .bear &&
     (g1.player me).beheldQualities == #[.bear] &&
     (g2.object! b.id).status.phasedOut &&
     !(g3.object! b.id).status.phasedOut &&
     (g4.object! b.id).status.transformed &&
     (g4.object! b.id).name == "Back Hero" &&
-    g5.loggedScried me &&
-    g5.loggedSurveilled me &&
     g5.loggedResolutions me == 1 &&
+    gScryDone.loggedScried me &&
+    libAfter.back? == some topChoice[0]! &&
+    libAfter[0]? == some botChoice[0]! &&
     g1.events.any (fun e =>
       e.change == .rules (.player (.beheld me .bear)) &&
         e.cause == .costPayment .behold me (some b.id)) &&
@@ -977,7 +999,37 @@ events. -/
     g3.events.any (fun e =>
       match e.change with
       | .rules (.permanent (.phasedIn o false)) => o.id == some b.id && e.cause == .turnBased .phaseInOut
-      | _ => false)
+      | _ => false) &&
+    gPump.events.any (fun e =>
+      match e.change, e.cause with
+      | .rules (.effectCreated _ (.pump id 2 2)), .oneShotEffect _ (some sid) (some ctrl) =>
+        id == b.id && sid == b.id && ctrl == me
+      | _, _ => false) &&
+    gCleanup.events.any (fun e =>
+      match e.change with
+      | .rules (.effectExpired _ (.pump id 2 2)) =>
+        id == b.id && e.cause == .turnBased .cleanupClear
+      | _ => false) &&
+    gBeholdEff.events.any (fun e =>
+      match e.change, e.cause with
+      | .rules (.player (.beheld p .bear)), .oneShotEffect _ _ (some ctrl) =>
+        p == me && ctrl == me
+      | _, _ => false) &&
+    gScryDone.events.any (fun e =>
+      match e.change with
+      | .rules (.player (.scried p top bottom 2 2)) =>
+        p == me && top == topChoice && bottom == botChoice
+      | _ => false) &&
+    gMana.events.any (fun e =>
+      e.change == .rules (.player (.manaEmptied me 2 false)) &&
+        e.cause == .turnBased .emptyManaPools) &&
+    (gMana.player me).manaPool.isEmpty &&
+    gCombat.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.removedFromCombat o)) =>
+        o.id == some b.id && e.cause == .turnBased .removeFromCombatAtEndOfCombat
+      | _ => false) &&
+    !(gCombat.object! b.id).status.attacking
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

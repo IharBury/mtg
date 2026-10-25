@@ -282,7 +282,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
     let g := ids.foldl (fun g id =>
-      if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
+      if (g.findObject? id).any (·.zone == .exile) then
+        g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))
+      else g) g
     return (g.change (.pendingFreeCopies none)).finishFraChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
@@ -388,7 +390,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
-    let g := g.ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .leavingZone))
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
@@ -683,7 +685,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile abilityId _, .decline =>
-    let g := g.ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .leavingZone))
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
@@ -721,19 +723,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (g.findObject? copyId).any (·.zone == .stack)
     if onStack then return g.finishFraChoice
     else
+      let copyCause := some (EventCause.stateBased .copyOutsideStackOrBf)
       let gone :=
         match g.findObject? copyId with
-        | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+        | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
         | none =>
           match g.findObject? landed with
-          | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+          | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
           | none => g
       return gone.finishFraChoice
   | .mayCastCopy copyId, .decline =>
     let g :=
       match g.findObject? copyId with
       | some o =>
-        (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist"
+        (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
+          s!"The copy of {o.name} ceases to exist"
       | none => g
     return g.finishFraChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"

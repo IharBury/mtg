@@ -67,13 +67,14 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
 /-- Puppet Crafting: the enchanted permanent is a 5/5 Construct creature
 while the Aura is attached to it. -/
 def refreshAuraAnimation (g : Game) : Game :=
+  let cause := some (EventCause.gameRule .staticAbility)
   g.battlefield.foldl (fun g o =>
     let animated := g.battlefield.any (fun a =>
       a.attachedTo == some o.id &&
         a.staticAbilities.any (· == .fra .enchantedIsConstruct55))
     if animated == o.status.animatedConstruct55 then g
-    else if animated then g.createEffect (.auraConstruct55 o.id)
-    else g.expireAll (.auraConstruct55 o.id)) g
+    else if animated then g.createEffect (.auraConstruct55 o.id) (cause := cause)
+    else g.expireAll (.auraConstruct55 o.id) (cause := cause)) g
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule
@@ -97,15 +98,18 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if shielded then
             pure ()
           else if pl.life ≤ 0 then
-            g := g.changePlayer pl.id (.lost true)
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+              (cause := some (.stateBased .lifeZeroOrLess)))
             g := g.logMsg s!"{pl.name} loses the game (life total {pl.life})"
             changed := true
           else if pl.drewFromEmpty then
-            g := g.changePlayer pl.id (.lost true)
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+              (cause := some (.stateBased .drewFromEmpty)))
             g := g.logMsg s!"{pl.name} loses the game (drew from empty library)"
             changed := true
           else if pl.poison ≥ 10 then
-            g := g.changePlayer pl.id (.lost true)
+            g := g.record (GameEvent.playerLost g.turnNumber pl.id
+              (cause := some (.stateBased .tenPoison)))
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
       match g.decideGameIfFinished with

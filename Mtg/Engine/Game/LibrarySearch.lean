@@ -99,14 +99,19 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
 
 /-- Behold `subtype`. If you do, untap the land this search just found. -/
 def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
-  let g := g.beholdQuality p subtype
+  let (src, ctrl) :=
+    match g.currentResolvingContext? with
+    | some (s, c) => (s, c.orElse (fun _ => some p))
+    | none => (none, some p)
+  let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+  let g := g.beholdQuality p subtype (cause := cause)
   if !g.qualityWasBeheld p subtype then g
   else
     match g.findObject? landId with
     | some o =>
       if o.isOnBattlefield && o.status.tapped && o.status.stun == 0 &&
           !g.hostCantBecomeUntapped o then
-        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
+        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false (cause := cause))
         g.logMsg s!"{o.name} untaps"
       else g
     | none => g

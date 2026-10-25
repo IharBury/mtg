@@ -32,7 +32,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o =>
           if o.zone == .stack then
             if o.isCopy then
-              (g.ceaseToExist o.id).logMsg
+              (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
                 s!"The copy of {o.name} ceases to exist (CR 704.5e)"
             else g.returnToHand id o.owner
           else g

@@ -75,7 +75,7 @@ def discardToMaxHandSize (g : Game) : Game :=
 
 /-- Clear “once each turn” activation counts as a turn ends. -/
 def clearTurnActivations (g : Game) : Game :=
-  let cause := some (EventCause.turnBased .expireAtStepEnd)
+  let cause := some (EventCause.turnBased .cleanupClear)
   Id.run do
     let mut g := g
     g := g.expireMatching (fun | .pendingFreeRGCreatureThisTurn _ => true | _ => false) (cause := cause)
@@ -204,6 +204,7 @@ def startNextTurn (g : Game) : Game :=
         .cleanupGivesPriority false ]
       if !g.powerUpsForbidden then
         g := g.createEffect .powerUpsForbiddenThisTurn
+          (cause := some (.turnBased .expireAtStepBegin))
       return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
       let n := g.players.size
@@ -219,6 +220,7 @@ def startNextTurn (g : Game) : Game :=
             .cleanupGivesPriority false ]
           if g.powerUpsForbidden then
             g := g.expireAll .powerUpsForbiddenThisTurn
+              (cause := some (.turnBased .expireAtStepEnd))
           return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
       return g
 
@@ -307,7 +309,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           let n := pl.eaglesBirdsNextUpkeep
           g := g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)
           if g.stillInGame pl.id then
-            g := g.createKindTokens pl.id .birdSoldier n
+            g := g.withResolvingContext none pl.id (fun g =>
+              g.createKindTokens pl.id .birdSoldier n)
           g := g.logMsg
             s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
@@ -360,8 +363,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         let mut g := g
         for o in g.permanentsOf ap do
           if o.printed.impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
+            let impCause := some (EventCause.gameRule .impending)
             g := (g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .time 1 true
-              (cause := some (.oneShotEffect ⟨0⟩ (some o.id) (some ap))))).syncImpendingNotACreature o.id
+              (cause := impCause))).syncImpendingNotACreature o.id (cause := impCause)
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
         g := g.change (.delayedEndStepSacrifices #[])
@@ -369,7 +373,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
+              let ctrl := o.controller.getD o.owner
+              g := g.withResolvingContext (some o.id) ctrl (fun g =>
+                g.sacrificeToGraveyard o s!"{o.name} is sacrificed")
           | none => pure ()
         let returns := g.delayedGraveReturns
         g := g.change (.delayedGraveReturns #[])
@@ -378,9 +384,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           | some o =>
             if o.zone == .graveyard o.owner && !(g.player who).lost then
               let name := o.name
-              let (g', newId) := g.putOntoBattlefield id who (summoningSick := !o.printed.keywords.haste)
-              g := g'.logMsg s!"{name} returns to the battlefield"
-              g := g.afterPermanentEnters (g.object! newId)
+              g := g.withResolvingContext (some o.id) who (fun g =>
+                let (g', newId) := g.putOntoBattlefield id who (summoningSick := !o.printed.keywords.haste)
+                let g := g'.logMsg s!"{name} returns to the battlefield"
+                g.afterPermanentEnters (g.object! newId))
             else pure ()
           | none => pure ()
         g := g.applyDelayedSynthetic
@@ -398,21 +405,23 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               else
                 let name := o.name
                 let sick := !o.printed.keywords.haste
-                let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
-                g := g'.logMsg
-                  s!"{name} returns to the battlefield (beginning of end step)"
-                let back := g.object! newId
-                g :=
+                g := g.withResolvingContext (some o.id) owner (fun g =>
+                  let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
+                  let g := g'.logMsg
+                    s!"{name} returns to the battlefield (beginning of end step)"
+                  let back := g.object! newId
                   if back.printed.isLand then g.afterLandEnters back
-                  else g.afterPermanentEnters back
+                  else g.afterPermanentEnters back)
         let exiles := g.delayedEndStepExiles
         g := g.change (.delayedEndStepExiles #[])
         for id in exiles do
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              let (g', _) := g.move id .exile none
-              g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
+              let ctrl := o.controller.getD o.owner
+              g := g.withResolvingContext (some o.id) ctrl (fun g =>
+                let (g', _) := g.move id .exile none
+                g'.logMsg s!"{o.name} is exiled (beginning of end step)")
           | none => pure ()
         return g
     let g :=
@@ -488,6 +497,7 @@ def advanceStep (g : Game) : Game :=
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else
+      let g := if g.step == .endOfCombat then g.clearCombat else g
       g.beginStep st
   | none =>
     -- Leaving cleanup. If CR 514.3a granted priority this step, another

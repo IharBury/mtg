@@ -80,14 +80,15 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
   | .scry q count =>
     g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
-    let pl := g.player p
-    let lower := pl.library.extract 0 (pl.library.size - count)
     let mut g := g
     for id in bottom do
       g := g.logMsg
         s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
     g := g.logPutOnTop p looked top
-    g := g.changePlayer p (.library (bottom ++ lower ++ top))
+    let happened := GameEvent.looked g.turnNumber p count false count (top := top) (rest := bottom)
+    g := g.record happened
+    g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
+    g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     return g.finishLibraryLook
   | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
@@ -100,24 +101,31 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
   | .surveil q count =>
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
-    let pl := g.player p
-    let lower := pl.library.extract 0 (pl.library.size - count)
+    let (src, ctrl) :=
+      match g.currentResolvingContext? with
+      | some (s, c) => (s, c.orElse (fun _ => some p))
+      | none => (none, some p)
+    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
     let mut g := g.logPutOnTop p looked top
-    g := g.changePlayer p (.library (graveyard ++ lower ++ top))
+    let happened :=
+      GameEvent.looked g.turnNumber p count true count
+        (top := top) (rest := graveyard) (cause := cause)
+    g := g.record happened
     for id in graveyard do
       let card := g.object! id
-      let (g', newId) := g.move id (.graveyard p) none
+      let (g', newId) := g.move id (.graveyard p) none (cause := cause)
       g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
       match g.surveilReturnMvAtMost with
       | some n =>
         if g.objectManaValue card ≤ n then
-          let (g', _) := g.move newId (.hand p) none
+          let (g', _) := g.move newId (.hand p) none (cause := cause)
           g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
       | none =>
         if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
             !card.printed.isLand then
-          let (g', _) := g.move newId (.hand p) none
+          let (g', _) := g.move newId (.hand p) none (cause := cause)
           g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+    g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     return g.finishLibraryLook
   | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
   | _ => throw "Not time to surveil (CR 701.25)"
@@ -204,8 +212,15 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       throw s!"Only {(g.player q).name} may proliferate"
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
+    let (src, ctrl) :=
+      match g.currentResolvingContext? with
+      | some (s, c) => (s, c.orElse (fun _ => some p))
+      | none => (none, some p)
+    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
     let mut g := g
     let mut loyaltyPut := false
+    let mut permIds : Array ObjectId := #[]
+    let mut playerIds : Array PlayerId := #[]
     for t in chosen do
       match t with
       | .permanent id =>
@@ -219,16 +234,18 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         let o := g.object! id
         g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
         if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
-        g := g.record (GameEvent.proliferated g.turnNumber p)
+        permIds := permIds.push id
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
         let pl := g.player pid
         if pl.poison == 0 then
           throw s!"{pl.name} has no counters"
-        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p))
-        g := g.record (GameEvent.proliferated g.turnNumber p)
+        g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some p) (cause := cause))
+        playerIds := playerIds.push pid
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+    g := g.record (GameEvent.proliferated g.turnNumber p
+      (permanents := permIds) (players := playerIds) (cause := cause))
     if loyaltyPut then
       g := g.queueLoyaltyPutTriggers p
     if chosen.isEmpty then

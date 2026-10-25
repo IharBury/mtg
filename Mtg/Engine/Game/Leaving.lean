@@ -226,7 +226,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
   if (g.player p).leftTheGame then g
   else
     let cause := some (EventCause.gameRule .playerLeftGame)
-    let g := g.changePlayers p #[.lost true, .leftTheGame true]
+    let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
     let g := g.logMsg s!"{(g.player p).name} leaves the game"
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
     let g :=
@@ -274,17 +274,18 @@ def leavePlayersWhoLost (g : Game) : Game :=
 def emptyManaPools (g : Game) : Game :=
   Id.run do
     let mut g := g
+    let cause := some (EventCause.turnBased .emptyManaPools)
     for pl in g.players do
       if !pl.manaPool.isEmpty then
         let colorless :=
           (g.permanentsOf pl.id).any (·.printed.unspentManaBecomesColorless)
+        let n := pl.manaPool.total
         if colorless then
-          let n := pl.manaPool.total
-          g := g.changePlayer pl.id (.manaPool { colorless := n })
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n true (cause := cause))
           g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
         else
           g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
-          g := g.changePlayer pl.id (.manaPool ManaPool.empty)
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n false (cause := cause))
     return g
 
 end Game
