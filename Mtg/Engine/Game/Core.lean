@@ -263,6 +263,8 @@ structure Game where
   delayedEndStepReturns : Array (ObjectId × EventCause) := #[]
   /-- Extra turns to take before the next player in turn order (Kang). -/
   extraTurns : Array PlayerId := #[]
+  /-- One-shot `EventCause` for each queued entry in `extraTurns` (CR 500.7 / 611.2a). -/
+  extraTurnCauses : Array EventCause := #[]
   /-- Power-up abilities can't be activated during this extra turn (Kang). -/
   powerUpsForbidden : Bool := false
   /-- Permanents exiled at the beginning of the next end step (Vindictive
@@ -2111,7 +2113,12 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .pushDelayedEndStepReturn id cause =>
     { g with delayedEndStepReturns := g.delayedEndStepReturns.push (id, cause) }
   | .extraTurns v => { g with extraTurns := v }
-  | .pushExtraTurn p => { g with extraTurns := g.extraTurns.push p }
+  | .extraTurnCauses v => { g with extraTurnCauses := v }
+  | .pushExtraTurn p cause? =>
+    let cause := cause?.getD (.oneShotEffect ⟨g.nextEffectId⟩ none (some p))
+    { g with
+      extraTurns := g.extraTurns.push p
+      extraTurnCauses := g.extraTurnCauses.push cause }
   | .powerUpsForbidden v => { g with powerUpsForbidden := v }
   | .delayedEndStepExiles v => { g with delayedEndStepExiles := v }
   | .pushDelayedEndStepExile id cause =>

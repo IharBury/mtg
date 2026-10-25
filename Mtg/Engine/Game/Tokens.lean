@@ -293,14 +293,14 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
 
 /-- Create `n` Treasure tokens, optionally tapped. -/
 def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
-    (tapped := false) : Game :=
+    (tapped := false) (cause : Option EventCause := none) : Game :=
   if (g.player controller).lost then
     if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
   else
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let (g', _) := g.createToken controller treasureToken (tapped := tapped)
+      let (g', _) := g.createToken controller treasureToken (tapped := tapped) (cause := cause)
       g := g'
     return g
 

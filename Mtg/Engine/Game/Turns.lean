@@ -16,6 +16,7 @@ def clearEOT (g : Game) : Game :=
   Id.run do
     let mut g := g
     g := g.expireAll .creaturesWithoutFlyingCantBlockUntilEot (cause := cause)
+    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
     g := g.expireMatching (fun | .assignCombatDamageEqualToughnessUntilEot _ => true | _ => false)
       (cause := cause)
     g := g.restoreCopiesUntilEot
@@ -78,6 +79,7 @@ def clearTurnActivations (g : Game) : Game :=
   let cause := some (EventCause.turnBased .cleanupClear)
   Id.run do
     let mut g := g
+    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
     g := g.expireMatching (fun | .pendingFreeRGCreatureThisTurn _ => true | _ => false) (cause := cause)
     g := g.expireMatching (fun | .pendingLokiCopy .. => true | _ => false) (cause := cause)
     -- Stingcaster Mage: flashback granted until end of turn ends.
@@ -124,8 +126,8 @@ def clearTurnActivations (g : Game) : Game :=
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn
 ends. Each permission is its own continuous effect: it ends, or its remaining
 turn count goes down, under its own `EffectId` (CR 611.2). -/
-def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
-  let cause := some (EventCause.turnBased .expireAtStepEnd)
+def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
+    (cause : Option EventCause := some (.turnBased .cleanupClear)) : Game :=
   g.activeEffects.foldl (fun g (eid, e) =>
     match e with
     | .playPermission oid perm =>
@@ -176,7 +178,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
     else g
   let g := g.expireAll (.lifeCantChange p) (cause := cause)
   let g := g.restoreCopiesUntilNextTurn p
-  let g := g.expirePlayPermissions p
+  let g := g.expirePlayPermissions p (cause := cause)
   let g := g.expireAll (.cantCastSpellsThisTurn p) (cause := cause)
   g.expireMatching (fun | .attackPumpPerPlainsThisTurn q _ => q == p | _ => false) (cause := cause)
 
@@ -185,7 +187,8 @@ A player who has left does not begin a turn (CR 800.4k); effects that last
 until that turn expire when it would have begun (CR 800.4m). -/
 def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
-  let g := g.expirePlayPermissions ending |>.clearTurnActivations
+  let g := g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
+    |>.clearTurnActivations
   Id.run do
     let mut g := g
     let extraN := g.extraTurns.size
@@ -193,18 +196,22 @@ def startNextTurn (g : Game) : Game :=
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-        g := g.change (.extraTurns (g.extraTurns.extract 1 g.extraTurns.size))
+        g := g.changes #[
+          .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
+          .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size) ]
     match g.extraTurns[0]? with
     | some q =>
+      let extraCause? := g.extraTurnCauses[0]?
       g := g.changes #[
         .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
+        .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size),
         .activePlayer q,
         .turnNumber (g.turnNumber + 1),
         .isFirstTurn false,
         .cleanupGivesPriority false ]
       if !g.powerUpsForbidden then
-        g := g.createEffect .powerUpsForbiddenThisTurn
-          (cause := some (.turnBased .expireAtStepBegin))
+        let cause := extraCause? <|> some (.oneShotEffect ⟨g.nextEffectId⟩ none (some q))
+        g := g.createEffect .powerUpsForbiddenThisTurn (cause := cause)
       return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
       let n := g.players.size
@@ -218,9 +225,6 @@ def startNextTurn (g : Game) : Game :=
             .turnNumber (g.turnNumber + 1),
             .isFirstTurn false,
             .cleanupGivesPriority false ]
-          if g.powerUpsForbidden then
-            g := g.expireAll .powerUpsForbiddenThisTurn
-              (cause := some (.turnBased .expireAtStepEnd))
           return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
       return g
 
@@ -435,7 +439,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority ap
   | .cleanup =>
     -- Combatants leave combat; then CR 514.1–514.3.
-    let g := g.clearCombat
+    let g := g.clearCombat (cause := some (.turnBased .cleanupClear))
     let g := g.discardToMaxHandSize
     let g := g.clearEOT
     -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions

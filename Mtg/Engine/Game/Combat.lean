@@ -323,7 +323,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
             match src.controller with
             | some pid =>
               if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
-                g := g.createTreasureTokens pid amt.toNat
+                g := g.createTreasureTokens pid amt.toNat (cause := combatCause)
             | none => pure ()
         | none => pure ()
       else if !g.sourceDamagePrevented src && asgn.toPlayer > 0 &&
@@ -399,7 +399,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
                   (some dealtToPlayer)
               | none => pure ()
           if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
-            g := g.createTreasureTokens pid dealtToPlayer.toNat
+            g := g.createTreasureTokens pid dealtToPlayer.toNat (cause := combatCause)
           g := g.putControlledTriggers defn .combatDamageToYou (cause := some src)
           if pid == g.activePlayer &&
               !g.waitingTriggers.any (fun w => w.event == .opponentsDealtCombatDamageYourTurn) then
@@ -471,14 +471,14 @@ def announceCombatDamage (g : Game) (p : PlayerId)
       return g.dealAssignedCombatDamage
   | _ => throw "Not time to assign combat damage (CR 510.1)"
 
-def clearCombat (g : Game) : Game :=
+def clearCombat (g : Game)
+    (cause : Option EventCause := some (.turnBased .removeFromCombatAtEndOfCombat)) : Game :=
   Id.run do
     let mut g := g.changes #[
       .firstStrikeDamageDone false,
       .pendingRegularCombatDamage false,
       .firstStrikeAssignedThisCombat #[],
       .blockersQueue #[] ]
-    let cause := some (EventCause.turnBased .removeFromCombatAtEndOfCombat)
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
         g := g.record (GameEvent.removedFromCombat g.turnNumber o.asEvent (cause := cause))

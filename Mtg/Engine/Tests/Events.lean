@@ -1344,6 +1344,99 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
        id1 == id2 && sid1 == h.id && sid2 == h.id && ctrl1 == me && ctrl2 == me
      | _, _ => false)
 
+/- Phase 3: `expirePlayPermissions` uses `.turnBased .cleanupClear` when a turn
+ends (CR 514.2) and `.turnBased .expireAtStepBegin` when a left player's next
+turn would begin (CR 611.2b / 800.4m); Kang's extra-turn `.powerUpsForbiddenThisTurn`
+is created under the delayed `.oneShotEffect` cause allocated when `.extraTurn`
+resolved (CR 500.7 / 611.2a) and expires under `.turnBased .cleanupClear`
+(CR 514.2); `createTreasureTokens` from combat damage to a player or planeswalker
+records `ZoneEvent.created` under `.turnBased .combatDamage` (CR 510.2); and
+`clearCombat` uses `.turnBased .removeFromCombatAtEndOfCombat` at end of combat
+(CR 511.3) vs. `.turnBased .cleanupClear` in `beginStep .cleanup`. -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == bear.name))[0]!
+  let h := (g0.battlefield.filter (·.name == hero.name))[0]!
+  -- 1. expirePlayPermissions: .cleanupClear at end of turn vs. .expireAtStepBegin in expireUntilNextTurnEffects
+  let gPermTurnEnd :=
+    (quiet (g0.createEffect (.playPermission b.id { player := me, turnEndsRemaining := 1 }))).startNextTurn
+  let gPermNextTurn :=
+    (quiet (g0.createEffect (.playPermission b.id { player := opp, turnEndsRemaining := 1 }))).expireUntilNextTurnEffects opp
+  -- 2. Kang's extra turn: delayed .oneShotEffect cause on creation, .cleanupClear on expiry
+  let effBeforeExtra := g0.nextEffectId
+  let gExtraQueued :=
+    g0.applyAbilityEffect me { resolution := .extraTurn } #[] (some h.id)
+  let storedExtraCause := gExtraQueued.extraTurnCauses[0]!
+  let gExtraStarted := (quiet gExtraQueued).startNextTurn
+  let gExtraClearedEot := (quiet gExtraStarted).clearEOT
+  let gExtraEndedTurn := (quiet gExtraStarted).startNextTurn
+  -- 3. Combat-damage Treasure creation (to player and to planeswalker) uses .turnBased (.dealCombatDamage false)
+  let pwDef : CardDef :=
+    { name := "Target PW"
+      types := #[.planeswalker]
+      loyalty := some 5 }
+  let gTreasPlayer :=
+    let g := g0.changeStatuses b.id #[.attacking true, .combatDamageCreatesTreasure true]
+    let g := g.change (.assignedCombatDamage #[{ source := b.id, toPlayer := 2 }])
+    (quiet g).dealAssignedCombatDamage
+  let gTreasPw :=
+    let g := addPermanent g0 pwDef opp opp
+    let pw := (g.battlefield.filter (·.name == "Target PW"))[0]!
+    let g := g.changeStatuses b.id #[.attacking true, .attackingPlaneswalker (some pw.id), .combatDamageCreatesTreasure true]
+    let g := g.change (.assignedCombatDamage #[{ source := b.id, toPlayer := 1 }])
+    (quiet g).dealAssignedCombatDamage
+  -- 4. clearCombat: .removeFromCombatAtEndOfCombat in advanceStep from .endOfCombat vs. .cleanupClear in beginStep .cleanup
+  let gEndCombat :=
+    (quiet ((g0.change (.step .endOfCombat)).changeStatus b.id (.attacking true))).advanceStep
+  let gCleanupCombat :=
+    (quiet (g0.changeStatus b.id (.attacking true))).beginStep .cleanup
+  gPermTurnEnd.events.any (fun e =>
+    match e.change with
+    | .rules (.effectExpired _ (.playPermission oid _)) =>
+      oid == b.id && e.cause == EventCause.turnBased .cleanupClear
+    | _ => false) &&
+    gPermNextTurn.events.any (fun e =>
+      match e.change with
+      | .rules (.effectExpired _ (.playPermission oid _)) =>
+        oid == b.id && e.cause == EventCause.turnBased .expireAtStepBegin
+      | _ => false) &&
+    storedExtraCause == EventCause.oneShotEffect ⟨effBeforeExtra⟩ (some h.id) (some me) &&
+    gExtraStarted.events.any (fun e =>
+      match e.change with
+      | .rules (.effectCreated _ .powerUpsForbiddenThisTurn) =>
+        e.cause == storedExtraCause
+      | _ => false) &&
+    gExtraClearedEot.events.any (fun e =>
+      match e.change with
+      | .rules (.effectExpired _ .powerUpsForbiddenThisTurn) =>
+        e.cause == EventCause.turnBased .cleanupClear
+      | _ => false) &&
+    gExtraEndedTurn.events.any (fun e =>
+      match e.change with
+      | .rules (.effectExpired _ .powerUpsForbiddenThisTurn) =>
+        e.cause == EventCause.turnBased .cleanupClear
+      | _ => false) &&
+    gTreasPlayer.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.created o p)) =>
+        o.name == "Treasure" && p == me && e.cause == EventCause.turnBased (.dealCombatDamage false)
+      | _ => false) &&
+    gTreasPw.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.created o p)) =>
+        o.name == "Treasure" && p == me && e.cause == EventCause.turnBased (.dealCombatDamage false)
+      | _ => false) &&
+    gEndCombat.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.removedFromCombat o)) =>
+        o.id == some b.id && e.cause == EventCause.turnBased .removeFromCombatAtEndOfCombat
+      | _ => false) &&
+    gCleanupCombat.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.removedFromCombat o)) =>
+        o.id == some b.id && e.cause == EventCause.turnBased .cleanupClear
+      | _ => false)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400
