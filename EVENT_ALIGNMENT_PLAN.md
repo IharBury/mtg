@@ -626,23 +626,27 @@ fields (`chosenX`, `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`,
 `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
 `sourceId`) plus `lastKnownPower` / `lastKnownToughness` for ability copies
 until Phase 8—directly from `original : ObjectId` per 707.10 (`chosenX` is
-copied by all five stack copiers today per MSH ruling 401 and must be copied by
-`applyStackObjectEvent` since `StackObjectEvent.copied` does not go through
-`applyZoneEvent`'s `moved.after` path). Because only `copyStackSpell` copies all
-five cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`, `sneakPaid`,
-`sneakAttackWhom`) and `adventurerCard` today—while Loki (`Entering.lean`)
-omits `StackEntry` decisions, `adventurerCard`, and the five cast-choice fields
-(copying `chosenX` only), Way of the Cryomancer (`Entering.lean`) omits
-`extraModes`, `adventurerCard`, and the five cast-choice fields,
-`.copyCauseSpell` (`FraResolve.lean`) omits `extraModes` and the five
-cast-choice fields (copying `adventurerCard` and `chosenX` only on the
-`GameObject`), and `copyStackAbility` leaves `targetsAnnounced` false—this
-migration is a 707.10 behavior change across both `StackEntry` decisions and
-`GameObject` cast/adventure fields, not only a new event constructor. Card
-copies created in `.exile`—both the 707.12 cast-during-resolution copies
-(Saruman, Baron Zemo, Uldaros) and `createPreparedCopy` (`Movement.lean`, which
-leaves the copy in `.exile` with a play permission while the permanent stays
-prepared per ruling 742, not 707.12)—remain `ZoneEvent.created`.
+copied by all five stack copiers today—spell copies per 707.10 and ruling 845
+for Way of the Cryomancer, and ability copies per MSH ruling 401—and must be
+copied by `applyStackObjectEvent` since `StackObjectEvent.copied` does not go
+through `applyZoneEvent`'s `moved.after` path). Because only `copyStackSpell`
+copies all five cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`,
+`sneakPaid`, `sneakAttackWhom`), `adventurerCard`, and `extraModes` today—while
+Loki (`Entering.lean`) omits `StackEntry` decisions, `adventurerCard`, and the
+five cast-choice fields (copying `chosenX` only), Way of the Cryomancer
+(`Entering.lean`, which already copies `adventurerCard`, `kicked`,
+`giftPromisedTo`, `teamworkPaid`, and `chosenX` on the object and `targets`,
+`dividedDamage`, `chosenMode`, and `targetsAnnounced` on the stack entry) omits
+`extraModes`, `sneakPaid`, and `sneakAttackWhom`, `.copyCauseSpell`
+(`FraResolve.lean`) omits `extraModes` and the five cast-choice fields (copying
+`adventurerCard` and `chosenX` only on the `GameObject`), and
+`copyStackAbility` leaves `targetsAnnounced` false—this migration is a 707.10
+behavior change across both `StackEntry` decisions and `GameObject`
+cast/adventure fields, not only a new event constructor. Card copies created in
+`.exile`—both the 707.12 cast-during-resolution copies (Saruman, Baron Zemo,
+Uldaros) and `createPreparedCopy` (`Movement.lean`, which leaves the copy in
+`.exile` with a play permission while the permanent stays prepared per ruling
+742, not 707.12)—remain `ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -1146,18 +1150,19 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `lastKnownPower` / `lastKnownToughness` (which `copyStackAbility` in
    `ResolutionEffects.lean` copies today, until those LKI fields are retired in
    Phase 8) directly from `original` onto the new copy `StackEntry` and
-   `GameObject` (preserving `chosenX` across all five copiers per MSH ruling
-   401 since `StackObjectEvent.copied` does not run `applyZoneEvent`'s
+   `GameObject` (preserving `chosenX` across all five copiers—spell copies per
+   707.10 and ruling 845 for Way of the Cryomancer, and ability copies per MSH
+   ruling 401—since `StackObjectEvent.copied` does not run `applyZoneEvent`'s
    `moved.after` path, and fixing Loki's copy to include `StackEntry`
    decisions, `adventurerCard`, and the 5 cast-choice fields, Way of the
-   Cryomancer to include `extraModes`, `adventurerCard`, and the 5 cast-choice
-   fields, `.copyCauseSpell` to include `extraModes` and the 5 cast-choice
-   fields, and `copyStackAbility` to copy `targetsAnnounced` per 707.10), and
-   retire the 9 copy-only stack fields from `EventObject` (`kicked`,
-   `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
-   `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`; note that
-   `chosenX` stays on the stack `GameObject` per 107.3a and on `EventObject` for
-   `moved.after`, `adventurerCard` and the stack ability fields
+   Cryomancer to include `extraModes`, `sneakPaid`, and `sneakAttackWhom`,
+   `.copyCauseSpell` to include `extraModes` and the 5 cast-choice fields, and
+   `copyStackAbility` to copy `targetsAnnounced` per 707.10), and retire the 9
+   copy-only stack fields from `EventObject` (`kicked`, `teamworkPaid`,
+   `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`,
+   `abilityEffect`, `triggeredAbility`, `sourceId`; note that `chosenX` stays
+   on the stack `GameObject` per 107.3a and on `EventObject` for `moved.after`,
+   `adventurerCard` and the stack ability fields
    `abilityEffect`/`triggeredAbility`/`sourceId` stay on `GameObject` per §3.8,
    and the 5 cast-choice fields stay on `GameObject` until their readers use
    `CastEvent` in Phase 8). **Only these milestones are rules events.**
