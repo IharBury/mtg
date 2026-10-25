@@ -112,10 +112,7 @@ def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
     (plusOnes : Nat := 0) (tapped := false) : Game × ObjectId :=
   let name := (g.object! id).name
   let (g, newId) := g.putOntoBattlefield id controller (tapped := tapped)
-  let g :=
-    if plusOnes > 0 then
-      g.changeStatus newId (.addPlusOnePlusOne plusOnes)
-    else g
+    (extraEntersWith := if plusOnes > 0 then #[(.plusOnePlusOne, plusOnes)] else #[])
   let g := g.logMsg s!"{name} returns to the battlefield"
   (g, newId)
 

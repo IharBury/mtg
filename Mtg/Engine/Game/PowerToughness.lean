@@ -54,5 +54,48 @@ def creaturesBlockedBy (g : Game) (blocker : GameObject) : Array GameObject :=
       if a.isOnBattlefield && a.status.attacking then some a else none
     | none => none)
 
+/-- Snapshot `o` as an `EventObject` (CR 113.7a).
+Note: `colors`, `manaValue`, `types`, `subtypes`, `power`, `toughness`,
+`keywords`, and `staticAbilities` are provisional until the Layer 1–7 pipeline
+in Phase 8 (CR 613.1). -/
+def snapshot (g : Game) (o : GameObject) : EventObject :=
+  let base := o.asEvent
+  let extraSubtypes : Array CardSubtype :=
+    #[.hero, .villain, .goblin, .orc, .army, .elf, .merfolk].foldl
+      (fun acc s => if g.hasSubtype o s && !acc.contains s then acc.push s else acc)
+      base.subtypes
+  let pw : Option Int :=
+    if o.zone == .battlefield then
+      if o.isCreature || o.printed.power.isSome then some (g.snapshotPower o) else none
+    else
+      o.lastKnownPower.orElse (fun _ =>
+        if o.isCreature || o.printed.power.isSome then some (g.snapshotPower o) else none)
+  let tg : Option Int :=
+    if o.zone == .battlefield then
+      if o.isCreature || o.printed.toughness.isSome then some (g.snapshotToughness o) else none
+    else
+      o.lastKnownToughness.orElse (fun _ =>
+        if o.isCreature || o.printed.toughness.isSome then some (g.snapshotToughness o) else none)
+  let curKw := g.currentKeywords o
+  { base with
+    subtypes := extraSubtypes
+    power := pw
+    toughness := tg
+    keywords := { curKw with
+      haste := g.hasHaste o
+      vigilance := g.hasVigilance o
+      flying := g.hasFlying o
+      menace := g.hasMenace o
+      hexproof := g.hasHexproof o
+      indestructible := g.hasIndestructible o
+      reach := curKw.reach
+      trample := g.hasTrample o
+      deathtouch := g.hasDeathtouch o
+      defender := curKw.defender
+      lifelink := g.hasLifelink o
+      firstStrike := g.hasFirstStrike o
+      doubleStrike := g.hasDoubleStrike o
+      shadow := g.hasShadow o } }
+
 end Game
 end Mtg.Engine

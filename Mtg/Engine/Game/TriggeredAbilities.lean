@@ -988,7 +988,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
     let src? := sourceId.bind g.findObject?
     let g :=
       g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
-        (source := src?.map g.damageSourceEvent)
+        (source := src?.map g.snapshot)
     g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
   | .player (.target .opponent), .fixed n, _ =>
     let n := n.toNat
@@ -1178,9 +1178,9 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .sourceCounters, .permanent _ =>
     -- Rulings 756 / 758: each kind of counter it had as it died, in the same
     -- numbers; nothing moves from the dead creature.
-    match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+    match sourceId.bind g.lastKnownCounterStatus? with
     | none => g.logMsg "The source had no counters"
-    | some (_, last) =>
+    | some last =>
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
         let extra := g.docSamsonBonus (some controller) o.controller
         let g := g.changeStatus o.id (.addCountersExceptPlusOne last extra)
@@ -1372,9 +1372,9 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       putN .hone (g.countCreaturesControlledBy opp)
     | .plusOneNoted => putN .plusOnePlusOne g.notedCountThisWay
     | .sourceCounters =>
-      match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
+      match sourceId.bind g.lastKnownCounterStatus? with
       | none => g
-      | some (_, last) =>
+      | some last =>
         match g.permanentsNamed ctx who with
         | none => g
         | some objs =>
@@ -1741,7 +1741,9 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let owner := o.owner
           let name := o.name
           let (g, exId) := g.move o.id .exile none
+          let ex := g.object! exId
           let (g, retId) := g.move exId .battlefield (some owner)
+            (summoningSick := ex.printed.isCreature && !ex.printed.keywords.haste)
           g.afterPermanentEnters (g.object! retId)
             |>.logMsg s!"{name} is exiled, then returned"
         | .returnTapped =>
@@ -1750,8 +1752,9 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             let owner := o.owner
             let name := o.name
             let (g, exId) := g.move o.id .exile none
+            let ex := g.object! exId
             let (g, retId) := g.move exId .battlefield (some owner)
-            let g := g.changeStatus retId (.tapped true)
+              (tapped := true) (summoningSick := ex.printed.isCreature && !ex.printed.keywords.haste)
             g.afterPermanentEnters (g.object! retId)
               |>.logMsg s!"{name} is exiled, then returned tapped"
         | .mayCastUpTo casts =>
@@ -2518,11 +2521,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some src =>
       if src.zone != .graveyard src.owner then g
       else
-        let (g, newId) := g.putOntoBattlefield src.id controller
-        let g := g.changeStatuses newId #[
-          .additionalCreature false,
-          .onlyFoodArtifact false]
-        let g := g.createEffect (.returnedAsArtifact newId)
+        let (g, newId) := g.putOntoBattlefield src.id controller (returnedAsArtifact := true)
         let o := g.object! newId
         g.logMsg s!"{o.name} returns as an artifact"
   | .notedLands, .tapped, _ =>
@@ -2533,8 +2532,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
       | some o =>
         let name := o.name
-        let (g, retId) := g.move id .battlefield (some o.owner)
-        let g := g.changeStatus retId (.tapped true)
+        let (g, retId) := g.move id .battlefield (some o.owner) (tapped := true) (summoningSick := false)
         let g := g.logMsg s!"{name} is exiled, then returned tapped"
         g.afterLandEnters (g.object! retId)) g
   | .discardedLand, .tapped, _ =>
@@ -2581,11 +2579,11 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match how with
           | .underOwner => o.owner
           | _ => controller
+        let (atk, whom) := g.enterModsAttacking controller note.enterMods
         let (g, newId) := g.putOntoBattlefield id owner (tapped := tapped)
-        let g :=
-          if how == .asArtifact then
-            g.createEffect (.returnedAsArtifact newId)
-          else g
+          (attacking := atk) (attackingWhom := whom)
+          (returnedAsArtifact := how == .asArtifact)
+          (extraEntersWith := enterModsExtraCounters note.enterMods)
         let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
         g.afterPermanentEnters (g.object! newId)) g
@@ -2653,11 +2651,11 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           match how with
           | .underOwner => o.owner
           | _ => controller
+        let (atk, whom) := g.enterModsAttacking controller note.enterMods
         let (g, newId) := g.putOntoBattlefield o.id owner (tapped := tapped)
-        let g :=
-          if how == .asArtifact then
-            g.createEffect (.returnedAsArtifact newId)
-          else g
+          (attacking := atk) (attackingWhom := whom)
+          (returnedAsArtifact := how == .asArtifact)
+          (extraEntersWith := enterModsExtraCounters note.enterMods)
         let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
         g.afterPermanentEnters (g.object! newId)) g
@@ -3797,6 +3795,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (g.findObject? oid).map fun o => (g.power o).toNat
           | _ => none
       let steps := rs.flatMap TriggeredAbility.TriggerResolution.flatten
+      match steps with
+      | [.createTokens kind (.fixed n) tapped .kind .you .none,
+          .«if» cond .markRecentTokensAttacking] =>
+        let (g, holds) :=
+          g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+        let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+        if holds then
+          g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+        else g
+      | steps =>
       let (g, rest, _, _) :=
         steps.foldl
           (fun (acc : Game × List TriggeredAbility.TriggerResolution × Bool × Bool) step =>
@@ -4010,16 +4018,6 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           |>.logMsg (triggerOrLog (g.player controller).name rs)
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
-  | .markRecentTokensAttacking =>
-    let dest := some g.defendingPlayer
-    let g :=
-      g.recentTokenIds.foldl (fun g id =>
-        match g.findObject? id with
-        | some o =>
-          g.changeStatuses o.id #[.attacking true, .attackingWhom dest]
-        | none => g) g
-    g.logMsg
-      s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
   | .additionalCombatPhase =>
     g.change (.additionalCombatPhases (g.additionalCombatPhases + 1))
       |>.logMsg "Attacking creatures untap. After this phase, there is an additional combat phase"
@@ -4552,6 +4550,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match steps with
         | [.shuffleSource, .draw (.fixed n)] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
+        | [.createTokens kind (.fixed n) tapped .kind .you .none,
+            .«if» cond .markRecentTokensAttacking] =>
+          let (g, holds) :=
+            g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
+          let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+          if holds then
+            g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+          else g
         | steps =>
           steps.foldl (fun g r =>
             let step : TriggeredAbility :=

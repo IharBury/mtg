@@ -1040,9 +1040,9 @@ def catalogSagasImplemented : Bool :=
 
 /-- Put `card` onto the battlefield and run its enters/chapter triggers. -/
 def enterSaga (g : Game) (card : CardDef) : Game :=
-  let g := addPermanent g card ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g card.name
-  g.afterPermanentEnters o |>.receivePriority ⟨0⟩
+  let (g, obj) := g.allocObject card ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId) |>.receivePriority ⟨0⟩
 
 /-- Apply idle actions until the stack is empty and no choice is pending. -/
 def settle (g : Game) : Nat → Game

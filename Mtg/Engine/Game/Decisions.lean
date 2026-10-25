@@ -544,7 +544,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       | throw s!"{pl.name} cannot pay {cost}"
     let g := g.changePlayer p (.manaPool pool)
     let stackBefore := g.stack
-    let (g, newId) := g.move id .stack (some p)
+    let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     let g := g.putStackEntry p newId
     let g := g.change (.pending .none)
     let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"

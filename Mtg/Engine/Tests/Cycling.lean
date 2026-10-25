@@ -494,8 +494,9 @@ def mentorMayPay : Game := passBoth mentorSmallEnters
 /-- Dawn of a New Age enters with a hope counter per creature you control. -/
 def dawnWithCreature : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g dawnOfANewAge ⟨0⟩ ⟨0⟩
-  g.afterPermanentEnters (namedPermanent g "Dawn of a New Age")
+  let (g, obj) := g.allocObject dawnOfANewAge ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
 
 #guard (namedPermanent dawnWithCreature "Dawn of a New Age").status.hope == 1
 #guard dawnWithCreature.log.any (fun s => mentions s "hope counter")

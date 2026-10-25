@@ -333,9 +333,9 @@ def onBattlefield (g : Game) (n : String) : Bool :=
 
 /-- Put `card` on the battlefield and let its enters abilities trigger. -/
 def mshEnter (g : Game) (card : CardDef) : Game :=
-  let g := addPermanent g card ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g card.name
-  (g.afterPermanentEnters o).receivePriority ⟨0⟩
+  let (g, obj) := g.allocObject card ⟨0⟩ (.outside ⟨0⟩) none
+  let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
+  (g.afterPermanentEnters (g.object! newId)).receivePriority ⟨0⟩
 
 def namedGraveyardCard (g : Game) (p : PlayerId) (name : String) : GameObject :=
   match g.objects.find? (fun o => o.name == name && o.zone == .graveyard p) with

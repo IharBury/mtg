@@ -40,8 +40,9 @@ def ironManArtifactEnteredOk : Bool :=
   let gNo := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
   !(gNo.waitingTriggers.any (fun (t : WaitingTrigger) =>
       t.source.name == "Iron Man, Master of Machines")) &&
-    (let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
-     let stone := namedPermanent g "The Mind Stone"
+    (let (g, stoneObj) := g.allocObject theMindStone ⟨0⟩ (.outside ⟨0⟩) none
+     let (g, stoneId) := g.putOntoBattlefield stoneObj.id ⟨0⟩ (summoningSick := false)
+     let stone := g.object! stoneId
      let g := g.afterPermanentEnters stone
      let (g, _) := g.move stone.id (.graveyard ⟨0⟩) none
      g.loggedArtifactEntered ⟨0⟩ &&

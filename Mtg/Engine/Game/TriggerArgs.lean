@@ -429,8 +429,8 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
       | none => 0
     let n :=
       if n == 0 then
-        match sourceId.bind (fun id => g.lastKnownStatus.reverse.find? (·.1 == id)) with
-        | some (_, last) => last.charge
+        match sourceId.bind g.lastKnownCounterStatus? with
+        | some last => last.charge
         | none => n
       else n
     some n

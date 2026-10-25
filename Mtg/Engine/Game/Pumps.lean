@@ -63,11 +63,11 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
-    (byPlayer : Option PlayerId := none) : Game :=
-  let n := g.countersYouPut o n (putter := byPlayer)
+    (byPlayer : Option PlayerId := none) (entersWith := false) : Game :=
+  let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter := byPlayer.orElse (fun _ => o.controller)
   let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n)
+    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n)
     else g
   g.logMsg s!"{o.name} gets a finality counter"
 
@@ -223,7 +223,7 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     else
       let putter := byPlayer.orElse (fun _ => o.controller)
       let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
-      let g := (g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
+      let g := (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
       if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
         g.queueGoblinOrcArmyCounterTriggers o
       else g

@@ -131,7 +131,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let manaBefore := pl.manaPool
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
-  let (g, newId) := g.move id .stack (some p)
+  let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
   let cost :=

@@ -66,7 +66,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let rest := ids.filter (· != id)
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
-  let (g, newId) := g.move id .stack (some p)
+  let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -157,13 +157,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else
         let owner := o.owner
         let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
-        let (g, newId) := g.move id (.library owner) none
+        let pos : LibraryPosition := if answer == .accept then .top else .bottom
+        let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
         if answer == .accept then
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on top of their library"
           return (g.dealDamageToPlayer owner damage (source := src?)).finishFraChoice
         else
-          let pl := g.player owner
-          let g := g.changePlayer owner (.library (#[newId] ++ pl.library.filter (· != newId)))
           let g := g.logMsg s!"{(g.player owner).name} puts {o.name} on the bottom of their library"
           return g.finishFraChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
@@ -388,7 +387,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
-    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
@@ -529,15 +528,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
-  | .payLifeOrEnterTapped _ n, .accept =>
+  | .payLifeOrEnterTapped id n, .accept =>
+    if (g.findObject? id).isNone then return g.finishFraChoice
     let g ← g.payLifeCost p n
-    return g.finishFraChoice
+    return (g.finishPlayLand p id (tapped := false)).finishFraChoice
   | .payLifeOrEnterTapped id _, .decline =>
-    match g.findObject? id with
-    | some o =>
-      let g := g.changeStatus o.id (.tapped true)
-      return (g.logMsg s!"{o.name} enters tapped").finishFraChoice
-    | none => return g.finishFraChoice
+    return (g.finishPlayLand p id (tapped := true)).finishFraChoice
   | .payLifeOrEnterTapped .., _ => throw "Pay the life (accept), or decline"
   | .mayPayExtort _, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }
@@ -686,7 +682,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile abilityId _, .decline =>
-    let g := (g.removeFromZoneList abilityId .stack).ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
@@ -1104,7 +1100,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if o.zone != .hand o.owner then pure g
           else
             let name := o.name
-            let (g, newId) := g.move id .battlefield (some o.owner)
+            let sick := o.printed.isCreature && !o.printed.keywords.haste
+            let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
             let g := g.logMsg s!"{name} begins the game on the battlefield"
             if g.pending != .none then pure g
             else pure (g.afterPermanentEnters (g.object! newId))

@@ -145,11 +145,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if !o.isCreature then none
           else
             let t := g.toughness o
-            if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
+            if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})", ZoneVerb.put)
             else if o.status.damage ≥ t && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from lethal damage")
+              some (o, s!"{o.name} dies from lethal damage", ZoneVerb.destroy)
             else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from deathtouch")
+              some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy)
             else none)
       if !victims.isEmpty then
         g := g.changes #[
@@ -159,11 +159,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         -- will actually go to a graveyard cause “die” triggers. A Bee that
         -- dies at the same time as another creature that *does* die still
         -- sees that event (ruling 139).
-        let actualDeaths := victims.filter (fun pair =>
-          !g.wouldExileInsteadOfDying pair.1)
+        let actualDeaths := victims.filter (fun (o, _, _) =>
+          !g.wouldExileInsteadOfDying o)
         if !actualDeaths.isEmpty then
           for o in g.battlefield do
-            if actualDeaths.any (fun pair => pair.1.id != o.id) then
+            if actualDeaths.any (fun (v, _, _) => v.id != o.id) then
               match o.controller with
               | some p =>
                 g := g.change (.enqueueWaitingTriggers
@@ -171,12 +171,12 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               | none => pure ()
           -- “One or more creature cards” fires once per source still on
           -- the battlefield (Robot Domination; MSH 138).
-          let leavingIds := victims.map (fun pair => pair.1.id)
+          let leavingIds := victims.map (fun (o, _, _) => o.id)
           let gyOwners :=
-            actualDeaths.foldl (fun acc pair =>
-              if pair.1.printed.isCreature && !pair.1.printed.isToken &&
-                  !acc.any (· == pair.1.owner) then
-                acc.push pair.1.owner
+            actualDeaths.foldl (fun acc (o, _, _) =>
+              if o.printed.isCreature && !o.printed.isToken &&
+                  !acc.any (· == o.owner) then
+                acc.push o.owner
               else acc) (#[] : Array PlayerId)
           if !gyOwners.isEmpty then
             for o in g.battlefield do
@@ -189,13 +189,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                     g := g.change (.enqueueWaitingTriggers wts)
                 | none => pure ()
             g := g.change (.suppressCreatureCardsToGy true)
-      for pair in victims do
-        let o := pair.1
-        let reason := pair.2
+      for (o, reason, verb) in victims do
         match g.findObject? o.id with
         | some o =>
           if o.isOnBattlefield && o.isCreature then
-            g := g.moveToOwnerGraveyard o reason
+            g := g.moveToOwnerGraveyard o reason (verb := some verb)
             changed := true
         | none => pure ()
       g := g.changes #[

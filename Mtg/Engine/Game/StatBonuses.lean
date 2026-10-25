@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Attachments
+import Mtg.Engine.Game.BasePT
 
 /-!
 # Continuous stat bonuses (CR 613)

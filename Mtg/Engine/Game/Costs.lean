@@ -14,7 +14,7 @@ namespace Game
 /-- Move `id` to `to`'s hand and log the return. -/
 def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
   let name := (g.object! id).name
-  let (g, _) := g.move id (.hand to) none
+  let (g, _) := g.move id (.hand to) none (verb := some .returnToHand)
   g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
 
 /-- Legal only during the declare blockers step of the caster's turn. -/

@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.StatBonuses
+import Mtg.Engine.Game.Attachments
 
 /-!
 # Zone changes (CR 400)
@@ -22,6 +22,38 @@ def removePreparedCopy (g : Game) (srcId : ObjectId) : Game :=
   | some c => (g.ceaseToExist c.id).logMsg s!"The copy of {c.name} in exile ceases to exist"
   | none => g
 
+/-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
+it while `o` remains prepared (ruling 742). -/
+def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace) : Game :=
+  let p := o.controller.getD o.owner
+  let copyId : ObjectId := ⟨g.nextObjectId⟩
+  let copyTs := g.timestamp + 1
+  let copyObj : GameObject := {
+    id := copyId
+    printed := face.toCardDef
+    owner := p
+    zone := .exile
+    timestamp := copyTs
+  }
+  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj))
+  let g := g.createPrintedStaticEffects (g.object! copyId)
+  g.createEffect (.playPermission copyId {
+    player := p
+    turnEndsRemaining := 0
+    whileExiled := true
+    prepareSource := some o.id })
+
+/-- Ensure the exiled copy of `o`'s prepare spell exists when `o` enters
+already prepared (CR 614.1c, ruling 742). -/
+def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
+  if !o.status.prepared || (g.preparedCopyOf? o.id).isSome then g
+  else
+    match o.printed.prepareFace with
+    | none => g
+    | some face =>
+      let g := g.createPreparedCopy o face
+      g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
+
 /-- `o` becomes prepared: its controller creates a copy of its prepare spell
 in exile and may cast that copy while `o` stays prepared (ruling 742). A
 creature without a prepare spell can't become prepared (ruling 747), and a
@@ -33,13 +65,7 @@ def becomePrepared (g : Game) (o : GameObject) : Game :=
   | some face =>
     if o.status.prepared then g.logMsg s!"{o.name} is already prepared"
     else
-      let p := o.controller.getD o.owner
-      let (g, copy) := g.allocObject face.toCardDef p .exile
-      let g := g.createEffect (.playPermission copy.id {
-        player := p
-        turnEndsRemaining := 0
-        whileExiled := true
-        prepareSource := some o.id })
+      let g := g.createPreparedCopy o face
       let g := g.changeStatus o.id (.prepared true)
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
@@ -110,7 +136,16 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
 
 /-- `partial` because linked-exile returns recurse into `move` (CR 610.3). -/
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
-    (controller : Option PlayerId := none) : Game × ObjectId :=
+    (controller : Option PlayerId := none)
+    (tapped : Bool := false) (summoningSick : Bool := true)
+    (attachedTo : Option ObjectId := none) (applyHope : Bool := true)
+    (attacking : Bool := false) (attackingWhom : Option PlayerId := none)
+    (returnedAsArtifact : Bool := false) (onlyFoodArtifact : Bool := false)
+    (nightBack : Bool := false) (wasCast : Option Bool := none)
+    (extraEntersWith : CounterBag := #[])
+    (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
+    (libraryPosition : Option LibraryPosition := none)
+    (cause : Option EventCause := none) : Game × ObjectId :=
   let old := g.object! id
   -- Power and toughness as this permanent last existed on the battlefield
   -- (CR 113.7a). Captured before attachments and the zone list change.
@@ -118,14 +153,116 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if old.zone == .battlefield then some (g.snapshotPower old) else none
   let lkiToughness :=
     if old.zone == .battlefield then some (g.snapshotToughness old) else none
+  let beforeSnap := g.snapshot old
   let discarded :=
     match old.zone, dest with
     | .hand p, .graveyard q => p == q
     | _, _ => false
+  let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat) :
+      GameObject × CounterBag × Nat × Bool × Bool :=
+    let newId : ObjectId := ⟨g.nextObjectId⟩
+    let ts := g.timestamp + 1
+    let leavingPlay :=
+      (old.zone == .battlefield || old.zone == .stack) &&
+        targetZone != .battlefield && targetZone != .stack
+    let printed :=
+      if leavingPlay && old.status.transformed then
+        match old.printed.otherFace with
+        | some front =>
+          { front with otherFace := some { old.printed with otherFace := none } }
+        | none => old.printed
+      else if targetZone == .battlefield && nightBack then
+        match old.printed.otherFace with
+        | some back =>
+          { back with otherFace := some { old.printed with otherFace := none } }
+        | none => old.printed
+      else old.printed
+    let faceDown := targetZone == .battlefield && old.zone == .stack && old.status.faceDown
+    let fromStackTime :=
+      if targetZone == .battlefield && old.zone == .stack then old.status.time else 0
+    let entersTapped :=
+      targetZone == .battlefield &&
+        (tapped ||
+          (!faceDown &&
+            match controller with
+            | some p => g.entersTapped p printed
+            | none => false))
+    let chosenCardType :=
+      if targetZone == .battlefield && !faceDown && printed.asEntersChooseCardType then
+        some CardType.creature
+      else none
+    let windcragMardu :=
+      targetZone == .battlefield && !faceDown && printed.asEntersChooseMarduOrJeskai
+    let prepared :=
+      targetZone == .battlefield && !faceDown && printed.entersPrepared
+    let impendingNotCreature :=
+      old.zone == .stack && targetZone == .battlefield &&
+        printed.impending.isSome && fromStackTime > 0
+    let baseStatus : Status :=
+      if targetZone == .battlefield then
+        { faceDown := faceDown
+          tapped := entersTapped
+          summoningSick := summoningSick
+          attacking := attacking
+          attackingWhom := attackingWhom
+          chosenCardType := chosenCardType
+          windcragMardu := windcragMardu
+          prepared := prepared
+          transformed := nightBack
+          cantTransform := nightBack
+          returnedAsArtifact := returnedAsArtifact
+          onlyFoodArtifact := onlyFoodArtifact
+          notACreature := impendingNotCreature }
+      else {}
+    let candidate : GameObject := {
+      id := newId
+      printed
+      owner := old.owner
+      controller := controller
+      lastController :=
+        if old.zone == .battlefield then old.controller else old.lastController
+      defaultController := if targetZone == .battlefield then controller else none
+      zone := targetZone
+      status := baseStatus
+      timestamp := ts
+      attachedTo := if targetZone == .battlefield then attachedTo else none
+      chosenX := old.chosenX
+      wasCast :=
+        if targetZone == .battlefield then wasCast.getD (old.zone == .stack && !old.isCopy)
+        else false
+      lastKnownPower := lkiPower
+      lastKnownToughness := lkiToughness
+    }
+    let entersWith : CounterBag :=
+      if targetZone == .battlefield then
+        g.computeEntersWithCounters candidate
+          (fromStackTime := fromStackTime)
+          (applyHope := applyHope)
+          (asOf := asOf)
+          (extraCounters := extraEntersWith)
+      else #[]
+    let weaverBonus : Nat :=
+      if targetZone == .battlefield && applyHope then
+        g.hopeCountersOnEnter candidate asOf
+      else 0
+    let fresh : GameObject :=
+      if entersWith.isEmpty then candidate
+      else
+        { candidate with
+          status :=
+            { (candidate.status.withCounterBag entersWith) with
+              gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 } }
+    (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown)
+  let (proposedFresh, proposedEntersWith, _, _, _) := buildArrival g dest g.timestamp
+  let gWithProposed : Game :=
+    { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then proposedFresh else x) }
+  let proposedAfterSnap := gWithProposed.snapshot proposedFresh
   -- The change that would happen. Replacements match it before it is recorded
   -- (CR 614.1). A replaced change never happens (CR 614.6).
   let proposed :=
-    GameEvent.moved g.turnNumber old.asEvent old.zone dest (discarded := discarded)
+    GameEvent.moved g.turnNumber beforeSnap old.zone dest (discarded := discarded)
+      (after := some proposedAfterSnap) (verb := verb) (actor := actor)
+      (entersWith := proposedEntersWith) (libraryPosition := libraryPosition) (cause := cause)
   -- Snapshot the replacement source before the object leaves so a
   -- simultaneous death of Head of the Hunt still applies (CR 614.6).
   let headSource :=
@@ -152,16 +289,18 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     if finalityExile then
       g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
     else g
-  let happened :=
-    proposed.withDestination dest (match old.zone, dest with
-      | .hand p, .graveyard q => p == q
-      | _, _ => false)
+  let finalDiscarded :=
+    match old.zone, dest with
+    | .hand p, .graveyard q => p == q
+    | _, _ => false
+  let happenedPrelim :=
+    proposed.withDestination dest finalDiscarded
   let died :=
-    happened.matchesTrigger (old.controller.getD old.owner) old.id .dying
+    happenedPrelim.matchesTrigger (old.controller.getD old.owner) old.id .dying
   let dying := g.dyingTriggers old dest
   let pwDied :=
-    match happened.change with
-    | .rules (.effectApplied _ (.moved object .battlefield (.graveyard _) _ _)) => object.planeswalker
+    match happenedPrelim.change with
+    | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) => before.planeswalker
     | _ => false
   -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
   -- while it is still attached.
@@ -256,50 +395,32 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- on the battlefield (ruling 742).
   let g :=
     if old.zone == .battlefield then g.removePreparedCopy id else g
+  let asOf := g.timestamp
+  let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown) :=
+    buildArrival g dest asOf
+  let newId := fresh.id
+  let printed := fresh.printed
   let g :=
-    if old.zone == .battlefield then
-      g.change (.recordLastKnownStatus id old.status)
+    if exileInstead then
+      g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
     else g
-  let g := g.removeFromZoneList id old.zone
-  let (g, newId) := g.allocId
-  let g := g.change (.recordMovedTo id newId)
-  let (g, ts) := g.bumpTime
-  let leavingPlay :=
-    (old.zone == .battlefield || old.zone == .stack) &&
-      dest != .battlefield && dest != .stack
-  let printed :=
-    if leavingPlay && old.status.transformed then
-      match old.printed.otherFace with
-      | some front =>
-        { front with otherFace := some { old.printed with otherFace := none } }
-      | none => old.printed
-    else old.printed
-  let fresh : GameObject := {
-    id := newId
-    printed
-    owner := old.owner
-    controller := controller
-    lastController :=
-      if old.zone == .battlefield then old.controller else old.lastController
-    defaultController := if dest == .battlefield then controller else none
-    zone := dest
-    status :=
-      if old.zone == .stack && dest == .battlefield then
-        { faceDown := old.status.faceDown
-          time := old.status.time }
-      else {}
-    timestamp := ts
-    chosenX := old.chosenX
-    lastKnownPower := lkiPower
-    lastKnownToughness := lkiToughness
-  }
-  let g : Game := g.change (.replaceObject id fresh)
-  let g :=
-    match dest with
-    | .library p => g.changePlayer p (.pushLibrary newId)
-    | .hand p => g.changePlayer p (.pushHand newId)
-    | .graveyard p => g.changePlayer p (.pushGraveyard newId)
-    | _ => g
+  let gWithFresh : Game :=
+    { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then fresh else x) }
+  let afterSnap := gWithFresh.snapshot fresh
+  let finalVerb : Option ZoneVerb :=
+    if exileInstead then some .exile else verb
+  let happened :=
+    GameEvent.moved g.turnNumber beforeSnap old.zone dest
+      (discarded := finalDiscarded)
+      (after := some afterSnap)
+      (verb := finalVerb)
+      (actor := actor)
+      (entersWith := entersWith)
+      (libraryPosition := libraryPosition)
+      (cause := cause)
+  -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
+  -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
+  let g := g.record happened
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -413,15 +534,14 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         mine ++ anyPlayer ++ one
       else #[]
     | _, _ => #[]
-  let g := g.change (.enqueueWaitingTriggers
-    (dying ++ othersDie ++ leaving ++ gyLeave ++
+  let allTriggers :=
+    dying ++ othersDie ++ leaving ++ gyLeave ++
       nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
       fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
-      frcNontokenDies ++ discardTriggers))
+      frcNontokenDies ++ discardTriggers
   let g :=
-    if exileInstead then
-      g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
-    else g
+    if allTriggers.isEmpty then g
+    else g.change (.enqueueWaitingTriggers allTriggers)
   let g :=
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
       Id.run do
@@ -449,8 +569,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 | some host =>
                   let hostId := host.id
                   let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                    (attachedTo := some hostId)
                   g := g'
-                  g := g.changeObject returnedId (.attachedTo (some hostId))
                   g := g.logMsg
                     s!"{name} returns attached to {host.name} (does not target)"
                   let returned := g.object! returnedId
@@ -460,11 +580,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                       (returned.waitingTriggersFor p .entering))
                   | none => pure ()
               else
+                let sick := !o.printed.keywords.haste
                 let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                  (summoningSick := sick)
                 g := g'
-                let returned := g.object! returnedId
-                let sick := !returned.printed.keywords.haste
-                g := g.changeStatus returnedId (.summoningSick sick)
                 g := g.logMsg s!"{name} returns to the battlefield"
                 let returned := g.object! returnedId
                 match returned.controller with
@@ -506,16 +625,23 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       -- rulings 967 / 970). The spell itself stays a creature spell, so the
       -- effect is created only now, on the permanent.
       let g : Game :=
-        if old.zone == Zone.stack && dest == Zone.battlefield &&
-            cur.printed.impending.isSome && cur.status.time > 0 then
+        if impendingNotCreature then
           g.createEffect (.notACreature newId)
+        else g
+      let g : Game :=
+        if dest == Zone.battlefield && returnedAsArtifact then
+          g.createEffect (.returnedAsArtifact newId)
+        else g
+      let g : Game :=
+        if dest == Zone.battlefield && onlyFoodArtifact then
+          g.createEffect (.onlyFoodArtifact newId)
         else g
       g.createPrintedStaticEffects cur
     | none => g
   -- Loki left: keep his pending copy effect under the same `EffectId`, now
   -- with his last known power (MSH 109).
   let g :=
-    g.activeEffects.foldl (fun g (eid, e) =>
+    g.activeEffects.foldl (fun g (eid, (e : ContinuousEffect)) =>
       match e with
       | .pendingLokiCopy p (some id) _ =>
         if id == old.id then
@@ -523,20 +649,27 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             (.pendingLokiCopy p none (old.lastKnownPower.getD old.power)))
         else g
       | _ => g) g
-  -- The object that arrives has a new id (CR 400.7). Trigger matching above
-  -- still uses the id the permanent had when it left.
-  let g := g.record (happened.withObjectId newId)
+  let g :=
+    if dest == .battlefield && !faceDown && printed.asEntersChooseCardType then
+      g.logMsg s!"{fresh.name} chooses Creature"
+    else g
+  let g :=
+    if weaverBonus > 0 then
+      g.logMsg s!"{fresh.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+    else g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
 replacements are applied by `move` (CR 614.1 / 614.6). -/
-def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
+    (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   let reason :=
     if o.exileInstantSorceryInstead && o.printed.isInstantOrSorcery then
       s!"{o.name} is exiled"
     else reason
   let g := g.logMsg reason
-  (g.move o.id (.graveyard o.owner) none).1
+  (g.move o.id (.graveyard o.owner) none (verb := verb) (actor := actor) (cause := cause)).1
 
 /-- Move several objects to their owners' graveyards as one event.
 Sources that also leave do not see “creature cards put into your
@@ -573,39 +706,30 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
       | none => g) g
   g.change (.suppressCreatureCardsToGy false)
 
-/-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
-and optional attachment. `applyHope` applies Arwen-style enter-with-counters
-using weavers that were already present. -/
+/-- Put `id` onto the battlefield under `controller`, setting tap, sickness,
+optional attachment, and as-enters counters and status inside the atomic zone
+change (CR 611.3 / 614.1c / 614.12). -/
 def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (tapped := false) (summoningSick := true)
-    (attachedTo : Option ObjectId := none) (applyHope := true) : Game × ObjectId :=
+    (attachedTo : Option ObjectId := none) (applyHope := true)
+    (attacking := false) (attackingWhom : Option PlayerId := none)
+    (returnedAsArtifact := false) (onlyFoodArtifact := false)
+    (nightBack := false) (wasCast : Option Bool := none)
+    (extraEntersWith : CounterBag := #[])
+    (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game × ObjectId :=
   if (g.player controller).lost then
     let name := (g.object! id).name
     (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", id)
   else
-    let asOf := g.timestamp
-    let (g, newId) := g.move id .battlefield (some controller)
-    let o := g.object! newId
-    let chosenCardType :=
-      if o.printed.asEntersChooseCardType && o.status.chosenCardType.isNone then some .creature
-      else o.status.chosenCardType
-    let windcragMardu :=
-      if o.printed.asEntersChooseMarduOrJeskai then true else o.status.windcragMardu
-    let g := g.changeStatuses newId #[
-      .tapped tapped,
-      .summoningSick summoningSick,
-      .chosenCardType chosenCardType,
-      .windcragMardu windcragMardu]
-    let g :=
-      if o.printed.asEntersChooseCardType then
-        g.logMsg s!"{o.name} chooses Creature"
-      else g
-    let g :=
-      match attachedTo with
-      | some host => g.changeObject newId (.attachedTo (some host))
-      | none => g
-    let g := if applyHope then g.applyHopeEnterCounters (g.object! newId) asOf else g
-    (g, newId)
+    g.move id .battlefield (some controller)
+      (tapped := tapped) (summoningSick := summoningSick)
+      (attachedTo := attachedTo) (applyHope := applyHope)
+      (attacking := attacking) (attackingWhom := attackingWhom)
+      (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
+      (nightBack := nightBack) (wasCast := wasCast)
+      (extraEntersWith := extraEntersWith)
+      (verb := verb) (actor := actor) (cause := cause)
 
 end Game
 end Mtg.Engine

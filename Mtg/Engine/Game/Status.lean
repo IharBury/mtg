@@ -286,6 +286,86 @@ def hasCounters (s : Status) : Bool :=
     s.story > 0 || s.time > 0 || s.poison > 0 ||
     s.keywordCounters.any
 
+/-- Count of `k` counters on `s` (CR 122.1). -/
+def counterCount (s : Status) (k : CounterKind) : Nat :=
+  match k with
+  | .plusOnePlusOne => s.plusOnePlusOne
+  | .minusOneMinusOne => s.minusOneMinusOne
+  | .loyalty => s.loyaltyCounters
+  | .hope => s.hope
+  | .charge => s.charge
+  | .stun => s.stun
+  | .shield => s.shield
+  | .finality => s.finality
+  | .plan => s.plan
+  | .burden => s.burden
+  | .quest => s.quest
+  | .invasion => s.invasion
+  | .influence => s.influence
+  | .trample => s.trampleCounters
+  | .indestructible => s.indestructibleCounters
+  | .lifelink => s.lifelinkCounters
+  | .hone => s.hone
+  | .shadow => s.shadow
+  | .lore => s.lore
+  | .story => s.story
+  | .time => s.time
+  | .haste => s.keywordCounters.haste
+  | .vigilance => s.keywordCounters.vigilance
+  | .flying => s.keywordCounters.flying
+  | .menace => s.keywordCounters.menace
+  | .reach => s.keywordCounters.reach
+  | .deathtouch => s.keywordCounters.deathtouch
+  | .firstStrike => s.keywordCounters.firstStrike
+  | .doubleStrike => s.keywordCounters.doubleStrike
+  | .poison => s.poison
+
+/-- Snapshot of all non-zero counter kinds on `s` as a `CounterBag` (CR 122.1). -/
+def toCounterBag (s : Status) : CounterBag :=
+  CounterKind.all.foldl (fun acc k =>
+    let n := s.counterCount k
+    if n > 0 then acc.push (k, n) else acc) #[]
+
+/-- Replace the counter fields of `s` with the counts in `bag` (CR 122.1). -/
+def withCounterBag (s : Status) (bag : CounterBag) : Status :=
+  { s with
+    plusOnePlusOne := bag.count .plusOnePlusOne
+    minusOneMinusOne := bag.count .minusOneMinusOne
+    loyaltyCounters := bag.count .loyalty
+    hope := bag.count .hope
+    charge := bag.count .charge
+    stun := bag.count .stun
+    shield := bag.count .shield
+    finality := bag.count .finality
+    plan := bag.count .plan
+    burden := bag.count .burden
+    quest := bag.count .quest
+    invasion := bag.count .invasion
+    influence := bag.count .influence
+    trampleCounters := bag.count .trample
+    indestructibleCounters := bag.count .indestructible
+    lifelinkCounters := bag.count .lifelink
+    hone := bag.count .hone
+    shadow := bag.count .shadow
+    lore := bag.count .lore
+    story := bag.count .story
+    time := bag.count .time
+    poison := bag.count .poison
+    keywordCounters := {
+      haste := bag.count .haste
+      vigilance := bag.count .vigilance
+      flying := bag.count .flying
+      menace := bag.count .menace
+      reach := bag.count .reach
+      deathtouch := bag.count .deathtouch
+      firstStrike := bag.count .firstStrike
+      doubleStrike := bag.count .doubleStrike
+    } }
+
+/-- Add all counters in `bag` to `s` (CR 122.1). -/
+def addCounterBag (s : Status) (bag : CounterBag) : Status :=
+  s.withCounterBag (s.toCounterBag.merge bag)
+
 /-- True when cleanup must clear until-EOT pumps, keyword grants, or
 base P/T setting (CR 514.2 / 514.3). Marked damage is cleared separately via
 `DamageEvent.markedCleared`. -/

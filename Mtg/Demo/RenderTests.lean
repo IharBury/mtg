@@ -10,7 +10,7 @@ namespace Mtg.Demo.RenderTests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Game
+open Mtg.Engine.Game hiding snapshot
 open Mtg.Engine.Tests
 open Mtg.Demo.Render
 

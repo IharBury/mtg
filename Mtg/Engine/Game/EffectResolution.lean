@@ -25,6 +25,7 @@ def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
       | .draw _ n => .draw owner n
       | other => other
     let (g, _) := g.move src.id (.library owner) none
+      (verb := some .shuffleIntoLibrary) (libraryPosition := some .shuffledIn)
     g.requestShuffle owner after |>.continueIfShuffled
 
 /-- Damage beyond lethal damage dealt to `o` by `dealt` damage (CR 120.4a):
@@ -114,7 +115,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     some (g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let before := o.status.damage
       let g := g.dealDamageToPermanent o n
-        (source := (sourceId.bind g.findObject?).map g.damageSourceEvent)
+        (source := (sourceId.bind g.findObject?).map g.snapshot)
       let dealt := ((g.object! o.id).status.damage - before).toNat
       let excess := g.excessDamage o dealt
       if excess > 0 then g.empowerJace controller excess
@@ -497,7 +498,8 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
     else
       let name := o.name
       let (g, newId) := g.putOntoBattlefield o.id controller
-      let g := g.addFinalityTo (g.object! newId) 1
+        (extraEntersWith := #[(.finality, 1)])
+      let g := g.addFinalityTo (g.object! newId) 1 (entersWith := true)
       let g := g.afterPermanentEnters (g.object! newId)
       if g.pending != .none then g
       else if (g.permanentsOf controller).any (fun eq => eq.printed.isEquipment) then
@@ -546,6 +548,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
             o.printed.manaValue ≤ x then
           let name := o.name
           let (g, newId) := g.putOntoBattlefield id p
+            (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
           let g :=
             if x > 0 then
               g.addPlusOnePlusOneTo (g.object! newId) x (entersWith := true)
@@ -667,7 +670,6 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
           if o.printed.isLand && o.zone == .library o.owner then
             let name := o.name
             let (g, newId) := g.putOntoBattlefield id p (tapped := true)
-            let g := g.changeStatus newId (.tapped true)
             let g := g.logMsg s!"{name} enters tapped"
             g.afterLandEnters (g.object! newId)
           else g
@@ -1091,7 +1093,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let n := match amount with
       | .fixed => n
       | .otherSpellsManaValue => g.otherSpellsManaValue controller
-    let srcEvent? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).map g.damageSourceEvent
+    let srcEvent? := (sourceId.bind (fun s => g.findObject? (g.followMoved s))).map g.snapshot
     let g := match which with
       | .each => g.dealDamageToEachCreatureMatching n (source := srcEvent?)
       | .opponentsControl =>
