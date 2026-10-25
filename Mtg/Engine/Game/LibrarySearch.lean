@@ -83,14 +83,19 @@ def placeSearchedGraveyard (g : Game) (id : ObjectId) : Game :=
     let (g, _) := g.move id (.graveyard o.owner) none
     g.logMsg s!"{name} is put into {(g.player o.owner).name}'s graveyard"
 
-/-- Exile `id` and link the exiled card to `source`. -/
+/-- Exile `id` and link the exiled card to `source` (CR 610.3). -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
-    (source : Option ObjectId) : Game :=
+    (source : Option ObjectId) (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := o.name
-    let (g, newId) := g.move id .exile none
+    let (g, linkCause) :=
+      match cause with
+      | some c => (g, c)
+      | none => g.allocDelayedCause (some p) source
+    let (g, newId) := g.move id .exile none (cause := some linkCause)
+    let g := g.change (.setLinkedExileCause newId (some linkCause))
     let g :=
       match source.bind g.findObject? with
       | some src => g.changeObject src.id (.pushLinkedExile newId)
@@ -195,7 +200,8 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
         | none => g) g
       g.shuffleThen p (.putOnTop p ids)
     | .exileLinked source =>
-      let g := ids.foldl (fun g id => g.exileSearchedLinked p id source) g
+      let (g, linkCause) := g.allocDelayedCause (some p) source
+      let g := ids.foldl (fun g id => g.exileSearchedLinked p id source (cause := some linkCause)) g
       g.shuffleSearch p after
     | .battlefieldTappedThenHand =>
       let g :=

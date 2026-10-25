@@ -648,8 +648,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if !src.isOnBattlefield then g.logMsg s!"{src.name} has left the battlefield"
       else
         g.withLegalKindPermanent controller kind targets (fun g o =>
-          let (g, ex) := g.move o.id .exile none
-          let g := g.changeObject src.id (.pushLinkedExile ex)
+          let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
+          let (g, ex) := g.move o.id .exile none (cause := some linkCause)
+          let g := (g.changeObject src.id (.pushLinkedExile ex)).change
+            (.setLinkedExileCause ex (some linkCause))
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroyEachTarget =>

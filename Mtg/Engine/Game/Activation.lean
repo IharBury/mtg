@@ -209,8 +209,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
-  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
-  let g := g.record happened
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if ab.cost.fra == .zemoBoast then
     return (g.change (.pending (.fraChoice p (.zemoBoastExile newId id)))).logMsg
@@ -218,6 +216,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if let .crew n := ab.cost.fra then
     return (g.change (.pending (.fraChoice p (.crew newId id n)))).logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
+  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
+  let g := g.record happened
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
     caster := p

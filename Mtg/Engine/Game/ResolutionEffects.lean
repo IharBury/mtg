@@ -324,13 +324,21 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       let destNote := if dest == .exile then "exiled" else "countered"
       g.logMsg s!"{name} is {destNote}"
 
-/-- Exile `o` until `source` leaves the battlefield, linking the new exile id. -/
-def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
-    Game :=
+/-- Exile `o` until `source` leaves the battlefield, linking the new exile id
+and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
+def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let name := o.name
   let fromZone := o.zone
-  let (g, newId) := g.move o.id .exile none
-  let g := g.changeObject newId (.returnToZone (some fromZone))
+  let fallbackCtrl :=
+    (sourceId.bind g.findObject?).bind (fun src => src.controller.orElse (fun _ => some src.owner))
+  let (g, linkCause) :=
+    match cause with
+    | some c => (g, c)
+    | none => g.allocDelayedCause fallbackCtrl sourceId
+  let (g, newId) := g.move o.id .exile none (cause := some linkCause)
+  let g := (g.changeObject newId (.returnToZone (some fromZone))).change
+    (.setLinkedExileCause newId (some linkCause))
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>

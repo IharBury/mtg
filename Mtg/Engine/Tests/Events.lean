@@ -1097,6 +1097,111 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
       e.cause == .turnBased (.assignCombatDamage false)
     | _ => false)
 
+/- Phase 3: linked-exile returns preserve the exiling one-shot `EventCause`
+(CR 610.3); Loki's pending-copy `effectUpdated` uses the move's `happenedCause`;
+permanent, Aura, and Adventure spells finish resolving with `.gameRule` causes
+(CR 608.3 / 303.4h / 715.3d); and declined crew / boast activations cease with
+`.gameRule .reversedActivation` without logging `GameEvent.activated`, while
+accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == bear.name))[0]!
+  let h := (g0.battlefield.filter (·.name == hero.name))[0]!
+  let (gLink0, sharedCause) := g0.allocDelayedCause (some me) (some h.id)
+  let gLink1 := gLink0.exileUntilSourceLeaves (some h.id) b (cause := some sharedCause)
+  let effIdAfterExile := gLink1.nextEffectId
+  let gLinkReturn :=
+    (quiet gLink1).withResolvingContext (some b.id) opp (fun g =>
+      (g.move h.id (.graveyard me) none).1)
+  let linkReturnCause? : Option EventCause :=
+    gLinkReturn.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => some e.cause
+      | _ => none)
+  let gLoki0 := g0.createEffect (.pendingLokiCopy me (some h.id) 3)
+    (cause := some (.oneShotEffect ⟨g0.nextEffectId⟩ (some h.id) (some me)))
+  let destroyCause := EventCause.oneShotEffect ⟨gLoki0.nextEffectId⟩ (some b.id) (some opp)
+  let (gLokiLeft, _) := (quiet gLoki0).move h.id (.graveyard me) none (cause := some destroyCause)
+  let gPermStack :=
+    let (g, sid) := (quiet g0).move b.id .stack (some me) (verb := some .cast) (actor := some me)
+      (cause := some (.gameRule .spellCast))
+    (quiet (g.putStackEntry me sid)).resolveTop
+  let vehicleDef : CardDef :=
+    { name := "Test Vehicle"
+      types := #[.artifact]
+      subtypes := #["Vehicle"]
+      power := some 4
+      toughness := some 4
+      crew := some 2
+      activatedAbilities := #[ActivatedAbility.crewAbility 2] }
+  let gCrew0 := quiet (addPermanent g0 vehicleDef me me)
+  let v := (gCrew0.battlefield.filter (·.name == "Test Vehicle"))[0]!
+  let gCrewStarted :=
+    match gCrew0.activateAbility me v.id 0 with
+    | .ok g => g
+    | .error _ => gCrew0
+  let gCrewDeclined :=
+    match gCrewStarted.answerFraChoice me .decline with
+    | .ok g => g
+    | .error _ => gCrewStarted
+  let blackCard : CardDef :=
+    { name := "Dark Ritual15"
+      manaCost := { symbols := Array.replicate 15 (.colored .black) }
+      types := #[.instant] }
+  let zemoDef : CardDef :=
+    { name := "Baron Helmut Zemo"
+      types := #[.creature]
+      subtypes := #["Human", "Villain"]
+      power := some 3
+      toughness := some 3
+      staticAbilities := #[.boast] }
+  let (gZemo0, gyCardId) :=
+    let g := addPermanent g0 blackCard me me
+    let c := (g.battlefield.filter (·.name == "Dark Ritual15"))[0]!
+    g.move c.id (.graveyard me) none
+  let gZemo1 :=
+    (addPermanent gZemo0 zemoDef me me).change (.step .declareAttackers)
+  let z := (gZemo1.battlefield.filter (·.name == "Baron Helmut Zemo"))[0]!
+  let gZemo2 :=
+    quiet (gZemo1.changeStatuses z.id #[.attacking true, .declaredAsAttackerThisTurn true])
+  let gZemoStarted :=
+    match gZemo2.activateAbility me z.id 0 with
+    | .ok g => g
+    | .error _ => gZemo2
+  let gZemoAccepted :=
+    match gZemoStarted.answerFraChoice me (.objects #[gyCardId]) with
+    | .ok g => g
+    | .error _ => gZemoStarted
+  linkReturnCause? == some sharedCause &&
+    gLinkReturn.nextEffectId == effIdAfterExile + 1 &&
+    gLokiLeft.events.any (fun e =>
+      match e.change with
+      | .rules (.effectUpdated _ (.pendingLokiCopy _ none _)) => e.cause == destroyCause
+      | _ => false) &&
+    gPermStack.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .stack .battlefield ..)) =>
+        e.cause == EventCause.gameRule .permanentSpellResolved
+      | _ => false) &&
+    !gCrewDeclined.events.any (fun e =>
+      match e.change with
+      | .rules (.activated ..) => true
+      | _ => false) &&
+    gCrewDeclined.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.ceasedToExist o)) =>
+        o.zone == .stack && e.cause == EventCause.gameRule .reversedActivation
+      | _ => false) &&
+    gZemoAccepted.events.any (fun e =>
+      match e.change, e.cause with
+      | .rules (.zone (.moved _ _ (.graveyard _) .exile ..)), .costPayment .exile payer (some _) =>
+        payer == me
+      | _, _ => false) &&
+    gZemoAccepted.events.any (fun e =>
+      match e.change with
+      | .rules (.activated ..) => e.cause == EventCause.gameRule .abilityActivated
+      | _ => false)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

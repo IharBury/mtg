@@ -67,6 +67,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+    (cause := some (.gameRule .spellCast))
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -387,10 +388,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if total < n then throw s!"Total power {total} is less than {n}"
     let g := crew.foldl (fun g c =>
       g.becomeTapped (g.object! c.id) (cause := some (.costPayment .tap p (some abilityId)))) g
+    let g := g.record (GameEvent.activated g.turnNumber p (g.object! vehicleId).asEvent false false)
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
-    let g := g.ceaseToExist abilityId (cause := some (.gameRule .abilityActivated))
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .reversedActivation))
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
@@ -674,18 +676,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
     let (g, exiled) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, ex) := acc.1.move id .exile none
+        (cause := some (.costPayment .exile p (some abilityId)))
       (g, acc.2.push ex)) (g, #[])
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
     let g := match g.findObject? abilityId with
       | some ab => g.changeObject ab.id (.boastExiled exiled)
       | none => g
+    let srcEvent : EventObject :=
+      match g.findObject? sourceId with
+      | some src => src.asEvent
+      | none => { id := some sourceId, controller := some p, owner := p, name := "Baron Helmut Zemo" }
+    let g := g.record (GameEvent.activated g.turnNumber p srcEvent false false)
     let g := match g.findObject? sourceId with
       | some src => g.markBoastUsed src
       | none => g
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile abilityId _, .decline =>
-    let g := g.ceaseToExist abilityId (cause := some (.gameRule .abilityActivated))
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .reversedActivation))
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
@@ -1107,6 +1115,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             let name := o.name
             let sick := o.printed.isCreature && !o.printed.keywords.haste
             let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
+              (cause := some (.gameRule .staticAbility))
             let g := g.logMsg s!"{name} begins the game on the battlefield"
             if g.pending != .none then pure g
             else pure (g.afterPermanentEnters (g.object! newId))

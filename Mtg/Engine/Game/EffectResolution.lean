@@ -1650,11 +1650,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .exile (.target .eachPermanent) .untilSourceLeaves _ =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
+      let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
       targets.foldl (fun acc t =>
         match t with
         | Target.permanent oid =>
           match acc.findObject? oid with
-          | some o => acc.exileUntilSourceLeaves sourceId o
+          | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
           | none => acc
         | _ => acc) g
   | r =>

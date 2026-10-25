@@ -709,17 +709,20 @@ inductive ContinuousEffect where
   | powerUpsForbiddenThisTurn
 deriving Repr, Inhabited, BEq
 
-/-- A game rule that causes an event directly (CR 103.5, 304.2, 307.2, 700.2d, 701.3d, 702.176, 800.4a). -/
+/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
 inductive GameRuleKind where
   | openingHandDraw
   | mulligan
   | instantOrSorceryFinishedResolving
+  | permanentSpellResolved
+  | adventureSpellResolved
   | abilityFinishedResolving
   | unattachOnHostLeave
   | playerLeftGame
   | stepAdvance
   | spellCast
   | abilityActivated
+  | reversedActivation
   | staticAbility
   | continuousEffect
   | leavingZone
@@ -1232,6 +1235,8 @@ inductive EngineChange where
   | pushDelayedSynthetic (p : PlayerId) (n : Nat) (cause : EventCause)
   | eaglesBirdsCause (v : Array (PlayerId × EventCause))
   | setEaglesBirdsCause (p : PlayerId) (cause : Option EventCause)
+  | linkedExileCauses (v : Array (ObjectId × EventCause))
+  | setLinkedExileCause (id : ObjectId) (cause : Option EventCause)
   | untapSearchedIfLands (v : Option Nat)
   | pendingCreatureTokenCreators (v : Array PlayerId)
   | pushPendingCreatureTokenCreator (p : PlayerId)

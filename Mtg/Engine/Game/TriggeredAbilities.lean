@@ -1573,11 +1573,12 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .eachPermanent, .untilSourceLeaves, .none
   | .target .eachPermanent, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
+      let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
       targets.foldl (fun acc t =>
         match t with
         | Target.permanent oid =>
           match acc.findObject? oid with
-          | some o => acc.exileUntilSourceLeaves sourceId o
+          | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
           | none => acc
         | _ => acc) g
   | .landsYouControl, .forLater, .lands =>
@@ -1680,13 +1681,21 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .playCard => g.change (.playExiledThisWay none)
         | .impulse | .anyManaThisTurn => g.change (.revealedIdsThisWay #[])
         | _ => g
+      let linkedPair : Game × Option EventCause :=
+        if !objs.isEmpty && (how == .untilSourceLeaves || (how == .forLater && note == .linked)) then
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
+        else (g, none)
+      let g := linkedPair.1
+      let linkedCause? := linkedPair.2
       let exileOne (g : Game) (o : GameObject) : Game :=
         match how with
         | .leaveTrigger => g.exileForLeaveTrigger sourceId o
         | .untilSourceLeaves =>
           match sourceId.bind g.findObject? with
           | some src =>
-            if src.isOnBattlefield then g.exileUntilSourceLeaves sourceId o else g
+            if src.isOnBattlefield then g.exileUntilSourceLeaves sourceId o (cause := linkedCause?)
+            else g
           | none => g
         | .nextEndStep => g.exileUntilNextEndStep o
         | .playUntilNextTurn =>
@@ -1704,7 +1713,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           g.logMsg s!"{(g.player controller).name} exiles {name} and may play it this turn"
         | .forLater =>
           let name := o.name
-          let (g, newId) := g.move o.id .exile none
+          let (g, newId) := g.move o.id .exile none (cause := linkedCause?)
           match note with
           | .lands =>
             if o.printed.isLand then
@@ -1724,6 +1733,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               .grimaImpulseFound (some newId),
               .grimaImpulseOthers g.grimaImpulseOthers]
           | .linked =>
+            let g := g.change (.setLinkedExileCause newId linkedCause?)
             match sourceId.bind g.findObject? with
             | some src =>
               g.changeObject src.id (.pushLinkedExile newId)

@@ -323,6 +323,9 @@ structure Game where
   /-- Cause of each player's scheduled upkeep Bird Soldier delayed triggered
   ability (CR 603.7; The Eagles Are Coming!). -/
   eaglesBirdsCause : Array (PlayerId × EventCause) := #[]
+  /-- Exiling one-shot `EventCause` for each card in `linkedExile`, used when
+  the card returns because the source leaves the battlefield (CR 610.3). -/
+  linkedExileCauses : Array (ObjectId × EventCause) := #[]
   /-- After the current search, untap the land if its controller has this many lands. -/
   untapSearchedIfLands : Option Nat := none
   /-- Players who created one or more creature tokens since the last priority. -/
@@ -2148,6 +2151,14 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
         match cause with
         | some c => rest.push (p, c)
         | none => rest }
+  | .linkedExileCauses v => { g with linkedExileCauses := v }
+  | .setLinkedExileCause id cause =>
+    let rest := g.linkedExileCauses.filter (·.1 != id)
+    { g with
+      linkedExileCauses :=
+        match cause with
+        | some c => rest.push (id, c)
+        | none => rest }
   | .untapSearchedIfLands v => { g with untapSearchedIfLands := v }
   | .pendingCreatureTokenCreators v => { g with pendingCreatureTokenCreators := v }
   | .pushPendingCreatureTokenCreator p =>
@@ -2279,9 +2290,9 @@ def resolvingOneShotCause (g : Game) (p : PlayerId)
     | none => (source, some p)
   some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
 
-/-- Allocate a one-shot `EventCause` for a delayed triggered ability (CR 603.7),
-bumping `g.nextEffectId` so the stored cause carries the `EffectId` allocated
-when the delay was set up. -/
+/-- Allocate a one-shot `EventCause` for a delayed triggered ability (CR 603.7)
+or linked-exile return (CR 610.3), bumping `g.nextEffectId` so the stored cause
+carries the `EffectId` allocated when the delay or link was set up. -/
 def allocDelayedCause (g : Game) (fallbackCtrl : Option PlayerId := none)
     (source : Option ObjectId := none) : Game × EventCause :=
   let (src, ctrl) :=
@@ -2291,6 +2302,10 @@ def allocDelayedCause (g : Game) (fallbackCtrl : Option PlayerId := none)
   let id : EffectId := ⟨g.nextEffectId⟩
   let g := g.change (.nextEffectId (g.nextEffectId + 1))
   (g, .oneShotEffect id src ctrl)
+
+/-- Look up the stored exiling `EventCause` for a card in `linkedExile` (CR 610.3). -/
+def linkedExileCause? (g : Game) (id : ObjectId) : Option EventCause :=
+  (g.linkedExileCauses.find? (·.1 == id)).map (·.2)
 
 /-- Add and process a sequence of `EngineChange`s on the current turn. -/
 def changes (g : Game) (cs : Array EngineChange) : Game :=

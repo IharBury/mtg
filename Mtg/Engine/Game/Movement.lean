@@ -547,9 +547,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g.change (.enqueueWaitingTriggers allTriggers)
   let g :=
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
-      let linkCause :=
-        some (EventCause.oneShotEffect ⟨0⟩ (some old.id)
-          (old.controller.orElse (fun _ => some old.owner)))
       Id.run do
         let mut g := g
         for exId in old.linkedExile do
@@ -557,6 +554,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | some o =>
             if o.zone == .exile then
               let name := o.name
+              let linkCause := g.linkedExileCause? o.id
+              g := g.change (.setLinkedExileCause o.id none)
               match o.returnToZone with
               | some (.hand p) =>
                 let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
@@ -653,7 +652,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if id == old.id then
           g.record (GameEvent.effectUpdated g.turnNumber eid
             (.pendingLokiCopy p none (old.lastKnownPower.getD old.power))
-            (cause := some (.gameRule .leavingZone)))
+            (cause := some happenedCause))
         else g
       | _ => g) g
   let g :=
