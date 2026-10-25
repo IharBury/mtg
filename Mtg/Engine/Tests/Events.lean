@@ -1800,6 +1800,139 @@ produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
     cascMoveCauses.size == 6 &&
     cascMoveCauses.all (· == cascMoveCauses[0]!)
 
+/- Phase 3: `.mayRevealToHand` (`anyOrder := true`) + `.orderLibraryBottom`,
+`.nickFuryPut` + `.nickFuryMayTransform` `.accept`,
+`grimaExileUntilInstantOrSorcery` (`castTheCard := true`),
+generic `TriggerResolution.revealLibrary` (`applyRevealLibrary == none`), and
+`exileTopPlayIfYouControlSubtype` each share a single `.oneShotEffect` cause
+across all constituent moves, transforms, and continuous-effect creations
+(CR 608.2c / 610.1 / 701.14 / 701.27a). -/
+#guard
+  let landDef : CardDef :=
+    { name := "Test Plains", types := #[.land], subtypes := #["Plains"] }
+  let dfcHero : CardDef :=
+    { hero with
+      name := "Front Hero"
+      otherFace := some { bear with name := "Back Bear" } }
+  let shockDef : CardDef :=
+    { name := "Test Shock", types := #[.instant] }
+  let g0 :=
+    quiet (addPermanent (addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me)
+      landDef me me) landDef me me)
+  let bs := g0.battlefield.filter (·.name == bear.name)
+  let hs := g0.battlefield.filter (·.name == hero.name)
+  let ls := g0.battlefield.filter (·.name == "Test Plains")
+  let b := bs[0]!
+  let h := hs[0]!
+  let l1 := ls[0]!
+  let l2 := ls[1]!
+  let gLibSetup :=
+    let g := (g0.move b.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l1.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  -- 1. `.mayRevealToHand` (`anyOrder := true`) + `.orderLibraryBottom`
+  let gMayRev0 :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.beginLookRevealToHand me 3 (fun _ => true) true)
+  let looked3 := gLibSetup.scryLookedIds me 3
+  let picked := looked3[0]!
+  let rest2 := looked3.filter (· != picked)
+  let gMayRev1 :=
+    match gMayRev0.answerFraChoice me (.objects #[picked]) with
+    | .ok g' => g'
+    | .error _ => gMayRev0
+  let gMayRevDone :=
+    match gMayRev1.answerFraChoice me (.objects rest2.reverse) with
+    | .ok g' => g'
+    | .error _ => gMayRev1
+  let mayRevCauses :=
+    gMayRevDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 2. `.nickFuryPut` + `.nickFuryMayTransform` `.accept`
+  let gNick0 := addPermanent g0 dfcHero me me
+  let dfcObj := (gNick0.battlefield.filter (·.name == "Front Hero"))[0]!
+  let gNickSetup :=
+    let g := (gNick0.move l1.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move dfcObj.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let dfcLibId := (gNickSetup.player me).library.back!
+  let gNick1 := gNickSetup.beginLookPutTypes me 3 #[.hero]
+  let gNick2 :=
+    match gNick1.answerFraChoice me (.objects #[dfcLibId]) with
+    | .ok g' => g'
+    | .error _ => gNick1
+  let gNick3 :=
+    match gNick2.answerFraChoice me .accept with
+    | .ok g' => g'
+    | .error _ => gNick2
+  let gNickDone :=
+    match gNick3.supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gNick3
+  let nickCauses :=
+    gNickDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.permanent (.transformed ..)) => some e.cause
+      | _ => none)
+  -- 3. `grimaExileUntilInstantOrSorcery` with `castTheCard := true`
+  let gGrima0 :=
+    insertObject g0 shockDef me (.library me) none {} (fun id _ => #[.pushLibrary id])
+  let gGrimaSetup :=
+    let g := (gGrima0.move l1.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let gGrimaPending :=
+    gGrimaSetup.withResolvingContext (some h.id) me (fun g =>
+      g.grimaExileUntilInstantOrSorcery me me true)
+  let gGrimaDone :=
+    match gGrimaPending.supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gGrimaPending
+  let grimaCauses :=
+    gGrimaDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 4. Generic `TriggerResolution.revealLibrary` (`applyRevealLibrary == none`)
+  let gTrigRevPending :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.applyTriggeredAbility me (.onEnterDraw 1) (some h.id) #[] #[] none none "This creature"
+        (some (.revealLibrary .untilCreature (.put .revealed .asPrinted .none) .you)))
+  let gTrigRevDone :=
+    match gTrigRevPending.supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gTrigRevPending
+  let trigRevCauses :=
+    gTrigRevDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 5. `exileTopPlayIfYouControlSubtype` while resolving
+  let gExTop :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.exileTopPlayIfYouControlSubtype me 2 .hero)
+  let exTopCauses :=
+    gExTop.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.effectCreated _ (.playPermission ..)) => some e.cause
+      | _ => none)
+  mayRevCauses.size == 3 &&
+    mayRevCauses.all (· == mayRevCauses[0]!) &&
+    nickCauses.size == 4 &&
+    nickCauses.all (· == nickCauses[0]!) &&
+    grimaCauses.size == 6 &&
+    grimaCauses.all (· == grimaCauses[0]!) &&
+    trigRevCauses.size == 5 &&
+    trigRevCauses.all (· == trigRevCauses[0]!) &&
+    exTopCauses.size == 4 &&
+    exTopCauses.all (· == exTopCauses[0]!)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

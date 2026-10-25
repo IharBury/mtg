@@ -216,11 +216,16 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
         acc.logMsg s!"{o.name} returns as a Food artifact") g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
-control `subtype`. Timing and costs are unchanged. -/
+control `subtype` (CR 610.1 / 701.14). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
     (subtype : CardSubtype) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n == 0 || (g.player p).library.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+    let mut g := g0
     for _ in List.range n do
       let pl := g.player p
       if pl.library.isEmpty then
@@ -228,7 +233,7 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
       else
         let top := pl.library.back!
         let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         g := g.createEffect (.playPermission newId {
             player := p
@@ -236,6 +241,7 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
             whileExiled := true
             requireSubtype := some subtype
             faceDown := true })
+          (cause := cause?)
         g := g.logMsg s!"{pl.name} exiles a card face down"
         let _ := cardName
     return g
@@ -289,7 +295,7 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
       if castTheCard then
         let o := g.object! instId
         let (g, _) := g.move instId .stack (some controller)
-          (verb := some .cast) (actor := some controller)
+          (verb := some .cast) (actor := some controller) (cause := some cause)
         g.logMsg
           s!"{(g.player controller).name} casts {o.name} as the ability resolves"
       else

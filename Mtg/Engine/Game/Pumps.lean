@@ -63,11 +63,12 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
-    (byPlayer : Option PlayerId := none) (entersWith := false) : Game :=
+    (byPlayer : Option PlayerId := none) (entersWith := false)
+    (cause : Option EventCause := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter := byPlayer.orElse (fun _ => o.controller)
   let g :=
-    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n)
+    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n (cause := cause))
     else g
   g.logMsg s!"{o.name} gets a finality counter"
 
@@ -199,11 +200,12 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
-    (byPlayer : Option PlayerId := none) : Game :=
+    (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
   let putter := byPlayer.orElse (fun _ => o.controller)
   let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n)
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n (cause := cause))
     else g
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
@@ -213,17 +215,18 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
 counter” triggers still apply. Burden counters keep the total in the log. -/
 def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
-    (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
+    (entersWith := false) (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   match kind with
   | .plusOnePlusOne =>
-    g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer)
-  | .burden => g.addBurdenCounter o n (byPlayer := byPlayer)
+    g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer) (cause := cause)
+  | .burden => g.addBurdenCounter o n (byPlayer := byPlayer) (cause := cause)
   | kind =>
     let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
     if n == 0 then g
     else
       let putter := byPlayer.orElse (fun _ => o.controller)
-      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
+      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause)
       let g := (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
       if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
         g.queueGoblinOrcArmyCounterTriggers o

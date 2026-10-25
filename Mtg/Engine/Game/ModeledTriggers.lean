@@ -390,7 +390,8 @@ def enterModsAttacking (g : Game) (controller : PlayerId)
 
 /-- Apply one enters-with change to the permanent `id`. -/
 def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
-    (mod : TriggeredAbility.TriggerEnterWith) : Game :=
+    (mod : TriggeredAbility.TriggerEnterWith)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
@@ -401,38 +402,43 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         triggeredAbilities := #[]
         activatedAbilities := #[]
         staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
     | .keywords k =>
       let o := g.object! id
       g.createEffect (.copy id { o.printed with
         keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
     | .additionalSubtype subtype =>
       let o := g.object! id
       if o.printed.hasSubtype subtype then g
       else
         g.createEffect (.copy id { o.printed with
           subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+          (cause := cause)
     | .counter kind n asEnters =>
       let o := g.object! id
       match kind, asEnters with
       | .plusOnePlusOne, true =>
-        g.addPlusOnePlusOneTo o n (entersWith := true)
+        g.addPlusOnePlusOneTo o n (entersWith := true) (cause := cause)
       | .plusOnePlusOne, false =>
-        g.addPlusOnePlusOneTo o n (byPlayer := some controller)
+        g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
       | .finality, _ =>
-        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true)
+        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true) (cause := cause)
       | kind, asEnters =>
-        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller)
+        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller) (cause := cause)
     | .attacking => g
 
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  let (g, cause) := g.allocDelayedCause (some controller)
   let (atk, whom) := g.enterModsAttacking controller mods
   let (g, newId) := g.putOntoBattlefield o.id o.owner
     (attacking := atk) (attackingWhom := whom)
     (extraEntersWith := enterModsExtraCounters mods)
-  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m) g
+    (cause := some cause)
+  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
   let g := g.afterPermanentEnters (g.object! newId)
   if losesAbilitiesAndHaste mods then
     g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"

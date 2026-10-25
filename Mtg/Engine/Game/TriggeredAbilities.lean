@@ -222,8 +222,12 @@ def applyChooseModeStep (g : Game) (targets : Array Target)
 revealed cards on the bottom of their owner's library in a random order. -/
 def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array ObjectId)
     (chosen : ObjectId) (cause : Option EventCause := none) : Game :=
+  let stashed :=
+    cause.orElse (fun _ =>
+      revealed[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2)))
+  let g := revealed.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
   let (g, cause) : Game × Option EventCause :=
-    match cause with
+    match stashed with
     | some c => (g, some c)
     | none =>
       let (g, c) := g.allocDelayedCause (some p)
@@ -1690,11 +1694,17 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | .playCard => g.change (.playExiledThisWay none)
         | .impulse | .anyManaThisTurn => g.change (.revealedIdsThisWay #[])
         | _ => g
+      let stashedCause? :=
+        objs[0]?.bind (fun o => (g.linkedExileCauses.find? (·.1 == o.id)).map (·.2))
+      let g := objs.foldl (fun g o => g.change (.setLinkedExileCause o.id none)) g
       let (g, sharedCause?) : Game × Option EventCause :=
-        if !objs.isEmpty then
-          let (g, c) := g.allocDelayedCause (some controller) sourceId
-          (g, some c)
-        else (g, none)
+        match stashedCause? with
+        | some c => (g, some c)
+        | none =>
+          if !objs.isEmpty then
+            let (g, c) := g.allocDelayedCause (some controller) sourceId
+            (g, some c)
+          else (g, none)
       let exileOne (g : Game) (o : GameObject) : Game :=
         match how with
         | .leaveTrigger => g.exileForLeaveTrigger sourceId o (cause := sharedCause?)
@@ -2478,12 +2488,23 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.returnCauseToOwnerHand targets
   | .revealed, _ =>
     let ids := g.revealedIdsThisWay
-    let g := g.change (.revealedIdsThisWay #[])
+    let stashed :=
+      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none))
+      (g.change (.revealedIdsThisWay #[]))
+    let (g, cause?) : Game × Option EventCause :=
+      match stashed with
+      | some c => (g, some c)
+      | none =>
+        if ids.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
     ids.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
         let name := o.name
-        let (g, _) := g.move id (.hand controller) none
+        let (g, _) := g.move id (.hand controller) none (cause := cause?)
         g.logMsg s!"{name} is put into {(g.player controller).name}'s hand"
       | none => g) g
   | what, note =>
@@ -2495,8 +2516,13 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match note with
         | .returnedPermanent => g.change (.returnedPermanentThisWay false)
         | .none => g
+      let (g, cause?) : Game × Option EventCause :=
+        if objs.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
       objs.foldl (fun g o =>
-        let g := g.returnToHand o.id o.owner
+        let g := g.returnToHand o.id o.owner (cause := cause?)
         match note with
         | .returnedPermanent => g.change (.returnedPermanentThisWay true)
         | .none => g) g
@@ -2594,7 +2620,18 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.returnCauseUnderOwner controller targets subtype note.enterMods
   | .revealed, how, note =>
     let ids := g.revealedIdsThisWay
-    let g := g.change (.revealedIdsThisWay #[])
+    let stashed :=
+      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none))
+      (g.change (.revealedIdsThisWay #[]))
+    let (g, cause?) : Game × Option EventCause :=
+      match stashed with
+      | some c => (g, some c)
+      | none =>
+        if ids.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
     let tapped := how == .tapped
     ids.foldl (fun g id =>
       match g.findObject? id with
@@ -2609,14 +2646,21 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (attacking := atk) (attackingWhom := whom)
           (returnedAsArtifact := how == .asArtifact)
           (extraEntersWith := enterModsExtraCounters note.enterMods)
-        let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
+          (cause := cause?)
+        let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := cause?)) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
         g.afterPermanentEnters (g.object! newId)) g
   | .randomCreature, _, _ =>
     let ids := g.revealedIdsThisWay
     if ids.isEmpty then g
     else
+      let stashed :=
+        ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
       let g := g.change (.revealedIdsThisWay #[])
+      let (g, cause) : Game × EventCause :=
+        match stashed with
+        | some c => (g, c)
+        | none => g.allocDelayedCause (some controller) sourceId
       let creatures := ids.filter fun id =>
         (g.findObject? id).any (·.printed.isCreature)
       let libraryOwner :=
@@ -2624,15 +2668,19 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | some o => o.owner
         | none => controller
       if creatures.isEmpty then
+        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
         (g.logMsg "No creature card was revealed").putRestOnBottomRandom libraryOwner ids
+          (cause := some cause)
       else if creatures.size > 1 then
+        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id (some cause))) g
         g.changes #[
           .pending (.resolveRandom (.chooseObject creatures)),
           .afterRandom (.revealRandomCreatureThenBottom controller ids)]
           |>.logMsg
             s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
       else
-        g.resolveRandomCreatureReveal controller ids creatures[0]!
+        let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id none)) g
+        g.resolveRandomCreatureReveal controller ids creatures[0]! (cause := some cause)
   | what, how, note =>
     let inGraveyard (o : GameObject) : Bool :=
       match o.zone with
@@ -2670,6 +2718,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => #[]
     if cards.isEmpty then g
     else
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let tapped := how == .tapped
       cards.foldl (fun g o =>
         let owner :=
@@ -2681,7 +2730,8 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           (attacking := atk) (attackingWhom := whom)
           (returnedAsArtifact := how == .asArtifact)
           (extraEntersWith := enterModsExtraCounters note.enterMods)
-        let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m) g
+          (cause := some cause)
+        let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
         let g := g.logMsg s!"{o.name} is put onto the battlefield"
         g.afterPermanentEnters (g.object! newId)) g
 
@@ -3299,6 +3349,11 @@ def noteRevealedLibraries (g : Game) (controller : PlayerId)
           match hit with
           | some id => found := found.push id
           | none => pure ()
+      match cause with
+      | some c =>
+        for id in found do
+          g := g.change (.setLinkedExileCause id (some c))
+      | none => pure ()
       return (g.change (.revealedIdsThisWay found), rests)
 
 /-- Resolve `TriggerResolution.revealLibrary`. Each printed combination
@@ -3311,6 +3366,7 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     (who : TriggeredAbility.PlayerSelector) : Option Game :=
   match how, thenDo, who with
   | .top n, .put .randomCreature .asPrinted .none, .you => some <|
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
     let ids := g.scryLookedIds controller n
     let g := ids.foldl (fun g id =>
       match g.findObject? id with
@@ -3319,14 +3375,15 @@ partial def applyRevealLibrary (g : Game) (controller : PlayerId)
     let creatures := ids.filter (fun id => (g.findObject? id).any (·.printed.isCreature))
     if creatures.isEmpty then
       (g.logMsg "No creature card was revealed").putRestOnBottomRandom controller ids
+        (cause := some cause)
     else if creatures.size > 1 then
+      let g := ids.foldl (fun g id => g.change (.setLinkedExileCause id (some cause))) g
       g.changes #[
         .pending (.resolveRandom (.chooseObject creatures)),
         .afterRandom (.revealRandomCreatureThenBottom controller ids)]
         |>.logMsg
           s!"{(g.player controller).name} puts a random creature from among them onto the battlefield"
     else
-      let (g, cause) := g.allocDelayedCause (some controller) sourceId
       g.resolveRandomCreatureReveal controller ids creatures[0]! (cause := some cause)
   | .untilCreature,
     .ifElse .revealedManaValueAtMostLands
@@ -4197,6 +4254,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let name := o.name
         let g := g.createEffect
           (.playPermission o.id { player := controller, turnEndsRemaining := 2 })
+          (cause := g.lastMoveCauseOf? o.id)
         g.logMsg
           s!"{(g.player controller).name} exiles {name} and may play it until the end of their next turn"
       | none => g

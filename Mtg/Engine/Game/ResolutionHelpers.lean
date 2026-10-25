@@ -105,7 +105,7 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
-permission to cast them, spending mana as though it were any type. -/
+permission to cast them, spending mana as though it were any type (CR 610.1 / 701.14). -/
 def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
     (ty : CardType := .creature) : Game :=
   let ids :=
@@ -113,23 +113,27 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
       match g.findObject? id with
       | some o => o.printed.hasType ty
       | none => false)
-  Id.run do
-    let mut g := g
-    for id in ids do
-      match g.findObject? id with
-      | none => pure ()
-      | some o =>
-        let name := o.name
-        let (g', newId) := g.move id .exile none
-        g := g'
-        g := g.createEffect (.playPermission newId {
-          player := controller
-          turnEndsRemaining := 0
-          whileExiled := true
-          anyMana := true })
-        g := g.logMsg
-          s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
-    return g
+  if ids.isEmpty then g
+  else
+    let (g, cause) := g.allocDelayedCause (some controller)
+    Id.run do
+      let mut g := g
+      for id in ids do
+        match g.findObject? id with
+        | none => pure ()
+        | some o =>
+          let name := o.name
+          let (g', newId) := g.move id .exile none (cause := some cause)
+          g := g'
+          g := g.createEffect (.playPermission newId {
+            player := controller
+            turnEndsRemaining := 0
+            whileExiled := true
+            anyMana := true })
+            (cause := some cause)
+          g := g.logMsg
+            s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+      return g
 
 /-- Put `o` on the top (`top`) or bottom of its owner's library. -/
 def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
@@ -229,10 +233,18 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     (g.change (.pending (.surveil p count n))).logMsg
       s!"{pl.name} surveils {n}"
 
-/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
-def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
+/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
+def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 || (g.player p).library.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
   Id.run do
-    let mut g := g
+    let mut g := g0
     for _ in [0:n] do
       let pl := g.player p
       if pl.library.isEmpty then
@@ -241,6 +253,7 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
         let top := pl.library.back!
         let name := (g.object! top).name
         let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
+          (cause := cause?)
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
@@ -248,7 +261,8 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
 `maxPut` limits how many are returned (`none` means all matches). -/
 def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (maxPut : Option Nat := none) : Game :=
-  let g := g.mill p n
+  let (g, cause) := g.allocDelayedCause (some p)
+  let g := g.mill p n (cause := some cause)
   let gy := (g.player p).graveyard
   let take := gy.size.min n
   let milled := gy.extract (gy.size - take) gy.size
@@ -258,7 +272,7 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
     for id in milled do
       if left > 0 && pred (g.object! id) then
         let name := (g.object! id).name
-        let (g', _) := g.move id (.hand p) none
+        let (g', _) := g.move id (.hand p) none (cause := some cause)
         g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
         left := left - 1
     return g

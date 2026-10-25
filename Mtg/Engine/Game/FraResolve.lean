@@ -420,10 +420,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
             | none => acc
         | none => acc
       | _ => acc) (#[], #[])
+    let (g, cause?) : Game × Option EventCause :=
+      if ids.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some controller) sourceId
+        (g, some c)
     let (g, copies) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       let card := g.object! id
-      let (g, ex) := g.move id .exile none
+      let (g, ex) := g.move id .exile none (cause := cause?)
       let g := g.logMsg s!"{card.name} is exiled"
       let printed := (g.object! ex).printed
       -- Permanent spells cast this way become tokens.
@@ -438,10 +443,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         timestamp := copyTs
         isCopy := true
       }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
       let g := g.createEffect (.playPermission copyId {
         player := controller, turnEndsRemaining := 0,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+        (cause := cause?)
       (g, cs.push copyId)) (g, #[])
     if copies.isEmpty then g
     else

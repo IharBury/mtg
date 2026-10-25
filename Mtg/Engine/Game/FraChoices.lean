@@ -578,7 +578,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
     let rest := looked.filter (· != id)
     let g :=
-      if anyOrder then g.offerBottomAnyOrder p rest
+      if anyOrder then g.offerBottomAnyOrder p rest (cause := some cause)
       else g.requestOrderInto rest (.library p)
         s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
         (cause := some cause)
@@ -610,7 +610,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .nickFuryPut .., _ => throw "Put a card onto the battlefield, or decline"
   | .nickFuryMayTransform id rest, .accept =>
     let cause := g.lastMoveCauseOf? id
-    let g := g.applyAbilityEffect p Effect.transform #[] (some id)
+    let g := g.transformPermanent p (some id) (cause := cause)
     return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
   | .nickFuryMayTransform id rest, .decline =>
     let cause := g.lastMoveCauseOf? id
@@ -620,10 +620,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
         !ordered.all (ids.contains ·) then
       throw "Put every remaining card on the bottom, in the order you choose"
-    return (g.moveIdsInOrder ordered (.library p)
+    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g :=
+      match ids[0]? with
+      | some id => g.change (.setLinkedExileCause id none)
+      | none => g
+    return (g.moveIdsInOrder ordered (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom ids, .decline =>
-    return (g.moveIdsInOrder ids (.library p)
+    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g :=
+      match ids[0]? with
+      | some id => g.change (.setLinkedExileCause id none)
+      | none => g
+    return (g.moveIdsInOrder ids (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept

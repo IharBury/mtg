@@ -128,7 +128,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
   | .identityEcho =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let (g, _) := g.move o.id .exile none
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, _) := g.move o.id .exile none (cause := some cause)
       let g := g.logMsg s!"{o.name} is exiled"
       let lib := (g.player controller).library
       let (revealed, hit) := Id.run do
@@ -145,14 +146,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       let g :=
         match hit with
         | some id =>
-          let (g, newId) := g.putOntoBattlefield id controller
+          let (g, newId) := g.putOntoBattlefield id controller (cause := some cause)
           let g := g.logMsg s!"{(g.object! newId).name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         | none => g.logMsg "No creature or planeswalker card is revealed"
       if revealed.isEmpty then g
       else
         g.requestOrderInto revealed (.library controller)
-          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order")
+          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+          (cause := some cause))
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -428,6 +430,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
+    let (g, cause?) : Game × Option EventCause :=
+      if exiled.any (fun id => (g.findObject? id).any (·.zone == .exile)) then
+        let (g, c) := g.allocDelayedCause (some controller) sourceId
+        (g, some c)
+      else (g, none)
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       match g.findObject? id with
@@ -445,10 +452,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             timestamp := copyTs
             isCopy := true
           }
-          let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+          let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
           let g := g.createEffect (.playPermission copyId {
             player := controller, turnEndsRemaining := 0,
             whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+            (cause := cause?)
           (g, cs.push copyId)
       | none => (g, cs)) (g, #[])
     if copies.isEmpty then g.logMsg "No exiled card is left to copy"
