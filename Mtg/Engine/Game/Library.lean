@@ -94,8 +94,11 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
           firstOfTheirDrawStep then
         (g, none)
       else
-        let (g, c) := g.allocDelayedCause (some p)
-        (g, some c)
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
   Id.run do
     let mut g := g0
     for _ in [0:n] do

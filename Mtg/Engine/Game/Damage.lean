@@ -364,7 +364,8 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat)
 
 /-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
-  (g.draw p cards).loseLife p life
+  let (g, cause) := g.allocDelayedCause (some p)
+  (g.draw p cards (cause := some cause)).loseLife p life (cause := some cause)
 
 /-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
 run a stored draw or life-gain after-action. -/

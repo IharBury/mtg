@@ -261,20 +261,24 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
 `maxPut` limits how many are returned (`none` means all matches). -/
 def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (maxPut : Option Nat := none) : Game :=
+  let lib := (g.player p).library
+  let count := min n lib.size
+  let tops := (lib.extract (lib.size - count) lib.size).reverse
   let (g, cause) := g.allocDelayedCause (some p)
   let g := g.mill p n (cause := some cause)
-  let gy := (g.player p).graveyard
-  let take := gy.size.min n
-  let milled := gy.extract (gy.size - take) gy.size
+  let milled := tops.map (fun id => g.followMoved id)
   Id.run do
     let mut g := g
     let mut left := maxPut.getD milled.size
     for id in milled do
-      if left > 0 && pred (g.object! id) then
-        let name := (g.object! id).name
-        let (g', _) := g.move id (.hand p) none (cause := some cause)
-        g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
-        left := left - 1
+      match g.findObject? id with
+      | some o =>
+        if left > 0 && o.zone == .graveyard p && pred o then
+          let name := o.name
+          let (g', _) := g.move id (.hand p) none (cause := some cause)
+          g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
+          left := left - 1
+      | none => pure ()
     return g
 
 /-- Deal `n` damage to each creature matching `pred`. -/

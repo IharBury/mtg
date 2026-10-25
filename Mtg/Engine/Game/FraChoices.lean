@@ -1076,14 +1076,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | .amassArmy .. =>
       if chosen.size != 1 then throw "Choose one Army"
     | _ => pure ()
-    return (g.finishChooseCards p chosen purpose).finishFraChoice
+    let cause := ids[0]?.bind g.linkedExileCause?
+    let g := ids.foldl (fun (g : Game) id =>
+      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    return (g.finishChooseCards p chosen purpose (cause := cause)).finishFraChoice
   | .chooseCards ids _ purpose, .decline =>
     match purpose with
     | .toHand true =>
       if !ids.isEmpty then throw "Choose one card"
     | .amassArmy .. => throw "Choose an Army"
     | _ => pure ()
-    return (g.finishChooseCards p #[] purpose).finishFraChoice
+    let cause := ids[0]?.bind g.linkedExileCause?
+    let g := ids.foldl (fun (g : Game) id =>
+      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    return (g.finishChooseCards p #[] purpose (cause := cause)).finishFraChoice
   | .chooseCards .., _ => throw "Choose cards, or decline"
   | .blackGatePlayer creature players, .mode idx =>
     let some pid := players[idx]? | throw "No such player"

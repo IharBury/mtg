@@ -1946,20 +1946,47 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
-  -- 8. `millThenChooseForHand` shares one cause across the mill and deferred `.chooseCards` `.toHand`
+  -- 8. `millThenChooseForHand` shares one cause across the mill and deferred `.chooseCards` `.toHand`,
+  --    and only offers cards actually milled from the library even when `n` exceeds `library.size`
+  let gShortLib :=
+    let g := g0.changePlayer me (.library #[])
+    let (g, gyLandId) := g.move l1.id (.graveyard me) none
+    let g := (g.move b.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    (quiet g, gyLandId)
+  let preExistingGyLand := gShortLib.2
   let gMillChoose0 :=
-    gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.millThenChooseForHand me 3 (fun o => o.printed.isLand) 2 false)
-  let milledLands :=
-    (gMillChoose0.player me).graveyard.filter (fun id => (gMillChoose0.object! id).printed.isLand)
+    gShortLib.1.withResolvingContext (some h.id) me (fun g =>
+      g.millThenChooseForHand me 4 (fun o => o.printed.isLand) 2 false)
+  let offeredIds :=
+    match gMillChoose0.pending with
+    | .fraChoice _ (.chooseCards ids _ _) => ids
+    | _ => #[]
   let gMillChooseDone :=
-    match gMillChoose0.answerFraChoice me (.objects milledLands) with
+    match gMillChoose0.answerFraChoice me (.objects offeredIds) with
     | .ok g' => g'
     | .error _ => gMillChoose0
   let millChooseCauses :=
     gMillChooseDone.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 9. `draw` outside a resolving context leaves `.unclassified`, while `drawThenLoseLife`
+  --    inside a resolving context shares one `.oneShotEffect` cause across draws and life loss
+  let gRawDraw := gLibSetup.draw me 2
+  let rawDrawCauses :=
+    gRawDraw.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gDrawLose :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.drawThenLoseLife me 2 2)
+  let drawLoseCauses :=
+    gDrawLose.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.life (.lost ..)) => some e.cause
       | _ => none)
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
@@ -1978,8 +2005,15 @@ across all constituent moves, transforms, and continuous-effect creations
     echoMoveCauses[0]! != echoMoveCauses[1]! &&
     echoMoveCauses[1]! == echoMoveCauses[2]! &&
     echoMoveCauses[2]! == echoMoveCauses[3]! &&
-    millChooseCauses.size == 5 &&
-    millChooseCauses.all (· == millChooseCauses[0]!)
+    offeredIds.size == 1 &&
+    !offeredIds.contains preExistingGyLand &&
+    millChooseCauses.size == 3 &&
+    millChooseCauses.all (· == millChooseCauses[0]!) &&
+    rawDrawCauses.size == 2 &&
+    rawDrawCauses.all (· == .unclassified) &&
+    drawLoseCauses.size == 3 &&
+    drawLoseCauses.all (· == drawLoseCauses[0]!) &&
+    (match drawLoseCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

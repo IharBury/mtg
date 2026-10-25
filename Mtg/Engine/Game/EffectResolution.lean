@@ -664,15 +664,18 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
 
 /-- Carry out a `chooseCards` answer. -/
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
-    (purpose : CardChoice) : Game :=
+    (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
   match purpose with
   | .toHand _ =>
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        match chosen[0]?.bind g.lastMoveCauseOf? with
-        | some (.oneShotEffect id src ctrl) => (g, some (.oneShotEffect id src ctrl))
-        | _ =>
+        match cause.orElse (fun _ => chosen[0]?.bind g.linkedExileCause?) with
+        | some c =>
+          let g := chosen.foldl (fun (g : Game) id =>
+            if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+          (g, some c)
+        | none =>
           let (g, c) := g.allocDelayedCause (some p)
           (g, some c)
     chosen.foldl (fun g id =>
@@ -687,8 +690,11 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        let (g, c) := g.allocDelayedCause (some p)
-        (g, some c)
+        match cause with
+        | some c => (g, some c)
+        | none =>
+          let (g, c) := g.allocDelayedCause (some p)
+          (g, some c)
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
@@ -703,8 +709,11 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        let (g, c) := g.allocDelayedCause (some p)
-        (g, some c)
+        match cause with
+        | some c => (g, some c)
+        | none =>
+          let (g, c) := g.allocDelayedCause (some p)
+          (g, some c)
     let g :=
       chosen.foldl (fun g id =>
         match g.findObject? id with
@@ -721,8 +730,11 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
   | .keepDestroyRest =>
     let (g, cause?) : Game × Option EventCause :=
       if g.battlefield.any (fun o => o.isCreature && !chosen.contains o.id) then
-        let (g, c) := g.allocDelayedCause (some p)
-        (g, some c)
+        match cause with
+        | some c => (g, some c)
+        | none =>
+          let (g, c) := g.allocDelayedCause (some p)
+          (g, some c)
       else (g, none)
     g.battlefield.foldl (fun g o =>
       if o.isCreature && !chosen.contains o.id then
@@ -739,25 +751,33 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
 /-- Ask `p` to choose up to `max` of `ids`, or resolve immediately when there
 is nothing to decide. -/
 def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
-    (purpose : CardChoice) (msg : String) : Game :=
-  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose
-  else g.beginFraChoice p (.chooseCards ids max purpose) msg
+    (purpose : CardChoice) (msg : String) (cause : Option EventCause := none) : Game :=
+  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose (cause := cause)
+  else
+    let g :=
+      match cause with
+      | some c => ids.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | none => g
+    g.beginFraChoice p (.chooseCards ids max purpose) msg
 
-/-- Mill `n`, then choose matching cards from among them for your hand (CR 610.1). -/
+/-- Mill `n`, then choose matching cards from among them for your hand (CR 610.1 / 701.17). -/
 def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (max : Nat) (mustOne : Bool) : Game :=
+  let lib := (g.player p).library
+  let count := min n lib.size
+  let tops := (lib.extract (lib.size - count) lib.size).reverse
   let (g, cause) := g.allocDelayedCause (some p)
   let g := g.mill p n (cause := some cause)
-  let gy := (g.player p).graveyard
-  let take := gy.size.min n
-  let milled := gy.extract (gy.size - take) gy.size
-  let eligible := milled.filter (fun id => (g.findObject? id).any pred)
+  let milled := tops.map (fun id => g.followMoved id)
+  let eligible := milled.filter (fun id =>
+    (g.findObject? id).any (fun o => o.zone == .graveyard p && pred o))
   if eligible.isEmpty then g
   else if mustOne && eligible.size == 1 then
-    g.finishChooseCards p eligible (.toHand true)
+    g.finishChooseCards p eligible (.toHand true) (cause := some cause)
   else
     g.offerCardChoice p eligible max (.toHand mustOne)
       s!"{(g.player p).name} chooses cards to put into their hand"
+      (cause := some cause)
 
 /-- True when a targeted sequence must not resolve (CR 608.2b).
 A missing or illegal required target means none of the steps happen, so
