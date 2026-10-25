@@ -307,10 +307,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       for pl in g.players do
         if pl.eaglesBirdsNextUpkeep > 0 then
           let n := pl.eaglesBirdsNextUpkeep
-          g := g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)
+          let cause :=
+            (g.eaglesBirdsCause.findSome? (fun (pid, c) => if pid == pl.id then some c else none))
+              |>.orElse (fun _ => some (.oneShotEffect ⟨g.nextEffectId⟩ none (some pl.id)))
+          g := (g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)).change (.setEaglesBirdsCause pl.id none)
           if g.stillInGame pl.id then
-            g := g.withResolvingContext none pl.id (fun g =>
-              g.createKindTokens pl.id .birdSoldier n)
+            g := g.createKindTokens pl.id .birdSoldier n (cause := cause)
           g := g.logMsg
             s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
@@ -369,31 +371,29 @@ partial def beginStep (g : Game) (st : Step) : Game :=
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
         g := g.change (.delayedEndStepSacrifices #[])
-        for id in sacrifices do
+        for (id, cause) in sacrifices do
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              let ctrl := o.controller.getD o.owner
-              g := g.withResolvingContext (some o.id) ctrl (fun g =>
-                g.sacrificeToGraveyard o s!"{o.name} is sacrificed")
+              g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed" (cause := some cause)
           | none => pure ()
         let returns := g.delayedGraveReturns
         g := g.change (.delayedGraveReturns #[])
-        for (id, who) in returns do
+        for (id, who, cause) in returns do
           match g.findObject? id with
           | some o =>
             if o.zone == .graveyard o.owner && !(g.player who).lost then
               let name := o.name
-              g := g.withResolvingContext (some o.id) who (fun g =>
-                let (g', newId) := g.putOntoBattlefield id who (summoningSick := !o.printed.keywords.haste)
-                let g := g'.logMsg s!"{name} returns to the battlefield"
-                g.afterPermanentEnters (g.object! newId))
+              let (g', newId) := g.putOntoBattlefield id who
+                (summoningSick := !o.printed.keywords.haste) (cause := some cause)
+              let g' := g'.logMsg s!"{name} returns to the battlefield"
+              g := g'.afterPermanentEnters (g'.object! newId)
             else pure ()
           | none => pure ()
         g := g.applyDelayedSynthetic
         let ids := g.delayedEndStepReturns
         g := g.change (.delayedEndStepReturns #[])
-        for id in ids do
+        for (id, cause) in ids do
           match g.findObject? id with
           | none => pure ()
           | some o =>
@@ -405,23 +405,22 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               else
                 let name := o.name
                 let sick := !o.printed.keywords.haste
-                g := g.withResolvingContext (some o.id) owner (fun g =>
-                  let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
-                  let g := g'.logMsg
-                    s!"{name} returns to the battlefield (beginning of end step)"
-                  let back := g.object! newId
-                  if back.printed.isLand then g.afterLandEnters back
-                  else g.afterPermanentEnters back)
+                let (g', newId) := g.putOntoBattlefield id owner
+                  (summoningSick := sick) (cause := some cause)
+                let g' := g'.logMsg
+                  s!"{name} returns to the battlefield (beginning of end step)"
+                let back := g'.object! newId
+                g :=
+                  if back.printed.isLand then g'.afterLandEnters back
+                  else g'.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
         g := g.change (.delayedEndStepExiles #[])
-        for id in exiles do
+        for (id, cause) in exiles do
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              let ctrl := o.controller.getD o.owner
-              g := g.withResolvingContext (some o.id) ctrl (fun g =>
-                let (g', _) := g.move id .exile none
-                g'.logMsg s!"{o.name} is exiled (beginning of end step)")
+              let (g', _) := g.move id .exile none (cause := some cause)
+              g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
           | none => pure ()
         return g
     let g :=

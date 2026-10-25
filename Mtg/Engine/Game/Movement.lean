@@ -18,7 +18,7 @@ def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
 
 /-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
 def removePreparedCopy (g : Game) (srcId : ObjectId)
-    (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
+    (cause : Option EventCause := some (.stateBased .copyOutsideStackOrBf)) : Game :=
   match g.preparedCopyOf? srcId with
   | some c => (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {c.name} in exile ceases to exist"
   | none => g

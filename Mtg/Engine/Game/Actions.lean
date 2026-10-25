@@ -133,8 +133,8 @@ def actor (g : Game) : Option PlayerId :=
     | .sacrificeCreature p => who p
     | .declareMulligan p => who p
     | .putOnBottom p _ => who p
-    | .scry p _ => who p
-    | .surveil p _ => who p
+    | .scry p .. => who p
+    | .surveil p .. => who p
     | .mayDiscardDraw p _ => who p
     | .chooseAdditionalCost p => who p
     | .chooseSacrificeCreature p _ _ => who p
@@ -184,6 +184,7 @@ are counted; they later cease in hand (CR 704.5d). -/
 def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     (ids : Array ObjectId) : Game :=
   Id.run do
+    let (g, cause) := g.allocDelayedCause (some p)
     let mut g := g
     let mut n : Nat := 0
     for id in ids do
@@ -193,11 +194,12 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
         if o.isOnBattlefield && o.isCreature && o.owner == p then
           let name := o.name
           let owner := o.owner
-          let (g', _) := g.move o.id (.hand owner) none
+          let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
           n := n + 1
     if n > 0 then
-      g := g.changePlayer p (.addEaglesBirdsNextUpkeep n)
+      g := (g.changePlayer p (.addEaglesBirdsNextUpkeep n)).change
+        (.setEaglesBirdsCause p (some cause))
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g

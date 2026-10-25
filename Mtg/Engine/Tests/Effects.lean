@@ -1563,7 +1563,7 @@ def spellOrScried : Game :=
 
 #guard
   match spellOrScried.pending with
-  | .scry p 1 => p == ⟨0⟩ && spellOrScried.spellOr.isEmpty
+  | .scry p 1 _ => p == ⟨0⟩ && spellOrScried.spellOr.isEmpty
   | _ => false
 
 #guard

@@ -427,7 +427,8 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
     (listed : Array CreatureCombatAssignment) : Except String Game := do
   let batch ← g.completeCombatAssignments forAttackers listed
   let _ ← checkCombatAssignmentBatch g forAttackers batch
-  return g.change (.assignedCombatDamage (g.assignedCombatDamage ++ batch))
+  let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
+  return g.record (GameEvent.combatDamageAssigned g.turnNumber forAttackers batch (firstStrike := fs))
 
 /-- After attackers have assigned, the defending player assigns (CR 510.1d)
 or damage is dealt if they have no division to announce. -/

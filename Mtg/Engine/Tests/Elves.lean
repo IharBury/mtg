@@ -452,7 +452,7 @@ def celebornScrying : Game := passBoth celebornAttackDeclared
 
 #guard
   match celebornScrying.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 _ => true
   | _ => false
 #guard celebornScrying.stack.isEmpty
 #guard celebornScrying.log.any (fun s => mentions s "scries 1")
@@ -518,7 +518,7 @@ def celebornGiftScrying : Game := passBoth celebornGiftEntered
 
 #guard
   match celebornGiftScrying.pending with
-  | .scry ⟨0⟩ 2 => true
+  | .scry ⟨0⟩ 2 _ => true
   | _ => false
 
 def celebornGiftScried : Game := keepScry celebornGiftScrying
@@ -587,7 +587,7 @@ def celebornGoneBeforeScry : Game :=
 
 #guard
   match celebornGoneBeforeScry.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 _ => true
   | _ => false
 #guard celebornGoneBeforeScry.waitingTriggers.isEmpty
 

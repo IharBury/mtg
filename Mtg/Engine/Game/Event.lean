@@ -272,7 +272,6 @@ inductive StatusChange where
   | reset
   | addDamage (n : Int) (deathtouch : Bool := false)
   | withoutCounters
-  | proliferatedExceptPlusOne (extra : Nat := 0)
   | addCountersExceptPlusOne («from» : Status) (extra : Nat := 0)
   | addPump (p t : Int)
   | addPlusOnePlusOne (n : Nat := 1)
@@ -921,6 +920,9 @@ inductive DamageEvent where
   | markedCleared (objects : Array ObjectId)
   /-- Damage that was prevented (CR 615.1 / 615.6). -/
   | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)
+  /-- Combat damage assigned by attacking (`forAttackers`) or blocking creatures
+  (CR 510.1 / 510.4 / 703.4k). -/
+  | combatAssigned (forAttackers : Bool) (assignments : Array CreatureCombatAssignment)
 deriving Repr, Inhabited, BEq
 
 /-- Life gain and life loss events (CR 119.2 / 119.3). -/
@@ -1197,13 +1199,13 @@ inductive EngineChange where
   | suppressOthersDie (v : Bool)
   | suppressCreatureCardsToGy (v : Bool)
   | castingFromTop (v : Bool)
-  | delayedEndStepReturns (v : Array ObjectId)
-  | pushDelayedEndStepReturn (id : ObjectId)
+  | delayedEndStepReturns (v : Array (ObjectId × EventCause))
+  | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)
   | extraTurns (v : Array PlayerId)
   | pushExtraTurn (p : PlayerId)
   | powerUpsForbidden (v : Bool)
-  | delayedEndStepExiles (v : Array ObjectId)
-  | pushDelayedEndStepExile (id : ObjectId)
+  | delayedEndStepExiles (v : Array (ObjectId × EventCause))
+  | pushDelayedEndStepExile (id : ObjectId) (cause : EventCause)
   | conniveSource (v : Option ObjectId)
   | plusOneAfterDiscards (v : Option ObjectId)
   | additionalCombatPhases (v : Nat)
@@ -1222,12 +1224,14 @@ inductive EngineChange where
   | pendingDiscardsLeft (v : Nat)
   | wardQueue (v : Array WardObligation)
   | enqueueWard (ws : Array WardObligation)
-  | delayedEndStepSacrifices (v : Array ObjectId)
-  | pushDelayedEndStepSacrifice (id : ObjectId)
-  | delayedGraveReturns (v : Array (ObjectId × PlayerId))
-  | pushDelayedGraveReturn (id : ObjectId) (p : PlayerId)
-  | delayedSynthetic (v : Array (PlayerId × Nat))
-  | pushDelayedSynthetic (p : PlayerId) (n : Nat)
+  | delayedEndStepSacrifices (v : Array (ObjectId × EventCause))
+  | pushDelayedEndStepSacrifice (id : ObjectId) (cause : EventCause)
+  | delayedGraveReturns (v : Array (ObjectId × PlayerId × EventCause))
+  | pushDelayedGraveReturn (id : ObjectId) (p : PlayerId) (cause : EventCause)
+  | delayedSynthetic (v : Array (PlayerId × Nat × EventCause))
+  | pushDelayedSynthetic (p : PlayerId) (n : Nat) (cause : EventCause)
+  | eaglesBirdsCause (v : Array (PlayerId × EventCause))
+  | setEaglesBirdsCause (p : PlayerId) (cause : Option EventCause)
   | untapSearchedIfLands (v : Option Nat)
   | pendingCreatureTokenCreators (v : Array PlayerId)
   | pushPendingCreatureTokenCreator (p : PlayerId)
@@ -1378,6 +1382,15 @@ def damagePrevented (turn : Nat) (source : EventObject)
     (recipient : DamageRecipient) (amount : Nat)
     (cause : Option EventCause := none) : GameEvent :=
   rulesOrUnclassified turn (.damage (.prevented source recipient amount)) cause
+
+/-- Combat damage was assigned by attacking (`forAttackers`) or blocking
+creatures (CR 510.1 / 510.4 / 703.4k). -/
+def combatDamageAssigned (turn : Nat) (forAttackers : Bool)
+    (assignments : Array CreatureCombatAssignment)
+    (firstStrike : Bool := false)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.damage (.combatAssigned forAttackers assignments))
+    (cause.getD (.turnBased (.assignCombatDamage firstStrike)))
 
 /-- `player` cast `spell` (CR 601.2i). -/
 def cast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)

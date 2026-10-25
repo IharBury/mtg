@@ -214,9 +214,9 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g p .keep
   | .putOnBottom _ n, some p =>
     mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
-  | .scry _ n, some p =>
+  | .scry _ n _, some p =>
     mustApply g p (.scry (g.scryLookedIds p n) #[])
-  | .surveil _ n, some p =>
+  | .surveil _ n _, some p =>
     mustApply g p (.surveil (g.scryLookedIds p n) #[])
   | .mayDiscardDraw _ _, some p =>
     mustApply g p .decline

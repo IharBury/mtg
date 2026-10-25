@@ -77,20 +77,23 @@ on top (last = new top) of the library, each pile in the given order (CR 701.20)
 def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     Except String Game := do
   match g.pending with
-  | .scry q count =>
+  | .scry q count asked =>
     g.checkLookedPiles p q count top bottom "scry" "CR 701.20"
     let looked := g.scryLookedIds p count
+    let cause := g.resolvingOneShotCause p
     let mut g := g
     for id in bottom do
       g := g.logMsg
         s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
     g := g.logPutOnTop p looked top
-    let happened := GameEvent.looked g.turnNumber p count false count (top := top) (rest := bottom)
+    let happened :=
+      GameEvent.looked g.turnNumber p count false asked
+        (top := top) (rest := bottom) (cause := cause)
     g := g.record happened
     g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
     g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     return g.finishLibraryLook
-  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
+  | .surveil .. => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
 
 /-- Finish surveilling: put `graveyard` into the graveyard in that order and
@@ -98,17 +101,13 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
 def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
     Except String Game := do
   match g.pending with
-  | .surveil q count =>
+  | .surveil q count asked =>
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
-    let (src, ctrl) :=
-      match g.currentResolvingContext? with
-      | some (s, c) => (s, c.orElse (fun _ => some p))
-      | none => (none, some p)
-    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+    let cause := g.resolvingOneShotCause p
     let mut g := g.logPutOnTop p looked top
     let happened :=
-      GameEvent.looked g.turnNumber p count true count
+      GameEvent.looked g.turnNumber p count true asked
         (top := top) (rest := graveyard) (cause := cause)
     g := g.record happened
     for id in graveyard do
@@ -127,7 +126,7 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
           g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
     g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     return g.finishLibraryLook
-  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
   | _ => throw "Not time to surveil (CR 701.25)"
 
 /-- Remove one symbol a convoking creature of `colors` can pay: a colored
@@ -212,11 +211,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       throw s!"Only {(g.player q).name} may proliferate"
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
-    let (src, ctrl) :=
-      match g.currentResolvingContext? with
-      | some (s, c) => (s, c.orElse (fun _ => some p))
-      | none => (none, some p)
-    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+    let cause := g.resolvingOneShotCause p
     let mut g := g
     let mut loyaltyPut := false
     let mut permIds : Array ObjectId := #[]
@@ -230,9 +225,15 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         if !o.status.hasCounters then
           throw s!"{o.name} has no counters"
         let hadLoyalty := o.status.loyaltyCounters > 0
-        g := g.changeStatus o.id (.proliferatedExceptPlusOne 0)
+        let bag := o.status.toCounterBag
+        for (kind, _) in bag do
+          if kind != .plusOnePlusOne then
+            let cur := g.object! id
+            g := g.record (GameEvent.counters g.turnNumber (some p) cur.asEvent kind 1 false
+              (cause := cause))
+        g := g.syncImpendingNotACreature id (cause := cause)
         let o := g.object! id
-        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 else g
+        g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := cause) else g
         if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
         permIds := permIds.push id
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"

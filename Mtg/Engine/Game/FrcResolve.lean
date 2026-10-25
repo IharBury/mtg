@@ -109,7 +109,8 @@ private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x :
       g := g.change (.recentTokenIds ids)
       return if printed.isCreature then g.noteCreatureTokenEvent p else g
 
-private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (limit : Nat) :
+private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (limit : Nat)
+    (cause : Option EventCause := none) :
     Game × Array ObjectId × Array ObjectId :=
   Id.run do
     let mut g := g
@@ -124,24 +125,26 @@ private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (lim
       else
         let top := lib.back!
         let card := g.object! top
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause)
         g := g'.logMsg s!"{(g.player p).name} reveals {card.name}"
         if pred card.printed then hits := hits.push newId
         else rest := rest.push newId
     return (g, hits, rest)
 
-private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := false) : Game :=
+private def putHits (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := false)
+    (cause : Option EventCause := none) : Game :=
   hits.foldl (fun g id =>
     match g.findObject? id with
     | none => g
     | some _ =>
-      let (g, newId) := g.putOntoBattlefield id p (summoningSick := !haste)
+      let (g, newId) := g.putOntoBattlefield id p (summoningSick := !haste) (cause := cause)
       g.afterPermanentEnters (g.object! newId)) g
 
-private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool) : Game :=
+private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
+    (cause : Option EventCause := none) : Game :=
   if rest.isEmpty then if shuffle then g.requestShuffle p else g
   else if shuffle then
-    let g := g.moveIdsInOrder rest (.library p)
+    let g := g.moveIdsInOrder rest (.library p) (cause := cause)
     g.requestShuffle p
   else
     g.requestOrderInto rest (.library p)
@@ -262,8 +265,9 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.restBottom controller rest true
   | .syntheticDestiny =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
     let g := yours.foldl (fun g id => g.exileId id) g
-    g.change (.pushDelayedSynthetic controller yours.size)
+    g.change (.pushDelayedSynthetic controller yours.size cause)
       |>.logMsg "Those creatures return as revealed cards at the next end step"
   | .searchBasics kinds untapAt =>
     let g := if untapAt == 0 then g else g.change (.untapSearchedIfLands (some untapAt))
@@ -312,7 +316,8 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.frcCause? with
     | some o =>
       if o.zone == .graveyard o.owner then
-        g.change (.pushDelayedGraveReturn o.id controller)
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        g.change (.pushDelayedGraveReturn o.id controller cause)
           |>.logMsg s!"{o.name} returns at the beginning of the next end step"
       else g
     | none => g
@@ -481,12 +486,13 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       match g.findObject? id with
       | some src =>
         Id.run do
+          let (g, cause) := g.allocDelayedCause (some controller) sourceId
           let mut g := g
           for _ in [0:2] do
             let (g', tok) := g.copyBattlefieldPermanent src controller
             g := g'
-            g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste)
-            g := g.change (.pushDelayedEndStepSacrifice tok.id)
+            g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := some cause)
+            g := g.change (.pushDelayedEndStepSacrifice tok.id cause)
           return g.logMsg "The token copies gain haste and are sacrificed at the next end step"
       | none => g
     | _ => g
@@ -661,11 +667,10 @@ where
 def applyDelayedSynthetic (g : Game) : Game :=
   let synth := g.delayedSynthetic
   let g := g.change (.delayedSynthetic #[])
-  synth.foldl (fun g (who, n) =>
-    g.withResolvingContext none who (fun g =>
-      let (g, hits, rest) := g.revealUntil who (·.isCreature) n
-      let g := g.putHits who hits
-      g.restBottom who rest true)) g
+  synth.foldl (fun g (who, n, cause) =>
+    let (g, hits, rest) := g.revealUntil who (·.isCreature) n (cause := some cause)
+    let g := g.putHits who hits (cause := some cause)
+    g.restBottom who rest true (cause := some cause)) g
 
 end Game
 end Mtg.Engine

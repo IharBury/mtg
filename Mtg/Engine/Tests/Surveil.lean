@@ -22,7 +22,7 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
 #guard
   let g := step (.surveil (.fixed 1))
   match g.pending with
-  | .surveil p n => p == caster && n == 1
+  | .surveil p n _ => p == caster && n == 1
   | _ => false
 
 /- A count of other creatures is surveilled. Zero creatures still surveils 0. -/
@@ -41,7 +41,7 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
   let g := g0.applyTriggeredAbility caster (.onEnterDraw 1) none
     (resolutionOverride := some (.surveil .perOtherCreature))
   match g.pending with
-  | .surveil p n => p == caster && n == 1
+  | .surveil p n _ => p == caster && n == 1
   | _ => false
 
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)

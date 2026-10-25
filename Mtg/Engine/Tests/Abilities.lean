@@ -75,7 +75,7 @@ def beeScrying : Game := passBoth beeOtherDied
 
 #guard
   match beeScrying.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 _ => true
   | _ => false
 #guard beeScrying.log.any (fun s => mentions s "scries 1")
 

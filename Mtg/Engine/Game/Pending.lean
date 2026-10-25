@@ -552,11 +552,13 @@ inductive Pending where
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
   | putOnBottom (player : PlayerId) (count : Nat)
-  /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
-  | scry (player : PlayerId) (count : Nat)
+  /-- This player is looking at the top `count` cards of their library (CR 701.20).
+  `asked` is the printed scry count before capping at library size. -/
+  | scry (player : PlayerId) (count : Nat) (asked : Nat := count)
   /-- This player is looking at the top `count` cards of their library to
-  surveil (CR 701.25). -/
-  | surveil (player : PlayerId) (count : Nat)
+  surveil (CR 701.25). `asked` is the printed surveil count before capping at
+  library size. -/
+  | surveil (player : PlayerId) (count : Nat) (asked : Nat := count)
   /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
   | mayDiscardDraw (player : PlayerId) (drawCount : Nat)
   /-- The player must announce an additional or alternative additional cost

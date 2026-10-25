@@ -139,7 +139,8 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes
 the new bottom of that group. -/
-def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
+def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
+    (cause : Option EventCause := none) : Game :=
   match dest with
   | .library p =>
     Id.run do
@@ -150,11 +151,11 @@ def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
         let pos : LibraryPosition :=
           if i == 0 then .bottom
           else .fromTop (libSize - Nat.min i libSize)
-        let (g', _) := g.move id dest none (libraryPosition := some pos)
+        let (g', _) := g.move id dest none (libraryPosition := some pos) (cause := cause)
         g := g'
       return g
   | _ =>
-    ids.foldl (fun acc id => (acc.move id dest none).1) g
+    ids.foldl (fun acc id => (acc.move id dest none (cause := cause)).1) g
 
 /-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
 longer in that library are skipped. -/

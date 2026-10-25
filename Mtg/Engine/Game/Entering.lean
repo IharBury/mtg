@@ -328,14 +328,16 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
 counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
 `extraEntersWith` (CR 614.1c), so only the log and put-counter triggers run. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
-    (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
+    (entersWith := false) (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
   let proposed :=
-    GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n
+    GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n (cause := cause)
   let n :=
     if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
   let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
+    (cause := cause)
   let g := if n > 0 && !entersWith then g.record happened else g
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"

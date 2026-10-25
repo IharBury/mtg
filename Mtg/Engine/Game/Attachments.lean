@@ -30,8 +30,9 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) 
   | some old =>
     let snap := g.snapshot old
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap cause)
-    let g := g.expireEffectsOnLeavingObject old
-    if old.zone == .battlefield then g.expireWhileSourceEffects id else g
+    let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
+    let g := g.expireEffectsOnLeavingObject old (cause := expCause)
+    if old.zone == .battlefield then g.expireWhileSourceEffects id (cause := expCause) else g
   | none =>
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } cause)
 

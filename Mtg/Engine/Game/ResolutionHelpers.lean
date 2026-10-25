@@ -218,14 +218,15 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else if count == 0 then
-    let happened := GameEvent.looked g.turnNumber p 0 true n
+    let happened :=
+      GameEvent.looked g.turnNumber p 0 true n (cause := g.resolvingOneShotCause p)
     let g := g.record happened
     let g :=
       if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
       else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
-    (g.change (.pending (.surveil p count))).logMsg
+    (g.change (.pending (.surveil p count n))).logMsg
       s!"{pl.name} surveils {n}"
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/

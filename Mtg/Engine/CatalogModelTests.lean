@@ -1007,7 +1007,7 @@ really scries, and the counters are put by the counter action. -/
   let before := handSize g me
   let g := g.applyTriggeredAbility me .onAnotherCreatureYouControlEntersAlliance (some sid)
   let g := mustApply g me (.chooseMode 2)
-  let scried := match g.pending with | .scry _ 2 => true | _ => false
+  let scried := match g.pending with | .scry _ 2 _ => true | _ => false
   let g := applyIdle g
   scried && handSize g me == before + 1
 #guard
@@ -1220,7 +1220,7 @@ mills and loses life equal to the milled cards' mana values. -/
   let g := onlyLib (addPermanent afterDraw palantirOfOrthanc me me) #[mountain, lightningBolt]
   let g := g.applyTriggeredAbility me .onYourEndStepPalantir
     (some (idOf g "Palantír of Orthanc")) #[.player opp]
-  let scried := match g.pending with | .scry _ 2 => true | _ => false
+  let scried := match g.pending with | .scry _ 2 _ => true | _ => false
   let g := applyIdle g
   let choosing :=
     match g.pending with

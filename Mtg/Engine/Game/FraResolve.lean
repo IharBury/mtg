@@ -215,12 +215,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- Ruling: the mana value is that of the permanent as it last existed
       -- on the battlefield.
       let mv := g.objectManaValue o
-      let (g, exiled) := g.move o.id .exile none
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, exiled) := g.move o.id .exile none (cause := some cause)
       let g := g.logMsg s!"{o.name} is exiled"
       if mv ≤ n && !o.printed.isToken then
-        let (g, back) := g.putOntoBattlefield exiled controller (tapped := true)
+        let (g, back) := g.putOntoBattlefield exiled controller (tapped := true) (cause := some cause)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
-        let g := g.change (.pushDelayedEndStepExile back)
+        let g := g.change (.pushDelayedEndStepExile back cause)
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .eachPlayerMayWheel n =>

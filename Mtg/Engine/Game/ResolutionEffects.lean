@@ -837,19 +837,20 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
   | none => g.logMsg "No reflexive triggered ability is on the stack"
   | some (id, controller, kind, paid) =>
     let sourceId := (g.findObject? id).bind (·.sourceId)
-    let g := (g.ceaseToExist id).change (.pending .none)
-    if kind == 10 then
-      let division :=
-        if !division.isEmpty then division
-        else if targets.size == 1 then #[7] else #[4, 3]
-      if targets.isEmpty || targets.size > 2 || division.size != targets.size then
-        g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
-      else if division.any (· == 0) then
-        g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
-      else if division.foldl (· + ·) 0 != 7 then
-        g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
-      else g.resolveModeledReflexive controller sourceId kind paid targets division
-    else g.resolveModeledReflexive controller sourceId kind paid targets division
+    let g := (g.ceaseToExist id (cause := some (.gameRule .abilityFinishedResolving))).change (.pending .none)
+    g.withResolvingContext sourceId controller (fun g =>
+      if kind == 10 then
+        let division :=
+          if !division.isEmpty then division
+          else if targets.size == 1 then #[7] else #[4, 3]
+        if targets.isEmpty || targets.size > 2 || division.size != targets.size then
+          g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
+        else if division.any (· == 0) then
+          g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
+        else if division.foldl (· + ·) 0 != 7 then
+          g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
+        else g.resolveModeledReflexive controller sourceId kind paid targets division
+      else g.resolveModeledReflexive controller sourceId kind paid targets division)
 
 /-- Merge subtype names without duplicates. -/
 def mergeSubtypes (xs : Array String) (ys : Array CardSubtype) : Array String :=

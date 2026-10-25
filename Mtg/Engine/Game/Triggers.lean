@@ -931,13 +931,14 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else if count == 0 then
-    let happened := GameEvent.looked g.turnNumber p 0 false n
+    let happened :=
+      GameEvent.looked g.turnNumber p 0 false n (cause := g.resolvingOneShotCause p)
     let g := g.record happened
     let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p 0
     let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    (g.changes #[.pending (.scry p count), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
+    (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
 
 /-- Scry `scryN`, then draw `drawN`. An empty library draws immediately.
 The draw waits on `pendingDrawAfterScry` while the scry choice is open. -/
@@ -945,7 +946,7 @@ def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
   let g := g.change (.pendingDrawAfterScry (some (p, drawN)))
   let g := g.beginScry p scryN
   if g.pendingDrawAfterScry.isSome &&
-      (match g.pending with | .scry _ _ => false | _ => true) then
+      (match g.pending with | .scry .. => false | _ => true) then
     let g := g.change (.pendingDrawAfterScry none)
     g.draw p drawN
   else g

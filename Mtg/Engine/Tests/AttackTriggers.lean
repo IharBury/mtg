@@ -420,7 +420,7 @@ def lookoutScrying : Game := passBoth lookoutAttackDeclared
 
 #guard
   match lookoutScrying.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 _ => true
   | _ => false
 #guard lookoutScrying.actor == some ⟨0⟩
 #guard !lookoutScrying.hasPriority ⟨0⟩
@@ -471,7 +471,7 @@ def lookoutLeftBeforeTrigger : Game :=
 
 #guard
   match lookoutLeftBeforeTrigger.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 _ => true
   | _ => false
 #guard !(lookoutLeftBeforeTrigger.battlefield.any (fun o => o.name == "Lothlórien Lookout"))
 #guard (lookoutLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>

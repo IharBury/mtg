@@ -510,11 +510,7 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
 /-- One more counter of each kind already on the target (Powerful Broker). -/
 def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
   g.withLegalKindTarget controller .permanentOrPlayer targets (fun g t =>
-    let (src, ctrl) :=
-      match g.currentResolvingContext? with
-      | some (s, c) => (s, c.orElse (fun _ => some controller))
-      | none => (none, some controller)
-    let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+    let cause := g.resolvingOneShotCause controller
     match t with
     | Target.permanent id =>
       match g.findObject? id with
@@ -522,9 +518,19 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
         if o.isOnBattlefield && o.status.hasCounters then
           let plus := o.status.plusOnePlusOne
           let extra := g.docSamsonBonus (some controller) o.controller
+          let bag := o.status.toCounterBag
           let g :=
-            if plus > 0 then g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) else g
-          let g := g.changeStatus id (.proliferatedExceptPlusOne extra)
+            if plus > 0 then
+              g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) (cause := cause)
+            else g
+          let g :=
+            bag.foldl (fun g (kind, _) =>
+              if kind == .plusOnePlusOne then g
+              else
+                let cur := g.object! id
+                g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent kind
+                  (1 + extra) false (cause := cause))) g
+          let g := g.syncImpendingNotACreature id (cause := cause)
           (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[id]) (cause := cause))).logMsg
             s!"{o.name} gets another counter of each kind"
         else g.logMsg s!"{o.name} has no counters"
@@ -1223,6 +1229,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.permanent id => some id
         | _ => none)
     Id.run do
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let mut g := g
       let mut n : Nat := 0
       for id in ids do
@@ -1232,11 +1239,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           if o.isOnBattlefield && o.isCreature && o.owner == controller then
             let name := o.name
             let owner := o.owner
-            let (g', _) := g.move o.id (.hand owner) none
+            let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
             g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
             n := n + 1
       if n > 0 then
-        g := g.changePlayer controller (.addEaglesBirdsNextUpkeep n)
+        g := (g.changePlayer controller (.addEaglesBirdsNextUpkeep n)).change
+          (.setEaglesBirdsCause controller (some cause))
         g := g.logMsg
           s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
       return g
@@ -1710,8 +1718,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand &&
               some o.id != sourceId then
             let name := o.name
-            let (g, newId) := g.move o.id .exile none
-            g.change (.pushDelayedEndStepReturn newId)
+            let (g, cause) := g.allocDelayedCause (some controller) sourceId
+            let (g, newId) := g.move o.id .exile none (cause := some cause)
+            g.change (.pushDelayedEndStepReturn newId cause)
               |>.logMsg s!"{name} is exiled until the beginning of the next end step"
           else g.logMsg "The target is no longer legal")
       | .searchBasicBeholdSubtypeUntap subtype =>

@@ -333,10 +333,10 @@ structure LibraryLook where
 /-- The pending library look, if a player is looking at cards. -/
 def libraryLook? (g : Game) : Option LibraryLook :=
   match g.pending with
-  | .scry p n =>
+  | .scry p n _ =>
     some { player := p, ids := g.scryLookedIds p n, boardTitle := "Scry",
            label := s!"scry {n}", hiddenActivity := s!"is scrying {n}" }
-  | .surveil p n =>
+  | .surveil p n _ =>
     some { player := p, ids := g.scryLookedIds p n, boardTitle := "Surveil",
            label := s!"surveil {n}", hiddenActivity := s!"is surveilling {n}" }
   | .mayCastFromLooked p ids maxMv =>
@@ -674,9 +674,9 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .putOnBottom p n =>
       let cards := if n == 1 then "1 card" else s!"{n} cards"
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
-    | .scry p n =>
+    | .scry p n _ =>
       s!" [scry {n} ({g.player p |>.name})]"
-    | .surveil p n =>
+    | .surveil p n _ =>
       s!" [surveil {n} ({g.player p |>.name})]"
     | .mayDiscardDraw p n =>
       s!" [may discard a card, then draw {n} ({g.player p |>.name})]"

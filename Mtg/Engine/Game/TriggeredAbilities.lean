@@ -19,7 +19,7 @@ def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) 
 /-- Scry first when there are cards to look at; otherwise ask immediately. -/
 def schedulePalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) : Game :=
   match g.pending with
-  | .scry _ _ => g.change (.palantirAfterScry (some (controller, opp, sid)))
+  | .scry .. => g.change (.palantirAfterScry (some (controller, opp, sid)))
   | _ => g.offerPalantirChoice controller opp sid
 
 /-- Each opponent sacrifices a creature that dealt combat damage to
@@ -4206,7 +4206,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.beginSurveil controller n
       if armed then
         match g.pending with
-        | .surveil _ _ => g.change (.surveilReturnMvAtMost (some life))
+        | .surveil .. => g.change (.surveilReturnMvAtMost (some life))
         | _ => g
       else g
   | .empowerJace amount =>

@@ -1031,6 +1031,72 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
       | _ => false) &&
     !(gCombat.object! b.id).status.attacking
 
+/- Phase 3: scry preserves printed `asked` count and resolving spell/ability
+controller; proliferate records `PermanentEvent.counters` for non-+1/+1
+counters under the proliferate `.oneShotEffect` cause; delayed end-step
+triggers retain the source and `EffectId` allocated when the delay was set up;
+and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
+`.turnBased (.assignCombatDamage _)`. -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == bear.name))[0]!
+  let h := (g0.battlefield.filter (·.name == hero.name))[0]!
+  let lib := (g0.player me).library
+  let oneCard := lib.extract (lib.size - 1) lib.size
+  let gScryOne :=
+    (g0.changePlayer me (.library oneCard)).withResolvingContext (some h.id) opp (fun g =>
+      g.beginScry me 3)
+  let gScryOneDone :=
+    match gScryOne.finishScry me oneCard #[] with
+    | .ok g => g
+    | .error _ => gScryOne
+  let gProlif0 :=
+    ((quiet g0).changeStatus b.id (.addCounters .stun 1)).change
+      (.pending (.chooseProliferate me 1))
+  let gProlifDone :=
+    match gProlif0.finishProliferate me #[.permanent b.id] with
+    | .ok g => g
+    | .error _ => gProlif0
+  let gBlink :=
+    (quiet g0).withResolvingContext (some h.id) me (fun g =>
+      g.exileUntilNextEndStep (g.object! b.id))
+  let exileCause? : Option EventCause :=
+    gBlink.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  let gReturned := (quiet gBlink).beginStep .end
+  let returnCause? : Option EventCause :=
+    gReturned.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .exile .battlefield ..)) => some e.cause
+      | _ => none)
+  let gAssign :=
+    match ((quiet g0).changeStatus b.id (.attacking true)).storeCombatAssignments true #[] with
+    | .ok g => g
+    | .error _ => g0
+  gScryOneDone.events.any (fun e =>
+    match e.change, e.cause with
+    | .rules (.player (.scried p top bottom 1 3)), .oneShotEffect _ (some sid) (some ctrl) =>
+      p == me && top == oneCard && bottom.isEmpty && sid == h.id && ctrl == opp
+    | _, _ => false) &&
+  gProlifDone.events.any (fun e =>
+    match e.change, e.cause with
+    | .rules (.permanent (.counters (.object o) .stun (.put 1) (some actor))),
+      .oneShotEffect _ _ (some ctrl) =>
+      o.id == some b.id && actor == me && ctrl == me
+    | _, _ => false) &&
+  (match exileCause?, returnCause? with
+   | some (.oneShotEffect id1 (some sid1) (some ctrl1)),
+     some (.oneShotEffect id2 (some sid2) (some ctrl2)) =>
+     id1 == id2 && sid1 == h.id && sid2 == h.id && ctrl1 == me && ctrl2 == me
+   | _, _ => false) &&
+  gAssign.events.any (fun e =>
+    match e.change with
+    | .rules (.damage (.combatAssigned true _)) =>
+      e.cause == .turnBased (.assignCombatDamage false)
+    | _ => false)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

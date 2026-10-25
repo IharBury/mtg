@@ -749,8 +749,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       nonTypes := #[.land], nontoken := true, another := true }
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let name := o.name
-      let (g, newId) := g.move o.id .exile none
-      g.change (.pushDelayedEndStepReturn newId)
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, newId) := g.move o.id .exile none (cause := some cause)
+      g.change (.pushDelayedEndStepReturn newId cause)
         |>.logMsg s!"{name} is exiled until the beginning of the next end step")
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>

@@ -258,15 +258,16 @@ structure Game where
   (Elven Chorus cannot show the new top until that finishes). -/
   castingFromTop : Bool := false
   /-- Cards in exile that return at the beginning of the next end step
-  (Roll-Roll-Roll-Roll and similar delayed blinks). -/
-  delayedEndStepReturns : Array ObjectId := #[]
+  (Roll-Roll-Roll-Roll and similar delayed blinks), with the cause of the
+  delayed triggered ability (CR 603.7). -/
+  delayedEndStepReturns : Array (ObjectId × EventCause) := #[]
   /-- Extra turns to take before the next player in turn order (Kang). -/
   extraTurns : Array PlayerId := #[]
   /-- Power-up abilities can't be activated during this extra turn (Kang). -/
   powerUpsForbidden : Bool := false
   /-- Permanents exiled at the beginning of the next end step (Vindictive
-  Triumph). -/
-  delayedEndStepExiles : Array ObjectId := #[]
+  Triumph), with the cause of the delayed triggered ability (CR 603.7). -/
+  delayedEndStepExiles : Array (ObjectId × EventCause) := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
   /-- Put a +1/+1 counter on this permanent after the current discard choices
@@ -310,12 +311,18 @@ structure Game where
   pendingDiscardsLeft : Nat := 0
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
-  /-- Permanents sacrificed at the beginning of the next end step. -/
-  delayedEndStepSacrifices : Array ObjectId := #[]
-  /-- Graveyard cards that return under a chosen player at the next end step. -/
-  delayedGraveReturns : Array (ObjectId × PlayerId) := #[]
-  /-- At the next end step, reveal this many creature cards (Synthetic Destiny). -/
-  delayedSynthetic : Array (PlayerId × Nat) := #[]
+  /-- Permanents sacrificed at the beginning of the next end step, with the
+  cause of the delayed triggered ability (CR 603.7). -/
+  delayedEndStepSacrifices : Array (ObjectId × EventCause) := #[]
+  /-- Graveyard cards that return under a chosen player at the next end step,
+  with the cause of the delayed triggered ability (CR 603.7). -/
+  delayedGraveReturns : Array (ObjectId × PlayerId × EventCause) := #[]
+  /-- At the next end step, reveal this many creature cards (Synthetic Destiny),
+  with the cause of the delayed triggered ability (CR 603.7). -/
+  delayedSynthetic : Array (PlayerId × Nat × EventCause) := #[]
+  /-- Cause of each player's scheduled upkeep Bird Soldier delayed triggered
+  ability (CR 603.7; The Eagles Are Coming!). -/
+  eaglesBirdsCause : Array (PlayerId × EventCause) := #[]
   /-- After the current search, untap the land if its controller has this many lands. -/
   untapSearchedIfLands : Option Nat := none
   /-- Players who created one or more creature tokens since the last priority. -/
@@ -352,20 +359,6 @@ def applyChange (s : Status) (c : StatusChange) : Status :=
       influence := 0, trampleCounters := 0, indestructibleCounters := 0, lifelinkCounters := 0
       hone := 0, shadow := 0, lore := 0, story := 0, time := 0, poison := 0
       keywordCounters := {} }
-  | .proliferatedExceptPlusOne extra =>
-    let inc (n : Nat) : Nat := if n > 0 then n + 1 + extra else n
-    { s with
-      loyaltyCounters := inc s.loyaltyCounters, hope := inc s.hope, charge := inc s.charge
-      minusOneMinusOne := inc s.minusOneMinusOne
-      stun := inc s.stun
-      shield := inc s.shield
-      finality := inc s.finality, plan := inc s.plan, burden := inc s.burden
-      quest := inc s.quest, invasion := inc s.invasion, influence := inc s.influence
-      trampleCounters := inc s.trampleCounters
-      indestructibleCounters := inc s.indestructibleCounters
-      lifelinkCounters := inc s.lifelinkCounters, hone := inc s.hone, shadow := inc s.shadow
-      lore := inc s.lore, story := inc s.story, time := inc s.time, poison := inc s.poison
-      keywordCounters := s.keywordCounters.incPresent extra }
   | .addCountersExceptPlusOne «from» extra =>
     let bump (n : Nat) : Nat := if n == 0 then 0 else n + extra
     { s with
@@ -1558,6 +1551,8 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
 def applyDamageEvent (g : Game) (e : DamageEvent) : Game :=
   match e with
   | .dealt _ | .prevented _ _ _ => g
+  | .combatAssigned _ batch =>
+    { g with assignedCombatDamage := g.assignedCombatDamage ++ batch }
   | .marked objectId amount =>
     match g.objects.findIdx? (·.id == objectId) with
     | some i =>
@@ -2110,14 +2105,14 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .suppressCreatureCardsToGy v => { g with suppressCreatureCardsToGy := v }
   | .castingFromTop v => { g with castingFromTop := v }
   | .delayedEndStepReturns v => { g with delayedEndStepReturns := v }
-  | .pushDelayedEndStepReturn id =>
-    { g with delayedEndStepReturns := g.delayedEndStepReturns.push id }
+  | .pushDelayedEndStepReturn id cause =>
+    { g with delayedEndStepReturns := g.delayedEndStepReturns.push (id, cause) }
   | .extraTurns v => { g with extraTurns := v }
   | .pushExtraTurn p => { g with extraTurns := g.extraTurns.push p }
   | .powerUpsForbidden v => { g with powerUpsForbidden := v }
   | .delayedEndStepExiles v => { g with delayedEndStepExiles := v }
-  | .pushDelayedEndStepExile id =>
-    { g with delayedEndStepExiles := g.delayedEndStepExiles.push id }
+  | .pushDelayedEndStepExile id cause =>
+    { g with delayedEndStepExiles := g.delayedEndStepExiles.push (id, cause) }
   | .conniveSource v => { g with conniveSource := v }
   | .plusOneAfterDiscards v => { g with plusOneAfterDiscards := v }
   | .additionalCombatPhases v => { g with additionalCombatPhases := v }
@@ -2137,14 +2132,22 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .wardQueue v => { g with wardQueue := v }
   | .enqueueWard ws => { g with wardQueue := g.wardQueue ++ ws }
   | .delayedEndStepSacrifices v => { g with delayedEndStepSacrifices := v }
-  | .pushDelayedEndStepSacrifice id =>
-    { g with delayedEndStepSacrifices := g.delayedEndStepSacrifices.push id }
+  | .pushDelayedEndStepSacrifice id cause =>
+    { g with delayedEndStepSacrifices := g.delayedEndStepSacrifices.push (id, cause) }
   | .delayedGraveReturns v => { g with delayedGraveReturns := v }
-  | .pushDelayedGraveReturn id p =>
-    { g with delayedGraveReturns := g.delayedGraveReturns.push (id, p) }
+  | .pushDelayedGraveReturn id p cause =>
+    { g with delayedGraveReturns := g.delayedGraveReturns.push (id, p, cause) }
   | .delayedSynthetic v => { g with delayedSynthetic := v }
-  | .pushDelayedSynthetic p n =>
-    { g with delayedSynthetic := g.delayedSynthetic.push (p, n) }
+  | .pushDelayedSynthetic p n cause =>
+    { g with delayedSynthetic := g.delayedSynthetic.push (p, n, cause) }
+  | .eaglesBirdsCause v => { g with eaglesBirdsCause := v }
+  | .setEaglesBirdsCause p cause =>
+    let rest := g.eaglesBirdsCause.filter (·.1 != p)
+    { g with
+      eaglesBirdsCause :=
+        match cause with
+        | some c => rest.push (p, c)
+        | none => rest }
   | .untapSearchedIfLands v => { g with untapSearchedIfLands := v }
   | .pendingCreatureTokenCreators v => { g with pendingCreatureTokenCreators := v }
   | .pushPendingCreatureTokenCreator p =>
@@ -2265,6 +2268,29 @@ def withResolvingContext (g : Game) (src : Option ObjectId) (ctrl : PlayerId)
   let g := f (g.change (.resolvingContext (some (src, ctrl))))
   if g.pending != .none || g.afterRandom != .none then g
   else g.change (.resolvingContext prev)
+
+/-- Resolving one-shot cause for a player action (`p` is the fallback controller
+when no resolving spell or ability is on the stack; CR 610.1). -/
+def resolvingOneShotCause (g : Game) (p : PlayerId)
+    (source : Option ObjectId := none) : Option EventCause :=
+  let (src, ctrl) :=
+    match g.currentResolvingContext? with
+    | some (s, c) => (source.orElse (fun _ => s), c.orElse (fun _ => some p))
+    | none => (source, some p)
+  some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+
+/-- Allocate a one-shot `EventCause` for a delayed triggered ability (CR 603.7),
+bumping `g.nextEffectId` so the stored cause carries the `EffectId` allocated
+when the delay was set up. -/
+def allocDelayedCause (g : Game) (fallbackCtrl : Option PlayerId := none)
+    (source : Option ObjectId := none) : Game × EventCause :=
+  let (src, ctrl) :=
+    match g.currentResolvingContext? with
+    | some (s, c) => (source.orElse (fun _ => s), c.orElse (fun _ => fallbackCtrl))
+    | none => (source, fallbackCtrl)
+  let id : EffectId := ⟨g.nextEffectId⟩
+  let g := g.change (.nextEffectId (g.nextEffectId + 1))
+  (g, .oneShotEffect id src ctrl)
 
 /-- Add and process a sequence of `EngineChange`s on the current turn. -/
 def changes (g : Game) (cs : Array EngineChange) : Game :=
@@ -2507,17 +2533,24 @@ isn't a creature; when it has no time counters, that effect ends, and if time
 counters are later put or moved onto it, a new `.notACreature` effect is
 created. -/
 def syncImpendingNotACreature (g : Game) (id : ObjectId)
-    (cause : Option EventCause := some (.gameRule .impending)) : Game :=
+    (cause : Option EventCause := none) : Game :=
+  let effCause :=
+    match cause with
+    | some c => some c
+    | none =>
+      match g.currentResolvingContext? with
+      | some (src, ctrl) => some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+      | none => some (.gameRule .impending)
   match g.findObject? id with
   | none => g
   | some o =>
     if o.zone != .battlefield || !o.printed.impending.isSome then g
     else if o.status.time == 0 then
       if o.status.notACreature || g.hasActiveEffect (.notACreature id) then
-        g.expireAll (.notACreature id) (cause := cause)
+        g.expireAll (.notACreature id) (cause := effCause)
       else g
     else if g.loggedCastForImpending id && !o.status.notACreature then
-      g.createEffect (.notACreature id) (cause := cause)
+      g.createEffect (.notACreature id) (cause := effCause)
     else g
 
 /-- Add and process an `ObjectChange` for `id`. -/
