@@ -345,12 +345,33 @@ structure EventObject where
   attachedTo : Option ObjectId
   counters : CounterBag
   isCopy : Bool
+  summoningSick : Bool
+  attackingWhom : Option PlayerId   -- becomes `Option AttackTarget` in Phase 5
+  printed : Option CardDef          -- preserves full printed card definition across `moved`/`created`
+  -- transitional arrival / cast / stack-copy / LKI fields carried in Phase 2 so
+  -- `applyZoneEvent` materializes `GameObject` without a follow-up `EngineChange.setObject`;
+  -- stack-copy and cast-choice fields retire in Phase 5, and effect-mirror / LKI fields retire in Phase 8:
+  returnedAsArtifact : Bool := false
+  onlyFoodArtifact : Bool := false
+  wasCast : Bool := false
+  chosenX : Option Nat := none
+  kicked : Bool := false
+  teamworkPaid : Bool := false
+  sneakPaid : Bool := false
+  sneakAttackWhom : Option PlayerId := none
+  giftPromisedTo : Option PlayerId := none
+  adventurerCard : Option CardDef := none
+  abilityEffect : Option Effect := none
+  triggeredAbility : Option TriggeredAbility := none
+  sourceId : Option ObjectId := none
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
 deriving Repr, Inhabited, BEq
 ```
 
 `owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
 `Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
-toughness, colors, and granted abilities depend on the game.
+toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carries `summoningSick`, `attackingWhom`, `printed`, and the transitional cast/stack-copy/effect-mirror/LKI fields above on `EventObject`; the transitional fields are removed alongside their `GameObject`/`Status` counterparts in Phases 5 and 8.
 
 ### 2.4 Zone changes
 
@@ -437,8 +458,13 @@ covering both standard CR 701.15a goad and indefinite goad (e.g. Dack Fayden).
 `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`,
 `burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`,
 `trampleCounters`, `keywordCounters`) become one `CounterBag` written only by
-counter events and `moved`. Keyword counters (122.1b) stay in the bag; layer 6
-reads them as an input (613.1f). They are not a continuous-effect spec.
+counter events and `moved` (Phase 2 introduced `CounterBag` on
+`EventObject.counters` and `ZoneEvent.moved.entersWith` with
+`Status.toCounterBag` / `Status.withCounterBag` bridges; Phase 8 step 4 replaces
+the 22 stored `Status` fields with `counters : CounterBag` plus computed
+projection helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.).
+Keyword counters (122.1b) stay in the bag; layer 6 reads them as an input
+(613.1f). They are not a continuous-effect spec.
 
 ### 2.6 Damage and life
 
@@ -582,7 +608,14 @@ inductive StackObjectEvent where
 Countering is a `ZoneEvent.moved` with `verb := .counter` (701.6). The proposal
 under construction (`ProposedSpell`), the waiting-trigger queue
 (`Game.waitingTriggers`), and the priority holder are **engine state** updated by
-`EngineChange`; only the milestones above go into the rules history.
+`EngineChange`; only the milestones above go into the rules history. Copying a
+spell or ability on the stack (`copyStackSpell`, `copyStackAbility`, Way of the
+Cryomancer, Loki, `.copyCauseSpell`) temporarily emits `ZoneEvent.created` in
+`.stack` during Phase 2; Phase 5 migrates stack copies to
+`StackObjectEvent.copied` (which copies stack metadata directly from
+`original : ObjectId` per 707.10), while card copies created in `.exile`
+(Saruman, Baron Zemo, Uldaros, prepared copies per 707.12) remain
+`ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -604,6 +637,14 @@ inductive CombatEvent where
   | damageAssigned (firstStrike : Bool) (assignments : Array CreatureCombatAssignment)  -- 510.1 / 703.4k
   | removedFromCombat (object : EventObject)                                       -- 506.4 / 511.3
 ```
+
+Permanents and tokens that enter the battlefield attacking (Andúril's Spirit
+tokens, Sneak, mobilize, stadium tokens) already set `attacking := true` and
+`attackingWhom := some …` on `ZoneEvent.moved.after` / `ZoneEvent.created.object`
+in Phase 2 without matching *"whenever … attacks"* (`CombatEvent.attackersDeclared`,
+508.3a). `CombatEvent.becameAttacking` covers effects that make an existing
+battlefield permanent attacking (508.4) and unifies combat target tracking under
+`AttackTarget`.
 
 First-strike and regular combat damage are separate combat damage steps
 (510.4 / 702.7b), so they are separate `damageAssigned` events and separate
@@ -1046,12 +1087,20 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `TurnEvent`s; extra combat is an extra phase after a phase (500.8).
 2. Replace `.attacked` and the raw combat status writes with `CombatEvent`
    (§2.10), including `becameAttacking` for 508.4 so "whenever … attacks" does
-   not see it (508.3a), and `AttackTarget` instead of a bare `PlayerId`.
+   not see it (508.3a), and `AttackTarget` instead of a bare `PlayerId` (replacing
+   `EventObject.attackingWhom` with `Option AttackTarget`).
 3. Replace `.cast` / `.activated` with `CastEvent`, add `TriggerQueueEvent` and
-   `StackObjectEvent` (§2.9). **Only these milestones are rules events.**
-   `ProposedSpell` and `ProposalChange`, `Game.waitingTriggers` and its queue
-   operations, `.pushStack` / `.popStack` bookkeeping, and `.priority` stay
-   `EngineChange`, so the log does not carry the scratchpad.
+   `StackObjectEvent` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
+   `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
+   `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
+   `.exile` per 707.12 stay `ZoneEvent.created`), and retire the transitional
+   stack-copy and cast-choice fields from `EventObject` (`chosenX`, `kicked`,
+   `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
+   `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`). **Only
+   these milestones are rules events.** `ProposedSpell` and `ProposalChange`,
+   `Game.waitingTriggers` and its queue operations, `.pushStack` / `.popStack`
+   bookkeeping, and `.priority` stay `EngineChange`, so the log does not carry
+   the scratchpad.
 
 Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
 `ThisAttack.lean`, `YouAttack.lean`, `Casting.lean`, `CastTriggers.lean`,
@@ -1114,9 +1163,14 @@ non-occurrence, and the 616.1a–e order.
    same live resolution-time attacking check (`source` on the battlefield and
    `status.attacking`) as the untap instruction.
 4. Delete every field in §3.8 marked as a mirror, history, delayed trigger, or
-   queue-time counter, together with its `StatusChange` / `ObjectChange` /
-   `PlayerChange` / `GameChange` constructor, after its readers use the log,
-   the layers, or the delayed-trigger table.
+   queue-time counter (alongside the remaining transitional mirror/cast/LKI
+   fields on `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`, `wasCast`,
+   `lastKnownPower`, and `lastKnownToughness`), consolidate the 22 stored counter
+   fields on `Status` into `counters : CounterBag` (with computed projection
+   helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.), and delete
+   their `StatusChange` / `ObjectChange` / `PlayerChange` / `GameChange`
+   constructors after their readers use the log, the layers, or the
+   delayed-trigger table.
 5. Move the continuation registers into a continuation frame stack.
 
 Final check: `lake build`, `lake exe mtg-demo`, `lake exe oracle-roundtrip`, and
