@@ -765,16 +765,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
   | .mayDiscardHandBalin sourceId, .accept =>
-    let ids := (g.player p).hand
-    let n := ids.size
-    let g :=
-      ids.foldl (fun acc id =>
-        match acc.findObject? id with
-        | none => acc
-        | some o =>
-          let (acc, _) := acc.move id (.graveyard o.owner) none
-          acc) g
-    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
+    let n := (g.player p).hand.size
+    let g := g.discardEntireHand p
     let g := g.changes #[.handDiscardedThisWay (some n), .notedSourceThisWay sourceId]
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>

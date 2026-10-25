@@ -2058,15 +2058,27 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => some e.cause
       | .rules (.life (.lost ..)) => some e.cause
       | _ => none)
-  let gBalinRaw := gLibSetup.mayDiscardHandDrawThatMany me true
+  let balinSeq : TriggeredAbility.TriggerResolution :=
+    .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand]
+  let gBalinRaw0 :=
+    gLibSetup.change (.pending (.fraChoice me (.mayDiscardHandBalin (some h.id))))
+  let gBalinRaw :=
+    match gBalinRaw0.answerFraChoice me .accept with
+    | .ok g' => g'
+    | .error _ => gBalinRaw0
   let balinRawCauses :=
     gBalinRaw.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
-  let gBalinRes :=
+  let gBalinRes0 :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.mayDiscardHandDrawThatMany me true)
+      g.applyTriggeredAbility me (.onEnterDraw 1) (some h.id)
+        (resolutionOverride := some balinSeq))
+  let gBalinRes :=
+    match gBalinRes0.answerFraChoice me .accept with
+    | .ok g' => g'
+    | .error _ => gBalinRes0
   let balinResCauses :=
     gBalinRes.events.filterMap (fun e =>
       match e.change with
@@ -2123,7 +2135,7 @@ across all constituent moves, transforms, and continuous-effect creations
     palantirCauses.all (· == palantirCauses[0]!) &&
     palantirRawCauses.size == 4 &&
     palantirRawCauses.all (· == .unclassified) &&
-    balinRawCauses.size == handSize * 2 &&
+    balinRawCauses.size == handSize &&
     balinRawCauses.all (· == .unclassified) &&
     balinResCauses.size == handSize * 2 &&
     (balinResCauses.extract 0 handSize).all (· == balinResCauses[0]!) &&
