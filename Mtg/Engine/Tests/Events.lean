@@ -1922,6 +1922,45 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => some e.cause
       | .rules (.effectCreated _ (.playPermission ..)) => some e.cause
       | _ => none)
+  -- 6. `exileHandDrawPlayUntilNext` shares one cause across hand exiles, play permissions, and draws
+  let handSize := (gLibSetup.player me).hand.size
+  let gHex :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.exileHandDrawPlayUntilNext me)
+  let hexCauses :=
+    gHex.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.effectCreated _ (.playPermission ..)) => some e.cause
+      | _ => none)
+  -- 7. `.identityEcho` uses one cause for the exile and a distinct shared cause for the reveal/put/bottom
+  let gEchoPending :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.applyFraAbility me { targeting := .of .creatureYouControl } .identityEcho #[.permanent h.id] (some h.id))
+  let gEchoDone :=
+    match gEchoPending.supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gEchoPending
+  let echoMoveCauses :=
+    gEchoDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 8. `millThenChooseForHand` shares one cause across the mill and deferred `.chooseCards` `.toHand`
+  let gMillChoose0 :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.millThenChooseForHand me 3 (fun o => o.printed.isLand) 2 false)
+  let milledLands :=
+    (gMillChoose0.player me).graveyard.filter (fun id => (gMillChoose0.object! id).printed.isLand)
+  let gMillChooseDone :=
+    match gMillChoose0.answerFraChoice me (.objects milledLands) with
+    | .ok g' => g'
+    | .error _ => gMillChoose0
+  let millChooseCauses :=
+    gMillChooseDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -1931,7 +1970,16 @@ across all constituent moves, transforms, and continuous-effect creations
     trigRevCauses.size == 5 &&
     trigRevCauses.all (· == trigRevCauses[0]!) &&
     exTopCauses.size == 4 &&
-    exTopCauses.all (· == exTopCauses[0]!)
+    exTopCauses.all (· == exTopCauses[0]!) &&
+    handSize > 0 &&
+    hexCauses.size == handSize * 3 &&
+    hexCauses.all (· == hexCauses[0]!) &&
+    echoMoveCauses.size == 4 &&
+    echoMoveCauses[0]! != echoMoveCauses[1]! &&
+    echoMoveCauses[1]! == echoMoveCauses[2]! &&
+    echoMoveCauses[2]! == echoMoveCauses[3]! &&
+    millChooseCauses.size == 5 &&
+    millChooseCauses.all (· == millChooseCauses[0]!)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

@@ -249,7 +249,7 @@ def exileHandDrawPlayUntilNext (g : Game) (p : PlayerId) : Game :=
   let g :=
     if n == 0 then g
     else g.logMsg s!"{(g.player p).name} may play the exiled cards until the end of their next turn"
-  g.draw p n
+  g.draw p n (cause := cause?)
 
 /-- A token copy of each nontoken creature `p` controls, except it isn't
 legendary (Multiversal Incursion; rulings 468 / 508). -/
@@ -636,18 +636,23 @@ owners' graveyards. Enters abilities run after every chosen creature is on
 the battlefield. -/
 def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array ObjectId) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if looked.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+    let mut g := g0
     let mut entered : Array ObjectId := #[]
     for id in looked do
       match g.findObject? id with
       | some o =>
         if put.contains id && o.printed.isCreature && o.zone == .library p then
-          let (g', newId) := g.putOntoBattlefield id p
+          let (g', newId) := g.putOntoBattlefield id p (cause := cause?)
           g := g'
           entered := entered.push newId
           g := g.logMsg s!"{(g.player p).name} puts {o.name} onto the battlefield"
         else if o.zone == .library o.owner then
-          let (g', _) := g.move id (.graveyard o.owner) none
+          let (g', _) := g.move id (.graveyard o.owner) none (cause := cause?)
           g := g'
         else pure ()
       | none => pure ()
@@ -662,33 +667,51 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     (purpose : CardChoice) : Game :=
   match purpose with
   | .toHand _ =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        match chosen[0]?.bind g.lastMoveCauseOf? with
+        | some (.oneShotEffect id src ctrl) => (g, some (.oneShotEffect id src ctrl))
+        | _ =>
+          let (g, c) := g.allocDelayedCause (some p)
+          (g, some c)
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
         if o.zone == .graveyard o.owner || o.zone == .hand o.owner then
           let name := o.name
-          (g.move id (.hand p) none).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
+          (g.move id (.hand p) none (cause := cause?)).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
         else g
       | none => g) g
   | .creaturesToBattlefield =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
         if o.zone == .hand o.owner && o.printed.isCreature then
           let sick := !o.printed.keywords.haste
-          let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick)
+          let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick) (cause := cause?)
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         else g
       | none => g) g
   | .landsTappedGainLife life =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
     let g :=
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
           if o.printed.isLand && o.zone == .library o.owner then
             let name := o.name
-            let (g, newId) := g.putOntoBattlefield id p (tapped := true)
+            let (g, newId) := g.putOntoBattlefield id p (tapped := true) (cause := cause?)
             let g := g.logMsg s!"{name} enters tapped"
             g.afterLandEnters (g.object! newId)
           else g
@@ -696,10 +719,15 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let g := g.requestShuffle p (.gainLife p life)
     g.continueIfShuffled
   | .keepDestroyRest =>
+    let (g, cause?) : Game × Option EventCause :=
+      if g.battlefield.any (fun o => o.isCreature && !chosen.contains o.id) then
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+      else (g, none)
     g.battlefield.foldl (fun g o =>
       if o.isCreature && !chosen.contains o.id then
         match g.findObject? o.id with
-        | some o => g.destroyPermanent o
+        | some o => g.destroyPermanent o (cause := cause?)
         | none => g
       else g) g
       |>.logMsg "Chosen creatures are kept; the rest are destroyed"
@@ -715,10 +743,11 @@ def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
   if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose
   else g.beginFraChoice p (.chooseCards ids max purpose) msg
 
-/-- Mill `n`, then choose matching cards from among them for your hand. -/
+/-- Mill `n`, then choose matching cards from among them for your hand (CR 610.1). -/
 def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (max : Nat) (mustOne : Bool) : Game :=
-  let g := g.mill p n
+  let (g, cause) := g.allocDelayedCause (some p)
+  let g := g.mill p n (cause := some cause)
   let gy := (g.player p).graveyard
   let take := gy.size.min n
   let milled := gy.extract (gy.size - take) gy.size

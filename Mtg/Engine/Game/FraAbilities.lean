@@ -128,8 +128,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
   | .identityEcho =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let (g, cause) := g.allocDelayedCause (some controller) sourceId
-      let (g, _) := g.move o.id .exile none (cause := some cause)
+      let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
+      let (g, _) := g.move o.id .exile none (cause := some exileCause)
       let g := g.logMsg s!"{o.name} is exiled"
       let lib := (g.player controller).library
       let (revealed, hit) := Id.run do
@@ -143,10 +143,15 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         return (revealed, none)
       let g := (revealed ++ hit.toArray).foldl (fun g id =>
         g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
+      let (g, revealCause?) : Game × Option EventCause :=
+        if hit.isSome || !revealed.isEmpty then
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
+        else (g, none)
       let g :=
         match hit with
         | some id =>
-          let (g, newId) := g.putOntoBattlefield id controller (cause := some cause)
+          let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
           let g := g.logMsg s!"{(g.object! newId).name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         | none => g.logMsg "No creature or planeswalker card is revealed"
@@ -154,7 +159,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       else
         g.requestOrderInto revealed (.library controller)
           s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-          (cause := some cause))
+          (cause := revealCause?))
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>

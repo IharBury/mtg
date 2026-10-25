@@ -82,15 +82,29 @@ def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
 
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      let pl := g.player p
+      let firstOfTheirDrawStep :=
+        g.step == .draw && g.activePlayer == p &&
+          !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
+      if n == 0 || pl.drewFromEmpty || pl.library.isEmpty || !pl.keptOpeningHand ||
+          firstOfTheirDrawStep then
+        (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
   Id.run do
-    let mut g := g
+    let mut g := g0
     for _ in [0:n] do
       let copies := g.drawMultiplier p
       for _ in [0:copies] do
         let pl := g.player p
         if pl.drewFromEmpty then
           return g
-        g := g.drawOneCard p (cause := cause)
+        g := g.drawOneCard p (cause := cause?)
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a

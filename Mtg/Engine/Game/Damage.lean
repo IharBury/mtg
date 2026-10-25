@@ -60,14 +60,15 @@ def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
 /-- Destroy a permanent (CR 701.8). Indestructible permanents aren't destroyed
 (CR 701.8b / 702.12b). If it would die this turn under an exile replacement,
 `move` sends it to exile instead of the graveyard (CR 614.1). -/
-def destroyPermanent (g : Game) (o : GameObject) : Game :=
+def destroyPermanent (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   if o.status.shield > 0 then
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := cause))
     g.logMsg s!"A shield counter is removed from {o.name} instead of destroying it"
   else if g.hasIndestructible o then
     g.logMsg s!"{o.name} is indestructible and isn't destroyed"
   else
-    g.moveToOwnerGraveyard o s!"{o.name} is destroyed" (verb := some .destroy)
+    g.moveToOwnerGraveyard o s!"{o.name} is destroyed" (verb := some .destroy) (cause := cause)
 
 /-- Queue “a creature you control is dealt damage” triggers (She-Hulk). -/
 def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : Game :=
