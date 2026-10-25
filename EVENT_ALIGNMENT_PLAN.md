@@ -619,17 +619,20 @@ under construction (`ProposedSpell`), the waiting-trigger queue
 spell or ability on the stack (`copyStackSpell`, `copyStackAbility`, Way of the
 Cryomancer, Loki, `.copyCauseSpell`) temporarily emits `ZoneEvent.created` in
 `.stack` during Phase 2; Phase 5 migrates stack copies to
-`StackObjectEvent.copied`, whose applier copies stack metadata (including
-stack-entry targets and modes as well as `GameObject` stack/cast/adventure
-fields and `lastKnownPower` / `lastKnownToughness` for ability copies until
-Phase 8) directly from `original : ObjectId` per 707.10. For Loki
+`StackObjectEvent.copied`, whose applier copies stack metadata—both the
+`StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
+`extraModes`, and `dividedDamage`) and the `GameObject` stack/cast/adventure
+fields plus `lastKnownPower` / `lastKnownToughness` for ability copies until
+Phase 8—directly from `original : ObjectId` per 707.10. For Loki
 (`Entering.lean`, which today records `ZoneEvent.created` on `.stack` without
-copying targets or modes, unlike Way of the Cryomancer), this migration is a
-707.10 behavior change, not only a new event constructor. Card copies created
-in `.exile`—both the 707.12 cast-during-resolution copies (Saruman, Baron Zemo,
-Uldaros) and `createPreparedCopy` (`Movement.lean`, which leaves the copy in
-`.exile` with a play permission while the permanent stays prepared per ruling
-742, not 707.12)—remain `ZoneEvent.created`.
+copying `StackEntry` decisions), Way of the Cryomancer / `.copyCauseSpell`
+(which omit `extraModes` today), and `copyStackAbility` (which leaves
+`targetsAnnounced` false today), this migration is a 707.10 behavior change, not
+only a new event constructor. Card copies created in `.exile`—both the 707.12
+cast-during-resolution copies (Saruman, Baron Zemo, Uldaros) and
+`createPreparedCopy` (`Movement.lean`, which leaves the copy in `.exile` with a
+play permission while the permanent stays prepared per ruling 742, not
+707.12)—remain `ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -1125,12 +1128,15 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
    `.exile`—both the 707.12 cast-during-resolution copies for Saruman, Baron
    Zemo, and Uldaros, and `createPreparedCopy` per ruling 742—stay
-   `ZoneEvent.created`). Have `applyStackObjectEvent` copy stack-entry
-   targets/modes, `GameObject` stack/cast/adventure fields, and
+   `ZoneEvent.created`). Have `applyStackObjectEvent` copy the `StackEntry`
+   decisions (`targets`, `targetsAnnounced`, `chosenMode`, `extraModes`, and
+   `dividedDamage`), `GameObject` stack/cast/adventure fields, and
    `lastKnownPower` / `lastKnownToughness` (which `copyStackAbility` in
    `ResolutionEffects.lean` copies today, until those LKI fields are retired in
-   Phase 8) directly from `original` onto the new copy `GameObject` (fixing
-   Loki's copy to include targets and modes per 707.10), and retire the 9
+   Phase 8) directly from `original` onto the new copy `StackEntry` and
+   `GameObject` (fixing Loki's copy to include `StackEntry` decisions, Way of
+   the Cryomancer / `.copyCauseSpell` to include `extraModes`, and
+   `copyStackAbility` to copy `targetsAnnounced` per 707.10), and retire the 9
    copy-only stack fields from `EventObject` (`kicked`, `teamworkPaid`,
    `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`,
    `abilityEffect`, `triggeredAbility`, `sourceId`; note that `chosenX` stays
