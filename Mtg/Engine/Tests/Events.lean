@@ -1466,6 +1466,80 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
         o.name == "Bird Soldier" && p == me && e.cause == causeEagles2
       | _ => false)
 
+/- Phase 3: `createEffect` and `createEffects` inside a resolving context
+allocate a distinct `.oneShotEffect` `EffectId` before assigning each continuous
+effect's `EffectId` (CR 610.1 / 611.2a), and `createEffects` shares that one-shot
+cause across all effects in the batch; `.exileThenReturnNextEnd` and
+`.exileThenReturnYouControl` share one `.oneShotEffect` cause across both targets
+(and their returns); and `.syntheticDestiny` / `.sunfall` exile all affected
+creatures under the single instruction cause (sharing the delayed reveal cause
+for `.syntheticDestiny`, CR 603.7 / 610.3). -/
+#guard
+  let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
+  let b := (g0.battlefield.filter (·.name == bear.name))[0]!
+  let h := (g0.battlefield.filter (·.name == hero.name))[0]!
+  let srcCard : CardDef := { name := "Source Artifact", types := #[.artifact] }
+  let gWithSrc := quiet (addPermanent g0 srcCard me me)
+  let s := (gWithSrc.battlefield.filter (·.name == "Source Artifact"))[0]!
+  -- 1. createEffect / createEffects inside resolving context: distinct one-shot vs. continuous EffectIds
+  let eff0 := g0.nextEffectId
+  let gEffBatch :=
+    (quiet g0).withResolvingContext (some h.id) me (fun g =>
+      g.createEffects #[.protectionFromEverything me, .lifeCantChange me])
+  let createdIds := (GameEvent.createdEffectsWithId gEffBatch.events).map Prod.fst
+  let oneShotIds :=
+    gEffBatch.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.effectCreated ..) => e.cause.oneShotEffectId?
+      | _ => none)
+  -- 2. .exileThenReturnNextEnd and .exileThenReturnYouControl on two targets
+  let twoTargets := #[Target.permanent b.id, Target.permanent h.id]
+  let gNextEnd :=
+    (quiet gWithSrc).applyUnifiedAbility me Effect.exileThenReturnNextEnd twoTargets
+      (sourceId := some s.id)
+  let nextEndExileCauses :=
+    gNextEnd.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  let gBlinkTwo :=
+    (quiet gWithSrc).applyEffect me Effect.exileThenReturnYouControl twoTargets
+      (sourceId := some s.id)
+  let blinkMoveCauses :=
+    gBlinkTwo.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures
+  let gSynth :=
+    (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
+  let synthStoredCause := gSynth.delayedSynthetic[0]!.2.2
+  let synthExileCauses :=
+    gSynth.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  let gSunfall :=
+    (quiet gWithSrc).applyFrc me default .sunfall #[] (some s.id)
+  let sunfallExileCauses :=
+    gSunfall.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  oneShotIds == #[⟨eff0⟩, ⟨eff0⟩] &&
+    createdIds == #[⟨eff0 + 1⟩, ⟨eff0 + 2⟩] &&
+    nextEndExileCauses.size == 2 &&
+    nextEndExileCauses[0]! == nextEndExileCauses[1]! &&
+    gNextEnd.delayedEndStepReturns.size == 2 &&
+    gNextEnd.delayedEndStepReturns[0]!.2 == nextEndExileCauses[0]! &&
+    gNextEnd.delayedEndStepReturns[1]!.2 == nextEndExileCauses[0]! &&
+    blinkMoveCauses.size == 4 &&
+    blinkMoveCauses.all (· == blinkMoveCauses[0]!) &&
+    synthExileCauses.size == 2 &&
+    synthExileCauses.all (· == synthStoredCause) &&
+    sunfallExileCauses.size == 2 &&
+    sunfallExileCauses[0]! == sunfallExileCauses[1]!
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

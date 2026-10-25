@@ -24,12 +24,13 @@ private def knownN (g : Game) : Nat :=
 private def srcObj? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind fun id => g.findObject? (g.followMoved id)
 
-private def exileId (g : Game) (id : ObjectId) : Game :=
+private def exileId (g : Game) (id : ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := o.name
-    let (g, _) := g.move id .exile none
+    let (g, _) := g.move id .exile none (cause := cause)
     g.logMsg s!"{name} is exiled"
 
 private def handDiscard (g : Game) (p : PlayerId) : Game :=
@@ -250,7 +251,8 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.createKindTokens controller .spirit types.size
   | .sunfall =>
     let ids := (g.battlefield.filter (·.isCreature)).map (·.id)
-    let g := ids.foldl (fun g id => g.exileId id) g
+    let exileCause := g.resolvingOneShotCause controller sourceId
+    let g := ids.foldl (fun g id => g.exileId id (cause := exileCause)) g
     let g := g.makeFrc controller .incubator
     match (g.recentTokenIds.back?).bind g.findObject? with
     | some tok =>
@@ -259,14 +261,15 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | none => g
   | .massPolymorph =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
-    let g := yours.foldl (fun g id => g.exileId id) g
+    let exileCause := g.resolvingOneShotCause controller sourceId
+    let g := yours.foldl (fun g id => g.exileId id (cause := exileCause)) g
     let (g, hits, rest) := g.revealUntil controller (·.isCreature) yours.size
     let g := g.putHits controller hits
     g.restBottom controller rest true
   | .syntheticDestiny =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    let g := yours.foldl (fun g id => g.exileId id) g
+    let g := yours.foldl (fun g id => g.exileId id (cause := some cause)) g
     g.change (.pushDelayedSynthetic controller yours.size cause)
       |>.logMsg "Those creatures return as revealed cards at the next end step"
   | .searchBasics kinds untapAt =>

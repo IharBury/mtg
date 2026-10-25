@@ -2417,10 +2417,21 @@ static-ability continuous effects when an object loses all abilities or becomes
 a copy. -/
 def createEffect (g : Game) (eff : ContinuousEffect)
     (cause : Option EventCause := none) : Game :=
-  let cause :=
-    cause.orElse (fun _ =>
-      g.currentResolvingContext?.map (fun (src, ctrl) =>
-        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c =>
+      match c with
+      | .oneShotEffect cid _ _ =>
+        if g.nextEffectId ≤ cid.raw then
+          (g.change (.nextEffectId (cid.raw + 1)), some c)
+        else (g, some c)
+      | _ => (g, some c)
+    | none =>
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause ctrl src
+        (g, some c)
+      | none => (g, none)
   match eff with
   | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
     let prev? := g.findObject? id
@@ -2466,7 +2477,15 @@ def createEffect (g : Game) (eff : ContinuousEffect)
 /-- Record and apply the creation of multiple continuous effects in order (CR 611). -/
 def createEffects (g : Game) (effs : Array ContinuousEffect)
     (cause : Option EventCause := none) : Game :=
-  effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
+  if effs.isEmpty then g
+  else
+    let (g, cause) : Game × Option EventCause :=
+      match cause, g.currentResolvingContext? with
+      | none, some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause ctrl src
+        (g, some c)
+      | _, _ => (g, cause)
+    effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
 
 /-- Record and apply the expiration of the active continuous effect recorded
 under `eid` (CR 611), using the payload stored when it was created or last

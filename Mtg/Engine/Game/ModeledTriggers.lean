@@ -1003,17 +1003,22 @@ carried while exiled. With `land := false` the permanent returns summoning
 sick unless it has haste and `afterPermanentEnters` runs; with `land := true`
 it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
 def exileThenReturn (g : Game) (o : GameObject) (logText : String)
-    (clearExileFields := false) (tapped := false) (land := false) : Game :=
+    (clearExileFields := false) (tapped := false) (land := false)
+    (cause : Option EventCause := none) : Game :=
+  let cause :=
+    cause.orElse (fun _ =>
+      g.currentResolvingContext?.map (fun (src, ctrl) =>
+        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
   let owner := o.owner
   let name := o.name
-  let (g, newId) := g.move o.id .exile none
+  let (g, newId) := g.move o.id .exile none (cause := cause)
   let g :=
     if clearExileFields then
       g.changeObjects newId #[.playPermission none, .linkedExile #[]]
     else g
   let sick := !land && !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)
-    (tapped := land && tapped) (summoningSick := sick)
+    (tapped := land && tapped) (summoningSick := sick) (cause := cause)
   let g := g.logMsg s!"{name} {logText}"
   if land then g.afterLandEnters (g.object! retId)
   else g.afterPermanentEnters (g.object! retId)

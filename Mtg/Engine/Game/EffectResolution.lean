@@ -1178,14 +1178,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopPlayIfYouControlSubtype n subtype =>
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
+    let cause := g.resolvingOneShotCause controller sourceId
     g.foldPermanentTargets targets (fun g o =>
       if o.controlledBy controller && o.isOnBattlefield then
         g.exileThenReturn o "is exiled, then returned to the battlefield"
-          (land := o.printed.isLand)
+          (land := o.printed.isLand) (cause := cause)
       else g)
   | .playersCantCastThisTurn =>
-    g.players.foldl (fun acc pl =>
-      acc.createEffect (.cantCastSpellsThisTurn pl.id)) g
+    g.createEffects (g.players.map (fun pl => .cantCastSpellsThisTurn pl.id))
       |>.logMsg "Players can't cast spells this turn"
   | .exileTopXOppPlayForLife =>
     match targets[0]? with
@@ -1717,11 +1717,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
           (fun g o => subtypes.any (fun s => g.hasSubtype o s))
       | .exileThenReturnNextEnd =>
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
         g.foldPermanentTargets targets (fun g o =>
           if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand &&
               some o.id != sourceId then
             let name := o.name
-            let (g, cause) := g.allocDelayedCause (some controller) sourceId
             let (g, newId) := g.move o.id .exile none (cause := some cause)
             g.change (.pushDelayedEndStepReturn newId cause)
               |>.logMsg s!"{name} is exiled until the beginning of the next end step"
