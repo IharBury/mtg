@@ -37,15 +37,24 @@ def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #[.merfolk] 1 1 (some .blue)
 
 /-- Exile from `pid`'s library until a nonland is exiled. -/
-def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option ObjectId :=
+def exileLibraryUntilNonland (g : Game) (pid : PlayerId)
+    (cause : Option EventCause := none) : Game × Option ObjectId :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if (g.player pid).library.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some pid)
+          (g, some c)
+    let mut g := g0
     let mut found : Option ObjectId := none
     while found.isNone && !(g.player pid).library.isEmpty do
       match (g.player pid).library.back? with
       | none => pure ()
       | some id =>
-        let (g', newId) := g.move id .exile none
+        let (g', newId) := g.move id .exile none (cause := cause?)
         g := g'
         let o := g.object! newId
         g := g.logMsg s!"{(g.player pid).name} exiles {o.name}"
@@ -71,14 +80,16 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
       | none => g) g
 
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
-def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId) : Game :=
+def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match exiled.bind g.findObject? with
   | none => g.logMsg "No nonland card was exiled"
   | some o =>
+    let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
     g.createEffect (.playPermission o.id {
       player := controller
       turnEndsRemaining := 1
-      anyMana := true })
+      anyMana := true }) (cause := cause)
       |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
 
 /-- Copy the nontoken artifact that entered, then make a noncreature token a
@@ -315,10 +326,11 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
       if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand && other then
         let owner := o.owner
         let name := o.name
-        let (g, exId) := g.move o.id .exile none
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        let (g, exId) := g.move o.id .exile none (cause := some cause)
         let ex := g.object! exId
         let (g, retId) := g.move exId .battlefield (some owner)
-          (summoningSick := !ex.printed.keywords.haste)
+          (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
@@ -338,10 +350,11 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
           (o.printed.isArtifact || o.isCreature) then
         let owner := o.owner
         let name := o.name
-        let (g, newId) := g.move o.id .exile none
+        let (g, cause) := g.allocDelayedCause o.controller
+        let (g, newId) := g.move o.id .exile none (cause := some cause)
         let ex := g.object! newId
         let (g, retId) := g.move newId .battlefield (some owner)
-          (tapped := true) (summoningSick := !ex.printed.keywords.haste)
+          (tapped := true) (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"

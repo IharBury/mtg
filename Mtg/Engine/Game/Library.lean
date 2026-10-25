@@ -204,13 +204,25 @@ def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
   else
     (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
 
+/-- The `EventCause` recorded on the most recent zone-change event that moved
+an object into `id`. Used to thread a one-shot instruction's `EffectId` across
+multi-step library reveal / exile / bottom-of-library effects. -/
+def lastMoveCauseOf? (g : Game) (id : ObjectId) : Option EventCause :=
+  g.events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ after ..)) =>
+      if after.id == some id then some e.cause else none
+    | _ => none
+
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/
-def putRestOnBottomRandom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+def putRestOnBottomRandom (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game :=
   if ids.isEmpty then g
   else
     g.requestOrderInto ids (.library p)
       s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+      (cause := cause)
 
 end Game
 end Mtg.Engine

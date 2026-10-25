@@ -1685,6 +1685,121 @@ end-step sacrifices. -/
     jhoiraMoveCauses.all (· == jhoiraMoveCauses[0]!) &&
     jhoiraLifeCauses[0]! == jhoiraMoveCauses[0]!
 
+/- Phase 3: `applyRevealLibrary` (`untilSaga` / `untilCreature` / `resolveRandomCreatureReveal`),
+`resolveCascade`, `applyExile` (`.landsYouControl .forLater .lands`, `.nextEndStep`,
+`.playUntilNextTurn`, and `.playThisTurn`), `resolveExileTopPlayUntilEndOfNextTurn`,
+and `exileTopForPlay` each share one `.oneShotEffect` `EventCause` across all
+moves, play-permission `effectCreated` events, and bottom-of-library returns
+produced by the single one-shot instruction (CR 610.1 / 701.14 / 702.85a). -/
+#guard
+  let landDef : CardDef := { name := "Event Forest", types := #[.land], subtypes := #["Forest"] }
+  let g0 := addPermanent (addPermanent afterDraw landDef me me) landDef me me
+  let lands := g0.battlefield.filter (·.name == "Event Forest")
+  let l1 := lands[0]!
+  let l2 := lands[1]!
+  let g0 := addPermanent (addPermanent g0 bear me me) hero me me
+  let b := (g0.battlefield.filter (·.name == bear.name))[0]!
+  let h := (g0.battlefield.filter (·.name == hero.name))[0]!
+  -- 1. `.landsYouControl .forLater .lands` shares one cause across all exiled lands
+  let gLands :=
+    (quiet g0).applyExile me default (some b.id) #[Target.permanent l1.id, Target.permanent l2.id]
+      .landsYouControl .forLater .lands
+  let landExileCauses :=
+    gLands.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  -- 2. `applyExile` with `.nextEndStep` on multiple permanents shares one cause
+  let gNextEndTrig :=
+    (quiet g0).applyExile me default (some b.id) #[Target.permanent b.id, Target.permanent h.id]
+      .eachPermanent .nextEndStep .none
+  let nextEndTrigCauses :=
+    gNextEndTrig.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  -- 3. `applyExile` `.playUntilNextTurn` and `.playThisTurn` share cause between
+  --    `ZoneEvent.moved` and `effectCreated (.playPermission ...)`
+  let gPlayNext :=
+    (quiet g0).applyExile me default (some b.id) #[] .top .playUntilNextTurn .none
+  let playNextMoveCauses :=
+    gPlayNext.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => some e.cause
+      | _ => none)
+  let playNextEffCauses :=
+    gPlayNext.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.effectCreated ..) => some e.cause
+      | _ => none)
+  let gPlayThis :=
+    (quiet g0).applyExile me default (some b.id) #[] .top .playThisTurn .none
+  let playThisMoveCauses :=
+    gPlayThis.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ (.library _) .exile ..)) => some e.cause
+      | _ => none)
+  let playThisEffCauses :=
+    gPlayThis.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.effectCreated ..) => some e.cause
+      | _ => none)
+  -- 4. `applyRevealLibrary` `.untilCreature` shares one cause across revealed
+  --    non-creature exiles, putting the creature onto the battlefield, and
+  --    putting the rest on the bottom of the library (`putRestOnBottomRandom`)
+  let gRevSetup :=
+    let g := (g0.move b.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l1.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let gRevPending :=
+    (gRevSetup.applyRevealLibrary me (some h.id) #[] .untilCreature
+      (.ifElse .revealedManaValueAtMostLands
+        (.put .revealed .asPrinted .none)
+        (.returnToHand .revealed .none))
+      .you).getD gRevSetup
+  let gRevDone :=
+    match (gRevPending.change (.resolvingContext none)).supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gRevPending
+  let revMoveCauses :=
+    gRevDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  -- 5. `resolveCascade` + `.mayCastCascade` `.decline` shares one cause across
+  --    exiling from library and returning the exiled cards to the bottom
+  let gCascPending := gRevSetup.resolveCascade me 3
+  let gCascChoice :=
+    match gCascPending.answerFraChoice me .decline with
+    | .ok g' => g'
+    | .error _ => gCascPending
+  let gCascDone :=
+    match (gCascChoice.change (.resolvingContext none)).supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gCascChoice
+  let cascMoveCauses :=
+    gCascDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  landExileCauses.size == 2 &&
+    landExileCauses[0]! == landExileCauses[1]! &&
+    nextEndTrigCauses.size == 2 &&
+    nextEndTrigCauses[0]! == nextEndTrigCauses[1]! &&
+    gNextEndTrig.delayedEndStepReturns.size == 2 &&
+    gNextEndTrig.delayedEndStepReturns.all (fun (_, c) => c == nextEndTrigCauses[0]!) &&
+    playNextMoveCauses.size == 1 &&
+    playNextEffCauses.size == 1 &&
+    playNextMoveCauses[0]! == playNextEffCauses[0]! &&
+    playThisMoveCauses.size == 1 &&
+    playThisEffCauses.size == 1 &&
+    playThisMoveCauses[0]! == playThisEffCauses[0]! &&
+    revMoveCauses.size == 5 &&
+    revMoveCauses.all (· == revMoveCauses[0]!) &&
+    cascMoveCauses.size == 6 &&
+    cascMoveCauses.all (· == cascMoveCauses[0]!)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

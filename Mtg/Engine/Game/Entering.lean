@@ -625,12 +625,13 @@ A daybound front face enters back-face-up at night and cannot transform
 (MSH 191). Otherwise it enters front-face-up; you may then transform a DFC
 (MSH 192). Front-face enters abilities trigger in either case before the
 optional transform. -/
-def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game :=
+def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g.logMsg "No card to put onto the battlefield"
   | some o =>
     let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
-    let (g, newId) := g.putOntoBattlefield id controller (nightBack := nightBack)
+    let (g, newId) := g.putOntoBattlefield id controller (nightBack := nightBack) (cause := cause)
     let o := g.object! newId
     let g :=
       if nightBack then

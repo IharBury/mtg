@@ -243,16 +243,25 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
 /-- Exile cards from the top of `victim`'s library until an instant or
 sorcery, face up. Returns the game, that card, and the other exiled cards
 in the order they were exiled. -/
-partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId) :
+partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId)
+    (cause : Option EventCause := none) :
     Game × Option ObjectId × Array ObjectId :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if (g.player victim).library.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some victim)
+          (g, some c)
+    let mut g := g0
     let mut exiled : Array ObjectId := #[]
     let mut found : Option ObjectId := none
     while found.isNone && !(g.player victim).library.isEmpty do
       let top := (g.player victim).library.back!
       let name := (g.object! top).name
-      let (g', newId) := g.move top .exile none
+      let (g', newId) := g.move top .exile none (cause := cause?)
       g := g'
       let o := g.object! newId
       g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
@@ -268,11 +277,13 @@ cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
 in a random order. -/
 def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
     (castTheCard : Bool) : Game :=
-  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim
+  let (g, cause) := g.allocDelayedCause (some controller)
+  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim (cause := some cause)
   match found with
   | none =>
     g.requestOrderInto exiled (.library victim)
       s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+      (cause := some cause)
   | some instId =>
     let g :=
       if castTheCard then
@@ -282,9 +293,10 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
         g.logMsg
           s!"{(g.player controller).name} casts {o.name} as the ability resolves"
       else
-        (g.move instId (.library victim) none).1
+        (g.move instId (.library victim) none (cause := some cause)).1
     g.requestOrderInto exiled (.library victim)
       s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+      (cause := some cause)
 
 /-- An uncast copy ceases the next time state-based actions are checked. -/
 def ceaseUncastCopies (g : Game) : Game :=

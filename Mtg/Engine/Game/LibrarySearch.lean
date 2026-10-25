@@ -297,8 +297,10 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
   else
     let top := pl.library.back!
     let cardName := (g.object! top).name
-    let (g, newId) := g.move top .exile none
+    let (g, cause) := g.allocDelayedCause (some p)
+    let (g, newId) := g.move top .exile none (cause := some cause)
     let g := g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+      (cause := some cause)
     g.logMsg
       s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
 

@@ -93,14 +93,15 @@ value less than `maxMv`. The player may cast it without paying its mana
 cost; the other exiled cards go on the bottom in a random order. -/
 def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause) := g.allocDelayedCause (some p)
+    let mut g := g0
     let mut exiled : Array ObjectId := #[]
     let mut found : Option GameObject := none
     while found.isNone && !(g.player p).library.isEmpty do
       match (g.player p).library.back? with
       | none => pure ()
       | some id =>
-        let (g', newId) := g.move id .exile none
+        let (g', newId) := g.move id .exile none (cause := some cause)
         g := g'
         exiled := exiled.push newId
         let card := g.object! newId
@@ -111,6 +112,7 @@ def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
     | none =>
       return g.requestOrderInto exiled (.library p)
         s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
+        (cause := some cause)
     | some card =>
       let others := exiled.filter (· != card.id)
       return g.change (.pending (.fraChoice p (.mayCastCascade card.id others)))
@@ -319,9 +321,13 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
     g.logMsg s!"{(g.player controller).name} chooses {o.name}. {(g.player victim).name} discards it"
 
 /-- Exile `o` and return it at the beginning of the next end step. -/
-def exileUntilNextEndStep (g : Game) (o : GameObject) : Game :=
+def exileUntilNextEndStep (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let name := o.name
-  let (g, cause) := g.allocDelayedCause o.controller
+  let (g, cause) :=
+    match cause with
+    | some c => (g, c)
+    | none => g.allocDelayedCause o.controller
   let (g, newId) := g.move o.id .exile none (cause := some cause)
   let g := g.change (.pushDelayedEndStepReturn newId cause)
   g.logMsg s!"{name} is exiled until the beginning of the next end step"

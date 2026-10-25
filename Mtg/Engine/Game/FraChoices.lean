@@ -573,13 +573,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
     let name := (g.object! id).name
-    let (g, _) := g.move id (.hand p) none
+    let (g, cause) := g.allocDelayedCause (some p)
+    let (g, _) := g.move id (.hand p) none (cause := some cause)
     let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
     let rest := looked.filter (· != id)
     let g :=
       if anyOrder then g.offerBottomAnyOrder p rest
       else g.requestOrderInto rest (.library p)
         s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+        (cause := some cause)
     return g.finishFraChoice
   | .mayRevealToHand looked _ anyOrder, .decline =>
     let g :=
@@ -591,7 +593,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .nickFuryPut looked eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be put onto the battlefield"
     let rest := looked.filter (· != id)
-    let g := g.enterFromNickFury p id
+    let (g, cause) := g.allocDelayedCause (some p)
+    let g := g.enterFromNickFury p id (cause := some cause)
     let newId := g.followMoved id
     let g :=
       match g.findObject? newId with
@@ -599,17 +602,19 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         if o.isOnBattlefield && o.printed.otherFace.isSome && !o.status.cantTransform then
           g.beginFraChoice p (.nickFuryMayTransform newId rest)
             s!"{(g.player p).name} may transform {o.name}"
-        else g.putRestOnBottomRandom p rest
-      | none => g.putRestOnBottomRandom p rest
+        else g.putRestOnBottomRandom p rest (cause := some cause)
+      | none => g.putRestOnBottomRandom p rest (cause := some cause)
     return g.finishFraChoice
   | .nickFuryPut looked _, .decline =>
     return (g.putRestOnBottomRandom p looked).finishFraChoice
   | .nickFuryPut .., _ => throw "Put a card onto the battlefield, or decline"
   | .nickFuryMayTransform id rest, .accept =>
+    let cause := g.lastMoveCauseOf? id
     let g := g.applyAbilityEffect p Effect.transform #[] (some id)
-    return (g.putRestOnBottomRandom p rest).finishFraChoice
-  | .nickFuryMayTransform _ rest, .decline =>
-    return (g.putRestOnBottomRandom p rest).finishFraChoice
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
+  | .nickFuryMayTransform id rest, .decline =>
+    let cause := g.lastMoveCauseOf? id
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
   | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
   | .orderLibraryBottom ids, .objects ordered =>
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
@@ -691,15 +696,19 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
+    let cause := g.lastMoveCauseOf? cardId
     let g := g.castAsPartOfResolution p cardId
     let msg := s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
-    let g := g.requestOrderInto others (.library p) msg
+    let g := g.requestOrderInto others (.library p) msg (cause := cause)
     return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
+    let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library p)
-      s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+      s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
+      (cause := cause)).finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
   | .mayCastGrima cardId others victim, .accept =>
+    let cause := g.lastMoveCauseOf? cardId
     let g := g.castAsPartOfResolution p cardId
     let landed := g.followMoved cardId
     let cast := (g.findObject? landed).any (·.zone == .stack)
@@ -711,11 +720,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let pile := others ++ uncast
     let msg :=
       s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-    let g := g.requestOrderInto pile (.library victim) msg
+    let g := g.requestOrderInto pile (.library victim) msg (cause := cause)
     return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
+    let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library victim)
-      s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+      s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
+      (cause := cause)).finishFraChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
     let g := g.castAsPartOfResolution p copyId
@@ -851,8 +862,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some o =>
       if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
       let name := o.name
-      let (g, newId) := g.move o.id .exile none
+      let (g, cause) := g.allocDelayedCause (some p)
+      let (g, newId) := g.move o.id .exile none (cause := some cause)
       return (g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+        (cause := some cause)
         |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
     | none => return g.finishFraChoice
   | .moonstoneMayExile _, .decline =>

@@ -311,15 +311,16 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         if exilePermanent && o.printed.isPermanentCard then Zone.exile
         else Zone.graveyard o.owner
       let name := o.name
+      let (g, cause) := g.allocDelayedCause (some controller)
       let (g, newId) := g.move spellId dest none
-        (verb := some .counter) (actor := some controller)
+        (verb := some .counter) (actor := some controller) (cause := some cause)
       let g :=
         if dest == .exile && grantFreeCast then
           g.createEffect (.playPermission newId {
             player := controller
             turnEndsRemaining := 0
             whileExiled := true
-            withoutManaCost := true })
+            withoutManaCost := true }) (cause := some cause)
         else g
       let destNote := if dest == .exile then "exiled" else "countered"
       g.logMsg s!"{name} is {destNote}"
@@ -348,10 +349,10 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
 
 /-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
 does not return automatically when the source leaves. -/
-def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
-    Game :=
+def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let name := o.name
-  let (g, newId) := g.move o.id .exile none
+  let (g, newId) := g.move o.id .exile none (cause := cause)
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
@@ -537,7 +538,12 @@ them this turn. `logAfter ownerName cardName` is the per-card message. -/
 def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
     (logAfter : String → String → String) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n > 0 && !(g.player fromPlayer).library.isEmpty then
+        let (g, c) := g.allocDelayedCause (some caster)
+        (g, some c)
+      else (g, none)
+    let mut g := g0
     for _ in [0:n] do
       let pl := g.player fromPlayer
       if pl.library.isEmpty then
@@ -545,9 +551,10 @@ def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
       else
         let top := pl.library.back!
         let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
+          (cause := cause?)
         g := g.logMsg (logAfter pl.name cardName)
     return g
 
@@ -713,7 +720,12 @@ def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
 to `casts` nonland cards from among them without paying their mana costs. -/
 def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n > 0 && !(g.player fromPlayer).library.isEmpty then
+        let (g, c) := g.allocDelayedCause (some caster)
+        (g, some c)
+      else (g, none)
+    let mut g := g0
     let mut ids : Array ObjectId := #[]
     for _ in [0:n] do
       let pl := g.player fromPlayer
@@ -722,7 +734,7 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
       else
         let top := pl.library.back!
         let name := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         ids := ids.push newId
         g := g.logMsg s!"{pl.name} exiles {name}"
