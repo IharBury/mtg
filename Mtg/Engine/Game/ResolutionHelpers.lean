@@ -267,8 +267,15 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
   let lib := (g.player p).library
   let count := min n lib.size
   let tops := (lib.extract (lib.size - count) lib.size).reverse
-  let (g, cause) := g.allocDelayedCause (some p)
-  let g := g.mill p n (cause := some cause)
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || lib.isEmpty then (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+  let g := g.mill p n (cause := cause?)
   let milled := tops.map (fun id => g.followMoved id)
   Id.run do
     let mut g := g
@@ -278,7 +285,7 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
       | some o =>
         if left > 0 && o.zone == .graveyard p && pred o then
           let name := o.name
-          let (g', _) := g.move id (.hand p) none (cause := some cause)
+          let (g', _) := g.move id (.hand p) none (cause := cause?)
           g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
           left := left - 1
       | none => pure ()

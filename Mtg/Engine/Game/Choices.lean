@@ -175,16 +175,14 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     g.logMsg s!"{(g.player p).name} does not discard their hand"
   else
     let n := (g.player p).hand.size
-    let (g, cause) := g.allocDelayedCause (some p)
-    let g := g.discardEntireHand p (cause := some cause)
-    if n == 0 then g else g.draw p n (cause := some cause)
+    let g := g.discardEntireHand p
+    if n == 0 then g else g.draw p n
 
 /-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
 (Sauron, the Dark Lord). -/
 def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let (g, cause) := g.allocDelayedCause (some p)
-  let g := g.discardEntireHand p (cause := some cause)
-  if n == 0 then g else g.draw p n (cause := some cause)
+  let g := g.discardEntireHand p
+  if n == 0 then g else g.draw p n
 
 /-- Players currently tied for most life. -/
 def playersWithMostLife (g : Game) : Array PlayerId :=

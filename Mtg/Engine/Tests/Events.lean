@@ -2046,6 +2046,44 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => some e.cause
       | .rules (.life (.lost ..)) => some e.cause
       | _ => none)
+  let gPalantirRaw0 :=
+    (gGrimaSetup.changeStatus h.id (.influence 3)).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
+  let gPalantirRawDone :=
+    match gPalantirRaw0.answerFraChoice opp .decline with
+    | .ok g' => g'
+    | .error _ => gPalantirRaw0
+  let palantirRawCauses :=
+    gPalantirRawDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.life (.lost ..)) => some e.cause
+      | _ => none)
+  let gBalinRaw := gLibSetup.mayDiscardHandDrawThatMany me true
+  let balinRawCauses :=
+    gBalinRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gBalinRes :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.mayDiscardHandDrawThatMany me true)
+  let balinResCauses :=
+    gBalinRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gArmorEmpty0 :=
+    (gLibSetup.changePlayer me (.library #[])).change (.pending (.fraChoice me (.mayDrawThenEachOpponentDraws 1)))
+      |>.change (.resolvingContext (some (some h.id, me)))
+  let gArmorEmptyDone :=
+    match gArmorEmpty0.answerFraChoice me .accept with
+    | .ok g' => g'
+    | .error _ => gArmorEmpty0
+  let armorEmptyMoves :=
+    gArmorEmptyDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -2082,7 +2120,17 @@ across all constituent moves, transforms, and continuous-effect creations
     millSubtypeCauses.size == 4 &&
     millSubtypeCauses.all (· == millSubtypeCauses[0]!) &&
     palantirCauses.size == 4 &&
-    palantirCauses.all (· == palantirCauses[0]!)
+    palantirCauses.all (· == palantirCauses[0]!) &&
+    palantirRawCauses.size == 4 &&
+    palantirRawCauses.all (· == .unclassified) &&
+    balinRawCauses.size == handSize * 2 &&
+    balinRawCauses.all (· == .unclassified) &&
+    balinResCauses.size == handSize * 2 &&
+    (balinResCauses.extract 0 handSize).all (· == balinResCauses[0]!) &&
+    (balinResCauses.extract handSize (handSize * 2)).all (· == balinResCauses[handSize]!) &&
+    balinResCauses[0]! != balinResCauses[handSize]! &&
+    armorEmptyMoves.isEmpty &&
+    (gArmorEmptyDone.player me).drewFromEmpty
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

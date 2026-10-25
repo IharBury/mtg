@@ -907,9 +907,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.gainLife p life).finishFraChoice
   | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
   | .mayDrawThenEachOpponentDraws n, .accept =>
+    let before := g.loggedDraws p
     let g := g.draw p n
-    let (g, oppCause) := g.allocDelayedCause (some p)
-    let g := g.forEachOpponent p (fun g opp => g.draw opp 1 (cause := some oppCause))
+    if g.loggedDraws p == before then
+      return g.finishFraChoice
+    let (g, oppCause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+    let g := g.forEachOpponent p (fun g opp => g.draw opp 1 (cause := oppCause?))
     return (g.logMsg s!"{(g.player p).name} draws, so each opponent draws a card").finishFraChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
@@ -980,14 +988,21 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let lib := (g.player controller).library
     let count := min n lib.size
     let tops := (lib.extract (lib.size - count) lib.size).reverse
-    let (g, cause) := g.allocDelayedCause (some controller) (some sourceId)
-    let g := g.mill controller n (cause := some cause)
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || lib.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => some sourceId))
+          (g, some c)
+        | none => (g, none)
+    let g := g.mill controller n (cause := cause?)
     let milled := (tops.map g.followMoved).filter (fun id =>
       (g.findObject? id).any (fun o => o.zone == .graveyard controller))
     let mv :=
       milled.foldl (fun acc id =>
         acc + (g.object! id).printed.manaValue) 0
-    return (g.loseLife p mv (cause := some cause)).finishFraChoice
+    return (g.loseLife p mv (cause := cause?)).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"

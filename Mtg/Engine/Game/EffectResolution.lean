@@ -668,6 +668,12 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
   let stashed := cause.orElse (fun _ => chosen[0]?.bind g.linkedExileCause?)
   let g := chosen.foldl (fun (g : Game) id =>
     if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+  let allocIfResolving (g : Game) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+      (g, some c)
+    | none => (g, none)
   match purpose with
   | .toHand _ =>
     let (g, cause?) : Game × Option EventCause :=
@@ -675,9 +681,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       else
         match stashed with
         | some c => (g, some c)
-        | none =>
-          let (g, c) := g.allocDelayedCause (some p)
-          (g, some c)
+        | none => allocIfResolving g
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
@@ -692,9 +696,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       else
         match stashed with
         | some c => (g, some c)
-        | none =>
-          let (g, c) := g.allocDelayedCause (some p)
-          (g, some c)
+        | none => allocIfResolving g
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
@@ -711,9 +713,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       else
         match stashed with
         | some c => (g, some c)
-        | none =>
-          let (g, c) := g.allocDelayedCause (some p)
-          (g, some c)
+        | none => allocIfResolving g
     let g :=
       chosen.foldl (fun g id =>
         match g.findObject? id with
@@ -732,9 +732,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       if g.battlefield.any (fun o => o.isCreature && !chosen.contains o.id) then
         match stashed with
         | some c => (g, some c)
-        | none =>
-          let (g, c) := g.allocDelayedCause (some p)
-          (g, some c)
+        | none => allocIfResolving g
       else (g, none)
     g.battlefield.foldl (fun g o =>
       if o.isCreature && !chosen.contains o.id then
@@ -766,18 +764,25 @@ def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
   let lib := (g.player p).library
   let count := min n lib.size
   let tops := (lib.extract (lib.size - count) lib.size).reverse
-  let (g, cause) := g.allocDelayedCause (some p)
-  let g := g.mill p n (cause := some cause)
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || lib.isEmpty then (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+  let g := g.mill p n (cause := cause?)
   let milled := tops.map (fun id => g.followMoved id)
   let eligible := milled.filter (fun id =>
     (g.findObject? id).any (fun o => o.zone == .graveyard p && pred o))
   if eligible.isEmpty then g
   else if mustOne && eligible.size == 1 then
-    g.finishChooseCards p eligible (.toHand true) (cause := some cause)
+    g.finishChooseCards p eligible (.toHand true) (cause := cause?)
   else
     g.offerCardChoice p eligible max (.toHand mustOne)
       s!"{(g.player p).name} chooses cards to put into their hand"
-      (cause := some cause)
+      (cause := cause?)
 
 /-- True when a targeted sequence must not resolve (CR 608.2b).
 A missing or illegal required target means none of the steps happen, so
@@ -1193,14 +1198,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let greatest :=
       (g.permanentsOf controller).foldl (fun acc o =>
         if o.isCreature then max acc (g.toughness o).toNat else acc) 0
-    let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    let g := g.draw controller greatest (cause := some cause)
+    let (g, cause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+        (g, some c)
+      | none => (g, none)
+    let g := g.draw controller greatest (cause := cause?)
     let creatures :=
       (g.player controller).hand.filter (fun id =>
         (g.findObject? id).any (·.printed.isCreature))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
-      (cause := some cause)
+      (cause := cause?)
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -1832,8 +1842,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         | some (Target.player a), some (Target.player b) =>
           if a == b then g.logMsg "Two target players must be different"
           else
-            let (g, cause) := g.allocDelayedCause (some controller) sourceId
-            g.draw a 1 (cause := some cause) |>.draw b 1 (cause := some cause)
+            let (g, cause?) : Game × Option EventCause :=
+              match g.currentResolvingContext? with
+              | some (src, ctrl) =>
+                let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+                (g, some c)
+              | none => (g, none)
+            g.draw a 1 (cause := cause?) |>.draw b 1 (cause := cause?)
         | _, _ => g.logMsg "The targets are no longer legal"
       | .discardLegendarySameNameDraw =>
         g.draw controller 2
