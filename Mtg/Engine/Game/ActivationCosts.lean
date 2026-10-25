@@ -170,7 +170,9 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         | _, _ => g
       else g
     return g
-  let fromGraveyard := src.zone == .graveyard src.owner && src.owner == p
+  let fromGraveyard :=
+    src.zone == .graveyard src.owner && src.owner == p &&
+      !ab.any (·.cost.loyalty.isSome)
   if fromGraveyard && !tapSource && !sacrificeSource then
     let g ← g.payLifeCost p payLife
     if ab.any (·.cost.exileSourceFromGraveyard) then

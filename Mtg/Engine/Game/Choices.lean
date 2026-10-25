@@ -437,6 +437,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         match prop.activation.bind (·.cost.loyalty) with
         | none => true
         | some sym =>
+          src.isOnBattlefield && src.controlledBy prop.caster &&
           !src.status.loyaltyActivatedThisTurn &&
           match sym.counters with
           | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k

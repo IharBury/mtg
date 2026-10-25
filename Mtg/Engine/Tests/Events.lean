@@ -1237,7 +1237,18 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
     match gPw0.activateAbility me pw.id 0 with
     | .ok g => g
     | .error _ => gPw0
+  let proposedAbId := gPwProposed.proposedSpell.get!.spellId
   let gPwReversed := gPwProposed.reverseProposedSpell
+  let gPwPaid :=
+    match (gPwProposed.changePlayer me (.addMana .colorless 2)).apply me .pay with
+    | .ok g => g
+    | .error _ => gPwProposed
+  let gPwInGy :=
+    (gPwProposed.changePlayer me (.addMana .colorless 2)).changeObject pw.id (.zone (.graveyard me))
+  let gPwInGyPaid :=
+    match gPwInGy.apply me .pay with
+    | .ok g => g
+    | .error _ => gPwInGy
   let baubleDef : CardDef :=
     { name := "Test Bauble"
       types := #[.artifact]
@@ -1297,6 +1308,20 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
     (gPwReversed.object! pw.id).status.loyaltyCounters == 3 &&
     !gPwReversed.log.any (fun s => mentions s "loyalty counter(s)") &&
     !gPwReversed.events.any (fun e =>
+      match e.change with
+      | .rules (.activated ..) | .rules (.permanent (.counters ..)) => true
+      | _ => false) &&
+    proposedAbId != pw.id &&
+    gPwPaid.events.any (fun e =>
+      match e.change, e.cause with
+      | .rules (.permanent (.counters (.object o) .loyalty (.put 1) (some actor))),
+        .costPayment .loyalty payer (some forId) =>
+        o.id == some pw.id && actor == me && payer == me && forId == proposedAbId
+      | _, _ => false) &&
+    !gPwInGy.sourceStillPayable gPwInGy.proposedSpell.get! &&
+    gPwInGyPaid.stack.isEmpty &&
+    !gPwInGyPaid.loggedActivatedLoyalty me &&
+    !gPwInGyPaid.events.any (fun e =>
       match e.change with
       | .rules (.activated ..) | .rules (.permanent (.counters ..)) => true
       | _ => false) &&

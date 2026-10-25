@@ -672,26 +672,25 @@ def lockInTargetCostReduction (g : Game) : Game :=
 
 /-- Pay a loyalty cost: put or remove loyalty counters on the source and
 record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
-def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
+def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
+    (forObject : Option ObjectId := none) : Game :=
   let k := (sym.counters).getD 0
   let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
   let g :=
     if k != 0 then
-      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0)
-        (cause := some (.costPayment .loyalty (o.controller.getD o.owner) (some o.id))))
+      g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
+        (cause := some (.costPayment .loyalty p forObject)))
     else g
-  let g := match o.controller with
-    | some p =>
-      let happened := GameEvent.activated g.turnNumber p o.asEvent true
-      let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
-      -- Gideon, the Oathless: an opponent activating a loyalty ability.
-      (g.livingOpponents p).foldl (fun g opp =>
-        g.foldControlledPermanents opp.id none fun g src =>
-          if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
-            g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
-              (cause := some o)
-          else g) g
-    | none => g
+  let happened := GameEvent.activated g.turnNumber p o.asEvent true
+  let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
+  -- Gideon, the Oathless: an opponent activating a loyalty ability.
+  let g :=
+    (g.livingOpponents p).foldl (fun g opp =>
+      g.foldControlledPermanents opp.id none fun g src =>
+        if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
+          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
+            (cause := some o)
+        else g) g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
   else g
@@ -723,15 +722,16 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
     (sourceSnapshot : Option EventObject := none) : Game :=
   let activation := activation <|> g.proposedSpell.bind (·.activation)
+  let abilityId := g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
   let chosenX :=
-    ((g.stack.back?.bind (fun e => g.findObject? e.objectId)).bind (·.chosenX)).getD 0
+    ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
   let g :=
     match activation.bind (·.cost.loyalty) with
     | some sym =>
       let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
       let g :=
         match sourceId.bind g.findObject? with
-        | some src => g.payLoyaltyCost src actualSym
+        | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
         | none => g
       g.queueLoyaltyActivationTriggers p actualSym
     | none => g
