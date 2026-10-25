@@ -1100,7 +1100,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if o.zone != .hand o.owner then pure g
           else
             let name := o.name
-            let sick := !o.printed.isLand && !o.printed.keywords.haste
+            let sick := o.printed.isCreature && !o.printed.keywords.haste
             let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
             let g := g.logMsg s!"{name} begins the game on the battlefield"
             if g.pending != .none then pure g
