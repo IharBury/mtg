@@ -1399,23 +1399,30 @@ def applyPermanentEvent (g : Game) (e : PermanentEvent) : Game :=
       let s := { o.status with tapped := false }
       { g with objects := g.objects.set! i { o with status := s } }
     | none => g
-  | .phasedOut object _ =>
+  | .phasedOut object indirectly =>
     match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
-      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := true } } }
+      let pw := if indirectly then o.attachedTo else none
+      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := true, phasedWith := pw } } }
     | none => g
   | .phasedIn object _ =>
     match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
-      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false } } }
+      { g with objects := g.objects.set! i { o with status := { o.status with phasedOut := false, phasedWith := none, summoningSick := false } } }
     | none => g
   | .transformed object nowBackFace =>
     match findEventIdx? object with
     | some i =>
       let o := g.objects[i]!
-      { g with objects := g.objects.set! i { o with status := { o.status with transformed := nowBackFace } } }
+      let printed :=
+        if o.status.transformed != nowBackFace then
+          match o.printed.otherFace with
+          | some face => { face with otherFace := some { o.printed with otherFace := none } }
+          | none => o.printed
+        else o.printed
+      { g with objects := g.objects.set! i { o with printed, status := { o.status with transformed := nowBackFace } } }
     | none => g
   | .turnedFaceUp object =>
     match findEventIdx? object with
@@ -1821,6 +1828,19 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
       let g := g.stripFromZoneList id object.zone
       { g with objects := g.objects.filter (fun o => o.id != id) }
 
+/-- Apply a `PlayerEvent` to `g` (CR 701.22, 701.25, 701.34, 701.62). -/
+def applyPlayerEvent (g : Game) (e : PlayerEvent) : Game :=
+  match e with
+  | .beheld p quality =>
+    if h : p.idx < g.players.size then
+      let pl := g.players[p.idx]
+      { g with players := g.players.set! p.idx (pl.applyChange (.pushBeheldQuality quality)) }
+    else g
+  | .scried .. | .surveilled .. | .proliferated .. | .sheHulkDealtDamage .. => g
+
+/-- Apply a `StackObjectEvent` to `g` (CR 608). -/
+def applyStackObjectEvent (g : Game) (_e : StackObjectEvent) : Game := g
+
 /-- Process one `RulesEvent` in isolation. -/
 def applyRulesEvent (g : Game) (r : RulesEvent) : Game :=
   match r with
@@ -1828,10 +1848,10 @@ def applyRulesEvent (g : Game) (r : RulesEvent) : Game :=
   | .permanent e => g.applyPermanentEvent e
   | .damage e => g.applyDamageEvent e
   | .life e => g.applyLifeEvent e
+  | .player e => g.applyPlayerEvent e
+  | .stackObject e => g.applyStackObjectEvent e
   | .cast .. | .attacked .. | .stepped .. | .activated ..
   | .spentMana .. | .playedLand .. => g
-  | .effectApplied id _ =>
-    { g with nextEffectId := max g.nextEffectId (id.raw + 1) }
   | .effectCreated id eff => g.applyEffectCreated id eff
   | .effectExpired id eff => g.applyEffectExpired id eff
   | .effectUpdated id eff => g.applyEffectUpdated id eff
@@ -2097,40 +2117,61 @@ def applyChange (g : Game) (c : GameChange) : Game :=
   | .rules r => g.applyRulesEvent r
   | .engine e => g.applyEngineChange e
 
+/-- Active resolving source object id and controller, if a spell or ability is
+currently resolving (CR 608 / 610.1). -/
+def currentResolvingContext (g : Game) : Option ObjectId × Option PlayerId :=
+  let objId? := g.resolvingSpell.orElse (fun _ => g.resolvingAbility)
+  match objId?.bind (fun id => g.objects.find? (·.id == id)) with
+  | some o => (o.sourceId.orElse (fun _ => some o.id), o.controller)
+  | none =>
+    match g.triggerSequenceRest.orElse (fun _ => g.mayContext) with
+    | some ctx => (ctx.sourceId, some ctx.controller)
+    | none =>
+      match g.triggerOr with
+      | some rest => (rest.sourceId, some rest.controller)
+      | none =>
+        match g.chooseModesRest with
+        | some rest => (rest.sourceId, some rest.controller)
+        | none => (objId?, none)
+
+/-- Populate a fresh `EffectId` (and fallback `source` / `controller` from the
+current resolving context) on `.oneShotEffect` inside `cause` (CR 610). -/
+def resolveOneShotCause (g : Game) : EventCause → EventCause × Option EffectId
+  | .oneShotEffect id src ctrl =>
+    let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
+    let (defSrc, defCtrl) := g.currentResolvingContext
+    let src' := src.orElse (fun _ => defSrc)
+    let ctrl' := ctrl.orElse (fun _ => defCtrl)
+    (.oneShotEffect actualId src' ctrl', some actualId)
+  | .replaced rep orig =>
+    let (orig', bumpId?) := g.resolveOneShotCause orig
+    (.replaced rep orig', bumpId?)
+  | c => (c, none)
+
 /-- Process one `GameEvent` in isolation, appending it to `g.events` and
 applying its `GameChange`. One-shot effects receive a fresh unique `EffectId`
 from `g.nextEffectId` when recorded if not already assigned one at or above
 `g.nextEffectId` (CR 610). -/
 def applyEvent (g : Game) (e : GameEvent) : Game :=
   let (e, bumpId?) :=
-    match e.cause, e.change with
-    | .oneShotEffect id src ctrl, .rules (.effectApplied _ eff) =>
-      let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
-      ({ e with
-          cause := .oneShotEffect actualId src ctrl
-          change := .rules (.effectApplied actualId eff) },
-        some actualId)
-    | _, .rules (.effectApplied id eff) =>
-      let actualId : EffectId := if id.raw < g.nextEffectId then ⟨g.nextEffectId⟩ else id
-      ({ e with
-          cause := .oneShotEffect actualId none none
-          change := .rules (.effectApplied actualId eff) },
-        some actualId)
-    | _, .rules (.zone (.moved before after fromZone toZone verb actor entersWith libPos)) =>
-      if after.id.isNone then
-        let newId : ObjectId := ⟨g.nextObjectId⟩
-        ({ e with
-            change := .rules (.zone (.moved before { after with id := some newId } fromZone toZone verb actor entersWith libPos)) },
-          none)
-      else (e, none)
-    | _, .rules (.zone (.created object controller)) =>
-      if object.id.isNone then
-        let newId : ObjectId := ⟨g.nextObjectId⟩
-        ({ e with
-            change := .rules (.zone (.created { object with id := some newId } controller)) },
-          none)
-      else (e, none)
-    | _, _ => (e, none)
+    match e.change with
+    | .engine _ => (e, none)
+    | .rules r =>
+      let (cause', bumpId?) := g.resolveOneShotCause e.cause
+      let r' : RulesEvent :=
+        match r with
+        | .zone (.moved before after fromZone toZone verb actor entersWith libPos) =>
+          if after.id.isNone then
+            let newId : ObjectId := ⟨g.nextObjectId⟩
+            .zone (.moved before { after with id := some newId } fromZone toZone verb actor entersWith libPos)
+          else r
+        | .zone (.created object controller) =>
+          if object.id.isNone then
+            let newId : ObjectId := ⟨g.nextObjectId⟩
+            .zone (.created { object with id := some newId } controller)
+          else r
+        | _ => r
+      ({ e with cause := cause', change := .rules r' }, bumpId?)
   let g := { g with events := g.events.push e }
   let g := g.applyChange e.change
   match bumpId? with
@@ -2180,11 +2221,6 @@ def changeProposals (g : Game) (cs : Array ProposalChange) : Game :=
 
 def logMsg (g : Game) (msg : String) : Game :=
   g.change (.logMsg msg)
-
-/-- Record and apply a one-shot effect (CR 610) on the current turn, assigning
-it a fresh unique `EffectId` from `g.nextEffectId`. -/
-def applyOneShot (g : Game) (eff : OneShotEffect) : Game :=
-  g.record (GameEvent.effectApplied g.turnNumber eff (id := ⟨g.nextEffectId⟩))
 
 def findObject? (g : Game) (id : ObjectId) : Option GameObject :=
   g.objects.find? (fun o => o.id == id)
@@ -2239,85 +2275,91 @@ def activeEffect? (g : Game) (eid : EffectId) : Option ContinuousEffect :=
 
 /-- Record the creation of `o`'s printed static-ability continuous effects if `o`
 is active on the battlefield or in the command zone (CR 611.3). -/
-def createPrintedStaticEffects (g : Game) (o : GameObject) : Game :=
+def createPrintedStaticEffects (g : Game) (o : GameObject)
+    (cause : Option EventCause := some (.gameRule .staticAbility)) : Game :=
   if hasActivePrintedStatics o then
     o.printed.staticAbilities.foldl (fun acc sa =>
       let eid : EffectId := ⟨acc.nextEffectId⟩
-      acc.record (GameEvent.effectCreated acc.turnNumber eid (.staticAbility o.id sa))) g
+      acc.record (GameEvent.effectCreated acc.turnNumber eid (.staticAbility o.id sa) (cause := cause))) g
   else g
 
 /-- Record the expiration of `o`'s active printed static-ability continuous
 effects (CR 611.3), each under the `EffectId` it was created with. -/
-def expirePrintedStaticEffects (g : Game) (o : GameObject) : Game :=
+def expirePrintedStaticEffects (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   o.printed.staticAbilities.foldl (fun acc sa =>
     let eff := ContinuousEffect.staticAbility o.id sa
     match acc.activeEffects.find? (fun (_, e) => e == eff) with
-    | some (eid, _) => acc.record (GameEvent.effectExpired acc.turnNumber eid eff)
+    | some (eid, _) => acc.record (GameEvent.effectExpired acc.turnNumber eid eff (cause := cause))
     | none => acc) g
 
 /-- Record and apply the creation of a continuous effect (CR 611). Assigns a
 fresh unique `EffectId` from `g.nextEffectId` and updates any dependent
 static-ability continuous effects when an object loses all abilities or becomes
 a copy. -/
-def createEffect (g : Game) (eff : ContinuousEffect) : Game :=
+def createEffect (g : Game) (eff : ContinuousEffect)
+    (cause : Option EventCause := none) : Game :=
   match eff with
   | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
     let prev? := g.findObject? id
     let eid : EffectId := ⟨g.nextEffectId⟩
-    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff (cause := cause))
     match prev? with
-    | some prev => g.expirePrintedStaticEffects prev
+    | some prev => g.expirePrintedStaticEffects prev (cause := cause)
     | none => g
   | .copy id newPrinted _ _ _ _ =>
     let prev? := g.findObject? id
     let g :=
       match prev? with
-      | some prev => g.expirePrintedStaticEffects prev
+      | some prev => g.expirePrintedStaticEffects prev (cause := cause)
       | none => g
     let eid : EffectId := ⟨g.nextEffectId⟩
-    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff (cause := cause))
     match g.findObject? id with
     | some cur =>
       if hasActivePrintedStatics cur then
         newPrinted.staticAbilities.foldl (fun acc sa =>
           let sid : EffectId := ⟨acc.nextEffectId⟩
-          acc.record (GameEvent.effectCreated acc.turnNumber sid (.staticAbility id sa))) g
+          acc.record (GameEvent.effectCreated acc.turnNumber sid (.staticAbility id sa)
+            (cause := some (.gameRule .staticAbility)))) g
       else g
     | none => g
   | .control id _ _ _ _ =>
     let prevCtrl? := (g.findObject? id).bind (·.controller)
     let eid : EffectId := ⟨g.nextEffectId⟩
-    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    let g := g.record (GameEvent.effectCreated g.turnNumber eid eff (cause := cause))
     match g.findObject? id with
     | some o =>
       let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
       match g.effectiveController? o with
       | some toP =>
-        if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+        if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP (cause := cause))
         else g
       | none => g
     | none => g
   | _ =>
     let eid : EffectId := ⟨g.nextEffectId⟩
-    g.record (GameEvent.effectCreated g.turnNumber eid eff)
+    g.record (GameEvent.effectCreated g.turnNumber eid eff (cause := cause))
 
 /-- Record and apply the creation of multiple continuous effects in order (CR 611). -/
-def createEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
-  effs.foldl Game.createEffect g
+def createEffects (g : Game) (effs : Array ContinuousEffect)
+    (cause : Option EventCause := none) : Game :=
+  effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
 
 /-- Record and apply the expiration of the active continuous effect recorded
 under `eid` (CR 611), using the payload stored when it was created or last
 updated. Also updates any dependent static-ability continuous effects when an
 ability-loss or copy effect ends on an object still on the battlefield. An id
 that is not active records nothing. -/
-def expireEffectById (g : Game) (eid : EffectId) : Game :=
+def expireEffectById (g : Game) (eid : EffectId)
+    (cause : Option EventCause := none) : Game :=
   match g.activeEffect? eid with
   | none => g
   | some eff =>
     match eff with
     | .losesAbilitiesUntilEot id | .losesAbilitiesWhileSource id _ =>
       let wasActive := (g.findObject? id).map hasActivePrintedStatics |>.getD false
-      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := cause))
       match g.findObject? id with
       | some cur =>
         if !wasActive && hasActivePrintedStatics cur then g.createPrintedStaticEffects cur
@@ -2327,48 +2369,52 @@ def expireEffectById (g : Game) (eid : EffectId) : Game :=
       let prev? := g.findObject? id
       let g :=
         match prev? with
-        | some prev => g.expirePrintedStaticEffects prev
+        | some prev => g.expirePrintedStaticEffects prev (cause := cause)
         | none => g
-      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := cause))
       match g.findObject? id with
       | some cur => g.createPrintedStaticEffects cur
       | none => g
     | .control id _ _ _ _ =>
       let prevCtrl? := (g.findObject? id).bind (·.controller)
-      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff)
+      let g := g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := cause))
       match g.findObject? id with
       | some o =>
         let fromP := prevCtrl?.getD (o.defaultController.getD o.owner)
         match g.effectiveController? o with
         | some toP =>
-          if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP)
+          if fromP != toP then g.record (GameEvent.control g.turnNumber id fromP toP (cause := cause))
           else g
         | none => g
       | none => g
-    | _ => g.record (GameEvent.effectExpired g.turnNumber eid eff)
+    | _ => g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := cause))
 
 /-- Record and apply the expiration of the earliest active continuous effect
 equal to `eff` (CR 611). When no such effect is active, nothing is recorded
 and nothing is rolled back. -/
-def expireEffect (g : Game) (eff : ContinuousEffect) : Game :=
+def expireEffect (g : Game) (eff : ContinuousEffect)
+    (cause : Option EventCause := none) : Game :=
   match g.activeEffects.find? (fun (_, e) => e == eff) with
-  | some (eid, _) => g.expireEffectById eid
+  | some (eid, _) => g.expireEffectById eid (cause := cause)
   | none => g
 
 /-- Record and apply the expiration of every active continuous effect matching
 `pred`, each under its own `EffectId` (CR 611). -/
-def expireMatching (g : Game) (pred : ContinuousEffect → Bool) : Game :=
+def expireMatching (g : Game) (pred : ContinuousEffect → Bool)
+    (cause : Option EventCause := none) : Game :=
   let matching := g.activeEffects.filter (fun (_, e) => pred e)
-  matching.foldl (fun acc (eid, _) => acc.expireEffectById eid) g
+  matching.foldl (fun acc (eid, _) => acc.expireEffectById eid (cause := cause)) g
 
 /-- Record and apply the expiration of every active continuous effect equal to
 `eff`, e.g. when their shared duration ends (CR 611). -/
-def expireAll (g : Game) (eff : ContinuousEffect) : Game :=
-  g.expireMatching (· == eff)
+def expireAll (g : Game) (eff : ContinuousEffect)
+    (cause : Option EventCause := none) : Game :=
+  g.expireMatching (· == eff) (cause := cause)
 
 /-- Record and apply the expiration of multiple continuous effects in order (CR 611). -/
-def expireEffects (g : Game) (effs : Array ContinuousEffect) : Game :=
-  effs.foldl Game.expireEffect g
+def expireEffects (g : Game) (effs : Array ContinuousEffect)
+    (cause : Option EventCause := none) : Game :=
+  effs.foldl (fun acc e => acc.expireEffect e (cause := cause)) g
 
 /-- `id` is a permanent that was cast for its impending cost (CR 702.176,
 ruling 970). -/
@@ -2414,6 +2460,7 @@ def changeStatuses (g : Game) (id : ObjectId) (cs : Array StatusChange) : Game :
 own `EffectId` (CR 514.2). -/
 def expireObjectUntilEotEffects (g : Game) (o : GameObject) : Game :=
   g.expireMatching (fun e => effectEndsAtCleanup e && effectObject? e == some o.id)
+    (cause := some (.turnBased .cleanupClear))
 
 /-- Expire every active continuous effect on `o` when `o` leaves its zone or
 ceases to exist (CR 400.7, CR 611), each under its own `EffectId`. Call after
@@ -2713,7 +2760,8 @@ each under its own `EffectId`, restoring the original printed card (CR 707).
 turn, until a source leaves). Does not cause the permanent to enter or leave
 the battlefield. -/
 def restoreCopiesWhere (g : Game)
-    (sel : GameObject → Bool → Bool → Option ObjectId → Bool) : Game :=
+    (sel : GameObject → Bool → Bool → Option ObjectId → Bool)
+    (cause : Option EventCause := none) : Game :=
   g.activeEffects.foldl (fun acc (eid, e) =>
     match e with
     | .copy id printed restore untilEot untilNextTurn untilSourceLeaves =>
@@ -2721,7 +2769,7 @@ def restoreCopiesWhere (g : Game)
       | some o =>
         if o.zone == .battlefield && sel o untilEot untilNextTurn untilSourceLeaves then
           let card? := restore.orElse (fun _ => o.copyRestore)
-          let acc := acc.expireEffectById eid
+          let acc := acc.expireEffectById eid (cause := cause)
           match card? with
           | some card => acc.logMsg s!"{card.name} is no longer a copy of {printed.name}"
           | none => acc
@@ -2741,10 +2789,12 @@ def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
 /-- Restore copy effects that last until end of turn. -/
 def restoreCopiesUntilEot (g : Game) : Game :=
   g.restoreCopiesWhere (fun _ untilEot _ _ => untilEot)
+    (cause := some (.turnBased .cleanupClear))
 
 /-- Restore copy effects that last until `p`'s next turn. -/
 def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) : Game :=
   g.restoreCopiesWhere (fun o _ untilNextTurn _ => untilNextTurn && o.controller == some p)
+    (cause := some (.turnBased .expireAtStepBegin))
 
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=

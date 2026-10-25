@@ -373,7 +373,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return (g.logMsg s!"{(g.player p).name} chooses {nm} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseCardName _, _ => throw "Name a nonland card"
-  | .crew _ vehicleId n, .objects ids =>
+  | .crew abilityId vehicleId n, .objects ids =>
     let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
     if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
     let crew ← ids.mapM (fun id => do
@@ -383,7 +383,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
     if total < n then throw s!"Total power {total} is less than {n}"
-    let g := crew.foldl (fun g c => g.becomeTapped (g.object! c.id)) g
+    let g := crew.foldl (fun g c =>
+      g.becomeTapped (g.object! c.id) (cause := some (.costPayment .tap p (some abilityId)))) g
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>

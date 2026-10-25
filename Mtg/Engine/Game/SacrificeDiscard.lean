@@ -1,7 +1,7 @@
 import Mtg.Engine.Game.Activation
 
 /-!
-# Sacrifice and discard prompts (CR 701.17 / 701.9)
+# Sacrifice and discard prompts (CR 701.21 / 701.9)
 
 Multi-player sacrifice and discard flows resolved in APNAP order,
 connive (CR 701.58), and sacrifices paid for activations.
@@ -185,7 +185,7 @@ def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let g := g.change (.pending .none)
     g.draw p n |>.receivePriority g.activePlayer
 
-/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
+/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.21). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .sacrificePermanent caster sourceId =>
@@ -194,8 +194,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {sac.name}"
+    let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
+      (cause := some (.costPayment .sacrifice p forObject))
     match g.proposedSpell with
     | some prop =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
@@ -254,9 +256,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"{(g.player p).name} can't sacrifice {left} permanents"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+      (cause := some (.costPayment .ward p (some spellId)))
     if left ≤ 1 then return g.afterWardResolved
     else return g.change (.pending (.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1))))
-  | .payWard q _ .sacrificeLegendary =>
+  | .payWard q spellId .sacrificeLegendary =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
     let some sac := g.findObject? id | throw "no such object"
@@ -264,6 +267,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {sac.name} to pay ward"
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+      (cause := some (.costPayment .ward p (some spellId)))
     return g.afterWardResolved
   | .maySacArtifactOrDiscard q n =>
     if p != q then
@@ -277,14 +281,15 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- `p` discards `id` from their hand (CR 701.9). -/
-def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none) :
+def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none)
+    (cause : Option EventCause := none) :
     Game :=
   let card := g.object! id
   let g :=
     match chooser with
     | some c => g.logMsg s!"{(g.player c).name} chooses {card.name}. {(g.player p).name} discards it"
     | none => g.logMsg s!"{(g.player p).name} discards {card.name}"
-  let (g, _) := g.move id (.graveyard card.owner) none
+  let (g, _) := g.move id (.graveyard card.owner) none (cause := cause)
   g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/

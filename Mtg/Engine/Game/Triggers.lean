@@ -60,7 +60,7 @@ def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effec
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
   let modes := g.triggerModesOf obj
   if !modes.any (g.triggerModeChoosable p obj) then
-    let g := g.ceaseToExist obj.id
+    let g := g.ceaseToExist obj.id (cause := some (.gameRule .leavingZone))
     g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
   else
     let what := if count == 2 then "two modes" else "a mode"
@@ -428,7 +428,8 @@ def foldControlledPermanents (g : Game) (p : PlayerId)
 Entering the battlefield tapped is not becoming tapped; only a change from
 untapped to tapped fires these abilities (Hawkeye's Bow, Trick Arrows,
 Captain America, Living Legend). -/
-def becomeTapped (g : Game) (o : GameObject) : Game :=
+def becomeTapped (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   if o.status.tapped then
     g.logMsg s!"{o.name} is already tapped"
   else
@@ -437,7 +438,7 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
       match o.controller with
       | some p => g.activePlayer == p
       | none => false
-    let happened := GameEvent.tapped g.turnNumber o.asEvent true during
+    let happened := GameEvent.tapped g.turnNumber o.asEvent true during (cause := cause)
     let g := (g.record happened).logMsg s!"{o.name} becomes tapped"
     match o.controller with
     | some p =>
@@ -549,9 +550,11 @@ def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
 
 /-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers
 (CR 701.21a). -/
-def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
+    (cause : Option EventCause := none) : Game :=
   let actor := o.controller.getD o.owner
   let g := g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
+    (cause := cause)
   g.queueYouSacrificeToken o
 
 /-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/

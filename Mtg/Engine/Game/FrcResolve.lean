@@ -633,7 +633,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .turnFaceUp =>
     match g.srcObj? sourceId with
     | some o =>
-      g.changeStatus o.id (.faceDown false)
+      g.record (GameEvent.turnedFaceUp g.turnNumber o.asEvent)
         |>.logMsg s!"{o.name} is turned face up"
     | none => g
   | .gingerDash =>

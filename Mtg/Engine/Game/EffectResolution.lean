@@ -1784,13 +1784,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             match o.printed.otherFace with
             | none => g.logMsg s!"{o.name} has no other face"
             | some face =>
-              let back := { face with otherFace := some { o.printed with otherFace := none } }
               let g := g.expirePrintedStaticEffects o
-              let g := g.changeObjects o.id #[
-                .printed back,
-                .status (.transformed (!o.status.transformed))]
+              let g := g.record
+                (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed))
               let g := g.createPrintedStaticEffects (g.object! o.id)
-              g.logMsg s!"{o.name} transforms into {back.name}"
+              g.logMsg s!"{o.name} transforms into {face.name}"
       | .drawX =>
         g.draw controller chosenX
       | .lookAtTopRevealArtifact n =>

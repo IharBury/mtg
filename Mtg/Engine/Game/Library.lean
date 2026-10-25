@@ -12,7 +12,7 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Draw one card with no replacement effects (CR 121). -/
-def drawOneCard (g : Game) (p : PlayerId) : Game :=
+def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then
     let g := g.changePlayer p (.drewFromEmpty true)
@@ -28,7 +28,13 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
     -- “cards drawn this turn” once that counter is cleared for the first turn.
     let verb : Option ZoneVerb :=
       if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
-    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p)
+    let cause := cause.orElse (fun _ =>
+      if !pl.keptOpeningHand then
+        some (.gameRule (if pl.mulligansTaken > 0 then .mulligan else .openingHandDraw))
+      else if firstOfTheirDrawStep then
+        some (.turnBased .drawStepDraw)
+      else none)
+    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
     let pl := g.player p
     let g := g.logMsg s!"{pl.name} draws {cardName}"
     if !pl.keptOpeningHand then g
@@ -74,7 +80,8 @@ def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
       o.printed.drawTwoExceptFirstDrawStep) |>.size
     Nat.pow 2 n
 
-def draw (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
+def draw (g : Game) (p : PlayerId) (n : Nat := 1)
+    (cause : Option EventCause := none) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
@@ -83,7 +90,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
         let pl := g.player p
         if pl.drewFromEmpty then
           return g
-        g := g.drawOneCard p
+        g := g.drawOneCard p (cause := cause)
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a

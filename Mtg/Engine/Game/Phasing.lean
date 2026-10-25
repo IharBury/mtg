@@ -27,45 +27,45 @@ def removeFromCombat (g : Game) (o : GameObject) : Game :=
     else acc) g
 
 /-- Phase `o` out, along with Auras and Equipment attached to it. Does not
-trigger leaves-the-battlefield abilities. -/
-def phaseOut (g : Game) (o : GameObject) : Game :=
+trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
+def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if o.status.phasedOut || o.zone != .battlefield then g
   else
     let g := g.removeFromCombat o
     let o := g.object! o.id
-    let g := g.expirePrintedStaticEffects o
-    let g := g.changeStatuses o.id #[.phasedOut true, .phasedWith none]
+    let g := g.expirePrintedStaticEffects o (cause := cause)
+    let g := g.record (GameEvent.phasedOut g.turnNumber o.asEvent false (cause := cause))
     let g := g.logMsg s!"{o.name} phases out"
     (g.attachmentsOf o).foldl (fun acc att =>
       let att := acc.object! att.id
       let acc := acc.removeFromCombat att
       let att := acc.object! att.id
-      let acc := acc.expirePrintedStaticEffects att
-      acc.changeStatuses att.id #[.phasedOut true, .phasedWith (some o.id)]
+      let acc := acc.expirePrintedStaticEffects att (cause := cause)
+      acc.record (GameEvent.phasedOut acc.turnNumber att.asEvent true (cause := cause))
         |>.logMsg s!"{att.name} phases out attached to {o.name}") g
 
 /-- Phase `o` in, along with anything that phased out attached to it.
-Counters and “as this enters” choices are kept. Does not trigger enters. -/
-def phaseIn (g : Game) (o : GameObject) : Game :=
+Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26g). -/
+def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if !o.status.phasedOut then g
   else
-    let g := g.changeStatuses o.id #[
-      .phasedOut false, .phasedWith none, .summoningSick false]
+    let g := g.record (GameEvent.phasedIn g.turnNumber o.asEvent false (cause := cause))
     let g := g.createPrintedStaticEffects (g.object! o.id)
     let g := g.logMsg s!"{o.name} phases in"
     g.objects.foldl (fun acc att =>
       if att.status.phasedOut && att.status.phasedWith == some o.id then
-        let acc := acc.changeStatuses att.id #[.phasedOut false, .summoningSick false]
+        let acc := acc.record (GameEvent.phasedIn acc.turnNumber att.asEvent true (cause := cause))
         let acc := acc.createPrintedStaticEffects (acc.object! att.id)
         acc.logMsg s!"{att.name} phases in still attached to {o.name}"
       else acc) g
 
-/-- Phase in every phased-out permanent `p` controls (CR 502.1). -/
+/-- Phase in every phased-out permanent `p` controls (CR 502.1 / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
+  let cause := some (EventCause.turnBased .phaseInOut)
   g.objects.foldl (fun acc o =>
     if o.zone == .battlefield && o.status.phasedOut && o.controlledBy p &&
         o.status.phasedWith.isNone then
-      acc.phaseIn (acc.object! o.id)
+      acc.phaseIn (acc.object! o.id) (cause := cause)
     else acc) g
 
 end Game

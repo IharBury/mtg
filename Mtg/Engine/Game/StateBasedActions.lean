@@ -131,9 +131,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       for o in g.battlefield do
         let k := Nat.min o.status.plusOnePlusOne o.status.minusOneMinusOne
         if k > 0 then
-          g := g.changeStatuses o.id #[
-            .plusOnePlusOne (o.status.plusOnePlusOne - k),
-            .minusOneMinusOne (o.status.minusOneMinusOne - k)]
+          let cause := some (EventCause.stateBased .counterAnnihilation)
+          g := g.record (GameEvent.counters g.turnNumber none o.asEvent .plusOnePlusOne k true
+            (cause := cause))
+          g := g.record (GameEvent.counters g.turnNumber none (g.object! o.id).asEvent .minusOneMinusOne k true
+            (cause := cause))
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
@@ -145,11 +147,12 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if !o.isCreature then none
           else
             let t := g.toughness o
-            if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})", ZoneVerb.put)
+            if t ≤ 0 then
+              some (o, s!"{o.name} dies (toughness {t})", ZoneVerb.put, StateBasedAction.zeroOrLessToughness)
             else if o.status.damage ≥ t && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from lethal damage", ZoneVerb.destroy)
+              some (o, s!"{o.name} dies from lethal damage", ZoneVerb.destroy, StateBasedAction.lethalDamage)
             else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy)
+              some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy, StateBasedAction.deathtouchDamage)
             else none)
       if !victims.isEmpty then
         g := g.changes #[
@@ -159,11 +162,11 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         -- will actually go to a graveyard cause “die” triggers. A Bee that
         -- dies at the same time as another creature that *does* die still
         -- sees that event (ruling 139).
-        let actualDeaths := victims.filter (fun (o, _, _) =>
+        let actualDeaths := victims.filter (fun (o, _, _, _) =>
           !g.wouldExileInsteadOfDying o)
         if !actualDeaths.isEmpty then
           for o in g.battlefield do
-            if actualDeaths.any (fun (v, _, _) => v.id != o.id) then
+            if actualDeaths.any (fun (v, _, _, _) => v.id != o.id) then
               match o.controller with
               | some p =>
                 g := g.change (.enqueueWaitingTriggers
@@ -171,9 +174,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               | none => pure ()
           -- “One or more creature cards” fires once per source still on
           -- the battlefield (Robot Domination; MSH 138).
-          let leavingIds := victims.map (fun (o, _, _) => o.id)
+          let leavingIds := victims.map (fun (o, _, _, _) => o.id)
           let gyOwners :=
-            actualDeaths.foldl (fun acc (o, _, _) =>
+            actualDeaths.foldl (fun acc (o, _, _, _) =>
               if o.printed.isCreature && !o.printed.isToken &&
                   !acc.any (· == o.owner) then
                 acc.push o.owner
@@ -189,11 +192,12 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                     g := g.change (.enqueueWaitingTriggers wts)
                 | none => pure ()
             g := g.change (.suppressCreatureCardsToGy true)
-      for (o, reason, verb) in victims do
+      for (o, reason, verb, sba) in victims do
         match g.findObject? o.id with
         | some o =>
           if o.isOnBattlefield && o.isCreature then
             g := g.moveToOwnerGraveyard o reason (verb := some verb)
+              (cause := some (.stateBased sba))
             changed := true
         | none => pure ()
       g := g.changes #[
@@ -208,6 +212,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             !g.planeswalkersSurviveZeroLoyalty o.controller then
           g := g.moveToOwnerGraveyard o
             s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+            (cause := some (.stateBased .zeroLoyalty))
           changed := true
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
@@ -220,7 +225,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
       for o in g.objects do
         if o.printed.isToken && o.zone != .battlefield then
-          g := g.ceaseToExist o.id
+          g := g.ceaseToExist o.id (cause := some (.stateBased .tokenOutsideBattlefield))
           g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
           changed := true
       -- Saga with lore at or past its final chapter and no chapter on the
@@ -232,6 +237,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               !g.sagaChapterPending o.id then
             g := g.moveToOwnerGraveyard o
               s!"{o.name} is sacrificed (CR 714.4)"
+              (verb := some .sacrifice) (actor := o.controller)
+              (cause := some (.stateBased .sagaFinalChapter))
             changed := true
         | _, _ => pure ()
       -- Unattached or illegally attached Auras (CR 704.5m).
@@ -244,6 +251,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           if !legal then
             g := g.moveToOwnerGraveyard o
               s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+              (cause := some (.stateBased .illegalAura))
             changed := true
       -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
       for o in g.battlefield do

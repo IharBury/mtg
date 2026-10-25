@@ -355,7 +355,8 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
     (allowHeroRestricted : Bool := false) (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {})
+    (forObject : Option ObjectId := none) :
     Except String Game := do
   let pl := g.player p
   match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
@@ -365,7 +366,8 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
   | some pool =>
     let spent := cost.manaValue
     return (g.changePlayer p (.manaPool pool)).record
-      (GameEvent.spentMana g.turnNumber p spent)
+      (GameEvent.spentMana g.turnNumber p spent
+        (cause := some (.costPayment .mana p forObject)))
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=

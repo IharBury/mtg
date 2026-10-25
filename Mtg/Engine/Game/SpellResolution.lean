@@ -91,7 +91,7 @@ def resolveTop (g : Game) : Game :=
               obj.lastKnownPower (obj.chosenX.getD 0)
         let g := g.changes #[.resolvingAbility none, .resolvingDivision #[]]
         -- CR 608.2m: after resolution the ability ceases to exist.
-        g.ceaseToExist obj.id
+        g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
       else if let some t := obj.triggeredAbility then
         let srcName := obj.printed.name.replace "'s ability" ""
         let g := g.change (.resolvingAbility (some obj.id))
@@ -106,7 +106,7 @@ def resolveTop (g : Game) : Game :=
               (resolutionOverride := obj.reflexiveResolution)
           else g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
         let g := g.change (.resolvingAbility none)
-        let g := g.ceaseToExist obj.id
+        let g := g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         match t.shared with
         | .chapter n _ =>
           match obj.sourceId.bind g.findObject? with
@@ -138,11 +138,12 @@ def resolveTop (g : Game) : Game :=
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
+          let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
           if obj.isCopy then
-            (g.ceaseToExist obj.id).logMsg
+            (g.ceaseToExist obj.id (cause := finishCause)).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
           else if obj.castFromGraveyard then
-            let (g, _) := g.move obj.id .exile none
+            let (g, _) := g.move obj.id .exile none (cause := finishCause)
             g.logMsg s!"{obj.name} is exiled (flashback)"
           else
             -- An Adventure that doesn't resolve isn't exiled (ruling 5).
@@ -150,6 +151,7 @@ def resolveTop (g : Game) : Game :=
               .printed (obj.adventurerCard.getD obj.printed),
               .adventurerCard none]
             g.moveToOwnerGraveyard (g.object! obj.id) s!"{obj.name} goes to the graveyard"
+              (cause := finishCause)
         else
         let g :=
           match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
@@ -199,15 +201,18 @@ def resolveTop (g : Game) : Game :=
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
-        else if obj.isCopy then
-          (g.ceaseToExist obj.id).logMsg
-            s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
-        else if obj.castFromGraveyard then
-          let (g, _) := g.move obj.id .exile none (verb := some .resolve) (actor := some entry.controller)
-          g.logMsg s!"{obj.name} is exiled (flashback)"
         else
-          g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
-            (verb := some .resolve) (actor := some entry.controller)
+          let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
+          if obj.isCopy then
+            (g.ceaseToExist obj.id (cause := finishCause)).logMsg
+              s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
+          else if obj.castFromGraveyard then
+            let (g, _) := g.move obj.id .exile none
+              (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
+            g.logMsg s!"{obj.name} is exiled (flashback)"
+          else
+            g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
+              (verb := some .resolve) (actor := some entry.controller) (cause := finishCause)
 
 end Game
 end Mtg.Engine

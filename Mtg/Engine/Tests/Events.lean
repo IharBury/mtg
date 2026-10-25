@@ -1,3 +1,4 @@
+import Mtg.Engine.Agent
 import Mtg.Engine.Fixture
 
 /-!
@@ -223,31 +224,36 @@ battlefield. -/
   let expiredOnLeave := (GameEvent.expiredEffects g4.events).contains staticEff
   createdOnEnter && expiredOnLose && recreatedOnCleanup && expiredOnLeave
 
-/- Rule 610 / 400: applications of one-shot effects (scrying/surveilling,
-resolving abilities, proliferating) receive unique `EffectId`s, whereas durable
-`RulesEvent`s (`ZoneEvent`, `LifeEvent`, `PermanentEvent`, `DamageEvent`)
-record state changes directly without minting synthetic `OneShotEffect`s. -/
+/- Rule 610 / 400: applications of one-shot effects receive unique `EffectId`s
+via `EventCause.oneShotEffect`, whereas non-one-shot `RulesEvent`s
+(`.turnBased`, `.stateBased`, `.costPayment`, `.specialAction`, `.gameRule`)
+do not mint `EffectId`s. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let effId0 := g0.nextEffectId
-  let gUnclassified :=
-    ((g0.gainLife me 3).loseLife me 2).record
-      (GameEvent.tapped g0.turnNumber b.asEvent true true)
-  let unclassifiedDidNotAdvance :=
-    gUnclassified.nextEffectId == effId0 &&
-      (GameEvent.appliedEffectsWithId gUnclassified.events).isEmpty
-  let g1 := g0.draw me 1
-  let g2 := g1.gainLife me 3
-  let g3 := g2.loseLife me 2
-  let g4 := g3.record (GameEvent.counters g3.turnNumber (some me) b.asEvent .plusOnePlusOne 2 false)
-  let g5 := g4.record (GameEvent.tapped g4.turnNumber b.asEvent true true)
-  let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false)
+  let gNonOneShot :=
+    (((g0.gainLife me 3 (cause := some (.turnBased .cleanupClear))).loseLife me 2
+      (cause := some (.costPayment .life me))).record
+      (GameEvent.tapped g0.turnNumber b.asEvent true true
+        (cause := some (.turnBased .declareAttackers))))
+  let nonOneShotDidNotAdvance :=
+    gNonOneShot.nextEffectId == effId0 &&
+      (GameEvent.oneShotEffectsWithId gNonOneShot.events).isEmpty
+  let g1 := g0.draw me 1 (cause := some (.turnBased .drawStepDraw))
+  let g2 := g1.gainLife me 3 (cause := some (.turnBased .cleanupClear))
+  let g3 := g2.loseLife me 2 (cause := some (.costPayment .life me))
+  let g4 := g3.record (GameEvent.counters g3.turnNumber (some me) b.asEvent .plusOnePlusOne 2 false
+    (cause := some (.costPayment .removeCounters me)))
+  let g5 := g4.record (GameEvent.tapped g4.turnNumber b.asEvent true true
+    (cause := some (.costPayment .tap me)))
+  let g6 := g5.record (GameEvent.untapped g5.turnNumber b.asEvent false
+    (cause := some (.turnBased .untapAll)))
   let g7 := g6.createTreasureTokens me 1
   let g8 := ((g7.record (GameEvent.looked g7.turnNumber me 2)).record
     (GameEvent.resolved g7.turnNumber me 1)).record
     (GameEvent.proliferated g7.turnNumber me)
-  let appliedWithIds := GameEvent.appliedEffectsWithId g8.events
+  let appliedWithIds := GameEvent.oneShotEffectsWithId g8.events
   let ids := appliedWithIds.map Prod.fst
   let uniqueIds :=
     Id.run do
@@ -279,7 +285,7 @@ record state changes directly without minting synthetic `OneShotEffect`s. -/
     match e.change with
     | .rules (.permanent (.untapped obj)) => obj.id == some b.id
     | _ => false)
-  unclassifiedDidNotAdvance && uniqueIds && ids.size == 3 &&
+  nonOneShotDidNotAdvance && uniqueIds && ids.size == 4 &&
     hasDrawMove && hasGain && hasLoss &&
     hasCounters && hasTap && hasUntap && hasToken
 
@@ -293,14 +299,15 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let objIdBefore := g0.nextObjectId
   let effIdBefore := g0.nextEffectId
-  -- Apply two separate pump continuous effects and a life gain without creating any objects.
-  let g1 := ((g0.createEffect (.pump b.id 2 2)).gainLife me 4).createEffect (.pump b.id 1 3)
+  -- Apply two separate pump continuous effects and a non-one-shot life gain without creating any objects.
+  let g1 := ((g0.createEffect (.pump b.id 2 2)).gainLife me 4
+    (cause := some (.turnBased .cleanupClear))).createEffect (.pump b.id 1 3)
   let objIdUnchanged := g1.nextObjectId == objIdBefore
   let createdPairs := GameEvent.createdEffectsWithId g1.events
-  let appliedPairsBeforeToken := GameEvent.appliedEffectsWithId g1.events
+  let appliedPairsBeforeToken := GameEvent.oneShotEffectsWithId g1.events
   -- Now create a token (which increments `nextObjectId` via `ZoneEvent.created`) and a one-shot look effect.
   let g2 := (g1.createTreasureTokens me 1).record (GameEvent.looked g1.turnNumber me 1)
-  let appliedPairs := GameEvent.appliedEffectsWithId g2.events
+  let appliedPairs := GameEvent.oneShotEffectsWithId g2.events
   let objIdIncremented := g2.nextObjectId == objIdBefore + 1
   -- Expire until-end-of-turn continuous effects during cleanup.
   let g3 := (quiet g2).clearEOT
@@ -319,7 +326,7 @@ not interfere with `ObjectId` (`g.nextObjectId`). -/
     g1.nextEffectId == effIdBefore + 2 &&
     createdPairs.size == 2 &&
     appliedPairsBeforeToken.isEmpty &&
-    appliedPairs.size == 1 &&
+    appliedPairs.size == 2 &&
     allDistinct &&
     expiredPairs == createdPairs &&
     (g3.object! b.id).status.pump == (0, 0) &&
@@ -930,5 +937,59 @@ events. -/
     tok.printed.activatedAbilities.size == treasureToken.activatedAbilities.size &&
     tok.status.attacking &&
     tok.status.attackingWhom == some opp
+
+/- Phase 3: `PlayerEvent` (`.scried`, `.surveilled`, `.beheld`, `.proliferated`,
+`.sheHulkDealtDamage`), `StackObjectEvent` (`.resolved`), and `PermanentEvent`
+(`.phasedOut`, `.phasedIn`, `.transformed`, `.turnedFaceUp`) record directly as
+`RulesEvent`s with classified `EventCause`s, and `applyPlayerEvent` updates
+`beheldQualities` in isolation (CR 608 / 701.22 / 701.25 / 701.27 / 701.28 /
+701.34 / 701.62 / 702.26). -/
+#guard
+  let dfcBear : CardDef :=
+    { bear with
+      name := "Front Bear"
+      otherFace := some { hero with name := "Back Hero" } }
+  let g0 := quiet (addPermanent afterDraw dfcBear me me)
+  let b := (g0.battlefield.filter (·.name == "Front Bear"))[0]!
+  let g1 := g0.beholdQuality me .bear (cause := some (.costPayment .behold me (some b.id)))
+  let g2 := g1.phaseOut (g1.object! b.id) (cause := some (.turnBased .phaseInOut))
+  let g3 := g2.phaseInControlled me
+  let g4 := g3.record (GameEvent.transformed g3.turnNumber (g3.object! b.id).asEvent true)
+  let g5 := ((g4.record (GameEvent.looked g4.turnNumber me 2)).record
+    (GameEvent.looked g4.turnNumber me 1 true)).record
+    (GameEvent.resolved g4.turnNumber me 1)
+  g1.qualityWasBeheld me .bear &&
+    (g1.player me).beheldQualities == #[.bear] &&
+    (g2.object! b.id).status.phasedOut &&
+    !(g3.object! b.id).status.phasedOut &&
+    (g4.object! b.id).status.transformed &&
+    (g4.object! b.id).name == "Back Hero" &&
+    g5.loggedScried me &&
+    g5.loggedSurveilled me &&
+    g5.loggedResolutions me == 1 &&
+    g1.events.any (fun e =>
+      e.change == .rules (.player (.beheld me .bear)) &&
+        e.cause == .costPayment .behold me (some b.id)) &&
+    g2.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedOut o false)) => o.id == some b.id && e.cause == .turnBased .phaseInOut
+      | _ => false) &&
+    g3.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedIn o false)) => o.id == some b.id && e.cause == .turnBased .phaseInOut
+      | _ => false)
+
+/- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
+#guard
+  let g := Agent.play drawnHands 400
+  let rec causeHasUnclassified : EventCause → Bool
+    | .unclassified => true
+    | .replaced _ orig => causeHasUnclassified orig
+    | _ => false
+  let hasUnclassifiedRules (e : GameEvent) : Bool :=
+    match e.change with
+    | .rules _ => causeHasUnclassified e.cause
+    | .engine _ => false
+  g.over && !g.events.any hasUnclassifiedRules
 
 end Mtg.Engine.EventTests

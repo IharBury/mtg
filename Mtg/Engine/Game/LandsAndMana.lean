@@ -26,6 +26,7 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
     let (g, newId) := g.putOntoBattlefield id p
       (tapped := entersTapped) (summoningSick := false)
       (verb := some .playLand) (actor := some p)
+      (cause := some (.specialAction .playLand p))
     let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
     let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
     let g := if tapped then g.logMsg s!"{card.name} enters tapped" else g

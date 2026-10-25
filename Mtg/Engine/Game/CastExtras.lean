@@ -20,7 +20,7 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.change (.pending (.mayDiscardDraw p n))
       |>.logMsg s!"{pl.name} may discard a card. If they do, they draw {n}"
 
-/-- Start “sacrifices a creature of their choice” for `p` (CR 701.17 / 608.2d). -/
+/-- Start “sacrifices a creature of their choice” for `p` (CR 701.21 / 608.2d). -/
 def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
   if (g.sacrificeCreatureChoices p).isEmpty then
     g.logMsg s!"{(g.player p).name} has no creature to sacrifice"
@@ -261,7 +261,7 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       match g.findObject? id with
       | none => pure ()
       | some o =>
-        g := g.applyPermanentAction o .tap
+        g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
         g := g.putMatchingSourceTriggers p (g.object! id) .tappedForTeamwork
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
     g := g.changeObject spell.id (.teamworkPaid true)

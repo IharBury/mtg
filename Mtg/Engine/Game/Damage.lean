@@ -87,7 +87,8 @@ def preventsAllDamageTo (_g : Game) (o : GameObject) : Bool :=
 
 def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (deathtouch := false) (combat := false) (unpreventable := false)
-    (source : Option EventObject := none) : Game :=
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
   if n > 0 && !unpreventable && g.preventsAllDamageTo o then
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
@@ -100,33 +101,33 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       | _ => false)
   let g :=
     if healsOther && n > 0 then
-      g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id])
+      g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := cause))
     else g
   let o := g.findObject? o.id |>.getD o
   if n > 0 && o.status.shield > 0 && !unpreventable then
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := cause))
     g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
   else if n > 0 && o.status.shield > 0 && unpreventable then
-    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true)
+    let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .shield 1 true (cause := cause))
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
     let marked := g.object! o.id
-    let happened := GameEvent.damaged g.turnNumber srcEvent marked.asEvent n.toNat combat
-    let g := (g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat)).logMsg msg
+    let happened := GameEvent.damaged g.turnNumber srcEvent marked.asEvent n.toNat combat (cause := cause)
+    let g := (g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat (cause := cause))).logMsg msg
     if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
       g.queueCreatureYouControlDealtDamage (g.object! o.id) n
     else g
   else
   -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
-  let happened := GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat
+  let happened := GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat (cause := cause)
   let g := if n > 0 then g.record happened else g
   let g :=
     let g :=
       if n > 0 then
-        g.record (GameEvent.damageMarked g.turnNumber o.id n.toNat)
+        g.record (GameEvent.damageMarked g.turnNumber o.id n.toNat (cause := cause))
       else g
     let g :=
       if o.printed.isPlaneswalker && n > 0 then
-        g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true)
+        g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true (cause := cause))
       else g
     g.logMsg msg
   let g :=
@@ -222,8 +223,9 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
   g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := source)
 
 /-- Increase `p`'s life total (CR 119.2). Gaining 0 life does nothing (CR 119.9). -/
-def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let proposed := GameEvent.life g.turnNumber p n true
+def gainLife (g : Game) (p : PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  let proposed := GameEvent.life g.turnNumber p n true (cause := cause)
   if n == 0 || !proposed.watches .wouldGainLife then g
   else if (g.livingOpponents p).any (fun opp =>
       (g.permanentsOf opp.id).any (·.printed.opponentsCantGainLife)) then
@@ -234,7 +236,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       let before := pl.life
-      let happened := GameEvent.life g.turnNumber p n true
+      let happened := GameEvent.life g.turnNumber p n true (cause := cause)
       let g := (g.record happened).logMsg
         s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
       let gained := ((g.player p).life - before).toNat
@@ -346,14 +348,15 @@ def fightCreatures (g : Game) (src dest : GameObject) : Game :=
 
 /-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
 (CR 119.9). Loss of life is not damage (CR 119.3 / 120.3). -/
-def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+def loseLife (g : Game) (p : PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
     if pl.lifeLocked || pl.lifeCantChange then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
-      let g := (g.record (GameEvent.life g.turnNumber p n false)).logMsg
+      let g := (g.record (GameEvent.life g.turnNumber p n false (cause := cause))).logMsg
         s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
       let lost := (pl.life - (g.player p).life).toNat
       g.afterLifeLost p lost

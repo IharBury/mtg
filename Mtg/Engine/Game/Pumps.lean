@@ -142,6 +142,7 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     if o.status.tapped then
       throw s!"{o.name} is already tapped"
     g := g.becomeTapped o
+      (cause := some (.costPayment .tap p (g.proposedSpell.map (·.spellId))))
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
 /-- Equip worthy may attach only to a legendary non-Villain red or white

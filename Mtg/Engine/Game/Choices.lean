@@ -107,7 +107,8 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
 
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
-def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
+def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
+    (cause : Option EventCause := none) : Game :=
   let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
   let hasHand :=
     (g.player p).hand.any (fun id =>
@@ -115,8 +116,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g := g.changePlayer p (.pushBeheldQuality quality)
-    let g := g.record (GameEvent.beheld g.turnNumber p quality)
+    let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := cause))
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"

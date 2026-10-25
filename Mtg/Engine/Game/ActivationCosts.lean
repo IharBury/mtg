@@ -12,10 +12,13 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Remove an indestructible counter as a cost (ruling 357). -/
-def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
+def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
+    (forObject : Option ObjectId := none) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{o.name} has no indestructible counter"
-  let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .indestructible 1 true)
+  let p := o.controller.getD o.owner
+  let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .indestructible 1 true
+    (cause := some (.costPayment .removeCounters p forObject)))
   return g.logMsg s!"{o.name} loses an indestructible counter"
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
@@ -111,9 +114,11 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
       throw s!"{o.name} can't be used to {pick.phrase}"
     match pick with
     | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
-      g := (g.becomeTapped o).logMsg s!"{name} taps {o.name} to pay a cost"
+      g := (g.becomeTapped o (cause := some (.costPayment .tap p (some abilityId)))).logMsg
+        s!"{name} taps {o.name} to pay a cost"
     | .exileAnotherCreatureCardFromGraveyard =>
-      g := (g.move id .exile none).1.logMsg s!"{name} exiles {o.name} from their graveyard"
+      g := (g.move id .exile none (cause := some (.costPayment .exile p (some abilityId)))).1.logMsg
+        s!"{name} exiles {o.name} from their graveyard"
     | _ =>
       if o.isOnBattlefield then
         let records :=
@@ -122,11 +127,14 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : ObjectId) (pick 
               some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
         let pw := g.power o
         g := g.sacrificeToGraveyard o s!"{name} sacrifices {o.name}"
+          (cause := some (.costPayment .sacrifice p (some abilityId)))
         if records then
           if (g.findObject? abilityId).isSome then
             g := g.changeObject abilityId (.lastKnownPower (some pw))
       else
-        g := (g.move id (.graveyard o.owner) none).1.logMsg s!"{name} discards {o.name}"
+        g := (g.move id (.graveyard o.owner) none
+          (cause := some (.costPayment .discard p (some abilityId)))).1.logMsg
+          s!"{name} discards {o.name}"
   return g
 
 /-- Pay `{T}`, life, discard, and/or sacrifice the source, and the source's
@@ -138,12 +146,13 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0) :
     Except String Game := do
   let some src := g.findObject? sourceId | throw "The source is no longer in play"
+  let forObject := g.proposedSpell.map (·.spellId) <|> some sourceId
   if ab.any (·.cost.fra == .exileSourceFromHand) then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
     let g ← g.payLifeCost p payLife
     let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their hand"
-    return (g.move sourceId .exile none).1
+    return (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
   if discardSource then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{src.name} is not in your hand"
@@ -151,6 +160,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let src := g.object! sourceId
     let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
     let (g, newId) := g.move sourceId (.graveyard src.owner) none
+      (cause := some (.costPayment .discard p forObject))
     let g :=
       if src.printed.cycling.isSome then
         match g.findObject? newId, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
@@ -165,7 +175,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let g ← g.payLifeCost p payLife
     if ab.any (·.cost.exileSourceFromGraveyard) then
       let g := g.logMsg s!"{(g.player p).name} exiles {src.name} from their graveyard"
-      return (g.move sourceId .exile none).1
+      return (g.move sourceId .exile none (cause := some (.costPayment .exile p forObject))).1
     return g
   if !src.isOnBattlefield then
     throw "The source is no longer on the battlefield"
@@ -176,7 +186,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let src := g.object! sourceId
     if src.status.tapped then
       throw s!"{src.name} is already tapped"
-    g := g.becomeTapped src
+    g := g.becomeTapped src (cause := some (.costPayment .tap p forObject))
   g := (← g.payLifeCost p payLife)
   match ab with
   | some a =>
@@ -184,14 +194,19 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       let src := g.object! sourceId
       if src.status.story == 0 then
         throw s!"{src.name} has no story counter"
-      g := g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .story 1 true)
+      g := g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .story 1 true
+        (cause := some (.costPayment .removeCounters p forObject)))
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {src.name}"
     if a.cost.removeIndestructibleCounter then
-      g := (← g.payRemoveIndestructibleCounter (g.object! sourceId))
+      g := (← g.payRemoveIndestructibleCounter (g.object! sourceId) forObject)
     if a.cost.putStunCounterOnSource then
       let src := g.object! sourceId
       let n := g.countersYouPut src 1 (putter := some p)
-      let g' := if n > 0 then g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .stun n) else g
+      let g' :=
+        if n > 0 then
+          g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .stun n
+            (cause := some (.costPayment .removeCounters p forObject)))
+        else g
       g := g'.logMsg s!"{(g.player p).name} puts a stun counter on {src.name}"
     if a.cost.removeAnyNumberPlusOne then
       let src := g.object! sourceId
@@ -199,7 +214,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         throw s!"{src.name} doesn't have {removePlusOnes} +1/+1 counters"
       let g' :=
         if removePlusOnes > 0 then
-          g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .plusOnePlusOne removePlusOnes true)
+          g.record (GameEvent.counters g.turnNumber (some p) src.asEvent .plusOnePlusOne removePlusOnes true
+            (cause := some (.costPayment .removeCounters p forObject)))
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {src.name}"
@@ -210,11 +226,14 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     | some src =>
       g := g.sacrificeToGraveyard src
         s!"{(g.player p).name} sacrifices {src.name}"
+        (cause := some (.costPayment .sacrifice p forObject))
   if ab.any (·.cost.fra == .exileSource) then
     match g.findObject? sourceId with
     | some src =>
       if src.isOnBattlefield then
-        g := (g.move sourceId .exile none).1.logMsg s!"{(g.player p).name} exiles {src.name}"
+        g := (g.move sourceId .exile none
+          (cause := some (.costPayment .exile p forObject))).1.logMsg
+          s!"{(g.player p).name} exiles {src.name}"
     | none => pure ()
   return g
 

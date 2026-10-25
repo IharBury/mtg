@@ -83,6 +83,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return g.afterAdditionalCostAnnounced
       else
         let g := g.beholdQuality p quality
+          (cause := some (.costPayment .behold p (some prop.spellId)))
         if !(g.qualityWasBeheld p quality) then
           throw s!"{spell.name} requires beholding a {quality}"
         return g.afterAdditionalCostAnnounced

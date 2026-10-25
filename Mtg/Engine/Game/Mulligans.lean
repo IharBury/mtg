@@ -120,7 +120,7 @@ def returnHandToLibrary (g : Game) (p : PlayerId) : Game :=
     let mut g := g
     let ids := (g.player p).hand
     for id in ids do
-      let (g', _) := g.move id (.library p)
+      let (g', _) := g.move id (.library p) (cause := some (.gameRule .mulligan))
       g := g'
     return g
 

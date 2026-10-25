@@ -177,13 +177,13 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
         match convokePayOne cost o.printed.colors with
         | none => throw s!"{o.name} can't pay for any of the remaining cost"
         | some c => cost := c
-        g := g.becomeTapped o
+        g := g.becomeTapped o (cause := some (.costPayment .convoke p (some prop.spellId)))
         g := g.logMsg s!"{(g.player p).name} taps {o.name} to convoke {spell.name}"
       else if hasImprovise && o.types.contains .artifact then
         if cost.genericCount == 0 then
           throw s!"No generic mana is left for {o.name} to pay (CR 702.126a)"
         cost := cost.reduceGeneric 1
-        g := g.becomeTapped o
+        g := g.becomeTapped o (cause := some (.costPayment .tap p (some prop.spellId)))
         g := g.logMsg s!"{(g.player p).name} taps {o.name} for improvise"
       else
         throw s!"{o.name} can't help pay for {spell.name}"
@@ -246,7 +246,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
 and the card moves to its owner's graveyard. The move records the discard.
 Returns the discarded card. -/
 def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
-    (logSuffix : String := "") :
+    (logSuffix : String := "") (cause : Option EventCause := none) :
     Except String (Game × GameObject) := do
   if p != q then
     throw s!"Only {(g.player q).name} may discard"
@@ -254,7 +254,7 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
     throw "That card is not in your hand"
   let some card := g.findObject? id | throw "no such object"
   let g := g.logMsg s!"{(g.player p).name} discards {card.name}{logSuffix}"
-  let (g, _) := g.move id (.graveyard card.owner) none
+  let (g, _) := g.move id (.graveyard card.owner) none (cause := cause)
   return (g, card)
 
 /-- Run trigger-sequence steps that waited on this discard, then give
@@ -351,12 +351,13 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     return g.receivePriority g.activePlayer
   | .discardForAdditionalCost q =>
     let (g, _) ← g.discardPendingCard p q id
+      (cause := some (.costPayment .discard p (g.proposedSpell.map (·.spellId))))
     match g.proposedSpell with
     | some prop =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       return g.becomeCast prop.caster (g.object! prop.spellId)
     | none => throw "No spell is waiting for an additional cost"
-  | .payWard q _ cost =>
+  | .payWard q spellId cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"
     let legal :=
@@ -372,6 +373,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     if !legal then
       throw "That card cannot pay this ward"
     let (g, _) ← g.discardPendingCard p q id (logSuffix := " (ward)")
+      (cause := some (.costPayment .ward p (some spellId)))
     return g.afterWardResolved
   | _ => throw "Not time to discard a card (CR 701.9)"
 
@@ -405,12 +407,12 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := (g.change (.pending .none)).clearUnlessPays
     return g.receivePriority g.activePlayer
-  | .payWard q _ (.genericMana n) | .payWard q _ (.discardOrPay n) =>
+  | .payWard q spellId (.genericMana n) | .payWard q spellId (.discardOrPay n) =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}"
-    let g ← g.payCost p (ManaCost.ofGeneric n)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := some spellId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}} (ward)"
     return g.afterWardResolved
   | _ => throw "Not time to pay generic mana"
@@ -545,6 +547,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     let g := g.changePlayer p (.manaPool pool)
     let stackBefore := g.stack
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+      (cause := some (.gameRule .spellCast))
     let g := g.putStackEntry p newId
     let g := g.change (.pending .none)
     let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
@@ -765,6 +768,7 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
             g := g.logMsg
               s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
             let (g', _) := g.move o.id (.graveyard o.owner) none
+              (cause := some (.stateBased .legendRule))
             g := g'
         | none => pure ()
     g := g.change (.pending .none)
@@ -836,7 +840,7 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
     for id in ids do
       let card := g.object! id
       let ownerName := (g.player p).name
-      let (g', newId) := g.move id (.library p)
+      let (g', newId) := g.move id (.library p) (cause := some (.gameRule .mulligan))
       g := g'
       newBottom := newBottom.push newId
       g := g.logMsg s!"{ownerName} puts {card.name} on the bottom of their library"
@@ -861,6 +865,7 @@ partial def continueOpeningShuffles (g : Game) (next : Nat) : Game :=
       let mut g := g.changes #[.afterRandom .none, .pending .none]
       for pl in g.players do
         g := g.draw pl.id (g.player pl.id).startingHandSize
+          (cause := some (.gameRule .openingHandDraw))
       return g.beginMulliganRound
   else
     let p : PlayerId := ⟨next⟩
@@ -885,6 +890,7 @@ partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
     | .openingShuffles next => continueOpeningShuffles g next
     | .mulliganQueue p rest =>
       let g := g.draw p (g.player p).startingHandSize
+        (cause := some (.gameRule .mulligan))
       executeMulliganQueue g rest
     | .setStartingPlayer i =>
       let n := g.players.size
