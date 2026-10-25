@@ -1245,7 +1245,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             n := n + 1
       if n > 0 then
         g := (g.changePlayer controller (.addEaglesBirdsNextUpkeep n)).change
-          (.setEaglesBirdsCause controller (some cause))
+          (.pushEaglesBirdsCause controller n cause)
         g := g.logMsg
           s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
       return g
@@ -1265,24 +1265,25 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.changeControl o controller
       else g)
   | .phaseOutKicker =>
+    let cause := g.resolvingOneShotCause controller sourceId
     if kicked then
       match targets[0]? with
       | some (Target.player pid) =>
         (g.permanentsOf pid).foldl (fun acc o =>
-          if o.isCreature then acc.phaseOut o else acc) g
+          if o.isCreature then acc.phaseOut o (cause := cause) else acc) g
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
           let pid := o.controller.getD controller
           (g.permanentsOf pid).foldl (fun acc x =>
-            if x.isCreature then acc.phaseOut x else acc) g
+            if x.isCreature then acc.phaseOut x (cause := cause) else acc) g
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
     else
       match targets[0]? with
       | some (Target.permanent oid) =>
         match g.findObject? oid with
-        | some o => g.phaseOut o
+        | some o => g.phaseOut o (cause := cause)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
   | .dealDamageToControllerOfTarget n =>

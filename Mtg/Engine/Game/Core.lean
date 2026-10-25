@@ -322,9 +322,9 @@ structure Game where
   /-- At the next end step, reveal this many creature cards (Synthetic Destiny),
   with the cause of the delayed triggered ability (CR 603.7). -/
   delayedSynthetic : Array (PlayerId × Nat × EventCause) := #[]
-  /-- Cause of each player's scheduled upkeep Bird Soldier delayed triggered
-  ability (CR 603.7; The Eagles Are Coming!). -/
-  eaglesBirdsCause : Array (PlayerId × EventCause) := #[]
+  /-- Delayed Bird Soldier token batches `(player, count, cause)` queued for the
+  beginning of the next upkeep (CR 603.7; The Eagles Are Coming!). -/
+  eaglesBirdsCauses : Array (PlayerId × Nat × EventCause) := #[]
   /-- Exiling one-shot `EventCause` for each card in `linkedExile`, used when
   the card returns because the source leaves the battlefield (CR 610.3). -/
   linkedExileCauses : Array (ObjectId × EventCause) := #[]
@@ -2150,14 +2150,9 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .delayedSynthetic v => { g with delayedSynthetic := v }
   | .pushDelayedSynthetic p n cause =>
     { g with delayedSynthetic := g.delayedSynthetic.push (p, n, cause) }
-  | .eaglesBirdsCause v => { g with eaglesBirdsCause := v }
-  | .setEaglesBirdsCause p cause =>
-    let rest := g.eaglesBirdsCause.filter (·.1 != p)
-    { g with
-      eaglesBirdsCause :=
-        match cause with
-        | some c => rest.push (p, c)
-        | none => rest }
+  | .eaglesBirdsCauses v => { g with eaglesBirdsCauses := v }
+  | .pushEaglesBirdsCause p n cause =>
+    { g with eaglesBirdsCauses := g.eaglesBirdsCauses.push (p, n, cause) }
   | .linkedExileCauses v => { g with linkedExileCauses := v }
   | .setLinkedExileCause id cause =>
     let rest := g.linkedExileCauses.filter (·.1 != id)

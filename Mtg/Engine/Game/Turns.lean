@@ -308,17 +308,17 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let ap := g.activePlayer
     let g := Id.run do
       let mut g := g
+      let batches := g.eaglesBirdsCauses
+      g := g.change (.eaglesBirdsCauses #[])
       for pl in g.players do
         if pl.eaglesBirdsNextUpkeep > 0 then
-          let n := pl.eaglesBirdsNextUpkeep
-          let cause :=
-            (g.eaglesBirdsCause.findSome? (fun (pid, c) => if pid == pl.id then some c else none))
-              |>.orElse (fun _ => some (.oneShotEffect ⟨g.nextEffectId⟩ none (some pl.id)))
-          g := (g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)).change (.setEaglesBirdsCause pl.id none)
-          if g.stillInGame pl.id then
-            g := g.createKindTokens pl.id .birdSoldier n (cause := cause)
+          g := g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)
+      for (pid, n, cause) in batches do
+        if n > 0 then
+          if g.stillInGame pid then
+            g := g.createKindTokens pid .birdSoldier n (cause := some cause)
           g := g.logMsg
-            s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+            s!"{(g.player pid).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
     let g :=
       if stepEvent.matchesTrigger ap ⟨0⟩ .yourUpkeep then
@@ -438,8 +438,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       else g
     g.receivePriority ap
   | .cleanup =>
-    -- Combatants leave combat; then CR 514.1–514.3.
-    let g := g.clearCombat (cause := some (.turnBased .cleanupClear))
+    -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
     let g := g.clearEOT
     -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions

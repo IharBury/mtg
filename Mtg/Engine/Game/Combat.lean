@@ -471,14 +471,14 @@ def announceCombatDamage (g : Game) (p : PlayerId)
       return g.dealAssignedCombatDamage
   | _ => throw "Not time to assign combat damage (CR 510.1)"
 
-def clearCombat (g : Game)
-    (cause : Option EventCause := some (.turnBased .removeFromCombatAtEndOfCombat)) : Game :=
+def clearCombat (g : Game) : Game :=
   Id.run do
     let mut g := g.changes #[
       .firstStrikeDamageDone false,
       .pendingRegularCombatDamage false,
       .firstStrikeAssignedThisCombat #[],
       .blockersQueue #[] ]
+    let cause := some (EventCause.turnBased .removeFromCombatAtEndOfCombat)
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
         g := g.record (GameEvent.removedFromCombat g.turnNumber o.asEvent (cause := cause))

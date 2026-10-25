@@ -199,7 +199,7 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
           n := n + 1
     if n > 0 then
       g := (g.changePlayer p (.addEaglesBirdsNextUpkeep n)).change
-        (.setEaglesBirdsCause p (some cause))
+        (.pushEaglesBirdsCause p n cause)
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g

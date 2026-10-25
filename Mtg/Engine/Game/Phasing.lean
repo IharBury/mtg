@@ -30,12 +30,10 @@ trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
 def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if o.status.phasedOut || o.zone != .battlefield then g
   else
-    let (g, cause) : Game × Option EventCause :=
-      match cause, g.currentResolvingContext? with
-      | none, some (src, ctrl) =>
-        ({ g with nextEffectId := g.nextEffectId + 1 },
-         some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
-      | _, _ => (g, cause)
+    let cause :=
+      cause.orElse (fun _ =>
+        g.currentResolvingContext?.map (fun (src, ctrl) =>
+          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
     let g := g.removeFromCombat o (cause := cause)
     let o := g.object! o.id
     let g := g.expirePrintedStaticEffects o (cause := cause)

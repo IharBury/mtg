@@ -444,9 +444,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         #[.protectionFromEverything pid, .lifeCantChange pid]
       let g := g.logMsg s!"{(g.player pid).name} has protection from everything and their life total can't change"
       let ids := (g.permanentsOf pid).filter (fun o => !o.printed.isLand) |>.map (·.id)
+      let phaseCause := g.resolvingOneShotCause controller sourceId
       let g := ids.foldl (fun g id =>
         match g.findObject? id with
-        | some o => if o.isOnBattlefield then g.phaseOut o else g
+        | some o => if o.isOnBattlefield then g.phaseOut o (cause := phaseCause) else g
         | none => g) g
       match g.resolvingSpell.bind g.findObject? with
       | some spell =>

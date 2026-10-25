@@ -1350,9 +1350,11 @@ turn would begin (CR 611.2b / 800.4m); Kang's extra-turn `.powerUpsForbiddenThis
 is created under the delayed `.oneShotEffect` cause allocated when `.extraTurn`
 resolved (CR 500.7 / 611.2a) and expires under `.turnBased .cleanupClear`
 (CR 514.2); `createTreasureTokens` from combat damage to a player or planeswalker
-records `ZoneEvent.created` under `.turnBased .combatDamage` (CR 510.2); and
-`clearCombat` uses `.turnBased .removeFromCombatAtEndOfCombat` at end of combat
-(CR 511.3) vs. `.turnBased .cleanupClear` in `beginStep .cleanup`. -/
+records `ZoneEvent.created` under `.turnBased (.dealCombatDamage false)` (CR 510.2);
+`clearCombat` runs at end of combat (`advanceStep`, CR 511.3) while `beginStep .cleanup`
+does not emit `removedFromCombat`; multi-permanent `phaseOut` instructions share
+one `.oneShotEffect` cause (CR 610.1); and multiple `eaglesAreComing` delays
+before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.7). -/
 #guard
   let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
@@ -1385,11 +1387,26 @@ records `ZoneEvent.created` under `.turnBased .combatDamage` (CR 510.2); and
     let g := g.changeStatuses b.id #[.attacking true, .attackingPlaneswalker (some pw.id), .combatDamageCreatesTreasure true]
     let g := g.change (.assignedCombatDamage #[{ source := b.id, toPlayer := 1 }])
     (quiet g).dealAssignedCombatDamage
-  -- 4. clearCombat: .removeFromCombatAtEndOfCombat in advanceStep from .endOfCombat vs. .cleanupClear in beginStep .cleanup
+  -- 4. clearCombat: .removeFromCombatAtEndOfCombat in advanceStep from .endOfCombat, none in beginStep .cleanup
   let gEndCombat :=
     (quiet ((g0.change (.step .endOfCombat)).changeStatus b.id (.attacking true))).advanceStep
   let gCleanupCombat :=
     (quiet (g0.changeStatus b.id (.attacking true))).beginStep .cleanup
+  -- 5. Multi-permanent phaseOut shares a single .oneShotEffect id
+  let gKickedPhase :=
+    (quiet g0).applyUnified me { resolution := .phaseOutKicker } #[Target.player me]
+      (kicked := true) (sourceId := some h.id)
+  let kickedPhaseCauses :=
+    gKickedPhase.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedOut _ false)) => some e.cause
+      | _ => none)
+  -- 6. Two eaglesAreComing / returnOwnedCreaturesScheduleBirds batches keep distinct delayed causes
+  let gEagles1 := g0.returnOwnedCreaturesScheduleBirds me #[b.id]
+  let gEagles2 := gEagles1.returnOwnedCreaturesScheduleBirds me #[h.id]
+  let causeEagles1 := gEagles2.eaglesBirdsCauses[0]!.2.2
+  let causeEagles2 := gEagles2.eaglesBirdsCauses[1]!.2.2
+  let gEaglesUpkeep := (quiet gEagles2).beginStep .upkeep
   gPermTurnEnd.events.any (fun e =>
     match e.change with
     | .rules (.effectExpired _ (.playPermission oid _)) =>
@@ -1431,10 +1448,22 @@ records `ZoneEvent.created` under `.turnBased .combatDamage` (CR 510.2); and
       | .rules (.permanent (.removedFromCombat o)) =>
         o.id == some b.id && e.cause == EventCause.turnBased .removeFromCombatAtEndOfCombat
       | _ => false) &&
-    gCleanupCombat.events.any (fun e =>
+    !gCleanupCombat.events.any (fun e =>
       match e.change with
-      | .rules (.permanent (.removedFromCombat o)) =>
-        o.id == some b.id && e.cause == EventCause.turnBased .cleanupClear
+      | .rules (.permanent (.removedFromCombat _)) => true
+      | _ => false) &&
+    kickedPhaseCauses.size == 2 &&
+    kickedPhaseCauses[0]! == kickedPhaseCauses[1]! &&
+    causeEagles1 != causeEagles2 &&
+    gEaglesUpkeep.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.created o p)) =>
+        o.name == "Bird Soldier" && p == me && e.cause == causeEagles1
+      | _ => false) &&
+    gEaglesUpkeep.events.any (fun e =>
+      match e.change with
+      | .rules (.zone (.created o p)) =>
+        o.name == "Bird Soldier" && p == me && e.cause == causeEagles2
       | _ => false)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
