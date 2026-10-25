@@ -216,8 +216,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if let .crew n := ab.cost.fra then
     return (g.change (.pending (.fraChoice p (.crew newId id n)))).logMsg
       s!"{pl.name} chooses untapped creatures with total power {n} or more to crew {o.name}"
-  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
-  let g := g.record happened
   let manaCost := g.activationManaCost p ab (some o)
   let prop : ProposedSpell := {
     caster := p

@@ -629,10 +629,15 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     match g.srcObj? sourceId with
     | some o =>
       let counters := o.status.plusOnePlusOne
-      let transformCause :=
-        g.currentResolvingContext?.map (fun (src, ctrl) =>
-          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+      let (src, ctrl) :=
+        match g.currentResolvingContext? with
+        | some (s, c) => (s.orElse (fun _ => some o.id), c.orElse (fun _ => some controller))
+        | none => (some o.id, some controller)
+      let transformCause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
       let g := g.expirePrintedStaticEffects o (cause := transformCause)
+      let g := g.record
+        (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed)
+          (cause := transformCause))
       let g := g.changeObject o.id (.printed
         { creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
           name := "Phyrexian" })

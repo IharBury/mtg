@@ -680,16 +680,22 @@ def lockInTargetCostReduction (g : Game) : Game :=
       | _ => g
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
-    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none) : Game :=
+    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
+    (sourceSnapshot : Option EventObject := none) : Game :=
   let activation := activation <|> g.proposedSpell.bind (·.activation)
-  let g :=
-    if activation.any (·.isEquip) then
-      let source :=
-        match sourceId.bind g.findObject? with
-        | some src => src.asEvent
-        | none => { controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
-      g.record (GameEvent.activated g.turnNumber p source false true)
-    else g
+  let isLoyalty := activation.any (·.cost.loyalty.isSome)
+  let isEquip := activation.any (·.isEquip)
+  let source : EventObject :=
+    match (sourceId.bind g.findObject?).map GameObject.asEvent <|> sourceSnapshot <|>
+        g.proposedSpell.map (·.original.asEvent) with
+    | some src => src
+    | none =>
+      if isEquip then
+        { id := sourceId, name := sourceName, controller := some p, owner := p,
+          types := #[.artifact], subtypes := #[.equipment] }
+      else
+        { id := sourceId, name := sourceName, controller := some p, owner := p }
+  let g := g.record (GameEvent.activated g.turnNumber p source isLoyalty isEquip)
   let g :=
     match sourceId with
     | none => g
@@ -738,6 +744,7 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
   let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
   return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
+    (sourceSnapshot := some prop.original.asEvent)
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
 activation when none remain. -/

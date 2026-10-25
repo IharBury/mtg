@@ -2393,6 +2393,7 @@ def activeEffect? (g : Game) (eid : EffectId) : Option ContinuousEffect :=
 is active on the battlefield or in the command zone (CR 611.3). -/
 def createPrintedStaticEffects (g : Game) (o : GameObject)
     (cause : Option EventCause := some (.gameRule .staticAbility)) : Game :=
+  let cause := cause.orElse (fun _ => some (.gameRule .staticAbility))
   if hasActivePrintedStatics o then
     o.printed.staticAbilities.foldl (fun acc sa =>
       let eid : EffectId := ⟨acc.nextEffectId⟩
@@ -2403,6 +2404,7 @@ def createPrintedStaticEffects (g : Game) (o : GameObject)
 effects (CR 611.3), each under the `EffectId` it was created with. -/
 def expirePrintedStaticEffects (g : Game) (o : GameObject)
     (cause : Option EventCause := some (.gameRule .leavingZone)) : Game :=
+  let cause := cause.orElse (fun _ => some (.gameRule .leavingZone))
   o.printed.staticAbilities.foldl (fun acc sa =>
     let eff := ContinuousEffect.staticAbility o.id sa
     match acc.activeEffects.find? (fun (_, e) => e == eff) with

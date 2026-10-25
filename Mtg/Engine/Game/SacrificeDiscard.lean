@@ -205,6 +205,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
       | .activatedAbility =>
         return g.becomeActivated p prop.original.name prop.sourceId prop.activation
+          (sourceSnapshot := some prop.original.asEvent)
     | none =>
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)

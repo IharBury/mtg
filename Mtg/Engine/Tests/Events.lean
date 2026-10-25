@@ -1202,6 +1202,77 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
       | .rules (.activated ..) => e.cause == EventCause.gameRule .abilityActivated
       | _ => false)
 
+/- Phase 3: `GameEvent.activated` is only recorded when activation cost payment
+completes (`becomeActivated`, CR 602.2b), so reversing a proposed activation
+before cost payment finishes (CR 733.1) leaves no `activated` event or
+`activatedLoyalty` turn flag; and `.transformIncubator` records
+`PermanentEvent.transformed` under a `.oneShotEffect` cause (CR 701.27f / 111.10i). -/
+#guard
+  let pwWithMana : CardDef :=
+    { name := "Test Planeswalker"
+      types := #[.planeswalker]
+      activatedAbilities :=
+        #[{ cost := { mana := ManaCost.ofGeneric 2, loyalty := some (.plus 1) }
+            effect := {} }] }
+  let gPw0 :=
+    let g := addPermanent afterDraw pwWithMana me me
+    let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
+    quiet (g.changeStatus pw.id (.addCounters .loyalty 3))
+  let pw := (gPw0.battlefield.filter (·.name == "Test Planeswalker"))[0]!
+  let gPwProposed :=
+    match gPw0.activateAbility me pw.id 0 with
+    | .ok g => g
+    | .error _ => gPw0
+  let gPwReversed := gPwProposed.reverseProposedSpell
+  let baubleDef : CardDef :=
+    { name := "Test Bauble"
+      types := #[.artifact]
+      activatedAbilities :=
+        #[{ cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
+            effect := {} }] }
+  let gWb0 :=
+    let g := addPermanent afterDraw baubleDef me me
+    let g := g.changePlayer me (.addMana .colorless 2)
+    quiet g
+  let wb := (gWb0.battlefield.filter (·.name == "Test Bauble"))[0]!
+  let gWbPaid :=
+    match gWb0.activateAbility me wb.id 0 with
+    | .ok g =>
+      match g.apply me .pay with
+      | .ok g' => g'
+      | .error _ => g
+    | .error _ => gWb0
+  let incDef : CardDef :=
+    { name := "Incubator Token"
+      types := #[.artifact]
+      subtypes := #["Incubator"] }
+  let gInc0 := quiet (addPermanent afterDraw incDef me me)
+  let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
+  let gIncTransformed :=
+    gInc0.applyFrc me default .transformIncubator #[] (some inc.id)
+  let incAfter := gIncTransformed.object! inc.id
+  !gPwProposed.loggedActivatedLoyalty me &&
+    !gPwReversed.loggedActivatedLoyalty me &&
+    gPwReversed.stack.isEmpty &&
+    !(gPwReversed.object! pw.id).status.loyaltyActivatedThisTurn &&
+    !gPwReversed.events.any (fun e =>
+      match e.change with
+      | .rules (.activated ..) => true
+      | _ => false) &&
+    gWbPaid.events.any (fun e =>
+      match e.change with
+      | .rules (.activated p o false false) =>
+        p == me && o.id == some wb.id && o.name == "Test Bauble" &&
+          e.cause == EventCause.gameRule .abilityActivated
+      | _ => false) &&
+    incAfter.status.transformed &&
+    incAfter.name == "Phyrexian" &&
+    gIncTransformed.events.any (fun e =>
+      match e.change, e.cause with
+      | .rules (.permanent (.transformed o true)), .oneShotEffect _ (some sid) (some ctrl) =>
+        o.id == some inc.id && sid == inc.id && ctrl == me
+      | _, _ => false)
+
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
   let g := Agent.play drawnHands 400

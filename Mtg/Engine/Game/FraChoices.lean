@@ -388,7 +388,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if total < n then throw s!"Total power {total} is less than {n}"
     let g := crew.foldl (fun g c =>
       g.becomeTapped (g.object! c.id) (cause := some (.costPayment .tap p (some abilityId)))) g
-    let g := g.record (GameEvent.activated g.turnNumber p (g.object! vehicleId).asEvent false false)
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
@@ -682,11 +681,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := match g.findObject? abilityId with
       | some ab => g.changeObject ab.id (.boastExiled exiled)
       | none => g
-    let srcEvent : EventObject :=
-      match g.findObject? sourceId with
-      | some src => src.asEvent
-      | none => { id := some sourceId, controller := some p, owner := p, name := "Baron Helmut Zemo" }
-    let g := g.record (GameEvent.activated g.turnNumber p srcEvent false false)
     let g := match g.findObject? sourceId with
       | some src => g.markBoastUsed src
       | none => g
