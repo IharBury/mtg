@@ -145,15 +145,26 @@ def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
 
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
-def discardEntireHand (g : Game) (p : PlayerId) : Game :=
+def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   let ids := (g.player p).hand
   let discarded := ids.size
+  let (g, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
   let g :=
     ids.foldl (fun acc id =>
       match acc.findObject? id with
       | none => acc
       | some o =>
-        let (acc, _) := acc.move id (.graveyard o.owner) none
+        let (acc, _) := acc.move id (.graveyard o.owner) none (cause := cause?)
         acc) g
   g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
@@ -164,14 +175,16 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
     g.logMsg s!"{(g.player p).name} does not discard their hand"
   else
     let n := (g.player p).hand.size
-    let g := g.discardEntireHand p
-    if n == 0 then g else g.draw p n
+    let (g, cause) := g.allocDelayedCause (some p)
+    let g := g.discardEntireHand p (cause := some cause)
+    if n == 0 then g else g.draw p n (cause := some cause)
 
 /-- Discard the hand, then draw `n` cards. An empty hand is a legal discard
 (Sauron, the Dark Lord). -/
 def discardHandThenDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  let g := g.discardEntireHand p
-  if n == 0 then g else g.draw p n
+  let (g, cause) := g.allocDelayedCause (some p)
+  let g := g.discardEntireHand p (cause := some cause)
+  if n == 0 then g else g.draw p n (cause := some cause)
 
 /-- Players currently tied for most life. -/
 def playersWithMostLife (g : Game) : Array PlayerId :=

@@ -1815,7 +1815,7 @@ across all constituent moves, transforms, and continuous-effect creations
       name := "Front Hero"
       otherFace := some { bear with name := "Back Bear" } }
   let shockDef : CardDef :=
-    { name := "Test Shock", types := #[.instant] }
+    { name := "Test Shock", manaCost := ManaCost.ofGeneric 2, types := #[.instant] }
   let g0 :=
     quiet (addPermanent (addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me)
       landDef me me) landDef me me)
@@ -1971,11 +1971,18 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
-  -- 9. `draw` outside a resolving context leaves `.unclassified`, while `drawThenLoseLife`
-  --    inside a resolving context shares one `.oneShotEffect` cause across draws and life loss
+  -- 9. `draw` and `mill` outside a resolving context leave `.unclassified`, while `drawThenLoseLife`,
+  --    `drawEqualToughnessThenPutCreatures`, `.twoPlayersDraw`, `millCollected` / `.milledSubtype`,
+  --    and `.palantirMayDraw` `.decline` share one `.oneShotEffect` cause across each instruction
   let gRawDraw := gLibSetup.draw me 2
   let rawDrawCauses :=
     gRawDraw.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gRawMill := gLibSetup.mill me 2
+  let rawMillCauses :=
+    gRawMill.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
@@ -1984,6 +1991,57 @@ across all constituent moves, transforms, and continuous-effect creations
       g.drawThenLoseLife me 2 2)
   let drawLoseCauses :=
     gDrawLose.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | .rules (.life (.lost ..)) => some e.cause
+      | _ => none)
+  let gLastMarchSetup :=
+    let g := (g0.move l1.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move b.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let gLastMarch0 :=
+    gLastMarchSetup.withResolvingContext (some h.id) me (fun g =>
+      g.applyEffect me Effect.drawEqualToughnessThenPutCreatures #[] (sourceId := some h.id))
+  let lastMarchOffered :=
+    match gLastMarch0.pending with
+    | .fraChoice _ (.chooseCards ids _ .creaturesToBattlefield) => ids
+    | _ => #[]
+  let gLastMarchDone :=
+    match gLastMarch0.answerFraChoice me (.objects lastMarchOffered) with
+    | .ok g' => g'
+    | .error _ => gLastMarch0
+  let lastMarchCauses :=
+    gLastMarchDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gTwoDraw :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.applyAbilityEffect me { resolution := .twoPlayersDraw } #[Target.player me, Target.player opp] (sourceId := some h.id))
+  let twoDrawCauses :=
+    gTwoDraw.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gMillSubtype :=
+    gLibSetup.withResolvingContext (some h.id) me (fun g =>
+      g.applyTriggeredAbility me (.onEnterMillThenSubtypeToHand 3 "Bear") (some h.id) #[] #[] none none "This creature"
+        (some (.sequence [.mill (.fixed 3) .you .milledCards, .returnToHand (.milledSubtype .bear)])))
+  let millSubtypeCauses :=
+    gMillSubtype.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let gPalantir0 :=
+    (gGrimaSetup.changeStatus h.id (.influence 3)).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
+      |>.change (.resolvingContext (some (some h.id, me)))
+  let gPalantirDone :=
+    match gPalantir0.answerFraChoice opp .decline with
+    | .ok g' => g'
+    | .error _ => gPalantir0
+  let palantirCauses :=
+    gPalantirDone.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | .rules (.life (.lost ..)) => some e.cause
@@ -2011,9 +2069,20 @@ across all constituent moves, transforms, and continuous-effect creations
     millChooseCauses.all (· == millChooseCauses[0]!) &&
     rawDrawCauses.size == 2 &&
     rawDrawCauses.all (· == .unclassified) &&
+    rawMillCauses.size == 2 &&
+    rawMillCauses.all (· == .unclassified) &&
     drawLoseCauses.size == 3 &&
     drawLoseCauses.all (· == drawLoseCauses[0]!) &&
-    (match drawLoseCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
+    (match drawLoseCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    !lastMarchOffered.isEmpty &&
+    lastMarchCauses.size >= 3 &&
+    lastMarchCauses.all (· == lastMarchCauses[0]!) &&
+    twoDrawCauses.size == 2 &&
+    twoDrawCauses[0]! == twoDrawCauses[1]! &&
+    millSubtypeCauses.size == 4 &&
+    millSubtypeCauses.all (· == millSubtypeCauses[0]!) &&
+    palantirCauses.size == 4 &&
+    palantirCauses.all (· == palantirCauses[0]!)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

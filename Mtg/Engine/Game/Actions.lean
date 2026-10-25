@@ -219,8 +219,14 @@ player cannot be chosen twice. -/
 def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
   if a == b then
     throw "Two target players must be different"
-  let g := g.draw a 1
-  return g.draw b 1
+  let (g, cause?) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some a)) src
+      (g, some c)
+    | none => (g, none)
+  let g := g.draw a 1 (cause := cause?)
+  return g.draw b 1 (cause := cause?)
 
 end Game
 end Mtg.Engine

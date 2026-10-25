@@ -267,10 +267,23 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
-def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
+def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game × Bool :=
   let before :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
-  let g := opponents.foldl (fun acc pid => acc.mill pid n) g
+  let (g, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 || !opponents.any (fun pid => !(g.player pid).library.isEmpty) then
+        (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
+  let g := opponents.foldl (fun acc pid => acc.mill pid n (cause := cause?)) g
   let after :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
   (g, after > before)

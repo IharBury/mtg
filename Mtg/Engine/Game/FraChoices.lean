@@ -908,7 +908,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
   | .mayDrawThenEachOpponentDraws n, .accept =>
     let g := g.draw p n
-    let g := g.forEachOpponent p (fun g opp => g.draw opp 1)
+    let (g, oppCause) := g.allocDelayedCause (some p)
+    let g := g.forEachOpponent p (fun g opp => g.draw opp 1 (cause := some oppCause))
     return (g.logMsg s!"{(g.player p).name} draws, so each opponent draws a card").finishFraChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
@@ -976,14 +977,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       match g.findObject? sourceId with
       | some src => src.status.influence
       | none => 0
-    let before := (g.player controller).graveyard.size
-    let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let milled := gy.size - before
+    let lib := (g.player controller).library
+    let count := min n lib.size
+    let tops := (lib.extract (lib.size - count) lib.size).reverse
+    let (g, cause) := g.allocDelayedCause (some controller) (some sourceId)
+    let g := g.mill controller n (cause := some cause)
+    let milled := (tops.map g.followMoved).filter (fun id =>
+      (g.findObject? id).any (fun o => o.zone == .graveyard controller))
     let mv :=
-      (gy.extract (gy.size - milled) gy.size).foldl (fun acc id =>
+      milled.foldl (fun acc id =>
         acc + (g.object! id).printed.manaValue) 0
-    return (g.loseLife p mv).finishFraChoice
+    return (g.loseLife p mv (cause := some cause)).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"

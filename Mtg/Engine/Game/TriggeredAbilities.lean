@@ -2400,7 +2400,15 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
     let n := ((g.permanentsOf controller).filter (fun o => o.printed.hasType ty)).size
     if n == 0 then g else g.draw controller n
   | .eachOpponent, .fixed n =>
-    g.forEachOpponent controller (fun g pid => g.draw pid n.toNat)
+    let (g, cause?) : Game × Option EventCause :=
+      if n.toNat == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
+    g.forEachOpponent controller (fun g pid => g.draw pid n.toNat (cause := cause?))
   | .you, .fixed n =>
     g.draw controller n.toNat
   | .you, .forEachTappedHuman =>
@@ -2429,8 +2437,15 @@ def applyTriggerDraw (g : Game) (controller : PlayerId) (sourceId : Option Objec
         match amount with
         | .forEachTappedHuman => g.change (.humansTappedThisWay 0)
         | _ => g
-      if n == 0 then g
-      else pids.foldl (fun g pid => g.draw pid n) g
+      if n == 0 || pids.isEmpty then g
+      else
+        let (g, cause?) : Game × Option EventCause :=
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+            (g, some c)
+          | none => (g, none)
+        pids.foldl (fun g pid => g.draw pid n (cause := cause?)) g
     | _, _ => g
 
 /-- Resolve `TriggerResolution.returnToHand`. Each printed combination keeps
@@ -2466,13 +2481,28 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g) sourceId (some "The target is no longer legal")
   | .milledSubtype subtype, .none =>
     let ids := g.milledIdsThisWay
-    let g := g.change (.milledIdsThisWay #[])
+    let stashed :=
+      ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g := ids.foldl (fun (g : Game) id =>
+        if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g)
+      (g.change (.milledIdsThisWay #[]))
+    let (g, cause?) : Game × Option EventCause :=
+      match stashed with
+      | some c => (g, some c)
+      | none =>
+        if ids.any (fun id => (g.findObject? id).any (·.printed.hasSubtype subtype)) then
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+            (g, some c)
+          | none => (g, none)
+        else (g, none)
     ids.foldl (fun acc id =>
       match acc.findObject? id with
       | some o =>
         if o.printed.hasSubtype subtype then
           let name := o.name
-          let (acc, _) := acc.move id (.hand controller) none
+          let (acc, _) := acc.move id (.hand controller) none (cause := cause?)
           acc.logMsg s!"{name} is put into {(acc.player controller).name}'s hand"
         else acc
       | none => acc) g
@@ -3015,10 +3045,7 @@ def applyMill (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .fixed n, .you, .none =>
     g.mill controller n.toNat
   | .fixed n, .you, .milledCards =>
-    let before := (g.player controller).graveyard
-    let g := g.mill controller n.toNat
-    let after := (g.player controller).graveyard
-    g.change (.milledIdsThisWay (after.filter (fun id => !before.contains id)))
+    g.millCollected controller #[controller] n.toNat .milledCards
   | .fixed n, .target .player, .none =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n.toNat)
   | .thatManyLost, .thatPlayer, .none =>

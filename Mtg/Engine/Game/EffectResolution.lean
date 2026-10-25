@@ -665,16 +665,16 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
 /-- Carry out a `chooseCards` answer. -/
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
+  let stashed := cause.orElse (fun _ => chosen[0]?.bind g.linkedExileCause?)
+  let g := chosen.foldl (fun (g : Game) id =>
+    if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
   match purpose with
   | .toHand _ =>
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        match cause.orElse (fun _ => chosen[0]?.bind g.linkedExileCause?) with
-        | some c =>
-          let g := chosen.foldl (fun (g : Game) id =>
-            if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
-          (g, some c)
+        match stashed with
+        | some c => (g, some c)
         | none =>
           let (g, c) := g.allocDelayedCause (some p)
           (g, some c)
@@ -690,7 +690,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        match cause with
+        match stashed with
         | some c => (g, some c)
         | none =>
           let (g, c) := g.allocDelayedCause (some p)
@@ -709,7 +709,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let (g, cause?) : Game × Option EventCause :=
       if chosen.isEmpty then (g, none)
       else
-        match cause with
+        match stashed with
         | some c => (g, some c)
         | none =>
           let (g, c) := g.allocDelayedCause (some p)
@@ -730,7 +730,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
   | .keepDestroyRest =>
     let (g, cause?) : Game × Option EventCause :=
       if g.battlefield.any (fun o => o.isCreature && !chosen.contains o.id) then
-        match cause with
+        match stashed with
         | some c => (g, some c)
         | none =>
           let (g, c) := g.allocDelayedCause (some p)
@@ -1193,12 +1193,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let greatest :=
       (g.permanentsOf controller).foldl (fun acc o =>
         if o.isCreature then max acc (g.toughness o).toNat else acc) 0
-    let g := g.draw controller greatest
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    let g := g.draw controller greatest (cause := some cause)
     let creatures :=
       (g.player controller).hand.filter (fun id =>
         (g.findObject? id).any (·.printed.isCreature))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
+      (cause := some cause)
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -1829,7 +1831,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         match targets[0]?, targets[1]? with
         | some (Target.player a), some (Target.player b) =>
           if a == b then g.logMsg "Two target players must be different"
-          else g.draw a 1 |>.draw b 1
+          else
+            let (g, cause) := g.allocDelayedCause (some controller) sourceId
+            g.draw a 1 (cause := some cause) |>.draw b 1 (cause := some cause)
         | _, _ => g.logMsg "The targets are no longer legal"
       | .discardLegendarySameNameDraw =>
         g.draw controller 2
