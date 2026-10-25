@@ -1270,7 +1270,14 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
   let incDef : CardDef :=
     { name := "Incubator Token"
       types := #[.artifact]
-      subtypes := #["Incubator"] }
+      subtypes := #["Incubator"]
+      otherFace := some
+        { name := "Phyrexian"
+          types := #[.artifact, .creature]
+          subtypes := #["Phyrexian"]
+          power := some 0
+          toughness := some 0
+          isToken := true } }
   let gInc0 := quiet (addPermanent afterDraw incDef me me)
   let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
   let gIncTransformed :=
@@ -1333,6 +1340,12 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
       | _ => false) &&
     incAfter.status.transformed &&
     incAfter.name == "Phyrexian" &&
+    incAfter.printed.power == some 0 &&
+    incAfter.printed.toughness == some 0 &&
+    !gIncTransformed.events.any (fun e =>
+      match e.change with
+      | .engine (.object _ (.printed _)) => true
+      | _ => false) &&
     gIncTransformed.events.any (fun e =>
       match e.change, e.cause with
       | .rules (.permanent (.transformed o true)), .oneShotEffect _ (some sid) (some ctrl) =>
@@ -1471,14 +1484,24 @@ allocate a distinct `.oneShotEffect` `EffectId` before assigning each continuous
 effect's `EffectId` (CR 610.1 / 611.2a), and `createEffects` shares that one-shot
 cause across all effects in the batch; `.exileThenReturnNextEnd` and
 `.exileThenReturnYouControl` share one `.oneShotEffect` cause across both targets
-(and their returns); and `.syntheticDestiny` / `.sunfall` exile all affected
+(and their returns); `.syntheticDestiny` / `.sunfall` exile all affected
 creatures under the single instruction cause (sharing the delayed reveal cause
-for `.syntheticDestiny`, CR 603.7 / 610.3). -/
+for `.syntheticDestiny`, CR 603.7 / 610.3), while `.sunfall` incubates with
+enters-with +1/+1 counters on `ZoneEvent.created`, fires `.youPutPlusOne`
+triggers, and creates an Incubator token with `otherFace` that transforms into a
+0/0 Phyrexian via `PermanentEvent.transformed`; `.massPolymorph` uses one shared
+`exileCause` for battlefield exiles and one distinct shared `revealCause` across
+`revealUntil`, `putHits`, and `restBottom`; and `.venserPerm` shares one cause
+across both token creations, both haste continuous effects, and both delayed
+end-step sacrifices. -/
 #guard
   let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
   let h := (g0.battlefield.filter (·.name == hero.name))[0]!
-  let srcCard : CardDef := { name := "Source Artifact", types := #[.artifact] }
+  let srcCard : CardDef :=
+    { name := "Source Artifact"
+      types := #[.artifact]
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneCreateInsectOnce {}] }
   let gWithSrc := quiet (addPermanent g0 srcCard me me)
   let s := (gWithSrc.battlefield.filter (·.name == "Source Artifact"))[0]!
   -- 1. createEffect / createEffects inside resolving context: distinct one-shot vs. continuous EffectIds
@@ -1510,7 +1533,9 @@ for `.syntheticDestiny`, CR 603.7 / 610.3). -/
       match e.change with
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
-  -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures
+  -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures,
+  --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created, triggers
+  --    .youPutPlusOne, and transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
     (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
   let synthStoredCause := gSynth.delayedSynthetic[0]!.2.2
@@ -1526,6 +1551,51 @@ for `.syntheticDestiny`, CR 603.7 / 610.3). -/
       match e.change with
       | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
       | _ => none)
+  let sunfallCreated? :=
+    gSunfall.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.created o p)) =>
+        if o.name == "Incubator" && p == me then some (o, e.cause) else none
+      | _ => none)
+  let sunfallInc := (gSunfall.battlefield.filter (·.name == "Incubator"))[0]!
+  let gSunfallTransformed :=
+    (quiet gSunfall).applyFrc me default .transformIncubator #[] (some sunfallInc.id)
+  let sunfallIncAfter := gSunfallTransformed.object! sunfallInc.id
+  -- 4. .massPolymorph shares one exileCause for battlefield exiles and one distinct
+  --    revealCause across revealUntil, putHits, and restBottom
+  let gMassPoly :=
+    (quiet gWithSrc).applyFrc me default .massPolymorph #[] (some s.id)
+  let polyBfExiles :=
+    gMassPoly.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .battlefield .exile ..)) => some e.cause
+      | _ => none)
+  let polyRevealMoves :=
+    gMassPoly.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ (.library _) .exile ..))
+      | .rules (.zone (.moved _ _ .exile .battlefield ..))
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | _ => none)
+  let polyRestMoves :=
+    gMassPoly.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | _ => none)
+  -- 5. .venserPerm shares one cause across both token creations, both haste effects,
+  --    and both delayed end-step sacrifices
+  let gVenser :=
+    (quiet gWithSrc).applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id)
+  let venserCreateCauses :=
+    gVenser.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.created ..)) => some e.cause
+      | _ => none)
+  let venserEffectCauses :=
+    gVenser.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.effectCreated ..) => some e.cause
+      | _ => none)
   oneShotIds == #[⟨eff0⟩, ⟨eff0⟩] &&
     createdIds == #[⟨eff0 + 1⟩, ⟨eff0 + 2⟩] &&
     nextEndExileCauses.size == 2 &&
@@ -1538,7 +1608,38 @@ for `.syntheticDestiny`, CR 603.7 / 610.3). -/
     synthExileCauses.size == 2 &&
     synthExileCauses.all (· == synthStoredCause) &&
     sunfallExileCauses.size == 2 &&
-    sunfallExileCauses[0]! == sunfallExileCauses[1]!
+    sunfallExileCauses[0]! == sunfallExileCauses[1]! &&
+    (match sunfallCreated? with
+     | some (o, incCause) =>
+       o.counters == #[(.plusOnePlusOne, 2)] &&
+         incCause != sunfallExileCauses[0]! &&
+         !gSunfall.events.any (fun e =>
+           match e.change with
+           | .rules (.permanent (.counters ..)) => true
+           | _ => false)
+     | none => false) &&
+    gSunfall.waitingTriggers.size == 1 &&
+    sunfallIncAfter.status.transformed &&
+    sunfallIncAfter.name == "Phyrexian" &&
+    sunfallIncAfter.printed.power == some 0 &&
+    sunfallIncAfter.printed.toughness == some 0 &&
+    sunfallIncAfter.status.plusOnePlusOne == 2 &&
+    !gSunfallTransformed.events.any (fun e =>
+      match e.change with
+      | .engine (.object _ (.printed _)) => true
+      | _ => false) &&
+    polyBfExiles.size == 2 &&
+    polyBfExiles[0]! == polyBfExiles[1]! &&
+    polyRestMoves.size > 0 &&
+    polyRevealMoves.size >= 5 &&
+    polyRevealMoves.all (· == polyRevealMoves[0]!) &&
+    polyRevealMoves[0]! != polyBfExiles[0]! &&
+    venserCreateCauses.size == 2 &&
+    venserEffectCauses.size == 2 &&
+    gVenser.delayedEndStepSacrifices.size == 2 &&
+    venserCreateCauses.all (· == venserCreateCauses[0]!) &&
+    venserEffectCauses.all (· == venserCreateCauses[0]!) &&
+    gVenser.delayedEndStepSacrifices.all (fun (_, c) => c == venserCreateCauses[0]!)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

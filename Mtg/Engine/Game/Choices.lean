@@ -422,8 +422,8 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
-    : Game × GameObject :=
-  g.createToken controller src.printed
+    (cause : Option EventCause := none) : Game × GameObject :=
+  g.createToken controller src.printed (cause := cause)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=

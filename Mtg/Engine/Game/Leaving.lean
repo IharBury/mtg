@@ -32,15 +32,16 @@ def representedByCard (o : GameObject) : Bool :=
 /-- Change `o`'s controller unless that player has left (CR 800.4b). -/
 def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
-    (untilSourceLeaves : Option ObjectId := none) : Game :=
+    (untilSourceLeaves : Option ObjectId := none)
+    (cause : Option EventCause := none) : Game :=
   if (g.player p).lost then
     g.logMsg s!"{o.name} does not change control (CR 800.4b)"
   else if o.controlledBy p then
     if untilEot || turnEndsLeft > 0 || untilSourceLeaves.isSome then
-      g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
+      g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
     else g
   else
-    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
+    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End the control-changing effect recorded under `eid` on `oid`. Any other

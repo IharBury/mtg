@@ -91,12 +91,17 @@ private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
   | .incubator => {
       name := "Incubator"
       types := #[.artifact]
+      subtypes := #["Incubator"]
       isToken := true
+      otherFace := some {
+        creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
+        name := "Phyrexian" }
       activatedAbilities := #[
         { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
           cost := { mana := ManaCost.ofGeneric 2 } } ] }
 
-private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0) : Game :=
+private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0)
+    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
   if n == 0 || (g.player p).lost then g.change (.recentTokenIds #[])
   else
     Id.run do
@@ -105,6 +110,7 @@ private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x :
       let printed := frcPrinted k x
       for _ in [0:n] do
         let (g', obj) := g.createToken p printed (batch := true)
+          (extraCounters := extraCounters) (cause := cause)
         g := g'
         ids := ids.push obj.id
       g := g.change (.recentTokenIds ids)
@@ -150,6 +156,7 @@ private def restBottom (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffl
   else
     g.requestOrderInto rest (.library p)
       s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+      (cause := cause)
 
 private def historicCard (c : CardDef) : Bool :=
   c.isPermanentCard && (c.isArtifact || c.hasSupertype .legendary || c.hasSubtype .saga)
@@ -251,21 +258,26 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.createKindTokens controller .spirit types.size
   | .sunfall =>
     let ids := (g.battlefield.filter (·.isCreature)).map (·.id)
-    let exileCause := g.resolvingOneShotCause controller sourceId
-    let g := ids.foldl (fun g id => g.exileId id (cause := exileCause)) g
-    let g := g.makeFrc controller .incubator
+    let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
+    let g := ids.foldl (fun g id => g.exileId id (cause := some exileCause)) g
+    let (g, incubateCause) := g.allocDelayedCause (some controller) sourceId
+    let extra : CounterBag :=
+      if ids.size > 0 then #[(.plusOnePlusOne, ids.size)] else #[]
+    let g := g.makeFrc controller .incubator 1 0
+      (extraCounters := extra) (cause := some incubateCause)
     match (g.recentTokenIds.back?).bind g.findObject? with
     | some tok =>
-      g.changeStatus tok.id (.plusOnePlusOne ids.size)
-        |>.logMsg s!"Incubator enters with {ids.size} +1/+1 counters"
+      g.addPlusOnePlusOneTo tok ids.size (entersWith := true)
+        (byPlayer := some controller) (cause := some incubateCause)
     | none => g
   | .massPolymorph =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
-    let exileCause := g.resolvingOneShotCause controller sourceId
-    let g := yours.foldl (fun g id => g.exileId id (cause := exileCause)) g
-    let (g, hits, rest) := g.revealUntil controller (·.isCreature) yours.size
-    let g := g.putHits controller hits
-    g.restBottom controller rest true
+    let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
+    let g := yours.foldl (fun g id => g.exileId id (cause := some exileCause)) g
+    let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
+    let (g, hits, rest) := g.revealUntil controller (·.isCreature) yours.size (cause := some revealCause)
+    let g := g.putHits controller hits (cause := some revealCause)
+    g.restBottom controller rest true (cause := some revealCause)
   | .syntheticDestiny =>
     let yours := (g.permanentsOf controller).filter (·.isCreature) |>.map (·.id)
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
@@ -281,10 +293,12 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       match g.findObject? id with
       | some o =>
         let owner := o.controller.getD o.owner
-        let g := g.moveIdsInOrder #[id] (.library owner)
-        let (g, hits, rest) := g.revealUntil owner (·.isCreature) 1
-        let g := g.putHits owner hits
-        g.restBottom owner rest false
+        let (g, putCause) := g.allocDelayedCause (some controller) sourceId
+        let g := g.moveIdsInOrder #[id] (.library owner) (cause := some putCause)
+        let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
+        let (g, hits, rest) := g.revealUntil owner (·.isCreature) 1 (cause := some revealCause)
+        let g := g.putHits owner hits (cause := some revealCause)
+        g.restBottom owner rest false (cause := some revealCause)
       | none => g
     | _ => g
   | .animate p t flying first =>
@@ -326,11 +340,12 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     | none => g
   | .dack =>
     let n := (g.livingOpponents controller).size
-    let (g, hits, rest) := g.revealUntil controller (·.isCreature) n
-    let g := g.putHits controller hits
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    let (g, hits, rest) := g.revealUntil controller (·.isCreature) n (cause := some cause)
+    let g := g.putHits controller hits (cause := some cause)
     let g := hits.foldl (fun g id =>
       match g.followMoved id |> g.findObject? with
-      | some o => g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded controller false) true)
+      | some o => g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded controller false) true (cause := some cause))
       | none => g) g
     let opps := g.livingOpponents controller
     let g := Id.run do
@@ -339,26 +354,27 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       for id in hits do
         match opps[i]?, g.followMoved id |> g.findObject? with
         | some opp, some o =>
-          g := g.changeControl o opp.id
+          g := g.changeControl o opp.id (cause := some cause)
           i := i + 1
         | _, _ => pure ()
       return g
-    g.restBottom controller rest true
+    g.restBottom controller rest true (cause := some cause)
   | .jhoira =>
     match targets[0]? with
     | some (Target.player pid) =>
-      let (g, hits, rest) := g.revealUntil pid historicCard 1
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, hits, rest) := g.revealUntil pid historicCard 1 (cause := some cause)
       let g :=
         match hits[0]? with
       | some id =>
           match g.findObject? id with
           | some card =>
             let mv := card.printed.manaValue
-            let g := (g.putHits controller #[id])
+            let g := (g.putHits controller #[id] (cause := some cause))
             g.loseLife controller mv
           | none => g
         | none => g.logMsg s!"{(g.player pid).name} reveals no historic permanent"
-      g.restBottom pid rest false
+      g.restBottom pid rest false (cause := some cause)
     | _ => g
   | .nissa =>
     let g := g.draw controller
@@ -367,9 +383,10 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       if src.status.optionalOnceUsed then g
       else
         let g := g.changeStatus src.id (.optionalOnceUsed true)
-        let (g, hits, rest) := g.revealUntil controller (·.isCreature) 1
-        let g := g.putHits controller hits
-        g.restBottom controller rest false
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        let (g, hits, rest) := g.revealUntil controller (·.isCreature) 1 (cause := some cause)
+        let g := g.putHits controller hits (cause := some cause)
+        g.restBottom controller rest false (cause := some cause)
     | none => g
   | .nivPay =>
     let n := g.knownN
@@ -408,10 +425,12 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
   | .jaceMinus =>
     match targets[0]? with
     | some (Target.permanent id) =>
-      let g := g.exileId id
-      let (g, hits, rest) := g.revealUntil controller creatureOrWalker 1
-      let g := g.putHits controller hits
-      g.restBottom controller rest false
+      let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
+      let g := g.exileId id (cause := some exileCause)
+      let (g, revealCause) := g.allocDelayedCause (some controller) sourceId
+      let (g, hits, rest) := g.revealUntil controller creatureOrWalker 1 (cause := some revealCause)
+      let g := g.putHits controller hits (cause := some revealCause)
+      g.restBottom controller rest false (cause := some revealCause)
     | _ => g
   | .jaceTax =>
     if g.activePlayer == controller then g
@@ -493,7 +512,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           let (g, cause) := g.allocDelayedCause (some controller) sourceId
           let mut g := g
           for _ in [0:2] do
-            let (g', tok) := g.copyBattlefieldPermanent src controller
+            let (g', tok) := g.copyBattlefieldPermanent src controller (cause := some cause)
             g := g'
             g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := some cause)
             g := g.change (.pushDelayedEndStepSacrifice tok.id cause)
@@ -642,9 +661,6 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       let g := g.record
         (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed)
           (cause := transformCause))
-      let g := g.changeObject o.id (.printed
-        { creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
-          name := "Phyrexian" })
       g.createPrintedStaticEffects (g.object! o.id)
         |>.logMsg s!"{o.name} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
     | none => g

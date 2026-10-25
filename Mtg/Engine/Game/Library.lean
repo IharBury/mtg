@@ -141,6 +141,10 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
     (cause : Option EventCause := none) : Game :=
+  let cause :=
+    cause.orElse (fun _ =>
+      g.currentResolvingContext?.map (fun (src, ctrl) =>
+        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
   match dest with
   | .library p =>
     Id.run do
@@ -176,9 +180,9 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
 /-- Put `ids` into `dest` in a random order. With two or more cards and no
 other pending choice, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
-    (log : String) : Game :=
+    (log : String) (cause : Option EventCause := none) : Game :=
   if ids.size ≤ 1 || g.pending != .none then
-    g.moveIdsInOrder ids dest |>.logMsg log
+    g.moveIdsInOrder ids dest (cause := cause) |>.logMsg log
   else
     (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
 

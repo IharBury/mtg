@@ -174,6 +174,7 @@ invoke `afterPermanentEnters` after this returns. -/
 def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
+    (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
   if (g.player controller).lost then
     (g.logMsg "no token is created (CR 800.4b)",
@@ -201,7 +202,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       }
       timestamp := ts
     }
-    let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf)
+    let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf) (extraCounters := extraCounters)
     let status :=
       { (baseObj.status.withCounterBag entersWith) with
         gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
@@ -249,10 +250,12 @@ Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (batch := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
+    (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
-      (attacking := attacking) (attackingWhom := attackingWhom) (cause := cause)
+      (attacking := attacking) (attackingWhom := attackingWhom)
+      (extraCounters := extraCounters) (cause := cause)
   else
     let original := printed
     let proposed := GameEvent.created g.turnNumber controller {
@@ -277,7 +280,8 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       let mut last : Option GameObject := none
       for _ in [0:copies] do
         let (g', obj) := g.createOneToken controller printed (tapped := tapped)
-          (attacking := attacking) (attackingWhom := attackingWhom) (cause := cause)
+          (attacking := attacking) (attackingWhom := attackingWhom)
+          (extraCounters := extraCounters) (cause := cause)
         g := g'
         last := some obj
       for _ in [0:copies * extraTreasure] do
