@@ -1202,11 +1202,14 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
       | .rules (.activated ..) => e.cause == EventCause.gameRule .abilityActivated
       | _ => false)
 
-/- Phase 3: `GameEvent.activated` is only recorded when activation cost payment
-completes (`becomeActivated`, CR 602.2b), so reversing a proposed activation
-before cost payment finishes (CR 733.1) leaves no `activated` event or
-`activatedLoyalty` turn flag; and `.transformIncubator` records
-`PermanentEvent.transformed` under a `.oneShotEffect` cause (CR 701.27f / 111.10i). -/
+/- Phase 3: `GameEvent.activated`, loyalty counter costs, and loyalty activation
+triggers only fire when activation cost payment completes (`becomeActivated`,
+CR 602.2b / 606.4), so reversing a proposed activation before cost payment
+finishes (CR 733.1) leaves no `activated` event, loyalty counter cost event, or
+waiting triggers; `.transformIncubator` records `PermanentEvent.transformed`
+under a `.oneShotEffect` cause (CR 701.27f / 111.10i); and spell/ability
+`phaseOut` expires printed static abilities under the resolving `.oneShotEffect`
+cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
 #guard
   let pwWithMana : CardDef :=
     { name := "Test Planeswalker"
@@ -1214,8 +1217,19 @@ before cost payment finishes (CR 733.1) leaves no `activated` event or
       activatedAbilities :=
         #[{ cost := { mana := ManaCost.ofGeneric 2, loyalty := some (.plus 1) }
             effect := {} }] }
+  let myWatcher : CardDef :=
+    { name := "Loyalty Watcher"
+      types := #[.enchantment]
+      triggeredAbilities :=
+        #[TriggeredAbility.fra .youActivateLoyaltyAbility "" (.draw 1),
+          TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1)] }
+  let oppWatcher : CardDef :=
+    { name := "Opp Loyalty Watcher"
+      types := #[.enchantment]
+      triggeredAbilities :=
+        #[TriggeredAbility.fra (.fra .opponentActivatesLoyaltyAbility) "" (.draw 1)] }
   let gPw0 :=
-    let g := addPermanent afterDraw pwWithMana me me
+    let g := addPermanent (addPermanent (addPermanent afterDraw pwWithMana me me) myWatcher me me) oppWatcher opp opp
     let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
     quiet (g.changeStatus pw.id (.addCounters .loyalty 3))
   let pw := (gPw0.battlefield.filter (·.name == "Test Planeswalker"))[0]!
@@ -1251,13 +1265,40 @@ before cost payment finishes (CR 733.1) leaves no `activated` event or
   let gIncTransformed :=
     gInc0.applyFrc me default .transformIncubator #[] (some inc.id)
   let incAfter := gIncTransformed.object! inc.id
+  let staticCreature : CardDef :=
+    { name := "Static Bear"
+      types := #[.creature]
+      power := some 2
+      toughness := some 2
+      staticAbilities := #[.boast] }
+  let gPhase0 := quiet (addPermanent (addPermanent afterDraw staticCreature me me) hero me me)
+  let sb := (gPhase0.battlefield.filter (·.name == "Static Bear"))[0]!
+  let h := (gPhase0.battlefield.filter (·.name == hero.name))[0]!
+  let gPhasedOut :=
+    gPhase0.withResolvingContext (some h.id) me (fun g => g.phaseOut sb)
+  let expiredCause? : Option EventCause :=
+    gPhasedOut.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.effectExpired _ (.staticAbility id .boast)) =>
+        if id == sb.id then some e.cause else none
+      | _ => none)
+  let phasedCause? : Option EventCause :=
+    gPhasedOut.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedOut o false)) =>
+        if o.id == some sb.id then some e.cause else none
+      | _ => none)
   !gPwProposed.loggedActivatedLoyalty me &&
     !gPwReversed.loggedActivatedLoyalty me &&
+    gPwProposed.waitingTriggers.isEmpty &&
+    gPwReversed.waitingTriggers.isEmpty &&
     gPwReversed.stack.isEmpty &&
     !(gPwReversed.object! pw.id).status.loyaltyActivatedThisTurn &&
+    (gPwReversed.object! pw.id).status.loyaltyCounters == 3 &&
+    !gPwReversed.log.any (fun s => mentions s "loyalty counter(s)") &&
     !gPwReversed.events.any (fun e =>
       match e.change with
-      | .rules (.activated ..) => true
+      | .rules (.activated ..) | .rules (.permanent (.counters ..)) => true
       | _ => false) &&
     gWbPaid.events.any (fun e =>
       match e.change with
@@ -1271,7 +1312,12 @@ before cost payment finishes (CR 733.1) leaves no `activated` event or
       match e.change, e.cause with
       | .rules (.permanent (.transformed o true)), .oneShotEffect _ (some sid) (some ctrl) =>
         o.id == some inc.id && sid == inc.id && ctrl == me
-      | _, _ => false)
+      | _, _ => false) &&
+    (match expiredCause?, phasedCause? with
+     | some (.oneShotEffect id1 (some sid1) (some ctrl1)),
+       some (.oneShotEffect id2 (some sid2) (some ctrl2)) =>
+       id1 == id2 && sid1 == h.id && sid2 == h.id && ctrl1 == me && ctrl2 == me
+     | _, _ => false)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

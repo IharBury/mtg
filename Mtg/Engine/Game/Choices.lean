@@ -425,7 +425,7 @@ def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerI
     : Game × GameObject :=
   g.createToken controller src.printed
 
-/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
+/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none => true
@@ -433,13 +433,24 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? sid with
     | none => false
     | some src =>
-      (src.isOnBattlefield && src.controlledBy prop.caster &&
+      let loyaltyPayable :=
+        match prop.activation.bind (·.cost.loyalty) with
+        | none => true
+        | some sym =>
+          !src.status.loyaltyActivatedThisTurn &&
+          match sym.counters with
+          | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
+          | none =>
+            let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+            sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x
+      loyaltyPayable &&
+      ((src.isOnBattlefield && src.controlledBy prop.caster &&
         (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
       (src.zone == .hand src.owner && src.owner == prop.caster &&
         (prop.discardSource || prop.activation.any (·.cost.fra == .exileSourceFromHand)) &&
-        !prop.tapSource && !prop.sacrificeSource)
+        !prop.tapSource && !prop.sacrificeSource))
 
 end Game
 end Mtg.Engine

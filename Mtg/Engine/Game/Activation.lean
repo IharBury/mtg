@@ -194,10 +194,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   g.validateActivation p o ab
   let loyaltyX := ab.cost.loyalty == some .minusX
   let g :=
-    match ab.cost.loyalty with
-    | some sym => if loyaltyX then g else (g.payLoyaltyCost o sym).queueLoyaltyActivationTriggers p sym
-    | none => g
-  let g :=
     if ab.exhaust then
       g.changeStatus id (.exhaustUsed true)
     else g
