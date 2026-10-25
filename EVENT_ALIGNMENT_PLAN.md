@@ -345,12 +345,39 @@ structure EventObject where
   attachedTo : Option ObjectId
   counters : CounterBag
   isCopy : Bool
+  summoningSick : Bool
+  attackingWhom : Option PlayerId   -- becomes `attackingTarget : Option AttackTarget` in Phase 5 (folding `Status.attackingWhom` and `Status.attackingPlaneswalker`)
+  printed : Option CardDef          -- preserves full printed card definition across `moved`/`created`
+  chosenX : Option Nat := none      -- stays on stack `GameObject` (107.3a) and `EventObject` (`after.chosenX.orElse existing.chosenX`); off-stack readers use `CastEvent.announced` in Phase 8
+  -- copy-only stack fields carried in Phase 2 so `.created` stack copies round-trip through `applyZoneEvent`
+  -- (`applyZoneEvent` writes `adventurerCard` only in the `.created` branch; `Movement.buildArrival` does not copy it on `moved`);
+  -- removed from `EventObject` in Phase 5 when `StackObjectEvent.copied` copies them from `original` onto the new `GameObject`
+  -- (`adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId` stay on `GameObject` per §3.8; the 5 cast-choice fields stay on `GameObject` until Phase 8):
+  kicked : Bool := false
+  teamworkPaid : Bool := false
+  sneakPaid : Bool := false
+  sneakAttackWhom : Option PlayerId := none
+  giftPromisedTo : Option PlayerId := none
+  adventurerCard : Option CardDef := none
+  abilityEffect : Option Effect := none
+  triggeredAbility : Option TriggeredAbility := none
+  sourceId : Option ObjectId := none
+  -- effect-mirror, 400.7d cast-metadata, and LKI fields carried in Phase 2 so `applyZoneEvent` materializes `GameObject`
+  -- without a follow-up `EngineChange.setObject`; retired from `EventObject` alongside their `GameObject`/`Status` fields in Phase 8 step 4:
+  returnedAsArtifact : Bool := false
+  onlyFoodArtifact : Bool := false
+  wasCast : Bool := false           -- 400.7d cast metadata (`applyZoneEvent` reads `after.wasCast` when `printed` is set)
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
 deriving Repr, Inhabited, BEq
 ```
 
 `owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
 `Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
-toughness, colors, and granted abilities depend on the game.
+toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carries the arrival, card, stack-copy, cast, effect-mirror, and LKI fields above on `EventObject`:
+- `summoningSick`, `attackingWhom` (replaced by `attackingTarget : Option AttackTarget` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` copies `chosenX` directly from `original`).
+- The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—where `adventurerCard` is only written by `applyZoneEvent` in the `.created` branch for stack copies, not on `moved`) leave `EventObject` in Phase 5 when stack copies migrate from `ZoneEvent.created` to `StackObjectEvent.copied` and the copy applier copies them (together with `chosenX` and, for ability copies until Phase 8, `lastKnownPower` and `lastKnownToughness`) from `original` onto the new `GameObject` (`adventurerCard`, `abilityEffect`, `triggeredAbility`, and `sourceId` remain on `GameObject` per §3.8, and the 5 cast-choice fields remain on `GameObject` until their readers use `CastEvent` in Phase 8).
+- The 5 remaining transitional fields (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) are deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4.
 
 ### 2.4 Zone changes
 
@@ -432,12 +459,18 @@ inductive PermanentEvent where
 `PermanentDesignation.goaded` carries `(byPlayer : PlayerId) (untilNextTurn : Bool := true)`,
 covering both standard CR 701.15a goad and indefinite goad (e.g. Dack Fayden).
 
-**Counter storage.** The ~22 counter fields on `Status` (`plusOnePlusOne`,
+**Counter storage.** The 23 counter fields on `Status` (`plusOnePlusOne`,
 `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`,
 `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`,
-`burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`,
-`trampleCounters`, `keywordCounters`) become one `CounterBag` written only by
-counter events and `moved`. Keyword counters (122.1b) stay in the bag; layer 6
+`burden`, `quest`, `invasion`, `poison`, `indestructibleCounters`,
+`lifelinkCounters`, `trampleCounters`, `keywordCounters`) become one
+`CounterBag` written only by counter events and `moved` (Phase 2 introduced
+`CounterBag` on `EventObject.counters` and `ZoneEvent.moved.entersWith` with
+`Status.toCounterBag` / `Status.withCounterBag` bridges that round-trip all 23
+fields including `Status.poison`; Phase 8 step 4 replaces the 23 stored `Status`
+fields with `counters : CounterBag` plus computed projection helpers
+`Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc., while player poison
+stays on `Player.poison`). Keyword counters (122.1b) stay in the bag; layer 6
 reads them as an input (613.1f). They are not a continuous-effect spec.
 
 ### 2.6 Damage and life
@@ -582,7 +615,38 @@ inductive StackObjectEvent where
 Countering is a `ZoneEvent.moved` with `verb := .counter` (701.6). The proposal
 under construction (`ProposedSpell`), the waiting-trigger queue
 (`Game.waitingTriggers`), and the priority holder are **engine state** updated by
-`EngineChange`; only the milestones above go into the rules history.
+`EngineChange`; only the milestones above go into the rules history. Copying a
+spell or ability on the stack (`copyStackSpell`, `copyStackAbility`, Way of the
+Cryomancer, Loki, `.copyCauseSpell`) temporarily emits `ZoneEvent.created` in
+`.stack` during Phase 2; Phase 5 migrates stack copies to
+`StackObjectEvent.copied`, whose applier copies stack metadata—both the
+`StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
+`extraModes`, and `dividedDamage`) and the `GameObject` stack/cast/adventure
+fields (`chosenX`, `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`,
+`giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
+`sourceId`) plus `lastKnownPower` / `lastKnownToughness` for ability copies
+until Phase 8—directly from `original : ObjectId` per 707.10 (`chosenX` is
+copied by all five stack copiers today—spell copies per 707.10 and ruling 845
+for Way of the Cryomancer, and ability copies per MSH ruling 401—and must be
+copied by `applyStackObjectEvent` since `StackObjectEvent.copied` does not go
+through `applyZoneEvent`'s `moved.after` path). Because only `copyStackSpell`
+copies all five cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`,
+`sneakPaid`, `sneakAttackWhom`), `adventurerCard`, and `extraModes` today—while
+Loki (`Entering.lean`) omits `StackEntry` decisions, `adventurerCard`, and the
+five cast-choice fields (copying `chosenX` only), Way of the Cryomancer
+(`Entering.lean`, which already copies `adventurerCard`, `kicked`,
+`giftPromisedTo`, `teamworkPaid`, and `chosenX` on the object and `targets`,
+`dividedDamage`, `chosenMode`, and `targetsAnnounced` on the stack entry) omits
+`extraModes`, `sneakPaid`, and `sneakAttackWhom`, `.copyCauseSpell`
+(`FraResolve.lean`) omits `extraModes` and the five cast-choice fields (copying
+`adventurerCard` and `chosenX` only on the `GameObject`), and
+`copyStackAbility` leaves `targetsAnnounced` false—this migration is a 707.10
+behavior change across both `StackEntry` decisions and `GameObject`
+cast/adventure fields, not only a new event constructor. Card copies created in
+`.exile`—both the 707.12 cast-during-resolution copies (Saruman, Baron Zemo,
+Uldaros) and `createPreparedCopy` (`Movement.lean`, which leaves the copy in
+`.exile` with a play permission while the permanent stays prepared per ruling
+742, not 707.12)—remain `ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -604,6 +668,24 @@ inductive CombatEvent where
   | damageAssigned (firstStrike : Bool) (assignments : Array CreatureCombatAssignment)  -- 510.1 / 703.4k
   | removedFromCombat (object : EventObject)                                       -- 506.4 / 511.3
 ```
+
+`CombatEvent.becameAttacking` is the combat milestone for both halves of 508.4:
+permanents put onto the battlefield attacking and permanents made attacking on
+the battlefield by an effect. In Phase 2, the enter-attacking paths in this
+tree—Andúril's Spirit tokens (`createKindTokens` with `attacking`), Sneak
+(`putOntoBattlefield` with `attacking` / `attackingWhom`), and graveyard returns
+through `enterModsAttacking` / `returnFromGyTappedAttackingFinality` (Grim
+Reaper)—set `attacking := true` and `attackingWhom := some …` on the zone
+event's arrival object (`ZoneEvent.moved.after` / `ZoneEvent.created.object`),
+which keeps them from matching *"whenever … attacks"*
+(`CombatEvent.attackersDeclared`, 508.3a) without replacing the 508.4 combat
+milestone. Phase 5 adds `CombatEvent.becameAttacking` for all 508.4 transitions
+and folds `Status.attackingWhom : Option PlayerId`,
+`Status.attackingPlaneswalker : Option ObjectId`, and
+`EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` so
+enter-attacking paths and `becameAttacking` can target a player, planeswalker,
+or battle (e.g. Andúril ruling 181, whereas Phase 2's enter-attacking paths only
+store a `PlayerId`).
 
 First-strike and regular combat damage are separate combat damage steps
 (510.4 / 702.7b), so they are separate `damageAssigned` events and separate
@@ -841,8 +923,8 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId`, `attackingPlaneswalker : Option ObjectId`, `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
-| **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5). |
+| **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId` + `attackingPlaneswalker : Option ObjectId` (folded into `attackingTarget : Option AttackTarget` in Phase 5), `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
+| **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `poison`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5; player poison stays on `Player.poison`). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
 | **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derived in Phase 1 per creature via `Game.deathtouchDealtSinceLastSba` from `DamageEvent.dealt` packets committed since the last `EngineChange.sbaChecked` marker where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). Delete the remaining `Status.dealtDeathtouch` field and cleanup/test references in Phase 8. |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
@@ -1045,10 +1127,45 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `step`, and `extraTurns` / `additionalCombatPhases` become state written by
    `TurnEvent`s; extra combat is an extra phase after a phase (500.8).
 2. Replace `.attacked` and the raw combat status writes with `CombatEvent`
-   (§2.10), including `becameAttacking` for 508.4 so "whenever … attacks" does
-   not see it (508.3a), and `AttackTarget` instead of a bare `PlayerId`.
+   (§2.10), including `becameAttacking` for both halves of 508.4 (permanents
+   put onto the battlefield attacking and permanents made attacking by an
+   effect; the zone-event arrival flags keep enter-attacking off
+   `attackersDeclared` per 508.3a), and `AttackTarget` instead of a bare
+   `PlayerId` (folding `Status.attackingWhom : Option PlayerId`,
+   `Status.attackingPlaneswalker : Option ObjectId`, and
+   `EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` so
+   enter-attacking paths and `becameAttacking` can target a player,
+   planeswalker, or battle, e.g. Andúril ruling 181).
 3. Replace `.cast` / `.activated` with `CastEvent`, add `TriggerQueueEvent` and
-   `StackObjectEvent` (§2.9). **Only these milestones are rules events.**
+   `StackObjectEvent` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
+   `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
+   `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
+   `.exile`—both the 707.12 cast-during-resolution copies for Saruman, Baron
+   Zemo, and Uldaros, and `createPreparedCopy` per ruling 742—stay
+   `ZoneEvent.created`). Have `applyStackObjectEvent` copy the `StackEntry`
+   decisions (`targets`, `targetsAnnounced`, `chosenMode`, `extraModes`, and
+   `dividedDamage`), `GameObject` stack/cast/adventure fields (`chosenX`,
+   `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
+   `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`), and
+   `lastKnownPower` / `lastKnownToughness` (which `copyStackAbility` in
+   `ResolutionEffects.lean` copies today, until those LKI fields are retired in
+   Phase 8) directly from `original` onto the new copy `StackEntry` and
+   `GameObject` (preserving `chosenX` across all five copiers—spell copies per
+   707.10 and ruling 845 for Way of the Cryomancer, and ability copies per MSH
+   ruling 401—since `StackObjectEvent.copied` does not run `applyZoneEvent`'s
+   `moved.after` path, and fixing Loki's copy to include `StackEntry`
+   decisions, `adventurerCard`, and the 5 cast-choice fields, Way of the
+   Cryomancer to include `extraModes`, `sneakPaid`, and `sneakAttackWhom`,
+   `.copyCauseSpell` to include `extraModes` and the 5 cast-choice fields, and
+   `copyStackAbility` to copy `targetsAnnounced` per 707.10), and retire the 9
+   copy-only stack fields from `EventObject` (`kicked`, `teamworkPaid`,
+   `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`,
+   `abilityEffect`, `triggeredAbility`, `sourceId`; note that `chosenX` stays
+   on the stack `GameObject` per 107.3a and on `EventObject` for `moved.after`,
+   `adventurerCard` and the stack ability fields
+   `abilityEffect`/`triggeredAbility`/`sourceId` stay on `GameObject` per §3.8,
+   and the 5 cast-choice fields stay on `GameObject` until their readers use
+   `CastEvent` in Phase 8). **Only these milestones are rules events.**
    `ProposedSpell` and `ProposalChange`, `Game.waitingTriggers` and its queue
    operations, `.pushStack` / `.popStack` bookkeeping, and `.priority` stay
    `EngineChange`, so the log does not carry the scratchpad.
@@ -1113,10 +1230,21 @@ non-occurrence, and the 616.1a–e order.
    `Game.enrageGrantsAdditionalCombat` and have `.enrageGrantsCombat` use the
    same live resolution-time attacking check (`source` on the battlefield and
    `status.attacking`) as the untap instruction.
-4. Delete every field in §3.8 marked as a mirror, history, delayed trigger, or
-   queue-time counter, together with its `StatusChange` / `ObjectChange` /
-   `PlayerChange` / `GameChange` constructor, after its readers use the log,
-   the layers, or the delayed-trigger table.
+4. Delete every field in §3.8 marked as a mirror, history, cast metadata
+   (400.7d on `GameObject`: `castFromGraveyard`, `castFromHand`, `wasCast`,
+   `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
+   `isPreparedSpell`, `treasureManaSpent`, `boastExiled`, and off-stack
+   `chosenX` reads), LKI (`GameObject.lastKnownPower`, `lastKnownToughness`,
+   `lastController`), delayed trigger, or queue-time counter (alongside the
+   remaining transitional mirror, 400.7d cast-metadata, and LKI fields on
+   `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`, `wasCast`,
+   `lastKnownPower`, and `lastKnownToughness`), consolidate the 23 stored
+   counter fields on `Status` (including `Status.poison`; player poison stays on
+   `Player.poison`) into `counters : CounterBag` (with computed projection
+   helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.), and delete
+   their `StatusChange` / `ObjectChange` / `PlayerChange` / `GameChange`
+   constructors after their readers use the log, the layers, or the
+   delayed-trigger table.
 5. Move the continuation registers into a continuation frame stack.
 
 Final check: `lake build`, `lake exe mtg-demo`, `lake exe oracle-roundtrip`, and
