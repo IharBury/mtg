@@ -337,7 +337,7 @@ def randomPromptBlock (g : Game) : Option String :=
       "  shuffle            keep the current order\n" ++
       "  shuffle <id>...\n" ++
       randomChoiceLines g lib
-  | some (.orderInto ids dest) =>
+  | some (.orderInto ids dest _) =>
     some <|
       s!"Provide the random order of these cards into {zoneLabel g dest} (first listed = first / bottom).\n" ++
       "  order              keep their current order\n" ++

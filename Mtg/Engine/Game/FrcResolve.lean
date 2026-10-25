@@ -371,7 +371,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
           | some card =>
             let mv := card.printed.manaValue
             let g := (g.putHits controller #[id] (cause := some cause))
-            g.loseLife controller mv
+            g.loseLife controller mv (cause := some cause)
           | none => g
         | none => g.logMsg s!"{(g.player pid).name} reveals no historic permanent"
       g.restBottom pid rest false (cause := some cause)

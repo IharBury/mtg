@@ -141,10 +141,17 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
     (cause : Option EventCause := none) : Game :=
-  let cause :=
-    cause.orElse (fun _ =>
-      g.currentResolvingContext?.map (fun (src, ctrl) =>
-        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   match dest with
   | .library p =>
     Id.run do
@@ -181,10 +188,21 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
 other pending choice, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
     (log : String) (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   if ids.size ≤ 1 || g.pending != .none then
     g.moveIdsInOrder ids dest (cause := cause) |>.logMsg log
   else
-    (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
+    (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
 
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/

@@ -168,7 +168,7 @@ def actor (g : Game) : Option PlayerId :=
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
-      | .orderInto _ dest =>
+      | .orderInto _ dest _ =>
         match dest with
         | .library p | .hand p | .graveyard p => some p
         | _ =>

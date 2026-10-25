@@ -215,7 +215,7 @@ choice waits, and the chosen creature then enters. -/
   waiting && onBattlefield g "Reveal Elf" && !onBattlefield g "Reveal Bear" &&
     logContains g "puts a random creature from among them" &&
     (match g.pending with
-      | .resolveRandom (.orderInto ids (.library p)) =>
+      | .resolveRandom (.orderInto ids (.library p) _) =>
         p == caster && ids.size == 2
       | _ => false)
 
@@ -280,7 +280,7 @@ library changes nothing. -/
   let g := stepRaw g0 untilCreature
   (g.player caster).library.isEmpty && inExile g "Reveal Bolt" && inExile g "Reveal Plot" &&
     (match g.pending with
-      | .resolveRandom (.orderInto ids (.library p)) => p == caster && ids.size == 2
+      | .resolveRandom (.orderInto ids (.library p) _) => p == caster && ids.size == 2
       | _ => false)
 
 /- A Saga enters. Other cards go on the bottom. No Saga puts every revealed

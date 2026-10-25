@@ -968,7 +968,7 @@ the other revealed cards on the bottom. The rest of the library stays. -/
   let g := mustApply g me (.supplyOrder #[gid])
   choosing && onBattlefield g "Grizzly Bears" &&
     match g.pending with
-    | .resolveRandom (.orderInto _ (.library _)) => true
+    | .resolveRandom (.orderInto _ (.library _) _) => true
     | _ => false
 
 /- Part in Friendship puts the revealed noncreatures on the bottom at random,

@@ -951,7 +951,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       match req with
       | .shuffleLibrary p =>
         s!" [shuffle {(g.player p).name}'s library (--norandom)]"
-      | .orderInto _ dest =>
+      | .orderInto _ dest _ =>
         let destName :=
           match dest with
           | .library p => s!"{(g.player p).name}'s library"

@@ -948,12 +948,12 @@ def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
       let g := g.change (.pending .none)
       let g := g.changePlayer p (.library ids)
       return g.finishAfterRandom true
-    | .orderInto expected dest =>
+    | .orderInto expected dest cause =>
       let ids := if ids.isEmpty then expected else ids
       if !isPermutation ids expected then
         throw "Order must list each of those cards once, or omit the ids to keep their current order"
       let g := g.change (.pending .none)
-      let g := g.moveIdsInOrder ids dest
+      let g := g.moveIdsInOrder ids dest (cause := cause)
       return g.finishAfterRandom true
     | .chooseObject choices =>
       match ids[0]?, ids.size with
@@ -1004,7 +1004,7 @@ def resolveOneRandom (g : Game) (rng : Rng) : Rng × Game :=
     match g.supplyOrder ordered with
     | .ok g' => (rng, g')
     | .error _ => (rng, g)
-  | .resolveRandom (.orderInto ids _) =>
+  | .resolveRandom (.orderInto ids _ _) =>
     let (rng, ordered) := rng.shuffle ids
     match g.supplyOrder ordered with
     | .ok g' => (rng, g')

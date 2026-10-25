@@ -1596,6 +1596,44 @@ end-step sacrifices. -/
       match e.change with
       | .rules (.effectCreated ..) => some e.cause
       | _ => none)
+  -- 6. .jhoira shares one cause across revealUntil, putHits, loseLife, and the
+  --    deferred RandomRequest.orderInto library return when 2+ cards remain
+  let relicDef : CardDef :=
+    { name := "Historic Relic"
+      types := #[.artifact]
+      manaCost := ManaCost.ofGeneric 2 }
+  let gJhoiraSetup :=
+    let g := addPermanent gWithSrc relicDef me me
+    let r := (g.battlefield.filter (·.name == "Historic Relic"))[0]!
+    let g := (g.move r.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move b.id (.library me) none (libraryPosition := some .top)).1
+    let g := (g.move h.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let gJhoiraPending :=
+    gJhoiraSetup.applyFrc me default .jhoira #[Target.player me] (some s.id)
+  let jhoiraPendingOk :=
+    match gJhoiraPending.pending with
+    | .resolveRandom (.orderInto ids (.library p) (some _)) => p == me && ids.size == 2
+    | _ => false
+  let gJhoiraDone :=
+    match (gJhoiraPending.change (.resolvingContext none)).supplyOrder #[] with
+    | .ok g' => g'
+    | .error _ => gJhoiraPending
+  let jhoiraMoveCauses :=
+    gJhoiraDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved ..)) => some e.cause
+      | _ => none)
+  let jhoiraRestCauses :=
+    gJhoiraDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.zone (.moved _ _ .exile (.library _) ..)) => some e.cause
+      | _ => none)
+  let jhoiraLifeCauses :=
+    gJhoiraDone.events.filterMap (fun e =>
+      match e.change with
+      | .rules (.life (.lost _ 2 ..)) => some e.cause
+      | _ => none)
   oneShotIds == #[⟨eff0⟩, ⟨eff0⟩] &&
     createdIds == #[⟨eff0 + 1⟩, ⟨eff0 + 2⟩] &&
     nextEndExileCauses.size == 2 &&
@@ -1639,7 +1677,13 @@ end-step sacrifices. -/
     gVenser.delayedEndStepSacrifices.size == 2 &&
     venserCreateCauses.all (· == venserCreateCauses[0]!) &&
     venserEffectCauses.all (· == venserCreateCauses[0]!) &&
-    gVenser.delayedEndStepSacrifices.all (fun (_, c) => c == venserCreateCauses[0]!)
+    gVenser.delayedEndStepSacrifices.all (fun (_, c) => c == venserCreateCauses[0]!) &&
+    jhoiraPendingOk &&
+    jhoiraMoveCauses.size == 6 &&
+    jhoiraRestCauses.size == 2 &&
+    jhoiraLifeCauses.size == 1 &&
+    jhoiraMoveCauses.all (· == jhoiraMoveCauses[0]!) &&
+    jhoiraLifeCauses[0]! == jhoiraMoveCauses[0]!
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard
