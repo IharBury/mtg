@@ -267,36 +267,53 @@ structure BatchId where
   raw : Nat
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- A game rule that causes an event directly (103.5, 303.4h, 304.2, 307.2,
+602.2b, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). `.stepAdvance`,
+`.spellCast`, and `.abilityActivated` are the Phase 3 causes on
+`RulesEvent.stepped` / `.cast` / `.activated` until Phase 5 replaces those
+constructors with `TurnEvent` and `CastEvent`. -/
+inductive GameRuleKind where
+  | openingHandDraw | mulligan
+  | instantOrSorceryFinishedResolving | permanentSpellResolved
+  | adventureSpellResolved | abilityFinishedResolving
+  | unattachOnHostLeave | playerLeftGame
+  | stepAdvance | spellCast | abilityActivated | reversedActivation
+  | staticAbility | continuousEffect | leavingZone
+  | impending | noLegalMode
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Why a rules event happened. -/
 inductive EventCause where
-  /-- Game setup (103) or a player leaving the game (800.4a, not an SBA). -/
+  /-- A rule of the game (`GameRuleKind`). -/
   | gameRule (rule : GameRuleKind)
   /-- A turn-based action (703.4 / 500.4 / 500.5 / 511.3). -/
   | turnBased (action : TurnBasedAction)
   /-- A state-based action (704.5). -/
   | stateBased (sba : StateBasedAction)
   /-- A special action (116.2). -/
-  | specialAction (player : PlayerId) (kind : SpecialActionKind)
+  | specialAction (kind : SpecialActionKind) (player : PlayerId)
   /-- Paying a cost (118 / 601.2h / 602.2b). Costs are not one-shot effects:
-  the link is the spell or ability being cast or activated, not an `EffectId`. -/
-  | costPayment (player : PlayerId) (forObject : ObjectId) (kind : CostKind)
+  when casting a spell or activating an ability, `forObject` is `some spellOrAbilityId`;
+  for ward, unless-pays, or optional resolving costs without a proposed object, it may be `none`. -/
+  | costPayment (kind : CostKind) (payer : PlayerId) (forObject : Option ObjectId := none)
   /-- A one-shot effect of a resolving spell or ability (610). -/
-  | oneShotEffect (effectId : EffectId) (source : Option ObjectId)
-      (controller : Option PlayerId)
+  | oneShotEffect (id : EffectId) (source : Option ObjectId := none)
+      (controller : Option PlayerId := none)
   /-- The result of a replacement or prevention effect (614 / 615). -/
   | replaced (replacement : ReplacementId) (original : EventCause)
   /-- Migration-only: a call site not yet classified. Excluded from trigger
   matching that depends on cause; must reach zero uses by the end of Phase 3. -/
   | unclassified
-deriving Repr, Inhabited, BEq
+deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive TurnBasedAction where
-  | phasing | dayNight | untap | draw | sagaLore
+  | phaseInOut | dayNightCheck | untapAll | drawStepDraw | sagaLoreOnMain
   | chooseDefendingPlayer | declareAttackers | declareBlockers
   | assignCombatDamage (firstStrike : Bool) | dealCombatDamage (firstStrike : Bool)
-  | cleanupDiscard | cleanupDamageAndEffects
-  | expireAtStepBegin | expireAtStepEnd | emptyManaPools | removeFromCombat
-deriving Repr, Inhabited, BEq
+  | removeFromCombatAtEndOfCombat
+  | cleanupDiscard | cleanupClear
+  | emptyManaPools | expireAtStepBegin | expireAtStepEnd
+deriving DecidableEq, Repr, Inhabited, BEq
 
 structure GameEvent where
   turn : Nat
@@ -440,7 +457,7 @@ inductive PermanentEvent where
   | tapped (object : EventObject)               -- 701.26a
   | untapped (object : EventObject)             -- 701.26b
   | phasedOut (object : EventObject) (indirectly : Bool)   -- 702.26
-  | phasedIn (object : EventObject) (indirectly : Bool)    -- 702.26c; cause is usually .turnBased .phasing
+  | phasedIn (object : EventObject) (indirectly : Bool)    -- 702.26c; cause is usually .turnBased .phaseInOut
   | transformed (object : EventObject)          -- 701.27
   | turnedFaceUp (object : EventObject)         -- 116.2b / 708.8 (special action or effect, by cause)
   | turnedFaceDown (object : EventObject)       -- 708.2a
@@ -542,26 +559,42 @@ structure ManaUnit where
 inductive PlayerEvent where
   | manaAdded (player : PlayerId) (units : Array ManaUnit)                    -- 106.4
   | manaSpent (player : PlayerId) (units : Array ManaUnit) (forObject : ObjectId)
-  | manaEmptied (player : PlayerId) (units : Array ManaUnit)                  -- 500.5 / 703.4q
-  | scried (player : PlayerId) (top bottom : Array ObjectId)                  -- 701.22, recorded when finished
-  | surveilled (player : PlayerId) (top graveyard : Array ObjectId)           -- 701.25, recorded when finished
+  | manaEmptied (player : PlayerId) (units : Array ManaUnit)
+      (keptColorless : Bool := false)                                         -- 500.5 / 703.4q
+  | scried (player : PlayerId) (top : Array ObjectId := #[])
+      (bottom : Array ObjectId := #[]) (lookedAt : Nat := 0) (asked : Nat := 0) -- 701.22, recorded when finished
+  | surveilled (player : PlayerId) (top : Array ObjectId := #[])
+      (graveyard : Array ObjectId := #[]) (lookedAt : Nat := 0) (asked : Nat := 0) -- 701.25, recorded when finished
   | lookedAt (player : PlayerId) (cards : Array ObjectId)                     -- only for "look at", not scry/surveil
   | revealed (player : PlayerId) (cards : Array ObjectId)                     -- 701.20
   | searched (player : PlayerId) (libraryOwner : PlayerId) (found : Array ObjectId)  -- 701.23
   | shuffled (libraryOwner : PlayerId) (newOrder : Array ObjectId)            -- 701.24
-  | proliferated (player : PlayerId) (permanents : Array ObjectId) (players : Array PlayerId)  -- 701.34
+  | proliferated (player : PlayerId) (permanents : Array ObjectId := #[])
+      (players : Array PlayerId := #[])                                       -- 701.34
   | ringTempted (player : PlayerId) (bearer : Option ObjectId) (stage : Nat)  -- 701.54
-  | beheld (player : PlayerId) (quality : CardSubtype)
+  | beheld (player : PlayerId) (quality : CardSubtype)                        -- 701.62
+  | sheHulkDealtDamage (player : PlayerId)                                    -- MSH 448 once-each-turn optional action
   | becameMonarch (player : PlayerId) (previous : Option PlayerId)            -- 725
   | gainedDesignation (player : PlayerId) (d : PlayerDesignation)             -- city's blessing 702.131, …
   | lost (player : PlayerId) (reason : LossReason)                            -- 104 / 704.5a–c
-  | leftGame (player : PlayerId)                                              -- 800.4a, cause .gameRule
+  | leftGame (player : PlayerId)                                              -- 800.4a, cause .gameRule .playerLeftGame
   | gameEnded (result : GameResult)
 ```
 
 The individual scry/surveil choices stay in the continuation stack until the
-player orders the piles; the log gets one `scried` / `surveilled`, so "whenever
-you scry" matches once.
+player orders the piles; the log gets one `scried` / `surveilled` (carrying both
+the actual `lookedAt` card count and the printed `asked` count, folding in the
+former `OneShotEffect.looked`), so "whenever you scry" matches once. Phase 3
+introduced `PlayerEvent` with `scried`, `surveilled`, `beheld`, `proliferated`,
+`sheHulkDealtDamage`, `manaEmptied (player : PlayerId) (amount : Nat := 0) (keptColorless : Bool := false)`,
+`lost (player : PlayerId)`, and `leftGame (player : PlayerId)`; Phase 8 step 4
+adds the remaining constructors (`manaAdded`, `manaSpent` replacing top-level
+`RulesEvent.spentMana`, `lookedAt`, `revealed`, `searched`, `shuffled`,
+`ringTempted`, `becameMonarch`, `gainedDesignation`, and `gameEnded`), replaces
+`manaEmptied`'s `amount : Nat` with `units : Array ManaUnit` while preserving
+`keptColorless : Bool := false` (so `Game.emptyManaPools` / `applyPlayerEvent`
+continues to convert unspent mana to colorless when `unspentManaBecomesColorless`
+applies instead of emptying the pool), and adds `LossReason` to `lost`.
 
 ### 2.8 Turn structure
 
@@ -608,7 +641,7 @@ inductive TriggerQueueEvent where
 /-- Things that happen to an object already on the stack. -/
 inductive StackObjectEvent where
   | copied (original : ObjectId) (copy : EventObject) (controller : PlayerId)       -- 707.10
-  | resolved (obj : EventObject)                                                    -- 608.2
+  | resolved (obj : EventObject) (nth : Nat := 1)                                   -- 608.2 (added in Phase 3)
   | removedOnResolution (obj : EventObject)                                         -- 608.2b, all targets illegal
 ```
 
@@ -665,7 +698,8 @@ inductive CombatEvent where
   | blockersDeclared (player : PlayerId) (decls : Array (EventObject × ObjectId))  -- 509.1 / 703.4j
   | becameBlocked (attacker : EventObject) (blockers : Array ObjectId)             -- 509.1h
   | remainedUnblocked (attacker : EventObject)                                     -- 509.1h
-  | damageAssigned (firstStrike : Bool) (assignments : Array CreatureCombatAssignment)  -- 510.1 / 703.4k
+  | damageAssigned (firstStrike : Bool) (forAttackers : Bool)
+      (assignments : Array CreatureCombatAssignment)                               -- 510.1 / 510.4 / 703.4k
   | removedFromCombat (object : EventObject)                                       -- 506.4 / 511.3
 ```
 
@@ -736,19 +770,36 @@ The commit API takes **data**, not a callback, so a nested call cannot open a
 second batch by accident:
 
 ```lean
-/-- Apply `events` as one simultaneous batch under a single `BatchId` and
-evaluate batch-level ("whenever one or more …") triggers for the batch while
-keeping the existing per-event queues for individual triggers (Phase 4);
-Phase 6 replaces those individual queues with `matchTriggers pre post batch`
-(§3.5). -/
+/-- Apply `events` (each paired with its `EventCause`) as one simultaneous batch
+under a single `BatchId` and evaluate batch-level ("whenever one or more …")
+triggers for the batch while keeping the existing per-event queues for
+individual triggers (Phase 4); Phase 6 replaces those individual queues with
+`matchTriggers pre post batch` (§3.5). -/
+def Game.commitBatchWithCauses (g : Game) (events : Array (EventCause × RulesEvent)) : Game
+
+/-- Commit a homogeneous-cause batch under one `BatchId`. When `cause` is a
+one-shot effect (or `.unclassified` while resolving), resolves `resolveOneShotCause`
+once and advances `nextEffectId` for the batch before delegating to
+`commitBatchWithCauses`, so all events in the batch share that one `EffectId`. -/
 def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent) : Game
 ```
 
-- In Phase 4, `commitBatch` applies `events` under one `BatchId` and runs a
-  batch-level pass for the "whenever one or more …" triggers while keeping the
-  existing per-event trigger queues for individual triggers; Phase 6 replaces
-  those individual per-event queues with the unified `matchTriggers pre post batch`
-  pass (§3.5).
+- In Phase 4, `commitBatchWithCauses` applies its `(EventCause × RulesEvent)`
+  entries under one `BatchId` (`⟨g.nextBatchId⟩`), and `commitBatch` resolves
+  `g.resolveOneShotCause cause` (advancing `nextEffectId` once when it mints a
+  fresh `EffectId`) before delegating to `commitBatchWithCauses` so every event
+  of a one-shot instruction shares one `EffectId` and one `BatchId` (replacing
+  the manual `allocDelayedCause` pre-allocation across `markDamageOn`,
+  `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
+  `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
+  `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean`), while
+  SBA passes call `commitBatchWithCauses` so heterogeneous `.stateBased` causes
+  (`.lifeZeroOrLess`, `.zeroOrLessToughness`, `.legendRule`,
+  `.counterAnnihilation`, …) share one `BatchId` per pass (704.3) while keeping
+  their per-event `.stateBased` causes. Both run a batch-level pass for the
+  "whenever one or more …" triggers while keeping the existing per-event trigger
+  queues for individual triggers; Phase 6 replaces those individual per-event
+  queues with the unified `matchTriggers pre post batch` pass (§3.5).
 - An instruction such as "destroy all creatures", "create N tokens",
   "mill N", or "each player discards" builds all its events, then commits once.
 - Combat damage is **two** commits when there is a first-strike step
@@ -901,7 +952,7 @@ SBA loop and priority (117.3a, 704.3). Cleanup grants priority only per 514.3a.
 
 ### 3.7 Casting, activating, and costs (118, 400.7d, 601, 602)
 
-- Cost payments are committed with `cause := .costPayment player spellOrAbilityId kind`.
+- Cost payments are committed with `cause := .costPayment kind payer forObject`.
   Teamwork and convoke taps are ordinary `tapped` events with that cause; the
   `tappedForTeamwork` trigger (fired from [`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean))
   becomes a query on the cause. There is no tap flag to delete.
@@ -957,16 +1008,17 @@ Each field is put in exactly one category. "Log" means a query over
 | **Game state — stays** | `life : Int`, `maxHandSize : Nat` (base 7, 514.1; hand-size modifiers evaluate via `ContinuousEffectSpec.playerRule`), `manaPool : ManaPool`, `poison : Nat` (written by `PermanentEvent.counters (.player p) .poison`), `lost : Bool`, `leftTheGame : Bool`, `mulligansTaken : Nat`, `keptOpeningHand : Bool`, `library : Array ObjectId`, `hand : Array ObjectId`, `graveyard : Array ObjectId`, `isMonarch : Bool` (written by `becameMonarch`, 725), `citysBlessing : Bool` (702.131), `enduringStory : Bool`, `theRingAbilities : Nat`, `ringBearerId : Option ObjectId` (701.54) | Single-writer events. |
 | **Delayed triggers → delayed-trigger table (603.7)** | `eaglesBirdsNextUpkeep : Nat` (upkeep delayed trigger from *The Eagles Are Coming!*), `attackPumpPerPlainsThisTurn : Nat` (*"whenever you attack this turn"* delayed trigger from *Roads Go Ever, Ever On*) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (Phase 8). |
 | **Player effect mirrors → layers / specs** | `additionalLandsThisTurn : Nat` (305.2b), `protectionFromEverything : Bool`, `lifeCantChange : Bool` (until the player's next turn), `lifeLocked : Bool` (Platinum Emperion; a separate flag), `cantCastSpellsThisTurn : Bool`, `typeSpellCostLessThisTurn : Array (CardType × Nat)`, `supertypeSpellCostLessThisTurn : Array (Supertype × Nat)`, `jaceLoyaltyAtInstantSpeed : Bool`, `legendRuleOffThisTurn : Bool`, `copyNextInstantSorceryThisTurn : Nat`, `mountainExtraRedThisTurn : Nat`, `nextSpellCantBeCountered : Bool`, `cantAttackJaces : Bool` | `ContinuousEffectSpec.playerRule` (611.2c). |
-| **Player history → log** | `beheldQualities : Array CardSubtype` | `PlayerEvent.beheld` (already recorded as `OneShotEffect.beheld`). |
+| **Player history → log** | `beheldQualities : Array CardSubtype` | `PlayerEvent.beheld` (already recorded in Phase 3). |
 | **Player SBA bookkeeping** | `drewFromEmpty : Bool` | Derive from a failed-draw event since the last SBA batch (704.5b). |
 
 #### `Game` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId`, `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
-| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
-| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array ObjectId`, `delayedEndStepExiles : Array ObjectId`, `delayedEndStepSacrifices : Array ObjectId`, `delayedGraveReturns : Array (ObjectId × PlayerId)`, `delayedSynthetic : Array (PlayerId × Nat)` | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
+| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingContext : Option (Option ObjectId × PlayerId)` (added in Phase 3 for active resolving source/controller across pending choices; moves into the continuation frame stack in Phase 8), `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
+| **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
+| **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
 | **Queue-time note — deleted in Phase 8** | `enrageGrantsAdditionalCombat : Nat` | Queue-time counter written in `Damage.lean` for `.enrageGrantsCombat` ("If he's attacking, untap him and there is an additional combat phase after this phase"); not an intervening-if (603.4), so delete the counter and check at resolution whether the source is currently attacking on the battlefield, matching the untap instruction's live check. |
 | **Game effect mirrors → specs** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
@@ -1070,44 +1122,92 @@ Thread `EventCause` through every call site so `.unclassified` reaches zero for
 rules events:
 
 - `.turnBased` — phasing, untap, draw, Saga lore, attacker/blocker declaration,
-  damage assignment and dealing (with `firstStrike`), cleanup discard, cleanup
-  damage/effects, step-boundary expiry, mana emptying, removal from combat
-  ([`Turns.lean`](Mtg/Engine/Game/Turns.lean), [`Phasing.lean`](Mtg/Engine/Game/Phasing.lean),
+  damage assignment and dealing (with `firstStrike`), cleanup discard,
+  `cleanupClear` (damage and until-EOT effects), step-boundary expiry, mana
+  emptying, removal from combat ([`Turns.lean`](Mtg/Engine/Game/Turns.lean),
+  [`Phasing.lean`](Mtg/Engine/Game/Phasing.lean),
   [`Combat.lean`](Mtg/Engine/Game/Combat.lean)).
 - `.stateBased` — every 704.5 action in
   [`StateBasedActions.lean`](Mtg/Engine/Game/StateBasedActions.lean).
 - `.specialAction` — playing a land ([`LandsAndMana.lean`](Mtg/Engine/Game/LandsAndMana.lean))
   and turning a face-down permanent face up (116.2b). Turning something face up
   because a spell or ability says so is `.oneShotEffect`.
-- `.costPayment player spellOrAbilityId kind` — mana, taps (including convoke
+- `.costPayment kind payer forObject` — mana, taps (including convoke
   and teamwork), sacrifice, discard, life, counter removal, exile, behold
   ([`Casting.lean`](Mtg/Engine/Game/Casting.lean),
   [`ActivationCosts.lean`](Mtg/Engine/Game/ActivationCosts.lean),
   [`ManaAbilities.lean`](Mtg/Engine/Game/ManaAbilities.lean),
   [`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean)).
-- `.oneShotEffect effectId source controller` — resolution
+- `.oneShotEffect id source controller` — resolution
   ([`EffectResolution.lean`](Mtg/Engine/Game/EffectResolution.lean),
   [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean),
   [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)).
-- `.gameRule` — setup, mulligans, and leaving the game (800.4a).
+- `.gameRule` — `GameRuleKind` (`openingHandDraw`, `mulligan`,
+  `instantOrSorceryFinishedResolving`, `permanentSpellResolved`,
+  `adventureSpellResolved`, `abilityFinishedResolving`, `unattachOnHostLeave`,
+  `playerLeftGame`, `stepAdvance`, `spellCast`, `abilityActivated`,
+  `reversedActivation`, `staticAbility`, `continuousEffect`, `leavingZone`,
+  `impending`, `noLegalMode`).
 
-Add a `#guard` that no rules event in a full demo game has `.unclassified`.
-Migrate the remaining `OneShotEffect` constructors (`.looked`, `.resolved`,
-`.beheld`, `.proliferated`, `.sheHulkDealtDamage`) to `PlayerEvent` /
-`StackObjectEvent` and delete `OneShotEffect`.
+Completed in Phase 3 (#571): added `#guard`s that no rules event in a full demo
+game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
+`PlayerEvent.surveilled`), `.resolved` (`StackObjectEvent.resolved`), `.beheld`
+(`PlayerEvent.beheld`), `.proliferated` (`PlayerEvent.proliferated`), and
+`.sheHulkDealtDamage` (`PlayerEvent.sheHulkDealtDamage`), and deleted
+`OneShotEffect`.
 
 ### Phase 4 — Simultaneous batches
 
-1. Add `Game.commitBatch` (§3.2) and `nextBatchId`. In Phase 4, `commitBatch`
-   applies the batch under one `BatchId` and runs a batch-level pass for the
-   "one or more" triggers below while keeping the existing per-event queues for
+1. Add `Game.commitBatchWithCauses` and `Game.commitBatch` (§3.2) plus
+   `nextBatchId`. In Phase 4, `commitBatchWithCauses` applies its
+   `(EventCause × RulesEvent)` entries under one `BatchId`, and `commitBatch`
+   resolves `g.resolveOneShotCause cause` (advancing `nextEffectId` once when a
+   fresh `EffectId` is minted) before delegating to `commitBatchWithCauses` so
+   every event in a one-shot batch shares one `EffectId` and one `BatchId`
+   (replacing the `allocDelayedCause` pre-allocation across `markDamageOn`,
+   `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
+   `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
+   `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean`), while
+   SBA passes use `commitBatchWithCauses` to keep per-event `.stateBased` causes
+   under one `BatchId` per pass; both run a batch-level pass for the "one or
+   more" triggers below while keeping the existing per-event queues for
    individual triggers; Phase 6 replaces those per-event queues with
    `matchTriggers pre post batch`.
-2. Convert multi-object instructions (including bulk counter operations
-   `.withoutCounters`, `.proliferatedExceptPlusOne`, and
-   `.addCountersExceptPlusOne`, deleting those `StatusChange` constructors), the
-   combat damage steps (two batches with first strike, per 510.4 / 702.7b in
-   §2.10), and the SBA loop (one batch per pass).
+2. Rewrite `applyPermanentEvent` (`Core.lean`) to update the counter fields (and
+   `gotPlusOneThisTurn` on `.plusOnePlusOne` `.put n` when `n > 0`) on `Status`
+   directly instead of lowering `PermanentEvent.counters` to
+   `StatusChange.addCounters` / `StatusChange.removeCounters`; convert
+   multi-object instructions (including bulk counter operations
+   `.withoutCounters`—recording
+   `PermanentEvent.counters (.object o.asEvent) kind (.removed n)` for each
+   counter kind, including `keywordCounters`, whose current count `n` on
+   `o.status` is `n > 0`—and `.addCountersExceptPlusOne «from» extra`—recording
+   `PermanentEvent.counters (.object o.asEvent) kind (.put (n + extra))` only
+   for non-`+1/+1` counter kinds, including `keywordCounters`, whose count `n`
+   on `«from»` is `n > 0` per `bump n = if n == 0 then 0 else n + extra` and
+   rulings 756 / 758; `.proliferatedExceptPlusOne` was already deleted in
+   Phase 3—plus the remaining raw permanent counter writes `.addCounters kind n`,
+   `.removeCounters kind n` such as `FraHelpers.removeUpToCountersFrom`, and
+   `.addPlusOnePlusOne n` when `n > 0`, `StatusChange.shadow` in
+   `Designations.putShadowCounter`—recording
+   `PermanentEvent.counters (.object o.asEvent) .shadow (.put n)` when `n > 0`
+   for the delta `n := g.countersYouPut o 1` rather than the old absolute total
+   `o.status.shadow + n`—and `StatusChange.plusOnePlusOne` in `FraChoices.lean`
+   `.mayMovePlusOne`—recording
+   `PermanentEvent.counters (.object o.asEvent) .plusOnePlusOne (.removed 1)`
+   rather than the old absolute total `o.status.plusOnePlusOne - 1`, never
+   emitting `.put 0` or `.removed 0`—across
+   `Designations.lean`, `EffectResolution.lean`, `FraAbilities.lean`,
+   `FraChoices.lean`, `FraHelpers.lean`, `FraResolve.lean`, `FrcResolve.lean`,
+   `ModeledTriggers.lean`, `ResolutionEffects.lean`, `Tokens.lean`, and
+   `TriggeredAbilities.lean` to `PermanentEvent.counters`, deleting
+   `.withoutCounters`, `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`,
+   `.addCounters`, `.removeCounters`, `.shadow`, and `.plusOnePlusOne` from
+   `StatusChange`; `CastExtras.lean`'s `StatusChange.time` on a proposed spell on
+   the stack for impending is cast-announcement state retired with the cast
+   events and `CounterBag` consolidation), the combat damage steps (two batches
+   with first strike, per 510.4 / 702.7b in §2.10), and the SBA loop (one batch
+   per pass via `commitBatchWithCauses`).
 3. Move "one or more" triggers to per-batch evaluation:
    `oneOrMoreOtherCreaturesDie`, `creatureCardsPutIntoYourGy`,
    `youCreateCreatureTokens`, `creaturesYouControlBecomeTapped`,
@@ -1125,19 +1225,43 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
 
 1. Replace `.stepped` with `TurnEvent` (§2.8). `turnNumber`, `activePlayer`,
    `step`, and `extraTurns` / `additionalCombatPhases` become state written by
-   `TurnEvent`s; extra combat is an extra phase after a phase (500.8).
+   `TurnEvent`s (retiring `Game.extraTurnCauses` and `EngineChange.extraTurnCauses` /
+   `pushExtraTurn` added in Phase 3, since `TurnEvent.extraTurnAdded` carries its
+   `EventCause` in the `GameEvent` envelope); extra combat is an extra phase
+   after a phase (500.8).
 2. Replace `.attacked` and the raw combat status writes with `CombatEvent`
-   (§2.10), including `becameAttacking` for both halves of 508.4 (permanents
+   (§2.10), moving `PermanentEvent.removedFromCombat` and
+   `DamageEvent.combatAssigned` into `CombatEvent.removedFromCombat` and
+   `CombatEvent.damageAssigned (firstStrike : Bool) (forAttackers : Bool) (assignments : Array CreatureCombatAssignment)`,
+   adding `becameAttacking` for both halves of 508.4 (permanents
    put onto the battlefield attacking and permanents made attacking by an
    effect; the zone-event arrival flags keep enter-attacking off
-   `attackersDeclared` per 508.3a), and `AttackTarget` instead of a bare
+   `attackersDeclared` per 508.3a), and using `AttackTarget` instead of a bare
    `PlayerId` (folding `Status.attackingWhom : Option PlayerId`,
    `Status.attackingPlaneswalker : Option ObjectId`, and
    `EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` so
    enter-attacking paths and `becameAttacking` can target a player,
    planeswalker, or battle, e.g. Andúril ruling 181).
-3. Replace `.cast` / `.activated` with `CastEvent`, add `TriggerQueueEvent` and
-   `StackObjectEvent` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
+3. Replace `.cast` / `.activated` with `CastEvent`, re-point
+   `GameEvent.landsPlayed` (`Game.loggedLandsPlayed`) at `ZoneEvent.moved`
+   matching `verb == .playLand && actor == some p` (dropping the redundant
+   `GameEvent.playedLand` record in `finishPlayLand`, which already sets
+   `actor := some p` on its `putOntoBattlefield` move; updating the count-only
+   test helper `recordLandPlayed` to record a `ZoneEvent.moved` on
+   `applyZoneEvent`'s no-op branch—`existing? = none`, `before.id == after.id`
+   set to the same unallocated `some` id such as `some ⟨Nat.pow 2 60⟩` so
+   `applyEvent` does not rewrite `after.id` to `some ⟨g.nextObjectId⟩`, empty
+   `after.name` and `after.types`, and `fromZone := .outside p` /
+   `toZone := .outside p` so `enteredBattlefield`, `objectEntered`, and
+   draw/discard/mill queries do not match it, with `verb := .playLand`,
+   `actor := some p`, and `cause := .specialAction .playLand p`—so it counts a
+   land drop for `p` without materializing a permanent, colliding with
+   allocated `ObjectId`s, or defaulting `cause` to `.unclassified` (which
+   `resolveOneShotCause` would upgrade to `.oneShotEffect` when a spell or
+   ability is resolving); and retiring top-level
+   `RulesEvent.playedLand`), add
+   `TriggerQueueEvent`, and extend `StackObjectEvent` (introduced in Phase 3
+   with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
    `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
    `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
    `.exile`—both the 707.12 cast-during-resolution copies for Saruman, Baron
@@ -1218,7 +1342,7 @@ non-occurrence, and the 616.1a–e order.
 2. Evaluate characteristics through layers 1–7d with timestamps (613.7) and
    dependencies (613.8); switch `Game.snapshot` to the layer results.
 3. Replace the ad-hoc 603.7 delayed-trigger fields (`Player.eaglesBirdsNextUpkeep`,
-   `Player.attackPumpPerPlainsThisTurn` together with its
+   `Game.eaglesBirdsCauses`, `Player.attackPumpPerPlainsThisTurn` together with its
    `ContinuousEffect.attackPumpPerPlainsThisTurn` constructor,
    `Game.delayedEndStepReturns`, `Game.delayedEndStepExiles`,
    `Game.delayedEndStepSacrifices`, `Game.delayedGraveReturns`, and
@@ -1230,12 +1354,25 @@ non-occurrence, and the 616.1a–e order.
    `Game.enrageGrantsAdditionalCombat` and have `.enrageGrantsCombat` use the
    same live resolution-time attacking check (`source` on the battlefield and
    `status.attacking`) as the untap instruction.
-4. Delete every field in §3.8 marked as a mirror, history, cast metadata
-   (400.7d on `GameObject`: `castFromGraveyard`, `castFromHand`, `wasCast`,
-   `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
-   `isPreparedSpell`, `treasureManaSpent`, `boastExiled`, and off-stack
-   `chosenX` reads), LKI (`GameObject.lastKnownPower`, `lastKnownToughness`,
-   `lastController`), delayed trigger, or queue-time counter (alongside the
+4. Add the remaining `PlayerEvent` constructors (`manaAdded`, `manaSpent`
+   replacing top-level `RulesEvent.spentMana`, `lookedAt`, `revealed`,
+   `searched`, `shuffled`, `ringTempted`, `becameMonarch`, `gainedDesignation`,
+   and `gameEnded`), upgrade `PlayerEvent.manaEmptied` from `amount : Nat` to
+   `units : Array ManaUnit` while preserving `keptColorless : Bool := false` (for
+   `unspentManaBecomesColorless` in `Game.emptyManaPools` / `applyPlayerEvent`),
+   add `LossReason` to `PlayerEvent.lost`, and convert the remaining raw
+   designation status writes in `Designations.lean` (`.ringBearer`),
+   `Casting.lean` / `CastSpell.lean` / `Movement.lean` (`.prepared`), and
+   `EffectResolution.lean` (`.harnessed`) to `GameEvent.designation`
+   (`PermanentEvent.designation` and `applyPermanentEvent` already support
+   `.ringBearer`, `.commander`, `.prepared`, and `.harnessed`); delete every field in §3.8 marked as a mirror,
+   history, cast metadata (400.7d on `GameObject`: `castFromGraveyard`,
+   `castFromHand`, `wasCast`, `kicked`, `teamworkPaid`, `sneakPaid`,
+   `sneakAttackWhom`, `giftPromisedTo`, `isPreparedSpell`, `treasureManaSpent`,
+   `boastExiled`, and off-stack `chosenX` reads), LKI
+   (`GameObject.lastKnownPower`, `lastKnownToughness`, `lastController`),
+   delayed trigger, linked-exile cause cache (`Game.linkedExileCauses`, queried
+   from the exiling `ZoneEvent.moved`), or queue-time counter (alongside the
    remaining transitional mirror, 400.7d cast-metadata, and LKI fields on
    `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`, `wasCast`,
    `lastKnownPower`, and `lastKnownToughness`), consolidate the 23 stored
@@ -1245,7 +1382,8 @@ non-occurrence, and the 616.1a–e order.
    their `StatusChange` / `ObjectChange` / `PlayerChange` / `GameChange`
    constructors after their readers use the log, the layers, or the
    delayed-trigger table.
-5. Move the continuation registers into a continuation frame stack.
+5. Move the continuation registers (including `Game.resolvingContext`) into a
+   continuation frame stack.
 
 Final check: `lake build`, `lake exe mtg-demo`, `lake exe oracle-roundtrip`, and
 `RulesEvent` contains only the families in §2 (zone, permanent, damage, life,
