@@ -33,7 +33,7 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
     let cause :=
       cause.orElse (fun _ =>
         g.currentResolvingContext?.map (fun (src, ctrl) =>
-          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
+          .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl))
     let g := g.removeFromCombat o (cause := cause)
     let o := g.object! o.id
     let g := g.expirePrintedStaticEffects o (cause := cause)

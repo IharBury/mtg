@@ -297,7 +297,7 @@ inductive EventCause where
   for ward, unless-pays, or optional resolving costs without a proposed object, it may be `none`. -/
   | costPayment (kind : CostKind) (payer : PlayerId) (forObject : Option ObjectId := none)
   /-- A one-shot effect of a resolving spell or ability (610). -/
-  | oneShotEffect (id : EffectId) (source : Option ObjectId := none)
+  | oneShotEffect (id : Option EffectId := none) (source : Option ObjectId := none)
       (controller : Option PlayerId := none)
   /-- The result of a replacement or prevention effect (614 / 615). -/
   | replaced (replacement : ReplacementId) (original : EventCause)

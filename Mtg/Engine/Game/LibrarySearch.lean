@@ -112,7 +112,7 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
     match g.currentResolvingContext? with
     | some (s, c) => (s, c.orElse (fun _ => some p))
     | none => (none, some p)
-  let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+  let cause := some (EventCause.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
   let g := g.beholdQuality p subtype (cause := cause)
   if !g.qualityWasBeheld p subtype then g
   else

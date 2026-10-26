@@ -1026,7 +1026,7 @@ def exileThenReturn (g : Game) (o : GameObject) (logText : String)
   let cause :=
     cause.orElse (fun _ =>
       g.currentResolvingContext?.map (fun (src, ctrl) =>
-        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
+        .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl))
   let owner := o.owner
   let name := o.name
   let (g, newId) := g.move o.id .exile none (cause := cause)

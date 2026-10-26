@@ -210,7 +210,7 @@ def startNextTurn (g : Game) : Game :=
         .isFirstTurn false,
         .cleanupGivesPriority false ]
       if !g.powerUpsForbidden then
-        let cause := extraCause? <|> some (.oneShotEffect ⟨g.nextEffectId⟩ none (some q))
+        let cause := extraCause? <|> some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some q))
         g := g.createEffect .powerUpsForbiddenThisTurn (cause := cause)
       return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
