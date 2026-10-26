@@ -3276,23 +3276,24 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (amount : TriggeredAbility.NumberSelector)
     (who : TriggeredAbility.PlayerSelector)
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (cause : Option EventCause := none) : Game :=
   match amount, who with
   | .fixed n, .you =>
-    g.loseLife controller n.toNat
+    g.loseLife controller n.toNat (cause := cause)
   | .fixed n, .target .opponent =>
     g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
-      g.loseLife pid n.toNat)
+      g.loseLife pid n.toNat (cause := cause))
   | .fixed n, .eachOpponent =>
-    g.loseLifeEachOpponent controller n.toNat
+    g.loseLifeEachOpponent controller n.toNat (cause := cause)
   | .perBurden, .you =>
     match sourceId.bind g.findObject? with
     | none => g
-    | some src => g.loseLife controller src.status.burden
+    | some src => g.loseLife controller src.status.burden (cause := cause)
   | .attachedEquipment, .eachOpponent =>
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
     if x == 0 then g
-    else g.loseLifeEachOpponent controller x
+    else g.loseLifeEachOpponent controller x (cause := cause)
   | amount, who =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower }
@@ -3302,18 +3303,21 @@ def applyLoseLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match who with
       | .target .player | .target .opponent =>
         g.withLegalTriggerPlayer controller ab sourceId targets fun g pid =>
-          g.loseLife pid n
+          g.loseLife pid n (cause := cause)
       | _ =>
         match g.collectPlayers ctx who with
         | some pids =>
           let (g, cause?) : Game × Option EventCause :=
-            if n == 0 || pids.isEmpty then (g, none)
-            else
-              match g.currentResolvingContext? with
-              | some (src, ctrl) =>
-                let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-                (g, some c)
-              | none => (g, none)
+            match cause with
+            | some c => (g, some c)
+            | none =>
+              if n == 0 || pids.isEmpty then (g, none)
+              else
+                match g.currentResolvingContext? with
+                | some (src, ctrl) =>
+                  let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+                  (g, some c)
+                | none => (g, none)
           pids.foldl (fun g pid => g.loseLife pid n (cause := cause?)) g
         | none => g
 
@@ -3324,32 +3328,33 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (amount : TriggeredAbility.NumberSelector)
     (sequencedCardPower : Option Nat)
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (cause : Option EventCause := none) : Game :=
   match amount with
   | .fixed n =>
-    g.gainLife controller n.toNat
+    g.gainLife controller n.toNat (cause := cause)
   | .attachedEquipment =>
     let x := g.attachedEquipmentAtResolution sourceId lastKnownPower
-    if x == 0 then g else g.gainLife controller x
+    if x == 0 then g else g.gainLife controller x (cause := cause)
   | .equalToTargetPower =>
     match sequencedCardPower with
-    | some k => g.gainLife controller k
+    | some k => g.gainLife controller k (cause := cause)
     | none =>
       g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
         match t with
         | Target.card oid | Target.permanent oid =>
           match g.findObject? oid with
-          | some o => g.gainLife controller (g.power o).toNat
+          | some o => g.gainLife controller (g.power o).toNat (cause := cause)
           | none => g.logMsg "The target is no longer in the graveyard"
         | _ => g.logMsg "The target is no longer legal"
   | .forEachDestroyedThisWay =>
     let k := g.permanentsDestroyedThisWay
     let g := g.change (.permanentsDestroyedThisWay 0)
-    if k == 0 then g else g.gainLife controller k
+    if k == 0 then g else g.gainLife controller k (cause := cause)
   | .perOtherCreature =>
     let k :=
       ((g.creaturesControlledBy controller).filter (fun o => some o.id != sourceId)).size
-    if k == 0 then g else g.gainLife controller k
+    if k == 0 then g else g.gainLife controller k (cause := cause)
   | amount =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, sequencedCardPower }
@@ -3357,10 +3362,10 @@ def applyGainLife (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | .forEachDestroyedThisWay =>
       let k := (g.triggerCount ctx amount).getD 0
       let g := g.change (.permanentsDestroyedThisWay 0)
-      g.gainLife controller k
+      g.gainLife controller k (cause := cause)
     | _ =>
       match g.triggerCount ctx amount with
-      | some k => g.gainLife controller k
+      | some k => g.gainLife controller k (cause := cause)
       | none => g
 
 /-- Reveal cards from the top of a library until `stop`, or `fuel` runs out.
@@ -3992,17 +3997,37 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
         else g
       | steps =>
-      let (g, rest, _, _) :=
-        steps.foldl
-          (fun (acc : Game × List TriggeredAbility.TriggerResolution × Bool × Bool) step =>
-            let (g, waiting, paused, dropped) := acc
-            if dropped then
-              (g, [], true, true)
-            else if paused then
-              (g, waiting ++ [step], true, false)
-            else if g.mayThenSkip > 0 then
-              (g.change (.mayThenSkip (g.mayThenSkip - 1)), waiting, false, false)
-            else
+      let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
+          (paused dropped : Bool) :
+          List TriggeredAbility.TriggerResolution →
+          Game × List TriggeredAbility.TriggerResolution × Bool × Bool
+        | [] => (g, waiting, paused, dropped)
+        | cur@(step :: restSteps) =>
+          if dropped then
+            (g, [], true, true)
+          else if paused then
+            (g, waiting ++ cur, true, false)
+          else if g.mayThenSkip > 0 then
+            runSteps (g.change (.mayThenSkip (g.mayThenSkip - 1))) waiting false false restSteps
+          else
+            match cur with
+            | .loseLife loseAmt who :: .gainLife gainAmt :: tail =>
+              let (g, cause?) : Game × Option EventCause :=
+                match g.currentResolvingContext? with
+                | some (src, ctrl) =>
+                  let (g, c) := g.allocDelayedCause
+                    (ctrl.orElse (fun _ => some controller))
+                    (src.orElse (fun _ => sourceId))
+                  (g, some c)
+                | none => (g, none)
+              let g :=
+                g.applyLoseLife controller ab sourceId targets loseAmt who
+                  lastKnownPower (cause := cause?)
+              let g :=
+                g.applyGainLife controller ab sourceId targets gainAmt
+                  cardPower lastKnownPower (cause := cause?)
+              runSteps g waiting false false tail
+            | _ =>
               let pendingBefore := g.pending
               let g :=
                 g.applyTriggeredAbility controller ab sourceId targets dividedDamage
@@ -4013,8 +4038,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
                 -- Pause only when this step opens a choice. A choice that was
                 -- already pending belongs to an earlier ability.
                 let opened := g.pending != pendingBefore && g.pending != .none
-                (g, waiting, opened, false))
-          (g, [], false, false)
+                runSteps g waiting opened false restSteps
+      let (g, rest, _, _) := runSteps g [] false false steps
       -- The ordinal belongs to this resolution. A paused sequence still
       -- needs it for the `«if» (.nthResolve _)` steps that have not run.
       let usesNth := steps.any fun

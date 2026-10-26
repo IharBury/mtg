@@ -18,8 +18,8 @@ private def frcCause? (g : Game) : Option GameObject :=
   g.resolvingAbilityObject?.bind fun ab =>
     ab.fraCauseId.bind fun id => g.findObject? (g.followMoved id)
 
-private def knownN (g : Game) : Nat :=
-  ((g.resolvingAbilityObject?.bind (·.lastKnownPower)).getD 0).toNat
+private def knownN (g : Game) (lastKnownPower : Option Int := none) : Nat :=
+  ((lastKnownPower.orElse (fun _ => g.resolvingAbilityObject?.bind (·.lastKnownPower))).getD 0).toNat
 
 private def srcObj? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
   sourceId.bind fun id => g.findObject? (g.followMoved id)
@@ -104,8 +104,17 @@ private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x :
     (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
   if n == 0 || (g.player p).lost then g.change (.recentTokenIds #[])
   else
+    let (g0, cause) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
     Id.run do
-      let mut g := g
+      let mut g := g0
       let mut ids : Array ObjectId := #[]
       let printed := frcPrinted k x
       for _ in [0:n] do
@@ -168,8 +177,10 @@ private def basicOf (kinds : Array CardSubtype) (c : CardDef) : Bool :=
   isBasicLandCard c && kinds.any fun k => c.hasSubtype k
 
 def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffect)
-    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Game :=
   let pl := g.player controller
+  let nKnown := g.knownN lastKnownPower
   match e with
   | .drawPutOnTop drawN putN =>
     let g := g.draw controller drawN
@@ -389,15 +400,17 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         g.restBottom controller rest false (cause := some cause)
     | none => g
   | .nivPay =>
-    let n := g.knownN
+    let n := nKnown
     if (g.player controller).life > Int.ofNat n && n > 0 then
-      let (g, cause?) : Game × Option EventCause :=
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-      (g.loseLife controller n (cause := cause?)).draw controller n (cause := cause?)
+      let before := (g.player controller).life
+      let payCause : Option EventCause :=
+        g.currentResolvingContext?.map fun (src, _) =>
+          .costPayment .life controller
+            (g.resolvingAbility.orElse (fun _ => sourceId.orElse (fun _ => src)))
+      match g.payLifeCost controller n (cause := payCause) with
+      | .ok g =>
+        if (g.player controller).life < before then g.draw controller n else g
+      | .error _ => g.logMsg s!"{pl.name} declines to pay {n} life"
     else g.logMsg s!"{pl.name} declines to pay {n} life"
   | .nivDrain =>
     g.eachOpponentLosesYouGain controller 1
@@ -483,7 +496,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       | none => g
     | _ => g
   | .urSphinx =>
-    let n := g.knownN
+    let n := nKnown
     g.livingPlayers.foldl (fun g q =>
       Id.run do
         let mut g := g
@@ -589,7 +602,13 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
     g.forEachOpponent controller fun g pid =>
       g.loseLife pid (g.loggedLifeLost pid) (cause := cause?)
   | .dreadUpkeep =>
-    (g.loseLife controller 1).amassZombies controller 1
+    let (g, cause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+        (g, some c)
+      | none => (g, none)
+    (g.loseLife controller 1 (cause := cause?)).amassZombies controller 1 (cause := cause?)
   | .dreadLink =>
     match g.frcCause? with
     | some o =>
@@ -606,9 +625,15 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
       | none => 0
     g.makeFrc controller .shark 1 x
   | .sharkCycle =>
-    g.makeFrc controller .shark 1 g.knownN
+    g.makeFrc controller .shark 1 nKnown
   | .skrelv =>
-    (g.loseLife controller 1).makeFrc controller .mite
+    let (g, cause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+        (g, some c)
+      | none => (g, none)
+    (g.loseLife controller 1 (cause := cause?)).makeFrc controller .mite (cause := cause?)
   | .insects => g.makeFrc controller .insect 2
   | .factOrFiction =>
     let lib := (g.player controller).library

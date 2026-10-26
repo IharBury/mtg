@@ -58,7 +58,8 @@ def sacrificeGreatestManaValue (g : Game) (pid : PlayerId) : Game :=
 /-- Resolutions added for Reality Fracture, shared by spells and activated
 abilities. `none` for every other resolution. -/
 def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (sourceId : Option ObjectId) : Option Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Option Game :=
   match effect.resolution with
   | .empowerJace (.fixed n) => some (g.empowerJace controller n.toNat)
   | .surveil (.fixed n) => some (g.beginSurveil controller n.toNat)
@@ -227,7 +228,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.createEffect (.jaceLoyaltyAtInstantSpeedThisTurn controller)
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
   | r =>
-    if r.isFra then some (g.applyFra controller effect r targets sourceId) else none
+    if r.isFra then some (g.applyFra controller effect r targets sourceId (lastKnownPower := lastKnownPower)) else none
 
 /-- Exile every card in `p`'s hand, then draw that many. Those cards may be
 played until the end of `p`'s next turn (Hex Magic; ruling 421). -/
@@ -743,7 +744,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
       |>.logMsg "Chosen creatures are kept; the rest are destroyed"
   | .amassArmy subtype n attach =>
     match chosen[0]? with
-    | some id => g.finishAmassOn p id subtype n attach
+    | some id => g.finishAmassOn p id subtype n attach (cause := cause)
     | none => g.logMsg s!"{(g.player p).name} doesn't choose an Army"
 
 /-- Ask `p` to choose up to `max` of `ids`, or resolve immediately when there
@@ -1732,7 +1733,7 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
-  match g.applyFraResolution? controller effect targets sourceId with
+  match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
   | some g => g
   | none =>
   match effect.resolution with

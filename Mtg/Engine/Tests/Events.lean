@@ -2139,6 +2139,72 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules _ => some e.cause
       | _ => none)
+  let gNivRaw := gDmgSetup.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2)
+  let nivRawCauses :=
+    gNivRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gNivRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2))
+  let nivResCauses :=
+    gNivRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gNivLocked :=
+    quiet (gDmgSetup.createEffect (.lifeCantChange me))
+      |>.withResolvingContext (some lh.id) me (fun g =>
+        g.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2))
+  let nivLockedEvents :=
+    gNivLocked.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDreadRaw := gDmgSetup.applyFrc me default .dreadUpkeep #[] (some lh.id)
+  let dreadRawCauses :=
+    gDreadRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDreadRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.applyFrc me default .dreadUpkeep #[] (some lh.id))
+  let dreadResCauses :=
+    gDreadRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gSkrelvRaw := gDmgSetup.applyFrc me default .skrelv #[] (some lh.id)
+  let skrelvRawCauses :=
+    gSkrelvRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gSkrelvRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.applyFrc me default .skrelv #[] (some lh.id))
+  let skrelvResCauses :=
+    gSkrelvRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDrainPlanRaw :=
+    gDmgSetup.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 2) (some lh.id)
+  let drainPlanRawCauses :=
+    gDrainPlanRaw.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
+  let gDrainPlanRes :=
+    gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
+      g.applyTriggeredAbility me (.onVillainYouControlEntersDrainAndPlan 2) (some lh.id))
+  let drainPlanResCauses :=
+    gDrainPlanRes.events.filterMap (fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | _ => none)
   mayRevCauses.size == 3 &&
     mayRevCauses.all (· == mayRevCauses[0]!) &&
     nickCauses.size == 4 &&
@@ -2196,9 +2262,32 @@ across all constituent moves, transforms, and continuous-effect creations
     dmgPlayerResCauses.size == 3 &&
     dmgPlayerResCauses.all (· == dmgPlayerResCauses[0]!) &&
     (match dmgPlayerResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
-    sweepResCauses.size >= 6 &&
+    sweepResCauses.size >= 9 &&
     sweepResCauses.all (· == sweepResCauses[0]!) &&
-    (match sweepResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
+    (match sweepResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    nivRawCauses.size == 3 &&
+    nivRawCauses.all (· == .unclassified) &&
+    nivResCauses.size == 3 &&
+    nivResCauses[0]! == .costPayment .life me (some lh.id) &&
+    nivResCauses[1]! == nivResCauses[2]! &&
+    (match nivResCauses[1]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    nivLockedEvents.isEmpty &&
+    dreadRawCauses.size == 3 &&
+    dreadRawCauses.all (· == .unclassified) &&
+    dreadResCauses.size == 3 &&
+    dreadResCauses.all (· == dreadResCauses[0]!) &&
+    (match dreadResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    skrelvRawCauses.size == 2 &&
+    skrelvRawCauses.all (· == .unclassified) &&
+    skrelvResCauses.size == 2 &&
+    skrelvResCauses.all (· == skrelvResCauses[0]!) &&
+    (match skrelvResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    drainPlanRawCauses.size == 3 &&
+    drainPlanRawCauses.all (· == .unclassified) &&
+    drainPlanResCauses.size == 3 &&
+    drainPlanResCauses[0]! != drainPlanResCauses[1]! &&
+    drainPlanResCauses[1]! == drainPlanResCauses[2]! &&
+    (match drainPlanResCauses[1]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

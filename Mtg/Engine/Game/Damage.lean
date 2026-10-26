@@ -229,12 +229,6 @@ def tomikNoncombatBonus (g : Game) (src : GameObject) (recipient : PlayerId) : I
       (· == .fra .noncombatDamagePlusOne))).size
   | none => 0
 
-/-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
-def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
-    (source : Option EventObject := none)
-    (cause : Option EventCause := none) : Game :=
-  g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := source) (cause := cause)
-
 /-- Increase `p`'s life total (CR 119.2). Gaining 0 life does nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
@@ -257,6 +251,32 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
       else if happened.matchesTrigger p ⟨0⟩ .youGainLife then
         g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
       else g
+
+/-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
+def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
+  let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
+  let prevented := g.preventsAllDamageTo o || o.status.shield > 0
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n <= 0 || g.preventsAllDamageTo o then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (ctxSrc, ctrl) =>
+          let (g, c) := g.allocDelayedCause
+            (ctrl.orElse (fun _ => srcEvent?.bind (·.controller)))
+            (ctxSrc.orElse (fun _ => srcEvent?.bind (·.id)))
+          (g, some c)
+        | none => (g, none)
+  let g := g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := srcEvent?) (cause := cause)
+  -- CR 702.15b: damage dealt by a source with lifelink.
+  match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
+  | some c =>
+    if n > 0 && !prevented then g.gainLife c n.toNat (cause := cause) else g
+  | none => g
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)

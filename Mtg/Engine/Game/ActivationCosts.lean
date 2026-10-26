@@ -26,7 +26,9 @@ def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
   n == 0 || (g.player p).life ≥ (n : Int)
 
 /-- Pay `n` life as a cost (CR 118.3b / 119.4). Payment of life is not damage. -/
-def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
+def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
+    (forObject : Option ObjectId := none)
+    (cause : Option EventCause := some (.costPayment .life p forObject)) : Except String Game := do
   if n == 0 then
     return g
   let pl := g.player p
@@ -37,7 +39,7 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
       g.logMsg s!"{pl.name}'s life total can't change"
     else
       (g.record (GameEvent.life g.turnNumber p n false false false
-        (cause := some (.costPayment .life p)))).logMsg
+        (cause := cause))).logMsg
         s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
   return g.afterLifeLost p (pl.life - (g.player p).life).toNat
 

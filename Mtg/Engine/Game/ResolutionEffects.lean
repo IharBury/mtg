@@ -488,12 +488,20 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
     let n := g.countersYouPut o 1 (putter := some controller)
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     let g := Id.run do
       let mut g := g
       for _ in [0:n] do
         match g.findObject? o.id with
         | some cur =>
-          g := g.changeStatus cur.id (.addCounters .plan 1)
+          g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1 (cause := cause?))
           let cur := g.object! cur.id
           g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
         | none => pure ()

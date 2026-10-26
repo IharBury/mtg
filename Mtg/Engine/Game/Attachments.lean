@@ -11,11 +11,12 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4). -/
-def attachSourceTo (g : Game) (src host : GameObject) : Game :=
+def attachSourceTo (g : Game) (src host : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let (g, ts) := g.bumpTime
   let src := g.object! src.id
   let g := g.changeObject src.id (.timestamp ts)
-  let g := g.record (GameEvent.attached g.turnNumber src.id host.id)
+  let g := g.record (GameEvent.attached g.turnNumber src.id host.id (cause := cause))
   g.logMsg s!"{src.name} attaches to {host.name}"
 
 /-- Remove an id from a zone list. -/
