@@ -45,8 +45,7 @@ def withHope (g : Game) (name : String) (n : Nat) : Game :=
 
 def load (g : Game) (name : String) : Game :=
   let o := obj g name
-  g.changeStatuses o.id #[
-    .plusOnePlusOne 2,
+  (g.recordPutCounters o.id .plusOnePlusOne 2).changeStatuses o.id #[
     .hope 1,
     .charge 2,
     .stun 1,
@@ -190,8 +189,8 @@ Removing them does not count as removing a hope counter. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
   let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
-  let g1 := g1.changeStatuses (anyObj g1 "Bear").id #[
-    .plusOnePlusOne 2, .hope 1, .damage 4, .pump (1, 2)]
+  let g1 := (g1.recordPutCounters bearId .plusOnePlusOne 2).changeStatuses bearId #[
+    .hope 1, .damage 4, .pump (1, 2)]
   let aura := obj g1 "Grasp"
   let g1 := g1.changeObject aura.id (.attachedTo (some bearId))
   let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))

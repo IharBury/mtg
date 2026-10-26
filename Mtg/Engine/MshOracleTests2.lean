@@ -902,7 +902,7 @@ characteristics, not counters or tap. -/
 def copyTokenOriginalOk : Bool :=
   let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
-  let g := g.changeStatuses tok.id #[.plusOnePlusOne 3, .tapped true]
+  let g := (g.recordPutCounters tok.id .plusOnePlusOne 3).changeStatus tok.id (.tapped true)
   let dest := namedPermanent g "Aerial Doombot"
   let tok := g.object! tok.id
   let g := g.becomeCopyOf dest tok
@@ -1179,14 +1179,14 @@ def statureBlockedThenShrunkOk : Bool :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let st := namedPermanent g "Stature, Size Shifter"
-  let g := g.changeStatuses st.id #[
-    .plusOnePlusOne 3, .attacking true, .attackingWhom (some ⟨1⟩),
+  let g := (g.recordPutCounters st.id .plusOnePlusOne 3).changeStatuses st.id #[
+    .attacking true, .attackingWhom (some ⟨1⟩),
     .blocked true]
   let st := namedPermanent g "Stature, Size Shifter"
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.changeStatus bears.id (.blocking #[st.id])
-  let g := g.changeStatus (namedPermanent g "Stature, Size Shifter").id
-    (.plusOnePlusOne 0)
+  let st := namedPermanent g "Stature, Size Shifter"
+  let g := g.recordRemoveCounters st.id .plusOnePlusOne st.status.plusOnePlusOne
   let st := namedPermanent g "Stature, Size Shifter"
   g.power st == 1 && g.hasCantBeBlocked st && st.status.blocked &&
     (namedPermanent g "Grizzly Bears").status.blocking == #[st.id]

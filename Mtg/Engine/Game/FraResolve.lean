@@ -50,15 +50,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
   | .damageEachPlayer n =>
-    let (g, cause?) : Game × Option EventCause :=
-      if n == 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-    g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?) (cause := cause?)) g
+    if n == 0 then g
+    else
+      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
   | .damageSourceAt index n =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | some o => g.dealDamageFrom srcName o n (source := src?)
@@ -88,39 +83,43 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let chosen := g.chooseCreatureTypeFor controller
     let g := g.logMsg s!"{(g.player controller).name} chooses {chosen}"
     let doomed := g.battlefield.filter (fun o => o.isCreature && !g.hasSubtype o chosen)
-    doomed.foldl (fun g o =>
-      match g.findObject? o.id with
-      | some o => g.destroyPermanent o
-      | none => g) g
+    g.withBatch none fun g =>
+      doomed.foldl (fun g o =>
+        match g.findObject? o.id with
+        | some o => g.destroyPermanent o
+        | none => g) g
   | .searchPlaneswalkerToTop =>
     g.beginLibrarySearch controller (·.isPlaneswalker) "a planeswalker card" .topAfterShuffle
   | .plusOneOnEachTarget n =>
-    targets.foldl (fun g t =>
-      match t with
-      | Target.permanent id =>
-        if g.targetLegalAt controller kind 0 t sourceId then
-          g.addPlusOnePlusOneTo (g.object! id) n
-        else g.illegalAbilityTarget t
-      | _ => g) g
+    g.withBatch none fun g =>
+      targets.foldl (fun g t =>
+        match t with
+        | Target.permanent id =>
+          if g.targetLegalAt controller kind 0 t sourceId then
+            g.addPlusOnePlusOneTo (g.object! id) n
+          else g.illegalAbilityTarget t
+        | _ => g) g
   | .returnAllNonlandPermanentsFromGy =>
     let ids := (g.player controller).graveyard.filter (fun id =>
       (g.findObject? id).any (fun o =>
         o.printed.isPermanentCard && !o.printed.isLand && !o.printed.isAura))
-    let (g, newIds) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
-      let (g, newId) := acc.1.returnCardToBattlefield controller id
-      (g, acc.2.push newId)) (g, #[])
-    newIds.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.afterPermanentEnters o
-      | none => g) g
+    g.withBatch none fun g =>
+      let (g, newIds) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
+        let (g, newId) := acc.1.returnCardToBattlefield controller id
+        (g, acc.2.push newId)) (g, #[])
+      newIds.foldl (fun g id =>
+        match g.findObject? id with
+        | some o => g.afterPermanentEnters o
+        | none => g) g
   | .drawMilledThisTurn =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
     let creatures := g.battlefield.filter (·.isCreature)
-    let g := creatures.foldl (fun g o =>
-      let (g, _) := g.move o.id .exile none
-      g.logMsg s!"{o.name} is exiled") g
+    let g := g.withBatch none fun g =>
+      creatures.foldl (fun g o =>
+        let (g, _) := g.move o.id .exile none
+        g.logMsg s!"{o.name} is exiled") g
     g.empowerJace controller creatures.size
   | .drawGreatestPowerLoseLife =>
     let n := (g.greatestPowerAmongCreatures controller).toNat
@@ -132,7 +131,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       g.beginRevealDiscard controller pid permanentOnly) sourceId illegal
   | .discardHand =>
-    (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
+    g.withBatch none fun g =>
+      (g.player controller).hand.foldl (fun g id => g.discardFromHand controller id) g
   | .drawPerCreatureYouControl =>
     g.draw controller (g.creaturesControlledBy controller).size
   | .extrapolate =>
@@ -154,26 +154,22 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else g
     | none => g
   | .plusOneOnWizardTokensExceptRecent =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o .wizard then
-        g.addPlusOnePlusOneTo o 1
-      else g) g
+    g.withBatch none fun g =>
+      (g.permanentsOf controller).foldl (fun g o =>
+        if !g.recentTokenIds.contains o.id && o.printed.isToken && g.hasSubtype o .wizard then
+          g.addPlusOnePlusOneTo o 1
+        else g) g
   | .damageEachOppCreatureAndPlaneswalker n =>
     let victims := g.battlefield.filter (fun o =>
       (o.isCreature || o.printed.isPlaneswalker) && o.controller.isSome &&
         !o.controlledBy controller)
-    let (g, cause?) : Game × Option EventCause :=
-      if n == 0 || victims.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-    victims.foldl (fun g o =>
-      match g.findObject? o.id with
-      | some o => g.dealDamageFrom srcName o n (source := src?) (cause := cause?)
-      | none => g) g
+    if n == 0 || victims.isEmpty then g
+    else
+      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        victims.foldl (fun g o =>
+          match g.findObject? o.id with
+          | some o => g.dealDamageFrom srcName o n (source := src?)
+          | none => g) g
   | .loseAbilitiesAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | none => g.logMsg "The target is no longer legal"
@@ -204,15 +200,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let counters := if fromGy then (g.player controller).graveyard.size / 3 else 0
     if counters == 0 then g
     else
+      g.withBatch none fun g =>
+        g.recentTokenIds.foldl (fun g id =>
+          match g.findObject? id with
+          | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o counters else g
+          | none => g) g
+  | .grantHasteToRecentTokens =>
+    g.withBatch none fun g =>
       g.recentTokenIds.foldl (fun g id =>
         match g.findObject? id with
-        | some o => if o.isOnBattlefield then g.addPlusOnePlusOneTo o counters else g
+        | some o => g.grantKeywordsUntilEot o Keyword.haste
         | none => g) g
-  | .grantHasteToRecentTokens =>
-    g.recentTokenIds.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.grantKeywordsUntilEot o Keyword.haste
-      | none => g) g
   | .drawOneOrTwoIfNotFromHand =>
     let fromHand := (g.resolvingSpell.bind g.findObject?).any (·.castFromHand)
     g.draw controller (if fromHand then 1 else 2)
@@ -224,7 +222,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     match targets[index]? with
     | some t@(Target.player pid) =>
       if g.targetLegalAt controller kind index t sourceId then
-        (g.creaturesControlledBy pid).foldl (fun g o => g.addPlusOnePlusOneTo o 1) g
+        g.withBatch none fun g =>
+          (g.creaturesControlledBy pid).foldl (fun g o => g.addPlusOnePlusOneTo o 1) g
       else g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .exileReturnBrieflyIfMvAtMost n =>
@@ -279,9 +278,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
   | .chooseTriggerModes _ => g
   | .untapAllLandsYouControl =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
-      else g) g
+    g.withBatch none fun g =>
+      (g.permanentsOf controller).foldl (fun g o =>
+        if o.printed.isLand && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
+        else g) g
   | .blink =>
     if targets.isEmpty then g
     else
@@ -348,16 +348,18 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | Target.card _ => g) sourceId illegal
   | .creaturesGetPowerPerArtifact =>
     let n : Int := Int.ofNat ((g.permanentsOf controller).filter (·.printed.isArtifact)).size
-    (g.creaturesControlledBy controller).foldl (fun g o =>
-      g.pumpPermanent (g.object! o.id) n 0) g
+    g.withBatch none fun g =>
+      (g.creaturesControlledBy controller).foldl (fun g o =>
+        g.pumpPermanent (g.object! o.id) n 0) g
   | .plusOnesEqualToHandOnEachCreature =>
     let x := (g.player controller).hand.size
     if x == 0 then g
     else
-      ((g.creaturesControlledBy controller).map (·.id)).foldl (fun g id =>
-        match g.findObject? id with
-        | some o => g.addPlusOnePlusOneTo o x
-        | none => g) g
+      g.withBatch none fun g =>
+        ((g.creaturesControlledBy controller).map (·.id)).foldl (fun g id =>
+          match g.findObject? id with
+          | some o => g.addPlusOnePlusOneTo o x
+          | none => g) g
   | .searchCardThenDiscardRandom =>
     g.beginLibrarySearch controller (fun _ => true) "card" .handThenDiscardRandom
   | .grantFlashbackUntilEot =>
@@ -402,16 +404,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .causeDealsDamageToEachOpponent n =>
     let cause := g.fraCause?
     let name := (cause.map (·.name)).getD "The creature"
-    let (g, evCause?) : Game × Option EventCause :=
-      if n == 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-    g.forEachOpponent controller (fun g pid =>
-      (g.dealDamageToPlayer pid n (source := cause) (cause := evCause?)).logMsg s!"{name} deals {n} damage")
+    if n == 0 then g
+    else
+      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        g.forEachOpponent controller (fun g pid =>
+          (g.dealDamageToPlayer pid n (source := cause)).logMsg s!"{name} deals {n} damage")
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
@@ -551,16 +548,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some o => if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
     | none => g
   | .tapAndStunPerOpponent =>
-    targets.foldl (fun g t =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o then
-            g.applyPermanentAction o .tapAndStun
-          else g.illegalAbilityTarget t
-        | none => g
-      | _ => g) g
+    g.withBatch none fun g =>
+      targets.foldl (fun g t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o then
+              g.applyPermanentAction o .tapAndStun
+            else g.illegalAbilityTarget t
+          | none => g
+        | _ => g) g
   | .damageCauseController n =>
     match g.fraCauseController? with
     | some pid => g.dealDamageToPlayer pid n (source := src?)
@@ -618,9 +616,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | none => acc) (g, #[])
     g.shuffleLibrary controller
   | .untapAllTokensYouControl =>
-    (g.permanentsOf controller).foldl (fun g o =>
-      if o.printed.isToken && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
-      else g) g
+    g.withBatch none fun g =>
+      (g.permanentsOf controller).foldl (fun g o =>
+        if o.printed.isToken && o.status.tapped then g.applyPermanentAction (g.object! o.id) .untap
+        else g) g
   | .mayDiscardThenSearchEnchantment =>
     if (g.player controller).hand.isEmpty then g
     else
@@ -636,23 +635,24 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       match g.findObject? id with
       | some o => Nat.max acc (g.objectManaValue o)
       | none => acc) 0
-    targets.foldl (fun g t =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          let shielded :=
-            match o.controller with
-            | some c => (g.permanentsOf c).any (·.printed.creaturesCantGetMinusCounters)
-            | none => false
-          if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
-              !shielded then
-            let n := g.countersYouPut o x (putter := some controller)
-            (g.changeStatus o.id (.addCounters .minusOneMinusOne n)).logMsg
-              s!"{n} -1/-1 counter(s) are put on {o.name}"
-          else g
-        | none => g
-      | _ => g) g
+    g.withBatch none fun g =>
+      targets.foldl (fun g t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            let shielded :=
+              match o.controller with
+              | some c => (g.permanentsOf c).any (·.printed.creaturesCantGetMinusCounters)
+              | none => false
+            if o.isOnBattlefield && o.isCreature && g.canBeTargetedBy controller o && x > 0 &&
+                !shielded then
+              let n := g.countersYouPut o x (putter := some controller)
+              (g.recordPutCounters o.id .minusOneMinusOne n (byPlayer := some controller)).logMsg
+                s!"{n} -1/-1 counter(s) are put on {o.name}"
+            else g
+          | none => g
+        | _ => g) g
   | .drawPerColorAmongOtherArtifacts =>
     let colors := (g.permanentsOf controller).foldl (fun (acc : ColorSet) o =>
       if o.printed.isArtifact && some o.id != sourceId then ColorSet.union acc o.printed.colors
@@ -692,15 +692,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroyEachTarget =>
-    targets.foldl (fun g t =>
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && g.canBeTargetedBy controller o then g.destroyPermanent o
-          else g.illegalAbilityTarget t
-        | none => g
-      | _ => g) g
+    g.withBatch none fun g =>
+      targets.foldl (fun g t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield && g.canBeTargetedBy controller o then g.destroyPermanent o
+            else g.illegalAbilityTarget t
+          | none => g
+        | _ => g) g
   | .damageAny n =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with

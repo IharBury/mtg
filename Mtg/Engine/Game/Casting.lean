@@ -412,7 +412,7 @@ targets are skipped. `unique` visits a permanent only once even when it is
 targeted more than once. -/
 def foldPermanentTargets (g : Game) (targets : Array Target)
     (f : Game → GameObject → Game) (unique := false) : Game :=
-  Id.run do
+  g.withBatch none fun g => Id.run do
     let mut g := g
     let mut seen : Array ObjectId := #[]
     for t in targets do
@@ -682,7 +682,6 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
         (cause := some (.costPayment .loyalty p forObject)))
     else g
   let happened := GameEvent.activated g.turnNumber p o.asEvent true
-  let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
   -- Gideon, the Oathless: an opponent activating a loyalty ability.
   let g :=
     (g.livingOpponents p).foldl (fun g opp =>

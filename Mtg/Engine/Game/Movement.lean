@@ -382,15 +382,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | some p => old.waitingTriggersFor p .leaving
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
-  let othersDie :=
-    if died && !g.suppressOthersDie then
-      g.battlefield.foldl (fun acc o =>
-        if o.id == old.id then acc
-        else
-          match o.controller with
-          | some p => acc ++ o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie
-          | none => acc) (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
   let g :=
     if old.zone == .battlefield then g.unattachFrom id else g
   -- The copy of a prepare spell stays in exile only while its permanent is
@@ -423,7 +414,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
   -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
   let g := g.record happened
-  let happenedCause := g.events.back!.cause
+  let happenedCause :=
+    (g.events.findSomeRev? fun e =>
+      match e.change with
+      | .rules _ => some e.cause
+      | .engine _ => none).getD .unclassified
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -494,27 +489,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (causeId := some newId) (cause := some fresh)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
-  -- After the object has left: sources still on the battlefield see
-  -- creature cards going to a graveyard (Robot Domination; MSH 138).
-  let creatureCardToGy :=
-    if g.suppressCreatureCardsToGy then (#[] : Array WaitingTrigger)
-    else
-      match dest with
-      | .graveyard owner =>
-        if old.printed.isCreature && !old.printed.isToken then
-          g.battlefield.foldl (fun acc o =>
-            match o.controller with
-            | some p =>
-              if p == owner then
-                acc ++ (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
-                  !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
-              else acc
-            | none => acc) (#[] : Array WaitingTrigger)
-        else (#[] : Array WaitingTrigger)
-      | _ => (#[] : Array WaitingTrigger)
   -- CR 701.9: a card moved from a hand to its owner's graveyard is
   -- discarded. “Whenever a player discards one or more cards” triggers once
-  -- per batch.
+  -- per batch via `evaluateBatchTriggers`.
   let discardTriggers :=
     match old.zone, dest with
     | .hand p, .graveyard _ =>
@@ -522,24 +499,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis) ++
           (g.permanentsOf p).foldl (fun acc o =>
             acc ++ o.waitingTriggersFor p .youDiscard (lastKnownPower := some (Int.ofNat newId.raw))) #[]
-        let anyPlayer := g.battlefield.foldl (fun acc o =>
-          match o.controller with
-          | some c =>
-            if g.waitingTriggers.any (fun w =>
-                w.source.id == o.id && w.event == .fra .playerDiscards) then acc
-            else acc ++ o.waitingTriggersFor c (.fra .playerDiscards)
-          | none => acc) (#[] : Array WaitingTrigger)
         let discarded := fresh
         let one :=
           (g.permanentsOf p).foldl (fun acc o =>
             acc ++ o.waitingTriggersFor p (.fra .youDiscardOne)
               (causeId := some newId) (cause := some discarded)) (#[] : Array WaitingTrigger)
-        mine ++ anyPlayer ++ one
+        mine ++ one
       else #[]
     | _, _ => #[]
   let allTriggers :=
-    dying ++ othersDie ++ leaving ++ gyLeave ++
-      nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
+    dying ++ leaving ++ gyLeave ++
+      nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++
       fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
       frcNontokenDies ++ discardTriggers
   let g :=
@@ -681,36 +651,12 @@ def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String)
 Sources that also leave do not see “creature cards put into your
 graveyard” (Robot Domination; MSH 138). -/
 def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
-  let objs := ids.filterMap g.findObject?
-  let leavingIds := objs.map (·.id)
-  let gyOwners :=
-    objs.foldl (fun acc o =>
-      if o.printed.isCreature && !o.printed.isToken &&
-          !acc.any (· == o.owner) then
-        acc.push o.owner
-      else acc) (#[] : Array PlayerId)
-  let extra :=
-    if gyOwners.isEmpty then (#[] : Array WaitingTrigger)
-    else
-      g.battlefield.foldl (fun acc o =>
-        if leavingIds.any (· == o.id) then acc
-        else
-          match o.controller with
-          | some p =>
-            if gyOwners.any (· == p) then
-              acc ++ (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
-                !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
-            else acc
-          | none => acc) (#[] : Array WaitingTrigger)
-  let g := g.changes #[
-    .enqueueWaitingTriggers extra,
-    .suppressCreatureCardsToGy true]
-  let g :=
+  g.withBatch none fun g =>
+    let objs := ids.filterMap g.findObject?
     objs.foldl (fun g o =>
       match g.findObject? o.id with
       | some o => g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
       | none => g) g
-  g.change (.suppressCreatureCardsToGy false)
 
 /-- Put `id` onto the battlefield under `controller`, setting tap, sickness,
 optional attachment, and as-enters counters and status inside the atomic zone

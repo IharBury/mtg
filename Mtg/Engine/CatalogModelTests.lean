@@ -1612,7 +1612,7 @@ line is Human Mercenary Villain. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) enchantedRiverSGrasp me me
   let g := equip g "Enchanted River's Grasp" "Grizzly Bears"
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatuses host.id #[.plusOnePlusOne 2, .stun 1, .minusOneMinusOne 1]
+  let g := (g.recordPutCounters host.id .plusOnePlusOne 2).changeStatuses host.id #[.stun 1, .minusOneMinusOne 1]
   let g := passBoth (fireTrigger g "Enchanted River's Grasp")
   let h := namedPermanent g "Grizzly Bears"
   h.status.tapped && h.status.plusOnePlusOne == 0 && h.status.stun == 0 &&

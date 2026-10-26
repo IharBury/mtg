@@ -93,17 +93,11 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   if n > 0 && !unpreventable && g.preventsAllDamageTo o then
     g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
   else
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n <= 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause ctrl src
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n <= 0 then none
+      else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  g.withBatch defaultCause fun g =>
   let srcEvent : EventObject :=
     let base := (source.orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
@@ -258,19 +252,14 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (cause : Option EventCause := none) : Game :=
   let srcEvent? := source.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let prevented := g.preventsAllDamageTo o || o.status.shield > 0
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n <= 0 || g.preventsAllDamageTo o then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (ctxSrc, ctrl) =>
-          let (g, c) := g.allocDelayedCause
-            (ctrl.orElse (fun _ => srcEvent?.bind (·.controller)))
-            (ctxSrc.orElse (fun _ => srcEvent?.bind (·.id)))
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n <= 0 || g.preventsAllDamageTo o then none
+      else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+        .oneShotEffect none
+          (ctxSrc.orElse (fun _ => srcEvent?.bind (·.id)))
+          (ctrl.orElse (fun _ => srcEvent?.bind (·.controller))))
+  g.withBatch defaultCause fun g =>
   let g := g.markDamageOn o n s!"{o.name} is dealt {n} damage" (source := srcEvent?) (cause := cause)
   -- CR 702.15b: damage dealt by a source with lifelink.
   match srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none) with
@@ -295,19 +284,14 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           | none => n
         else n
       let prevented := g.preventsAllDamageTo o || o.status.shield > 0
-      let (g, cause) : Game × Option EventCause :=
-        match cause with
-        | some c => (g, some c)
-        | none =>
-          if n <= 0 || g.preventsAllDamageTo o then (g, none)
-          else
-            match g.currentResolvingContext? with
-            | some (ctxSrc, ctrl) =>
-              let (g, c) := g.allocDelayedCause
-                (ctrl.orElse (fun _ => src.controller))
-                (ctxSrc.orElse (fun _ => some src.id))
-              (g, some c)
-            | none => (g, none)
+      let defaultCause :=
+        cause.orElse (fun _ =>
+          if n <= 0 || g.preventsAllDamageTo o then none
+          else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+            .oneShotEffect none
+              (ctxSrc.orElse (fun _ => some src.id))
+              (ctrl.orElse (fun _ => src.controller)))
+      g.withBatch defaultCause fun g =>
       let g := g.changeStatus src.id (.dealtDamageThisTurn true)
       let g := g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
         (deathtouch || g.hasDeathtouch src) (source := some (g.snapshot src)) (cause := cause)
@@ -338,19 +322,14 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
   else
-    let (g, cause) : Game × Option EventCause :=
-      match cause with
-      | some c => (g, some c)
-      | none =>
-        if n <= 0 then (g, none)
-        else
-          match g.currentResolvingContext? with
-          | some (ctxSrc, ctrl) =>
-            let (g, c) := g.allocDelayedCause
-              (ctrl.orElse (fun _ => source.bind (·.controller)))
-              (ctxSrc.orElse (fun _ => source.map (·.id)))
-            (g, some c)
-          | none => (g, none)
+    let defaultCause :=
+      cause.orElse (fun _ =>
+        if n <= 0 then none
+        else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+          .oneShotEffect none
+            (ctxSrc.orElse (fun _ => source.map (·.id)))
+            (ctrl.orElse (fun _ => source.bind (·.controller))))
+    g.withBatch defaultCause fun g =>
     let srcEvent :=
       ((source.map g.snapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)).getD default
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false (cause := cause)
@@ -372,27 +351,13 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
         | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
         | none => g
       | none => g
-    let g :=
-      match source.orElse (fun _ => g.resolvingMovedDamageSource?) with
-      | some src =>
-        match src.controller with
-        | some c =>
-          if n > 0 && happened.matchesTrigger c src.id .heroesDealDamageToPlayer then
-            g.putControlledTriggersOncePerBatch c .heroesDealDamageToPlayer
-          else g
-        | none => g
-      | none => g
     if n > 0 then
       -- Each other player sees an opponent dealt noncombat damage. “One or
-      -- more opponents” triggers once per batch.
+      -- more opponents” (`opponentsDealtNoncombatDamage`) and `.heroesDealDamageToPlayer`
+      -- are evaluated once per batch in `evaluateBatchTriggers`.
       g.livingPlayers.foldl (fun g q =>
         if q.id == pid then g
-        else
-          let g := g.putFraEventTriggers q.id .opponentDealtNoncombatDamage
-          g.foldControlledPermanents q.id none fun g o =>
-            if g.waitingTriggers.any (fun w =>
-                w.source.id == o.id && w.event == .fra .opponentsDealtNoncombatDamage) then g
-            else g.putMatchingSourceTriggers q.id o (.fra .opponentsDealtNoncombatDamage)) g
+        else g.putFraEventTriggers q.id .opponentDealtNoncombatDamage) g
     else g
 
 /-- Deal `n` damage to each opponent of `controller` under a single shared
@@ -401,19 +366,14 @@ def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
     (source : Option GameObject := none)
     (cause : Option EventCause := none) : Game :=
   let source := source.orElse (fun _ => g.resolvingDamageSource?)
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n <= 0 || (g.livingOpponents controller).isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (ctxSrc, ctrl) =>
-          let (g, c) := g.allocDelayedCause
-            (ctrl.orElse (fun _ => some controller))
-            (ctxSrc.orElse (fun _ => source.map (·.id)))
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n <= 0 || (g.livingOpponents controller).isEmpty then none
+      else g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+        .oneShotEffect none
+          (ctxSrc.orElse (fun _ => source.map (·.id)))
+          (ctrl.orElse (fun _ => some controller)))
+  g.withBatch defaultCause fun g =>
   g.forEachOpponent controller (fun g pid =>
     g.dealDamageToPlayer pid n (source := source) (cause := cause))
 
@@ -426,17 +386,13 @@ def dealFightDamage (g : Game) (src dest : GameObject)
 then `dest` if both are still in play. -/
 def fightCreatures (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      match g.currentResolvingContext? with
-      | some (ctxSrc, ctrl) =>
-        let (g, c) := g.allocDelayedCause
-          (ctrl.orElse (fun _ => src.controller))
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      g.currentResolvingContext?.map fun (ctxSrc, ctrl) =>
+        .oneShotEffect none
           (ctxSrc.orElse (fun _ => some src.id))
-        (g, some c)
-      | none => (g, none)
+          (ctrl.orElse (fun _ => src.controller)))
+  g.withBatch defaultCause fun g =>
   let g := g.dealFightDamage src dest (cause := cause)
   match g.findObject? dest.id, g.findObject? src.id with
   | some dest, some src => g.dealFightDamage dest src (cause := cause)
@@ -461,46 +417,34 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat)
 `.oneShotEffect` cause when resolving (CR 119.3 / 610.1). -/
 def loseLifeEachOpponent (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 || (g.livingOpponents controller).isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 || (g.livingOpponents controller).isEmpty then none
+      else g.currentResolvingContext?.map fun (src, ctrl) =>
+        .oneShotEffect none src (ctrl.orElse (fun _ => some controller)))
+  g.withBatch defaultCause fun g =>
   g.forEachOpponent controller (fun g pid => g.loseLife pid n (cause := cause))
 
 /-- Each opponent of `controller` loses `n` life and `controller` gains `n`
 life under one shared `.oneShotEffect` cause when resolving (CR 119 / 610.1). -/
 def eachOpponentLosesYouGain (g : Game) (controller : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 then none
+      else g.currentResolvingContext?.map fun (src, ctrl) =>
+        .oneShotEffect none src (ctrl.orElse (fun _ => some controller)))
+  g.withBatch defaultCause fun g =>
   let g := g.forEachOpponent controller (fun g pid => g.loseLife pid n (cause := cause))
   g.gainLife controller n (cause := cause)
 
 /-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
 def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
-  let (g, cause?) : Game × Option EventCause :=
-    match g.currentResolvingContext? with
-    | some (src, ctrl) =>
-      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
-      (g, some c)
-    | none => (g, none)
-  (g.draw p cards (cause := cause?)).loseLife p life (cause := cause?)
+  let defaultCause :=
+    g.currentResolvingContext?.map fun (src, ctrl) =>
+      .oneShotEffect none src (ctrl.orElse (fun _ => some p))
+  g.withBatch defaultCause fun g =>
+  (g.draw p cards).loseLife p life
 
 /-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
 run a stored draw or life-gain after-action. -/

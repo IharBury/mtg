@@ -71,13 +71,14 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
     (g.change (.pending (.fraChoice p (.sacrificeNontokenEach rest.toArray chosen)))).logMsg
       s!"{(g.player p).name} sacrifices a nontoken creature"
   | [] =>
-    chosen.foldl (fun g id =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield then
-          g.sacrificeToGraveyard o s!"{(g.player (o.controller.getD o.owner)).name} sacrifices {o.name}"
-        else g
-      | none => g) g
+    g.withBatch none fun g =>
+      chosen.foldl (fun g id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield then
+            g.sacrificeToGraveyard o s!"{(g.player (o.controller.getD o.owner)).name} sacrifices {o.name}"
+          else g
+        | none => g) g
 
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
 def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
@@ -196,10 +197,10 @@ def applyHydeMode (g : Game) (controller : PlayerId) (sourceId : Option ObjectId
         if o.isOnBattlefield && o.controlledBy controller && o.status.hasCounters then
           let g :=
             if o.status.plusOnePlusOne > 0 then
-              g.changeStatus o.id (.removeCounters .plusOnePlusOne 1)
+              g.recordRemoveCounters o.id .plusOnePlusOne 1 (byPlayer := some controller)
                 |>.logMsg s!"A counter is removed from {o.name}"
             else if o.status.indestructibleCounters > 0 then
-              g.changeStatus o.id (.removeCounters .indestructible 1)
+              g.recordRemoveCounters o.id .indestructible 1 (byPlayer := some controller)
                 |>.logMsg s!"A counter is removed from {o.name}"
             else g.logMsg "A counter is removed from the creature"
           g.draw controller 1
@@ -434,15 +435,16 @@ def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
   let (atk, whom) := g.enterModsAttacking controller mods
-  let (g, newId) := g.putOntoBattlefield o.id o.owner
-    (attacking := atk) (attackingWhom := whom)
-    (extraEntersWith := enterModsExtraCounters mods)
-    (cause := some cause)
-  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
-  let g := g.afterPermanentEnters (g.object! newId)
-  if losesAbilitiesAndHaste mods then
-    g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-  else g
+  g.withBatch (some cause) fun g =>
+    let (g, newId) := g.putOntoBattlefield o.id o.owner
+      (attacking := atk) (attackingWhom := whom)
+      (extraEntersWith := enterModsExtraCounters mods)
+      (cause := some cause)
+    let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
+    let g := g.afterPermanentEnters (g.object! newId)
+    if losesAbilitiesAndHaste mods then
+      g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+    else g
 
 /-- Return the source from its owner's graveyard under its owner's control.
 Hellcat's return reports her by name when she has already left. -/
@@ -575,12 +577,13 @@ def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
   if n == 0 then
     g.logMsg "No blue mana symbols. No Merfolk are created."
   else
-    Id.run do
-      let mut g := g
-      for _ in [0:n] do
-        let (g', _) := g.createToken controller merfolk11blueToken
-        g := g'
-      return g
+    g.withBatch none fun g =>
+      Id.run do
+        let mut g := g
+        for _ in [0:n] do
+          let (g', _) := g.createToken controller merfolk11blueToken
+          g := g'
+        return g
 
 /-- Ask for one Vision mode that has not been chosen this turn. The chosen
 resolution is `TriggerResolution.visionModes`. -/
@@ -636,13 +639,14 @@ def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
           match t with
           | Target.permanent id => some id
           | _ => none)
-  ids.foldl (fun (g : Game) id =>
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield && o.isCreature then
-        g.grantUntilEotLogged o k
-      else g
-    | none => g) g
+  g.withBatch none fun g =>
+    ids.foldl (fun (g : Game) id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature then
+          g.grantUntilEotLogged o k
+        else g
+      | none => g) g
 
 /-- Copy the spell that caused this trigger and ask for new targets. -/
 def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
@@ -685,16 +689,17 @@ life gained in that event (the trigger's last-known power). -/
 def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
     (targets : Array Target) (lastKnownPower : Option Int) : Game :=
   let n := (lastKnownPower.getD 0).toNat
-  (targets.extract 0 n).foldl (fun (g : Game) t =>
-    match t with
-    | Target.permanent id =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
-          g.addPlusOnePlusOneTo o 1
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal") g
+  g.withBatch none fun g =>
+    (targets.extract 0 n).foldl (fun (g : Game) t =>
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature && o.controlledBy controller then
+            g.addPlusOnePlusOneTo o 1
+          else g.logMsg "The target is no longer legal"
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer legal") g
 
 /-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
 Effects are applied from that structured payload — not from Oracle text. -/

@@ -34,7 +34,7 @@ def putPalantirInfluence (g : Game) (sourceId : ObjectId) (target : Option Playe
         else
           let before := src.status.influence
           let n := g.countersYouPut src 1 (putter := src.controller)
-          let g := g.changeStatus src.id (.addCounters .influence n)
+          let g := g.recordPutCounters src.id .influence n (byPlayer := src.controller)
           let g := g.logMsg s!"{src.name} gets an influence counter"
           let after := ((g.findObject? sourceId).map (·.status.influence)).getD before
           (g, some (after > before))
@@ -271,19 +271,9 @@ def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game × Bool :=
   let before :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
-  let (g, cause?) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 || !opponents.any (fun pid => !(g.player pid).library.isEmpty) then
-        (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause ctrl src
-          (g, some c)
-        | none => (g, none)
-  let g := opponents.foldl (fun acc pid => acc.mill pid n (cause := cause?)) g
+  let g :=
+    g.withBatch cause fun g =>
+      opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
   let after :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
   (g, after > before)
@@ -412,8 +402,9 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
 /-- Return cards linked-exiled by `source` (leave-trigger list first, then
 until-leaves). -/
 def returnLinkedExile (g : Game) (source : GameObject) : Game :=
-  (source.leaveTriggerExile ++ source.linkedExile).foldl
-    (fun acc id => acc.returnExiledId id) g
+  g.withBatch none fun g =>
+    (source.leaveTriggerExile ++ source.linkedExile).foldl
+      (fun acc id => acc.returnExiledId id) g
 
 /-- Named MSH tokens that carry extra rules text. -/
 def zabuToken : CardDef :=
@@ -488,24 +479,20 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
     let n := g.countersYouPut o 1 (putter := some controller)
-    let (g, cause?) : Game × Option EventCause :=
-      if n == 0 then (g, none)
+    let g :=
+      if n == 0 then g
       else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-    let g := Id.run do
-      let mut g := g
-      for _ in [0:n] do
-        match g.findObject? o.id with
-        | some cur =>
-          g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1 (cause := cause?))
-          let cur := g.object! cur.id
-          g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
-        | none => pure ()
-      return g
+        g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+          Id.run do
+            let mut g := g
+            for _ in [0:n] do
+              match g.findObject? o.id with
+              | some cur =>
+                g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1)
+                let cur := g.object! cur.id
+                g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
+              | none => pure ()
+            return g
     k g (g.object! o.id)
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
@@ -558,26 +545,27 @@ def logLookAtTop (g : Game) (p : PlayerId) (n : Nat) : Game :=
 them this turn. `logAfter ownerName cardName` is the per-card message. -/
 def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
     (logAfter : String → String → String) : Game :=
-  Id.run do
-    let (g0, cause?) : Game × Option EventCause :=
-      if n > 0 && !(g.player fromPlayer).library.isEmpty then
-        let (g, c) := g.allocDelayedCause (some caster)
-        (g, some c)
-      else (g, none)
-    let mut g := g0
-    for _ in [0:n] do
-      let pl := g.player fromPlayer
-      if pl.library.isEmpty then
-        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-      else
-        let top := pl.library.back!
-        let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none (cause := cause?)
-        g := g'
-        g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
-          (cause := cause?)
-        g := g.logMsg (logAfter pl.name cardName)
-    return g
+  let (g0, cause?) : Game × Option EventCause :=
+    if n > 0 && !(g.player fromPlayer).library.isEmpty then
+      let (g, c) := g.allocDelayedCause (some caster)
+      (g, some c)
+    else (g, none)
+  g0.withBatch cause? fun g =>
+    Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        let pl := g.player fromPlayer
+        if pl.library.isEmpty then
+          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+        else
+          let top := pl.library.back!
+          let cardName := (g.object! top).name
+          let (g', newId) := g.move top .exile none (cause := cause?)
+          g := g'
+          g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
+            (cause := cause?)
+          g := g.logMsg (logAfter pl.name cardName)
+      return g
 
 /-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
 def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -587,20 +575,15 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Extort is paid: each opponent loses 1 life and `controller` gains the
 life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
 def extortDrain (g : Game) (controller : PlayerId) : Game :=
-  let (g, cause?) : Game × Option EventCause :=
-    match g.currentResolvingContext? with
-    | some (src, ctrl) =>
-      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
-      (g, some c)
-    | none => (g, none)
-  let (g, lost) :=
-    (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
-      let before := (acc.1.player pl.id).life
-      let g := acc.1.loseLife pl.id 1 (cause := cause?)
-      let after := (g.player pl.id).life
-      let delta := if before > after then (before - after).toNat else 0
-      (g, acc.2 + delta)) (g, 0)
-  g.gainLife controller lost (cause := cause?) |>.logMsg "Extort is paid"
+  g.withBatch (g.resolvingBatchCause controller) fun g =>
+    let (g, lost) :=
+      (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
+        let before := (acc.1.player pl.id).life
+        let g := acc.1.loseLife pl.id 1
+        let after := (g.player pl.id).life
+        let delta := if before > after then (before - after).toNat else 0
+        (g, acc.2 + delta)) (g, 0)
+    g.gainLife controller lost |>.logMsg "Extort is paid"
 
 /-- A stack object to stand for `sourceId` as an ability's source. -/
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
@@ -746,29 +729,31 @@ def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may cast up
 to `casts` nonland cards from among them without paying their mana costs. -/
 def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
-  Id.run do
-    let (g0, cause?) : Game × Option EventCause :=
-      if n > 0 && !(g.player fromPlayer).library.isEmpty then
-        let (g, c) := g.allocDelayedCause (some caster)
-        (g, some c)
-      else (g, none)
-    let mut g := g0
-    let mut ids : Array ObjectId := #[]
-    for _ in [0:n] do
-      let pl := g.player fromPlayer
-      if pl.library.isEmpty then
-        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-      else
-        let top := pl.library.back!
-        let name := (g.object! top).name
-        let (g', newId) := g.move top .exile none (cause := cause?)
-        g := g'
-        ids := ids.push newId
-        g := g.logMsg s!"{pl.name} exiles {name}"
-    let spells := ids.filter (fun id =>
-      (g.findObject? id).any (fun o => !o.printed.isLand))
-    if spells.isEmpty || casts == 0 then g
-    else g.offerExileCasts caster spells casts
+  let (g0, cause?) : Game × Option EventCause :=
+    if n > 0 && !(g.player fromPlayer).library.isEmpty then
+      let (g, c) := g.allocDelayedCause (some caster)
+      (g, some c)
+    else (g, none)
+  let (g, ids) := g0.withBatchReturn cause? fun g =>
+    Id.run do
+      let mut g := g
+      let mut ids : Array ObjectId := #[]
+      for _ in [0:n] do
+        let pl := g.player fromPlayer
+        if pl.library.isEmpty then
+          g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+        else
+          let top := pl.library.back!
+          let name := (g.object! top).name
+          let (g', newId) := g.move top .exile none (cause := cause?)
+          g := g'
+          ids := ids.push newId
+          g := g.logMsg s!"{pl.name} exiles {name}"
+      return (g, ids)
+  let spells := ids.filter (fun id =>
+    (g.findObject? id).any (fun o => !o.printed.isLand))
+  if spells.isEmpty || casts == 0 then g
+  else g.offerExileCasts caster spells casts
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. -/
@@ -847,26 +832,22 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       sourceId illegal
   | 10 =>
     let legal := g.legalTargetsForKind controller tkind sourceId
-    let (g, cause?) : Game × Option EventCause :=
-      if targets.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
-          (g, some c)
-        | none => (g, none)
-    (List.range targets.size).foldl (fun g i =>
-      let tgt := targets[i]!
-      if legal.contains tgt then
-        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?) (cause := cause?)
-      else g.illegalAbilityTarget tgt) g
+    if targets.isEmpty then g
+    else
+      g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
+        (List.range targets.size).foldl (fun g i =>
+          let tgt := targets[i]!
+          if legal.contains tgt then
+            g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
+          else g.illegalAbilityTarget tgt) g
   | 11 =>
     let legal := g.legalTargetsForKind controller tkind sourceId
-    targets.foldl (fun g tgt =>
-      match tgt with
-      | Target.card id =>
-        if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
-      | _ => g) g
+    g.withBatch none fun g =>
+      targets.foldl (fun g tgt =>
+        match tgt with
+        | Target.card id =>
+          if legal.contains tgt then g.returnToHand id controller else g.illegalAbilityTarget tgt
+        | _ => g) g
   | 12 =>
     g.withLegalKindPermanent controller tkind targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId illegal
@@ -1012,39 +993,40 @@ def revealHand (g : Game) (p : PlayerId) : Game :=
 the exiled cards return to their owners' hands, and the spell is exiled. -/
 def finishWorldsWithinWorlds (g : Game) (exiled chosen : Array ObjectId)
     (sourceId : Option ObjectId) : Game :=
-  Id.run do
-    let mut g := g
-    let mut entered : Array ObjectId := #[]
-    for id in chosen do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .hand o.owner && o.printed.isCreature then
-          let pid := o.owner
-          let (g', newId) := g.putOntoBattlefield id pid
-          g := g'
-          entered := entered.push newId
-          g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
-        else pure ()
-      | none => pure ()
-    for id in entered do
-      match g.findObject? id with
-      | some o => g := g.afterPermanentEnters o
-      | none => pure ()
-    for nid in exiled do
-      match g.findObject? nid with
-      | some o =>
-        if o.zone == .exile then
-          let (g', _) := g.move o.id (.hand o.owner) none
-          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
-        else pure ()
-      | none => pure ()
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.zone == .exile then return g
-      else
-        let (g', _) := g.move src.id .exile none
-        return g'.logMsg s!"{src.name} is exiled"
-    | none => return g
+  g.withBatch none fun g =>
+    Id.run do
+      let mut g := g
+      let mut entered : Array ObjectId := #[]
+      for id in chosen do
+        match g.findObject? id with
+        | some o =>
+          if o.zone == .hand o.owner && o.printed.isCreature then
+            let pid := o.owner
+            let (g', newId) := g.putOntoBattlefield id pid
+            g := g'
+            entered := entered.push newId
+            g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
+          else pure ()
+        | none => pure ()
+      for id in entered do
+        match g.findObject? id with
+        | some o => g := g.afterPermanentEnters o
+        | none => pure ()
+      for nid in exiled do
+        match g.findObject? nid with
+        | some o =>
+          if o.zone == .exile then
+            let (g', _) := g.move o.id (.hand o.owner) none
+            g := g'.logMsg s!"{o.name} is returned to its owner's hand"
+          else pure ()
+        | none => pure ()
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.zone == .exile then return g
+        else
+          let (g', _) := g.move src.id .exile none
+          return g'.logMsg s!"{src.name} is exiled"
+      | none => return g
 
 /-- Ask the next player who has a creature card in hand, in the order given. -/
 def offerWorldsCreatures (g : Game) (rest : List PlayerId)
@@ -1069,21 +1051,23 @@ together, the exiled cards return to their owners' hands, then the spell
 is exiled. -/
 def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
-  Id.run do
-    let mut g := g
-    let creatures := g.battlefield.filter (fun o => o.isCreature)
-    let mut exiled : Array ObjectId := #[]
-    for o in creatures do
-      let name := o.name
-      let (g', nid) := g.move o.id .exile none
-      g := g'
-      exiled := exiled.push nid
-      g := g.logMsg s!"{name} is exiled"
-    let order :=
-      let apnap := g.apnapOrder
-      if apnap.isEmpty then #[controller]
-      else apnap
-    return g.offerWorldsCreatures order.toList exiled #[] sourceId
+  let (g, exiled) := g.withBatchReturn none fun g =>
+    Id.run do
+      let mut g := g
+      let creatures := g.battlefield.filter (fun o => o.isCreature)
+      let mut exiled : Array ObjectId := #[]
+      for o in creatures do
+        let name := o.name
+        let (g', nid) := g.move o.id .exile none
+        g := g'
+        exiled := exiled.push nid
+        g := g.logMsg s!"{name} is exiled"
+      return (g, exiled)
+  let order :=
+    let apnap := g.apnapOrder
+    if apnap.isEmpty then #[controller]
+    else apnap
+  g.offerWorldsCreatures order.toList exiled #[] sourceId
 
 end Game
 end Mtg.Engine

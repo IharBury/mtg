@@ -91,7 +91,7 @@ def galionResolved : Game := passBoth galionTargeted
 def galionOnCounteredElves : Game :=
   let g := galionAndElves
   let elves := namedPermanent g "Llanowar Elves"
-  let g := g.changeStatus elves.id (.plusOnePlusOne 1)
+  let g := g.recordPutCounters elves.id .plusOnePlusOne 1
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
     (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])

@@ -63,16 +63,17 @@ def discardToMaxHandSize (g : Game) : Game :=
   let extra := pl.hand.size - g.effectiveMaxHandSize g.activePlayer
   if extra == 0 then g
   else
-    Id.run do
-      let mut g := g
-      for _ in [0:extra] do
-        let pl := g.player g.activePlayer
-        if let some last := pl.hand.back? then
-          let card := g.object! last
-          let (g', _) := g.move last (.graveyard pl.id) none
-            (cause := some (.turnBased .cleanupDiscard))
-          g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
-      return g
+    g.withBatch (some (.turnBased .cleanupDiscard)) fun g =>
+      Id.run do
+        let mut g := g
+        for _ in [0:extra] do
+          let pl := g.player g.activePlayer
+          if let some last := pl.hand.back? then
+            let card := g.object! last
+            let (g', _) := g.move last (.graveyard pl.id) none
+              (cause := some (.turnBased .cleanupDiscard))
+            g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
+        return g
 
 /-- Clear “once each turn” activation counts as a turn ends. -/
 def clearTurnActivations (g : Game) : Game :=
@@ -254,29 +255,33 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .additionalLandsThisTurn p _ => p == ap | _ => false)
         (cause := some (.turnBased .expireAtStepBegin))
-      for o in g.permanentsOf ap do
-        -- CR 502.3: the active player untaps their permanents. Logging each
-        -- previously tapped permanent makes the battlefield status change
-        -- visible in the demo before the zone reprint.
-        let skipUntap :=
-          (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
-            !g.hasEnduringStory ap) ||
-          o.staticAbilities.any (· == .fra .doesntUntap) ||
-          g.hostCantBecomeUntapped o ||
-          g.hostSkipsUntapStep o
-        let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := some (.turnBased .untapAll))
-        -- CR 122.1d: a stun counter is removed instead of untapping.
-        let stunned := o.status.tapped && !skipUntap && o.status.stun > 0 && untap.watches .wouldUntap
-        if o.status.tapped && !skipUntap && !stunned then do
-          g := g.logMsg s!"{apName} untaps {o.name}"
-          if untap.watches .wouldUntap then
-            g := g.record untap
-        if stunned then do
-          g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
-            (cause := some (.turnBased .untapAll)))
-        if o.status.summoningSick then
-          g := g.changeStatus o.id (.summoningSick false)
+      g := g.withBatch (some (.turnBased .untapAll)) fun g =>
+        Id.run do
+          let mut g := g
+          for o in g.permanentsOf ap do
+            -- CR 502.3: the active player untaps their permanents. Logging each
+            -- previously tapped permanent makes the battlefield status change
+            -- visible in the demo before the zone reprint.
+            let skipUntap :=
+              (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
+                !g.hasEnduringStory ap) ||
+              o.staticAbilities.any (· == .fra .doesntUntap) ||
+              g.hostCantBecomeUntapped o ||
+              g.hostSkipsUntapStep o
+            let untap := GameEvent.untapped g.turnNumber o.asEvent false (cause := some (.turnBased .untapAll))
+            -- CR 122.1d: a stun counter is removed instead of untapping.
+            let stunned := o.status.tapped && !skipUntap && o.status.stun > 0 && untap.watches .wouldUntap
+            if o.status.tapped && !skipUntap && !stunned then do
+              g := g.logMsg s!"{apName} untaps {o.name}"
+              if untap.watches .wouldUntap then
+                g := g.record untap
+            if stunned then do
+              g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
+              g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+                (cause := some (.turnBased .untapAll)))
+            if o.status.summoningSick then
+              g := g.changeStatus o.id (.summoningSick false)
+          return g
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>

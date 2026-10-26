@@ -24,58 +24,6 @@ def isLordOf (src target : GameObject) : Bool :=
   src.controller.isSome &&
   target.isCreature
 
-/-- Current subtypes after Aura type-setting (e.g. Fog on the Barrow-Downs
-makes the enchanted creature only a Spirit; CR 205.3m / 613.1d). -/
-def currentSubtypes (g : Game) (o : GameObject) : Array CardSubtype :=
-  match g.battlefield.find? (fun a =>
-    a.attachedTo == some o.id &&
-      a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome)) with
-  | none => o.subtypes
-  | some aura =>
-    match aura.staticAbilities.findSome? (fun ab => ab.enchantedOnlySubtype?) with
-    | some s => #[s]
-    | none => o.subtypes
-
-/-- Creature cards in `p`'s graveyard. -/
-def gyCreatureCards (g : Game) (p : PlayerId) : Nat :=
-  (g.player p).graveyard.filter (fun id =>
-    (g.findObject? id).any (·.printed.isCreature)) |>.size
-
-/-- Undercover Skrull: all creature types while enough creature cards are
-in your graveyard. -/
-def hasAllCreatureTypes (g : Game) (o : GameObject) : Bool :=
-  match o.controller with
-  | none => false
-  | some p =>
-    o.staticAbilities.any fun
-      | .getsAndAllTypesIfGyCreatureCards min _ _ => g.gyCreatureCards p >= min
-      | _ => false
-
-/-- Types an attached Aura adds, including the word "legendary". -/
-def auraAddedTypes (g : Game) (o : GameObject) : Array CardSubtype :=
-  if !o.isOnBattlefield then #[]
-  else
-    g.battlefield.foldl (fun acc a =>
-      if a.attachedTo != some o.id then acc
-      else
-        a.staticAbilities.foldl (fun acc ab =>
-          match ab with
-          | .enchantedCreatureGetsHasAndTypes _ _ _ types => acc ++ types
-          | _ => acc) acc) #[]
-
-/-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
-Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
-type-setting Aura overwrites the subtypes. -/
-def hasSubtype (g : Game) (o : GameObject) (s : CardSubtype) : Bool :=
-  let fogged :=
-    g.battlefield.any (fun a =>
-      a.attachedTo == some o.id &&
-        a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
-  (g.currentSubtypes o).any (· == s) ||
-    (g.auraAddedTypes o).any (· == s) ||
-    (!fogged && (o.printedOrUntilEot.changeling || g.hasAllCreatureTypes o) &&
-      !s.isNoncreature)
-
 /-- Printed legendary, or an Aura that adds the legendary supertype. -/
 def treatedAsLegendary (g : Game) (o : GameObject) : Bool :=
   o.isLegendary ||

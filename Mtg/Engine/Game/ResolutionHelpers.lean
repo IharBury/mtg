@@ -117,7 +117,7 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
   if ids.isEmpty then g
   else
     let (g, cause) := g.allocDelayedCause (some controller)
-    Id.run do
+    g.withBatch (some cause) fun g => Id.run do
       let mut g := g
       for id in ids do
         match g.findObject? id with
@@ -236,19 +236,13 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
 def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
-  let (g0, cause?) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 || (g.player p).library.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
-          (g, some c)
-        | none => (g, none)
-  Id.run do
-    let mut g := g0
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 || (g.player p).library.isEmpty then none
+      else g.currentResolvingContext?.map fun (src, ctrl) =>
+        .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
+  g.withBatch defaultCause fun g => Id.run do
+    let mut g := g
     for _ in [0:n] do
       let pl := g.player p
       if pl.library.isEmpty then
@@ -257,7 +251,7 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
         let top := pl.library.back!
         let name := (g.object! top).name
         let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
-          (cause := cause?)
+          (cause := cause)
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
@@ -278,7 +272,7 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
       | none => (g, none)
   let g := g.mill p n (cause := cause?)
   let milled := tops.map (fun id => g.followMoved id)
-  Id.run do
+  g.withBatch cause? fun g => Id.run do
     let mut g := g
     let mut left := maxPut.getD milled.size
     for id in milled do
@@ -297,17 +291,11 @@ def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (pred : GameObject → Bool := fun _ => true)
     (source : Option EventObject := none)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause ctrl src
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 then none
+      else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  g.withBatch defaultCause fun g =>
   g.foldBattlefield (fun o => o.isCreature && pred o)
     (fun g o => g.dealDamageToPermanent o n (source := source) (cause := cause))
 

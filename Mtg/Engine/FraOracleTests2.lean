@@ -352,7 +352,7 @@ def shockedGoyf : Game :=
 +1/+1 counter still applies, so it survives as a 1/1. -/
 def zeroedGoyf : Game :=
   let g := addToGraveyard goyfOnBattlefield grizzlyBears ⟨1⟩
-  let g := g.changeStatus (namedPermanent g "Tarmogoyf").id (.addPlusOnePlusOne 1)
+  let g := g.recordPutCounters (namedPermanent g "Tarmogoyf").id .plusOnePlusOne 1
   let g := withBlackMana (addToHand g multiplyByZero ⟨0⟩) ⟨0⟩ 2
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Multiply by Zero").id
     (.permanent (namedPermanent g "Tarmogoyf").id)

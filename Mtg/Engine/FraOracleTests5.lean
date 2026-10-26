@@ -328,7 +328,8 @@ def chandraTokens (g : Game) (name : String) : Array GameObject :=
 787: counters and tapped status aren't copied. -/
 def facedOculus : Game :=
   let g := addPermanent afterDraw mindseekerOculus ⟨1⟩ ⟨1⟩
-  let g := g.changeStatuses (namedPermanent g "Mindseeker Oculus").id #[.addPlusOnePlusOne 2, .tapped true]
+  let oc := namedPermanent g "Mindseeker Oculus"
+  let g := (g.recordPutCounters oc.id .plusOnePlusOne 2).changeStatus oc.id (.tapped true)
   faceYourselfAt g
 
 #guard (chandraTokens facedOculus "Mindseeker Oculus").size == 1
@@ -342,7 +343,7 @@ def facedOculus : Game :=
 counters and dies as a 1/0. -/
 #guard
   let g := addPermanent afterDraw guidingHydra ⟨1⟩ ⟨1⟩
-  let g := g.changeStatus (namedPermanent g "Guiding Hydra").id (.addPlusOnePlusOne 3)
+  let g := g.recordPutCounters (namedPermanent g "Guiding Hydra").id .plusOnePlusOne 3
   let g := faceYourselfAt g
   (chandraTokens g "Guiding Hydra").isEmpty && g.battlefield.any (fun o => o.name == "Guiding Hydra")
 #guard (fraRuling 785).comment.contains "X is considered to be 0"

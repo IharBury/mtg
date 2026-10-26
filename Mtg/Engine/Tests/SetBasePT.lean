@@ -80,7 +80,7 @@ and a creature that has left are not set. -/
 
 #guard
   let o := obj board "Bear"
-  let marked := board.changeStatus o.id (.plusOnePlusOne 1)
+  let marked := board.recordPutCounters o.id .plusOnePlusOne 1
   let g := step marked fixed (targets := #[Target.permanent (pid marked "Bear")])
   base g "Bear" == some (1, 1) && g.basePower (obj g "Bear") == 1 &&
     g.power (obj g "Bear") == 2 &&

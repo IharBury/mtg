@@ -227,29 +227,6 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     g.putTriggeredAbilityOnStack controller source ab event.label
       lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
 
-/-- Append waiting-trigger snapshots. -/
-def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
-  if wts.isEmpty then g else g.change (.enqueueWaitingTriggers wts)
-
-/-- Extra times a trigger of `source` fires from Bifur / Chief / Wizard's Staff
-statics. Each such ability adds one additional instance; they stack. -/
-def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) : Nat :=
-  let story := (g.player controller).enduringStory
-  (g.permanentsOf controller).foldl (fun acc o =>
-    o.staticAbilities.foldl (fun acc ab =>
-      match ab with
-      | .extraTriggerIfEnduringStorySubtype subtype =>
-        if story && g.hasSubtype source subtype then acc + 1 else acc
-      | .extraTriggerAnotherYouControl subtypes types =>
-        if o.id == source.id then acc
-        else
-          let matchSubtype := subtypes.any (fun s => g.hasSubtype source s)
-          let matchType := types.any source.printed.hasType
-          if matchSubtype || matchType then acc + 1 else acc
-      | .equippedTriggersAgain =>
-        if o.attachedTo == some source.id then acc + 1 else acc
-      | _ => acc) acc) 0
-
 /-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
 intervening condition is checked when the event occurs. -/
 def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
@@ -446,17 +423,6 @@ def becomeTapped (g : Game) (o : GameObject)
         if happened.matchesTrigger p o.id .sourceBecomesTapped then
           g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
         else g
-      -- “Whenever one or more creatures you control become tapped” triggers once
-      -- per batch of tapping.
-      let g :=
-        if happened.matchesTrigger p o.id .creaturesYouControlBecomeTapped then
-          g.foldControlledPermanents p none fun g src =>
-            if g.waitingTriggers.any (fun w =>
-                w.source.id == src.id && w.event == .creaturesYouControlBecomeTapped) then g
-            else if happened.matchesTrigger p src.id .creaturesYouControlBecomeTapped then
-              g.putMatchingSourceTriggers p src .creaturesYouControlBecomeTapped
-            else g
-        else g
       let g :=
         (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
           if eq.printed.isEquipment &&
@@ -473,15 +439,9 @@ def becomeTapped (g : Game) (o : GameObject)
 /-- Apply `f` to each creature `p` controls, optionally skipping one id. -/
 def forEachControlledCreature (g : Game) (p : PlayerId)
     (f : Game → GameObject → Game) (excludeId : Option ObjectId := none) : Game :=
-  g.foldControlledPermanents p excludeId fun g o =>
-    if o.isCreature then f g o else g
-
-/-- Queue `event` for each permanent `p` controls that doesn't already have a
-waiting trigger for it, so a “one or more” trigger fires once per batch. -/
-def putControlledTriggersOncePerBatch (g : Game) (p : PlayerId) (event : TriggerEvent) : Game :=
-  g.foldControlledPermanents p none fun g src =>
-    if g.waitingTriggers.any (fun w => w.source.id == src.id && w.event == event) then g
-    else g.putMatchingSourceTriggers p src event
+  g.withBatch none fun g =>
+    g.foldControlledPermanents p excludeId fun g o =>
+      if o.isCreature then f g o else g
 
 /-- `p` lost `n` life (from damage, payment, or loss; CR 119.3 / 120.3a):
 trigger “whenever a player loses life”. The player and amount ride on the
@@ -700,21 +660,10 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
 def waitingFor (g : Game) (event : TriggerEvent) : Array WaitingTrigger :=
   g.waitingTriggers.filter (·.event == event)
 
-/-- One “whenever one or more other creatures die” trigger per source
-(CR 603.2a / 603.3b). -/
-def dedupWaitingTriggers (wts : Array WaitingTrigger) : Array WaitingTrigger :=
-  wts.foldl (fun acc wt =>
-    if wt.event == .oneOrMoreOtherCreaturesDie &&
-        acc.any (fun w =>
-          w.event == .oneOrMoreOtherCreaturesDie && w.source.id == wt.source.id) then
-      acc
-    else acc.push wt) #[]
-
 /-- CR 603.3b: part 1 is every waiting trigger whose condition is not another
 ability triggering; part 2 is the remainder. -/
 def waitingTriggersPart (g : Game) (part2 : Bool) : Array WaitingTrigger :=
   g.waitingTriggers.filter (fun wt => wt.event.isAnotherAbilityTriggering == part2)
-    |> dedupWaitingTriggers
 
 /-- The current CR 603.3b batch: part 1 if any remain, otherwise part 2. -/
 def currentTriggerBatch (g : Game) : Array WaitingTrigger :=
@@ -735,20 +684,14 @@ def nextTriggerStackingPlayer? (g : Game) : Option PlayerId :=
   let batch := g.currentTriggerBatch
   g.apnapPlayers.find? (fun p => batch.any (·.controller == p))
 
-/-- Remove `wt` from the waiting list. A “one or more other creatures die”
-trigger consumes every queued copy from the same source. -/
+/-- Remove `wt` from the waiting list. -/
 def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
-  if wt.event == .oneOrMoreOtherCreaturesDie then
-    g.change (.waitingTriggers
-      (g.waitingTriggers.filter (fun w =>
-        !(w.event == .oneOrMoreOtherCreaturesDie && w.source.id == wt.source.id))))
-  else
-    match g.waitingTriggers.findIdx? (fun w =>
-      w.controller == wt.controller && w.source.id == wt.source.id &&
-        w.ability == wt.ability && w.event == wt.event &&
-        w.causeId == wt.causeId) with
-    | none => g
-    | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
+  match g.waitingTriggers.findIdx? (fun w =>
+    w.controller == wt.controller && w.source.id == wt.source.id &&
+      w.ability == wt.ability && w.event == wt.event &&
+      w.causeId == wt.causeId) with
+  | none => g
+  | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
 
 /-- Last-known power, or the causing object's id for Baron Strucker's optional
 connive (MSH 422). -/
@@ -800,12 +743,7 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
 decides the log label and whether to remove abilities that require a target
 and have none (CR 603.3d). -/
 def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
-  let waiting :=
-    let raw := g.waitingFor event
-    if event == .oneOrMoreOtherCreaturesDie then
-      raw.foldl (fun acc wt =>
-        if acc.any (fun w => w.source.id == wt.source.id) then acc else acc.push wt) #[]
-    else raw
+  let waiting := g.waitingFor event
   if waiting.isEmpty then g
   else
     Id.run do
@@ -824,12 +762,6 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     if g.pending == .none && g.afterRandom == .none && g.resolvingContext.isSome then
       g.change (.resolvingContext none)
     else g
-  let g :=
-    if g.pendingCreatureTokenCreators.isEmpty then g
-    else
-      let ps := g.pendingCreatureTokenCreators
-      let g := g.change (.pendingCreatureTokenCreators #[])
-      ps.foldl (fun g pid => g.putFraEventTriggers pid .youCreateCreatureTokens) g
   let p := g.priorityInstead p
   let g := if recheckSba then g.checkSBA else g
   if g.over then g

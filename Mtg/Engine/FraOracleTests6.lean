@@ -31,7 +31,8 @@ def tamBoard : Game :=
   let g := addPermanent (afterDraw.empowerJace ⟨0⟩ 2) tamThePossibility ⟨0⟩ ⟨0⟩
   let g := enterPermanent g ajaniResolute ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.changeStatuses (namedPermanent g "Grizzly Bears").id #[.addPlusOnePlusOne 1, .shield 1]
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := (g.recordPutCounters bears.id .plusOnePlusOne 1).changeStatus bears.id (.shield 1)
   let g := g.changePlayer ⟨1⟩ (.poison 1)
   [Color.white, .blue, .black, .red, .green].foldl (fun g c => withMana g ⟨0⟩ c 1) g
 

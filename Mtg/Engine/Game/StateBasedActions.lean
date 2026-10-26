@@ -84,8 +84,9 @@ priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
-    Id.run do
-      let mut g := g.refreshAuraAnimation
+    let g := g.refreshAuraAnimation
+    let (g, (changed, paused)) := g.withBatchReturn none fun g => Id.run do
+      let mut g := g
       let mut changed := false
       -- Players losing (CR 704.5a–c). They leave after this SBA pass
       -- if the game continues (CR 800.4 / 800.4a).
@@ -113,7 +114,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
       match g.decideGameIfFinished with
-      | some finished => return (finished, true)
+      | some finished => return (finished, (true, true))
       | none => pure ()
       -- Waiting for a legend-rule choice: do not apply further SBAs until
       -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
@@ -126,7 +127,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             o.isOnBattlefield && o.controlledBy p && o.isLegendary && o.name == name
           | none => false)
         if still.size ≥ 2 then
-          return (g, changed)
+          return (g, (changed, true))
         else
           g := g.change (.pending .none)
       | _ => pure ()
@@ -159,43 +160,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy, StateBasedAction.deathtouchDamage)
             else none)
       if !victims.isEmpty then
-        g := g.changes #[
-          .lockedDeathReplacements (some snap),
-          .suppressOthersDie true]
-        -- CR 614.6: a replaced death never happens, so only creatures that
-        -- will actually go to a graveyard cause “die” triggers. A Bee that
-        -- dies at the same time as another creature that *does* die still
-        -- sees that event (ruling 139).
-        let actualDeaths := victims.filter (fun (o, _, _, _) =>
-          !g.wouldExileInsteadOfDying o)
-        if !actualDeaths.isEmpty then
-          for o in g.battlefield do
-            if actualDeaths.any (fun (v, _, _, _) => v.id != o.id) then
-              match o.controller with
-              | some p =>
-                g := g.change (.enqueueWaitingTriggers
-                  (o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie))
-              | none => pure ()
-          -- “One or more creature cards” fires once per source still on
-          -- the battlefield (Robot Domination; MSH 138).
-          let leavingIds := victims.map (fun (o, _, _, _) => o.id)
-          let gyOwners :=
-            actualDeaths.foldl (fun acc (o, _, _, _) =>
-              if o.printed.isCreature && !o.printed.isToken &&
-                  !acc.any (· == o.owner) then
-                acc.push o.owner
-              else acc) (#[] : Array PlayerId)
-          if !gyOwners.isEmpty then
-            for o in g.battlefield do
-              if !leavingIds.any (· == o.id) then
-                match o.controller with
-                | some p =>
-                  if gyOwners.any (· == p) then
-                    let wts := (o.waitingTriggersFor p .creatureCardsPutIntoYourGy).filter (fun w =>
-                      !g.waitingTriggers.any (fun x => x.source.id == w.source.id && x.event == w.event))
-                    g := g.change (.enqueueWaitingTriggers wts)
-                | none => pure ()
-            g := g.change (.suppressCreatureCardsToGy true)
+        g := g.change (.lockedDeathReplacements (some snap))
       for (o, reason, verb, sba) in victims do
         match g.findObject? o.id with
         | some o =>
@@ -206,8 +171,6 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         | none => pure ()
       g := g.changes #[
         .lockedDeathReplacements none,
-        .suppressOthersDie false,
-        .suppressCreatureCardsToGy false,
         .sbaChecked]
       -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
       -- controls Sanctum Lurker (ruling 778).
@@ -224,7 +187,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         g := g.change (.pending (.chooseLegend p name ids))
         g := g.logMsg
           s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
-        return (g, true)
+        return (g, (true, true))
       | none => pure ()
       -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
       for o in g.objects do
@@ -271,12 +234,13 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
       match g.decideGameIfFinished with
-      | some finished => return (finished, true)
-      | none => pure ()
-      if changed then
-        let (g', _) := checkSBACounted g
-        return (g', true)
-      return (g, false)
+      | some finished => return (finished, (true, true))
+      | none => return (g, (changed, false))
+    if paused then (g, changed)
+    else if changed then
+      let (g', _) := checkSBACounted g
+      (g', true)
+    else (g, false)
 
 def checkSBA (g : Game) : Game :=
   let g := (g.checkSBACounted).1

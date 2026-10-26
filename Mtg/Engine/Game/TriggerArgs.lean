@@ -453,15 +453,18 @@ def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.Numbe
 returned when at least one was created. -/
 def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
     (tapped : Bool := false) : Game × Option ObjectId :=
-  Id.run do
-    let mut g := g
-    let mut last : Option ObjectId := none
-    for pid in pids do
-      for _ in [0:n] do
-        let (g', tok) := g.createToken pid face (tapped := tapped)
-        g := g'
-        last := some tok.id
-    return (g, last)
+  if n == 0 || pids.isEmpty then (g, none)
+  else
+    g.withBatchReturn none fun g =>
+      Id.run do
+        let mut g := g
+        let mut last : Option ObjectId := none
+        for pid in pids do
+          for _ in [0:n] do
+            let (g', tok) := g.createToken pid face (tapped := tapped)
+            g := g'
+            last := some tok.id
+        return (g, last)
 
 /-- Recipients of a created token. The Void with no announced opponent is
 created for the controller. -/
@@ -490,13 +493,15 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
       | none => (g, none)
   match note with
   | .none =>
-    pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
+    g.withBatch cause? fun g =>
+      pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
   | .milledCards =>
     let tops := pids.foldl (fun acc pid =>
       let lib := (g.player pid).library
       let count := min n lib.size
       acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
-    let g := pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
+    let g := g.withBatch cause? fun g =>
+      pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
     let milled := (tops.map g.followMoved).filter (fun id =>
       (g.findObject? id).any (fun o => o.zone == .graveyard o.owner))
     let g :=
@@ -506,9 +511,11 @@ def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n 
     g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)
-    let (g, flag) := g.millThenReflexive opps n (cause := cause?)
-    let g := pids.foldl (fun g pid =>
-      if pid == controller then g.mill pid n (cause := cause?) else g) g
+    let (g, flag) := g.withBatchReturn cause? fun g =>
+      let (g, flag) := g.millThenReflexive opps n (cause := cause?)
+      let g := pids.foldl (fun g pid =>
+        if pid == controller then g.mill pid n (cause := cause?) else g) g
+      (g, flag)
     g.change (.opponentsMilledThisWay flag)
 
 end Game

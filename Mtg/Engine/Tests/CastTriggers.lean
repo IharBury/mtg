@@ -777,8 +777,7 @@ def guardianDiesFromTwoDamage : Game :=
 
 def guardianSurvivesTwoDamage : Game :=
   let o := namedPermanent guardianResolved "Guardian of the Halls"
-  let g := guardianResolved.changeStatuses o.id #[
-    .plusOnePlusOne o.status.plusOnePlusOne, .damage 2]
+  let g := guardianResolved.changeStatus o.id (.damage 2)
   g.receivePriority ⟨0⟩
 
 #guard guardianSurvivesTwoDamage.battlefield.any (fun o =>
