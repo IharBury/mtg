@@ -1239,10 +1239,15 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `GameEvent.playedLand` record in `finishPlayLand`, which already sets
    `actor := some p` on its `putOntoBattlefield` move; updating the count-only
    test helper `recordLandPlayed` to record a `ZoneEvent.moved` on
-   `applyZoneEvent`'s no-op branch—same `id := none`, empty `after.name`, and
-   empty `after.types`, with `verb := .playLand` and `actor := some p`—so it
-   counts a land drop for `p` without materializing a land permanent on the
-   battlefield; and retiring top-level `RulesEvent.playedLand`), add
+   `applyZoneEvent`'s no-op branch—`existing? = none`, `before.id == after.id`
+   set to the same unallocated `some` id such as `some ⟨Nat.pow 2 60⟩` so
+   `applyEvent` does not rewrite `after.id` to `some ⟨g.nextObjectId⟩`, empty
+   `after.name` and `after.types`, and `fromZone := .outside p` /
+   `toZone := .outside p` so `enteredBattlefield`, `objectEntered`, and
+   draw/discard/mill queries do not match it, with `verb := .playLand` and
+   `actor := some p`—so it counts a land drop for `p` without materializing a
+   permanent or colliding with allocated `ObjectId`s; and retiring top-level
+   `RulesEvent.playedLand`), add
    `TriggerQueueEvent`, and extend `StackObjectEvent` (introduced in Phase 3
    with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
    `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
