@@ -1244,9 +1244,12 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `applyEvent` does not rewrite `after.id` to `some ⟨g.nextObjectId⟩`, empty
    `after.name` and `after.types`, and `fromZone := .outside p` /
    `toZone := .outside p` so `enteredBattlefield`, `objectEntered`, and
-   draw/discard/mill queries do not match it, with `verb := .playLand` and
-   `actor := some p`—so it counts a land drop for `p` without materializing a
-   permanent or colliding with allocated `ObjectId`s; and retiring top-level
+   draw/discard/mill queries do not match it, with `verb := .playLand`,
+   `actor := some p`, and `cause := .specialAction .playLand p`—so it counts a
+   land drop for `p` without materializing a permanent, colliding with
+   allocated `ObjectId`s, or defaulting `cause` to `.unclassified` (which
+   `resolveOneShotCause` would upgrade to `.oneShotEffect` when a spell or
+   ability is resolving); and retiring top-level
    `RulesEvent.playedLand`), add
    `TriggerQueueEvent`, and extend `StackObjectEvent` (introduced in Phase 3
    with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
