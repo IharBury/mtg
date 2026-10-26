@@ -1178,16 +1178,25 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    directly instead of lowering `PermanentEvent.counters` to
    `StatusChange.addCounters` / `StatusChange.removeCounters`; convert
    multi-object instructions (including bulk counter operations
-   `.withoutCounters` and `.addCountersExceptPlusOne`—`.proliferatedExceptPlusOne`
-   was already deleted in Phase 3—plus the remaining raw permanent counter
-   writes `.addCounters`, `.removeCounters`, `.addPlusOnePlusOne`,
-   `StatusChange.shadow` in `Designations.putShadowCounter`—recording
-   `PermanentEvent.counters (.object o.asEvent) .shadow (.put n)` for the
-   delta `n := g.countersYouPut o 1` rather than the old absolute total
+   `.withoutCounters`—recording
+   `PermanentEvent.counters (.object o.asEvent) kind (.removed n)` for each
+   counter kind, including `keywordCounters`, whose current count `n` on
+   `o.status` is `n > 0`—and `.addCountersExceptPlusOne «from» extra`—recording
+   `PermanentEvent.counters (.object o.asEvent) kind (.put (n + extra))` only
+   for non-`+1/+1` counter kinds, including `keywordCounters`, whose count `n`
+   on `«from»` is `n > 0` per `bump n = if n == 0 then 0 else n + extra` and
+   rulings 756 / 758; `.proliferatedExceptPlusOne` was already deleted in
+   Phase 3—plus the remaining raw permanent counter writes `.addCounters kind n`,
+   `.removeCounters kind n` such as `FraHelpers.removeUpToCountersFrom`, and
+   `.addPlusOnePlusOne n` when `n > 0`, `StatusChange.shadow` in
+   `Designations.putShadowCounter`—recording
+   `PermanentEvent.counters (.object o.asEvent) .shadow (.put n)` when `n > 0`
+   for the delta `n := g.countersYouPut o 1` rather than the old absolute total
    `o.status.shadow + n`—and `StatusChange.plusOnePlusOne` in `FraChoices.lean`
    `.mayMovePlusOne`—recording
    `PermanentEvent.counters (.object o.asEvent) .plusOnePlusOne (.removed 1)`
-   rather than the old absolute total `o.status.plusOnePlusOne - 1`—across
+   rather than the old absolute total `o.status.plusOnePlusOne - 1`, never
+   emitting `.put 0` or `.removed 0`—across
    `Designations.lean`, `EffectResolution.lean`, `FraAbilities.lean`,
    `FraChoices.lean`, `FraHelpers.lean`, `FraResolve.lean`, `FrcResolve.lean`,
    `ModeledTriggers.lean`, `ResolutionEffects.lean`, `Tokens.lean`, and
