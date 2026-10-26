@@ -961,13 +961,13 @@ chosen piles/targets; a resolving pump has cause `.oneShotEffect`; a cleanup
   let g2 := g1.phaseOut (g1.object! b.id) (cause := some (.turnBased .phaseInOut))
   let g3 := g2.phaseInControlled me
   let g4 := g3.record (GameEvent.transformed g3.turnNumber (g3.object! b.id).asEvent true
-    (cause := some (.oneShotEffect ⟨g3.nextEffectId⟩ (some b.id) (some me))))
+    (cause := some (.oneShotEffect (some ⟨g3.nextEffectId⟩) (some b.id) (some me))))
   let g5 := g4.record (GameEvent.resolved g4.turnNumber me 1)
   let gPump := (quiet g0).withResolvingContext (some b.id) me (fun g =>
     g.createEffect (.pump b.id 2 2))
   let gCleanup := ((quiet gPump).clearEOT).clearTurnActivations
   let gBeholdEff := ((quiet g0).becomeTapped (g0.object! b.id)
-    (cause := some (.oneShotEffect ⟨g0.nextEffectId⟩ (some b.id) (some me)))).beholdAndMaybeUntap me b.id .bear
+    (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some b.id) (some me)))).beholdAndMaybeUntap me b.id .bear
   let gScry0 := (quiet afterDraw).beginScry me 2
   let looked := gScry0.scryLookedIds me 2
   let topChoice := #[looked[0]!]
@@ -1087,8 +1087,8 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
       o.id == some b.id && actor == me && ctrl == me
     | _, _ => false) &&
   (match exileCause?, returnCause? with
-   | some (.oneShotEffect id1 (some sid1) (some ctrl1)),
-     some (.oneShotEffect id2 (some sid2) (some ctrl2)) =>
+   | some (.oneShotEffect (some id1) (some sid1) (some ctrl1)),
+     some (.oneShotEffect (some id2) (some sid2) (some ctrl2)) =>
      id1 == id2 && sid1 == h.id && sid2 == h.id && ctrl1 == me && ctrl2 == me
    | _, _ => false) &&
   gAssign.events.any (fun e =>
@@ -1119,8 +1119,8 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
       | .rules (.zone (.moved _ _ .exile .battlefield ..)) => some e.cause
       | _ => none)
   let gLoki0 := g0.createEffect (.pendingLokiCopy me (some h.id) 3)
-    (cause := some (.oneShotEffect ⟨g0.nextEffectId⟩ (some h.id) (some me)))
-  let destroyCause := EventCause.oneShotEffect ⟨gLoki0.nextEffectId⟩ (some b.id) (some opp)
+    (cause := some (.oneShotEffect (some ⟨g0.nextEffectId⟩) (some h.id) (some me)))
+  let destroyCause := EventCause.oneShotEffect (some ⟨gLoki0.nextEffectId⟩) (some b.id) (some opp)
   let (gLokiLeft, _) := (quiet gLoki0).move h.id (.graveyard me) none (cause := some destroyCause)
   let gPermStack :=
     let (g, sid) := (quiet g0).move b.id .stack (some me) (verb := some .cast) (actor := some me)
@@ -1352,8 +1352,8 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
         o.id == some inc.id && sid == inc.id && ctrl == me
       | _, _ => false) &&
     (match expiredCause?, phasedCause? with
-     | some (.oneShotEffect id1 (some sid1) (some ctrl1)),
-       some (.oneShotEffect id2 (some sid2) (some ctrl2)) =>
+     | some (.oneShotEffect (some id1) (some sid1) (some ctrl1)),
+       some (.oneShotEffect (some id2) (some sid2) (some ctrl2)) =>
        id1 == id2 && sid1 == h.id && sid2 == h.id && ctrl1 == me && ctrl2 == me
      | _, _ => false)
 
@@ -1430,7 +1430,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
       | .rules (.effectExpired _ (.playPermission oid _)) =>
         oid == b.id && e.cause == EventCause.turnBased .expireAtStepBegin
       | _ => false) &&
-    storedExtraCause == EventCause.oneShotEffect ⟨effBeforeExtra⟩ (some h.id) (some me) &&
+    storedExtraCause == EventCause.oneShotEffect (some ⟨effBeforeExtra⟩) (some h.id) (some me) &&
     gExtraStarted.events.any (fun e =>
       match e.change with
       | .rules (.effectCreated _ .powerUpsForbiddenThisTurn) =>
@@ -2232,7 +2232,7 @@ across all constituent moves, transforms, and continuous-effect creations
     rawMillCauses.all (· == .unclassified) &&
     drawLoseCauses.size == 3 &&
     drawLoseCauses.all (· == drawLoseCauses[0]!) &&
-    (match drawLoseCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match drawLoseCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     !lastMarchOffered.isEmpty &&
     lastMarchCauses.size >= 3 &&
     lastMarchCauses.all (· == lastMarchCauses[0]!) &&
@@ -2256,38 +2256,55 @@ across all constituent moves, transforms, and continuous-effect creations
     dmgPermRawCauses.all (· == .unclassified) &&
     dmgPermResCauses.size == 3 &&
     dmgPermResCauses.all (· == dmgPermResCauses[0]!) &&
-    (match dmgPermResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match dmgPermResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     dmgPlayerRawCauses.size == 3 &&
     dmgPlayerRawCauses.all (· == .unclassified) &&
     dmgPlayerResCauses.size == 3 &&
     dmgPlayerResCauses.all (· == dmgPlayerResCauses[0]!) &&
-    (match dmgPlayerResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match dmgPlayerResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     sweepResCauses.size >= 9 &&
     sweepResCauses.all (· == sweepResCauses[0]!) &&
-    (match sweepResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match sweepResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivRawCauses.size == 3 &&
     nivRawCauses.all (· == .unclassified) &&
     nivResCauses.size == 3 &&
     nivResCauses[0]! == .costPayment .life me (some lh.id) &&
     nivResCauses[1]! == nivResCauses[2]! &&
-    (match nivResCauses[1]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match nivResCauses[1]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     nivLockedEvents.isEmpty &&
     dreadRawCauses.size == 3 &&
     dreadRawCauses.all (· == .unclassified) &&
     dreadResCauses.size == 3 &&
     dreadResCauses.all (· == dreadResCauses[0]!) &&
-    (match dreadResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match dreadResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     skrelvRawCauses.size == 2 &&
     skrelvRawCauses.all (· == .unclassified) &&
     skrelvResCauses.size == 2 &&
     skrelvResCauses.all (· == skrelvResCauses[0]!) &&
-    (match skrelvResCauses[0]! with | .oneShotEffect _ (some _) (some _) => true | _ => false) &&
+    (match skrelvResCauses[0]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false) &&
     drainPlanRawCauses.size == 3 &&
     drainPlanRawCauses.all (· == .unclassified) &&
     drainPlanResCauses.size == 3 &&
     drainPlanResCauses[0]! != drainPlanResCauses[1]! &&
     drainPlanResCauses[1]! == drainPlanResCauses[2]! &&
-    (match drainPlanResCauses[1]! with | .oneShotEffect _ (some _) (some _) => true | _ => false)
+    (match drainPlanResCauses[1]! with | .oneShotEffect (some _) (some _) (some _) => true | _ => false)
+
+/- `EffectId` `⟨0⟩` is a valid effect identifier (`Game.nextEffectId` starts at
+`0`), while `Option EffectId := none` on `EventCause.oneShotEffect` allocates a
+fresh `EffectId` when recorded. -/
+#guard
+  let g0 : Game := {}
+  let g1 := g0.record (GameEvent.looked 1 me 1)
+  let g2 := g1.record (GameEvent.looked 1 me 1)
+  let g3 := g2.record (GameEvent.looked 1 me 1 (id := some ⟨0⟩))
+  let ids := (GameEvent.oneShotEffectsWithId g3.events).map Prod.fst
+  g0.nextEffectId == 0 &&
+    g1.nextEffectId == 1 &&
+    g2.nextEffectId == 2 &&
+    g3.nextEffectId == 2 &&
+    ids == #[⟨0⟩, ⟨1⟩, ⟨0⟩] &&
+    (EventCause.oneShotEffect none none none).oneShotEffectId? == none &&
+    (EventCause.oneShotEffect (some ⟨0⟩) none none).oneShotEffectId? == some ⟨0⟩
 
 /- Phase 3: no rules event in a full demo game has `e.cause == .unclassified`. -/
 #guard

@@ -134,7 +134,7 @@ inductive EventCause where
   /-- Payment of a cost (118, 601.2h, 602.2b). -/
   | costPayment (kind : CostKind) (payer : PlayerId) (forObject : Option ObjectId := none)
   /-- Resolution of a one-shot effect (610.1) from a spell or ability. -/
-  | oneShotEffect (id : EffectId) (source : Option ObjectId := none)
+  | oneShotEffect (id : Option EffectId := none) (source : Option ObjectId := none)
       (controller : Option PlayerId := none)
   /-- A replacement effect (614) or prevention effect (615) modified a prior
   proposed event. `original` is the cause of the event that was replaced. -/
@@ -147,7 +147,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Extract the `EffectId` if this cause is (or replaces) a one-shot effect (CR 610). -/
 def EventCause.oneShotEffectId? : EventCause → Option EffectId
-  | .oneShotEffect id _ _ => some id
+  | .oneShotEffect id _ _ => id
   | .replaced _ orig => orig.oneShotEffectId?
   | _ => none
 

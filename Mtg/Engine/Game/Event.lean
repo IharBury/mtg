@@ -1291,7 +1291,7 @@ def counters (turn : Nat) (player : Option PlayerId) (object : EventObject)
 /-- `player` scried or surveilled (CR 701.22 / 701.25 / 610.1). `n` cards were looked at. `asked` is the
 printed number; it defaults to `n`. -/
 def looked (turn : Nat) (player : PlayerId) (n : Nat) (surveil : Bool := false)
-    (asked : Nat := n) (id : EffectId := ⟨0⟩)
+    (asked : Nat := n) (id : Option EffectId := none)
     (top : Array ObjectId := #[]) (rest : Array ObjectId := #[])
     (cause : Option EventCause := none) : GameEvent :=
   let ev : PlayerEvent :=
@@ -1343,7 +1343,7 @@ def playedLand (turn : Nat) (player : PlayerId) (land : EventObject)
 
 /-- The `nth` counted resolution for `player` this turn (CR 608 / 610.1). -/
 def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
-    (id : EffectId := ⟨0⟩) (obj : Option EventObject := none)
+    (id : Option EffectId := none) (obj : Option EventObject := none)
     (cause : Option EventCause := none) : GameEvent :=
   let evObj := obj.getD { controller := some player, owner := player, zone := .stack }
   rules turn (.stackObject (.resolved evObj nth))
@@ -1410,7 +1410,7 @@ def poisoned (turn : Nat) (player : PlayerId) (n : Nat)
 
 /-- `player` proliferated (CR 701.34 / 610.1). -/
 def proliferated (turn : Nat) (player : PlayerId)
-    (id : EffectId := ⟨0⟩)
+    (id : Option EffectId := none)
     (permanents : Array ObjectId := #[]) (players : Array PlayerId := #[])
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.player (.proliferated player permanents players))
@@ -1418,7 +1418,7 @@ def proliferated (turn : Nat) (player : PlayerId)
 
 /-- `player` chose to have The Sensational She-Hulk deal damage (CR 610.1). -/
 def sheHulkDealtDamage (turn : Nat) (player : PlayerId)
-    (id : EffectId := ⟨0⟩) (cause : Option EventCause := none) : GameEvent :=
+    (id : Option EffectId := none) (cause : Option EventCause := none) : GameEvent :=
   rules turn (.player (.sheHulkDealtDamage player))
     (cause.getD (.oneShotEffect id none (some player)))
 

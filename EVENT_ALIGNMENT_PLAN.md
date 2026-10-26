@@ -281,7 +281,7 @@ inductive EventCause where
   the link is the spell or ability being cast or activated, not an `EffectId`. -/
   | costPayment (player : PlayerId) (forObject : ObjectId) (kind : CostKind)
   /-- A one-shot effect of a resolving spell or ability (610). -/
-  | oneShotEffect (effectId : EffectId) (source : Option ObjectId)
+  | oneShotEffect (effectId : Option EffectId) (source : Option ObjectId)
       (controller : Option PlayerId)
   /-- The result of a replacement or prevention effect (614 / 615). -/
   | replaced (replacement : ReplacementId) (original : EventCause)

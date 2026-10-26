@@ -313,8 +313,8 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       let name := o.name
       let cause :=
         g.currentResolvingContext?.map (fun (src, ctrl) =>
-          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
-          |>.orElse (fun _ => some (.oneShotEffect ⟨g.nextEffectId⟩ none (some controller)))
+          .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
+          |>.orElse (fun _ => some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some controller)))
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || o.uncounterableThisCast then

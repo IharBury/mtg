@@ -25,7 +25,7 @@ structure Game where
   pending : Pending := .none
   nextObjectId : Nat := 0
   /-- Next unique effect identifier (CR 610 / 611), independent of `nextObjectId`. -/
-  nextEffectId : Nat := 1
+  nextEffectId : Nat := 0
   /-- Active continuous effects paired with their unique `EffectId` (CR 611). -/
   activeEffects : Array (EffectId × ContinuousEffect) := #[]
   timestamp : Nat := 0
@@ -2115,7 +2115,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .extraTurns v => { g with extraTurns := v }
   | .extraTurnCauses v => { g with extraTurnCauses := v }
   | .pushExtraTurn p cause? =>
-    let cause := cause?.getD (.oneShotEffect ⟨g.nextEffectId⟩ none (some p))
+    let cause := cause?.getD (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some p))
     { g with
       extraTurns := g.extraTurns.push p
       extraTurnCauses := g.extraTurnCauses.push cause }
@@ -2213,26 +2213,25 @@ def resolveOneShotCause (g : Game) : EventCause → EventCause × Option EffectI
     match g.currentResolvingContext? with
     | some (src, ctrl) =>
       let actualId : EffectId := ⟨g.nextEffectId⟩
-      (.oneShotEffect actualId src ctrl, some actualId)
+      (.oneShotEffect (some actualId) src ctrl, some actualId)
     | none => (.unclassified, none)
   | .oneShotEffect id src ctrl =>
-    let actualId : EffectId := if id.raw == 0 then ⟨g.nextEffectId⟩ else id
+    let actualId : EffectId := id.getD ⟨g.nextEffectId⟩
     let (defSrc, defCtrl) :=
       match g.currentResolvingContext? with
       | some (s, c) => (s, c)
       | none => (none, none)
     let src' := src.orElse (fun _ => defSrc)
     let ctrl' := ctrl.orElse (fun _ => defCtrl)
-    (.oneShotEffect actualId src' ctrl', some actualId)
+    (.oneShotEffect (some actualId) src' ctrl', some actualId)
   | .replaced rep orig =>
     let (orig', bumpId?) := g.resolveOneShotCause orig
     (.replaced rep orig', bumpId?)
   | c => (c, none)
 
 /-- Process one `GameEvent` in isolation, appending it to `g.events` and
-applying its `GameChange`. One-shot effects receive a fresh unique `EffectId`
-from `g.nextEffectId` when recorded if not already assigned one at or above
-`g.nextEffectId` (CR 610). -/
+applying its `GameChange`. One-shot effects with `id := none` receive a fresh
+unique `EffectId` from `g.nextEffectId` when recorded (CR 610). -/
 def applyEvent (g : Game) (e : GameEvent) : Game :=
   let (e, bumpId?) :=
     match e.change with
@@ -2290,7 +2289,7 @@ def resolvingOneShotCause (g : Game) (p : PlayerId)
     match g.currentResolvingContext? with
     | some (s, c) => (source.orElse (fun _ => s), c.orElse (fun _ => some p))
     | none => (source, some p)
-  some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+  some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
 
 /-- Allocate a one-shot `EventCause` for a delayed triggered ability (CR 603.7)
 or linked-exile return (CR 610.3), bumping `g.nextEffectId` so the stored cause
@@ -2303,7 +2302,7 @@ def allocDelayedCause (g : Game) (fallbackCtrl : Option PlayerId := none)
     | none => (source, fallbackCtrl)
   let id : EffectId := ⟨g.nextEffectId⟩
   let g := g.change (.nextEffectId (g.nextEffectId + 1))
-  (g, .oneShotEffect id src ctrl)
+  (g, .oneShotEffect (some id) src ctrl)
 
 /-- Look up the stored exiling `EventCause` for a card in `linkedExile` (CR 610.3). -/
 def linkedExileCause? (g : Game) (id : ObjectId) : Option EventCause :=
@@ -2421,10 +2420,15 @@ def createEffect (g : Game) (eff : ContinuousEffect)
     match cause with
     | some c =>
       match c with
-      | .oneShotEffect cid _ _ =>
+      | .oneShotEffect (some cid) _ _ =>
         if g.nextEffectId ≤ cid.raw then
           (g.change (.nextEffectId (cid.raw + 1)), some c)
         else (g, some c)
+      | .oneShotEffect none _ _ =>
+        let (c', bumpId?) := g.resolveOneShotCause c
+        match bumpId? with
+        | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), some c')
+        | none => (g, some c')
       | _ => (g, some c)
     | none =>
       match g.currentResolvingContext? with
@@ -2484,6 +2488,11 @@ def createEffects (g : Game) (effs : Array ContinuousEffect)
       | none, some (src, ctrl) =>
         let (g, c) := g.allocDelayedCause ctrl src
         (g, some c)
+      | some (.oneShotEffect none src ctrl), _ =>
+        let (c', bumpId?) := g.resolveOneShotCause (.oneShotEffect none src ctrl)
+        match bumpId? with
+        | some cid => (g.change (.nextEffectId (max g.nextEffectId (cid.raw + 1))), some c')
+        | none => (g, some c')
       | _, _ => (g, cause)
     effs.foldl (fun acc e => acc.createEffect e (cause := cause)) g
 
@@ -2575,7 +2584,7 @@ def syncImpendingNotACreature (g : Game) (id : ObjectId)
     | some c => some c
     | none =>
       match g.currentResolvingContext? with
-      | some (src, ctrl) => some (.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+      | some (src, ctrl) => some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
       | none => some (.gameRule .impending)
   match g.findObject? id with
   | none => g
