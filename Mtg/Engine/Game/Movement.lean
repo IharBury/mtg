@@ -17,14 +17,16 @@ def preparedCopyOf? (g : Game) (srcId : ObjectId) : Option GameObject :=
     o.zone == .exile && (o.playPermission.bind (·.prepareSource)) == some srcId)
 
 /-- The exiled copy of `srcId`'s prepare spell ceases to exist. -/
-def removePreparedCopy (g : Game) (srcId : ObjectId) : Game :=
+def removePreparedCopy (g : Game) (srcId : ObjectId)
+    (cause : Option EventCause := some (.stateBased .copyOutsideStackOrBf)) : Game :=
   match g.preparedCopyOf? srcId with
-  | some c => (g.ceaseToExist c.id).logMsg s!"The copy of {c.name} in exile ceases to exist"
+  | some c => (g.ceaseToExist c.id (cause := cause)).logMsg s!"The copy of {c.name} in exile ceases to exist"
   | none => g
 
 /-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
 it while `o` remains prepared (ruling 742). -/
-def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace) : Game :=
+def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
+    (cause : Option EventCause := none) : Game :=
   let p := o.controller.getD o.owner
   let copyId : ObjectId := ⟨g.nextObjectId⟩
   let copyTs := g.timestamp + 1
@@ -35,13 +37,13 @@ def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace) : Game
     zone := .exile
     timestamp := copyTs
   }
-  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj))
+  let g := g.record (GameEvent.created g.turnNumber p (g.snapshot copyObj) (cause := cause))
   let g := g.createPrintedStaticEffects (g.object! copyId)
   g.createEffect (.playPermission copyId {
     player := p
     turnEndsRemaining := 0
     whileExiled := true
-    prepareSource := some o.id })
+    prepareSource := some o.id }) (cause := cause)
 
 /-- Ensure the exiled copy of `o`'s prepare spell exists when `o` enters
 already prepared (CR 614.1c, ruling 742). -/
@@ -51,7 +53,7 @@ def ensurePreparedCopy (g : Game) (o : GameObject) : Game :=
     match o.printed.prepareFace with
     | none => g
     | some face =>
-      let g := g.createPreparedCopy o face
+      let g := g.createPreparedCopy o face (cause := some (.gameRule .staticAbility))
       g.logMsg s!"{o.name} becomes prepared. A copy of {face.name} is exiled"
 
 /-- `o` becomes prepared: its controller creates a copy of its prepare spell
@@ -421,6 +423,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
   -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
   let g := g.record happened
+  let happenedCause := g.events.back!.cause
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -551,13 +554,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | some o =>
             if o.zone == .exile then
               let name := o.name
+              let linkCause := g.linkedExileCause? o.id
+              g := g.change (.setLinkedExileCause o.id none)
               match o.returnToZone with
               | some (.hand p) =>
-                let (g', _) := g.move o.id (.hand p) none
+                let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
                 g := g'
                 g := g.logMsg s!"{name} returns to {(g.player p).name}'s hand"
               | some (.graveyard p) =>
-                let (g', _) := g.move o.id (.graveyard p) none
+                let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
                 g := g'
                 g := g.logMsg s!"{name} returns to {(g.player p).name}'s graveyard"
               | _ =>
@@ -569,7 +574,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 | some host =>
                   let hostId := host.id
                   let (g', returnedId) := g.move o.id .battlefield (some o.owner)
-                    (attachedTo := some hostId)
+                    (attachedTo := some hostId) (cause := linkCause)
                   g := g'
                   g := g.logMsg
                     s!"{name} returns attached to {host.name} (does not target)"
@@ -582,7 +587,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               else
                 let sick := !o.printed.keywords.haste
                 let (g', returnedId) := g.move o.id .battlefield (some o.owner)
-                  (summoningSick := sick)
+                  (summoningSick := sick) (cause := linkCause)
                 g := g'
                 g := g.logMsg s!"{name} returns to the battlefield"
                 let returned := g.object! returnedId
@@ -626,15 +631,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       -- effect is created only now, on the permanent.
       let g : Game :=
         if impendingNotCreature then
-          g.createEffect (.notACreature newId)
+          g.createEffect (.notACreature newId) (cause := some (.gameRule .impending))
         else g
       let g : Game :=
         if dest == Zone.battlefield && returnedAsArtifact then
-          g.createEffect (.returnedAsArtifact newId)
+          g.createEffect (.returnedAsArtifact newId) (cause := some happenedCause)
         else g
       let g : Game :=
         if dest == Zone.battlefield && onlyFoodArtifact then
-          g.createEffect (.onlyFoodArtifact newId)
+          g.createEffect (.onlyFoodArtifact newId) (cause := some happenedCause)
         else g
       g.createPrintedStaticEffects cur
     | none => g
@@ -646,7 +651,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | .pendingLokiCopy p (some id) _ =>
         if id == old.id then
           g.record (GameEvent.effectUpdated g.turnNumber eid
-            (.pendingLokiCopy p none (old.lastKnownPower.getD old.power)))
+            (.pendingLokiCopy p none (old.lastKnownPower.getD old.power))
+            (cause := some happenedCause))
         else g
       | _ => g) g
   let g :=

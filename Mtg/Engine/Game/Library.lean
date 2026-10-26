@@ -12,7 +12,7 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Draw one card with no replacement effects (CR 121). -/
-def drawOneCard (g : Game) (p : PlayerId) : Game :=
+def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then
     let g := g.changePlayer p (.drewFromEmpty true)
@@ -28,7 +28,13 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
     -- “cards drawn this turn” once that counter is cleared for the first turn.
     let verb : Option ZoneVerb :=
       if pl.keptOpeningHand then some (.draw nth firstOfTheirDrawStep) else some .put
-    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p)
+    let cause := cause.orElse (fun _ =>
+      if !pl.keptOpeningHand then
+        some (.gameRule (if pl.mulligansTaken > 0 then .mulligan else .openingHandDraw))
+      else if firstOfTheirDrawStep then
+        some (.turnBased .drawStepDraw)
+      else none)
+    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
     let pl := g.player p
     let g := g.logMsg s!"{pl.name} draws {cardName}"
     if !pl.keptOpeningHand then g
@@ -74,16 +80,34 @@ def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
       o.printed.drawTwoExceptFirstDrawStep) |>.size
     Nat.pow 2 n
 
-def draw (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
+def draw (g : Game) (p : PlayerId) (n : Nat := 1)
+    (cause : Option EventCause := none) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      let pl := g.player p
+      let firstOfTheirDrawStep :=
+        g.step == .draw && g.activePlayer == p &&
+          !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
+      if n == 0 || pl.drewFromEmpty || pl.library.isEmpty || !pl.keptOpeningHand ||
+          firstOfTheirDrawStep then
+        (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
   Id.run do
-    let mut g := g
+    let mut g := g0
     for _ in [0:n] do
       let copies := g.drawMultiplier p
       for _ in [0:copies] do
         let pl := g.player p
         if pl.drewFromEmpty then
           return g
-        g := g.drawOneCard p
+        g := g.drawOneCard p (cause := cause?)
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a
@@ -132,7 +156,19 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 
 /-- Move `ids` into `dest` in this order. For a library, first listed becomes
 the new bottom of that group. -/
-def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
+def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
+    (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   match dest with
   | .library p =>
     Id.run do
@@ -143,11 +179,11 @@ def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
         let pos : LibraryPosition :=
           if i == 0 then .bottom
           else .fromTop (libSize - Nat.min i libSize)
-        let (g', _) := g.move id dest none (libraryPosition := some pos)
+        let (g', _) := g.move id dest none (libraryPosition := some pos) (cause := cause)
         g := g'
       return g
   | _ =>
-    ids.foldl (fun acc id => (acc.move id dest none).1) g
+    ids.foldl (fun acc id => (acc.move id dest none (cause := cause)).1) g
 
 /-- Put `ids` on top of `p`'s library, last listed on top. Cards that are no
 longer in that library are skipped. -/
@@ -168,19 +204,42 @@ def putIdsOnTop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
 /-- Put `ids` into `dest` in a random order. With two or more cards and no
 other pending choice, becomes `Pending.resolveRandom`. -/
 def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
-    (log : String) : Game :=
+    (log : String) (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   if ids.size ≤ 1 || g.pending != .none then
-    g.moveIdsInOrder ids dest |>.logMsg log
+    g.moveIdsInOrder ids dest (cause := cause) |>.logMsg log
   else
-    (g.change (.pending (.resolveRandom (.orderInto ids dest)))).logMsg log
+    (g.change (.pending (.resolveRandom (.orderInto ids dest cause)))).logMsg log
+
+/-- The `EventCause` recorded on the most recent zone-change event that moved
+an object into `id`. Used to thread a one-shot instruction's `EffectId` across
+multi-step library reveal / exile / bottom-of-library effects. -/
+def lastMoveCauseOf? (g : Game) (id : ObjectId) : Option EventCause :=
+  g.events.findSomeRev? fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ after ..)) =>
+      if after.id == some id then some e.cause else none
+    | _ => none
 
 /-- Put `ids` on the bottom of `p`'s library in a random order. The rest of
 the library stays above them, in its current order. -/
-def putRestOnBottomRandom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+def putRestOnBottomRandom (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game :=
   if ids.isEmpty then g
   else
     g.requestOrderInto ids (.library p)
       s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+      (cause := cause)
 
 end Game
 end Mtg.Engine

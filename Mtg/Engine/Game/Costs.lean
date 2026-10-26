@@ -12,9 +12,10 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Move `id` to `to`'s hand and log the return. -/
-def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
+def returnToHand (g : Game) (id : ObjectId) (to : PlayerId)
+    (cause : Option EventCause := none) : Game :=
   let name := (g.object! id).name
-  let (g, _) := g.move id (.hand to) none (verb := some .returnToHand)
+  let (g, _) := g.move id (.hand to) none (verb := some .returnToHand) (cause := cause)
   g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
 
 /-- Legal only during the declare blockers step of the caster's turn. -/
@@ -37,6 +38,7 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
   let whom := attacker.status.attackingWhom
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
+    (cause := some (.costPayment .returnToHand p (some spellId)))
   let g := g.changeObjects spellId #[.sneakPaid true, .sneakAttackWhom whom]
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
@@ -66,7 +68,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let count (g : Game) (u : FraManaUse) :=
     ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
   let paid ← g.payCost prop.caster prop.cost allowElf allowInst
-    allowHero allowVillain allowCant allowCreature spend
+    allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
   let spent (u : FraManaUse) := count paid u < count g u
   let manaSpent := (g.player prop.caster).manaPool.total - (paid.player prop.caster).manaPool.total
   let paid :=

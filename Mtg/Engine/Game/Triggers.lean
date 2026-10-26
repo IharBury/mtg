@@ -60,7 +60,7 @@ def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effec
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
   let modes := g.triggerModesOf obj
   if !modes.any (g.triggerModeChoosable p obj) then
-    let g := g.ceaseToExist obj.id
+    let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
     g.logMsg s!"{obj.name} has no mode that can be chosen and is removed from the stack (CR 700.2d)"
   else
     let what := if count == 2 then "two modes" else "a mode"
@@ -428,7 +428,8 @@ def foldControlledPermanents (g : Game) (p : PlayerId)
 Entering the battlefield tapped is not becoming tapped; only a change from
 untapped to tapped fires these abilities (Hawkeye's Bow, Trick Arrows,
 Captain America, Living Legend). -/
-def becomeTapped (g : Game) (o : GameObject) : Game :=
+def becomeTapped (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   if o.status.tapped then
     g.logMsg s!"{o.name} is already tapped"
   else
@@ -437,7 +438,7 @@ def becomeTapped (g : Game) (o : GameObject) : Game :=
       match o.controller with
       | some p => g.activePlayer == p
       | none => false
-    let happened := GameEvent.tapped g.turnNumber o.asEvent true during
+    let happened := GameEvent.tapped g.turnNumber o.asEvent true during (cause := cause)
     let g := (g.record happened).logMsg s!"{o.name} becomes tapped"
     match o.controller with
     | some p =>
@@ -549,9 +550,11 @@ def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
 
 /-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers
 (CR 701.21a). -/
-def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
+    (cause : Option EventCause := none) : Game :=
   let actor := o.controller.getD o.owner
   let g := g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
+    (cause := cause)
   g.queueYouSacrificeToken o
 
 /-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/
@@ -818,6 +821,10 @@ After that batch, check state-based actions again. Repeat until idle, then
 batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
   let g :=
+    if g.pending == .none && g.afterRandom == .none && g.resolvingContext.isSome then
+      g.change (.resolvingContext none)
+    else g
+  let g :=
     if g.pendingCreatureTokenCreators.isEmpty then g
     else
       let ps := g.pendingCreatureTokenCreators
@@ -921,14 +928,17 @@ Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.22c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let happened := GameEvent.looked g.turnNumber p count false n
-  let g := if n == 0 then g else g.record happened
-  let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
-  let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
-  if count == 0 then
+  if n == 0 then
+    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  else if count == 0 then
+    let happened :=
+      GameEvent.looked g.turnNumber p 0 false n (cause := g.resolvingOneShotCause p)
+    let g := g.record happened
+    let g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p 0
+    let g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
-    (g.changes #[.pending (.scry p count), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
+    (g.changes #[.pending (.scry p count n), .surveilReturnMvAtMost none]).logMsg s!"{pl.name} scries {n}"
 
 /-- Scry `scryN`, then draw `drawN`. An empty library draws immediately.
 The draw waits on `pendingDrawAfterScry` while the scry choice is open. -/
@@ -936,7 +946,7 @@ def scryThenDraw (g : Game) (p : PlayerId) (scryN drawN : Nat) : Game :=
   let g := g.change (.pendingDrawAfterScry (some (p, drawN)))
   let g := g.beginScry p scryN
   if g.pendingDrawAfterScry.isSome &&
-      (match g.pending with | .scry _ _ => false | _ => true) then
+      (match g.pending with | .scry .. => false | _ => true) then
     let g := g.change (.pendingDrawAfterScry none)
     g.draw p drawN
   else g

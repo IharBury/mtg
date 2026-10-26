@@ -107,7 +107,8 @@ def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
 
 /-- Behold a quality: choose a matching permanent you control or reveal a
 matching card from your hand. Later zone changes do not un-behold (117). -/
-def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
+def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
+    (cause : Option EventCause := none) : Game :=
   let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
   let hasHand :=
     (g.player p).hand.any (fun id =>
@@ -115,8 +116,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype) : Game :=
       | some o => o.printed.hasSubtype quality
       | none => false)
   if hasPerm || hasHand then
-    let g := g.changePlayer p (.pushBeheldQuality quality)
-    let g := g.record (GameEvent.beheld g.turnNumber p quality)
+    let g := g.record (GameEvent.beheld g.turnNumber p quality (cause := cause))
     g.logMsg s!"{(g.player p).name} beholds a {quality}"
   else
     g.logMsg s!"{(g.player p).name} does not behold a {quality}"
@@ -145,15 +145,26 @@ def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
 
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
-def discardEntireHand (g : Game) (p : PlayerId) : Game :=
+def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   let ids := (g.player p).hand
   let discarded := ids.size
+  let (g, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if ids.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
   let g :=
     ids.foldl (fun acc id =>
       match acc.findObject? id with
       | none => acc
       | some o =>
-        let (acc, _) := acc.move id (.graveyard o.owner) none
+        let (acc, _) := acc.move id (.graveyard o.owner) none (cause := cause?)
         acc) g
   g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
 
@@ -216,11 +227,16 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
         acc.logMsg s!"{o.name} returns as a Food artifact") g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
-control `subtype`. Timing and costs are unchanged. -/
+control `subtype` (CR 610.1 / 701.14). Timing and costs are unchanged. -/
 def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
     (subtype : CardSubtype) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n == 0 || (g.player p).library.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+    let mut g := g0
     for _ in List.range n do
       let pl := g.player p
       if pl.library.isEmpty then
@@ -228,7 +244,7 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
       else
         let top := pl.library.back!
         let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         g := g.createEffect (.playPermission newId {
             player := p
@@ -236,6 +252,7 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
             whileExiled := true
             requireSubtype := some subtype
             faceDown := true })
+          (cause := cause?)
         g := g.logMsg s!"{pl.name} exiles a card face down"
         let _ := cardName
     return g
@@ -243,16 +260,25 @@ def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
 /-- Exile cards from the top of `victim`'s library until an instant or
 sorcery, face up. Returns the game, that card, and the other exiled cards
 in the order they were exiled. -/
-partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId) :
+partial def exileUntilInstantOrSorcery (g : Game) (victim : PlayerId)
+    (cause : Option EventCause := none) :
     Game × Option ObjectId × Array ObjectId :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if (g.player victim).library.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some victim)
+          (g, some c)
+    let mut g := g0
     let mut exiled : Array ObjectId := #[]
     let mut found : Option ObjectId := none
     while found.isNone && !(g.player victim).library.isEmpty do
       let top := (g.player victim).library.back!
       let name := (g.object! top).name
-      let (g', newId) := g.move top .exile none
+      let (g', newId) := g.move top .exile none (cause := cause?)
       g := g'
       let o := g.object! newId
       g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
@@ -268,29 +294,32 @@ cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
 in a random order. -/
 def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
     (castTheCard : Bool) : Game :=
-  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim
+  let (g, cause) := g.allocDelayedCause (some controller)
+  let (g, found, exiled) := g.exileUntilInstantOrSorcery victim (cause := some cause)
   match found with
   | none =>
     g.requestOrderInto exiled (.library victim)
       s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+      (cause := some cause)
   | some instId =>
     let g :=
       if castTheCard then
         let o := g.object! instId
         let (g, _) := g.move instId .stack (some controller)
-          (verb := some .cast) (actor := some controller)
+          (verb := some .cast) (actor := some controller) (cause := some cause)
         g.logMsg
           s!"{(g.player controller).name} casts {o.name} as the ability resolves"
       else
-        (g.move instId (.library victim) none).1
+        (g.move instId (.library victim) none (cause := some cause)).1
     g.requestOrderInto exiled (.library victim)
       s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+      (cause := some cause)
 
 /-- An uncast copy ceases the next time state-based actions are checked. -/
 def ceaseUncastCopies (g : Game) : Game :=
   g.objects.foldl (fun acc o =>
     if o.isCopy && o.zone != .stack && o.zone != .battlefield then
-      let acc := acc.ceaseToExist o.id
+      let acc := acc.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))
       acc.logMsg s!"{o.name} ceases to exist"
     else acc) g
 
@@ -422,10 +451,10 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
-    : Game × GameObject :=
-  g.createToken controller src.printed
+    (cause : Option EventCause := none) : Game × GameObject :=
+  g.createToken controller src.printed (cause := cause)
 
-/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
+/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard/loyalty. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none => true
@@ -433,13 +462,25 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     match g.findObject? sid with
     | none => false
     | some src =>
-      (src.isOnBattlefield && src.controlledBy prop.caster &&
+      let loyaltyPayable :=
+        match prop.activation.bind (·.cost.loyalty) with
+        | none => true
+        | some sym =>
+          src.isOnBattlefield && src.controlledBy prop.caster &&
+          !src.status.loyaltyActivatedThisTurn &&
+          match sym.counters with
+          | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
+          | none =>
+            let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+            sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x
+      loyaltyPayable &&
+      ((src.isOnBattlefield && src.controlledBy prop.caster &&
         (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
         !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
       (src.zone == .hand src.owner && src.owner == prop.caster &&
         (prop.discardSource || prop.activation.any (·.cost.fra == .exileSourceFromHand)) &&
-        !prop.tapSource && !prop.sacrificeSource)
+        !prop.tapSource && !prop.sacrificeSource))
 
 end Game
 end Mtg.Engine

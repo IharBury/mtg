@@ -132,6 +132,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let fromTop :=
     original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+    (cause := some (.gameRule .spellCast))
   -- CR 601.2a / 601.2f: the total cost is determined after the spell is on
   -- the stack (rulings 824 / 874).
   let cost :=
@@ -246,56 +247,6 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       return g.afterModesChosen p
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
-/-- Pay a loyalty cost: put or remove loyalty counters on the source and
-record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
-def payLoyaltyCost (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Game :=
-  let k := (sym.counters).getD 0
-  let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
-  let g :=
-    if k != 0 then
-      g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .loyalty k.natAbs (k < 0)
-        (cause := some (.costPayment .loyalty (o.controller.getD o.owner) (some o.id))))
-    else g
-  let g := match o.controller with
-    | some p =>
-      let happened := GameEvent.activated g.turnNumber p o.asEvent true
-      let g := g.record happened
-      let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
-      -- Gideon, the Oathless: an opponent activating a loyalty ability.
-      (g.livingOpponents p).foldl (fun g opp =>
-        g.foldControlledPermanents opp.id none fun g src =>
-          if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
-            g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
-              (cause := some o)
-          else g) g
-    | none => g
-  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
-  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
-  else g
-
-/-- Queue “whenever you activate a loyalty ability” triggers. They go on the
-stack above the loyalty ability, so they resolve first (rulings 847 / 853).
-Way of the Mind Sculptor triggers only if two or more loyalty counters were
-removed (intervening “if”). -/
-def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbol) : Game :=
-  let removed := match sym.counters with
-    | some k => if k < 0 then (-k).toNat else 0
-    | none => 0
-  let happened := GameEvent.activated g.turnNumber p
-    { controller := some p, owner := p } true
-  if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
-  else
-  g.foldControlledPermanents p none fun g o =>
-    let waiting :=
-      ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
-        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
-          WaitingTrigger.mk wt.controller wt.source wt.ability wt.event
-            (some (Int.ofNat removed)) wt.lastKnownToughness wt.causeId wt.cause
-            wt.causeController wt.checked
-        else wt)
-    g.enqueueWaitingTriggers waiting
-
 /-- Announce the value of `{X}` for a proposed spell or ability
 (CR 107.3a / 601.2b). Substitutes `{X}` into the locked-in cost and
 continues the proposal window. -/
@@ -315,7 +266,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           | throw "The planeswalker left the battlefield"
         if src.status.loyaltyCounters < x then
           throw s!"{src.name} doesn't have {x} loyalty counters to remove (CR 606.4)"
-        pure ((g.payLoyaltyCost src (.minus x)).queueLoyaltyActivationTriggers p (.minus x))
+        pure g
       else if prop.removePlusOneX then
         let some src := prop.sourceId.bind g.findObject?
           | throw "The source left the battlefield"

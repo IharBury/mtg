@@ -479,19 +479,36 @@ def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.Tri
 /-- Mill `pids` `n` cards and record `note`. -/
 def millCollected (g : Game) (controller : PlayerId) (pids : Array PlayerId) (n : Nat)
     (note : TriggeredAbility.TriggerMillNote) : Game :=
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || !pids.any (fun pid => !(g.player pid).library.isEmpty) then
+      (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+        (g, some c)
+      | none => (g, none)
   match note with
   | .none =>
-    pids.foldl (fun g pid => g.mill pid n) g
+    pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
   | .milledCards =>
-    let before := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
-    let g := pids.foldl (fun g pid => g.mill pid n) g
-    let after := pids.foldl (fun acc pid => acc ++ (g.player pid).graveyard) #[]
-    g.change (.milledIdsThisWay (after.filter (fun id => !before.contains id)))
+    let tops := pids.foldl (fun acc pid =>
+      let lib := (g.player pid).library
+      let count := min n lib.size
+      acc ++ (lib.extract (lib.size - count) lib.size).reverse) #[]
+    let g := pids.foldl (fun g pid => g.mill pid n (cause := cause?)) g
+    let milled := (tops.map g.followMoved).filter (fun id =>
+      (g.findObject? id).any (fun o => o.zone == .graveyard o.owner))
+    let g :=
+      match cause? with
+      | some c => milled.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | none => g
+    g.change (.milledIdsThisWay milled)
   | .opponentsMilled =>
     let opps := pids.filter (· != controller)
-    let (g, flag) := g.millThenReflexive opps n
+    let (g, flag) := g.millThenReflexive opps n (cause := cause?)
     let g := pids.foldl (fun g pid =>
-      if pid == controller then g.mill pid n else g) g
+      if pid == controller then g.mill pid n (cause := cause?) else g) g
     g.change (.opponentsMilledThisWay flag)
 
 end Game

@@ -394,10 +394,11 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g ← g.payCostPick p id id pick (rest.extract 0 pick.count)
     rest := rest.extract pick.count rest.size
   if d.tap then
-    g := g.becomeTapped (g.object! id)
+    g := g.becomeTapped (g.object! id) (cause := some (.costPayment .tap p (some id)))
   let src := g.object! id
   if d.sacrificeSelf then
     g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {src.name}"
+      (cause := some (.costPayment .sacrifice p (some id)))
   match d.activatedIdx with
   | some i =>
     if (g.findObject? id).isSome then

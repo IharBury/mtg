@@ -133,8 +133,8 @@ def actor (g : Game) : Option PlayerId :=
     | .sacrificeCreature p => who p
     | .declareMulligan p => who p
     | .putOnBottom p _ => who p
-    | .scry p _ => who p
-    | .surveil p _ => who p
+    | .scry p .. => who p
+    | .surveil p .. => who p
     | .mayDiscardDraw p _ => who p
     | .chooseAdditionalCost p => who p
     | .chooseSacrificeCreature p _ _ => who p
@@ -168,7 +168,7 @@ def actor (g : Game) : Option PlayerId :=
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
-      | .orderInto _ dest =>
+      | .orderInto _ dest _ =>
         match dest with
         | .library p | .hand p | .graveyard p => some p
         | _ =>
@@ -184,6 +184,7 @@ are counted; they later cease in hand (CR 704.5d). -/
 def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     (ids : Array ObjectId) : Game :=
   Id.run do
+    let (g, cause) := g.allocDelayedCause (some p)
     let mut g := g
     let mut n : Nat := 0
     for id in ids do
@@ -193,11 +194,12 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
         if o.isOnBattlefield && o.isCreature && o.owner == p then
           let name := o.name
           let owner := o.owner
-          let (g', _) := g.move o.id (.hand owner) none
+          let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
           g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
           n := n + 1
     if n > 0 then
-      g := g.changePlayer p (.addEaglesBirdsNextUpkeep n)
+      g := (g.changePlayer p (.addEaglesBirdsNextUpkeep n)).change
+        (.pushEaglesBirdsCause p n cause)
       g := g.logMsg
         s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
     return g
@@ -217,8 +219,14 @@ player cannot be chosen twice. -/
 def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
   if a == b then
     throw "Two target players must be different"
-  let g := g.draw a 1
-  return g.draw b 1
+  let (g, cause?) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some a)) src
+      (g, some c)
+    | none => (g, none)
+  let g := g.draw a 1 (cause := cause?)
+  return g.draw b 1 (cause := cause?)
 
 end Game
 end Mtg.Engine

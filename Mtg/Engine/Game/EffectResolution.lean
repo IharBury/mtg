@@ -58,7 +58,8 @@ def sacrificeGreatestManaValue (g : Game) (pid : PlayerId) : Game :=
 /-- Resolutions added for Reality Fracture, shared by spells and activated
 abilities. `none` for every other resolution. -/
 def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (sourceId : Option ObjectId) : Option Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Option Game :=
   match effect.resolution with
   | .empowerJace (.fixed n) => some (g.empowerJace controller n.toNat)
   | .surveil (.fixed n) => some (g.beginSurveil controller n.toNat)
@@ -77,7 +78,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
   | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
   | .extraTurn =>
-    some (g.change (.pushExtraTurn controller)
+    let (g, cause) := g.allocDelayedCause (some controller) sourceId
+    some (g.change (.pushExtraTurn controller (some cause))
       |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
   | .drawEqualToBurdenCounters =>
     some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)
@@ -125,14 +127,14 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     let src? := sid.bind (fun s => g.findObject? (g.followMoved s))
     match (g.player controller).library.back? with
     | none =>
-      some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+      some (g.dealDamageToEachOpponent controller n (source := src?))
     | some top =>
       let (g, id) := g.move top .exile none
       let card := g.object! id
       let g := g.logMsg s!"{(g.player controller).name} exiles {card.name}"
       if card.printed.isLand then
         -- Ruling 855: a land can't be cast, so the damage is dealt.
-        some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+        some (g.dealDamageToEachOpponent controller n (source := src?))
       else
         some ((g.change (.pending (.mayCastExiledElseDamage controller id n sid))).logMsg
           s!"{(g.player controller).name} may cast {card.name}")
@@ -220,29 +222,35 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
   | .damageEachOpponent n =>
     let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
-    some (g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?)))
+    some (g.dealDamageToEachOpponent controller n (source := src?))
   | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.createEffect (.jaceLoyaltyAtInstantSpeedThisTurn controller)
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
   | r =>
-    if r.isFra then some (g.applyFra controller effect r targets sourceId) else none
+    if r.isFra then some (g.applyFra controller effect r targets sourceId (lastKnownPower := lastKnownPower)) else none
 
 /-- Exile every card in `p`'s hand, then draw that many. Those cards may be
 played until the end of `p`'s next turn (Hex Magic; ruling 421). -/
 def exileHandDrawPlayUntilNext (g : Game) (p : PlayerId) : Game :=
   let ids := (g.player p).hand
   let n := ids.size
+  let (g, cause?) : Game × Option EventCause :=
+    if ids.isEmpty then (g, none)
+    else
+      let (g, c) := g.allocDelayedCause (some p)
+      (g, some c)
   let g := ids.foldl (fun g id =>
     match g.findObject? id with
     | none => g
     | some _ =>
-      let (g, newId) := g.move id .exile none
-      g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })) g
+      let (g, newId) := g.move id .exile none (cause := cause?)
+      g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+        (cause := cause?)) g
   let g :=
     if n == 0 then g
     else g.logMsg s!"{(g.player p).name} may play the exiled cards until the end of their next turn"
-  g.draw p n
+  g.draw p n (cause := cause?)
 
 /-- A token copy of each nontoken creature `p` controls, except it isn't
 legendary (Multiversal Incursion; rulings 468 / 508). -/
@@ -510,6 +518,7 @@ def returnFromGyFinalityAttach (g : Game) (controller : PlayerId)
 /-- One more counter of each kind already on the target (Powerful Broker). -/
 def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target) : Game :=
   g.withLegalKindTarget controller .permanentOrPlayer targets (fun g t =>
+    let cause := g.resolvingOneShotCause controller
     match t with
     | Target.permanent id =>
       match g.findObject? id with
@@ -517,17 +526,28 @@ def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target
         if o.isOnBattlefield && o.status.hasCounters then
           let plus := o.status.plusOnePlusOne
           let extra := g.docSamsonBonus (some controller) o.controller
+          let bag := o.status.toCounterBag
           let g :=
-            if plus > 0 then g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) else g
-          let g := g.changeStatus id (.proliferatedExceptPlusOne extra)
-          (g.record (GameEvent.proliferated g.turnNumber controller)).logMsg
+            if plus > 0 then
+              g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) (cause := cause)
+            else g
+          let g :=
+            bag.foldl (fun g (kind, _) =>
+              if kind == .plusOnePlusOne then g
+              else
+                let cur := g.object! id
+                g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent kind
+                  (1 + extra) false (cause := cause))) g
+          let g := g.syncImpendingNotACreature id (cause := cause)
+          (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[id]) (cause := cause))).logMsg
             s!"{o.name} gets another counter of each kind"
         else g.logMsg s!"{o.name} has no counters"
       | none => g.logMsg "The target is no longer legal"
     | Target.player pid =>
       let pl := g.player pid
       if pl.poison > 0 then
-        g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller))
+        let g := g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller) (cause := cause))
+        (g.record (GameEvent.proliferated g.turnNumber controller (players := #[pid]) (cause := cause)))
           |>.logMsg s!"{pl.name} gets a poison counter"
       else g.logMsg s!"{pl.name} has no counters"
     | Target.card _ => g.logMsg "The target is no longer legal") none
@@ -617,18 +637,23 @@ owners' graveyards. Enters abilities run after every chosen creature is on
 the battlefield. -/
 def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array ObjectId) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if looked.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some p)
+        (g, some c)
+    let mut g := g0
     let mut entered : Array ObjectId := #[]
     for id in looked do
       match g.findObject? id with
       | some o =>
         if put.contains id && o.printed.isCreature && o.zone == .library p then
-          let (g', newId) := g.putOntoBattlefield id p
+          let (g', newId) := g.putOntoBattlefield id p (cause := cause?)
           g := g'
           entered := entered.push newId
           g := g.logMsg s!"{(g.player p).name} puts {o.name} onto the battlefield"
         else if o.zone == .library o.owner then
-          let (g', _) := g.move id (.graveyard o.owner) none
+          let (g', _) := g.move id (.graveyard o.owner) none (cause := cause?)
           g := g'
         else pure ()
       | none => pure ()
@@ -640,36 +665,63 @@ def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array Objec
 
 /-- Carry out a `chooseCards` answer. -/
 def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
-    (purpose : CardChoice) : Game :=
+    (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
+  let stashed := cause.orElse (fun _ => chosen[0]?.bind g.linkedExileCause?)
+  let g := chosen.foldl (fun (g : Game) id =>
+    if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+  let allocIfResolving (g : Game) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+      (g, some c)
+    | none => (g, none)
   match purpose with
   | .toHand _ =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
         if o.zone == .graveyard o.owner || o.zone == .hand o.owner then
           let name := o.name
-          (g.move id (.hand p) none).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
+          (g.move id (.hand p) none (cause := cause?)).1.logMsg s!"{(g.player p).name} puts {name} into their hand"
         else g
       | none => g) g
   | .creaturesToBattlefield =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
     chosen.foldl (fun g id =>
       match g.findObject? id with
       | some o =>
         if o.zone == .hand o.owner && o.printed.isCreature then
           let sick := !o.printed.keywords.haste
-          let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick)
+          let (g, newId) := g.putOntoBattlefield id p (summoningSick := sick) (cause := cause?)
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         else g
       | none => g) g
   | .landsTappedGainLife life =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
     let g :=
       chosen.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
           if o.printed.isLand && o.zone == .library o.owner then
             let name := o.name
-            let (g, newId) := g.putOntoBattlefield id p (tapped := true)
+            let (g, newId) := g.putOntoBattlefield id p (tapped := true) (cause := cause?)
             let g := g.logMsg s!"{name} enters tapped"
             g.afterLandEnters (g.object! newId)
           else g
@@ -677,39 +729,61 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     let g := g.requestShuffle p (.gainLife p life)
     g.continueIfShuffled
   | .keepDestroyRest =>
+    let (g, cause?) : Game × Option EventCause :=
+      if g.battlefield.any (fun o => o.isCreature && !chosen.contains o.id) then
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
+      else (g, none)
     g.battlefield.foldl (fun g o =>
       if o.isCreature && !chosen.contains o.id then
         match g.findObject? o.id with
-        | some o => g.destroyPermanent o
+        | some o => g.destroyPermanent o (cause := cause?)
         | none => g
       else g) g
       |>.logMsg "Chosen creatures are kept; the rest are destroyed"
   | .amassArmy subtype n attach =>
     match chosen[0]? with
-    | some id => g.finishAmassOn p id subtype n attach
+    | some id => g.finishAmassOn p id subtype n attach (cause := cause)
     | none => g.logMsg s!"{(g.player p).name} doesn't choose an Army"
 
 /-- Ask `p` to choose up to `max` of `ids`, or resolve immediately when there
 is nothing to decide. -/
 def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
-    (purpose : CardChoice) (msg : String) : Game :=
-  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose
-  else g.beginFraChoice p (.chooseCards ids max purpose) msg
+    (purpose : CardChoice) (msg : String) (cause : Option EventCause := none) : Game :=
+  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose (cause := cause)
+  else
+    let g :=
+      match cause with
+      | some c => ids.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | none => g
+    g.beginFraChoice p (.chooseCards ids max purpose) msg
 
-/-- Mill `n`, then choose matching cards from among them for your hand. -/
+/-- Mill `n`, then choose matching cards from among them for your hand (CR 610.1 / 701.17). -/
 def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (max : Nat) (mustOne : Bool) : Game :=
-  let g := g.mill p n
-  let gy := (g.player p).graveyard
-  let take := gy.size.min n
-  let milled := gy.extract (gy.size - take) gy.size
-  let eligible := milled.filter (fun id => (g.findObject? id).any pred)
+  let lib := (g.player p).library
+  let count := min n lib.size
+  let tops := (lib.extract (lib.size - count) lib.size).reverse
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || lib.isEmpty then (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+  let g := g.mill p n (cause := cause?)
+  let milled := tops.map (fun id => g.followMoved id)
+  let eligible := milled.filter (fun id =>
+    (g.findObject? id).any (fun o => o.zone == .graveyard p && pred o))
   if eligible.isEmpty then g
   else if mustOne && eligible.size == 1 then
-    g.finishChooseCards p eligible (.toHand true)
+    g.finishChooseCards p eligible (.toHand true) (cause := cause?)
   else
     g.offerCardChoice p eligible max (.toHand mustOne)
       s!"{(g.player p).name} chooses cards to put into their hand"
+      (cause := cause?)
 
 /-- True when a targeted sequence must not resolve (CR 608.2b).
 A missing or illegal required target means none of the steps happen, so
@@ -1063,12 +1137,20 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .targetPlayersGainLife n =>
     Id.run do
       let playerLegal := g.legalTargetsForAtomicKind controller .player none
+      let (g, cause?) : Game × Option EventCause :=
+        if n == 0 || targets.isEmpty then (g, none)
+        else
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+            (g, some c)
+          | none => (g, none)
       let mut g := g
       for t in targets do
         match t with
         | Target.player pid =>
           if playerLegal.contains t then
-            g := g.gainLife pid n
+            g := g.gainLife pid n (cause := cause?)
           else
             g := g.illegalAbilityTarget t
         | _ => pure ()
@@ -1125,12 +1207,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let greatest :=
       (g.permanentsOf controller).foldl (fun acc o =>
         if o.isCreature then max acc (g.toughness o).toNat else acc) 0
-    let g := g.draw controller greatest
+    let (g, cause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+        (g, some c)
+      | none => (g, none)
+    let g := g.draw controller greatest (cause := cause?)
     let creatures :=
       (g.player controller).hand.filter (fun id =>
         (g.findObject? id).any (·.printed.isCreature))
     g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
       s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
+      (cause := cause?)
   | .millThenPut n which =>
     match which with
     | .oneOf a b =>
@@ -1149,36 +1238,42 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       match tgt with
       | Target.player pid =>
         Id.run do
-          let mut g := g
+          let attackers :=
+            g.battlefield.filter (fun o => o.isCreature && o.status.attacking && o.controlledBy pid)
+          if attackers.isEmpty then
+            return g.logMsg s!"{(g.player pid).name} controls no attacking creatures"
+          let (g0, cause) := g.allocDelayedCause (some controller) sourceId
+          let mut g := g0
           let mut n : Nat := 0
-          for o in g.battlefield do
-            if o.isCreature && o.status.attacking && o.controlledBy pid then
-              let name := o.name
-              let (g', _) := g.move o.id (.exile) none
-              g := g'.logMsg s!"{name} is exiled"
-              n := n + 1
-          if n == 0 then
-            g.logMsg s!"{(g.player pid).name} controls no attacking creatures"
-          else
-            g.offerMaySearchBasics pid n
+          for o in attackers do
+            let name := o.name
+            let (g', _) := g.move o.id (.exile) none (cause := some cause)
+            g := g'.logMsg s!"{name} is exiled"
+            n := n + 1
+          return g.offerMaySearchBasics pid n
       | _ => g.logMsg "The target is no longer legal")
   | .exileTopPlayIfYouControlSubtype n subtype =>
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
+    let cause := g.resolvingOneShotCause controller sourceId
     g.foldPermanentTargets targets (fun g o =>
       if o.controlledBy controller && o.isOnBattlefield then
         g.exileThenReturn o "is exiled, then returned to the battlefield"
-          (land := o.printed.isLand)
+          (land := o.printed.isLand) (cause := cause)
       else g)
   | .playersCantCastThisTurn =>
-    g.players.foldl (fun acc pl =>
-      acc.createEffect (.cantCastSpellsThisTurn pl.id)) g
+    g.createEffects (g.players.map (fun pl => .cantCastSpellsThisTurn pl.id))
       |>.logMsg "Players can't cast spells this turn"
   | .exileTopXOppPlayForLife =>
     match targets[0]? with
     | some (Target.player pid) =>
       Id.run do
-        let mut g := g
+        let (g0, cause?) : Game × Option EventCause :=
+          if chosenX == 0 || (g.player pid).library.isEmpty then (g, none)
+          else
+            let (g, c) := g.allocDelayedCause (some controller) sourceId
+            (g, some c)
+        let mut g := g0
         for _ in List.range chosenX do
           let pl := g.player pid
           if pl.library.isEmpty then
@@ -1186,12 +1281,13 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           else
             let top := pl.library.back!
             let name := (g.object! top).name
-            let (g', newId) := g.move top .exile none
+            let (g', newId) := g.move top .exile none (cause := cause?)
             g := g'
             g := g.createEffect (.playPermission newId {
               player := controller,
               turnEndsRemaining := 1,
               payLifeEqualManaValue := true })
+              (cause := cause?)
             g := g.logMsg s!"{(g.player controller).name} exiles {name}"
         return g
     | _ => g.logMsg "The target is no longer legal"
@@ -1217,6 +1313,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | Target.permanent id => some id
         | _ => none)
     Id.run do
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let mut g := g
       let mut n : Nat := 0
       for id in ids do
@@ -1226,11 +1323,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           if o.isOnBattlefield && o.isCreature && o.owner == controller then
             let name := o.name
             let owner := o.owner
-            let (g', _) := g.move o.id (.hand owner) none
+            let (g', _) := g.move o.id (.hand owner) none (cause := some cause)
             g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
             n := n + 1
       if n > 0 then
-        g := g.changePlayer controller (.addEaglesBirdsNextUpkeep n)
+        g := (g.changePlayer controller (.addEaglesBirdsNextUpkeep n)).change
+          (.pushEaglesBirdsCause controller n cause)
         g := g.logMsg
           s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
       return g
@@ -1250,24 +1348,25 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.changeControl o controller
       else g)
   | .phaseOutKicker =>
+    let cause := g.resolvingOneShotCause controller sourceId
     if kicked then
       match targets[0]? with
       | some (Target.player pid) =>
         (g.permanentsOf pid).foldl (fun acc o =>
-          if o.isCreature then acc.phaseOut o else acc) g
+          if o.isCreature then acc.phaseOut o (cause := cause) else acc) g
       | some (Target.permanent oid) =>
         match g.findObject? oid with
         | some o =>
           let pid := o.controller.getD controller
           (g.permanentsOf pid).foldl (fun acc x =>
-            if x.isCreature then acc.phaseOut x else acc) g
+            if x.isCreature then acc.phaseOut x (cause := cause) else acc) g
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
     else
       match targets[0]? with
       | some (Target.permanent oid) =>
         match g.findObject? oid with
-        | some o => g.phaseOut o
+        | some o => g.phaseOut o (cause := cause)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
   | .dealDamageToControllerOfTarget n =>
@@ -1289,8 +1388,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       let teamwork := g.resolvingTeamworkPaid
       if o.isOnBattlefield && o.isCreature &&
           (teamwork || o.printed.manaValue ≤ n) then
-        let (g, _) := g.move o.id .exile none
-        if teamwork then g.gainLife controller life else g
+        let (g, cause?) : Game × Option EventCause :=
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+            (g, some c)
+          | none => (g, none)
+        let (g, _) := g.move o.id .exile none (cause := cause?)
+        if teamwork then g.gainLife controller life (cause := cause?) else g
       else g.logMsg "The target is no longer legal")
       none (some "The target is no longer legal")
   | .returnGyCreatureMvAtMostOrAny n =>
@@ -1388,7 +1493,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.changes #[.thirstDiscardsLeft n, .thirstDiscardType ty]
     g.beginDiscardCards #[controller]
   | .loseLife (.fixed n) .eachOpponent =>
-    g.forEachOpponent controller (fun g pid => g.loseLife pid n.toNat)
+    g.loseLifeEachOpponent controller n.toNat
   | .plusOneOnEachYouControl n which =>
     let exclude :=
       match which with
@@ -1521,11 +1626,16 @@ def cardHasLookType (o : GameObject) (t : CardSubtype) : Bool :=
 
 /-- Put `ids` on the bottom. One card needs no order. Two or more are ordered
 by the player, first card on the bottom. -/
-def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
+def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game :=
   if ids.size ≤ 1 then
-    (g.moveIdsInOrder ids (.library p)).logMsg
+    (g.moveIdsInOrder ids (.library p) (cause := cause)).logMsg
       s!"{(g.player p).name} puts the rest on the bottom of their library"
   else
+    let g :=
+      match ids[0]?, cause with
+      | some id, some c => g.change (.setLinkedExileCause id (some c))
+      | _, _ => g
     g.beginFraChoice p (.orderLibraryBottom ids)
       s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
 
@@ -1590,11 +1700,40 @@ def finishPlusOneAfterDiscards (g : Game) : Game :=
       if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
     | none => g
 
+/-- Transform the source permanent on the battlefield (CR 701.27a). When `cause`
+is supplied, the printed-static expiration and `PermanentEvent.transformed`
+share that cause; otherwise a fresh `.oneShotEffect` cause is allocated. -/
+def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  g.withSourceOnBattlefield sourceId fun g o =>
+    if o.status.cantTransform then
+      g.logMsg s!"{o.name} can't transform (entered back face up at night)"
+    else
+      match o.printed.otherFace with
+      | none => g.logMsg s!"{o.name} has no other face"
+      | some face =>
+        let (src, ctrl) :=
+          match g.currentResolvingContext? with
+          | some (s, c) => (s.orElse (fun _ => some o.id), c.orElse (fun _ => some controller))
+          | none => (some o.id, some controller)
+        let (g, transformCause) : Game × Option EventCause :=
+          match cause with
+          | some c => (g, some c)
+          | none =>
+            let (g, c) := g.allocDelayedCause ctrl src
+            (g, some c)
+        let g := g.expirePrintedStaticEffects o (cause := transformCause)
+        let g := g.record
+          (GameEvent.transformed g.turnNumber o.asEvent (!o.status.transformed)
+            (cause := transformCause))
+        let g := g.createPrintedStaticEffects (g.object! o.id)
+        g.logMsg s!"{o.name} transforms into {face.name}"
+
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
-  match g.applyFraResolution? controller effect targets sourceId with
+  match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
   | some g => g
   | none =>
   match effect.resolution with
@@ -1636,11 +1775,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .exile (.target .eachPermanent) .untilSourceLeaves _ =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
+      let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
       targets.foldl (fun acc t =>
         match t with
         | Target.permanent oid =>
           match acc.findObject? oid with
-          | some o => acc.exileUntilSourceLeaves sourceId o
+          | some o => acc.exileUntilSourceLeaves sourceId o (cause := some linkCause)
           | none => acc
         | _ => acc) g
   | r =>
@@ -1700,12 +1840,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
           (fun g o => subtypes.any (fun s => g.hasSubtype o s))
       | .exileThenReturnNextEnd =>
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
         g.foldPermanentTargets targets (fun g o =>
           if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand &&
               some o.id != sourceId then
             let name := o.name
-            let (g, newId) := g.move o.id .exile none
-            g.change (.pushDelayedEndStepReturn newId)
+            let (g, newId) := g.move o.id .exile none (cause := some cause)
+            g.change (.pushDelayedEndStepReturn newId cause)
               |>.logMsg s!"{name} is exiled until the beginning of the next end step"
           else g.logMsg "The target is no longer legal")
       | .searchBasicBeholdSubtypeUntap subtype =>
@@ -1715,7 +1856,14 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         match targets[0]?, targets[1]? with
         | some (Target.player a), some (Target.player b) =>
           if a == b then g.logMsg "Two target players must be different"
-          else g.draw a 1 |>.draw b 1
+          else
+            let (g, cause?) : Game × Option EventCause :=
+              match g.currentResolvingContext? with
+              | some (src, ctrl) =>
+                let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+                (g, some c)
+              | none => (g, none)
+            g.draw a 1 (cause := cause?) |>.draw b 1 (cause := cause?)
         | _, _ => g.logMsg "The targets are no longer legal"
       | .discardLegendarySameNameDraw =>
         g.draw controller 2
@@ -1739,7 +1887,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           g.putShadowCounter o) sourceId (some "The target is no longer legal")
       | .damageEachOpponent n =>
         let src? := sourceId.bind g.findObject?
-        g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n (source := src?))
+        g.dealDamageToEachOpponent controller n (source := src?)
       | .chooseTwoDestroyRest =>
         let creatures := (g.battlefield.filter (·.isCreature)).map (·.id)
         g.offerCardChoice controller creatures 2 .keepDestroyRest
@@ -1777,20 +1925,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .lookAtTopPutTypes n types =>
         g.beginLookPutTypes controller n types
       | .transform =>
-        g.withSourceOnBattlefield sourceId fun g o =>
-          if o.status.cantTransform then
-            g.logMsg s!"{o.name} can't transform (entered back face up at night)"
-          else
-            match o.printed.otherFace with
-            | none => g.logMsg s!"{o.name} has no other face"
-            | some face =>
-              let back := { face with otherFace := some { o.printed with otherFace := none } }
-              let g := g.expirePrintedStaticEffects o
-              let g := g.changeObjects o.id #[
-                .printed back,
-                .status (.transformed (!o.status.transformed))]
-              let g := g.createPrintedStaticEffects (g.object! o.id)
-              g.logMsg s!"{o.name} transforms into {back.name}"
+        g.transformPermanent controller sourceId
       | .drawX =>
         g.draw controller chosenX
       | .lookAtTopRevealArtifact n =>

@@ -2030,15 +2030,15 @@ def knotsOk : Bool :=
   hithlainKnots.spellEffect == some (Effect.tapScryDraw 1 1) &&
     knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
     knotsIllegal.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ &&
-    (match knotsIllegal.pending with | .scry _ _ => false | _ => true) &&
+    (match knotsIllegal.pending with | .scry .. => false | _ => true) &&
     knotsAlreadyTapped.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ &&
     (match knotsAlreadyTapped.pending with
-     | .scry _ _ => true
+     | .scry .. => true
      | _ => knotsAlreadyTapped.log.any (fun s => mentions s "scries")) &&
     (match knotsAfterScry with
      | .ok g =>
        g.loggedDraws ⟨0⟩ == afterDraw.loggedDraws ⟨0⟩ + 1 &&
-         match g.pending with | .scry _ _ => false | _ => true
+         match g.pending with | .scry .. => false | _ => true
      | .error _ => false) &&
     (ruling 188).comment.contains "spell doesn't resolve"
 

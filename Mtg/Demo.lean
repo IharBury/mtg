@@ -337,7 +337,7 @@ def randomPromptBlock (g : Game) : Option String :=
       "  shuffle            keep the current order\n" ++
       "  shuffle <id>...\n" ++
       randomChoiceLines g lib
-  | some (.orderInto ids dest) =>
+  | some (.orderInto ids dest _) =>
     some <|
       s!"Provide the random order of these cards into {zoneLabel g dest} (first listed = first / bottom).\n" ++
       "  order              keep their current order\n" ++
@@ -1137,7 +1137,7 @@ the rest stay on top in their current relative order. Both piles may be
 listed to choose each order. -/
 def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match g.pending with
-  | .scry q n =>
+  | .scry q n _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may scry"
     let looked := g.scryLookedIds p n
@@ -1163,7 +1163,7 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
           pure ids
       g.apply p (.scry topIds bottomIds)
     | _ => throw scryUsage
-  | .surveil _ _ => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
+  | .surveil .. => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
 
 def surveilUsage : String := "usage: surveil [top <id> ...] [graveyard <id> ...]"
@@ -1176,7 +1176,7 @@ current relative order. `surveil top <ids>` keeps those cards on top
 listed to choose each order. -/
 def applySurveil (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match g.pending with
-  | .surveil q n =>
+  | .surveil q n _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may surveil"
     let looked := g.scryLookedIds p n
@@ -1200,7 +1200,7 @@ def applySurveil (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
           pure ids
       g.apply p (.surveil topIds graveyardIds)
     | _ => throw surveilUsage
-  | .scry _ _ => throw "You are scrying, not surveilling; use scry (CR 701.20)"
+  | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
   | _ => throw "Not time to surveil (CR 701.25)"
 
 def discardUsage : String := "usage: discard <id>"

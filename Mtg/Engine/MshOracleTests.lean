@@ -3449,7 +3449,7 @@ def hourOfDefeatSurveilOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.destroyCreatureSurveil #[Target.permanent bears.id]
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     match g.pending with
-    | .surveil ⟨0⟩ 1 => true
+    | .surveil ⟨0⟩ 1 _ => true
     | _ => false
 
 #guard hourOfDefeatSurveilOk

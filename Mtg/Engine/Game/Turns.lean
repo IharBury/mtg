@@ -12,13 +12,16 @@ namespace Mtg.Engine
 namespace Game
 
 def clearEOT (g : Game) : Game :=
+  let cause := some (EventCause.turnBased .cleanupClear)
   Id.run do
     let mut g := g
-    g := g.expireAll .creaturesWithoutFlyingCantBlockUntilEot
+    g := g.expireAll .creaturesWithoutFlyingCantBlockUntilEot (cause := cause)
+    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
     g := g.expireMatching (fun | .assignCombatDamageEqualToughnessUntilEot _ => true | _ => false)
+      (cause := cause)
     g := g.restoreCopiesUntilEot
     for pl in g.players do
-      g := g.expireAll (.legendRuleOffThisTurn pl.id)
+      g := g.expireAll (.legendRuleOffThisTurn pl.id) (cause := cause)
     -- Each control-changing effect ends or counts down on its own, so another
     -- control effect on the same permanent keeps applying (CR 514.2 / 613.7).
     let effs := g.activeEffects
@@ -26,13 +29,14 @@ def clearEOT (g : Game) : Game :=
       match e with
       | .control oid c untilEot turnEndsLeft untilSourceLeaves =>
         if untilEot then
-          g := g.endControlEffect oid eid
+          g := g.endControlEffect oid eid (cause := cause)
         else if turnEndsLeft > 0 && c == g.activePlayer then
           if turnEndsLeft - 1 == 0 then
-            g := g.endControlEffect oid eid
+            g := g.endControlEffect oid eid (cause := cause)
           else
             g := g.record
-              (GameEvent.effectUpdated g.turnNumber eid (.control oid c untilEot (turnEndsLeft - 1) untilSourceLeaves))
+              (GameEvent.effectUpdated g.turnNumber eid
+                (.control oid c untilEot (turnEndsLeft - 1) untilSourceLeaves) (cause := cause))
       | _ => pure ()
     for o in g.battlefield do
       -- Ending a control effect can exile the permanent (CR 800.4c).
@@ -49,7 +53,7 @@ def clearEOT (g : Game) : Game :=
       (g.battlefield.filter (fun o => o.status.damage != 0 || o.status.dealtDeathtouch)).map (·.id)
     if !damagedIds.isEmpty then
       g := g.record (GameEvent.damageMarkedCleared g.turnNumber damagedIds
-        (cause := some (.turnBased .cleanupClear)))
+        (cause := cause))
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
@@ -66,19 +70,22 @@ def discardToMaxHandSize (g : Game) : Game :=
         if let some last := pl.hand.back? then
           let card := g.object! last
           let (g', _) := g.move last (.graveyard pl.id) none
+            (cause := some (.turnBased .cleanupDiscard))
           g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
       return g
 
 /-- Clear “once each turn” activation counts as a turn ends. -/
 def clearTurnActivations (g : Game) : Game :=
+  let cause := some (EventCause.turnBased .cleanupClear)
   Id.run do
     let mut g := g
-    g := g.expireMatching (fun | .pendingFreeRGCreatureThisTurn _ => true | _ => false)
-    g := g.expireMatching (fun | .pendingLokiCopy .. => true | _ => false)
+    g := g.expireAll .powerUpsForbiddenThisTurn (cause := cause)
+    g := g.expireMatching (fun | .pendingFreeRGCreatureThisTurn _ => true | _ => false) (cause := cause)
+    g := g.expireMatching (fun | .pendingLokiCopy .. => true | _ => false) (cause := cause)
     -- Stingcaster Mage: flashback granted until end of turn ends.
     g := g.expireMatching (fun
       | .flashbackUntilEot _ | .freeCastFromGraveyardUntilEot _ => true
-      | _ => false)
+      | _ => false) (cause := cause)
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -91,7 +98,7 @@ def clearTurnActivations (g : Game) : Game :=
           | .cantAttackJacesThisTurn p | .cantCastSpellsThisTurn p
           | .nextSpellCantBeCounteredThisTurn p | .lifeLocked p
           | .typeSpellCostLessThisTurn p _ _ | .supertypeSpellCostLessThisTurn p _ _ => p == pl.id
-          | _ => false)
+          | _ => false) (cause := cause)
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           o.status.optionalOnceUsed ||
@@ -119,13 +126,14 @@ def clearTurnActivations (g : Game) : Game :=
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn
 ends. Each permission is its own continuous effect: it ends, or its remaining
 turn count goes down, under its own `EffectId` (CR 611.2). -/
-def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
+def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
+    (cause : Option EventCause := some (.turnBased .cleanupClear)) : Game :=
   g.activeEffects.foldl (fun g (eid, e) =>
     match e with
     | .playPermission oid perm =>
       if perm.fromAdventure || perm.whileExiled || perm.player != endingPlayer then g
       else if perm.turnEndsRemaining ≤ 1 then
-        let g := g.expireEffectById eid
+        let g := g.expireEffectById eid (cause := cause)
         match g.findObject? oid with
         | some o =>
           if o.zone == .exile then g.logMsg s!"{o.name} can no longer be played from exile"
@@ -133,49 +141,54 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
         | none => g
       else
         g.record (GameEvent.effectUpdated g.turnNumber eid
-          (.playPermission oid { perm with turnEndsRemaining := perm.turnEndsRemaining - 1 }))
+          (.playPermission oid { perm with turnEndsRemaining := perm.turnEndsRemaining - 1 })
+          (cause := cause))
     | _ => g) g
 
 /-- End goad designations placed by `p` as `p`'s next turn begins (CR 701.15a). -/
 def expireGoadedFor (g : Game) (p : PlayerId) : Game :=
   g.battlefield.foldl (fun g o =>
     if o.status.goadedUntilNextTurnOf.contains p then
-      g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false)
+      g.record (GameEvent.designation g.turnNumber o.asEvent (.goaded p) false
+        (cause := some (.turnBased .expireAtStepBegin)))
     else g) g
 
 /-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
 Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
 and Garruk, Curse Breaker (CR 611.2b). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) : Game :=
-  let g := g.expireMatching (fun | .untilTurnOfPump _ q _ _ => q == p | _ => false)
+  let cause := some (EventCause.turnBased .expireAtStepBegin)
+  let g := g.expireMatching (fun | .untilTurnOfPump _ q _ _ => q == p | _ => false) (cause := cause)
   g.objects.foldl (fun g o =>
     if o.zone == .command && o.fraEffectUntilTurnOf == some p then
-      (g.ceaseToExist o.id).logMsg s!"{o.name} ends"
+      (g.ceaseToExist o.id (cause := cause)).logMsg s!"{o.name} ends"
     else g) g
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
 def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
+  let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g := g.expireGoadedFor p
   let g := g.expireFraUntilTurnEffects p
   let g :=
     if g.hasActiveEffect (.protectionFromEverything p) then
-      g.expireAll (.protectionFromEverything p)
+      g.expireAll (.protectionFromEverything p) (cause := cause)
         |>.logMsg
           s!"{(g.player p).name}'s protection from everything ends (CR 800.4m)"
     else g
-  let g := g.expireAll (.lifeCantChange p)
+  let g := g.expireAll (.lifeCantChange p) (cause := cause)
   let g := g.restoreCopiesUntilNextTurn p
-  let g := g.expirePlayPermissions p
-  let g := g.expireAll (.cantCastSpellsThisTurn p)
-  g.expireMatching (fun | .attackPumpPerPlainsThisTurn q _ => q == p | _ => false)
+  let g := g.expirePlayPermissions p (cause := cause)
+  let g := g.expireAll (.cantCastSpellsThisTurn p) (cause := cause)
+  g.expireMatching (fun | .attackPumpPerPlainsThisTurn q _ => q == p | _ => false) (cause := cause)
 
 /-- Advance to the next living player's turn after a cleanup step ends.
 A player who has left does not begin a turn (CR 800.4k); effects that last
 until that turn expire when it would have begun (CR 800.4m). -/
 def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
-  let g := g.expirePlayPermissions ending |>.clearTurnActivations
+  let g := g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
+    |>.clearTurnActivations
   Id.run do
     let mut g := g
     let extraN := g.extraTurns.size
@@ -183,17 +196,22 @@ def startNextTurn (g : Game) : Game :=
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-        g := g.change (.extraTurns (g.extraTurns.extract 1 g.extraTurns.size))
+        g := g.changes #[
+          .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
+          .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size) ]
     match g.extraTurns[0]? with
     | some q =>
+      let extraCause? := g.extraTurnCauses[0]?
       g := g.changes #[
         .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
+        .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size),
         .activePlayer q,
         .turnNumber (g.turnNumber + 1),
         .isFirstTurn false,
         .cleanupGivesPriority false ]
       if !g.powerUpsForbidden then
-        g := g.createEffect .powerUpsForbiddenThisTurn
+        let cause := extraCause? <|> some (.oneShotEffect ⟨g.nextEffectId⟩ none (some q))
+        g := g.createEffect .powerUpsForbiddenThisTurn (cause := cause)
       return g.logMsg s!"It is now {(g.player q).name}'s extra turn {g.turnNumber}"
     | none =>
       let n := g.players.size
@@ -207,8 +225,6 @@ def startNextTurn (g : Game) : Game :=
             .turnNumber (g.turnNumber + 1),
             .isFirstTurn false,
             .cleanupGivesPriority false ]
-          if g.powerUpsForbidden then
-            g := g.expireAll .powerUpsForbiddenThisTurn
           return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
       return g
 
@@ -237,6 +253,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       -- CR 502.1: phased-out permanents phase in before the player untaps.
       g := g.phaseInControlled ap
       g := g.expireMatching (fun | .additionalLandsThisTurn p _ => p == ap | _ => false)
+        (cause := some (.turnBased .expireAtStepBegin))
       for o in g.permanentsOf ap do
         -- CR 502.3: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
@@ -256,7 +273,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
             g := g.record untap
         if stunned then do
           g := g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it"
-          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true)
+          g := g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .stun 1 true
+            (cause := some (.turnBased .untapAll)))
         if o.status.summoningSick then
           g := g.changeStatus o.id (.summoningSick false)
       -- No priority (CR 502.4). Immediately continue.
@@ -270,7 +288,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         |>.beginStep .precombatMain
     else
       -- The turn-based draw happens before triggers (ruling 770).
-      let g := g.draw g.activePlayer
+      let g := g.draw g.activePlayer 1 (cause := some (.turnBased .drawStepDraw))
       let g := (g.livingOpponents g.activePlayer).foldl (fun acc pl =>
         acc.putControlledTriggers pl.id .eachOpponentDrawStep) g
       g.receivePriority g.activePlayer
@@ -290,14 +308,17 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     let ap := g.activePlayer
     let g := Id.run do
       let mut g := g
+      let batches := g.eaglesBirdsCauses
+      g := g.change (.eaglesBirdsCauses #[])
       for pl in g.players do
         if pl.eaglesBirdsNextUpkeep > 0 then
-          let n := pl.eaglesBirdsNextUpkeep
           g := g.changePlayer pl.id (.eaglesBirdsNextUpkeep 0)
-          if g.stillInGame pl.id then
-            g := g.createKindTokens pl.id .birdSoldier n
+      for (pid, n, cause) in batches do
+        if n > 0 then
+          if g.stillInGame pid then
+            g := g.createKindTokens pid .birdSoldier n (cause := some cause)
           g := g.logMsg
-            s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+            s!"{(g.player pid).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
     let g :=
       if stepEvent.matchesTrigger ap ⟨0⟩ .yourUpkeep then
@@ -348,33 +369,35 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         let mut g := g
         for o in g.permanentsOf ap do
           if o.printed.impending.isSome && g.loggedCastForImpending o.id && o.status.time > 0 then
-            let left := o.status.time - 1
-            g := g.changeStatus o.id (.time left)
+            let impCause := some (EventCause.gameRule .impending)
+            g := (g.record (GameEvent.counters g.turnNumber (some ap) o.asEvent .time 1 true
+              (cause := impCause))).syncImpendingNotACreature o.id (cause := impCause)
             g := g.logMsg s!"{o.name} loses a time counter"
         let sacrifices := g.delayedEndStepSacrifices
         g := g.change (.delayedEndStepSacrifices #[])
-        for id in sacrifices do
+        for (id, cause) in sacrifices do
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed"
+              g := g.sacrificeToGraveyard o s!"{o.name} is sacrificed" (cause := some cause)
           | none => pure ()
         let returns := g.delayedGraveReturns
         g := g.change (.delayedGraveReturns #[])
-        for (id, who) in returns do
+        for (id, who, cause) in returns do
           match g.findObject? id with
           | some o =>
             if o.zone == .graveyard o.owner && !(g.player who).lost then
               let name := o.name
-              let (g', newId) := g.putOntoBattlefield id who (summoningSick := !o.printed.keywords.haste)
-              g := g'.logMsg s!"{name} returns to the battlefield"
-              g := g.afterPermanentEnters (g.object! newId)
+              let (g', newId) := g.putOntoBattlefield id who
+                (summoningSick := !o.printed.keywords.haste) (cause := some cause)
+              let g' := g'.logMsg s!"{name} returns to the battlefield"
+              g := g'.afterPermanentEnters (g'.object! newId)
             else pure ()
           | none => pure ()
         g := g.applyDelayedSynthetic
         let ids := g.delayedEndStepReturns
         g := g.change (.delayedEndStepReturns #[])
-        for id in ids do
+        for (id, cause) in ids do
           match g.findObject? id with
           | none => pure ()
           | some o =>
@@ -386,20 +409,21 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               else
                 let name := o.name
                 let sick := !o.printed.keywords.haste
-                let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
-                g := g'.logMsg
+                let (g', newId) := g.putOntoBattlefield id owner
+                  (summoningSick := sick) (cause := some cause)
+                let g' := g'.logMsg
                   s!"{name} returns to the battlefield (beginning of end step)"
-                let back := g.object! newId
+                let back := g'.object! newId
                 g :=
-                  if back.printed.isLand then g.afterLandEnters back
-                  else g.afterPermanentEnters back
+                  if back.printed.isLand then g'.afterLandEnters back
+                  else g'.afterPermanentEnters back
         let exiles := g.delayedEndStepExiles
         g := g.change (.delayedEndStepExiles #[])
-        for id in exiles do
+        for (id, cause) in exiles do
           match g.findObject? id with
           | some o =>
             if o.isOnBattlefield then
-              let (g', _) := g.move id .exile none
+              let (g', _) := g.move id .exile none (cause := some cause)
               g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
           | none => pure ()
         return g
@@ -414,8 +438,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       else g
     g.receivePriority ap
   | .cleanup =>
-    -- Combatants leave combat; then CR 514.1–514.3.
-    let g := g.clearCombat
+    -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
     let g := g.clearEOT
     -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions
@@ -441,13 +464,14 @@ partial def beginStep (g : Game) (st : Step) : Game :=
 
 def beginTurn (g : Game) : Game :=
   let p := g.activePlayer
+  let cause := some (EventCause.turnBased .expireAtStepBegin)
   let g := g.restoreCopiesUntilNextTurn p
   let g :=
     if (g.player p).protectionFromEverything || (g.player p).lifeCantChange then
       let hadLife := (g.player p).lifeCantChange
       let hadProt := (g.player p).protectionFromEverything
-      let g := if hadProt then g.expireAll (.protectionFromEverything p) else g
-      let g := if hadLife then g.expireAll (.lifeCantChange p) else g
+      let g := if hadProt then g.expireAll (.protectionFromEverything p) (cause := cause) else g
+      let g := if hadLife then g.expireAll (.lifeCantChange p) (cause := cause) else g
       g.logMsg
         (if hadProt && hadLife then s!"{(g.player p).name}'s protection and life lock end"
          else if hadProt then s!"{(g.player p).name}'s protection from everything ends"
@@ -475,6 +499,7 @@ def advanceStep (g : Game) : Game :=
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else
+      let g := if g.step == .endOfCombat then g.clearCombat else g
       g.beginStep st
   | none =>
     -- Leaving cleanup. If CR 514.3a granted priority this step, another

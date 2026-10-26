@@ -241,10 +241,10 @@ def futurescribeCombat (scried surveilled : Bool) : Game :=
 #guard (fraRuling 804).comment.contains "only one +1/+1 counter"
 
 /- Scrying records only a scry. Surveilling records only a surveil. Scry 0 records neither. -/
-#guard (afterDraw.beginSurveil ⟨0⟩ 1).loggedSurveilled ⟨0⟩
-#guard !((afterDraw.beginSurveil ⟨0⟩ 1).loggedScried ⟨0⟩)
-#guard (afterDraw.beginScry ⟨0⟩ 1).loggedScried ⟨0⟩
-#guard !((afterDraw.beginScry ⟨0⟩ 1).loggedSurveilled ⟨0⟩)
+#guard (applyIdle (afterDraw.beginSurveil ⟨0⟩ 1)).loggedSurveilled ⟨0⟩
+#guard !((applyIdle (afterDraw.beginSurveil ⟨0⟩ 1)).loggedScried ⟨0⟩)
+#guard (applyIdle (afterDraw.beginScry ⟨0⟩ 1)).loggedScried ⟨0⟩
+#guard !((applyIdle (afterDraw.beginScry ⟨0⟩ 1)).loggedSurveilled ⟨0⟩)
 #guard !((afterDraw.beginScry ⟨0⟩ 0).loggedScried ⟨0⟩)
 #guard !((afterDraw.beginScry ⟨0⟩ 0).loggedSurveilled ⟨0⟩)
 

@@ -32,15 +32,16 @@ def representedByCard (o : GameObject) : Bool :=
 /-- Change `o`'s controller unless that player has left (CR 800.4b). -/
 def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     (untilEot : Bool := false) (turnEndsLeft : Nat := 0)
-    (untilSourceLeaves : Option ObjectId := none) : Game :=
+    (untilSourceLeaves : Option ObjectId := none)
+    (cause : Option EventCause := none) : Game :=
   if (g.player p).lost then
     g.logMsg s!"{o.name} does not change control (CR 800.4b)"
   else if o.controlledBy p then
     if untilEot || turnEndsLeft > 0 || untilSourceLeaves.isSome then
-      g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
+      g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
     else g
   else
-    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves)
+    g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
       |>.logMsg s!"{(g.player p).name} gains control of {o.name}"
 
 /-- End the control-changing effect recorded under `eid` on `oid`. Any other
@@ -48,11 +49,12 @@ control-changing effects on that permanent keep applying, and the most recent
 of them decides its controller (CR 613.1b / 613.7). When none remain and the
 default controller has left the game, the permanent is exiled (CR 800.4a /
 800.4c). -/
-def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId) : Game :=
+def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? oid with
-  | none => g.expireEffectById eid
+  | none => g.expireEffectById eid (cause := cause)
   | some o =>
-    let g := g.expireEffectById eid
+    let g := g.expireEffectById eid (cause := cause)
     let othersRemain := g.activeEffects.any (fun (_, e) =>
       match e with
       | .control id _ _ _ _ => id == oid
@@ -69,19 +71,20 @@ def endControlEffect (g : Game) (oid : ObjectId) (eid : EffectId) : Game :=
         let dest := o.defaultController.getD o.owner
         if (g.player dest).lost then
           let name := o.name
-          let (g, _) := g.move oid .exile none
+          let (g, _) := g.move oid .exile none (cause := some (.gameRule .playerLeftGame))
           g.logMsg s!"{name} is exiled (CR 800.4c)"
         else
           g.logMsg s!"{o.name} reverts to {(g.player dest).name}'s control"
 
 /-- End every control-changing effect on `o`, each under its own `EffectId`
 (CR 800.4a / 800.4c). -/
-def endControlChangingEffect (g : Game) (o : GameObject) : Game :=
+def endControlChangingEffect (g : Game) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let ids := g.activeEffects.filterMap (fun (eid, e) =>
     match e with
     | .control id _ _ _ _ => if id == o.id then some eid else none
     | _ => none)
-  ids.foldl (fun acc eid => acc.endControlEffect o.id eid) g
+  ids.foldl (fun acc eid => acc.endControlEffect o.id eid (cause := cause)) g
 
 /-- Gain control of `o` until end of turn (CR 611.2a). -/
 def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
@@ -93,13 +96,14 @@ def giveControlUntilEot (g : Game) (o : GameObject) (p : PlayerId) : Game :=
 /-- Remove `o` from the game. Battlefield permanents use `move` so
 until-leaves one-shots return (CR 610.3 / 800.4a). Ante stays (CR 800.4n). -/
 def objectLeavesTheGame (g : Game) (o : GameObject) (leavingPlayer : PlayerId) : Game :=
+  let cause := some (EventCause.gameRule .playerLeftGame)
   if o.zone == .ante then g
   else if o.zone == .battlefield then
-    let (g, newId) := g.move o.id .exile none
+    let (g, newId) := g.move o.id .exile none (cause := cause)
     let g := g.change (.removeWaitingTriggersOf leavingPlayer)
-    g.ceaseToExist newId
+    g.ceaseToExist newId (cause := cause)
   else
-    g.ceaseToExist o.id
+    g.ceaseToExist o.id (cause := cause)
 
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
@@ -131,7 +135,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         match g.findObject? spellId with
         | none => g
         | some o =>
-          let g := g.ceaseToExist o.id
+          let g := g.ceaseToExist o.id (cause := some (.gameRule .playerLeftGame))
           g.logMsg s!"{o.name} is countered"
     else g
   | .payWard q spellId _ =>
@@ -141,7 +145,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       match g.findObject? spellId with
       | none => g
       | some o =>
-        let g := g.ceaseToExist o.id
+        let g := g.ceaseToExist o.id (cause := some (.gameRule .playerLeftGame))
         g.logMsg s!"{o.name} is countered"
     else g
   | .mayPayGeneric q _ =>
@@ -182,7 +186,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
     if q == p then g.changes #[.pending .none, .proposedSpell none] else g
   | .sacrificePermanent q _ | .discardForAdditionalCost q
-  | .sacrificeCreature q | .scry q _ | .surveil q _
+  | .sacrificeCreature q | .scry q .. | .surveil q ..
   | .mayDiscardDraw q _ | .mayAttachEquipment q _
   | .recruitDiscard q | .chooseRingBearer q
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
@@ -222,7 +226,8 @@ they control are exiled. This is not a state-based action. -/
 def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
   if (g.player p).leftTheGame then g
   else
-    let g := g.changePlayers p #[.lost true, .leftTheGame true]
+    let cause := some (EventCause.gameRule .playerLeftGame)
+    let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
     let g := g.logMsg s!"{(g.player p).name} leaves the game"
     let owned := g.objects.filter (fun o => o.owner == p && o.zone != .ante)
     let g :=
@@ -233,12 +238,12 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
     let g :=
       g.activeEffects.foldl (fun acc (eid, e) =>
         match e with
-        | .control oid c _ _ _ => if c == p then acc.endControlEffect oid eid else acc
+        | .control oid c _ _ _ => if c == p then acc.endControlEffect oid eid (cause := cause) else acc
         | _ => acc) g
     let g :=
       g.objects.foldl (fun acc o =>
         if o.zone == .stack && o.controlledBy p && !representedByCard o then
-          acc.ceaseToExist o.id
+          acc.ceaseToExist o.id (cause := cause)
         else acc) g
     let still := g.objects.filter (fun o => o.controlledBy p)
     let g :=
@@ -247,7 +252,7 @@ def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
         | none => acc
         | some o =>
           let name := o.name
-          let (acc, _) := acc.move o.id .exile none
+          let (acc, _) := acc.move o.id .exile none (cause := cause)
           acc.logMsg s!"{name} is exiled (CR 800.4a)") g
     let g := g.change (.removeWaitingTriggersOf p)
     let g :=
@@ -270,17 +275,18 @@ def leavePlayersWhoLost (g : Game) : Game :=
 def emptyManaPools (g : Game) : Game :=
   Id.run do
     let mut g := g
+    let cause := some (EventCause.turnBased .emptyManaPools)
     for pl in g.players do
       if !pl.manaPool.isEmpty then
         let colorless :=
           (g.permanentsOf pl.id).any (·.printed.unspentManaBecomesColorless)
+        let n := pl.manaPool.total
         if colorless then
-          let n := pl.manaPool.total
-          g := g.changePlayer pl.id (.manaPool { colorless := n })
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n true (cause := cause))
           g := g.logMsg s!"{pl.name}'s unspent mana becomes colorless"
         else
           g := g.logMsg s!"{pl.name} empties mana pool ({pl.manaPool})"
-          g := g.changePlayer pl.id (.manaPool ManaPool.empty)
+          g := g.record (GameEvent.manaEmptied g.turnNumber pl.id n false (cause := cause))
     return g
 
 end Game

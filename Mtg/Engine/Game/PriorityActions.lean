@@ -83,6 +83,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return g.afterAdditionalCostAnnounced
       else
         let g := g.beholdQuality p quality
+          (cause := some (.costPayment .behold p (some prop.spellId)))
         if !(g.qualityWasBeheld p quality) then
           throw s!"{spell.name} requires beholding a {quality}"
         return g.afterAdditionalCostAnnounced
@@ -154,7 +155,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
   if (g.player p).lost then g
   else
     let pl := g.player p
-    let g := g.changePlayer p (.lost true)
+    let g := g.record (GameEvent.playerLost g.turnNumber p (cause := some (.gameRule .playerLeftGame)))
     let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
     match g.decideGameIfFinished with
     | some finished => finished

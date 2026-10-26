@@ -63,11 +63,12 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1)
-    (byPlayer : Option PlayerId := none) (entersWith := false) : Game :=
+    (byPlayer : Option PlayerId := none) (entersWith := false)
+    (cause : Option EventCause := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter := byPlayer.orElse (fun _ => o.controller)
   let g :=
-    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n)
+    if n > 0 && !entersWith then g.record (GameEvent.counters g.turnNumber putter o.asEvent .finality n (cause := cause))
     else g
   g.logMsg s!"{o.name} gets a finality counter"
 
@@ -142,6 +143,7 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     if o.status.tapped then
       throw s!"{o.name} is already tapped"
     g := g.becomeTapped o
+      (cause := some (.costPayment .tap p (g.proposedSpell.map (·.spellId))))
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
 /-- Equip worthy may attach only to a legendary non-Villain red or white
@@ -198,11 +200,12 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
-    (byPlayer : Option PlayerId := none) : Game :=
+    (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   let n := g.countersYouPut o n (putter := byPlayer)
   let putter := byPlayer.orElse (fun _ => o.controller)
   let g :=
-    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n)
+    if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n (cause := cause))
     else g
   let total := (g.object! o.id).status.burden
   let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
@@ -212,17 +215,18 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
 counter” triggers still apply. Burden counters keep the total in the log. -/
 def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
-    (entersWith := false) (byPlayer : Option PlayerId := none) : Game :=
+    (entersWith := false) (byPlayer : Option PlayerId := none)
+    (cause : Option EventCause := none) : Game :=
   match kind with
   | .plusOnePlusOne =>
-    g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer)
-  | .burden => g.addBurdenCounter o n (byPlayer := byPlayer)
+    g.addPlusOnePlusOneTo o n (entersWith := entersWith) (byPlayer := byPlayer) (cause := cause)
+  | .burden => g.addBurdenCounter o n (byPlayer := byPlayer) (cause := cause)
   | kind =>
     let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
     if n == 0 then g
     else
       let putter := byPlayer.orElse (fun _ => o.controller)
-      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n
+      let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause)
       let g := (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
       if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
         g.queueGoblinOrcArmyCounterTriggers o
@@ -230,18 +234,28 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
-    (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none) : Game :=
+    (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? armyId with
   | none => g.logMsg "That Army is no longer on the battlefield"
   | some army =>
     if !army.isOnBattlefield || !army.controlledBy controller || !g.hasSubtype army .army then
       g.logMsg "That Army is no longer on the battlefield"
     else
+      let (g, cause) : Game × Option EventCause :=
+        match cause with
+        | some c => (g, some c)
+        | none =>
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+            (g, some c)
+          | none => (g, none)
       let g :=
         if g.hasSubtype army subtype then g
-        else g.createEffect (.additionalSubtype army.id subtype)
+        else g.createEffect (.additionalSubtype army.id subtype) (cause := cause)
       let army := g.object! army.id
-      let g := g.addPlusOnePlusOneTo army n
+      let g := g.addPlusOnePlusOneTo army n (cause := cause)
       let g := g.logMsg
         s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
       match attach with
@@ -249,43 +263,60 @@ def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)
       | some sid =>
         match g.findObject? sid with
         | some src =>
-          if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) else g
+          if src.isOnBattlefield then g.attachSourceTo src (g.object! army.id) (cause := cause) else g
         | none => g
 
 /-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
 enters as 0/0 and triggers see that power before counters are put on it. If
 you control more than one Army, you choose which one. -/
 def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
-    (attach : Option ObjectId := none) : Game :=
+    (attach : Option ObjectId := none)
+    (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+        (g, some c)
+      | none => (g, none)
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o .army)
   if armies.size > 1 then
     let ids := armies.map (fun (o : GameObject) => o.id)
+    let g :=
+      match cause with
+      | some c => ids.foldl (fun (g : Game) id => g.change (.setLinkedExileCause id (some c))) g
+      | none => g
     (g.change (.pending (.fraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))))).logMsg
       s!"{(g.player controller).name} chooses an Army to amass"
   else
     let createdFresh := armies.isEmpty
     let (g, army) :=
       match armies[0]? with
-      | none => g.createToken controller (armyToken subtype)
+      | none => g.createToken controller (armyToken subtype) (cause := cause)
       | some army => (g, army)
     let g :=
       if createdFresh then
         let g := g.afterPermanentEnters (g.object! army.id)
         g.logMsg s!"the amassed Army entered as a 0/0 creature"
       else g
-    g.finishAmassOn controller (g.object! army.id).id subtype n attach
+    g.finishAmassOn controller (g.object! army.id).id subtype n attach (cause := cause)
 
 /-- Amass Goblins `n` (CR 701.43). -/
-def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller .goblin n
+def amassGoblins (g : Game) (controller : PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  g.amass controller .goblin n (cause := cause)
 
 /-- Amass Orcs `n` (CR 701.43). -/
-def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller .orc n
+def amassOrcs (g : Game) (controller : PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  g.amass controller .orc n (cause := cause)
 
 /-- Amass Zombies `n` (CR 701.43). -/
-def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
-  g.amass controller .zombie n
+def amassZombies (g : Game) (controller : PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game :=
+  g.amass controller .zombie n (cause := cause)
 
 /-- Damage plus until-EOT lose-indestructible and exile-if-dies (e.g. Smite).
 Spells apply those three steps in order. This sets the same flags at once. -/

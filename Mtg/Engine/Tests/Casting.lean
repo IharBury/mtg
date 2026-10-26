@@ -326,7 +326,7 @@ def colleenScry : Game :=
 
 #guard
   match colleenScry.pending with
-  | .scry q n =>
+  | .scry q n _ =>
     q == me && n == 1 &&
       (named colleenScry "Colleen Wing, Street Samurai").status.plusOnePlusOne == 1
   | _ => false

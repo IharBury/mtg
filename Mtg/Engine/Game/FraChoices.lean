@@ -67,6 +67,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let stackBefore := g.stack
   let pool := (g.player p).manaPool
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
+    (cause := some (.gameRule .spellCast))
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -282,7 +283,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
     let g := ids.foldl (fun g id =>
-      if (g.findObject? id).any (·.zone == .exile) then g.ceaseToExist id else g) g
+      if (g.findObject? id).any (·.zone == .exile) then
+        g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))
+      else g) g
     return (g.change (.pendingFreeCopies none)).finishFraChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
@@ -373,7 +376,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return (g.logMsg s!"{(g.player p).name} chooses {nm} for {o.name}").finishFraChoice
     | none => return g.finishFraChoice
   | .chooseCardName _, _ => throw "Name a nonland card"
-  | .crew _ vehicleId n, .objects ids =>
+  | .crew abilityId vehicleId n, .objects ids =>
     let some vehicle := g.findObject? vehicleId | throw "The Vehicle is gone"
     if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
     let crew ← ids.mapM (fun id => do
@@ -383,11 +386,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
     if total < n then throw s!"Total power {total} is less than {n}"
-    let g := crew.foldl (fun g c => g.becomeTapped (g.object! c.id)) g
+    let g := crew.foldl (fun g c =>
+      g.becomeTapped (g.object! c.id) (cause := some (.costPayment .tap p (some abilityId)))) g
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
-    let g := g.ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .reversedActivation))
     return (g.logMsg s!"{(g.player p).name} doesn't crew").receivePriority p
   | .crew .., _ => throw "Choose creatures to tap, or decline"
   | .costPicks sourceId picks _, .objects ids =>
@@ -569,13 +573,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
     let name := (g.object! id).name
-    let (g, _) := g.move id (.hand p) none
+    let (g, cause) := g.allocDelayedCause (some p)
+    let (g, _) := g.move id (.hand p) none (cause := some cause)
     let g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
     let rest := looked.filter (· != id)
     let g :=
-      if anyOrder then g.offerBottomAnyOrder p rest
+      if anyOrder then g.offerBottomAnyOrder p rest (cause := some cause)
       else g.requestOrderInto rest (.library p)
         s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+        (cause := some cause)
     return g.finishFraChoice
   | .mayRevealToHand looked _ anyOrder, .decline =>
     let g :=
@@ -587,7 +593,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .nickFuryPut looked eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be put onto the battlefield"
     let rest := looked.filter (· != id)
-    let g := g.enterFromNickFury p id
+    let (g, cause) := g.allocDelayedCause (some p)
+    let g := g.enterFromNickFury p id (cause := some cause)
     let newId := g.followMoved id
     let g :=
       match g.findObject? newId with
@@ -595,26 +602,38 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         if o.isOnBattlefield && o.printed.otherFace.isSome && !o.status.cantTransform then
           g.beginFraChoice p (.nickFuryMayTransform newId rest)
             s!"{(g.player p).name} may transform {o.name}"
-        else g.putRestOnBottomRandom p rest
-      | none => g.putRestOnBottomRandom p rest
+        else g.putRestOnBottomRandom p rest (cause := some cause)
+      | none => g.putRestOnBottomRandom p rest (cause := some cause)
     return g.finishFraChoice
   | .nickFuryPut looked _, .decline =>
     return (g.putRestOnBottomRandom p looked).finishFraChoice
   | .nickFuryPut .., _ => throw "Put a card onto the battlefield, or decline"
   | .nickFuryMayTransform id rest, .accept =>
-    let g := g.applyAbilityEffect p Effect.transform #[] (some id)
-    return (g.putRestOnBottomRandom p rest).finishFraChoice
-  | .nickFuryMayTransform _ rest, .decline =>
-    return (g.putRestOnBottomRandom p rest).finishFraChoice
+    let cause := g.lastMoveCauseOf? id
+    let g := g.transformPermanent p (some id) (cause := cause)
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
+  | .nickFuryMayTransform id rest, .decline =>
+    let cause := g.lastMoveCauseOf? id
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
   | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
   | .orderLibraryBottom ids, .objects ordered =>
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
         !ordered.all (ids.contains ·) then
       throw "Put every remaining card on the bottom, in the order you choose"
-    return (g.moveIdsInOrder ordered (.library p)
+    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g :=
+      match ids[0]? with
+      | some id => g.change (.setLinkedExileCause id none)
+      | none => g
+    return (g.moveIdsInOrder ordered (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom ids, .decline =>
-    return (g.moveIdsInOrder ids (.library p)
+    let cause := ids[0]?.bind (fun id => (g.linkedExileCauses.find? (·.1 == id)).map (·.2))
+    let g :=
+      match ids[0]? with
+      | some id => g.change (.setLinkedExileCause id none)
+      | none => g
+    return (g.moveIdsInOrder ids (.library p) (cause := cause)
       |>.logMsg s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order").finishFraChoice
   | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
   | .mayPayManaForReflexive cost maxTimes kind sourceId, .accept
@@ -671,6 +690,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Choose black cards from your graveyard with fifteen or more black mana symbols among their mana costs"
     let (g, exiled) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, ex) := acc.1.move id .exile none
+        (cause := some (.costPayment .exile p (some abilityId)))
       (g, acc.2.push ex)) (g, #[])
     let g := g.logMsg s!"{(g.player p).name} exiles {exiled.size} card(s) from their graveyard"
     let g := match g.findObject? abilityId with
@@ -682,19 +702,23 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let name := ((g.findObject? sourceId).map (·.name)).getD "Baron Helmut Zemo"
     return (g.becomeActivated p name (some sourceId) (some ActivatedAbility.zemoBoastAbility)).finishFraChoice
   | .zemoBoastExile abilityId _, .decline =>
-    let g := g.ceaseToExist abilityId
+    let g := g.ceaseToExist abilityId (cause := some (.gameRule .reversedActivation))
     return (g.logMsg s!"{(g.player p).name} doesn't boast").receivePriority p
   | .zemoBoastExile .., _ => throw "Choose the cards to exile, or decline"
   | .mayCastCascade cardId others, .accept =>
+    let cause := g.lastMoveCauseOf? cardId
     let g := g.castAsPartOfResolution p cardId
     let msg := s!"{(g.player p).name} puts the other exiled cards on the bottom of their library in a random order"
-    let g := g.requestOrderInto others (.library p) msg
+    let g := g.requestOrderInto others (.library p) msg (cause := cause)
     return g.finishFraChoice
   | .mayCastCascade cardId others, .decline =>
+    let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library p)
-      s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+      s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
+      (cause := cause)).finishFraChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
   | .mayCastGrima cardId others victim, .accept =>
+    let cause := g.lastMoveCauseOf? cardId
     let g := g.castAsPartOfResolution p cardId
     let landed := g.followMoved cardId
     let cast := (g.findObject? landed).any (·.zone == .stack)
@@ -706,11 +730,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let pile := others ++ uncast
     let msg :=
       s!"{(g.player victim).name} puts the exiled cards that weren't cast on the bottom of their library in a random order"
-    let g := g.requestOrderInto pile (.library victim) msg
+    let g := g.requestOrderInto pile (.library victim) msg (cause := cause)
     return g.finishFraChoice
   | .mayCastGrima cardId others victim, .decline =>
+    let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library victim)
-      s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order").finishFraChoice
+      s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
+      (cause := cause)).finishFraChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
     let g := g.castAsPartOfResolution p copyId
@@ -720,33 +746,27 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (g.findObject? copyId).any (·.zone == .stack)
     if onStack then return g.finishFraChoice
     else
+      let copyCause := some (EventCause.stateBased .copyOutsideStackOrBf)
       let gone :=
         match g.findObject? copyId with
-        | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+        | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
         | none =>
           match g.findObject? landed with
-          | some o => if o.isCopy then (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist" else g
+          | some o => if o.isCopy then (g.ceaseToExist o.id (cause := copyCause)).logMsg s!"The copy of {o.name} ceases to exist" else g
           | none => g
       return gone.finishFraChoice
   | .mayCastCopy copyId, .decline =>
     let g :=
       match g.findObject? copyId with
       | some o =>
-        (g.ceaseToExist o.id).logMsg s!"The copy of {o.name} ceases to exist"
+        (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
+          s!"The copy of {o.name} ceases to exist"
       | none => g
     return g.finishFraChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
   | .mayDiscardHandBalin sourceId, .accept =>
-    let ids := (g.player p).hand
-    let n := ids.size
-    let g :=
-      ids.foldl (fun acc id =>
-        match acc.findObject? id with
-        | none => acc
-        | some o =>
-          let (acc, _) := acc.move id (.graveyard o.owner) none
-          acc) g
-    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
+    let n := (g.player p).hand.size
+    let g := g.discardEntireHand p
     let g := g.changes #[.handDiscardedThisWay (some n), .notedSourceThisWay sourceId]
     return g.finishFraChoice
   | .mayDiscardHandBalin _, .decline =>
@@ -844,8 +864,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some o =>
       if o.zone != .graveyard p then throw s!"{o.name} is no longer in your graveyard"
       let name := o.name
-      let (g, newId) := g.move o.id .exile none
+      let (g, cause) := g.allocDelayedCause (some p)
+      let (g, newId) := g.move o.id .exile none (cause := some cause)
       return (g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+        (cause := some cause)
         |>.logMsg s!"{name} is exiled. {(g.player p).name} may play it until the end of their next turn").finishFraChoice
     | none => return g.finishFraChoice
   | .moonstoneMayExile _, .decline =>
@@ -877,8 +899,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.gainLife p life).finishFraChoice
   | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
   | .mayDrawThenEachOpponentDraws n, .accept =>
+    let before := g.loggedDraws p
     let g := g.draw p n
-    let g := g.forEachOpponent p (fun g opp => g.draw opp 1)
+    if g.loggedDraws p == before then
+      return g.finishFraChoice
+    let (g, oppCause?) : Game × Option EventCause :=
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+    let g := g.forEachOpponent p (fun g opp => g.draw opp 1 (cause := oppCause?))
     return (g.logMsg s!"{(g.player p).name} draws, so each opponent draws a card").finishFraChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
@@ -946,14 +977,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       match g.findObject? sourceId with
       | some src => src.status.influence
       | none => 0
-    let before := (g.player controller).graveyard.size
-    let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let milled := gy.size - before
+    let lib := (g.player controller).library
+    let count := min n lib.size
+    let tops := (lib.extract (lib.size - count) lib.size).reverse
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || lib.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => some sourceId))
+          (g, some c)
+        | none => (g, none)
+    let g := g.mill controller n (cause := cause?)
+    let milled := (tops.map g.followMoved).filter (fun id =>
+      (g.findObject? id).any (fun o => o.zone == .graveyard controller))
     let mv :=
-      (gy.extract (gy.size - milled) gy.size).foldl (fun acc id =>
+      milled.foldl (fun acc id =>
         acc + (g.object! id).printed.manaValue) 0
-    return (g.loseLife p mv).finishFraChoice
+    return (g.loseLife p mv (cause := cause?)).finishFraChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
@@ -1046,14 +1087,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | .amassArmy .. =>
       if chosen.size != 1 then throw "Choose one Army"
     | _ => pure ()
-    return (g.finishChooseCards p chosen purpose).finishFraChoice
+    let cause := ids[0]?.bind g.linkedExileCause?
+    let g := ids.foldl (fun (g : Game) id =>
+      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    return (g.finishChooseCards p chosen purpose (cause := cause)).finishFraChoice
   | .chooseCards ids _ purpose, .decline =>
     match purpose with
     | .toHand true =>
       if !ids.isEmpty then throw "Choose one card"
     | .amassArmy .. => throw "Choose an Army"
     | _ => pure ()
-    return (g.finishChooseCards p #[] purpose).finishFraChoice
+    let cause := ids[0]?.bind g.linkedExileCause?
+    let g := ids.foldl (fun (g : Game) id =>
+      if (g.linkedExileCause? id).isSome then g.change (.setLinkedExileCause id none) else g) g
+    return (g.finishChooseCards p #[] purpose (cause := cause)).finishFraChoice
   | .chooseCards .., _ => throw "Choose cards, or decline"
   | .blackGatePlayer creature players, .mode idx =>
     let some pid := players[idx]? | throw "No such player"
@@ -1102,6 +1149,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             let name := o.name
             let sick := o.printed.isCreature && !o.printed.keywords.haste
             let (g, newId) := g.move id .battlefield (some o.owner) (summoningSick := sick)
+              (cause := some (.gameRule .staticAbility))
             let g := g.logMsg s!"{name} begins the game on the battlefield"
             if g.pending != .none then pure g
             else pure (g.afterPermanentEnters (g.object! newId))

@@ -267,10 +267,23 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
-def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
+def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat)
+    (cause : Option EventCause := none) : Game × Bool :=
   let before :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
-  let g := opponents.foldl (fun acc pid => acc.mill pid n) g
+  let (g, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 || !opponents.any (fun pid => !(g.player pid).library.isEmpty) then
+        (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
+  let g := opponents.foldl (fun acc pid => acc.mill pid n (cause := cause?)) g
   let after :=
     opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
   (g, after > before)
@@ -298,7 +311,11 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
       g.logMsg s!"{o.name} is no longer on the stack"
     else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
       let name := o.name
-      let g := g.ceaseToExist o.id
+      let cause :=
+        g.currentResolvingContext?.map (fun (src, ctrl) =>
+          .oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+          |>.orElse (fun _ => some (.oneShotEffect ⟨g.nextEffectId⟩ none (some controller)))
+      let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || o.uncounterableThisCast then
       g.logMsg s!"{o.name} can't be countered"
@@ -307,26 +324,35 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
         if exilePermanent && o.printed.isPermanentCard then Zone.exile
         else Zone.graveyard o.owner
       let name := o.name
+      let (g, cause) := g.allocDelayedCause (some controller)
       let (g, newId) := g.move spellId dest none
-        (verb := some .counter) (actor := some controller)
+        (verb := some .counter) (actor := some controller) (cause := some cause)
       let g :=
         if dest == .exile && grantFreeCast then
           g.createEffect (.playPermission newId {
             player := controller
             turnEndsRemaining := 0
             whileExiled := true
-            withoutManaCost := true })
+            withoutManaCost := true }) (cause := some cause)
         else g
       let destNote := if dest == .exile then "exiled" else "countered"
       g.logMsg s!"{name} is {destNote}"
 
-/-- Exile `o` until `source` leaves the battlefield, linking the new exile id. -/
-def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
-    Game :=
+/-- Exile `o` until `source` leaves the battlefield, linking the new exile id
+and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
+def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let name := o.name
   let fromZone := o.zone
-  let (g, newId) := g.move o.id .exile none
-  let g := g.changeObject newId (.returnToZone (some fromZone))
+  let fallbackCtrl :=
+    (sourceId.bind g.findObject?).bind (fun src => src.controller.orElse (fun _ => some src.owner))
+  let (g, linkCause) :=
+    match cause with
+    | some c => (g, c)
+    | none => g.allocDelayedCause fallbackCtrl sourceId
+  let (g, newId) := g.move o.id .exile none (cause := some linkCause)
+  let g := (g.changeObject newId (.returnToZone (some fromZone))).change
+    (.setLinkedExileCause newId (some linkCause))
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
@@ -336,10 +362,10 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
 
 /-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
 does not return automatically when the source leaves. -/
-def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
-    Game :=
+def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let name := o.name
-  let (g, newId) := g.move o.id .exile none
+  let (g, newId) := g.move o.id .exile none (cause := cause)
   let g :=
     match sourceId.bind g.findObject? with
     | some src =>
@@ -462,12 +488,20 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
     (k : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId fun g o =>
     let n := g.countersYouPut o 1 (putter := some controller)
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     let g := Id.run do
       let mut g := g
       for _ in [0:n] do
         match g.findObject? o.id with
         | some cur =>
-          g := g.changeStatus cur.id (.addCounters .plan 1)
+          g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1 (cause := cause?))
           let cur := g.object! cur.id
           g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
         | none => pure ()
@@ -525,7 +559,12 @@ them this turn. `logAfter ownerName cardName` is the per-card message. -/
 def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
     (logAfter : String → String → String) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n > 0 && !(g.player fromPlayer).library.isEmpty then
+        let (g, c) := g.allocDelayedCause (some caster)
+        (g, some c)
+      else (g, none)
+    let mut g := g0
     for _ in [0:n] do
       let pl := g.player fromPlayer
       if pl.library.isEmpty then
@@ -533,9 +572,10 @@ def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
       else
         let top := pl.library.back!
         let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         g := g.createEffect (.playPermission newId { player := caster, turnEndsRemaining := 1 })
+          (cause := cause?)
         g := g.logMsg (logAfter pl.name cardName)
     return g
 
@@ -547,14 +587,20 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Extort is paid: each opponent loses 1 life and `controller` gains the
 life actually lost (CR 702.101a / MSH 292). Extort does not target (MSH 296). -/
 def extortDrain (g : Game) (controller : PlayerId) : Game :=
+  let (g, cause?) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) src
+      (g, some c)
+    | none => (g, none)
   let (g, lost) :=
     (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
       let before := (acc.1.player pl.id).life
-      let g := acc.1.loseLife pl.id 1
+      let g := acc.1.loseLife pl.id 1 (cause := cause?)
       let after := (g.player pl.id).life
       let delta := if before > after then (before - after).toNat else 0
       (g, acc.2 + delta)) (g, 0)
-  g.gainLife controller lost |>.logMsg "Extort is paid"
+  g.gainLife controller lost (cause := cause?) |>.logMsg "Extort is paid"
 
 /-- A stack object to stand for `sourceId` as an ability's source. -/
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
@@ -701,7 +747,12 @@ def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
 to `casts` nonland cards from among them without paying their mana costs. -/
 def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat) : Game :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      if n > 0 && !(g.player fromPlayer).library.isEmpty then
+        let (g, c) := g.allocDelayedCause (some caster)
+        (g, some c)
+      else (g, none)
+    let mut g := g0
     let mut ids : Array ObjectId := #[]
     for _ in [0:n] do
       let pl := g.player fromPlayer
@@ -710,7 +761,7 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
       else
         let top := pl.library.back!
         let name := (g.object! top).name
-        let (g', newId) := g.move top .exile none
+        let (g', newId) := g.move top .exile none (cause := cause?)
         g := g'
         ids := ids.push newId
         g := g.logMsg s!"{pl.name} exiles {name}"
@@ -796,10 +847,18 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
       sourceId illegal
   | 10 =>
     let legal := g.legalTargetsForKind controller tkind sourceId
+    let (g, cause?) : Game × Option EventCause :=
+      if targets.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     (List.range targets.size).foldl (fun g i =>
       let tgt := targets[i]!
       if legal.contains tgt then
-        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?)
+        g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0)) (source := sourceId.bind g.findObject?) (cause := cause?)
       else g.illegalAbilityTarget tgt) g
   | 11 =>
     let legal := g.legalTargetsForKind controller tkind sourceId
@@ -833,19 +892,20 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
   | none => g.logMsg "No reflexive triggered ability is on the stack"
   | some (id, controller, kind, paid) =>
     let sourceId := (g.findObject? id).bind (·.sourceId)
-    let g := (g.ceaseToExist id).change (.pending .none)
-    if kind == 10 then
-      let division :=
-        if !division.isEmpty then division
-        else if targets.size == 1 then #[7] else #[4, 3]
-      if targets.isEmpty || targets.size > 2 || division.size != targets.size then
-        g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
-      else if division.any (· == 0) then
-        g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
-      else if division.foldl (· + ·) 0 != 7 then
-        g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
-      else g.resolveModeledReflexive controller sourceId kind paid targets division
-    else g.resolveModeledReflexive controller sourceId kind paid targets division
+    let g := (g.ceaseToExist id (cause := some (.gameRule .abilityFinishedResolving))).change (.pending .none)
+    g.withResolvingContext sourceId controller (fun g =>
+      if kind == 10 then
+        let division :=
+          if !division.isEmpty then division
+          else if targets.size == 1 then #[7] else #[4, 3]
+        if targets.isEmpty || targets.size > 2 || division.size != targets.size then
+          g.logMsg "Choose one or two targets, each assigned a damage amount (CR 601.2d)"
+        else if division.any (· == 0) then
+          g.logMsg "Each target must receive at least 1 damage (CR 601.2d)"
+        else if division.foldl (· + ·) 0 != 7 then
+          g.logMsg "Must assign all 7 damage among the chosen targets (CR 601.2d)"
+        else g.resolveModeledReflexive controller sourceId kind paid targets division
+      else g.resolveModeledReflexive controller sourceId kind paid targets division)
 
 /-- Merge subtype names without duplicates. -/
 def mergeSubtypes (xs : Array String) (ys : Array CardSubtype) : Array String :=

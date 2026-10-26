@@ -827,7 +827,7 @@ def colleenWingPlusOneScry : Game :=
 #guard (namedPermanent colleenWingPlusOneScry "Colleen Wing, Street Samurai").status.plusOnePlusOne == 1
 #guard
   match colleenWingPlusOneScry.pending with
-  | .scry p 1 => p == ⟨0⟩
+  | .scry p 1 _ => p == ⟨0⟩
   | _ => false
 
 /-- Super Intelligence draws for the enchanted creature's controller. -/

@@ -99,13 +99,14 @@ def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbi
 /-- Deal `n` damage to a still-legal target of `kind`. -/
 def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
-    (missing : Option String := none) : Game :=
+    (missing : Option String := none)
+    (cause : Option EventCause := none) : Game :=
   g.withLegalKindTarget controller kind targets
-    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?))
+    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.findObject?) (cause := cause))
     sourceId missing
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
-permission to cast them, spending mana as though it were any type. -/
+permission to cast them, spending mana as though it were any type (CR 610.1 / 701.14). -/
 def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
     (ty : CardType := .creature) : Game :=
   let ids :=
@@ -113,23 +114,27 @@ def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
       match g.findObject? id with
       | some o => o.printed.hasType ty
       | none => false)
-  Id.run do
-    let mut g := g
-    for id in ids do
-      match g.findObject? id with
-      | none => pure ()
-      | some o =>
-        let name := o.name
-        let (g', newId) := g.move id .exile none
-        g := g'
-        g := g.createEffect (.playPermission newId {
-          player := controller
-          turnEndsRemaining := 0
-          whileExiled := true
-          anyMana := true })
-        g := g.logMsg
-          s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
-    return g
+  if ids.isEmpty then g
+  else
+    let (g, cause) := g.allocDelayedCause (some controller)
+    Id.run do
+      let mut g := g
+      for id in ids do
+        match g.findObject? id with
+        | none => pure ()
+        | some o =>
+          let name := o.name
+          let (g', newId) := g.move id .exile none (cause := some cause)
+          g := g'
+          g := g.createEffect (.playPermission newId {
+            player := controller
+            turnEndsRemaining := 0
+            whileExiled := true
+            anyMana := true })
+            (cause := some cause)
+          g := g.logMsg
+            s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
+      return g
 
 /-- Put `o` on the top (`top`) or bottom of its owner's library. -/
 def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
@@ -215,21 +220,35 @@ order. -/
 def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
-  let happened := GameEvent.looked g.turnNumber p count true n
-  let g := if n == 0 then g else g.record happened
-  let g :=
-    if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
-    else g.queueScryOrSurveilTriggers p
-  if count == 0 then
+  if n == 0 then
+    g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
+  else if count == 0 then
+    let happened :=
+      GameEvent.looked g.turnNumber p 0 true n (cause := g.resolvingOneShotCause p)
+    let g := g.record happened
+    let g :=
+      if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
+      else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
-    (g.change (.pending (.surveil p count))).logMsg
+    (g.change (.pending (.surveil p count n))).logMsg
       s!"{pl.name} surveils {n}"
 
-/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.13). -/
-def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
+/-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
+def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 || (g.player p).library.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+          (g, some c)
+        | none => (g, none)
   Id.run do
-    let mut g := g
+    let mut g := g0
     for _ in [0:n] do
       let pl := g.player p
       if pl.library.isEmpty then
@@ -238,6 +257,7 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
         let top := pl.library.back!
         let name := (g.object! top).name
         let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
+          (cause := cause?)
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
@@ -245,32 +265,57 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
 `maxPut` limits how many are returned (`none` means all matches). -/
 def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
     (pred : GameObject → Bool) (maxPut : Option Nat := none) : Game :=
-  let g := g.mill p n
-  let gy := (g.player p).graveyard
-  let take := gy.size.min n
-  let milled := gy.extract (gy.size - take) gy.size
+  let lib := (g.player p).library
+  let count := min n lib.size
+  let tops := (lib.extract (lib.size - count) lib.size).reverse
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || lib.isEmpty then (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+  let g := g.mill p n (cause := cause?)
+  let milled := tops.map (fun id => g.followMoved id)
   Id.run do
     let mut g := g
     let mut left := maxPut.getD milled.size
     for id in milled do
-      if left > 0 && pred (g.object! id) then
-        let name := (g.object! id).name
-        let (g', _) := g.move id (.hand p) none
-        g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
-        left := left - 1
+      match g.findObject? id with
+      | some o =>
+        if left > 0 && o.zone == .graveyard p && pred o then
+          let name := o.name
+          let (g', _) := g.move id (.hand p) none (cause := cause?)
+          g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
+          left := left - 1
+      | none => pure ()
     return g
 
 /-- Deal `n` damage to each creature matching `pred`. -/
 def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
     (pred : GameObject → Bool := fun _ => true)
-    (source : Option EventObject := none) : Game :=
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
+  let (g, cause) : Game × Option EventCause :=
+    match cause with
+    | some c => (g, some c)
+    | none =>
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause ctrl src
+          (g, some c)
+        | none => (g, none)
   g.foldBattlefield (fun o => o.isCreature && pred o)
-    (fun g o => g.dealDamageToPermanent o n (source := source))
+    (fun g o => g.dealDamageToPermanent o n (source := source) (cause := cause))
 
 /-- Deal `n` damage to each creature that is not `subtype`. -/
 def dealDamageToEachNonDragon (g : Game) (n : Nat) (subtype : CardSubtype := .dragon)
-    (source : Option EventObject := none) : Game :=
-  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source)
+    (source : Option EventObject := none)
+    (cause : Option EventCause := none) : Game :=
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype) (source := source) (cause := cause)
 
 end Game
 end Mtg.Engine

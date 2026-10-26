@@ -13,13 +13,14 @@ namespace Mtg.Engine
 namespace Game
 
 partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
-    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Game :=
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
   let src? := (g.resolvingSpell.bind g.findObject?).orElse (fun _ => sourceId.bind g.findObject?)
   match r with
-  | .frc e => g.applyFrc controller effect e targets sourceId
+  | .frc e => g.applyFrc controller effect e targets sourceId (lastKnownPower := lastKnownPower)
   | .bounce =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -32,7 +33,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | some o =>
           if o.zone == .stack then
             if o.isCopy then
-              (g.ceaseToExist o.id).logMsg
+              (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
                 s!"The copy of {o.name} ceases to exist (CR 704.5e)"
             else g.returnToHand id o.owner
           else g
@@ -49,7 +50,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let g := g.destroyPermanent o
       if wasAttacking then g else g.draw ctrl 1) sourceId illegal
   | .damageEachPlayer n =>
-    g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?)) g
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
+    g.livingPlayers.foldl (fun g pl => g.dealDamageToPlayer pl.id n (source := src?) (cause := cause?)) g
   | .damageSourceAt index n =>
     match g.legalPermanentAt? controller kind targets index sourceId with
     | some o => g.dealDamageFrom srcName o n (source := src?)
@@ -153,9 +162,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     let victims := g.battlefield.filter (fun o =>
       (o.isCreature || o.printed.isPlaneswalker) && o.controller.isSome &&
         !o.controlledBy controller)
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || victims.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     victims.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => g.dealDamageFrom srcName o n (source := src?)
+      | some o => g.dealDamageFrom srcName o n (source := src?) (cause := cause?)
       | none => g) g
   | .loseAbilitiesAt index =>
     match g.legalPermanentAt? controller kind targets index sourceId with
@@ -215,12 +232,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       -- Ruling: the mana value is that of the permanent as it last existed
       -- on the battlefield.
       let mv := g.objectManaValue o
-      let (g, exiled) := g.move o.id .exile none
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, exiled) := g.move o.id .exile none (cause := some cause)
       let g := g.logMsg s!"{o.name} is exiled"
       if mv ≤ n && !o.printed.isToken then
-        let (g, back) := g.putOntoBattlefield exiled controller (tapped := true)
+        let (g, back) := g.putOntoBattlefield exiled controller (tapped := true) (cause := some cause)
         let g := g.logMsg s!"{o.name} returns to the battlefield tapped under {(g.player controller).name}'s control"
-        let g := g.change (.pushDelayedEndStepExile back)
+        let g := g.change (.pushDelayedEndStepExile back cause)
         g.afterPermanentEnters (g.object! back)
       else g) sourceId illegal
   | .eachPlayerMayWheel n =>
@@ -384,8 +402,16 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .causeDealsDamageToEachOpponent n =>
     let cause := g.fraCause?
     let name := (cause.map (·.name)).getD "The creature"
+    let (g, evCause?) : Game × Option EventCause :=
+      if n == 0 then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     g.forEachOpponent controller (fun g pid =>
-      (g.dealDamageToPlayer pid n (source := cause)).logMsg s!"{name} deals {n} damage")
+      (g.dealDamageToPlayer pid n (source := cause) (cause := evCause?)).logMsg s!"{name} deals {n} damage")
   | .exileFromHandUntilLeaves =>
     g.withLegalKindPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
@@ -419,10 +445,15 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
             | none => acc
         | none => acc
       | _ => acc) (#[], #[])
+    let (g, cause?) : Game × Option EventCause :=
+      if ids.isEmpty then (g, none)
+      else
+        let (g, c) := g.allocDelayedCause (some controller) sourceId
+        (g, some c)
     let (g, copies) := ids.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       let card := g.object! id
-      let (g, ex) := g.move id .exile none
+      let (g, ex) := g.move id .exile none (cause := cause?)
       let g := g.logMsg s!"{card.name} is exiled"
       let printed := (g.object! ex).printed
       -- Permanent spells cast this way become tokens.
@@ -437,10 +468,11 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         timestamp := copyTs
         isCopy := true
       }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
       let g := g.createEffect (.playPermission copyId {
         player := controller, turnEndsRemaining := 0,
         whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+        (cause := cause?)
       (g, cs.push copyId)) (g, #[])
     if copies.isEmpty then g
     else
@@ -500,8 +532,14 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | some o =>
         if !o.isOnBattlefield then g
         else
-          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}"
-          g.drainOpponents controller 2 (some o)
+          let (g, cause?) : Game × Option EventCause :=
+            match g.currentResolvingContext? with
+            | some (src, ctrl) =>
+              let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+              (g, some c)
+            | none => (g, none)
+          let g := g.sacrificeToGraveyard o s!"{(g.player controller).name} sacrifices {o.name}" (cause := cause?)
+          g.drainOpponents controller 2 (some o) (cause := cause?)
       | none => g
   | .loyaltyOnEachPlaneswalkerYouControl => g.loyaltyOnEachPlaneswalkerOf controller
   | .causeGains k =>
@@ -560,7 +598,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some o => if o.isOnBattlefield && n > 0 then g.addPlusOnePlusOneTo o n else g
     | none => g
   | .kothGeomancer =>
-    let g := g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid 1 (source := src?))
+    let g := g.dealDamageToEachOpponent controller 1 (source := src?)
     match g.fraCause? with
     | some land => if g.hasSubtype land .mountain then g.addManaLogged controller #[.colored .red] else g
     | none => g
@@ -647,8 +685,10 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if !src.isOnBattlefield then g.logMsg s!"{src.name} has left the battlefield"
       else
         g.withLegalKindPermanent controller kind targets (fun g o =>
-          let (g, ex) := g.move o.id .exile none
-          let g := g.changeObject src.id (.pushLinkedExile ex)
+          let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
+          let (g, ex) := g.move o.id .exile none (cause := some linkCause)
+          let g := (g.changeObject src.id (.pushLinkedExile ex)).change
+            (.setLinkedExileCause ex (some linkCause))
           g.logMsg s!"{o.name} is exiled until {src.name} leaves the battlefield") sourceId illegal
     | none => g
   | .destroyEachTarget =>

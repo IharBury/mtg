@@ -167,12 +167,14 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     match o.printed.morph with
     | some cost =>
       let pl := g.player p
-      match pl.manaPool.pay? cost with
-      | none => throw s!"{pl.name} cannot pay {cost}"
-      | some pool =>
-        let g := (g.changePlayer p (.manaPool pool)).changeStatus o.id (.faceDown false)
-        let g := g.createPrintedStaticEffects (g.object! o.id)
-        return g.logMsg s!"{pl.name} turns {o.name} face up"
+      if !pl.manaPool.canPay cost then
+        throw s!"{pl.name} cannot pay {cost}"
+      let g ← g.payCost p cost (forObject := some o.id)
+      let g := g.record
+        (GameEvent.turnedFaceUp g.turnNumber (g.object! o.id).asEvent
+          (cause := some (.specialAction .turnFaceUp p)))
+      let g := g.createPrintedStaticEffects (g.object! o.id)
+      return g.logMsg s!"{pl.name} turns {o.name} face up"
     | none => throw s!"{o.name} is face down"
   let abs := g.activatedAbilitiesOf o
   if abs.isEmpty then
@@ -192,10 +194,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   g.validateActivation p o ab
   let loyaltyX := ab.cost.loyalty == some .minusX
   let g :=
-    match ab.cost.loyalty with
-    | some sym => if loyaltyX then g else (g.payLoyaltyCost o sym).queueLoyaltyActivationTriggers p sym
-    | none => g
-  let g :=
     if ab.exhaust then
       g.changeStatus id (.exhaustUsed true)
     else g
@@ -207,8 +205,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some effect)
   let newId := abilityObj.id
-  let happened := GameEvent.activated g.turnNumber p o.asEvent (ab.cost.loyalty.isSome) false
-  let g := g.record happened
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if ab.cost.fra == .zemoBoast then
     return (g.change (.pending (.fraChoice p (.zemoBoastExile newId id)))).logMsg

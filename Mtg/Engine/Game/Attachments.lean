@@ -11,11 +11,12 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4). -/
-def attachSourceTo (g : Game) (src host : GameObject) : Game :=
+def attachSourceTo (g : Game) (src host : GameObject)
+    (cause : Option EventCause := none) : Game :=
   let (g, ts) := g.bumpTime
   let src := g.object! src.id
   let g := g.changeObject src.id (.timestamp ts)
-  let g := g.record (GameEvent.attached g.turnNumber src.id host.id)
+  let g := g.record (GameEvent.attached g.turnNumber src.id host.id (cause := cause))
   g.logMsg s!"{src.name} attaches to {host.name}"
 
 /-- Remove an id from a zone list. -/
@@ -30,8 +31,9 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none) 
   | some old =>
     let snap := g.snapshot old
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap cause)
-    let g := g.expireEffectsOnLeavingObject old
-    if old.zone == .battlefield then g.expireWhileSourceEffects id else g
+    let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
+    let g := g.expireEffectsOnLeavingObject old (cause := expCause)
+    if old.zone == .battlefield then g.expireWhileSourceEffects id (cause := expCause) else g
   | none =>
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } cause)
 

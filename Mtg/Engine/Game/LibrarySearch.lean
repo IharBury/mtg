@@ -37,7 +37,8 @@ def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Optio
     | none => false)
 
 /-- Put `id` onto the battlefield under `p`. Lands can tap immediately. -/
-def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
+def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
+    (cause : Option EventCause := none) :
     Game × Option ObjectId :=
   match g.findObject? id with
   | none => (g, none)
@@ -45,6 +46,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
     let name := o.name
     let sick := !o.printed.isLand
     let (g, newId) := g.putOntoBattlefield id p (tapped := tapped) (summoningSick := sick)
+      (cause := cause)
     let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
     let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
     let entered := g.object! newId
@@ -55,7 +57,7 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
           if o.printed.isLand then acc + 1 else acc) 0
         if tapped && entered.printed.isLand && landCount >= n then
           let g := g.change (.untapSearchedIfLands none)
-          (g.record (GameEvent.untapped g.turnNumber entered.asEvent false)).logMsg
+          (g.record (GameEvent.untapped g.turnNumber entered.asEvent false (cause := cause))).logMsg
             s!"{(g.object! newId).name} is untapped"
         else g
       | none => g
@@ -66,31 +68,38 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool) :
     (g, some newId)
 
 /-- Reveal `id` and put it into `p`'s hand. -/
-def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
+def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := o.name
-    let (g, _) := g.move id (.hand p) none
+    let (g, _) := g.move id (.hand p) none (cause := cause)
     g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
 
 /-- Put `id` into its owner's graveyard. -/
-def placeSearchedGraveyard (g : Game) (id : ObjectId) : Game :=
+def placeSearchedGraveyard (g : Game) (id : ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := o.name
-    let (g, _) := g.move id (.graveyard o.owner) none
+    let (g, _) := g.move id (.graveyard o.owner) none (cause := cause)
     g.logMsg s!"{name} is put into {(g.player o.owner).name}'s graveyard"
 
-/-- Exile `id` and link the exiled card to `source`. -/
+/-- Exile `id` and link the exiled card to `source` (CR 610.3). -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
-    (source : Option ObjectId) : Game :=
+    (source : Option ObjectId) (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := o.name
-    let (g, newId) := g.move id .exile none
+    let (g, linkCause) :=
+      match cause with
+      | some c => (g, c)
+      | none => g.allocDelayedCause (some p) source
+    let (g, newId) := g.move id .exile none (cause := some linkCause)
+    let g := g.change (.setLinkedExileCause newId (some linkCause))
     let g :=
       match source.bind g.findObject? with
       | some src => g.changeObject src.id (.pushLinkedExile newId)
@@ -99,14 +108,19 @@ def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
 
 /-- Behold `subtype`. If you do, untap the land this search just found. -/
 def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype) : Game :=
-  let g := g.beholdQuality p subtype
+  let (src, ctrl) :=
+    match g.currentResolvingContext? with
+    | some (s, c) => (s, c.orElse (fun _ => some p))
+    | none => (none, some p)
+  let cause := some (EventCause.oneShotEffect ⟨g.nextEffectId⟩ src ctrl)
+  let g := g.beholdQuality p subtype (cause := cause)
   if !g.qualityWasBeheld p subtype then g
   else
     match g.findObject? landId with
     | some o =>
       if o.isOnBattlefield && o.status.tapped && o.status.stun == 0 &&
           !g.hostCantBecomeUntapped o then
-        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false)
+        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false (cause := cause))
         g.logMsg s!"{o.name} untaps"
       else g
     | none => g
@@ -172,16 +186,20 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
   else
     match dest with
     | .battlefield tapped =>
-      let g := ids.foldl (fun g id => (g.placeSearched p id tapped).1) g
+      let (g, cause) := g.allocDelayedCause (some p)
+      let g := ids.foldl (fun g id => (g.placeSearched p id tapped (cause := some cause)).1) g
       g.shuffleSearch p after
     | .hand =>
-      let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
+      let (g, cause) := g.allocDelayedCause (some p)
+      let g := ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
       g.shuffleSearch p after
     | .handThenDiscardRandom =>
-      let g := ids.foldl (fun g id => g.placeSearchedHand p id) g
+      let (g, cause) := g.allocDelayedCause (some p)
+      let g := ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
       g.shuffleThen p (.discardRandom p)
     | .graveyard =>
-      let g := ids.foldl (fun g id => g.placeSearchedGraveyard id) g
+      let (g, cause) := g.allocDelayedCause (some p)
+      let g := ids.foldl (fun g id => g.placeSearchedGraveyard id (cause := some cause)) g
       g.shuffleSearch p after
     | .topAfterShuffle =>
       let g := ids.foldl (fun g id =>
@@ -190,14 +208,16 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
         | none => g) g
       g.shuffleThen p (.putOnTop p ids)
     | .exileLinked source =>
-      let g := ids.foldl (fun g id => g.exileSearchedLinked p id source) g
+      let (g, linkCause) := g.allocDelayedCause (some p) source
+      let g := ids.foldl (fun g id => g.exileSearchedLinked p id source (cause := some linkCause)) g
       g.shuffleSearch p after
     | .battlefieldTappedThenHand =>
+      let (g, cause) := g.allocDelayedCause (some p)
       let g :=
         match ids[0]? with
-        | some id => (g.placeSearched p id true).1
+        | some id => (g.placeSearched p id true (cause := some cause)).1
         | none => g
-      let g := (ids.extract 1 ids.size).foldl (fun g id => g.placeSearchedHand p id) g
+      let g := (ids.extract 1 ids.size).foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
       g.shuffleSearch p after
     | .battlefieldTappedBeholdUntap subtype =>
       match ids[0]? with
@@ -210,7 +230,8 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | .battlefieldFromHandOrLibrary =>
       let fromLibrary := ids.any (fun id =>
         (g.findObject? id).any (·.zone == .library p))
-      let g := ids.foldl (fun g id => (g.placeSearched p id false).1) g
+      let (g, cause) := g.allocDelayedCause (some p)
+      let g := ids.foldl (fun g id => (g.placeSearched p id false (cause := some cause)).1) g
       if fromLibrary then g.shuffleSearch p after else g.applyWaitingPlusOne
 
 /-- Search `p`'s library for up to `count` cards matching `pred` (CR 701.19).
@@ -286,8 +307,10 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
   else
     let top := pl.library.back!
     let cardName := (g.object! top).name
-    let (g, newId) := g.move top .exile none
+    let (g, cause) := g.allocDelayedCause (some p)
+    let (g, newId) := g.move top .exile none (cause := some cause)
     let g := g.createEffect (.playPermission newId { player := p, turnEndsRemaining := 2 })
+      (cause := some cause)
     g.logMsg
       s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
 

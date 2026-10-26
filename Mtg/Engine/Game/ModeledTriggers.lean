@@ -37,15 +37,24 @@ def merfolk11blueToken : CardDef :=
   creatureToken "Merfolk" #[.merfolk] 1 1 (some .blue)
 
 /-- Exile from `pid`'s library until a nonland is exiled. -/
-def exileLibraryUntilNonland (g : Game) (pid : PlayerId) : Game × Option ObjectId :=
+def exileLibraryUntilNonland (g : Game) (pid : PlayerId)
+    (cause : Option EventCause := none) : Game × Option ObjectId :=
   Id.run do
-    let mut g := g
+    let (g0, cause?) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if (g.player pid).library.isEmpty then (g, none)
+        else
+          let (g, c) := g.allocDelayedCause (some pid)
+          (g, some c)
+    let mut g := g0
     let mut found : Option ObjectId := none
     while found.isNone && !(g.player pid).library.isEmpty do
       match (g.player pid).library.back? with
       | none => pure ()
       | some id =>
-        let (g', newId) := g.move id .exile none
+        let (g', newId) := g.move id .exile none (cause := cause?)
         g := g'
         let o := g.object! newId
         g := g.logMsg s!"{(g.player pid).name} exiles {o.name}"
@@ -71,14 +80,16 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
       | none => g) g
 
 /-- Let `controller` cast the exiled nonland with any type of mana until end of turn. -/
-def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId) : Game :=
+def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
+    (cause : Option EventCause := none) : Game :=
   match exiled.bind g.findObject? with
   | none => g.logMsg "No nonland card was exiled"
   | some o =>
+    let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
     g.createEffect (.playPermission o.id {
       player := controller
       turnEndsRemaining := 1
-      anyMana := true })
+      anyMana := true }) (cause := cause)
       |>.logMsg s!"{(g.player controller).name} may cast {o.name} until end of turn"
 
 /-- Copy the nontoken artifact that entered, then make a noncreature token a
@@ -315,10 +326,11 @@ def flickerChosenNonland (g : Game) (controller : PlayerId) (sourceId : Option O
       if o.isOnBattlefield && o.controlledBy controller && !o.printed.isLand && other then
         let owner := o.owner
         let name := o.name
-        let (g, exId) := g.move o.id .exile none
+        let (g, cause) := g.allocDelayedCause (some controller) sourceId
+        let (g, exId) := g.move o.id .exile none (cause := some cause)
         let ex := g.object! exId
         let (g, retId) := g.move exId .battlefield (some owner)
-          (summoningSick := !ex.printed.keywords.haste)
+          (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned"
       else g.logMsg "The target is no longer legal"
@@ -338,10 +350,11 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
           (o.printed.isArtifact || o.isCreature) then
         let owner := o.owner
         let name := o.name
-        let (g, newId) := g.move o.id .exile none
+        let (g, cause) := g.allocDelayedCause o.controller
+        let (g, newId) := g.move o.id .exile none (cause := some cause)
         let ex := g.object! newId
         let (g, retId) := g.move newId .battlefield (some owner)
-          (tapped := true) (summoningSick := !ex.printed.keywords.haste)
+          (tapped := true) (summoningSick := !ex.printed.keywords.haste) (cause := some cause)
         g.afterPermanentEnters (g.object! retId)
           |>.logMsg s!"{name} is exiled, then returned tapped"
       else g.logMsg "The target is no longer legal"
@@ -377,7 +390,8 @@ def enterModsAttacking (g : Game) (controller : PlayerId)
 
 /-- Apply one enters-with change to the permanent `id`. -/
 def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
-    (mod : TriggeredAbility.TriggerEnterWith) : Game :=
+    (mod : TriggeredAbility.TriggerEnterWith)
+    (cause : Option EventCause := none) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
@@ -388,38 +402,43 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
         triggeredAbilities := #[]
         activatedAbilities := #[]
         staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
     | .keywords k =>
       let o := g.object! id
       g.createEffect (.copy id { o.printed with
         keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
     | .additionalSubtype subtype =>
       let o := g.object! id
       if o.printed.hasSubtype subtype then g
       else
         g.createEffect (.copy id { o.printed with
           subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+          (cause := cause)
     | .counter kind n asEnters =>
       let o := g.object! id
       match kind, asEnters with
       | .plusOnePlusOne, true =>
-        g.addPlusOnePlusOneTo o n (entersWith := true)
+        g.addPlusOnePlusOneTo o n (entersWith := true) (cause := cause)
       | .plusOnePlusOne, false =>
-        g.addPlusOnePlusOneTo o n (byPlayer := some controller)
+        g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
       | .finality, _ =>
-        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true)
+        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true) (cause := cause)
       | kind, asEnters =>
-        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller)
+        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller) (cause := cause)
     | .attacking => g
 
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+  let (g, cause) := g.allocDelayedCause (some controller)
   let (atk, whom) := g.enterModsAttacking controller mods
   let (g, newId) := g.putOntoBattlefield o.id o.owner
     (attacking := atk) (attackingWhom := whom)
     (extraEntersWith := enterModsExtraCounters mods)
-  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m) g
+    (cause := some cause)
+  let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
   let g := g.afterPermanentEnters (g.object! newId)
   if losesAbilitiesAndHaste mods then
     g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
@@ -749,8 +768,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       nonTypes := #[.land], nontoken := true, another := true }
     g.withLegalKindPermanent controller kind targets (fun g o =>
       let name := o.name
-      let (g, newId) := g.move o.id .exile none
-      g.change (.pushDelayedEndStepReturn newId)
+      let (g, cause) := g.allocDelayedCause (some controller) sourceId
+      let (g, newId) := g.move o.id .exile none (cause := some cause)
+      g.change (.pushDelayedEndStepReturn newId cause)
         |>.logMsg s!"{name} is exiled until the beginning of the next end step")
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>
@@ -789,8 +809,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
       (some "The target is no longer legal")
   | (.resource .secondDrawDrain) =>
-    let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
-    g.gainLife controller 1
+    g.eachOpponentLosesYouGain controller 1
   | (.resource .gainLifePlusOnes) =>
     g.putPlusOnesUpToLastKnown controller targets lastKnownPower
   | (.resource .plusOneOnThisOnce) =>
@@ -840,7 +859,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "0/4 colorless Wall" then
     g.createKindTokens controller .wall04defender 1
   else if text.contains "each opponent loses" then
-    g.forEachOpponent controller (fun g pid => g.loseLife pid 2)
+    g.loseLifeEachOpponent controller 2
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -1002,17 +1021,22 @@ carried while exiled. With `land := false` the permanent returns summoning
 sick unless it has haste and `afterPermanentEnters` runs; with `land := true`
 it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
 def exileThenReturn (g : Game) (o : GameObject) (logText : String)
-    (clearExileFields := false) (tapped := false) (land := false) : Game :=
+    (clearExileFields := false) (tapped := false) (land := false)
+    (cause : Option EventCause := none) : Game :=
+  let cause :=
+    cause.orElse (fun _ =>
+      g.currentResolvingContext?.map (fun (src, ctrl) =>
+        .oneShotEffect ⟨g.nextEffectId⟩ src ctrl))
   let owner := o.owner
   let name := o.name
-  let (g, newId) := g.move o.id .exile none
+  let (g, newId) := g.move o.id .exile none (cause := cause)
   let g :=
     if clearExileFields then
       g.changeObjects newId #[.playPermission none, .linkedExile #[]]
     else g
   let sick := !land && !(g.object! newId).printed.keywords.haste
   let (g, retId) := g.move newId .battlefield (some owner)
-    (tapped := land && tapped) (summoningSick := sick)
+    (tapped := land && tapped) (summoningSick := sick) (cause := cause)
   let g := g.logMsg s!"{name} {logText}"
   if land then g.afterLandEnters (g.object! retId)
   else g.afterPermanentEnters (g.object! retId)

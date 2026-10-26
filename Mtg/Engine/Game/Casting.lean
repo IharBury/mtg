@@ -355,7 +355,8 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
     (allowHeroRestricted : Bool := false) (allowVillainRestricted : Bool := false)
     (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {}) :
+    (allowCreatureRestricted : Bool := false) (spend : ManaSpend := {})
+    (forObject : Option ObjectId := none) :
     Except String Game := do
   let pl := g.player p
   match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
@@ -365,7 +366,8 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
   | some pool =>
     let spent := cost.manaValue
     return (g.changePlayer p (.manaPool pool)).record
-      (GameEvent.spentMana g.turnNumber p spent)
+      (GameEvent.spentMana g.turnNumber p spent
+        (cause := some (.costPayment .mana p forObject)))
 
 /-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=
@@ -393,15 +395,6 @@ def reverseProposedSpell (g : Game) : Game :=
       | .spell, some src =>
         g := g.changeStatus src.id (.prepared true)
       | _, _ => pure ()
-      -- Undo a paid loyalty cost (CR 606.4 / 733.1).
-      match prop.kind, prop.sourceId.bind g.findObject?,
-          (prop.activation.bind (·.cost.loyalty)).bind (·.counters) with
-      | .activatedAbility, some src, some k =>
-        g := g.changeStatuses src.id #[
-          .loyaltyCounters ((src.status.loyaltyCounters : Int) - k).toNat,
-          .loyaltyActivatedThisTurn false
-        ]
-      | _, _, _ => pure ()
       match prop.kind, prop.sourceId.bind g.findObject?, prop.activation.any (·.exhaust) with
       | .activatedAbility, some src, true =>
         g := g.changeStatus src.id (.exhaustUsed false)
@@ -617,7 +610,8 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
         if castable.isEmpty || castsLeft == 0 then
-          let g := alive.foldl (fun g id => g.ceaseToExist id) g
+          let g := alive.foldl (fun g id =>
+            g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
           g.change (.pending (.fraChoice q (.castCopiesFree alive budget castsLeft)))
@@ -676,17 +670,84 @@ def lockInTargetCostReduction (g : Game) : Game :=
         | none => g
       | _ => g
 
-def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
-    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none) : Game :=
-  let activation := activation <|> g.proposedSpell.bind (·.activation)
+/-- Pay a loyalty cost: put or remove loyalty counters on the source and
+record that a loyalty ability of it was activated this turn (CR 606.3 / 606.4). -/
+def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
+    (forObject : Option ObjectId := none) : Game :=
+  let k := (sym.counters).getD 0
+  let g := g.changeStatus o.id (.loyaltyActivatedThisTurn true)
   let g :=
-    if activation.any (·.isEquip) then
-      let source :=
-        match sourceId.bind g.findObject? with
-        | some src => src.asEvent
-        | none => { controller := some p, owner := p, types := #[.artifact], subtypes := #[.equipment] }
-      g.record (GameEvent.activated g.turnNumber p source false true)
+    if k != 0 then
+      g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
+        (cause := some (.costPayment .loyalty p forObject)))
     else g
+  let happened := GameEvent.activated g.turnNumber p o.asEvent true
+  let g := if k > 0 then g.queueLoyaltyPutTriggers p else g
+  -- Gideon, the Oathless: an opponent activating a loyalty ability.
+  let g :=
+    (g.livingOpponents p).foldl (fun g opp =>
+      g.foldControlledPermanents opp.id none fun g src =>
+        if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
+          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
+            (cause := some o)
+        else g) g
+  if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
+  else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
+  else g
+
+/-- Queue “whenever you activate a loyalty ability” triggers. They go on the
+stack above the loyalty ability, so they resolve first (rulings 847 / 853).
+Way of the Mind Sculptor triggers only if two or more loyalty counters were
+removed (intervening “if”). -/
+def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbol) : Game :=
+  let removed := match sym.counters with
+    | some k => if k < 0 then (-k).toNat else 0
+    | none => 0
+  let happened := GameEvent.activated g.turnNumber p
+    { controller := some p, owner := p } true
+  if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
+  else
+  g.foldControlledPermanents p none fun g o =>
+    let waiting :=
+      ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
+        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
+        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
+          WaitingTrigger.mk wt.controller wt.source wt.ability wt.event
+            (some (Int.ofNat removed)) wt.lastKnownToughness wt.causeId wt.cause
+            wt.causeController wt.checked
+        else wt)
+    g.enqueueWaitingTriggers waiting
+
+def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
+    (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
+    (sourceSnapshot : Option EventObject := none) : Game :=
+  let activation := activation <|> g.proposedSpell.bind (·.activation)
+  let abilityId := g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
+  let chosenX :=
+    ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
+  let g :=
+    match activation.bind (·.cost.loyalty) with
+    | some sym =>
+      let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
+      let g :=
+        match sourceId.bind g.findObject? with
+        | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
+        | none => g
+      g.queueLoyaltyActivationTriggers p actualSym
+    | none => g
+  let isLoyalty := activation.any (·.cost.loyalty.isSome)
+  let isEquip := activation.any (·.isEquip)
+  let source : EventObject :=
+    match (sourceId.bind g.findObject?).map GameObject.asEvent <|> sourceSnapshot <|>
+        g.proposedSpell.map (·.original.asEvent) with
+    | some src => src
+    | none =>
+      if isEquip then
+        { id := sourceId, name := sourceName, controller := some p, owner := p,
+          types := #[.artifact], subtypes := #[.equipment] }
+      else
+        { id := sourceId, name := sourceName, controller := some p, owner := p }
+  let g := g.record (GameEvent.activated g.turnNumber p source isLoyalty isEquip)
   let g :=
     match sourceId with
     | none => g
@@ -735,6 +796,7 @@ def completeActivation (g : Game) (prop : ProposedSpell) : Except String Game :=
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
   let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
   return g.becomeActivated prop.caster prop.original.name prop.sourceId prop.activation
+    (sourceSnapshot := some prop.original.asEvent)
 
 /-- Ask `p` to choose what pays the first of `picks`, or finish the
 activation when none remain. -/

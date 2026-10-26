@@ -179,7 +179,7 @@ def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
 /-- Keep the looked-at cards on top in their current order (CR 701.20). -/
 def keepScry (g : Game) : Game :=
   match g.pending with
-  | .scry p n => mustApply g p (.scry (g.scryLookedIds p n) #[])
+  | .scry p n _ => mustApply g p (.scry (g.scryLookedIds p n) #[])
   | _ => panic! "expected a pending scry"
 
 /-- Gift of Strands in hand, Grizzly Bears on the battlefield, enough mana. -/
@@ -242,7 +242,7 @@ def giftScrying : Game := passBoth giftEntered
 
 #guard
   match giftScrying.pending with
-  | .scry ⟨0⟩ 2 => true
+  | .scry ⟨0⟩ 2 _ => true
   | _ => false
 #guard giftScrying.actor == some ⟨0⟩
 #guard !giftScrying.hasPriority ⟨0⟩
@@ -617,7 +617,7 @@ def scryOneCard : Game :=
 
 #guard
   match scryOneCard.pending with
-  | .scry ⟨0⟩ 1 => true
+  | .scry ⟨0⟩ 1 2 => true
   | _ => false
 
 def scryEmpty : Game :=
@@ -673,7 +673,7 @@ def guideScrying : Game := passBoth guideEntered
 
 #guard
   match guideScrying.pending with
-  | .scry ⟨0⟩ 2 => true
+  | .scry ⟨0⟩ 2 _ => true
   | _ => false
 #guard guideScrying.actor == some ⟨0⟩
 #guard !guideScrying.hasPriority ⟨0⟩
@@ -714,7 +714,7 @@ def guideLeftBeforeTrigger : Game :=
 
 #guard
   match guideLeftBeforeTrigger.pending with
-  | .scry ⟨0⟩ 2 => true
+  | .scry ⟨0⟩ 2 _ => true
   | _ => false
 #guard !(guideLeftBeforeTrigger.battlefield.any (fun o => o.name == "Galadhrim Guide"))
 #guard (guideLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>

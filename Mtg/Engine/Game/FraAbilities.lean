@@ -128,7 +128,8 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       s!"The next spell {(g.player controller).name} casts this turn can't be countered"
   | .identityEcho =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
-      let (g, _) := g.move o.id .exile none
+      let (g, exileCause) := g.allocDelayedCause (some controller) sourceId
+      let (g, _) := g.move o.id .exile none (cause := some exileCause)
       let g := g.logMsg s!"{o.name} is exiled"
       let lib := (g.player controller).library
       let (revealed, hit) := Id.run do
@@ -142,17 +143,23 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         return (revealed, none)
       let g := (revealed ++ hit.toArray).foldl (fun g id =>
         g.logMsg s!"{(g.player controller).name} reveals {(g.object! id).name}") g
+      let (g, revealCause?) : Game × Option EventCause :=
+        if hit.isSome || !revealed.isEmpty then
+          let (g, c) := g.allocDelayedCause (some controller) sourceId
+          (g, some c)
+        else (g, none)
       let g :=
         match hit with
         | some id =>
-          let (g, newId) := g.putOntoBattlefield id controller
+          let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
           let g := g.logMsg s!"{(g.object! newId).name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         | none => g.logMsg "No creature or planeswalker card is revealed"
       if revealed.isEmpty then g
       else
         g.requestOrderInto revealed (.library controller)
-          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order")
+          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
+          (cause := revealCause?))
       sourceId illegal
   | .destroyDrawIfLegendaryEnchantment =>
     g.withLegalKindPermanent controller kind targets (fun g o =>
@@ -264,9 +271,17 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .damageEachCreatureExceptYourTokens n =>
     let victims := g.battlefield.filter (fun o =>
       o.isCreature && !(o.printed.isToken && o.controlledBy controller))
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || victims.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     victims.foldl (fun g o =>
       match g.findObject? o.id with
-      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) else g
+      | some o => if o.isOnBattlefield then g.dealDamageFrom srcName o n (source := src?) (cause := cause?) else g
       | none => g) g
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
@@ -302,15 +317,23 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       g.beginFraChoice controller (.maySacrificeThen #[.creature] .beastToken sourceId)
         s!"{(g.player controller).name} may sacrifice a creature"
   | .damageUpToOneAndPlayer n =>
+    let (g, cause?) : Game × Option EventCause :=
+      if n == 0 || targets.isEmpty then (g, none)
+      else
+        match g.currentResolvingContext? with
+        | some (src, ctrl) =>
+          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some controller)) (src.orElse (fun _ => sourceId))
+          (g, some c)
+        | none => (g, none)
     targets.foldl (fun g t =>
       match t with
       | Target.permanent id =>
         if g.targetLegalAt controller kind 0 t sourceId then
-          g.dealDamageFrom srcName (g.object! id) n (source := src?)
+          g.dealDamageFrom srcName (g.object! id) n (source := src?) (cause := cause?)
         else g.illegalAbilityTarget t
       | Target.player pid =>
         if g.targetLegalAt controller kind 1 t sourceId then
-          g.dealDamageToPlayer pid n (source := src?)
+          g.dealDamageToPlayer pid n (source := src?) (cause := cause?)
         else g.illegalAbilityTarget t
       | _ => g) g
   | .beastToken => g.createKindTokens controller .beast44trample 1
@@ -428,6 +451,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
       | _ => g.logMsg "The target is no longer legal") sourceId illegal
   | .zemoBoastCopies =>
     let exiled := (g.resolvingAbilityObject?.map (·.boastExiled)).getD #[]
+    let (g, cause?) : Game × Option EventCause :=
+      if exiled.any (fun id => (g.findObject? id).any (·.zone == .exile)) then
+        let (g, c) := g.allocDelayedCause (some controller) sourceId
+        (g, some c)
+      else (g, none)
     let (g, copies) := exiled.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       match g.findObject? id with
@@ -445,10 +473,11 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
             timestamp := copyTs
             isCopy := true
           }
-          let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
+          let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj) (cause := cause?))
           let g := g.createEffect (.playPermission copyId {
             player := controller, turnEndsRemaining := 0,
             whileExiled := true, withoutManaCost := true, ignoreTiming := true })
+            (cause := cause?)
           (g, cs.push copyId)
       | none => (g, cs)) (g, #[])
     if copies.isEmpty then g.logMsg "No exiled card is left to copy"
