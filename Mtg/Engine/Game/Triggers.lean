@@ -202,7 +202,9 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .step .drawToTen => (g.player controller).hand.size < 10
     | .protectionEverything => source.any (·.wasCast)
     | .death .deathtouchOppSac => cause.any (g.hasDeathtouch ·)
-    | .resource .plusOneOnThisOnce => cause.any (fun c => some c.id != source.map (·.id))
+    | .resource .plusOneCreateInsectOnce => cause.any (·.isCreature)
+    | .resource .plusOneOnThisOnce =>
+      cause.any (fun c => c.isCreature && some c.id != source.map (·.id))
     | .resource .plusOneOnHeroesCreateWall =>
       cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
         g.hasSubtype c .hero)

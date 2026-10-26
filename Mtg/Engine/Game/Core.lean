@@ -2481,7 +2481,8 @@ def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
           e.countersPutInEvent.any (fun (eo, _, n, actor?) =>
             actor? == some p && n > 0 &&
               (eo.id.bind acc.findObject?).any (fun obj =>
-                acc.hasSubtype obj .goblin || acc.hasSubtype obj .orc || acc.hasSubtype obj .army)))
+                obj.controlledBy p &&
+                  (acc.hasSubtype obj .goblin || acc.hasSubtype obj .orc || acc.hasSubtype obj .army))))
       if matched then acc.queueBatchControlledTriggers p .youPutCountersOnGoblinOrcArmy
       else acc) g
     -- 12. “Whenever you put one or more loyalty counters on a planeswalker” (post-batch).
@@ -2514,8 +2515,8 @@ def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
               | .resource .plusOneOnHeroesCreateWall =>
                 obj.id != src.id && obj.controlledBy q && acc.hasSubtype obj .hero
               | .resource .plusOneOnThisOnce =>
-                obj.id != src.id
-              | _ => true
+                obj.isCreature && obj.id != src.id
+              | _ => obj.isCreature
             match putObjs.find? matchesAb with
             | some causeObj =>
               acc.queueBatchSourceAbility q src ab .youPutPlusOne (cause := some causeObj)

@@ -1489,13 +1489,13 @@ cause across all effects in the batch; `.exileThenReturnNextEnd` and
 (and their returns); `.syntheticDestiny` / `.sunfall` exile all affected
 creatures under the single instruction cause (sharing the delayed reveal cause
 for `.syntheticDestiny`, CR 603.7 / 610.3), while `.sunfall` incubates with
-enters-with +1/+1 counters on `ZoneEvent.created`, fires `.youPutPlusOne`
-triggers, and creates an Incubator token with `otherFace` that transforms into a
-0/0 Phyrexian via `PermanentEvent.transformed`; `.massPolymorph` uses one shared
-`exileCause` for battlefield exiles and one distinct shared `revealCause` across
-`revealUntil`, `putHits`, and `restBottom`; and `.venserPerm` shares one cause
-across both token creations, both haste continuous effects, and both delayed
-end-step sacrifices. -/
+enters-with +1/+1 counters on `ZoneEvent.created` (without firing creature-only
+`.youPutPlusOne` triggers on the noncreature Incubator token) and creates an
+Incubator token with `otherFace` that transforms into a 0/0 Phyrexian via
+`PermanentEvent.transformed`; `.massPolymorph` uses one shared `exileCause` for
+battlefield exiles and one distinct shared `revealCause` across `revealUntil`,
+`putHits`, and `restBottom`; and `.venserPerm` shares one cause across both token
+creations, both haste continuous effects, and both delayed end-step sacrifices. -/
 #guard
   let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
@@ -1536,8 +1536,9 @@ end-step sacrifices. -/
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
   -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures,
-  --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created, triggers
-  --    .youPutPlusOne, and transforms via otherFace without EngineChange.object (.printed _)
+  --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created without
+  --    firing creature-only .youPutPlusOne on the noncreature Incubator, and
+  --    transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
     (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
   let synthStoredCause := gSynth.delayedSynthetic[0]!.2.2
@@ -1658,7 +1659,7 @@ end-step sacrifices. -/
            | .rules (.permanent (.counters ..)) => true
            | _ => false)
      | none => false) &&
-    gSunfall.waitingTriggers.size == 1 &&
+    gSunfall.waitingTriggers.isEmpty &&
     sunfallIncAfter.status.transformed &&
     sunfallIncAfter.name == "Phyrexian" &&
     sunfallIncAfter.printed.power == some 0 &&
@@ -2515,12 +2516,15 @@ triggers once, while sequential batches fire them once per batch. -/
       staticAbilities := #[.extraCounterOnPermanents] }
   let gPlus0 :=
     let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) selfOnceWatcher me me) wallWatcher me me
+    let g := addPermanent g { name := "Noncreature Artifact", types := #[.artifact] } me me
     let g := addPermanent g entersHero me me
     let ehId := g.battlefield.back!.id
     let g := (g.move ehId (.hand me) none).1
     quiet g
-  let ehHandId := (gPlus0.player me).hand.back!
-  let (gPlusEntered, ehBfId) := gPlus0.putOntoBattlefield ehHandId me
+  let noncreatureArt := (gPlus0.battlefield.filter (·.name == "Noncreature Artifact"))[0]!
+  let gPlusArt := gPlus0.addPlusOnePlusOneTo noncreatureArt 1
+  let ehHandId := (gPlusArt.player me).hand.back!
+  let (gPlusEntered, ehBfId) := gPlusArt.putOntoBattlefield ehHandId me
   let plusTrigs1 := gPlusEntered.waitingTriggers.filter (·.event == .youPutPlusOne)
   let gPlusSecond := gPlusEntered.addPlusOnePlusOneTo (gPlusEntered.object! ehBfId) 1
   let plusTrigs2 := gPlusSecond.waitingTriggers.filter (·.event == .youPutPlusOne)
@@ -2535,7 +2539,8 @@ triggers once, while sequential batches fire them once per batch. -/
   let gExp1 := gExp0.applyFrc me default .explore #[] (some explorer.id)
   let explorerAfter := gExp1.object! explorer.id
   let expTrigs := gExp1.waitingTriggers.filter (·.event == .youPutPlusOne)
-  -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents
+  -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents,
+  --    and youPutCountersOnGoblinOrcArmy only triggers on a Goblin/Orc/Army you control
   let karnDef : CardDef :=
     { name := "Karn Test"
       types := #[.planeswalker]
@@ -2553,8 +2558,10 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Artifact Walker"
       types := #[.artifact, .planeswalker]
       loyalty := some 3 }
+  let oppGoblinDef : CardDef :=
+    creature "Opp Goblin" ManaCost.empty #["Goblin"] 1 1
   let gKarn0 :=
-    let g := addPermanent (addPermanent afterDraw karnDef me me) counterAndTokenWatcher me me
+    let g := addPermanent (addPermanent (addPermanent afterDraw karnDef me me) counterAndTokenWatcher me me) oppGoblinDef opp opp
     let g := addPermanent g entersHero me me
     let ehId := g.battlefield.back!.id
     let g := (g.move ehId (.hand me) none).1
@@ -2562,20 +2569,24 @@ triggers once, while sequential batches fire them once per batch. -/
     let awId := g.battlefield.back!.id
     let g := (g.move awId (.hand me) none).1
     quiet g
-  let karnHand := (gKarn0.player me).hand
+  let oppGoblin := (gKarn0.battlefield.filter (·.name == "Opp Goblin"))[0]!
+  let gKarnOppGob := gKarn0.addPlusOnePlusOneTo oppGoblin 1 (byPlayer := some me)
+  let karnHand := (gKarnOppGob.player me).hand
   let awHandId := karnHand.back!
   let ehKarnHandId := karnHand[karnHand.size - 2]!
-  let (gKarn1, _) := gKarn0.putOntoBattlefield ehKarnHandId me
+  let (gKarn1, _) := gKarnOppGob.putOntoBattlefield ehKarnHandId me
   let (gKarn2, _) := gKarn1.putOntoBattlefield awHandId me
   let (gKarn3, _) := gKarn2.createToken me bear
   discEvents1.size >= 2 &&
     discEvents1.all (·.batch == discEvents1[0]!.batch) &&
     discTrig1.size == 1 &&
     discTrigBoth.size == 2 &&
+    gPlusArt.waitingTriggers.isEmpty &&
     plusTrigs1.size == 3 &&
     plusTrigs2.size == 4 &&
     explorerAfter.status.plusOnePlusOne == 2 &&
     expTrigs.size == 1 &&
+    (gKarnOppGob.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).isEmpty &&
     (gKarn3.waitingTriggers.filter (·.event == .tokenYouControlEnters)).isEmpty &&
     (gKarn3.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
     (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&

@@ -1684,14 +1684,14 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       (this after || this before) && entersWith.count .plan > 0
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutPlusOne =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.count .plusOnePlusOne > 0
+      p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
     | .zone (.created object controller), .youPutPlusOne =>
-      you controller && object.counters.count .plusOnePlusOne > 0
+      you controller && object.counters.count .plusOnePlusOne > 0 && object.creature
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
+      p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
     | .zone (.created object controller), .youPutCountersOnGoblinOrcArmy =>
-      you controller && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
+      you controller && yours object && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
       let p := actor.orElse (fun _ => after.controller)
       p.any you && entersWith.count .loyalty > 0 && after.planeswalker
@@ -1735,10 +1735,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
     | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
     | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
-    | .permanent (.counters (.object _) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
-      you p && n > 0
+    | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
+      you p && n > 0 && object.creature
     | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
-      you p && n > 0 && object.goblinOrcArmy
+      you p && yours object && n > 0 && object.goblinOrcArmy
     | .permanent (.counters (.object object) .loyalty (.put n) (some p)), .fra .youPutLoyaltyCounters =>
       you p && n > 0 && object.planeswalker
     | .permanent (.counters (.object object) .plan (.put n) _), .nthPlanCounter _ =>
