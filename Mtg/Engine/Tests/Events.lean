@@ -2468,4 +2468,117 @@ triggers once, while sequential batches fire them once per batch. -/
     simulTapTrig.size == 1 &&
     seqTapTrig.size == 2
 
+/- Phase 4:
+1. `discardEntireHand` commits one batch per player hand discard (queueing
+   `.fra .playerDiscards` once for a multi-card hand), and a batch in which two
+   players discard queues `.fra .playerDiscards` once per discarding player.
+2. Unified `.youPutPlusOne` evaluation fires both `onceEachTurn` abilities
+   (`plusOneCreateInsectOnce`, `plusOneOnThisOnce`) and Invisible Woman on
+   printed enters-with +1/+1 counters and `.explore` (which also applies
+   `countersYouPut` / Doc Samson), while setting `firedOnceEachTurn` so a second
+   +1/+1 counter event in the same turn does not re-trigger them.
+3. `eventSuppressedByKarn` suppresses enters triggers (`tokenYouControlEnters`)
+   without suppressing counter-put triggers (`youPutCountersOnGoblinOrcArmy`,
+   `.fra .youPutLoyaltyCounters`, `.youPutPlusOne`) on entering permanents
+   (CR 122.6). -/
+#guard
+  -- 1. discardEntireHand batching and per-player .playerDiscards
+  let discardWatcher : CardDef :=
+    { name := "Discard Watcher"
+      types := #[.enchantment]
+      triggeredAbilities := #[TriggeredAbility.fra (.fra .playerDiscards) "" (.draw 1)] }
+  let gDisc0 := quiet (addPermanent afterDraw discardWatcher me me)
+  let gDisc1 := gDisc0.discardEntireHand me
+  let discEvents1 := gDisc1.events.filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  let discTrig1 := gDisc1.waitingTriggers.filter (·.event == .fra .playerDiscards)
+  let gDiscBoth := gDisc0.withBatch none (fun g =>
+    (g.discardEntireHand me).discardEntireHand opp)
+  let discTrigBoth := gDiscBoth.waitingTriggers.filter (·.event == .fra .playerDiscards)
+  -- 2. Unified .youPutPlusOne on printed entersWithPlusOneCounters and .explore + Doc Samson
+  let insectWatcher : CardDef :=
+    { (creature "Insect Watcher" ManaCost.empty #["Hero"] 1 1) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneCreateInsectOnce {}] }
+  let selfOnceWatcher : CardDef :=
+    { (creature "Self Once Watcher" ManaCost.empty #["Hero"] 2 2) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnThisOnce {}] }
+  let wallWatcher : CardDef :=
+    { (creature "Wall Watcher" ManaCost.empty #["Hero"] 1 4) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+  let entersHero : CardDef :=
+    { (creature "Enters Hero" ManaCost.empty #["Hero", "Goblin"] 1 1) with
+      entersWithPlusOneCounters := 2 }
+  let docSamsonDef : CardDef :=
+    { (creature "Doc Samson Test" ManaCost.empty #["Hero"] 3 3) with
+      staticAbilities := #[.extraCounterOnPermanents] }
+  let gPlus0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) selfOnceWatcher me me) wallWatcher me me
+    let g := addPermanent g entersHero me me
+    let ehId := g.battlefield.back!.id
+    let g := (g.move ehId (.hand me) none).1
+    quiet g
+  let ehHandId := (gPlus0.player me).hand.back!
+  let (gPlusEntered, ehBfId) := gPlus0.putOntoBattlefield ehHandId me
+  let plusTrigs1 := gPlusEntered.waitingTriggers.filter (·.event == .youPutPlusOne)
+  let gPlusSecond := gPlusEntered.addPlusOnePlusOneTo (gPlusEntered.object! ehBfId) 1
+  let plusTrigs2 := gPlusSecond.waitingTriggers.filter (·.event == .youPutPlusOne)
+  -- Explore with Doc Samson and nonland top card
+  let gExp0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) docSamsonDef me me) bear me me
+    let g := addPermanent g bear me me
+    let topId := g.battlefield.back!.id
+    let g := (g.move topId (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let explorer := (gExp0.battlefield.filter (·.name == bear.name))[0]!
+  let gExp1 := gExp0.applyFrc me default .explore #[] (some explorer.id)
+  let explorerAfter := gExp1.object! explorer.id
+  let expTrigs := gExp1.waitingTriggers.filter (·.event == .youPutPlusOne)
+  -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents
+  let karnDef : CardDef :=
+    { name := "Karn Test"
+      types := #[.planeswalker]
+      loyalty := some 5
+      staticAbilities := #[.enteringArtifactsCreaturesDontTrigger] }
+  let counterAndTokenWatcher : CardDef :=
+    { name := "Counter And Token Watcher"
+      types := #[.enchantment]
+      triggeredAbilities := #[
+        .triggered .fromEffect (Effect.ofTrigger (.watch .tokensEnterMayDraw)) {},
+        TriggeredAbility.fra .youPutCountersOnGoblinOrcArmy "" (.draw 1),
+        TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1),
+        .triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+  let artifactWalker : CardDef :=
+    { name := "Artifact Walker"
+      types := #[.artifact, .planeswalker]
+      loyalty := some 3 }
+  let gKarn0 :=
+    let g := addPermanent (addPermanent afterDraw karnDef me me) counterAndTokenWatcher me me
+    let g := addPermanent g entersHero me me
+    let ehId := g.battlefield.back!.id
+    let g := (g.move ehId (.hand me) none).1
+    let g := addPermanent g artifactWalker me me
+    let awId := g.battlefield.back!.id
+    let g := (g.move awId (.hand me) none).1
+    quiet g
+  let karnHand := (gKarn0.player me).hand
+  let awHandId := karnHand.back!
+  let ehKarnHandId := karnHand[karnHand.size - 2]!
+  let (gKarn1, _) := gKarn0.putOntoBattlefield ehKarnHandId me
+  let (gKarn2, _) := gKarn1.putOntoBattlefield awHandId me
+  let (gKarn3, _) := gKarn2.createToken me bear
+  discEvents1.size >= 2 &&
+    discEvents1.all (·.batch == discEvents1[0]!.batch) &&
+    discTrig1.size == 1 &&
+    discTrigBoth.size == 2 &&
+    plusTrigs1.size == 3 &&
+    plusTrigs2.size == 4 &&
+    explorerAfter.status.plusOnePlusOne == 2 &&
+    expTrigs.size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.event == .tokenYouControlEnters)).isEmpty &&
+    (gKarn3.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1
+
 end Mtg.Engine.EventTests

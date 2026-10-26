@@ -679,8 +679,7 @@ def applyFrc (g : Game) (controller : PlayerId) (_effect : Effect) (e : FrcEffec
         match g.srcObj? sourceId with
         | some o =>
           if o.isCreature then
-            g.recordPutCounters o.id .plusOnePlusOne 1 (byPlayer := some controller)
-              |>.logMsg s!"{pl.name} explores; {o.name} gets a +1/+1 counter"
+            (g.logMsg s!"{pl.name} explores").addPlusOnePlusOneTo o 1 (byPlayer := some controller)
           else g.logMsg s!"{pl.name} explores and leaves {card.name} on top"
         | none => g.logMsg s!"{pl.name} explores and leaves {card.name} on top"
   | .transformIncubator =>

@@ -326,7 +326,8 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
 counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
-`extraEntersWith` (CR 614.1c), so only the log and put-counter triggers run. -/
+`extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
+triggers are evaluated from the recorded event batch in `evaluateBatchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
@@ -342,18 +343,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  let g := g.logMsg phrase
-  -- “Whenever you put … counters”: “you” is whoever puts them.
-  let putter :=
-    byPlayer.orElse (fun _ => g.counterPutter o.controller)
-  match putter with
-  | some q =>
-    if n > 0 && happened.matchesTrigger q o.id .youPutPlusOne then
-      g.foldControlledPermanents q none fun g src =>
-        g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
-          (keep := fun ab => ab.shared != .resource .plusOneOnHeroesCreateWall)
-    else g
-  | none => g
+  g.logMsg phrase
 
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the

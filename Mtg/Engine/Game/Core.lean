@@ -2301,23 +2301,45 @@ def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
     let e := GameEvent.engine g.turnNumber (.enqueueWaitingTriggers wts)
     ({ g with events := g.events.push e }).applyEngineChange (.enqueueWaitingTriggers wts)
 
+/-- Queue one instance (plus `extraTriggerCopies`) of `ab` on `source` for
+`event` at batch-evaluation time, respecting `onceEachTurn` and
+`optionalOnceEachTurn` (CR 603.2c / 603.2h / 603.3). -/
+def queueBatchSourceAbility (g : Game) (controller : PlayerId) (source : GameObject)
+    (ab : TriggeredAbility) (event : TriggerEvent)
+    (cause : Option GameObject := none) : Game :=
+  if (g.player controller).lost then g
+  else
+    let fired :=
+      ((g.findObject? source.id).map (·.status.firedOnceEachTurn)).getD
+        source.status.firedOnceEachTurn
+    let optUsed :=
+      ((g.findObject? source.id).map (·.status.optionalOnceUsed)).getD
+        source.status.optionalOnceUsed
+    if ab.onceEachTurn && fired then g
+    else if ab.optionalOnceEachTurn && optUsed then g
+    else
+      let g :=
+        if ab.onceEachTurn && (g.findObject? source.id).isSome then
+          let ec : EngineChange := .object source.id (.status (.firedOnceEachTurn true))
+          let e := GameEvent.engine g.turnNumber ec
+          ({ g with events := g.events.push e }).applyEngineChange ec
+        else g
+      let curSource := (g.findObject? source.id).getD source
+      let copies := g.extraTriggerCopies controller curSource + 1
+      let wt : WaitingTrigger :=
+        { controller, source := curSource, ability := ab, event,
+          causeId := cause.map (·.id), cause, checked := true }
+      g.enqueueWaitingTriggers (Array.replicate copies wt)
+
 /-- Queue one instance (plus `extraTriggerCopies`) of each matching ability on
-`source` for `event` at batch-evaluation time (CR 603.2c / 603.3). -/
+`source` for `event` at batch-evaluation time (CR 603.2c / 603.2h / 603.3). -/
 def queueBatchSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent) (cause : Option GameObject := none)
     (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
   if (g.player controller).lost then g
   else
-    let copies := g.extraTriggerCopies controller source + 1
-    let abs := (source.matchingTriggers event).filter keep
-    if abs.isEmpty then g
-    else
-      let wts := abs.foldl (fun acc ab =>
-        let wt : WaitingTrigger :=
-          { controller, source, ability := ab, event,
-            causeId := cause.map (·.id), cause, checked := true }
-        acc ++ Array.replicate copies wt) #[]
-      g.enqueueWaitingTriggers wts
+    ((source.matchingTriggers event).filter keep).foldl (fun acc ab =>
+      acc.queueBatchSourceAbility controller source ab event (cause := cause)) g
 
 /-- Queue batch-level triggers for `event` on permanents and command-zone
 objects controlled by `p` (CR 603.2c / 114.4). -/
@@ -2372,17 +2394,19 @@ def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
           else acc
         | none => acc) #[]
       g.enqueueWaitingTriggers wts
-    -- 3. “Whenever a player discards one or more cards” (post-batch on g.battlefield).
+    -- 3. “Whenever a player discards one or more cards” (post-batch on g.battlefield,
+    --    once per player who discarded at least one card in the batch).
     let g :=
-      if batchEvents.any (·.matchesTrigger ⟨0⟩ ⟨0⟩ (.fra .playerDiscards)) then
-        let wts := g.battlefield.foldl (fun acc o =>
-          match o.controller with
-          | some c =>
-            if !(g.player c).lost then acc ++ o.waitingTriggersFor c (.fra .playerDiscards)
-            else acc
-          | none => acc) #[]
-        g.enqueueWaitingTriggers wts
-      else g
+      g.players.foldl (fun acc pl =>
+        if batchEvents.any (·.matchesTrigger pl.id ⟨0⟩ .youDiscard) then
+          let wts := acc.battlefield.foldl (fun wacc o =>
+            match o.controller with
+            | some c =>
+              if !(acc.player c).lost then wacc ++ o.waitingTriggersFor c (.fra .playerDiscards)
+              else wacc
+            | none => wacc) #[]
+          acc.enqueueWaitingTriggers wts
+        else acc) g
     -- 4. “Whenever you create one or more creature tokens” (post-batch).
     let g := g.livingPlayers.foldl (fun acc pl =>
       let p := pl.id
@@ -2453,50 +2477,49 @@ def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
     let g := g.livingPlayers.foldl (fun acc pl =>
       let p := pl.id
       let matched := batchEvents.any (fun e =>
-        if acc.eventSuppressedByKarn e then false
-        else if e.matchesTrigger p ⟨0⟩ .youPutCountersOnGoblinOrcArmy then true
-        else
-          match e.change with
-          | .rules (.permanent (.counters (.object eo) _ (.put n) (some q))) =>
-            q == p && n > 0 &&
+        e.matchesTrigger p ⟨0⟩ .youPutCountersOnGoblinOrcArmy ||
+          e.countersPutInEvent.any (fun (eo, _, n, actor?) =>
+            actor? == some p && n > 0 &&
               (eo.id.bind acc.findObject?).any (fun obj =>
-                acc.hasSubtype obj .goblin || acc.hasSubtype obj .orc || acc.hasSubtype obj .army)
-          | _ => false)
+                acc.hasSubtype obj .goblin || acc.hasSubtype obj .orc || acc.hasSubtype obj .army)))
       if matched then acc.queueBatchControlledTriggers p .youPutCountersOnGoblinOrcArmy
       else acc) g
     -- 12. “Whenever you put one or more loyalty counters on a planeswalker” (post-batch).
     let g := g.livingPlayers.foldl (fun acc pl =>
       let p := pl.id
-      let matched := batchEvents.any (fun e =>
-        !acc.eventSuppressedByKarn e && e.matchesTrigger p ⟨0⟩ (.fra .youPutLoyaltyCounters))
+      let matched := batchEvents.any (·.matchesTrigger p ⟨0⟩ (.fra .youPutLoyaltyCounters))
       if matched then
         let wts := (acc.permanentsOf p).foldl (fun wacc o =>
           wacc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
         acc.enqueueWaitingTriggers wts
       else acc) g
-    -- 13. “Whenever you put one or more +1/+1 counters on one or more other Heroes you control”
-    --     (Invisible Woman, post-batch).
+    -- 13. “Whenever you put one or more +1/+1 counters on …” (post-batch,
+    --     including enters-with +1/+1 counters per CR 122.6).
     g.livingPlayers.foldl (fun acc pl =>
       let q := pl.id
-      (acc.permanentsOf q).foldl (fun acc src =>
-        let heroCause? : Option GameObject :=
-          batchEvents.findSome? (fun e =>
-            if acc.eventSuppressedByKarn e then none
-            else
-              (e.countersPutInEvent.findSome? (fun (eo, kind, n, actor?) =>
-                if kind == .plusOnePlusOne && n > 0 && actor? == some q then
-                  match eo.id.bind acc.findObject? with
-                  | some obj =>
-                    if obj.id != src.id && obj.controlledBy q && acc.hasSubtype obj .hero then
-                      some obj
-                    else none
-                  | none => none
-                else none)))
-        match heroCause? with
-        | some heroObj =>
-          acc.queueBatchSourceTriggers q src .youPutPlusOne (cause := some heroObj)
-            (keep := fun ab => ab.shared == .resource .plusOneOnHeroesCreateWall)
-        | none => acc) acc) g
+      let putObjs : Array GameObject :=
+        batchEvents.foldl (fun objs e =>
+          e.countersPutInEvent.foldl (fun objs (eo, kind, n, actor?) =>
+            if kind == .plusOnePlusOne && n > 0 && actor? == some q then
+              match eo.id.bind acc.findObject? with
+              | some obj => objs.push obj
+              | none => objs
+            else objs) objs) #[]
+      if putObjs.isEmpty then acc
+      else
+        (acc.permanentsOf q).foldl (fun acc src =>
+          (src.matchingTriggers .youPutPlusOne).foldl (fun acc ab =>
+            let matchesAb (obj : GameObject) : Bool :=
+              match ab.shared with
+              | .resource .plusOneOnHeroesCreateWall =>
+                obj.id != src.id && obj.controlledBy q && acc.hasSubtype obj .hero
+              | .resource .plusOneOnThisOnce =>
+                obj.id != src.id
+              | _ => true
+            match putObjs.find? matchesAb with
+            | some causeObj =>
+              acc.queueBatchSourceAbility q src ab .youPutPlusOne (cause := some causeObj)
+            | none => acc) acc) acc) g
 
 /-- Resolve `cause` within an active batch `batchCause?`, sharing the batch's
 minted `EffectId` across all one-shot events in the batch (CR 610). -/
