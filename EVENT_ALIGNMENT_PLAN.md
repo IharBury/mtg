@@ -1181,10 +1181,15 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    `.withoutCounters` and `.addCountersExceptPlusOne`—`.proliferatedExceptPlusOne`
    was already deleted in Phase 3—plus the remaining raw permanent counter
    writes `.addCounters`, `.removeCounters`, `.addPlusOnePlusOne`,
-   `StatusChange.shadow` in `Designations.lean`, and
-   `StatusChange.plusOnePlusOne` in `FraChoices.lean` across `Designations.lean`,
-   `EffectResolution.lean`, `FraAbilities.lean`, `FraChoices.lean`,
-   `FraHelpers.lean`, `FraResolve.lean`, `FrcResolve.lean`,
+   `StatusChange.shadow` in `Designations.putShadowCounter`—recording
+   `PermanentEvent.counters (.permanent o.asEvent) .shadow (.put n)` for the
+   delta `n := g.countersYouPut o 1` rather than the old absolute total
+   `o.status.shadow + n`—and `StatusChange.plusOnePlusOne` in `FraChoices.lean`
+   `.mayMovePlusOne`—recording
+   `PermanentEvent.counters (.permanent o.asEvent) .plusOnePlusOne (.removed 1)`
+   rather than the old absolute total `o.status.plusOnePlusOne - 1`—across
+   `Designations.lean`, `EffectResolution.lean`, `FraAbilities.lean`,
+   `FraChoices.lean`, `FraHelpers.lean`, `FraResolve.lean`, `FrcResolve.lean`,
    `ModeledTriggers.lean`, `ResolutionEffects.lean`, `Tokens.lean`, and
    `TriggeredAbilities.lean` to `PermanentEvent.counters`, deleting
    `.withoutCounters`, `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`,
@@ -1230,10 +1235,14 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    planeswalker, or battle, e.g. Andúril ruling 181).
 3. Replace `.cast` / `.activated` with `CastEvent`, re-point
    `GameEvent.landsPlayed` (`Game.loggedLandsPlayed`) at `ZoneEvent.moved`
-   (`verb == .playLand`, dropping the redundant `GameEvent.playedLand` record in
-   `finishPlayLand`, updating `recordLandPlayed` to record a `ZoneEvent.moved`
-   with `verb := .playLand` and `actor := some p` so test setup call sites keep
-   counting land drops, and retiring top-level `RulesEvent.playedLand`), add
+   matching `verb == .playLand && actor == some p` (dropping the redundant
+   `GameEvent.playedLand` record in `finishPlayLand`, which already sets
+   `actor := some p` on its `putOntoBattlefield` move; updating the count-only
+   test helper `recordLandPlayed` to record a `ZoneEvent.moved` on
+   `applyZoneEvent`'s no-op branch—same `id := none`, empty `after.name`, and
+   empty `after.types`, with `verb := .playLand` and `actor := some p`—so it
+   counts a land drop for `p` without materializing a land permanent on the
+   battlefield; and retiring top-level `RulesEvent.playedLand`), add
    `TriggerQueueEvent`, and extend `StackObjectEvent` (introduced in Phase 3
    with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
    `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
