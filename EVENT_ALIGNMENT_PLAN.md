@@ -1182,11 +1182,11 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    was already deleted in Phase 3—plus the remaining raw permanent counter
    writes `.addCounters`, `.removeCounters`, `.addPlusOnePlusOne`,
    `StatusChange.shadow` in `Designations.putShadowCounter`—recording
-   `PermanentEvent.counters (.permanent o.asEvent) .shadow (.put n)` for the
+   `PermanentEvent.counters (.object o.asEvent) .shadow (.put n)` for the
    delta `n := g.countersYouPut o 1` rather than the old absolute total
    `o.status.shadow + n`—and `StatusChange.plusOnePlusOne` in `FraChoices.lean`
    `.mayMovePlusOne`—recording
-   `PermanentEvent.counters (.permanent o.asEvent) .plusOnePlusOne (.removed 1)`
+   `PermanentEvent.counters (.object o.asEvent) .plusOnePlusOne (.removed 1)`
    rather than the old absolute total `o.status.plusOnePlusOne - 1`—across
    `Designations.lean`, `EffectResolution.lean`, `FraAbilities.lean`,
    `FraChoices.lean`, `FraHelpers.lean`, `FraResolve.lean`, `FrcResolve.lean`,
