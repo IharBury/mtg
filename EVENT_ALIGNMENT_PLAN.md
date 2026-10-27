@@ -376,8 +376,8 @@ deriving Repr, Inhabited, BEq
 `owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
 `Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
 toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carries the arrival, card, cast, effect-mirror, and LKI fields above on `EventObject`:
-- `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` sets `chosenX` to `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` is in `g.objects` and `copy.chosenX` otherwise).
-- The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—carried in Phase 2 so `.created` stack copies round-tripped through `applyZoneEvent`) were deleted from `EventObject` in Phase 5 when stack copies migrated from `ZoneEvent.created` to `StackObjectEvent.copied` (`applyStackObjectEvent` combines `orig` with `CastEvent.announced` for `kicked` / `giftPromisedTo` / `teamworkPaid`—or reads them from `CastEvent.announced` when `original` is no longer in `g.objects`—sets `chosenX`, `lastKnownPower`, and `lastKnownToughness` from `copy.….orElse (fun _ => orig.…)` when `original` is in `g.objects` and `copy.…` otherwise, and copies `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus` from `orig` when `original` is in `g.objects`; `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, and the `fraCause*` fields remain on `GameObject` per §3.8, and the cast-choice fields remain on `GameObject` until their readers use `CastEvent` in Phase 8).
+- `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` sets `chosenX` to `copy.chosenX.orElse (fun _ => orig.chosenX)` when `original` or `g.followMoved original` is in `g.objects` and `copy.chosenX` otherwise).
+- The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—carried in Phase 2 so `.created` stack copies round-tripped through `applyZoneEvent`) were deleted from `EventObject` in Phase 5 when stack copies migrated from `ZoneEvent.created` to `StackObjectEvent.copied` (`applyStackObjectEvent` resolves `origObj?` via `(g.objects.find? (·.id == original)).orElse (fun _ => g.objects.find? (·.id == g.followMoved original))`, combines `orig` with `CastEvent.announced` for `kicked` / `giftPromisedTo` / `teamworkPaid` when `origObj?` is `some orig`—or reads them from `CastEvent.announced` when neither `original` nor `g.followMoved original` is in `g.objects`—sets `chosenX`, `lastKnownPower`, and `lastKnownToughness` from `copy.….orElse (fun _ => orig.…)` when `origObj?` is `some orig` and `copy.…` otherwise, and copies `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus` from `orig` when `origObj?` is `some orig`; `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, and the `fraCause*` fields remain on `GameObject` per §3.8, and the cast-choice fields remain on `GameObject` until their readers use `CastEvent` in Phase 8).
 - The 5 remaining transitional fields (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) are deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4.
 
 ### 2.4 Zone changes
@@ -1032,12 +1032,16 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   *"whenever a player cycles or discards"* triggers once when cycled).
 - The matcher must produce the same `WaitingTrigger` data the hand-written
   loops pass to `waitingTriggersFor`, `putMatchingSourceTriggers`, and
-  `queueBatchSourceAbility` (for `causeId`, `cause := some old`, `eventCause`, and
+  `queueBatchSourceAbility` (for `causeId`, `cause := some old`, and
   last-known power/toughness, e.g. `g.snapshotPower old` for dies triggers and
-  the accumulated amount for `sourceDealtDamage`) and to `putFraEventTriggers` /
-  `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger` (which
-  also accept `causeController` and `eventCause`). These come from
-  `moved.before` and the damage packets.
+  the accumulated amount for `sourceDealtDamage`), to `putFraEventTriggers` /
+  `putFraEventTriggersWhere` and `queueTrigger` (which accept `causeController`,
+  forwarded from `wt.causeController` by `putWaitingTrigger`), and for
+  `eventCause` on `waitingTriggersFor` and `queueTrigger` (forwarded from
+  `wt.eventCause` by `putWaitingTrigger`; today's trigger loops leave
+  `eventCause` at its default `none`, so `putTriggeredAbilityOnStack` defaults
+  `TriggerQueueEvent.putOnStack`'s cause to `.gameRule .triggeredAbility`). These
+  come from `moved.before` and the damage packets.
 - Each trigger that fires is recorded as `TriggerQueueEvent.triggered` (with
   `cause := .gameRule .triggeredAbility`), so
   "once each turn" is a log query (replacing `Status.firedOnceEachTurn` in
@@ -1451,16 +1455,18 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `dividedDamage` from `CastEvent.announced` / `CastEvent.targeted` with
    `targetsAnnounced := true` when `original`'s `StackEntry` is no longer on
    `g.stack`), set `kicked`, `giftPromisedTo`, and `teamworkPaid` on the copy
-   `GameObject` from `orig` combined with `CastEvent.announced` when `original`
-   is in `g.objects` (or from `CastEvent.announced` alone when `original` has
-   left `g.objects`), set `chosenX` and `lastKnownPower` / `lastKnownToughness`
-   (which `copyStackAbility` in `ResolutionEffects.lean` copies today, until
-   those LKI fields are retired in Phase 8) from `copy.….orElse (fun _ => orig.…)`
-   when `original` is in `g.objects` and from `copy.…` otherwise, and copy
-   `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`, `adventurerCard`,
-   `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`,
-   `fraCauseId`, `fraCauseController`, `fraCausePower`, and `fraCauseStatus`
-   from `orig` when `original` is in `g.objects` (preserving `chosenX` across all
+   `GameObject` from `orig` combined with `CastEvent.announced` when
+   `origObj? := (g.objects.find? (·.id == original)).orElse (fun _ => g.objects.find? (·.id == g.followMoved original))`
+   is `some orig` (or from `CastEvent.announced` alone when neither `original`
+   nor `g.followMoved original` is in `g.objects`), set `chosenX` and
+   `lastKnownPower` / `lastKnownToughness` (which `copyStackAbility` in
+   `ResolutionEffects.lean` copies today, until those LKI fields are retired in
+   Phase 8) from `copy.….orElse (fun _ => orig.…)` when `origObj?` is `some orig`
+   and from `copy.…` otherwise, and copy `sneakPaid`, `sneakAttackWhom`,
+   `sneakAttackTarget`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
+   `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`,
+   `fraCausePower`, and `fraCauseStatus` from `orig` when `origObj?` is
+   `some orig` (preserving `chosenX` across all
    five copiers—spell copies per 707.10 and ruling 845 for Way of the
    Cryomancer, and ability copies per MSH ruling 401—since
    `StackObjectEvent.copied` does not run `applyZoneEvent`'s `moved.after` path,
@@ -1495,11 +1501,14 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `openBatch` (`Pumps.lean`), upgrading `preBattlefield : Array GameObject` to
    `pre : GameSnapshot`, and folding the 13 batch-level trigger groups from
    `evaluateBatchTriggers` together with the remaining per-event triggers to
-   produce the same `WaitingTrigger` fields (`causeId`, `cause`, `eventCause`,
-   and `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
-   `putMatchingSourceTriggers`, and `queueBatchSourceAbility`, plus
-   `causeController` and `eventCause` passed to `putFraEventTriggers` /
-   `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger`).
+   produce the same `WaitingTrigger` fields (`causeId`, `cause`, and
+   `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
+   `putMatchingSourceTriggers`, and `queueBatchSourceAbility`; `causeController`
+   passed to `putFraEventTriggers` / `putFraEventTriggersWhere` and `queueTrigger`
+   and forwarded from `wt.causeController` by `putWaitingTrigger`; and
+   `eventCause` on `waitingTriggersFor` and `queueTrigger`—forwarded from
+   `wt.eventCause` by `putWaitingTrigger`—left at its default `none` by today's
+   trigger loops).
 2. Cover the whole of 603.10a–f for look-back (extending the `preBattlefield`
    look-back already used for `oneOrMoreOtherCreaturesDie` in Phase 4 to all four
    603.10a zone-change categories plus 603.10b–f).
@@ -1613,11 +1622,13 @@ non-occurrence, and the 616.1a–e order.
    `StatusChange.attackingWhom` / `.attackingPlaneswalker` with
    `.attackingTarget` plus abbreviation defs) / `ObjectChange` (including
    `.sneakAttackTarget`) / `StackEntryChange` / `PlayerChange` / `EngineChange`
-   (including the turn setters `.turnNumber`, `.activePlayer`, `.step`,
-   `.isFirstTurn`, `.isNight`, and `.additionalCombatPhases` whose state is
-   written by `TurnEvent` since Phase 5, plus `.extraTurns` once
+   (including the turn setters `.turnNumber`, `.step`, `.isFirstTurn`,
+   `.isNight`, and `.additionalCombatPhases` whose state is written by
+   `TurnEvent` since Phase 5, plus `.activePlayer` once `Start.startWithRng` and
+   `Decisions.finishAfterRandom`'s `.setStartingPlayer` no longer emit
+   `EngineChange.activePlayer` before `turnBegan`, `.extraTurns` once
    `Turns.startNextTurn` no longer emits `EngineChange.extraTurns` when skipping
-   a lost player's extra turn and `.assignedCombatDamage` once the
+   a lost player's extra turn, and `.assignedCombatDamage` once the
    `.assignedCombatDamage #[]` resets in `beginCombatDamageAssignment` and
    `dealAssignedCombatDamage` are folded into combat-step / combat-damage
    handling; Phase 5 already deleted `EngineChange.extraTurnCauses` and
