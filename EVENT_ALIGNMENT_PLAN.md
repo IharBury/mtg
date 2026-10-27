@@ -268,16 +268,13 @@ structure BatchId where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- A game rule that causes an event directly (103.5, 303.4h, 304.2, 307.2,
-602.2b, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). `.stepAdvance`,
-`.spellCast`, and `.abilityActivated` are the Phase 3 causes on
-`RulesEvent.stepped` / `.cast` / `.activated` until Phase 5 replaces those
-constructors with `TurnEvent` and `CastEvent`. -/
+602.2b, 603.3, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
 inductive GameRuleKind where
   | openingHandDraw | mulligan
   | instantOrSorceryFinishedResolving | permanentSpellResolved
   | adventureSpellResolved | abilityFinishedResolving
   | unattachOnHostLeave | playerLeftGame
-  | stepAdvance | spellCast | abilityActivated | reversedActivation
+  | stepAdvance | spellCast | abilityActivated | triggeredAbility | reversedActivation
   | staticAbility | continuousEffect | leavingZone
   | impending | noLegalMode
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -363,22 +360,9 @@ structure EventObject where
   counters : CounterBag
   isCopy : Bool
   summoningSick : Bool
-  attackingWhom : Option PlayerId   -- becomes `attackingTarget : Option AttackTarget` in Phase 5 (folding `Status.attackingWhom` and `Status.attackingPlaneswalker`)
+  attackingTarget : Option AttackTarget := none -- folded `Status.attackingWhom` and `Status.attackingPlaneswalker` in Phase 5
   printed : Option CardDef          -- preserves full printed card definition across `moved`/`created`
   chosenX : Option Nat := none      -- stays on stack `GameObject` (107.3a) and `EventObject` (`after.chosenX.orElse existing.chosenX`); off-stack readers use `CastEvent.announced` in Phase 8
-  -- copy-only stack fields carried in Phase 2 so `.created` stack copies round-trip through `applyZoneEvent`
-  -- (`applyZoneEvent` writes `adventurerCard` only in the `.created` branch; `Movement.buildArrival` does not copy it on `moved`);
-  -- removed from `EventObject` in Phase 5 when `StackObjectEvent.copied` copies them from `original` onto the new `GameObject`
-  -- (`adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId` stay on `GameObject` per §3.8; the 5 cast-choice fields stay on `GameObject` until Phase 8):
-  kicked : Bool := false
-  teamworkPaid : Bool := false
-  sneakPaid : Bool := false
-  sneakAttackWhom : Option PlayerId := none
-  giftPromisedTo : Option PlayerId := none
-  adventurerCard : Option CardDef := none
-  abilityEffect : Option Effect := none
-  triggeredAbility : Option TriggeredAbility := none
-  sourceId : Option ObjectId := none
   -- effect-mirror, 400.7d cast-metadata, and LKI fields carried in Phase 2 so `applyZoneEvent` materializes `GameObject`
   -- without a follow-up `EngineChange.setObject`; retired from `EventObject` alongside their `GameObject`/`Status` fields in Phase 8 step 4:
   returnedAsArtifact : Bool := false
@@ -391,9 +375,9 @@ deriving Repr, Inhabited, BEq
 
 `owner`, `controller`, `keywords`, and `toxic` already exist, and `id` is `Option ObjectId` (`GameObject.asEvent` populates `some o.id` and `Game.damageSourceEvent` extends it for damage sources, while `none` is used for proposed objects that do not have an id yet—`Game.entersTapped`, `Game.createToken`—and the `default` `EventObject` when damage has no source). In Phase 2 step 4, the builder becomes
 `Game.snapshot (g : Game) (o : GameObject) : EventObject` (folding `Game.damageSourceEvent` into it), because power,
-toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carries the arrival, card, stack-copy, cast, effect-mirror, and LKI fields above on `EventObject`:
-- `summoningSick`, `attackingWhom` (replaced by `attackingTarget : Option AttackTarget` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` copies `chosenX` directly from `original`).
-- The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—where `adventurerCard` is only written by `applyZoneEvent` in the `.created` branch for stack copies, not on `moved`) leave `EventObject` in Phase 5 when stack copies migrate from `ZoneEvent.created` to `StackObjectEvent.copied` and the copy applier copies them (together with `chosenX` and, for ability copies until Phase 8, `lastKnownPower` and `lastKnownToughness`) from `original` onto the new `GameObject` (`adventurerCard`, `abilityEffect`, `triggeredAbility`, and `sourceId` remain on `GameObject` per §3.8, and the 5 cast-choice fields remain on `GameObject` until their readers use `CastEvent` in Phase 8).
+toughness, colors, and granted abilities depend on the game. To uphold the single-writer invariant (`applyZoneEvent` installing the exact arrival or created `GameObject` without a follow-up `EngineChange.setObject`), Phase 2 also carries the arrival, card, cast, effect-mirror, and LKI fields above on `EventObject`:
+- `summoningSick`, `attackingTarget` (which replaced `attackingWhom : Option PlayerId` in Phase 5), `printed`, and `chosenX` stay on `EventObject` (`chosenX` stays on the stack `GameObject` per 107.3a and is carried across `moved.after` via `after.chosenX.orElse existing.chosenX`, while `StackObjectEvent.copied` copies `chosenX` from `copy.chosenX.orElse (fun _ => orig.chosenX)`).
+- The 9 copy-only stack fields (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`—carried in Phase 2 so `.created` stack copies round-tripped through `applyZoneEvent`) were deleted from `EventObject` in Phase 5 when stack copies migrated from `ZoneEvent.created` to `StackObjectEvent.copied` (`applyStackObjectEvent` copies them—along with `sneakAttackTarget`, `reflexiveResolution`, `fraCauseId`, `fraCauseController`, `fraCausePower`, `fraCauseStatus`, `chosenX`, and `lastKnownPower` / `lastKnownToughness`, falling back to `CastEvent.announced` for `kicked` / `giftPromisedTo` / `teamworkPaid` when `original` is no longer present—onto the new `GameObject`; `adventurerCard`, `abilityEffect`, `triggeredAbility`, `reflexiveResolution`, `sourceId`, and the `fraCause*` fields remain on `GameObject` per §3.8, and the cast-choice fields remain on `GameObject` until their readers use `CastEvent` in Phase 8).
 - The 5 remaining transitional fields (`returnedAsArtifact`, `onlyFoodArtifact`, `wasCast` as 400.7d cast metadata, `lastKnownPower`, and `lastKnownToughness`) are deleted from `EventObject` together with their `GameObject`/`Status` counterparts in Phase 8 step 4.
 
 ### 2.4 Zone changes
@@ -602,16 +586,22 @@ applies instead of emptying the pool), and adds `LossReason` to `lost`.
 inductive TurnEvent where
   | turnBegan (player : PlayerId) (extra : Bool)
   | phaseBegan (phase : Phase)
-  | stepBegan (step : Step)
+  | stepBegan (step : Step) (active : PlayerId := ⟨0⟩)
   | stepEnded (step : Step)
   | phaseEnded (phase : Phase)
   | turnEnded (player : PlayerId)
   | dayNightChanged (night : Bool)                                -- 731.2 (non-goal today)
-  | extraTurnAdded (player : PlayerId) (after : TurnRef)           -- 500.7
-  | extraPhaseAdded (phase : Phase) (afterPhase : PhaseRef)         -- 500.8 (extra combat is an extra phase after a phase)
+  | extraTurnAdded (player : PlayerId) (after : TurnRef := .current) -- 500.7
+  | extraPhaseAdded (phase : Phase) (afterPhase : PhaseRef := .current) -- 500.8 (extra combat is an extra phase after a phase)
   | extraStepAdded (step : Step) (anchor : StepAnchor)              -- 500.9
 ```
 
+`Phase`, `Step.phase`, `TurnRef`, `PhaseRef`, and `StepAnchor` live in
+[`Turn.lean`](Mtg/Engine/Turn.lean). `stepBegan` carries `active : PlayerId` so
+`GameEvent.matchesTrigger` matches active-player vs opponent step triggers on
+`.turn (.stepBegan step active)`. `applyTurnEvent`
+([`Core.lean`](Mtg/Engine/Game/Core.lean)) updates `turnNumber`, `activePlayer`,
+`isFirstTurn`, `extraTurns`, `additionalCombatPhases`, `step`, and `isNight`.
 Mana emptying is `PlayerEvent.manaEmptied` with
 `cause := .turnBased .emptyManaPools` at the end of each step and phase
 (500.5 / 703.4q), after "until end of step/phase" effects expire.
@@ -648,38 +638,53 @@ inductive StackObjectEvent where
 Countering is a `ZoneEvent.moved` with `verb := .counter` (701.6). The proposal
 under construction (`ProposedSpell`), the waiting-trigger queue
 (`Game.waitingTriggers`), and the priority holder are **engine state** updated by
-`EngineChange`; only the milestones above go into the rules history. Copying a
-spell or ability on the stack (`copyStackSpell`, `copyStackAbility`, Way of the
-Cryomancer, Loki, `.copyCauseSpell`) temporarily emits `ZoneEvent.created` in
-`.stack` during Phase 2; Phase 5 migrates stack copies to
-`StackObjectEvent.copied`, whose applier copies stack metadata—both the
-`StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
-`extraModes`, and `dividedDamage`) and the `GameObject` stack/cast/adventure
-fields (`chosenX`, `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`,
-`giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
-`sourceId`) plus `lastKnownPower` / `lastKnownToughness` for ability copies
-until Phase 8—directly from `original : ObjectId` per 707.10 (`chosenX` is
-copied by all five stack copiers today—spell copies per 707.10 and ruling 845
-for Way of the Cryomancer, and ability copies per MSH ruling 401—and must be
-copied by `applyStackObjectEvent` since `StackObjectEvent.copied` does not go
-through `applyZoneEvent`'s `moved.after` path). Because only `copyStackSpell`
-copies all five cast-choice fields (`kicked`, `giftPromisedTo`, `teamworkPaid`,
-`sneakPaid`, `sneakAttackWhom`), `adventurerCard`, and `extraModes` today—while
-Loki (`Entering.lean`) omits `StackEntry` decisions, `adventurerCard`, and the
-five cast-choice fields (copying `chosenX` only), Way of the Cryomancer
-(`Entering.lean`, which already copies `adventurerCard`, `kicked`,
-`giftPromisedTo`, `teamworkPaid`, and `chosenX` on the object and `targets`,
-`dividedDamage`, `chosenMode`, and `targetsAnnounced` on the stack entry) omits
-`extraModes`, `sneakPaid`, and `sneakAttackWhom`, `.copyCauseSpell`
-(`FraResolve.lean`) omits `extraModes` and the five cast-choice fields (copying
-`adventurerCard` and `chosenX` only on the `GameObject`), and
-`copyStackAbility` leaves `targetsAnnounced` false—this migration is a 707.10
-behavior change across both `StackEntry` decisions and `GameObject`
-cast/adventure fields, not only a new event constructor. Card copies created in
-`.exile`—both the 707.12 cast-during-resolution copies (Saruman, Baron Zemo,
-Uldaros) and `createPreparedCopy` (`Movement.lean`, which leaves the copy in
-`.exile` with a play permission while the permanent stays prepared per ruling
-742, not 707.12)—remain `ZoneEvent.created`.
+`EngineChange`; only the milestones above go into the rules history. In Phase 5:
+- `applyCastEvent` ([`Core.lean`](Mtg/Engine/Game/Core.lean)) writes
+  `castFromGraveyard`, `castFromHand`, and `isPreparedSpell` on `.proposed`;
+  `chosenX`, `kicked`, `giftPromisedTo`, and `teamworkPaid` (plus
+  `StackEntry.chosenMode` / `extraModes` when `modes` is non-empty) on
+  `.announced`; `StackEntry.targets`, `dividedDamage`, and
+  `targetsAnnounced := true` on `.targeted`; and `wasCast := true`,
+  `castFromGraveyard`, and `castFromHand` on `.spellCast` (until Phase 8 step 4
+  switches off-stack cast-metadata readers to `CastEvent` log queries and deletes
+  those `GameObject` fields).
+- `WaitingTrigger` ([`Object.lean`](Mtg/Engine/Game/Object.lean), where
+  `EventCause` was moved in Phase 5) carries `eventCause : Option EventCause := none`,
+  threaded through `queueTrigger`, `putWaitingTrigger`, `putQueuedTrigger`,
+  `putTriggerOrFizzle`, and `putTriggeredAbilityOnStack`
+  ([`Triggers.lean`](Mtg/Engine/Game/Triggers.lean)) to record
+  `TriggerQueueEvent.putOnStack` with default `cause := .gameRule .triggeredAbility`
+  (while `TriggerQueueEvent.triggered` is wired up in Phase 6 step 3).
+- Stack copies (`copyStackSpell`, `copyStackAbility`, Way of the Cryomancer,
+  Loki, `.copyCauseSpell`) migrated from `ZoneEvent.created` to
+  `StackObjectEvent.copied` (with `applySingleRulesEventInBatch` assigning
+  `copy.id := some ⟨g.nextObjectId⟩` when `copy.id.isNone` and
+  `GameEvent.withObjectId` updating `.copied`). `applyStackObjectEvent`
+  ([`Core.lean`](Mtg/Engine/Game/Core.lean)) installs the copy `GameObject` in
+  `.stack`—resetting cast-origin flags (`wasCast := false`, etc.) and copying
+  `chosenX`, `kicked`, `giftPromisedTo`, `teamworkPaid`, `sneakPaid`,
+  `sneakAttackWhom`, `sneakAttackTarget`, `adventurerCard`, `abilityEffect`,
+  `triggeredAbility`, `reflexiveResolution`, `sourceId`, `fraCauseId`,
+  `fraCauseController`, `fraCausePower`, `fraCauseStatus`, `lastKnownPower`, and
+  `lastKnownToughness` from `original` (following `followMoved` if `original`
+  already moved, or reconstructing `kicked` / `giftPromisedTo` / `teamworkPaid`
+  from `CastEvent.announced` when `original` is no longer in `g.objects`)—and
+  pushes the copy's `StackEntry` (copying `targets`, `targetsAnnounced`,
+  `chosenMode`, `extraModes`, and `dividedDamage` from `original`'s
+  `StackEntry`, or reconstructing them from `CastEvent.announced` and
+  `CastEvent.targeted` when `original` is no longer on `g.stack`) per 707.10.
+  `GameEvent.rootCopiedSpellId` ([`Event.lean`](Mtg/Engine/Game/Event.lean))
+  resolves copied spells back to their root cast for `GameEvent.giftPromised`
+  and `GameEvent.teamwork`, and `Game.effectCreatedCause`
+  ([`Core.lean`](Mtg/Engine/Game/Core.lean)) looks up the `.oneShotEffect` cause
+  recorded on `.rules (.effectCreated id eff)` in `g.events` so Way of the
+  Cryomancer and Loki in `Entering.putCastTriggersOnStack` attribute
+  `StackObjectEvent.copied` to the effect that created
+  `.copyNextInstantSorceryThisTurn` / `.pendingLokiCopy`. Card copies created in
+  `.exile`—both the 707.12 cast-during-resolution copies (Saruman, Baron Zemo,
+  Uldaros) and `createPreparedCopy` (`Movement.lean`, which leaves the copy in
+  `.exile` with a play permission while the permanent stays prepared per ruling
+  742, not 707.12)—remain `ZoneEvent.created`.
 
 ### 2.10 Combat
 
@@ -705,21 +710,32 @@ inductive CombatEvent where
 
 `CombatEvent.becameAttacking` is the combat milestone for both halves of 508.4:
 permanents put onto the battlefield attacking and permanents made attacking on
-the battlefield by an effect. In Phase 2, the enter-attacking paths in this
-tree—Andúril's Spirit tokens (`createKindTokens` with `attacking`), Sneak
-(`putOntoBattlefield` with `attacking` / `attackingWhom`), and graveyard returns
-through `enterModsAttacking` / `returnFromGyTappedAttackingFinality` (Grim
-Reaper)—set `attacking := true` and `attackingWhom := some …` on the zone
-event's arrival object (`ZoneEvent.moved.after` / `ZoneEvent.created.object`),
-which keeps them from matching *"whenever … attacks"*
-(`CombatEvent.attackersDeclared`, 508.3a) without replacing the 508.4 combat
-milestone. Phase 5 adds `CombatEvent.becameAttacking` for all 508.4 transitions
-and folds `Status.attackingWhom : Option PlayerId`,
+the battlefield by an effect. Phase 5 added `AttackTarget`
+([`Status.lean`](Mtg/Engine/Game/Status.lean)), folded
+`Status.attackingWhom : Option PlayerId`,
 `Status.attackingPlaneswalker : Option ObjectId`, and
-`EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` so
-enter-attacking paths and `becameAttacking` can target a player, planeswalker,
-or battle (e.g. Andúril ruling 181, whereas Phase 2's enter-attacking paths only
-store a `PlayerId`).
+`EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` (with
+projection helpers `Status.attackingPlayer?`, `Status.attackingPlaneswalker?`,
+`Game.defendingPlayerOfStatus`, and `Game.defendingPlayerOf`), added
+`GameObject.sneakAttackTarget : Option AttackTarget` so Sneak (`Casting.paySneak`
+and `SpellResolution.resolveTop`) preserves a planeswalker or battle
+`AttackTarget` alongside `sneakAttackWhom` (until both fields are retired in
+Phase 8 step 4), and implemented the pre-entry CR 508.4 / ruling 181 choice flow
+(`EnteringAttackLog`, `EnteringAttackItem`, and
+`FraChoice.chooseEnteringAttackTarget` in
+[`Pending.lean`](Mtg/Engine/Game/Pending.lean),
+`Game.legalEnteringAttackTargets` in [`Core.lean`](Mtg/Engine/Game/Core.lean),
+and `enterModsAttackOptions`, `advanceFixedEnteringAttackItems`,
+`commitEnteringAttackItems`, and `promptEnteringAttackItems` in
+[`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean)): when
+multiple legal attack targets exist (`options.size > 1`), each entering
+permanent's controller chooses its `AttackTarget` *before* the token is created
+or the card is moved onto the battlefield; once all choices are collected,
+`commitEnteringAttackItems` creates the tokens or moves the cards in one
+`withBatch cause` with `attacking := true` and `attackingTarget := some tgt` on
+both the `ZoneEvent.created` / `ZoneEvent.moved` arrival object and
+`CombatEvent.becameAttacking` (which keeps them from matching *"whenever …
+attacks"* on `CombatEvent.attackersDeclared` per 508.3a).
 
 First-strike and regular combat damage are separate combat damage steps
 (510.4 / 702.7b), so they are separate `damageAssigned` events and separate
@@ -825,14 +841,19 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
   empty-`livingOpponents` guards after any early-return prevention checks, so
   shield-counter removal still opens a batch). When `currentBatch` already holds
-  `some (_, some (.oneShotEffect (some bid) ..))`, both `resolvingOneShotCause`
-  and `createEffect` / `createEffects` (with `cause := none`) reuse that `bid`;
+  `some (_, some (.oneShotEffect (some bid) bsrc bctrl))`, both `resolvingOneShotCause`
+  (preserving `bsrc` via `bsrc.orElse (fun _ => source)`) and `createEffect` /
+  `createEffects` (with `cause := none`) reuse that `bid`;
   otherwise `resolvingOneShotCause` returns
   `some (.oneShotEffect (some ⟨g.nextEffectId⟩) ..)` without advancing
   `nextEffectId`, whereas `createEffect` / `createEffects` with `cause := none`
   call `allocDelayedCause` when `currentResolvingContext?` is `some` (including
   when `currentBatch` still holds `.oneShotEffect none ..`) and leave `cause` as
-  `none` when nothing is resolving.
+  `none` when nothing is resolving. For delayed spell-copy effects (Way of the
+  Cryomancer and Loki in `Entering.putCastTriggersOnStack`),
+  `Game.effectCreatedCause` (`Core.lean`) looks up the `EventCause` recorded on
+  `.rules (.effectCreated id eff)` in `g.events` (falling back to `.unclassified`
+  when no creation event exists).
   Meanwhile, each pass of `checkSBACounted` (`StateBasedActions.lean`) runs
   inside `withBatchReturn none` so heterogeneous `.stateBased` causes
   (`.lifeZeroOrLess`, `.drewFromEmpty`, `.tenPoison`, `.counterAnnihilation`,
@@ -994,13 +1015,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   *"whenever a player cycles or discards"* triggers once when cycled).
 - The matcher must produce the same `WaitingTrigger` data the hand-written
   loops pass to `waitingTriggersFor`, `putMatchingSourceTriggers`, and
-  `queueBatchSourceAbility` (for `causeId`, `cause := some old`, and last-known
-  power/toughness, e.g. `g.snapshotPower old` for dies triggers and the
-  accumulated amount for `sourceDealtDamage`) and to `putFraEventTriggers` /
+  `queueBatchSourceAbility` (for `causeId`, `cause := some old`, `eventCause`, and
+  last-known power/toughness, e.g. `g.snapshotPower old` for dies triggers and
+  the accumulated amount for `sourceDealtDamage`) and to `putFraEventTriggers` /
   `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger` (which
-  also accept `causeController`). These come from `moved.before` and the damage
-  packets.
-- Each trigger that fires is recorded as `TriggerQueueEvent.triggered`, so
+  also accept `causeController` and `eventCause`). These come from
+  `moved.before` and the damage packets.
+- Each trigger that fires is recorded as `TriggerQueueEvent.triggered` (with
+  `cause := .gameRule .triggeredAbility`), so
   "once each turn" is a log query (replacing `Status.firedOnceEachTurn` in
   `queueBatchSourceAbility` in `Core.lean`, `queueTrigger` /
   `putWaitingTrigger` in `Triggers.lean`, and the `.firedOnceEachTurn false`
@@ -1039,14 +1061,14 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId` + `attackingPlaneswalker : Option ObjectId` (folded into `attackingTarget : Option AttackTarget` in Phase 5), `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
+| **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId` + `attackingPlaneswalker : Option ObjectId` (folded into `attackingTarget : Option AttackTarget` in Phase 5, with `Status.attackingPlayer?` and `Status.attackingPlaneswalker?` projection helpers and `StatusChange.attackingTarget` replacing the two `StatusChange` constructors), `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
 | **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `poison`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5; player poison stays on `Player.poison`; Phase 4 rewrote `applyPermanentEvent` to update `Status` via `Status.applyCounterDelta` and deleted `.withoutCounters`, `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`, `.addCounters`, `.removeCounters`, `.shadow`, and `.plusOnePlusOne` from `StatusChange`, leaving `StatusChange.time` on proposed impending spells in `CastExtras.applyKickerToProposed` and the remaining absolute per-field counter setters—including `.hope`, `.charge`, `.stun`, `.shield`, `.lore`, and `.keywordCounters` still called in `Tests/RemoveCounters.lean`—to be migrated and deleted in Phase 8 step 4). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
 | **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derived in Phase 1 per creature via `Game.deathtouchDealtSinceLastSba` from `DamageEvent.dealt` packets committed since the last `EngineChange.sbaChecked` marker where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). Delete the remaining `Status.dealtDeathtouch` field and cleanup/test references in Phase 8. |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
 | | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn (replacing the reads/writes in `queueBatchSourceAbility` in `Core.lean`, `queueTrigger` / `putWaitingTrigger` in `Triggers.lean`, and the `.firedOnceEachTurn false` cleanup reset in `Turns.clearTurnActivations` in `Turns.lean` in Phase 6). It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
-| | `declaredAsAttackerThisTurn : Bool` | `CombatEvent.attackersDeclared` this turn (not `becameAttacking`, 508.3a). |
+| | `declaredAsAttackerThisTurn : Bool` | `CombatEvent.attackersDeclared` this turn (not `becameAttacking`, 508.3a; in Phase 5 `applyCombatEvent` sets this field on `.attackersDeclared`, and Phase 8 step 4 replaces the remaining reads with a log query and deletes the field). |
 | | `becameTappedThisTurn : Bool`, `gotPlusOneThisTurn : Bool`, `dealtDamageThisTurn : Bool`, `dealtCombatDamage : Bool`, `combatDamageToPlayers : Array PlayerId` | `tapped`, `counters … plusOne (put _)` (incl. `entersWith`), and `DamageEvent.dealt` this turn. |
 | | `allianceModesChosen : Array Nat`, `modesChosenThisTurn : Array Nat`, `chosenModes : Array Nat` | `CastEvent.announced` / trigger mode choices for this source (this turn or lifetime). |
 | | `manaSpentToCast : Nat` | `PlayerEvent.manaSpent` for the spell, joined through `moved` (400.7d). `GameEvent.manaSpentOn` already exists. |
@@ -1059,7 +1081,7 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields | Target |
 | :--- | :--- | :--- |
-| **Cast metadata → log (400.7d)** | `castFromGraveyard : Bool`, `castFromHand : Bool`, `wasCast : Bool`, `kicked : Bool`, `teamworkPaid : Bool`, `sneakPaid : Bool`, `sneakAttackWhom : Option PlayerId`, `giftPromisedTo : Option PlayerId`, `isPreparedSpell : Bool`, `treasureManaSpent : Bool`, `boastExiled : Array ObjectId`; `chosenX : Option Nat` once it leaves the stack | `CastEvent`s keyed by spell id, joined via `moved`. `chosenX` stays while on the stack (107.3a). |
+| **Cast metadata → log (400.7d)** | `castFromGraveyard : Bool`, `castFromHand : Bool`, `wasCast : Bool`, `kicked : Bool`, `teamworkPaid : Bool`, `sneakPaid : Bool`, `sneakAttackWhom : Option PlayerId`, `sneakAttackTarget : Option AttackTarget` (added in Phase 5 for planeswalker/battle Sneak attack targets), `giftPromisedTo : Option PlayerId`, `isPreparedSpell : Bool`, `treasureManaSpent : Bool`, `boastExiled : Array ObjectId`; `chosenX : Option Nat` once it leaves the stack | `CastEvent`s keyed by spell id, joined via `moved`. `chosenX` stays while on the stack (107.3a). |
 | **Effect mirrors → layers / specs** | `copyRestore : Option CardDef`, `copyUntilEot : Bool`, `copyUntilNextTurn : Bool`, `copyUntilSourceLeaves : Option ObjectId` (layer 1); `controlChanged : Bool`, `controlUntilSourceLeaves : Option ObjectId` (layer 2); `playPermission : Option PlayPermission`, `flashbackUntilEot : Bool` (permission); `exileInstantSorceryInstead : Bool` (replacement); `uncounterableThisCast : Bool` (rule); `fraEffectUntilTurnOf : Option PlayerId` (duration of an emblem) | §3.3 |
 | **LKI → `moved.before`** | `lastKnownPower : Option Int`, `lastKnownToughness : Option Int`, `lastController : Option PlayerId` | §3.1 |
 | **Stays** | `id : ObjectId`, `printed : CardDef`, `owner : PlayerId`, `controller : Option PlayerId`, `defaultController : Option PlayerId`, `zone : Zone`, `status : Status`, `timestamp : Nat`, `attachedTo : Option ObjectId`, `adventurerCard : Option CardDef`, `isCopy : Bool`, `linkedExile : Array ObjectId`, `returnToZone : Option Zone`, `leaveTriggerExile : Array ObjectId`, `exiledBy : Option ObjectId` (linked abilities, 607), stack data (`abilityEffect : Option Effect`, `triggeredAbility : Option TriggeredAbility`, `reflexiveResolution : Option TriggeredAbility.TriggerResolution`, `sourceId : Option ObjectId`, `fraCauseId : Option ObjectId`, `fraCauseController : Option PlayerId`, `fraCausePower : Option Int`, `fraCauseStatus : Option Status`) | — |
@@ -1345,16 +1367,20 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
 ### Phase 5 — Turn, combat, and stack events
 
 1. Replace `.stepped` with `TurnEvent` (§2.8). `turnNumber`, `activePlayer`,
-   `step`, and `extraTurns` / `additionalCombatPhases` become state written by
-   `TurnEvent`s (retiring `Game.extraTurnCauses` and `EngineChange.extraTurnCauses` /
-   `pushExtraTurn` added in Phase 3, since `TurnEvent.extraTurnAdded` carries its
-   `EventCause` in the `GameEvent` envelope); extra combat is an extra phase
-   after a phase (500.8).
+   `isFirstTurn`, `step`, `isNight`, and `extraTurns` / `additionalCombatPhases`
+   become state written by `TurnEvent`s (retiring `Game.extraTurnCauses` and
+   `EngineChange.extraTurnCauses` / `pushExtraTurn` added in Phase 3, since
+   `TurnEvent.extraTurnAdded` carries its `EventCause` in the `GameEvent`
+   envelope and `Turns.startNextTurn` reconstructs pending extra-turn causes
+   from `TurnEvent.extraTurnAdded` / `TurnEvent.turnBegan _ true` in
+   `g.events`); extra combat is an extra phase after a phase (500.8).
 2. Replace `.attacked` and the raw combat status writes with `CombatEvent`
    (§2.10), keeping the `openBatch` (`.turnBased .declareAttackers`) wrapper in
    `declareAttackers` (`Combat.lean`, added in Phase 4) so
    `CombatEvent.attackersDeclared` and the non-vigilance attacker
-   `PermanentEvent.tapped` events share one `BatchId`, moving
+   `PermanentEvent.tapped` events share one `BatchId`, wrapping
+   `declareBlockers` in `openBatch (some (.turnBased .declareBlockers))` for
+   `blockersDeclared`, `becameBlocked`, and `remainedUnblocked`, moving
    `PermanentEvent.removedFromCombat` and
    `DamageEvent.combatAssigned` into `CombatEvent.removedFromCombat` and
    `CombatEvent.damageAssigned (firstStrike : Bool) (forAttackers : Bool) (assignments : Array CreatureCombatAssignment)`,
@@ -1364,9 +1390,13 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `attackersDeclared` per 508.3a), and using `AttackTarget` instead of a bare
    `PlayerId` (folding `Status.attackingWhom : Option PlayerId`,
    `Status.attackingPlaneswalker : Option ObjectId`, and
-   `EventObject.attackingWhom` into `attackingTarget : Option AttackTarget` so
-   enter-attacking paths and `becameAttacking` can target a player,
-   planeswalker, or battle, e.g. Andúril ruling 181).
+   `EventObject.attackingWhom` into `attackingTarget : Option AttackTarget`,
+   adding `GameObject.sneakAttackTarget : Option AttackTarget` for Sneak, and
+   adding the pre-entry CR 508.4 / ruling 181 choice flow via
+   `EnteringAttackItem`, `FraChoice.chooseEnteringAttackTarget`,
+   `promptEnteringAttackItems`, and `commitEnteringAttackItems` so
+   enter-attacking paths and `becameAttacking` choose a player, planeswalker,
+   or battle before entering when multiple legal attack targets exist).
 3. Replace `.cast` / `.activated` with `CastEvent`, re-point
    `GameEvent.landsPlayed` (`Game.loggedLandsPlayed`) at `ZoneEvent.moved`
    matching `verb == .playLand && actor == some p` (dropping the redundant
@@ -1385,10 +1415,11 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `resolveCauseInBatch` / `resolveOneShotCause` would upgrade to
    `.oneShotEffect` when a spell or ability is resolving); and retiring top-level
    `RulesEvent.playedLand`), add
-   `TriggerQueueEvent` (recording `TriggerQueueEvent.putOnStack` when a waiting
-   trigger is put on the stack in `putTriggeredAbilityOnStack` per 603.3, while
-   `TriggerQueueEvent.triggered` is wired up in Phase 6 step 3), and extend
-   `StackObjectEvent` (introduced in Phase 3
+   `TriggerQueueEvent` (recording `TriggerQueueEvent.putOnStack` with default
+   `cause := .gameRule .triggeredAbility` via `WaitingTrigger.eventCause` when a
+   waiting trigger is put on the stack in `putTriggeredAbilityOnStack` per
+   603.3, while `TriggerQueueEvent.triggered` is wired up in Phase 6 step 3),
+   and extend `StackObjectEvent` (introduced in Phase 3
    with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
    `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
    `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
@@ -1397,30 +1428,34 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `ZoneEvent.created`). Have `applyStackObjectEvent` copy the `StackEntry`
    decisions (`targets`, `targetsAnnounced`, `chosenMode`, `extraModes`, and
    `dividedDamage`), `GameObject` stack/cast/adventure fields (`chosenX`,
-   `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`,
-   `adventurerCard`, `abilityEffect`, `triggeredAbility`, `sourceId`), and
+   `kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`, `sneakAttackTarget`,
+   `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
+   `reflexiveResolution`, `sourceId`, `fraCauseId`, `fraCauseController`,
+   `fraCausePower`, `fraCauseStatus`), and
    `lastKnownPower` / `lastKnownToughness` (which `copyStackAbility` in
    `ResolutionEffects.lean` copies today, until those LKI fields are retired in
-   Phase 8) directly from `original` onto the new copy `StackEntry` and
-   `GameObject` (preserving `chosenX` across all five copiers—spell copies per
-   707.10 and ruling 845 for Way of the Cryomancer, and ability copies per MSH
-   ruling 401—since `StackObjectEvent.copied` does not run `applyZoneEvent`'s
-   `moved.after` path, and fixing Loki's copy to include `StackEntry`
-   decisions, `adventurerCard`, and the 5 cast-choice fields, Way of the
-   Cryomancer to include `extraModes`, `sneakPaid`, and `sneakAttackWhom`,
-   `.copyCauseSpell` to include `extraModes` and the 5 cast-choice fields, and
-   `copyStackAbility` to copy `targetsAnnounced` per 707.10), and retire the 9
-   copy-only stack fields from `EventObject` (`kicked`, `teamworkPaid`,
-   `sneakPaid`, `sneakAttackWhom`, `giftPromisedTo`, `adventurerCard`,
-   `abilityEffect`, `triggeredAbility`, `sourceId`; note that `chosenX` stays
-   on the stack `GameObject` per 107.3a and on `EventObject` for `moved.after`,
-   `adventurerCard` and the stack ability fields
-   `abilityEffect`/`triggeredAbility`/`sourceId` stay on `GameObject` per §3.8,
-   and the 5 cast-choice fields stay on `GameObject` until their readers use
-   `CastEvent` in Phase 8). **Only these milestones are rules events.**
-   `ProposedSpell` and `ProposalChange`, `Game.waitingTriggers` and its queue
-   operations, `.pushStack` / `.popStack` bookkeeping, and `.priority` stay
-   `EngineChange`, so the log does not carry the scratchpad.
+   Phase 8) directly from `original` (or from `CastEvent.announced` /
+   `CastEvent.targeted` when `original` has left `g.objects` or `g.stack`) onto
+   the new copy `StackEntry` and `GameObject` (preserving `chosenX` across all
+   five copiers—spell copies per 707.10 and ruling 845 for Way of the
+   Cryomancer, and ability copies per MSH ruling 401—since
+   `StackObjectEvent.copied` does not run `applyZoneEvent`'s `moved.after` path,
+   using `Game.effectCreatedCause` for Way of the Cryomancer and Loki, and
+   fixing Loki's copy to include `StackEntry` decisions, `adventurerCard`, and
+   the cast-choice fields, Way of the Cryomancer to include `extraModes`,
+   `sneakPaid`, `sneakAttackWhom`, and `sneakAttackTarget`, `.copyCauseSpell` to
+   include `extraModes` and the cast-choice fields, and `copyStackAbility` to
+   copy `targetsAnnounced` per 707.10), and retire the 9 copy-only stack fields
+   from `EventObject` (`kicked`, `teamworkPaid`, `sneakPaid`, `sneakAttackWhom`,
+   `giftPromisedTo`, `adventurerCard`, `abilityEffect`, `triggeredAbility`,
+   `sourceId`; note that `chosenX` stays on the stack `GameObject` per 107.3a
+   and on `EventObject` for `moved.after`, `adventurerCard` and the stack
+   ability fields stay on `GameObject` per §3.8, and the cast-choice fields stay
+   on `GameObject` until their readers use `CastEvent` in Phase 8). **Only these
+   milestones are rules events.** `ProposedSpell` and `ProposalChange`,
+   `Game.waitingTriggers` and its queue operations, `.pushStack` / `.popStack`
+   bookkeeping, and `.priority` stay `EngineChange`, so the log does not carry
+   the scratchpad.
 
 Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
 `ThisAttack.lean`, `YouAttack.lean`, `Casting.lean`, `CastTriggers.lean`,
@@ -1434,26 +1469,27 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `openBatch` (`Pumps.lean`), upgrading `preBattlefield : Array GameObject` to
    `pre : GameSnapshot`, and folding the 13 batch-level trigger groups from
    `evaluateBatchTriggers` together with the remaining per-event triggers to
-   produce the same `WaitingTrigger` fields (`causeId`, `cause`, and
-   `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
+   produce the same `WaitingTrigger` fields (`causeId`, `cause`, `eventCause`,
+   and `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
    `putMatchingSourceTriggers`, and `queueBatchSourceAbility`, plus
-   `causeController` passed to `putFraEventTriggers` /
+   `causeController` and `eventCause` passed to `putFraEventTriggers` /
    `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger`).
 2. Cover the whole of 603.10a–f for look-back (extending the `preBattlefield`
    look-back already used for `oneOrMoreOtherCreaturesDie` in Phase 4 to all four
    603.10a zone-change categories plus 603.10b–f).
-3. Record `TriggerQueueEvent.triggered` when abilities trigger in
-   `matchTriggers`; replace `Status.firedOnceEachTurn` reads and writes across
-   `queueBatchSourceAbility` (`Core.lean`), `queueTrigger` /
-   `putWaitingTrigger` (`Triggers.lean`), and the `.firedOnceEachTurn false`
-   cleanup reset in `Turns.clearTurnActivations` (`Turns.lean`) with log queries
-   over `TriggerQueueEvent.triggered`, and delete `queueBatchSourceAbility`,
-   `queueBatchSourceTriggers`, and `queueBatchControlledTriggers` from
-   `Core.lean`.
+3. Record `TriggerQueueEvent.triggered` (with `cause := .gameRule .triggeredAbility`)
+   when abilities trigger in `matchTriggers`; replace `Status.firedOnceEachTurn`
+   reads and writes across `queueBatchSourceAbility` (`Core.lean`),
+   `queueTrigger` / `putWaitingTrigger` (`Triggers.lean`), and the
+   `.firedOnceEachTurn false` cleanup reset in `Turns.clearTurnActivations`
+   (`Turns.lean`) with log queries over `TriggerQueueEvent.triggered`, and
+   delete `queueBatchSourceAbility`, `queueBatchSourceTriggers`, and
+   `queueBatchControlledTriggers` from `Core.lean`.
 4. Delete `evaluateBatchTriggers` (`Core.lean`), `pendingTokenEnters` /
    `pushPendingTokenEnter` (`Core.lean`, `Event.lean`, `Tokens.lean`) and
-   `flushTokenEnters` (`Entering.lean`, called from `Actions.lean` and
-   `PriorityActions.lean`), and the remaining hand-written trigger loops in
+   `flushTokenEnters` (`Entering.lean`, called from `Actions.lean`,
+   `PriorityActions.lean`, and `FraChoices.lean`), and the remaining
+   hand-written trigger loops in
    `Game.move` ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)),
    [`Entering.lean`](Mtg/Engine/Game/Entering.lean),
    [`Combat.lean`](Mtg/Engine/Game/Combat.lean),
@@ -1527,8 +1563,8 @@ non-occurrence, and the 616.1a–e order.
    `.ringBearer`, `.commander`, `.prepared`, and `.harnessed`); delete every field in §3.8 marked as a mirror,
    history, cast metadata (400.7d on `GameObject`: `castFromGraveyard`,
    `castFromHand`, `wasCast`, `kicked`, `teamworkPaid`, `sneakPaid`,
-   `sneakAttackWhom`, `giftPromisedTo`, `isPreparedSpell`, `treasureManaSpent`,
-   `boastExiled`, and off-stack `chosenX` reads), LKI
+   `sneakAttackWhom`, `sneakAttackTarget`, `giftPromisedTo`, `isPreparedSpell`,
+   `treasureManaSpent`, `boastExiled`, and off-stack `chosenX` reads), LKI
    (`GameObject.lastKnownPower`, `lastKnownToughness`, `lastController`),
    delayed trigger, linked-exile cause cache (`Game.linkedExileCauses`, queried
    from the exiling `ZoneEvent.moved`), or queue-time counter (alongside the
@@ -1539,14 +1575,25 @@ non-occurrence, and the 616.1a–e order.
    `Player.poison`) into `counters : CounterBag` (with computed projection
    helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.), and delete
    their remaining `StatusChange` (`.time` in `CastExtras.applyKickerToProposed`
-   once impending cast announcement uses `CastEvent.announced`, and the remaining
+   once impending cast announcement uses `CastEvent.announced`, the combat setters
+   `.attacking`, `.attackingTarget`, `.attackingWhom`, `.attackingPlaneswalker`,
+   `.blocking`, `.blocked`, and `.declaredAsAttackerThisTurn` whose state is
+   written by `CombatEvent` since Phase 5, and the remaining
    absolute per-field counter setters—including `.hope`, `.charge`, `.stun`,
    `.shield`, `.lore`, and `.keywordCounters` in `Tests/RemoveCounters.lean`—once
    migrated; Phase 4 already deleted `.withoutCounters`,
    `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`, `.addCounters`,
-   `.removeCounters`, `.shadow`, and `.plusOnePlusOne`) / `ObjectChange` /
-   `PlayerChange` / `GameChange` constructors after their readers use the log,
-   the layers, or the delayed-trigger table.
+   `.removeCounters`, `.shadow`, and `.plusOnePlusOne`, and Phase 5 replaced
+   `StatusChange.attackingWhom` / `.attackingPlaneswalker` with
+   `.attackingTarget` plus abbreviation defs) / `ObjectChange` (including
+   `.sneakAttackTarget`) / `StackEntryChange` / `PlayerChange` / `EngineChange`
+   (including the turn/combat setters `.turnNumber`, `.activePlayer`,
+   `.turnAndActive`, `.step`, `.isFirstTurn`, `.isNight`, `.extraTurns`,
+   `.additionalCombatPhases`, and `.assignedCombatDamage` whose state is written
+   by `TurnEvent` and `CombatEvent` since Phase 5; Phase 5 already deleted
+   `EngineChange.extraTurnCauses` and `EngineChange.pushExtraTurn`) constructors
+   after their readers and test helpers use the log, the layers, or the
+   delayed-trigger table.
 5. Move the continuation registers (including `Game.resolvingContext`) into a
    continuation frame stack.
 
