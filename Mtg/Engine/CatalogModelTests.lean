@@ -783,7 +783,7 @@ it. -/
 /- Mister Fantastic: several tokens entering together trigger once. -/
 #guard
   let g := addPermanent afterDraw misterFantasticReedRichards me me
-  let g := (g.createKindTokens me .treasure 2).flushTokenEnters
+  let g := g.createKindTokens me .treasure 2
   ((g.waitingTriggers.filter (·.source.name == "Mister Fantastic, Reed Richards")).size == 1)
 
 /- Tokens created by a resolving ability trigger “whenever a token you

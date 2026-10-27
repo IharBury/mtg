@@ -708,7 +708,7 @@ def antManAnyCounterOk : Bool :=
   insect == 1 &&
     (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
     (let ant := namedPermanent g "Ant-Man, Colony Commander"
-     ant.status.firedOnceEachTurn &&
+     g.loggedSourceTriggeredThisTurn ant.id &&
        (let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
         (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
           t.event == TriggerEvent.youPutPlusOne)).size == 1)) &&

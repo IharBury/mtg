@@ -10,14 +10,6 @@ phasing out and in, including phasing attachments with their host.
 namespace Mtg.Engine
 namespace Game
 
-/-- Permanents currently attached to `hostId`. -/
-def attachmentsOfId (g : Game) (hostId : ObjectId) : Array GameObject :=
-  g.battlefield.filter (fun o => o.attachedTo == some hostId)
-
-/-- Attachments that should phase out or in with `host`. -/
-def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
-  g.attachmentsOfId host.id
-
 /-- Remove `o` from combat (CR 506.4). -/
 def removeFromCombat (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
   if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked ||
@@ -34,18 +26,19 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none) : G
       cause.orElse (fun _ =>
         g.currentResolvingContext?.map (fun (src, ctrl) =>
           .oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl))
-    let g := g.removeFromCombat o (cause := cause)
-    let o := g.object! o.id
-    let g := g.expirePrintedStaticEffects o (cause := cause)
-    let g := g.record (GameEvent.phasedOut g.turnNumber o.asEvent false (cause := cause))
-    let g := g.logMsg s!"{o.name} phases out"
-    (g.attachmentsOf o).foldl (fun acc att =>
-      let att := acc.object! att.id
-      let acc := acc.removeFromCombat att (cause := cause)
-      let att := acc.object! att.id
-      let acc := acc.expirePrintedStaticEffects att (cause := cause)
-      acc.record (GameEvent.phasedOut acc.turnNumber att.asEvent true (cause := cause))
-        |>.logMsg s!"{att.name} phases out attached to {o.name}") g
+    g.withBatch cause fun g =>
+      let g := g.removeFromCombat o (cause := cause)
+      let o := g.object! o.id
+      let g := g.expirePrintedStaticEffects o (cause := cause)
+      let g := g.record (GameEvent.phasedOut g.turnNumber o.asEvent false (cause := cause))
+      let g := g.logMsg s!"{o.name} phases out"
+      (g.attachmentsOf o).foldl (fun acc att =>
+        let att := acc.object! att.id
+        let acc := acc.removeFromCombat att (cause := cause)
+        let att := acc.object! att.id
+        let acc := acc.expirePrintedStaticEffects att (cause := cause)
+        acc.record (GameEvent.phasedOut acc.turnNumber att.asEvent true (cause := cause))
+          |>.logMsg s!"{att.name} phases out attached to {o.name}") g
 
 /-- Phase `o` in, along with anything that phased out attached to it.
 Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26g). -/

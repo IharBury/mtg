@@ -39,12 +39,6 @@ def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : Perma
     Game :=
   g.applyOnSource sourceId action "The triggered ability's source is no longer in play"
 
-/-- Queue “whenever the Ring tempts you” and “whenever you choose a
-Ring-bearer” triggers for `p`. -/
-def putRingTemptTriggers (g : Game) (p : PlayerId) (choseBearer : Bool) : Game :=
-  let g := g.putControlledTriggers p .theRingTemptsYou
-  if choseBearer then g.putControlledTriggers p .youChooseRingBearer else g
-
 /-- As the Ring tempts `p`: get The Ring emblem if needed, gain its next
 ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing
 the same creature still counts as choosing it. -/
@@ -72,7 +66,8 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
       g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
     | none =>
       g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
-  g.putRingTemptTriggers p pick.isSome
+  g.record (GameEvent.ringTempted g.turnNumber p pick nextAbilities
+    (cause := g.resolvingOneShotCause p))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
 def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
@@ -268,7 +263,6 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       | none => pure ()
       | some o =>
         g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
-        g := g.putMatchingSourceTriggers p (g.object! id) .tappedForTeamwork
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
     g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.teamwork ids])
       (cause := some (.costPayment .teamwork p (some spell.id))))

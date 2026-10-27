@@ -234,20 +234,10 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p ||
         sac.id == bolgId then
       throw s!"Can't sacrifice {sac.name} to Bolg"
-    let pw := g.power sac
     let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
     let g := g.change (.pending .none)
-    match g.findObject? bolgId with
-    | none =>
-      return g.receivePriority g.activePlayer
-    | some bolg =>
-      match bolg.controller with
-      | none => return g.receivePriority g.activePlayer
-      | some c =>
-        let g := g.queueTrigger c bolg .onBolgDealSacrificedPower
-          .bolgSacrificedForReflexive (lastKnownPower := some pw)
-        return g.receivePriority g.activePlayer
+    return g.receivePriority g.activePlayer
   | .payWard q spellId (.sacrificePermanents left paid) =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"

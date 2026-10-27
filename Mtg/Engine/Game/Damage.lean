@@ -70,16 +70,6 @@ def destroyPermanent (g : Game) (o : GameObject)
   else
     g.moveToOwnerGraveyard o s!"{o.name} is destroyed" (verb := some .destroy) (cause := cause)
 
-/-- Queue “a creature you control is dealt damage” triggers (She-Hulk). -/
-def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : Game :=
-  if n <= 0 || !o.isCreature then g
-  else
-    match o.controller with
-    | none => g
-    | some p =>
-      g.foldControlledPermanents p (excludeId := none) (fun g src =>
-        g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
-
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
@@ -118,10 +108,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
     let marked := g.object! o.id
     let happened := GameEvent.damaged g.turnNumber srcEvent marked.asEvent n.toNat combat (cause := cause)
-    let g := (g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat (cause := cause))).logMsg msg
-    if happened.matchesTrigger (marked.controller.getD marked.owner) marked.id .creatureYouControlDealtDamage then
-      g.queueCreatureYouControlDealtDamage (g.object! o.id) n
-    else g
+    (g.record happened |>.record (GameEvent.damageMarked g.turnNumber marked.id n.toNat (cause := cause))).logMsg msg
   else
   -- CR 120.3c: damage dealt to a planeswalker removes that many loyalty counters.
   let happened := GameEvent.damaged g.turnNumber srcEvent o.asEvent n.toNat combat (cause := cause)
@@ -136,39 +123,17 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true (cause := cause))
       else g
     g.logMsg msg
-  let g :=
-    if n > 0 then
-      match o.controller with
-      | some p =>
-        let already := g.waitingTriggers.any (fun t =>
-          t.source.id == o.id && t.event == .sourceDealtDamage)
-        -- The amount dealt rides on last-known power (Hexhaven Invigorator);
-        -- simultaneous damage adds up.
-        let g :=
-          if already then
-            g.change (.addSourceDealtDamagePower o.id n)
-          else if happened.matchesTrigger p o.id .sourceDealtDamage then
-            g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage (some n)
-          else g
-        let hasEnrage :=
-          o.printed.triggeredAbilities.any (fun ab =>
-            match ab.shared with
-            | .watch .hulk => true
-            | _ => false)
-        if !already && hasEnrage && o.status.attacking then
-          g.change (.enrageGrantsAdditionalCombat (g.enrageGrantsAdditionalCombat + 1))
-        else g
-      | none => g
+  if n > 0 then
+    let already := g.waitingTriggers.any (fun t =>
+      t.source.id == o.id && t.event == .sourceDealtDamage)
+    let hasEnrage :=
+      o.printed.triggeredAbilities.any (fun ab =>
+        match ab.shared with
+        | .watch .hulk => true
+        | _ => false)
+    if hasEnrage && o.status.attacking && !already then
+      g.change (.enrageGrantsAdditionalCombat (g.enrageGrantsAdditionalCombat + 1))
     else g
-  let g := g.queueCreatureYouControlDealtDamage o n
-  if n > 0 && !combat then
-    match o.controller with
-    | some p =>
-      if happened.matchesTrigger p o.id .sourceDealtNoncombatDamage then
-        g.putMatchingSourceTriggers p o .sourceDealtNoncombatDamage
-          (some n)
-      else g
-    | none => g
   else g
 
 /-- Extra noncombat damage from Hawkeye, Young Avenger. X is his power at
@@ -238,13 +203,8 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
     else
       let before := pl.life
       let happened := GameEvent.life g.turnNumber p n true (cause := cause)
-      let g := (g.record happened).logMsg
+      (g.record happened).logMsg
         s!"{pl.name} gains {n} life ({before + (n : Int)} life)"
-      let gained := ((g.player p).life - before).toNat
-      if gained == 0 then g
-      else if happened.matchesTrigger p ⟨0⟩ .youGainLife then
-        g.putControlledTriggers p .youGainLife (lastKnownPower := some (Int.ofNat gained))
-      else g
 
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
@@ -342,23 +302,13 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
           s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
       else
         g.logMsg s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
-    let g := g.afterLifeLost pid (pl.life - (g.player pid).life).toNat
     -- CR 702.15b: damage dealt by a source with lifelink.
-    let g :=
-      match source with
-      | some src =>
-        match src.controller with
-        | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
-        | none => g
+    match source with
+    | some src =>
+      match src.controller with
+      | some c => if n > 0 && g.hasLifelink src then g.gainLife c n.toNat (cause := cause) else g
       | none => g
-    if n > 0 then
-      -- Each other player sees an opponent dealt noncombat damage. “One or
-      -- more opponents” (`opponentsDealtNoncombatDamage`) and `.heroesDealDamageToPlayer`
-      -- are evaluated once per batch in `evaluateBatchTriggers`.
-      g.livingPlayers.foldl (fun g q =>
-        if q.id == pid then g
-        else g.putFraEventTriggers q.id .opponentDealtNoncombatDamage) g
-    else g
+    | none => g
 
 /-- Deal `n` damage to each opponent of `controller` under a single shared
 `.oneShotEffect` cause when resolving (CR 120 / 610.1). -/
@@ -408,10 +358,8 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat)
     if pl.lifeLocked || pl.lifeCantChange then
       g.logMsg s!"{pl.name}'s life total can't change"
     else
-      let g := (g.record (GameEvent.life g.turnNumber p n false (cause := cause))).logMsg
+      (g.record (GameEvent.life g.turnNumber p n false (cause := cause))).logMsg
         s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
-      let lost := (pl.life - (g.player p).life).toNat
-      g.afterLifeLost p lost
 
 /-- Each opponent of `controller` loses `n` life under one shared
 `.oneShotEffect` cause when resolving (CR 119.3 / 610.1). -/

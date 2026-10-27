@@ -99,17 +99,14 @@ def applyAction (g : Game) (p : PlayerId) : Action → Except String Game
   | .chooseName name => g.answerFraChoice p (.name name)
 
 
-/-- Apply an action, then process entering for tokens it created (CR 603.6a)
-and put the resulting triggered abilities on the stack. -/
+/-- Apply an action, then put any resulting triggered abilities on the stack. -/
 def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
+  let beforeWaiting := g.waitingTriggers.size
   let g ← g.applyAction p a
   let g :=
-    if g.pendingTokenEnters.isEmpty then g
-    else
-      let g := g.flushTokenEnters
-      if g.pending == .none && !g.waitingTriggers.isEmpty && !g.over then
-        g.receivePriority g.priority
-      else g
+    if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
+      g.receivePriority g.priority
+    else g
   return g.flushUnlessPays
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=

@@ -716,7 +716,7 @@ def crossbonesVillainOnceOk : Bool :=
        (namedPermanent g "Red Guardian, Super-Soldier")
      villainWait g == 1 &&
        (let xb := namedPermanent g "Crossbones, Malicious Mercenary"
-        xb.status.firedOnceEachTurn &&
+        g.loggedSourceTriggeredThisTurn xb.id &&
           (let g := addPermanent g baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
            let g := g.afterPermanentEnters
              (namedPermanent g "Baron Strucker, HYDRA Overlord")
@@ -948,8 +948,8 @@ and the copied permanent's enters abilities trigger. -/
 def copyTokenEntersAbilitiesOk : Bool :=
   let g := addPermanent afterDraw futuristForge ⟨0⟩ ⟨0⟩
   let src := namedPermanent g "Futurist Forge"
-  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
   let before := g.waitingTriggers.size
+  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
   let g := g.afterPermanentEnters tok
   !tok.status.tapped &&
     tok.status.plusOnePlusOne == 0 &&

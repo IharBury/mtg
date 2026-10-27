@@ -66,7 +66,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       match pw? with
       | some pw => .planeswalker pw.id
       | none => .player dest
-    decls := decls.push ({ o.asEvent with attacking := true, attackingTarget := some target }, target)
+    decls := decls.push ({ (g.snapshot o) with attacking := true, attackingTarget := some target }, target)
     steps := steps.push (id, dest, pw?)
   if !decls.isEmpty then
     g := g.record (GameEvent.attackersDeclared g.turnNumber p decls
@@ -102,16 +102,6 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
-  let mut sphinxes := 0
-  for id in ids do
-    let a := g.object! id
-    if a.printed.isToken && g.hasSubtype a .zombie && g.snapshotPower a >= 6 then
-      g := g.putFraEventTriggers p .zombieTokenAttacks (cause := some a)
-    if g.hasSubtype a .sphinx then
-      sphinxes := sphinxes + 1
-  if sphinxes > 0 then
-    g := g.putFraEventTriggers p .sphinxesAttack (lastKnownPower := some (Int.ofNat sphinxes))
-  g := g.putAttackTriggersOnStack p ids
   g := g.change (.pending .none)
   g := g.promptTriggerTargetsIfNeeded
   if g.pending != .none then
@@ -132,7 +122,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     let a := g.object! attackerId
     if !g.canBlock b a then
       throw s!"{b.name} cannot block {a.name}"
-    decls := decls.push (b.asEvent, attackerId)
+    decls := decls.push (g.snapshot b, attackerId)
   if !decls.isEmpty then
     g := g.record (GameEvent.blockersDeclared g.turnNumber p decls
       (cause := some (.turnBased .declareBlockers)))
@@ -146,7 +136,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   for attackerId in blockedAttackers do
     let a := g.object! attackerId
     let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
-    g := g.record (GameEvent.becameBlocked g.turnNumber a.asEvent bs
+    g := g.record (GameEvent.becameBlocked g.turnNumber (g.snapshot a) bs
       (cause := some (.turnBased .declareBlockers)))
   -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
   -- blocked must be blocked by at least that many creatures.
@@ -162,12 +152,11 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   if rest.isEmpty then
     for o in g.battlefield do
       if o.status.attacking && !o.status.blocked then
-        g := g.record (GameEvent.remainedUnblocked g.turnNumber o.asEvent
+        g := g.record (GameEvent.remainedUnblocked g.turnNumber (g.snapshot o)
           (cause := some (.turnBased .declareBlockers)))
   g := closeBatch g
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
-  g := g.putBlockedTriggersOnStack assignments
   if rest.isEmpty then
     return g.changes #[.pending .none, .blockersQueue #[]] |>.receivePriority g.activePlayer
   else
@@ -397,39 +386,8 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if dealtToPlayer > 0 && pwTarget?.isNone && !(g.player defn).lost then
         match src.controller with
         | some pid =>
-          let happened :=
-            GameEvent.damagedPlayer g.turnNumber srcEvent defn dealtToPlayer.toNat true
-          g :=
-            if happened.matchesTrigger pid src.id .dealsCombatDamageToPlayer then
-              g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
-                (lastKnownToughness := some (Int.ofNat defn.idx))
-            else g
-          g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
-          if src.isCreature then
-            for o in g.permanentsOf pid do
-              for ab in o.printed.triggeredAbilities do
-                match ab with
-                | .triggered _ _ opts =>
-                  match ab.shared, opts.watchedSubtype with
-                  | .createTokens .., some subtype =>
-                    if o.id != src.id && g.hasSubtype src subtype then
-                      g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
-                  | _, _ => pure ()
-          if g.hasSubtype src .army then
-            g := g.putControlledTriggers pid .armyYouControlCombatDamage
-          for eq in g.battlefield do
-            if eq.attachedTo == some src.id then
-              match eq.controller with
-              | some c =>
-                g := g.putMatchingSourceTriggers c eq
-                  .equippedDealsCombatDamageToPlayer
-                  (some dealtToPlayer)
-              | none => pure ()
           if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             g := g.createTreasureTokens pid dealtToPlayer.toNat (cause := combatCause)
-          if !(g.player defn).protectionFromEverything &&
-              !(g.player defn).lifeLocked && !(g.player defn).lifeCantChange then
-            g := g.afterLifeLost defn dealtToPlayer.toNat
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone

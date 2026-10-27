@@ -1128,7 +1128,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !(g.legalTargetsForKind p (g.targetingOf obj).kind (some c)).contains t then
       throw "Illegal target (CR 601.2c)"
     let g := g.setStackEntryTargets c #[t]
-    let g := g.queueBecomesTargetTriggers p #[t]
     let g := g.foldPermanentTargets #[t] (fun g o =>
       if o.controller != some p && o.isOnBattlefield then
         (g.wardCostsOn o).foldl (fun g cost =>
@@ -1184,7 +1183,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking"
     | none =>
       let g := g.commitEnteringAttackItems chosen' cause
-      let g := if g.pendingTokenEnters.isEmpty then g else g.flushTokenEnters
       return g.finishFraChoice
   | .mayBeginOnBattlefield ids, .accept =>
     let g ←

@@ -10,24 +10,6 @@ blessing (ascend, CR 702.131), and shadow counters.
 namespace Mtg.Engine
 namespace Game
 
-/-- Whether `p` currently has an enduring story. -/
-def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).enduringStory
-
-/-- A permanent counts once toward Storied even if it is legendary, an
-artifact, and a Saga. -/
-def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield &&
-    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype .saga)
-
-/-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
-def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).filter (g.countsTowardStoried) |>.size
-
-/-- Whether `p` controls a permanent with storied. -/
-def controlsStoried (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => o.printed.keywords.storied)
-
 /-- Grant a lasting player designation if `p` now qualifies. The designation
 is never removed. Not a triggered ability. -/
 def grantDesignationIfNeeded (g : Game) (p : PlayerId)
@@ -82,26 +64,6 @@ def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId) : Game :=
     | some _ =>
       let g := g.changeStatus id (.ringBearer true)
       g.changePlayer p (.ringBearerId (some id))
-
-/-- Whether `p` currently has the city's blessing. -/
-def hasCitysBlessing (g : Game) (p : PlayerId) : Bool :=
-  (g.player p).citysBlessing
-
-/-- Number of permanents `p` currently controls (phased-out objects do not
-count). -/
-def permanentCount (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).size
-
-/-- Whether `p` controls a permanent with ascend, or a resolving spell with
-ascend on the stack. -/
-def controlsAscend (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o => o.printed.keywords.ascend) ||
-    g.stack.any (fun e =>
-      match g.findObject? e.objectId with
-      | some o =>
-        o.controller == some p && o.printed.keywords.ascend &&
-          o.triggeredAbility.isNone && o.abilityEffect.isNone
-      | none => false)
 
 /-- Grant the city's blessing if `p` now qualifies. The designation is on the
 player and is never removed. Not a triggered ability. -/
