@@ -1057,20 +1057,33 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
 ```
 
 - Look-back triggers read `pre` (603.10, upgrading Phase 4's
-  `preBattlefield : Array GameObject` snapshot to `pre : GameSnapshot`;
-  [`Event.lean`](Mtg/Engine/Game/Event.lean) defines `GameEvent.isLookBack` for
-  the 603.10a–d / 603.10f categories, while `matchTriggers` selects `pre` vs
-  `post` per branch): the four
-  zone-change categories in 603.10a — (1) leaves-the-battlefield abilities
-  (including dies, 603.6c / 700.4; `oneOrMoreOtherCreaturesDie` already reads
-  `preBattlefield` in Phase 4), (2) abilities that trigger when a player
-  sacrifices a permanent, (3) abilities that trigger when a card leaves a
-  graveyard, and (4) abilities that trigger when an object that all players can
-  see is put into a hand or library — plus phasing out 603.10b, becoming
-  unattached 603.10c, losing control / an opponent gaining control 603.10d, a
-  spell being countered 603.10e, and a player losing the game 603.10f
-  (planeswalking 603.10g is a non-goal).
-- Everything else reads `post` (603.10), including enters-the-battlefield
+  `preBattlefield : Array GameObject` snapshot to `pre : GameSnapshot`): the CR
+  look-back categories are the four zone-change categories in 603.10a —
+  (1) leaves-the-battlefield abilities (including dies, 603.6c / 700.4;
+  `oneOrMoreOtherCreaturesDie` already reads `preBattlefield` in Phase 4),
+  (2) abilities that trigger when a player sacrifices a permanent,
+  (3) abilities that trigger when a card leaves a graveyard, and (4) abilities
+  that trigger when an object that all players can see is put into a hand or
+  library — plus phasing out 603.10b, becoming unattached 603.10c, losing
+  control / an opponent gaining control 603.10d, a spell being countered
+  603.10e, and a player losing the game 603.10f (planeswalking 603.10g is a
+  non-goal). [`Event.lean`](Mtg/Engine/Game/Event.lean) defines
+  `GameEvent.isLookBack` for 603.10a–f (including a `ZoneEvent.moved` from
+  `.stack` with `verb == .counter` for 603.10e), while `matchTriggers` selects
+  `pre` vs `post` directly per branch without calling `isLookBack`: on `pre`, it
+  evaluates leaves-the-battlefield (`fromZone == .battlefield && toZone != .battlefield`,
+  including dies and nonland battlefield-to-hand `.anotherNonlandReturned`),
+  sacrifice on a battlefield leave when `verb == .sacrifice`
+  (`.youSacrificeToken`, and `.bolgSacrificedForReflexive` while `pre.pending` is
+  `.maySacrificeAnotherBolg`), and a creature card leaving a graveyard
+  (`.creatureCardLeavesYourGy`); a general non-battlefield sacrifice, a
+  noncreature card leaving a graveyard, 603.10a(4) moves into a library or from
+  exile/stack/command/graveyard into a hand, and the 603.10b–f events
+  (`.permanent (.phasedOut ..)`, `.unattached`, `.controlChanged`,
+  `ZoneEvent.moved` from `.stack` with `verb == .counter`, and
+  `.player (.lost ..)`) have no modeled triggers and are unmatched in
+  `matchTriggers`.
+- All other matched triggers read `post` (603.10), including enters-the-battlefield
   (603.6a) and **discard / cycling**: 603.10a does not include cards leaving a
   hand. When a card is discarded (701.9) or cycled (702.29a), it moves from a
   hidden zone to a destination zone (typically the graveyard), and trigger
@@ -1621,11 +1634,14 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `WaitingTrigger` is later put on the stack, `putWaitingTrigger` forwards
    `wt.causeController` and `wt.eventCause` into `putQueuedTrigger`).
 2. Add `GameEvent.isLookBack` ([`Event.lean`](Mtg/Engine/Game/Event.lean)) for
-   the 603.10a–d / 603.10f categories, and select `pre` vs `post` per branch in
-   `matchTriggers`: leaves-the-battlefield (`fromZone == .battlefield && toZone != .battlefield`,
-   including dies and battlefield-to-hand `.anotherNonlandReturned`), sacrifice
-   (`verb == .sacrifice`, including `.youSacrificeToken` and Bolg's
-   `.bolgSacrificedForReflexive`), and a creature card leaving a graveyard
+   the 603.10a–f categories (including a `ZoneEvent.moved` from `.stack` with
+   `verb == .counter` for 603.10e), and select `pre` vs `post` directly per
+   branch in `matchTriggers`: leaves-the-battlefield
+   (`fromZone == .battlefield && toZone != .battlefield`, including dies and
+   nonland battlefield-to-hand `.anotherNonlandReturned`), sacrifice on a
+   battlefield leave when `verb == .sacrifice` (`.youSacrificeToken`, and Bolg's
+   `.bolgSacrificedForReflexive` while `pre.pending` is
+   `.maySacrificeAnotherBolg`), and a creature card leaving a graveyard
    (`.creatureCardLeavesYourGy`) evaluate on `pre`, whereas enters-the-battlefield,
    draw, discard / cycling (`.fra .youDiscardThis` and `.fra .youCycle` on
    `afterObj`, plus `.youDiscard` and `.fra .youDiscardOne`), tap, damage, life,
@@ -1634,8 +1650,9 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `attackPumpPerPlainsThisTurn` on `CombatEvent.attackersDeclared`), cast
    (`.fra .castThis`, `.youCastCreature`, etc.), target, and
    `.finalSagaChapterResolves` evaluate on `post` (while
-   `.permanent (.phasedOut ..)`, `.unattached`, `.controlChanged`, and
-   `.player (.lost ..)` are currently no-ops in `matchTriggers`).
+   `.permanent (.phasedOut ..)`, `.unattached`, `.controlChanged`, a countered
+   stack object `ZoneEvent.moved` from `.stack` with `verb == .counter`, and
+   `.player (.lost ..)` are currently unmatched no-ops in `matchTriggers`).
 3. Record `TriggerQueueEvent.triggered` (with default
    `cause := .gameRule .triggeredAbility`, `origin := batchId`, and
    `batch := batchId`) in `closeBatch` (`Core.lean`) for each new
@@ -1700,9 +1717,10 @@ plus new look-back tests for simultaneous deaths and phasing out.
 2. Implement the 616.1 loop from §3.4 with per-chain `applied` sets (614.5) and
    APNAP choice prompts.
 3. Remove the inline replacement branches listed in §1.4 (including the
-   `wouldCreateToken` branches in `Tokens.createToken` and
-   `ResolutionEffects.commitEnteringAttackItems`—Dragon replacement,
-   `tokenCreateMultiplier`, and Food/Treasure extras—and in
+   `wouldCreateToken` branches in `Tokens.createToken`—Dragon replacement,
+   `tokenCreateMultiplier`, and Food/Treasure extras—in
+   `ResolutionEffects.commitEnteringAttackItems`—Dragon replacement and
+   Food/Treasure extras—and in
    `TriggeredAbilities.createAndMarkTokensAttacking`—`tokenCreateMultiplier`—plus
    `Game.entersTapped` and `Game.sourceDamagePrevented` in `Core.lean`).
 
