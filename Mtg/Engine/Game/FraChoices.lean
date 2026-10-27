@@ -70,6 +70,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     (cause := some (.gameRule .spellCast))
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
+  let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let prop : ProposedSpell := {
@@ -1152,6 +1153,39 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .entersOddEven id, .mode 1 =>
     return (g.chooseGollumParity id true).finishFraChoice
   | .entersOddEven _, _ => throw "Choose even (0) or odd (1)"
+  | .chooseEnteringAttackTarget remaining chosen cause, ans =>
+    let some item := remaining[0]?
+      | return (g.commitEnteringAttackItems chosen cause).finishFraChoice
+    let options := item.options
+    let chosen? : Option AttackTarget :=
+      match ans with
+      | .mode idx => options[idx]?
+      | .objects #[oid] =>
+        options.find? fun
+          | .planeswalker pid | .battle pid => pid == oid
+          | .player _ => false
+      | _ => none
+    let some tgt := chosen?
+      | throw "Choose a player, planeswalker, or battle to attack (CR 508.4)"
+    let who :=
+      match tgt with
+      | .player pid => (g.player pid).name
+      | .planeswalker oid | .battle oid =>
+        ((g.findObject? oid).map GameObject.name).getD "that permanent"
+    let nm := g.enteringAttackItemName item
+    let g := g.logMsg s!"{(g.player p).name} chooses {who} for {nm} to attack"
+    let (restAfter, chosen') :=
+      advanceFixedEnteringAttackItems (remaining.extract 1 remaining.size) (chosen.push (item, some tgt))
+    match restAfter[0]? with
+    | some nextItem =>
+      let nextCtrl := nextItem.controller
+      let nextNm := g.enteringAttackItemName nextItem
+      return (g.change (.pending (.fraChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause)))).logMsg
+        s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking"
+    | none =>
+      let g := g.commitEnteringAttackItems chosen' cause
+      let g := if g.pendingTokenEnters.isEmpty then g else g.flushTokenEnters
+      return g.finishFraChoice
   | .mayBeginOnBattlefield ids, .accept =>
     let g ←
       match ids[0]? with
@@ -1376,6 +1410,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD CardSubtype.human).englishName
   | .entersOddEven _ => .chooseMode 0
+  | .chooseEnteringAttackTarget .. => .chooseMode 0
   | .mayBeginOnBattlefield _ => .decline
 
 end Game

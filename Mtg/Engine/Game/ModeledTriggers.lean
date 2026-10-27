@@ -362,89 +362,15 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
     | none => g.logMsg "The target is no longer legal"
   | _ => g
 
-/-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
-def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Bool :=
-  mods.any (· == .loseAllAbilities) &&
-    mods.any (fun m =>
-      match m with
-      | .keywords k => k.haste
-      | _ => false)
-
-/-- Extra enters-with counters specified by `mods`. -/
-def enterModsExtraCounters (mods : List TriggeredAbility.TriggerEnterWith) : CounterBag :=
-  mods.foldl (fun acc m =>
-    match m with
-    | .counter .finality n _ => acc.add .finality n
-    | .counter kind n true => acc.add kind n
-    | _ => acc) #[]
-
-/-- Attacking status specified by `mods` as the permanent enters. -/
-def enterModsAttacking (g : Game) (controller : PlayerId)
-    (mods : List TriggeredAbility.TriggerEnterWith) : Bool × Option PlayerId :=
-  if mods.any (· == .attacking) then
-    let whom :=
-      match (g.livingOpponents controller)[0]? with
-      | some pl => some pl.id
-      | none => none
-    (true, whom)
-  else (false, none)
-
-/-- Apply one enters-with change to the permanent `id`. -/
-def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
-    (mod : TriggeredAbility.TriggerEnterWith)
-    (cause : Option EventCause := none) : Game :=
-  match g.findObject? id with
-  | none => g
-  | some o =>
-    match mod with
-    | .loseAllAbilities =>
-      g.createEffect (.copy id { o.printed with
-        keywords := Keywords.none
-        triggeredAbilities := #[]
-        activatedAbilities := #[]
-        staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
-        (cause := cause)
-    | .keywords k =>
-      let o := g.object! id
-      g.createEffect (.copy id { o.printed with
-        keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
-        (cause := cause)
-    | .additionalSubtype subtype =>
-      let o := g.object! id
-      if o.printed.hasSubtype subtype then g
-      else
-        g.createEffect (.copy id { o.printed with
-          subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
-          (cause := cause)
-    | .counter kind n asEnters =>
-      let o := g.object! id
-      match kind, asEnters with
-      | .plusOnePlusOne, true =>
-        g.addPlusOnePlusOneTo o n (entersWith := true) (cause := cause)
-      | .plusOnePlusOne, false =>
-        g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
-      | .finality, _ =>
-        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true) (cause := cause)
-      | kind, asEnters =>
-        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller) (cause := cause)
-    | .attacking => g
-
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
-  let (atk, whom) := g.enterModsAttacking controller mods
-  g.withBatch (some cause) fun g =>
-    let (g, newId) := g.putOntoBattlefield o.id o.owner
-      (attacking := atk) (attackingWhom := whom)
-      (extraEntersWith := enterModsExtraCounters mods)
-      (cause := some cause)
-    let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
-    let g := g.afterPermanentEnters (g.object! newId)
-    if losesAbilitiesAndHaste mods then
-      g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-    else g
+  let options := g.enterModsAttackOptions o.owner mods
+  let item := EnteringAttackItem.card o.id o.owner controller false false
+    (enterModsExtraCounters mods) mods (.ownerGraveyard (losesAbilitiesAndHaste mods)) options
+  g.promptEnteringAttackItems #[item] (cause := some cause)
 
 /-- Return the source from its owner's graveyard under its owner's control.
 Hellcat's return reports her by name when she has already left. -/

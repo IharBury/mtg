@@ -209,12 +209,9 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let atk :=
     if o.status.attacking then
       let dest :=
-        match o.status.attackingPlaneswalker.bind g.findObject? with
+        match o.status.attackingPlaneswalker?.bind g.findObject? with
         | some pw => objectRef g pw.id
-        | none =>
-          match o.status.attackingWhom with
-          | some pid => (g.player pid).name
-          | none => (g.player g.defendingPlayer).name
+        | none => (g.player (g.defendingPlayerOf o)).name
       if o.status.blocked then s!" *attacking {dest}, blocked*" else s!" *attacking {dest}*"
     else ""
   let blk :=
@@ -553,10 +550,7 @@ def combatDamageTargetRefs (g : Game) (source : GameObject) (forAttackers : Bool
     (g.legalCombatDamageRecipients source forAttackers).toList.map (fun o =>
       objectRef g o.id)
   if g.canAssignCombatDamageToDefendingPlayer source forAttackers then
-    let dest :=
-      match source.status.attackingWhom with
-      | some pid => pid
-      | none => g.defendingPlayer
+    let dest := g.defendingPlayerOf source
     creatures ++ [(g.player dest).name]
   else creatures
 
@@ -938,6 +932,15 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             s!"may put a creature card ({creatures.size}): choose <id>, or decline"
         | .entersCreatureType _ => "choose a creature type as it enters: name <type>"
         | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
+        | .chooseEnteringAttackTarget remaining _ _ =>
+          let options := match remaining[0]? with | some item => item.options | none => #[]
+          let names := (List.range options.size).map (fun i =>
+            match options[i]! with
+            | AttackTarget.player pid => s!"{i} {(g.player pid).name}"
+            | AttackTarget.planeswalker oid | AttackTarget.battle oid =>
+              let nm := ((g.findObject? oid).map GameObject.name).getD s!"#{oid.raw}"
+              s!"{i} {nm} (#{oid.raw})")
+          s!"choose what it enters attacking ({remaining.size} left): {String.intercalate ", " names}"
         | .mayBeginOnBattlefield ids =>
           s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
       s!" [{what} ({g.player p |>.name})]"

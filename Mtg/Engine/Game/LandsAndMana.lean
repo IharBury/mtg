@@ -13,8 +13,10 @@ namespace Game
 /-- Record that `p` has used a land play this turn, without putting a land
 onto the battlefield. Tests use this when the drop itself is not the action. -/
 def recordLandPlayed (g : Game) (p : PlayerId) : Game :=
-  g.record (GameEvent.playedLand g.turnNumber p
-    { controller := some p, owner := p, types := #[.land] })
+  let snap : EventObject := { id := some ⟨Nat.pow 2 60⟩, controller := some p, owner := p, zone := .outside p }
+  g.record (GameEvent.moved g.turnNumber snap (.outside p) (.outside p)
+    (after := some snap) (verb := some .playLand) (actor := some p)
+    (cause := some (.specialAction .playLand p)))
 
 /-- Put `id` onto the battlefield as `p`'s land play and run its enters
 processing (CR 305.1). -/
@@ -27,7 +29,6 @@ def finishPlayLand (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool := f
       (tapped := entersTapped) (summoningSick := false)
       (verb := some .playLand) (actor := some p)
       (cause := some (.specialAction .playLand p))
-    let g := g.record (GameEvent.playedLand g.turnNumber p (g.object! newId).asEvent)
     let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
     let g := if tapped then g.logMsg s!"{card.name} enters tapped" else g
     g.afterLandEnters (g.object! newId)

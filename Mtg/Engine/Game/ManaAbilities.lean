@@ -396,6 +396,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if d.tap then
     g := g.becomeTapped (g.object! id) (cause := some (.costPayment .tap p (some id)))
   let src := g.object! id
+  let srcSnap := src.asEvent
   if d.sacrificeSelf then
     g := g.sacrificeToGraveyard src s!"{(g.player p).name} sacrifices {src.name}"
       (cause := some (.costPayment .sacrifice p (some id)))
@@ -404,6 +405,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     if (g.findObject? id).isSome then
       g := g.changeStatuses id #[.incActivationsThisTurn, .pushAbilitiesActivated i]
   | none => pure ()
+  g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p .mana)
   g := g.changePlayer p (.manaPool (addRestrictedMana (g.player p).manaPool mana d.restriction))
   if d.damageYou > 0 then
     let pl := g.player p
@@ -412,7 +414,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       if pl.lifeLocked || pl.lifeCantChange then
         g.logMsg s!"{pl.name}'s life total can't change"
       else
-        (g.record (GameEvent.life g.turnNumber p d.damageYou false true false)).logMsg
+        (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
+          (cause := if g.currentResolvingContext?.isSome then g.resolvingOneShotCause p (some id) else none))).logMsg
           s!"{o.name} deals {d.damageYou} damage to {pl.name}"
     let lost := (before - (g.player p).life).toNat
     g := g.afterLifeLost p lost

@@ -174,6 +174,7 @@ invoke `afterPermanentEnters` after this returns. -/
 def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none)
     (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
   if (g.player controller).lost then
@@ -187,6 +188,11 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     let newId : ObjectId := ⟨g.nextObjectId⟩
     let ts := g.timestamp + 1
     let entersTapped := tapped || g.entersTapped controller printed
+    let isAttacking := attacking || attackingTarget.isSome
+    let resolvedAttackTarget : Option AttackTarget :=
+      if isAttacking then
+        some (attackingTarget.getD (.player (attackingWhom.getD g.defendingPlayer)))
+      else none
     let baseObj : GameObject := {
       id := newId
       printed := printed
@@ -197,8 +203,8 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       status := {
         tapped := entersTapped
         summoningSick := sick
-        attacking := attacking
-        attackingWhom := attackingWhom
+        attacking := isAttacking
+        attackingTarget := resolvedAttackTarget
       }
       timestamp := ts
     }
@@ -208,6 +214,12 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
     let obj := { baseObj with status := status }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := cause))
+    let g : Game :=
+      match resolvedAttackTarget with
+      | some tgt =>
+        g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+          (cause := cause))
+      | none => g
     let g := g.createPrintedStaticEffects (g.object! newId)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
     let g := g.change (.pushPendingTokenEnter newId)
@@ -250,11 +262,13 @@ Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) (_batch := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none)
     (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
   if (g.player controller).lost then
     g.createOneToken controller printed (tapped := tapped)
       (attacking := attacking) (attackingWhom := attackingWhom)
+      (attackingTarget := attackingTarget)
       (extraCounters := extraCounters) (cause := cause)
   else
     let proposed := GameEvent.created g.turnNumber controller {
@@ -280,6 +294,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       for _ in [0:copies] do
         let (g', obj) := g.createOneToken controller printed (tapped := tapped)
           (attacking := attacking) (attackingWhom := attackingWhom)
+          (attackingTarget := attackingTarget)
           (extraCounters := extraCounters) (cause := cause)
         g := g'
         last := some obj
@@ -614,6 +629,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (n : Nat) (tapped := false) (attacking := false)
+    (attackingTarget : Option AttackTarget := none)
     (cause : Option EventCause := none) : Game :=
   if (g.player controller).lost then
     let g := g.change (.recentTokenIds #[])
@@ -623,11 +639,14 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     g.withBatch cause fun g => Id.run do
       let mut g := g
       let mut ids : Array ObjectId := #[]
-      let dest := if attacking then some g.defendingPlayer else none
+      let isAttacking := attacking || attackingTarget.isSome
+      let dest :=
+        if isAttacking && attackingTarget.isNone then some g.defendingPlayer else none
       let printed := tokenPrinted kind
       for _ in [0:n] do
         let (g', obj) := g.createToken controller printed (tapped := tapped)
-          (attacking := attacking) (attackingWhom := dest) (cause := cause)
+          (attacking := isAttacking) (attackingWhom := dest)
+          (attackingTarget := attackingTarget) (cause := cause)
         g := g'
         ids := ids.push obj.id
       return g.change (.recentTokenIds ids)

@@ -491,30 +491,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       if spell.zone != .stack then g.logMsg s!"{spell.name} is no longer on the stack"
       else
         let copyId : ObjectId := ⟨g.nextObjectId⟩
-        let copyTs := g.timestamp + 1
-        let copyObj : GameObject := {
-          id := copyId
-          printed := spell.printed
+        let copySnap : EventObject := {
+          (g.snapshot spell) with
+          id := some copyId
           owner := controller
           controller := some controller
           zone := .stack
-          timestamp := copyTs
-          chosenX := spell.chosenX
           isCopy := true
-          adventurerCard := spell.adventurerCard
+          wasCast := false
         }
-        let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-        let g := g.putStackEntry controller copyId
-        let g :=
-          match g.stack.find? (fun e => e.objectId == spell.id),
-              g.stack.findIdx? (fun e => e.objectId == copyId) with
-          | some orig, some i =>
-            g.changes #[
-              .stackEntry i (.targets orig.targets),
-              .stackEntry i (.dividedDamage orig.dividedDamage),
-              .stackEntry i (.chosenMode orig.chosenMode),
-              .stackEntry i (.targetsAnnounced true)]
-          | _, _ => g
+        let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap controller
+          (cause := g.resolvingOneShotCause controller sourceId))
         g.logMsg s!"A copy of {spell.name} is created"
     | none => g.logMsg "The spell is no longer on the stack"
   | .eyeOfJace =>

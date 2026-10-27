@@ -79,7 +79,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .createTigerGod => some (g.createNamedToken controller tigerGodToken)
   | .extraTurn =>
     let (g, cause) := g.allocDelayedCause (some controller) sourceId
-    some (g.change (.pushExtraTurn controller (some cause))
+    some (g.record (GameEvent.extraTurnAdded g.turnNumber controller (cause := some cause))
       |>.logMsg s!"{(g.player controller).name} takes an extra turn after this one. During that turn, power-up abilities can't be activated.")
   | .drawEqualToBurdenCounters =>
     some (g.withSourceOnBattlefield sourceId fun g o => g.draw controller o.status.burden)

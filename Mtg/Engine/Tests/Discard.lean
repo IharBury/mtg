@@ -37,9 +37,9 @@ def withSpent (spent : Nat) : Game :=
   let src := pebbleOf g
   let (g, ab) := g.allocStackAbility src caster
   let causeId : ObjectId := ⟨910⟩
+  let g := g.record (GameEvent.spentMana g.turnNumber caster spent (forObject := some causeId))
   let g := g.record (GameEvent.cast g.turnNumber caster
-    { id := some causeId, controller := some caster, owner := caster } (.hand caster)
-    (manaSpent := spent))
+    { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let g := g.changeObjects ab.id #[
     .fraCauseId (some causeId),
     .fraCauseStatus (some { manaSpentToCast := spent })]

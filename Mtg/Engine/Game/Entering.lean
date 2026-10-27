@@ -43,10 +43,35 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.castFromGraveyard then Zone.graveyard spell.owner
     else if spell.castFromHand then Zone.hand spell.owner
     else Zone.exile
+  let extraAnnounced : Array AdditionalCostChoice :=
+    let hasKicker := g.events.any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .kicker => true | _ => false)
+      | _ => false
+    let hasGift := g.events.any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .gift _ => true | _ => false)
+      | _ => false
+    let hasTeamwork := g.events.any fun e =>
+      match e.change with
+      | .rules (.cast (.announced oid _ _ cs)) => oid == spell.id && cs.any (fun | .teamwork _ => true | _ => false)
+      | _ => false
+    let cs : Array AdditionalCostChoice := #[]
+    let cs := if spell.kicked && !hasKicker then cs.push .kicker else cs
+    let cs :=
+      match spell.giftPromisedTo with
+      | some p => if !hasGift then cs.push (.gift p) else cs
+      | none => cs
+    let cs := if spell.teamworkPaid && !hasTeamwork then cs.push (.teamwork #[]) else cs
+    cs
+  let g :=
+    if !extraAnnounced.isEmpty then
+      g.record (GameEvent.announced g.turnNumber spell.id (costs := extraAnnounced))
+    else g
   let happened :=
-    GameEvent.cast g.turnNumber caster spell.asEvent fromZone
-      (g.objectManaValue spell) spell.status.manaSpentToCast
-      spell.castFromGraveyard spell.teamworkPaid spell.giftPromisedTo.isSome
+    GameEvent.spellCast g.turnNumber caster
+      { (g.snapshot spell) with manaValue := g.objectManaValue spell }
+      fromZone
   let g := g.record happened
   let spells := g.loggedSpellsCast caster
   let nonc := g.loggedNoncreatureSpells caster
@@ -159,7 +184,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       if p == caster && spell.printed.isCreature &&
           (spell.printed.colors.contains .red ||
             spell.printed.colors.contains .green) then
-        g.expireEffect (.pendingFreeRGCreatureThisTurn p)
+        g.expireEffect (.pendingFreeRGCreatureThisTurn p) (cause := some (.gameRule .spellCast))
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
     | none => g
@@ -232,35 +257,26 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- no costs are paid for it (rulings 843–846).
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
+      let cryoEid? := g.activeEffects.findSome? (fun (eid, eff) =>
+        match eff with
+        | .copyNextInstantSorceryThisTurn p _ => if p == caster then some eid else none
+        | _ => none)
+      let copyCause : Option EventCause :=
+        cryoEid?.map (fun eid => g.effectCreatedCause eid none caster)
       let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
+        (cause := some (.gameRule .spellCast))
       let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copyTs := g.timestamp + 1
-      let copyObj : GameObject := {
-        id := copyId
-        printed := spell.printed
+      let copySnap : EventObject := {
+        (g.snapshot spell) with
+        id := some copyId
         owner := caster
         controller := some caster
         zone := .stack
-        timestamp := copyTs
-        kicked := spell.kicked
-        giftPromisedTo := spell.giftPromisedTo
-        teamworkPaid := spell.teamworkPaid
-        chosenX := spell.chosenX
         isCopy := true
-        adventurerCard := spell.adventurerCard
+        wasCast := false
       }
-      let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
-      let g := g.putStackEntry caster copyId
-      let g :=
-        match g.stack.find? (fun e => e.objectId == spell.id),
-            g.stack.findIdx? (fun e => e.objectId == copyId) with
-        | some orig, some i =>
-          g.changes #[
-            .stackEntry i (.targets orig.targets),
-            .stackEntry i (.dividedDamage orig.dividedDamage),
-            .stackEntry i (.chosenMode orig.chosenMode),
-            .stackEntry i (.targetsAnnounced true)]
-        | _, _ => g
+      let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
+        (cause := copyCause))
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
@@ -281,24 +297,23 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
               | some o => if o.isOnBattlefield then g.power o else fallback
               | none => fallback
             | none => fallback
-          if Int.ofNat mv <= pw then some eid else none
+          if Int.ofNat mv <= pw then some (eid, src) else none
       | _ => none)
-    matching.foldl (fun g eid =>
+    matching.foldl (fun g (eid, src) =>
+      let copyCause := g.effectCreatedCause eid src caster
       let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copyTs := g.timestamp + 1
-      let copyObj : GameObject := {
-        id := copyId
-        printed := spell.printed
+      let copySnap : EventObject := {
+        (g.snapshot spell) with
+        id := some copyId
         owner := caster
         controller := some caster
         zone := .stack
-        timestamp := copyTs
-        chosenX := spell.chosenX
         isCopy := true
+        wasCast := false
       }
-      let g := g.record (GameEvent.created g.turnNumber caster (g.snapshot copyObj))
-      let g := g.putStackEntry caster copyId
-      let g := g.expireEffectById eid
+      let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
+        (cause := some copyCause))
+      let g := g.expireEffectById eid (cause := some (.gameRule .spellCast))
       g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack

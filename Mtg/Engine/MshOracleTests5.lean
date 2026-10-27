@@ -197,7 +197,7 @@ def grimReaperOtherDestinationOk : Bool :=
   let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingWhom := some ⟨1⟩)
   let bears := namedPermanent g "Grizzly Bears"
   bears.status.attacking &&
-    bears.status.attackingWhom == some ⟨1⟩ &&
+    bears.status.attackingTarget == some (.player ⟨1⟩) &&
     (mshRuling 707).comment.contains "doesn't have to be the same player"
 
 #guard grimReaperOtherDestinationOk

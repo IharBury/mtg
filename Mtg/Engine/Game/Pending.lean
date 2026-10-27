@@ -11,146 +11,6 @@ player must answer before the game continues.
 
 namespace Mtg.Engine
 
-/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 608.3, 700.2d, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
-inductive GameRuleKind where
-  | openingHandDraw
-  | mulligan
-  | instantOrSorceryFinishedResolving
-  | permanentSpellResolved
-  | adventureSpellResolved
-  | abilityFinishedResolving
-  | unattachOnHostLeave
-  | playerLeftGame
-  | stepAdvance
-  | spellCast
-  | abilityActivated
-  | reversedActivation
-  | staticAbility
-  | continuousEffect
-  | leavingZone
-  | impending             -- 702.176
-  | noLegalMode           -- 700.2d
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- A turn-based action (CR 703.4). -/
-inductive TurnBasedAction where
-  | phaseInOut          -- 502.1 / 703.4a
-  | dayNightCheck       -- 502.2 / 703.4b
-  | untapAll            -- 502.3 / 703.4c
-  | drawStepDraw        -- 504.1 / 703.4d
-  | sagaLoreOnMain      -- 714.3b / 703.4f
-  | chooseDefendingPlayer -- 507.1 / 703.4h
-  | declareAttackers    -- 508.1 / 703.4i
-  | declareBlockers     -- 509.1 / 703.4j
-  | assignCombatDamage (firstStrike : Bool)  -- 510.1 / 510.4 / 703.4k
-  | dealCombatDamage   (firstStrike : Bool)  -- 510.2 / 510.4 / 703.4m
-  | removeFromCombatAtEndOfCombat            -- 511.3
-  | cleanupDiscard      -- 514.1 / 703.4n
-  | cleanupClear        -- 514.2 / 703.4p (damage + until-EOT effects)
-  | emptyManaPools      -- 500.5 / 703.4q
-  | expireAtStepBegin   -- 500.4 / 611.2b
-  | expireAtStepEnd     -- 500.5 / 611.2a
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- A state-based action (CR 704.5 / 704.6). -/
-inductive StateBasedAction where
-  | lifeZeroOrLess      -- 704.5a
-  | drewFromEmpty       -- 704.5b
-  | tenPoison           -- 704.5c
-  | tokenOutsideBattlefield  -- 704.5d
-  | copyOutsideStackOrBf     -- 704.5e
-  | zeroOrLessToughness -- 704.5f
-  | lethalDamage        -- 704.5g
-  | deathtouchDamage    -- 704.5h
-  | zeroLoyalty         -- 704.5i
-  | legendRule          -- 704.5j
-  | worldRule           -- 704.5k
-  | illegalAura         -- 704.5m
-  | illegalEquipmentOrFortification  -- 704.5n
-  | illegalCreatureAttachment        -- 704.5p
-  | counterAnnihilation -- 704.5q (+1/+1 and -1/-1)
-  | counterLimit        -- 704.5r
-  | sagaFinalChapter    -- 704.5s / 714.4
-  | dungeonCompleted    -- 704.5t
-  | spaceSculptor       -- 704.5u
-  | zeroDefenseBattle   -- 704.5v
-  | illegalBattleProtector -- 704.5w
-  | siegeCompleted      -- 704.5x
-  | roleLimit           -- 704.5y
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- A special action (CR 116.2). -/
-inductive SpecialActionKind where
-  | playLand            -- 116.2a / 305.1
-  | turnFaceUp          -- 116.2b / 702.37e
-  | suspend             -- 116.2f / 702.62a
-  | companionToHand     -- 116.2g / 702.139a
-  | foretell            -- 116.2h / 702.143a
-  | plot                -- 116.2k / 702.170a
-  | unlockDoor          -- 116.2m / 709.5
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- A cost payment kind (CR 118, 601.2h, 602.2b). -/
-inductive CostKind where
-  | mana                -- 118.3
-  | tap                 -- 118.3 / 602.2b ({T} symbol or "Tap an untapped …")
-  | untap               -- 118.3 ({Q} symbol)
-  | life                -- 118.3 / 119.4 ("Pay N life")
-  | sacrifice           -- 118.3 / 701.21
-  | discard             -- 118.3 / 701.9
-  | exile               -- 118.3 / 406
-  | removeCounters      -- 118.3 / 122.1
-  | loyalty             -- 606.4 (+N, -N, 0 on a planeswalker)
-  | collectEvidence     -- 701.59
-  | behold              -- 701.62
-  | waterbend           -- 701.67
-  | convoke             -- 702.51
-  | delve               -- 702.66
-  | emerge              -- 702.119
-  | casualty            -- 702.153
-  | bargain             -- 702.166
-  | ward                -- 702.21
-  | teamwork            -- set mechanic (tap two untapped teammates)
-  | returnToHand        -- 118.3 / 702.190a (sneak / return permanent to hand)
-  | putCounters         -- 118.3 / 122.1
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Identifier for a replacement or prevention effect (CR 614 / 615). -/
-structure ReplacementId where
-  raw : Nat
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Every rules event carries the CR mechanism that caused it (CR 603.2, 610.1,
-703.1, 704.1, 116.1, 118.1, 614.1, 615.1). -/
-inductive EventCause where
-  /-- A rule of the game (e.g., 103.5 draw, 307.2 sorcery goes to graveyard). -/
-  | gameRule (rule : GameRuleKind)
-  /-- A turn-based action (703.4). -/
-  | turnBased (action : TurnBasedAction)
-  /-- A state-based action (704.5). -/
-  | stateBased (sba : StateBasedAction)
-  /-- A special action (116.2). -/
-  | specialAction (kind : SpecialActionKind) (player : PlayerId)
-  /-- Payment of a cost (118, 601.2h, 602.2b). -/
-  | costPayment (kind : CostKind) (payer : PlayerId) (forObject : Option ObjectId := none)
-  /-- Resolution of a one-shot effect (610.1) from a spell or ability. -/
-  | oneShotEffect (id : Option EffectId := none) (source : Option ObjectId := none)
-      (controller : Option PlayerId := none)
-  /-- A replacement effect (614) or prevention effect (615) modified a prior
-  proposed event. `original` is the cause of the event that was replaced. -/
-  | replaced (replacement : ReplacementId) (original : EventCause)
-  /-- Migration-only: a call site not yet classified. Excluded from trigger
-  matching that depends on cause; must reach zero uses for rules events by the
-  end of Phase 3. -/
-  | unclassified
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Extract the `EffectId` if this cause is (or replaces) a one-shot effect (CR 610). -/
-def EventCause.oneShotEffectId? : EventCause → Option EffectId
-  | .oneShotEffect id _ _ => id
-  | .replaced _ orig => orig.oneShotEffectId?
-  | _ => none
-
 /-- A random event the engine would otherwise resolve with `Rng`.
 `--norandom` leaves it pending so a host (the demo) can supply the result. -/
 inductive RandomRequest where
@@ -379,6 +239,42 @@ inductive CardChoice where
   attach afterward (Goblin Plate Mail). -/
   | amassArmy (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+deriving instance DecidableEq for Keywords
+deriving instance DecidableEq for TriggeredAbility.TriggerEnterWith
+
+/-- How to log a permanent after it enters the battlefield via `EnteringAttackItem.card`. -/
+inductive EnteringAttackLog where
+  | putOntoBattlefield
+  | grimReaper
+  | ownerGraveyard (losesAbilitiesAndHaste : Bool)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A card or token waiting for its controller to choose what it enters
+attacking (CR 508.4 / ruling 181). -/
+inductive EnteringAttackItem where
+  | token (controller : PlayerId) (kind : TokenKind) (tapped : Bool)
+      (options : Array AttackTarget)
+  | card (cardId : ObjectId) (enteringController : PlayerId)
+      (effectController : PlayerId) (tapped : Bool) (returnedAsArtifact : Bool)
+      (extraEntersWith : CounterBag)
+      (mods : List TriggeredAbility.TriggerEnterWith)
+      (logKind : EnteringAttackLog) (options : Array AttackTarget)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace EnteringAttackItem
+
+/-- The player who chooses what this permanent is attacking as it enters (CR 508.4). -/
+def controller : EnteringAttackItem → PlayerId
+  | .token c .. => c
+  | .card _ c .. => c
+
+/-- The legal attack targets to choose from (`options.size > 1` requires a player choice). -/
+def options : EnteringAttackItem → Array AttackTarget
+  | .token _ _ _ opts => opts
+  | .card _ _ _ _ _ _ _ _ opts => opts
+
+end EnteringAttackItem
 
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
@@ -664,6 +560,14 @@ inductive FraChoice where
   /-- You may begin the game with the first of these cards on the battlefield
   (Quicksilver). The rest are asked next. -/
   | mayBeginOnBattlefield (ids : Array ObjectId)
+  /-- Choose which player, planeswalker, or battle the first of `remaining` is
+  attacking as it enters the battlefield, then the rest (CR 508.4; ruling 181).
+  Answered with `Action.chooseMode` (index into `options`) or
+  `Action.choosePermanents` (a planeswalker or battle id in `options`). -/
+  | chooseEnteringAttackTarget
+      (remaining : Array EnteringAttackItem)
+      (chosen : Array (EnteringAttackItem × Option AttackTarget))
+      (cause : Option EventCause := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

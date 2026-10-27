@@ -72,7 +72,8 @@ ability's modes are chosen as it is put on the stack (CR 603.3c). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) (cause : Option GameObject := none)
-    (causeController : Option PlayerId := none) : Game :=
+    (causeController : Option PlayerId := none)
+    (eventCause : Option EventCause := none) : Game :=
   if (g.player controller).lost then g
   else
     let (g, obj) := g.putStackAbility source controller
@@ -97,6 +98,8 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       .fraCauseStatus (cause.map (·.status)),
       .abilityEffect abilityEffect]
     let obj := g.object! obj.id
+    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber obj.id source.asEvent controller
+      (cause := eventCause))
     let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
@@ -112,13 +115,14 @@ def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAb
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none) : Game :=
+    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (eventCause : Option EventCause := none) : Game :=
   if g.triggerHasNoLegalTarget controller ab source.id then
     g.logMsg
       s!"{source.name}'s {event} is removed from the stack (no legal target) (CR 603.3d)"
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
-      (cause := cause) (causeController := causeController)
+      (cause := cause) (causeController := causeController) (eventCause := eventCause)
 
 /-- A Reality Fracture intervening “if” clause on the trigger's options. -/
 def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
@@ -219,22 +223,25 @@ and CR 603.3d check so a new event is not restated at every queue site. -/
 def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none) : Game :=
+    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (eventCause : Option EventCause := none) : Game :=
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if event.checkTargets then
     g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
-      (cause := cause) (causeController := causeController)
+      (cause := cause) (causeController := causeController) (eventCause := eventCause)
   else
     g.putTriggeredAbilityOnStack controller source ab event.label
       lastKnownPower lastKnownToughness (cause := cause) (causeController := causeController)
+      (eventCause := eventCause)
 
 /-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
 intervening condition is checked when the event occurs. -/
 def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (cause : Option GameObject := none) (causeController : Option PlayerId := none) : Game :=
+    (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+    (eventCause : Option EventCause := none) : Game :=
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if ab.onceEachTurn &&
@@ -263,7 +270,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     let copies := g.extraTriggerCopies controller source + 1 + mardu
     let wt : WaitingTrigger := {
       controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
-      causeId := cause.map (·.id), cause, causeController, checked := true }
+      causeId := cause.map (·.id), cause, causeController, checked := true, eventCause }
     Id.run do
       let mut g := g
       for _ in [0:copies] do
@@ -712,6 +719,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
     g.putQueuedTrigger wt.controller wt.source wt.ability event
       (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
       wt.lastKnownToughness (cause := wt.cause) (causeController := wt.causeController)
+      (eventCause := wt.eventCause)
   if wt.checked then put g
   else
     let live := g.findObject? wt.source.id

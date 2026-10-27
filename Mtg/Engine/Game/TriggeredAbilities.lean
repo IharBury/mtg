@@ -1850,7 +1850,9 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .leastPower, .none =>
     let defn :=
       match sourceId.bind g.findObject? with
-      | some src => src.status.attackingWhom.getD (g.opponent controller)
+      | some src =>
+        if src.status.attackingTarget.isSome then g.defendingPlayerOf src
+        else g.opponent controller
       | none => g.opponent controller
     let chosen :=
       match targets[0]? with
@@ -2682,24 +2684,20 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let (g, c) := g.allocDelayedCause (some controller) sourceId
           (g, some c)
     let tapped := how == .tapped
-    g.withBatch cause? fun g =>
-      ids.foldl (fun g id =>
-        match g.findObject? id with
-        | none => g
-        | some o =>
-          let owner :=
-            match how with
-            | .underOwner => o.owner
-            | _ => controller
-          let (atk, whom) := g.enterModsAttacking controller note.enterMods
-          let (g, newId) := g.putOntoBattlefield id owner (tapped := tapped)
-            (attacking := atk) (attackingWhom := whom)
-            (returnedAsArtifact := how == .asArtifact)
-            (extraEntersWith := enterModsExtraCounters note.enterMods)
-            (cause := cause?)
-          let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := cause?)) g
-          let g := g.logMsg s!"{o.name} is put onto the battlefield"
-          g.afterPermanentEnters (g.object! newId)) g
+    let returnedAsArtifact := how == .asArtifact
+    let extra := enterModsExtraCounters note.enterMods
+    let items := ids.filterMap fun id =>
+      match g.findObject? id with
+      | none => none
+      | some o =>
+        let owner :=
+          match how with
+          | .underOwner => o.owner
+          | _ => controller
+        let options := g.enterModsAttackOptions owner note.enterMods
+        some (EnteringAttackItem.card id owner controller tapped returnedAsArtifact
+          extra note.enterMods .putOntoBattlefield options)
+    g.promptEnteringAttackItems items (cause := cause?)
   | .randomCreature, _, _ =>
     let ids := g.revealedIdsThisWay
     if ids.isEmpty then g
@@ -2770,21 +2768,17 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     else
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let tapped := how == .tapped
-      g.withBatch (some cause) fun g =>
-        cards.foldl (fun g o =>
-          let owner :=
-            match how with
-            | .underOwner => o.owner
-            | _ => controller
-          let (atk, whom) := g.enterModsAttacking controller note.enterMods
-          let (g, newId) := g.putOntoBattlefield o.id owner (tapped := tapped)
-            (attacking := atk) (attackingWhom := whom)
-            (returnedAsArtifact := how == .asArtifact)
-            (extraEntersWith := enterModsExtraCounters note.enterMods)
-            (cause := some cause)
-          let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
-          let g := g.logMsg s!"{o.name} is put onto the battlefield"
-          g.afterPermanentEnters (g.object! newId)) g
+      let returnedAsArtifact := how == .asArtifact
+      let extra := enterModsExtraCounters note.enterMods
+      let items := cards.map fun o =>
+        let owner :=
+          match how with
+          | .underOwner => o.owner
+          | _ => controller
+        let options := g.enterModsAttackOptions owner note.enterMods
+        EnteringAttackItem.card o.id owner controller tapped returnedAsArtifact
+          extra note.enterMods .putOntoBattlefield options
+      g.promptEnteringAttackItems items (cause := some cause)
 
 /-- Resolve `TriggerResolution.grant`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -3879,6 +3873,36 @@ where
     g.withAffected controller ab sourceId targets affected fun g o =>
       g.applyPermanentAction o (.setBasePT pw tw)
 
+/-- Create `n` tokens of `kind` for `controller` (`tapped := tapped`) and, when
+`holds` is true, have them enter attacking (CR 508.4 / ruling 181). When there
+is a single legal attack target, the tokens enter attacking that target
+immediately; when multiple players, planeswalkers, or battles are legal attack
+targets, `controller` chooses once per token before the tokens enter. -/
+def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
+    (kind : TokenKind) (n : Nat) (tapped holds : Bool)
+    (sourceId : Option ObjectId := none) : Game :=
+  let (g, c) := g.allocDelayedCause (some controller) sourceId
+  let cause := some c
+  if !holds then
+    g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
+  else if (g.player controller).lost then
+    let g := g.change (.recentTokenIds #[])
+    if n == 0 then g
+    else g.logMsg "no token is created (CR 800.4b)"
+  else
+    let rawPrinted := tokenPrinted kind
+    let proposed := GameEvent.created g.turnNumber controller {
+      controller := some controller, owner := controller, token := true
+      types := rawPrinted.types
+      subtypes := CardSubtype.ofSubtypes rawPrinted.subtypes
+      changeling := rawPrinted.keywords.changeling }
+    let copies :=
+      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
+    let total := n * copies
+    let options := g.legalEnteringAttackTargets controller
+    let items := Array.replicate total (EnteringAttackItem.token controller kind tapped options)
+    g.promptEnteringAttackItems items (cause := cause)
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -3967,10 +3991,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           .«if» cond .markRecentTokensAttacking] =>
         let (g, holds) :=
           g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-        let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
-        if holds then
-          g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-        else g
+        g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
       | steps =>
       let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
           (paused dropped : Bool) :
@@ -4207,7 +4228,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
   | .additionalCombatPhase =>
-    g.change (.additionalCombatPhases (g.additionalCombatPhases + 1))
+    g.record (GameEvent.extraPhaseAdded g.turnNumber .combat
+      (cause := g.resolvingOneShotCause controller sourceId))
       |>.logMsg "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .chooseModes modes how =>
     match how with
@@ -4745,10 +4767,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             .«if» cond .markRecentTokensAttacking] =>
           let (g, holds) :=
             g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-          let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
-          if holds then
-            g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-          else g
+          g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
         | steps =>
           steps.foldl (fun g r =>
             let step : TriggeredAbility :=
@@ -4770,6 +4789,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
+  | .markRecentTokensAttacking =>
+    let cause := g.resolvingOneShotCause controller sourceId
+    let options := g.legalEnteringAttackTargets controller
+    let tgt := options[0]?.getD (.player g.defendingPlayer)
+    g.recentTokenIds.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))
+      | none => g) g
   | .addMana types (.fixed 1) =>
     g.addManaLogged controller types
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
@@ -4880,23 +4907,34 @@ including “whenever you attack with one or more Elves” (once if any Elf atta
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
+    let decls : Array (EventObject × AttackTarget) :=
+      attackerIds.map fun id =>
+        let o := g.object! id
+        let tgt := o.status.attackingTarget.getD (.player (g.defendingPlayerOf o))
+        (o.asEvent, tgt)
+    let alreadyDeclared :=
+      g.events.any fun e =>
+        match e.change with
+        | .rules (.combat (.attackersDeclared p' ds)) =>
+          e.turn == g.turnNumber && p' == p && ds.map (·.1.id) == attackerIds.map some
+        | _ => false
+    if !attackerIds.isEmpty && !alreadyDeclared then
+      g := g.record (GameEvent.attackersDeclared g.turnNumber p decls)
+    let declEvent := GameEvent.attackersDeclared g.turnNumber p decls
     for id in attackerIds do
       let o := g.object! id
-      let whom := o.status.attackingWhom.getD g.defendingPlayer
-      let happened := GameEvent.attacked g.turnNumber p o.asEvent whom
-      g := g.record happened
-      if happened.matchesTrigger p o.id .attacking then
+      let whom := g.defendingPlayerOf o
+      if declEvent.matchesTrigger p o.id .attacking then
         g := g.putMatchingSourceTriggers p o .attacking
           (some (g.snapshotPower o)) (some (g.snapshotToughness o))
       -- Reality Fracture: each attacking creature, and one attacking a player
       -- alone (no other creature attacks that player; ruling 861).
-      if happened.matchesTrigger p o.id (.fra .creatureYouControlAttacks) then
+      if declEvent.matchesTrigger p o.id (.fra .creatureYouControlAttacks) then
         g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
-      let whom := o.status.attackingWhom.getD g.defendingPlayer
       let alone := !attackerIds.any (fun id' =>
-        id' != id && (g.object! id').status.attackingWhom.getD g.defendingPlayer == whom &&
-          (g.object! id').status.attackingPlaneswalker.isNone) &&
-        o.status.attackingPlaneswalker.isNone
+        id' != id && g.defendingPlayerOf (g.object! id') == whom &&
+          (g.object! id').status.attackingPlaneswalker?.isNone) &&
+        o.status.attackingPlaneswalker?.isNone
       if alone then
         g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
       -- “Whenever enchanted creature attacks or blocks” (Super-Soldier Serum).
@@ -4912,34 +4950,33 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     -- cause records the attacked player as its controller.
     let attackedPlayers := attackerIds.foldl (fun (acc : Array PlayerId) id =>
       let o := g.object! id
-      if o.status.attackingPlaneswalker.isSome then acc
+      if o.status.attackingPlaneswalker?.isSome then acc
       else
-        let d := o.status.attackingWhom.getD g.defendingPlayer
+        let d := g.defendingPlayerOf o
         if acc.contains d then acc else acc.push d) #[]
     for d in attackedPlayers do
       match attackerIds.find? (fun id =>
           let o := g.object! id
-          o.status.attackingPlaneswalker.isNone &&
-            o.status.attackingWhom.getD g.defendingPlayer == d) with
+          o.status.attackingPlaneswalker?.isNone &&
+            g.defendingPlayerOf o == d) with
       | some id =>
         for q in g.livingPlayers do
           if q.id != d then
             g := g.putFraEventTriggers q.id .creaturesAttackYourOpponent
               (cause := some (g.object! id)) (causeController := some d)
       | none => pure ()
-    let attackedWithElves := attackerIds.any (fun id =>
-      let o := g.object! id
-      (GameEvent.attacked g.turnNumber p o.asEvent
-        (o.status.attackingWhom.getD g.defendingPlayer)).matchesTrigger p o.id .youAttackWithElves)
+    let attackedWithElves :=
+      !attackerIds.isEmpty && declEvent.matchesTrigger p attackerIds[0]! .youAttackWithElves
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
     let attacksSamePlayer :=
       attackerIds.any (fun id =>
-        match (g.object! id).status.attackingWhom with
-        | none => attackerIds.size >= 2
+        match (g.object! id).status.attackingPlayer? with
+        | none =>
+          (g.object! id).status.attackingPlaneswalker?.isNone && attackerIds.size >= 2
         | some d =>
           (attackerIds.filter (fun id' =>
-            (g.object! id').status.attackingWhom == some d)).size >= 2)
+            (g.object! id').status.attackingPlayer? == some d)).size >= 2)
     if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
@@ -4948,7 +4985,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
           let o := g.object! id
           if !g.hasSubtype o .merfolk then acc
           else
-            let d := o.status.attackingWhom.getD g.defendingPlayer
+            let d := g.defendingPlayerOf o
             if acc.any (· == d) then acc else acc.push d)
           (#[] : Array PlayerId)
       for _ in merfolkDefenders do

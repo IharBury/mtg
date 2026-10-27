@@ -59,24 +59,15 @@ structure EventObject where
   token              : Bool                        := false
   isCopy             : Bool                        := false
   changeling         : Bool                        := false
-  -- Arrival status, printed card, and stack-copy metadata carried so
-  -- `applyZoneEvent` reconstructs the `GameObject` without a follow-up `setObject`.
+  -- Arrival status and printed card carried so `applyZoneEvent` reconstructs
+  -- the `GameObject` without a follow-up `setObject`.
   summoningSick      : Bool                        := false
-  attackingWhom      : Option PlayerId             := none
+  attackingTarget    : Option AttackTarget         := none
   returnedAsArtifact : Bool                        := false
   onlyFoodArtifact   : Bool                        := false
   wasCast            : Bool                        := false
   printed            : Option CardDef              := none
   chosenX            : Option Nat                  := none
-  kicked             : Bool                        := false
-  teamworkPaid       : Bool                        := false
-  sneakPaid          : Bool                        := false
-  sneakAttackWhom    : Option PlayerId             := none
-  giftPromisedTo     : Option PlayerId             := none
-  adventurerCard     : Option CardDef              := none
-  abilityEffect      : Option Effect               := none
-  triggeredAbility   : Option TriggeredAbility     := none
-  sourceId           : Option ObjectId             := none
   lastKnownPower     : Option Int                  := none
   lastKnownToughness : Option Int                  := none
 deriving Repr, Inhabited, BEq
@@ -201,21 +192,12 @@ def GameObject.asEvent (o : GameObject) : EventObject :=
     isCopy := o.isCopy
     changeling := o.printed.keywords.changeling
     summoningSick := o.status.summoningSick
-    attackingWhom := o.status.attackingWhom
+    attackingTarget := o.status.attackingTarget
     returnedAsArtifact := o.status.returnedAsArtifact
     onlyFoodArtifact := o.status.onlyFoodArtifact
     wasCast := o.wasCast
     printed := some o.printed
     chosenX := o.chosenX
-    kicked := o.kicked
-    teamworkPaid := o.teamworkPaid
-    sneakPaid := o.sneakPaid
-    sneakAttackWhom := o.sneakAttackWhom
-    giftPromisedTo := o.giftPromisedTo
-    adventurerCard := o.adventurerCard
-    abilityEffect := o.abilityEffect
-    triggeredAbility := o.triggeredAbility
-    sourceId := o.sourceId
     lastKnownPower := o.lastKnownPower
     lastKnownToughness := o.lastKnownToughness }
 
@@ -306,8 +288,7 @@ inductive StatusChange where
   | summoningSick (v : Bool)
   | pump (v : Int × Int)
   | attacking (v : Bool)
-  | attackingWhom (v : Option PlayerId)
-  | attackingPlaneswalker (v : Option ObjectId)
+  | attackingTarget (v : Option AttackTarget)
   | blocking (v : Array ObjectId)
   | blocked (v : Bool)
   | activationsThisTurn (v : Nat)
@@ -401,6 +382,18 @@ inductive StatusChange where
   | firstStrikeOnYourTurn (v : Bool)
 deriving Repr, Inhabited, BEq
 
+namespace StatusChange
+
+/-- Set `attackingTarget` to `v.map .player` (CR 508.1b). -/
+def attackingWhom (v : Option PlayerId) : StatusChange :=
+  .attackingTarget (v.map .player)
+
+/-- Set `attackingTarget` to `v.map .planeswalker` (CR 506.3 / 508.1b). -/
+def attackingPlaneswalker (v : Option ObjectId) : StatusChange :=
+  .attackingTarget (v.map .planeswalker)
+
+end StatusChange
+
 /-- One change to a `GameObject` (CR 109). -/
 inductive ObjectChange where
   | status (c : StatusChange)
@@ -444,6 +437,7 @@ inductive ObjectChange where
   | teamworkPaid (v : Bool)
   | sneakPaid (v : Bool)
   | sneakAttackWhom (v : Option PlayerId)
+  | sneakAttackTarget (v : Option AttackTarget)
   | giftPromisedTo (v : Option PlayerId)
   | isCopy (v : Bool)
   | uncounterableThisCast (v : Bool)
@@ -744,7 +738,6 @@ inductive PermanentEvent where
   | unattached (attachment : EventObject) (fromHost : ObjectId)              -- 701.3d / 704.5n / 704.5p
   | controlChanged (object : EventObject) (fromPlayer toPlayer : PlayerId)   -- 110.2 / 613.1b
   | designation (object : EventObject) (d : PermanentDesignation) (gained : Bool)
-  | removedFromCombat (object : EventObject)                                 -- 506.4 / 511.3 / 702.26b
 deriving Repr, Inhabited, BEq
 
 /-- Who or what receives damage (CR 120.1 / 120.2). -/
@@ -776,9 +769,6 @@ inductive DamageEvent where
   | markedCleared (objects : Array ObjectId)
   /-- Damage that was prevented (CR 615.1 / 615.6). -/
   | prevented (source : EventObject) (recipient : DamageRecipient) (amount : Nat)
-  /-- Combat damage assigned by attacking (`forAttackers`) or blocking creatures
-  (CR 510.1 / 510.4 / 703.4k). -/
-  | combatAssigned (forAttackers : Bool) (assignments : Array CreatureCombatAssignment)
 deriving Repr, Inhabited, BEq
 
 /-- Life gain and life loss events (CR 119.2 / 119.3). -/
@@ -867,10 +857,80 @@ inductive PlayerEvent where
   | leftGame (player : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Stack-object events (CR 608). -/
+/-- Turn, phase, and step transitions and extra-turn/phase/step insertion (CR 500). -/
+inductive TurnEvent where
+  | turnBegan (player : PlayerId) (extra : Bool)
+  | phaseBegan (phase : Phase)
+  | stepBegan (step : Step) (active : PlayerId := ⟨0⟩)
+  | stepEnded (step : Step)
+  | phaseEnded (phase : Phase)
+  | turnEnded (player : PlayerId)
+  | dayNightChanged (night : Bool)                                -- 731.2 (non-goal today)
+  | extraTurnAdded (player : PlayerId) (after : TurnRef := .current) -- 500.7
+  | extraPhaseAdded (phase : Phase) (afterPhase : PhaseRef := .current) -- 500.8
+  | extraStepAdded (step : Step) (anchor : StepAnchor)            -- 500.9
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- How a spell was proposed to be cast (CR 601.2a). -/
+inductive CastWay where
+  | normal
+  | alternative (name : String)          -- flashback, sneak, impending, prepare, miracle, cascade, free copy, etc.
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- An additional cost chosen during announcement (CR 601.2b). -/
+inductive AdditionalCostChoice where
+  | kicker
+  | gift (recipient : PlayerId)
+  | teamwork (tapped : Array ObjectId)
+  | behold (chosen : ObjectId)
+  | sacrifice (sacrificed : ObjectId)
+  | discard (discarded : ObjectId)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Whether an activated ability is a non-mana or mana ability (CR 602.2b / 605.3b). -/
+inductive ActivationKind where
+  | nonMana (loyalty : Option Int) (equip : Bool) (powerUp : Bool) (boast : Bool)
+  | mana
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Casting and activation lifecycle events (CR 601.2 / 602.2 / 605.3b). -/
+inductive CastEvent where
+  | proposed (obj : ObjectId) (player : PlayerId) (fromZone : Zone) (way : CastWay)  -- 601.2a
+  | announced (obj : ObjectId) (modes : Array Nat) (x : Option Nat)
+      (costs : Array AdditionalCostChoice)                                         -- 601.2b
+  | targeted (obj : ObjectId) (targets : Array Target) (division : Array Nat)      -- 601.2c–d
+  | spellCast (spell : EventObject) (player : PlayerId) (fromZone : Zone)          -- 601.2i
+  | abilityActivated (ability : ObjectId) (source : EventObject) (player : PlayerId)
+      (kind : ActivationKind)                                                       -- 602.2b; mana abilities 605.3b
+deriving Repr, Inhabited, BEq
+
+/-- Triggered ability queueing and stack placement events (CR 603.2 / 603.3). -/
+inductive TriggerQueueEvent where
+  | triggered (source : EventObject) (controller : PlayerId) (ability : TriggeredAbility)
+      (origin : BatchId)                                                            -- 603.2
+  | putOnStack (stackObj : ObjectId) (source : EventObject) (controller : PlayerId) -- 603.3
+deriving Repr, Inhabited, BEq
+
+/-- Stack-object events (CR 608 / 707.10). -/
 inductive StackObjectEvent where
-  /-- `obj` resolved (`nth` time this ability resolved for its controller this turn, CR 608). -/
+  /-- `original` was copied on the stack as `copy` under `controller`'s control (CR 707.10). -/
+  | copied (original : ObjectId) (copy : EventObject) (controller : PlayerId)
+  /-- `obj` resolved (`nth` time this ability resolved for its controller this turn, CR 608.2). -/
   | resolved (obj : EventObject) (nth : Nat := 1)
+  /-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
+  | removedOnResolution (obj : EventObject)
+deriving Repr, Inhabited, BEq
+
+/-- Combat declaration, state transitions, damage assignment, and removal events (CR 506–511). -/
+inductive CombatEvent where
+  | attackersDeclared (player : PlayerId) (decls : Array (EventObject × AttackTarget))
+  | becameAttacking (creature : EventObject) (target : AttackTarget)
+  | blockersDeclared (player : PlayerId) (decls : Array (EventObject × ObjectId))
+  | becameBlocked (attacker : EventObject) (blockers : Array ObjectId)
+  | remainedUnblocked (attacker : EventObject)
+  | damageAssigned (firstStrike : Bool) (forAttackers : Bool)
+      (assignments : Array CreatureCombatAssignment)
+  | removedFromCombat (object : EventObject)
 deriving Repr, Inhabited, BEq
 
 /-- A rules-level occurrence in the game (CR 603.2 / 610 / 611 / 614). -/
@@ -885,24 +945,18 @@ inductive RulesEvent where
   | life (e : LifeEvent)
   /-- Player-level keyword actions (scry, surveil, behold, proliferate). -/
   | player (e : PlayerEvent)
-  /-- Stack-object resolution events. -/
+  /-- Turn, phase, and step transitions and extra-turn/phase/step insertion. -/
+  | turn (e : TurnEvent)
+  /-- Casting and activation lifecycle events. -/
+  | cast (e : CastEvent)
+  /-- Triggered ability queueing and stack placement events. -/
+  | triggerQueue (e : TriggerQueueEvent)
+  /-- Stack-object copy, resolution, and fizzle events. -/
   | stackObject (e : StackObjectEvent)
-  /-- `player` cast `spell` from `fromZone`. `manaSpent` is the mana paid. -/
-  | cast (player : PlayerId) (spell : EventObject) (fromZone : Zone)
-      (manaValue manaSpent : Nat) (fromGraveyard teamwork gift : Bool := false)
-  /-- `player` attacked with `attacker`. -/
-  | attacked (player : PlayerId) (attacker : EventObject) (whom : PlayerId)
-  /-- The game entered `step` on `active`'s turn. A skipped step is not recorded
-  (CR 614.10). -/
-  | stepped (step : Step) (active : PlayerId)
-  /-- `player` activated an ability of `source`. `loyalty` is a loyalty ability.
-  `equip` is an equip ability, recorded when the activation is completed. -/
-  | activated (player : PlayerId) (source : EventObject) (loyalty equip : Bool)
+  /-- Combat declaration, state transitions, damage assignment, and removal events. -/
+  | combat (e : CombatEvent)
   /-- `player` spent `amount` mana. -/
   | spentMana (player : PlayerId) (amount : Nat)
-  /-- `player` played `land` as a land drop (CR 305.1). Putting a land onto
-  the battlefield another way is not a play. -/
-  | playedLand (player : PlayerId) (land : EventObject)
   /-- A continuous effect begins (CR 611). -/
   | effectCreated (id : EffectId) (effect : ContinuousEffect)
   /-- A continuous effect ends (CR 611). -/
@@ -1057,8 +1111,6 @@ inductive EngineChange where
   | delayedEndStepReturns (v : Array (ObjectId × EventCause))
   | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)
   | extraTurns (v : Array PlayerId)
-  | extraTurnCauses (v : Array EventCause)
-  | pushExtraTurn (p : PlayerId) (cause : Option EventCause := none)
   | powerUpsForbidden (v : Bool)
   | delayedEndStepExiles (v : Array (ObjectId × EventCause))
   | pushDelayedEndStepExile (id : ObjectId) (cause : EventCause)
@@ -1245,21 +1297,78 @@ def combatDamageAssigned (turn : Nat) (forAttackers : Bool)
     (assignments : Array CreatureCombatAssignment)
     (firstStrike : Bool := false)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.damage (.combatAssigned forAttackers assignments))
+  rules turn (.combat (.damageAssigned firstStrike forAttackers assignments))
     (cause.getD (.turnBased (.assignCombatDamage firstStrike)))
+
+/-- `player` proposed casting `obj` from `fromZone` (CR 601.2a). -/
+def proposed (turn : Nat) (obj : ObjectId) (player : PlayerId)
+    (fromZone : Zone) (way : CastWay := .normal)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.cast (.proposed obj player fromZone way))
+    (cause.getD (.gameRule .spellCast))
+
+/-- `obj` had its modes, X value, and/or additional costs announced (CR 601.2b). -/
+def announced (turn : Nat) (obj : ObjectId) (modes : Array Nat := #[])
+    (x : Option Nat := none) (costs : Array AdditionalCostChoice := #[])
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.cast (.announced obj modes x costs))
+    (cause.getD (.gameRule .spellCast))
+
+/-- `obj` had its targets and/or damage division chosen (CR 601.2c–d). -/
+def targeted (turn : Nat) (obj : ObjectId) (targets : Array Target)
+    (division : Array Nat := #[])
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.cast (.targeted obj targets division))
+    (cause.getD (.gameRule .spellCast))
+
+/-- `player` cast `spell` from `fromZone` (CR 601.2i). -/
+def spellCast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.cast (.spellCast spell player fromZone))
+    (cause.getD (.gameRule .spellCast))
 
 /-- `player` cast `spell` (CR 601.2i). -/
 def cast (turn : Nat) (player : PlayerId) (spell : EventObject) (fromZone : Zone)
-    (manaValue : Nat := 0) (manaSpent : Nat := 0)
-    (fromGraveyard : Bool := false) (teamwork : Bool := false) (gift : Bool := false)
-    (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.cast player spell fromZone manaValue manaSpent fromGraveyard teamwork gift)
+    (manaValue : Nat := 0) (cause : Option EventCause := none) : GameEvent :=
+  let spell' := if manaValue > 0 && spell.manaValue == 0 then { spell with manaValue := manaValue } else spell
+  rules turn (.cast (.spellCast spell' player fromZone))
     (cause.getD (.gameRule .spellCast))
+
+/-- `player` declared `decls` as attackers (CR 508.1k / 508.3d). -/
+def attackersDeclared (turn : Nat) (player : PlayerId)
+    (decls : Array (EventObject × AttackTarget))
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.combat (.attackersDeclared player decls))
+    (cause.getD (.turnBased .declareAttackers))
+
+/-- `creature` entered the battlefield attacking or was made attacking by an effect (CR 508.4). -/
+def becameAttacking (turn : Nat) (creature : EventObject) (target : AttackTarget)
+    (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.combat (.becameAttacking creature target)) cause
+
+/-- `player` declared `decls` as blockers (CR 509.1g). -/
+def blockersDeclared (turn : Nat) (player : PlayerId)
+    (decls : Array (EventObject × ObjectId))
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.combat (.blockersDeclared player decls))
+    (cause.getD (.turnBased .declareBlockers))
+
+/-- `attacker` became blocked by `blockers` (CR 509.1h / 509.3c). -/
+def becameBlocked (turn : Nat) (attacker : EventObject) (blockers : Array ObjectId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.combat (.becameBlocked attacker blockers))
+    (cause.getD (.turnBased .declareBlockers))
+
+/-- `attacker` remained unblocked after blockers were declared (CR 509.1h / 509.3g). -/
+def remainedUnblocked (turn : Nat) (attacker : EventObject)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.combat (.remainedUnblocked attacker))
+    (cause.getD (.turnBased .declareBlockers))
 
 /-- `player` attacked `whom` with `attacker` (CR 508.1). -/
 def attacked (turn : Nat) (player : PlayerId) (attacker : EventObject) (whom : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.attacked player attacker whom)
+  rules turn (.combat (.attackersDeclared player #[(attacker, .player whom)]))
     (cause.getD (.turnBased .declareAttackers))
 
 /-- `object` became tapped or untapped by a tap action (CR 701.26a). `nowTapped` is the result. -/
@@ -1313,23 +1422,98 @@ def control (turn : Nat) (object : ObjectId) (fromPlayer toPlayer : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
   rulesOrUnclassified turn (.permanent (.controlChanged { id := some object } fromPlayer toPlayer)) cause
 
+/-- `player` began a turn (CR 500.1 / 500.7). -/
+def turnBegan (turn : Nat) (player : PlayerId) (extra : Bool := false)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.turnBegan player extra))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `phase` began (CR 500.1). -/
+def phaseBegan (turn : Nat) (phase : Phase)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.phaseBegan phase))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `step` began on `active`'s turn (CR 500.1). -/
+def stepBegan (turn : Nat) (step : Step) (active : PlayerId := ⟨0⟩)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.stepBegan step active))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `step` ended (CR 500.1). -/
+def stepEnded (turn : Nat) (step : Step)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.stepEnded step))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `phase` ended (CR 500.1). -/
+def phaseEnded (turn : Nat) (phase : Phase)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.phaseEnded phase))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `player`'s turn ended (CR 500.1 / 514). -/
+def turnEnded (turn : Nat) (player : PlayerId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.turn (.turnEnded player))
+    (cause.getD (.gameRule .stepAdvance))
+
+/-- `player` was granted an extra turn after `after` (CR 500.7). -/
+def extraTurnAdded (turn : Nat) (player : PlayerId) (after : TurnRef := .current)
+    (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.turn (.extraTurnAdded player after)) cause
+
+/-- An extra `phase` was added after `afterPhase` (CR 500.8). -/
+def extraPhaseAdded (turn : Nat) (phase : Phase) (afterPhase : PhaseRef := .current)
+    (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.turn (.extraPhaseAdded phase afterPhase)) cause
+
+/-- An extra `step` was added at `anchor` (CR 500.9). -/
+def extraStepAdded (turn : Nat) (step : Step) (anchor : StepAnchor)
+    (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.turn (.extraStepAdded step anchor)) cause
+
 /-- The step or phase changed (CR 500.1). -/
 def stepped (turn : Nat) (step : Step) (active : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.stepped step active) (cause.getD (.gameRule .stepAdvance))
+  rules turn (.turn (.stepBegan step active)) (cause.getD (.gameRule .stepAdvance))
+
+/-- `player` activated an ability `ability` of `source` (CR 602.2b / 605.3b). -/
+def abilityActivated (turn : Nat) (ability : ObjectId) (source : EventObject)
+    (player : PlayerId) (kind : ActivationKind)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.cast (.abilityActivated ability source player kind))
+    (cause.getD (.gameRule .abilityActivated))
 
 /-- `player` activated an ability of `source` (CR 602.2). `equip` is set when the
 activation has been completed, so a proposal still being paid does not count. -/
 def activated (turn : Nat) (player : PlayerId) (source : EventObject)
     (loyalty : Bool := false) (equip : Bool := false)
+    (ability : ObjectId := source.id.getD ⟨0⟩)
+    (loyaltyDelta : Option Int := if loyalty then some 0 else none)
+    (powerUp : Bool := false) (boast : Bool := false)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.activated player source loyalty equip)
+  rules turn (.cast (.abilityActivated ability source player (.nonMana loyaltyDelta equip powerUp boast)))
     (cause.getD (.gameRule .abilityActivated))
 
-/-- `player` played `land` (CR 116.2a / 305.1). -/
-def playedLand (turn : Nat) (player : PlayerId) (land : EventObject)
+/-- A triggered ability of `source` was put on the stack as `stackObj` (CR 603.3). -/
+def triggerPutOnStack (turn : Nat) (stackObj : ObjectId) (source : EventObject)
+    (controller : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
-  rules turn (.playedLand player land) (cause.getD (.specialAction .playLand player))
+  rules turn (.triggerQueue (.putOnStack stackObj source controller))
+    (cause.getD (.gameRule .triggeredAbility))
+
+/-- `original` on the stack was copied as `copy` under `controller`'s control (CR 707.10). -/
+def stackObjectCopied (turn : Nat) (original : ObjectId) (copy : EventObject)
+    (controller : PlayerId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rulesOrUnclassified turn (.stackObject (.copied original copy controller)) cause
+
+/-- `obj` was removed from the stack on resolution because all its targets were illegal (CR 608.2b). -/
+def removedOnResolution (turn : Nat) (obj : EventObject)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.stackObject (.removedOnResolution obj))
+    (cause.getD (.gameRule .abilityFinishedResolving))
 
 /-- The `nth` counted resolution for `player` this turn (CR 608 / 610.1). -/
 def resolved (turn : Nat) (player : PlayerId) (nth : Nat)
@@ -1423,7 +1607,7 @@ def untapped (turn : Nat) (object : EventObject) (replacedByStun : Bool := false
 /-- `object` was removed from combat (CR 506.4 / 511.3 / 702.26b). -/
 def removedFromCombat (turn : Nat) (object : EventObject)
     (cause : Option EventCause := none) : GameEvent :=
-  rulesOrUnclassified turn (.permanent (.removedFromCombat object)) cause
+  rulesOrUnclassified turn (.combat (.removedFromCombat object)) cause
 
 /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). -/
 def manaEmptied (turn : Nat) (player : PlayerId)
@@ -1697,35 +1881,41 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       p.any you && entersWith.count .loyalty > 0 && after.planeswalker
     | .zone (.created object controller), .fra .youPutLoyaltyCounters =>
       you controller && object.counters.count .loyalty > 0 && object.planeswalker
-    | .cast p spell _ _ _ _ _ _, .youCastInstantOrSorcery =>
+    | .cast (.spellCast spell p _), .youCastInstantOrSorcery =>
       you p && spell.instantOrSorcery
-    | .cast p spell _ _ _ _ _ _, .youCastNoncreature =>
+    | .cast (.spellCast spell p _), .youCastNoncreature =>
       you p && !spell.creature
-    | .cast p spell _ _ _ _ _ _, .youCastCreature =>
+    | .cast (.spellCast spell p _), .youCastCreature =>
       you p && spell.creature
-    | .cast p _ _ _ _ _ _ _, .youCastSpell => you p
-    | .cast p _ _ _ _ _ _ _, .youCastColor _ => you p
-    | .cast p _ (.hand _) _ _ _ _ _, .youCastColorFromHand _ => you p
-    | .cast p _ _ _ _ _ _ _, .youCastGreen => you p
-    | .cast p spell _ _ _ _ _ _, .youCastVillain => you p && spell.villain
-    | .cast p _ _ _ _ _ _ _, .opponentCastsSpell => !you p
-    | .cast p spell _ _ _ _ _ _, .youCastFirstNoncreature => you p && !spell.creature
-    | .cast p _ _ _ _ _ _ _, .youCastSecondSpell => you p
-    | .cast _ _ _ _ _ _ _ _, .anyPlayerCastsSecondSpell => true
-    | .cast p _ _ _ _ _ _ _, .opponentCastsFirstNoncreature => !you p
-    | .cast p spell _ _ _ _ _ _, .fra .castThis => you p && this spell
-    | .attacked p attacker _, .attacking => you p && this attacker
-    | .attacked p _ _, .youAttack => you p
-    | .attacked p attacker _, .youAttackWithElves => you p && attacker.elf
-    | .attacked p _ _, .youAttackWithTwoOrMore => you p
-    | .attacked p attacker _, .creatureYouControlAttacksAlone =>
-      you p && attacker.creature
-    | .attacked p _ _, .equippedAttacks => you p
-    | .attacked p attacker _, .equippedCreatureYouControlAttacks =>
-      you p && attacker.creature
-    | .attacked p attacker _, .merfolkAttackPlayer => you p && attacker.merfolk
-    | .attacked p attacker _, .fra .creatureYouControlAttacks =>
-      you p && attacker.creature
+    | .cast (.spellCast _ p _), .youCastSpell => you p
+    | .cast (.spellCast _ p _), .youCastColor _ => you p
+    | .cast (.spellCast _ p (.hand _)), .youCastColorFromHand _ => you p
+    | .cast (.spellCast _ p _), .youCastGreen => you p
+    | .cast (.spellCast spell p _), .youCastVillain => you p && spell.villain
+    | .cast (.spellCast _ p _), .opponentCastsSpell => !you p
+    | .cast (.spellCast spell p _), .youCastFirstNoncreature => you p && !spell.creature
+    | .cast (.spellCast _ p _), .youCastSecondSpell => you p
+    | .cast (.spellCast _ _ _), .anyPlayerCastsSecondSpell => true
+    | .cast (.spellCast _ p _), .opponentCastsFirstNoncreature => !you p
+    | .cast (.spellCast spell p _), .fra .castThis => you p && this spell
+    | .combat (.attackersDeclared p decls), .attacking =>
+      you p && decls.any (fun (attacker, _) => this attacker)
+    | .combat (.attackersDeclared p decls), .youAttack =>
+      you p && !decls.isEmpty
+    | .combat (.attackersDeclared p decls), .youAttackWithElves =>
+      you p && decls.any (fun (attacker, _) => attacker.elf)
+    | .combat (.attackersDeclared p decls), .youAttackWithTwoOrMore =>
+      you p && !decls.isEmpty
+    | .combat (.attackersDeclared p decls), .creatureYouControlAttacksAlone =>
+      you p && decls.any (fun (attacker, _) => attacker.creature)
+    | .combat (.attackersDeclared p decls), .equippedAttacks =>
+      you p && !decls.isEmpty
+    | .combat (.attackersDeclared p decls), .equippedCreatureYouControlAttacks =>
+      you p && decls.any (fun (attacker, _) => attacker.creature)
+    | .combat (.attackersDeclared p decls), .merfolkAttackPlayer =>
+      you p && decls.any (fun (attacker, _) => attacker.merfolk)
+    | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
+      you p && decls.any (fun (attacker, _) => attacker.creature)
     | .permanent (.tapped object _), .sourceBecomesTapped => this object
     | .permanent (.tapped object _), .creaturesYouControlBecomeTapped =>
       yours object && object.creature
@@ -1745,26 +1935,26 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       this object && n > 0
     | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
       this object && n > 0
-    | .stepped .upkeep active, .yourUpkeep => you active
-    | .stepped .upkeep _, .eachUpkeep => true
-    | .stepped .upkeep _, .fra .eachUpkeepFromGraveyard => true
-    | .stepped .end active, .yourEndStep => you active
-    | .stepped .end _, .eachEndStep => true
-    | .stepped .beginningOfCombat active, .yourBeginCombat => you active
-    | .stepped .beginningOfCombat active, .fra .yourBeginCombatFromGraveyard => you active
-    | .stepped .beginningOfCombat _, .eachBeginCombat => true
-    | .stepped .beginningOfCombat active, .fra .opponentBeginCombat => !you active
-    | .stepped .precombatMain active, .yourFirstMain => you active
-    | .stepped .draw active, .eachOpponentDrawStep => !you active
-    | .stepped .upkeep _, .eaglesCreateBirds => true
-    | .stepped .upkeep active, .enchantedControllerUpkeep => you active
+    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active
+    | .turn (.stepBegan .upkeep _), .eachUpkeep => true
+    | .turn (.stepBegan .upkeep _), .fra .eachUpkeepFromGraveyard => true
+    | .turn (.stepBegan .end active), .yourEndStep => you active
+    | .turn (.stepBegan .end _), .eachEndStep => true
+    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active
+    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active
+    | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
+    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => !you active
+    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active
+    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => !you active
+    | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
+    | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
       you p && this before && before.token && owner == before.owner
-    | .activated p _ true _, .youActivateLoyaltyAbility => you p
-    | .activated p source false _, .youActivateCreatureAbility =>
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .youActivateLoyaltyAbility => you p
+    | .cast (.abilityActivated _ source p (.nonMana none _ _ _)), .youActivateCreatureAbility =>
       you p && source.creature
-    | .activated p _ true _, .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .fra .opponentActivatesLoyaltyAbility => !you p
     | .zone (.created object p), .fra .youCreateCreatureTokens => you p && object.creature
     | _, _ => false
 
@@ -1817,7 +2007,7 @@ def spellsCast (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.cast q _ _ _ _ _ _ _) => if q == p then n + 1 else n
+      | .rules (.cast (.spellCast _ q _)) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- `p` scried at least one card on `turn`. -/
@@ -1852,7 +2042,8 @@ def attackedWithSubtype (events : Array GameEvent) (turn : Nat) (p : PlayerId)
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.attacked q attacker _) => q == p && attacker.hasSubtype subtype
+      | .rules (.combat (.attackersDeclared q decls)) =>
+        q == p && decls.any (fun (attacker, _) => attacker.hasSubtype subtype)
       | _ => false
 
 /-- A permanent of `subtype` entered under `p`'s control on `turn`. -/
@@ -1871,7 +2062,7 @@ def activatedLoyalty (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.activated q _ true _) => q == p
+      | .rules (.cast (.abilityActivated _ _ q (.nonMana (some _) _ _ _))) => q == p
       | _ => false
 
 /-- `p` was dealt noncombat damage on `turn`. -/
@@ -1884,20 +2075,23 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
       | .rules (.life (.lost q _ true false)) => q == p
       | _ => false
 
-/-- Mana recorded for `spell` when it was cast, if the log has that cast. -/
+/-- Mana recorded for `spell` when it was cast, if the log has that payment. -/
 def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
   events.foldl (fun n e =>
-    match e.change with
-    | .rules (.cast _ s _ _ spent _ _ _) => if s.id == some spell then max n spent else n
-    | _ => n) 0
+    match e.change, e.cause with
+    | .rules (.spentMana _ amount), .costPayment .mana _ (some oid) =>
+      if oid == spell then max n amount else n
+    | _, _ => n) 0
 
-/-- Same event, naming the object id it has after the zone change (CR 400.7). -/
+/-- Same event, naming the object id it has after the zone change or copy (CR 400.7 / 707.10). -/
 def withObjectId (e : GameEvent) (id : ObjectId) : GameEvent :=
   match e.change with
   | .rules (.zone (.moved before after fromZone toZone verb actor entersWith libPos)) =>
     { e with change := .rules (.zone (.moved before { after with id := some id } fromZone toZone verb actor entersWith libPos)) }
   | .rules (.zone (.created object controller)) =>
     { e with change := .rules (.zone (.created { object with id := some id } controller)) }
+  | .rules (.stackObject (.copied original copy controller)) =>
+    { e with change := .rules (.stackObject (.copied original { copy with id := some id } controller)) }
   | _ => e
 
 /-- Creature spells `p` cast on `turn`. -/
@@ -1906,7 +2100,7 @@ def creatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat 
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.cast q spell _ _ _ _ _ _) => if q == p && spell.creature then n + 1 else n
+      | .rules (.cast (.spellCast spell q _)) => if q == p && spell.creature then n + 1 else n
       | _ => n) 0
 
 /-- Noncreature spells `p` cast on `turn`. -/
@@ -1915,7 +2109,7 @@ def noncreatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : N
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.cast q spell _ _ _ _ _ _) => if q == p && !spell.creature then n + 1 else n
+      | .rules (.cast (.spellCast spell q _)) => if q == p && !spell.creature then n + 1 else n
       | _ => n) 0
 
 /-- Creatures `p` attacked with on `turn`. -/
@@ -1924,7 +2118,7 @@ def attacks (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.attacked q _ _) => if q == p then n + 1 else n
+      | .rules (.combat (.attackersDeclared q decls)) => if q == p then n + decls.size else n
       | _ => n) 0
 
 /-- Cards that moved from `p`'s library to `p`'s graveyard on `turn`. -/
@@ -1951,7 +2145,7 @@ def equipActivations (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Na
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.activated q _ _ true) => if q == p then n + 1 else n
+      | .rules (.cast (.abilityActivated _ _ q (.nonMana _ true _ _))) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Mana values of spells `p` cast on `turn`, oldest first. Copies are absent. -/
@@ -1960,7 +2154,7 @@ def castManaValues (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Arra
     if e.turn != turn then acc
     else
       match e.change with
-      | .rules (.cast q _ _ mv _ _ _ _) => if q == p then acc.push mv else acc
+      | .rules (.cast (.spellCast spell q _)) => if q == p then acc.push spell.manaValue else acc
       | _ => acc) #[]
 
 /-- Cards `p` discarded on `turn`. A discard is a card moving from that
@@ -1993,13 +2187,13 @@ def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
         if (obj.controller.getD obj.owner) == p then n + 1 else n
       | _ => n) 0
 
-/-- Lands `p` played on `turn`. -/
+/-- Lands `p` played on `turn` (CR 305.1). -/
 def landsPlayed (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
   events.foldl (fun n e =>
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.playedLand q _) => if q == p then n + 1 else n
+      | .rules (.zone (.moved _ _ _ _ .playLand (some q) _ _)) => if q == p then n + 1 else n
       | _ => n) 0
 
 /-- Graveyard ids of creatures that moved from the battlefield to a graveyard
@@ -2060,25 +2254,40 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
       | .rules (.zone (.created object _)) => object.id == some id
       | _ => false
 
+/-- Resolve `spell` back through `StackObjectEvent.copied` to the root spell id on the stack (CR 707.10). -/
+def rootCopiedSpellId (events : Array GameEvent) (spell : ObjectId) : ObjectId :=
+  events.foldr (fun e cur =>
+    match e.change with
+    | .rules (.stackObject (.copied original copy _)) =>
+      if copy.id == some cur then original else cur
+    | _ => cur) spell
+
 /-- The cast of `spell` was from a graveyard. -/
 def castFromGraveyard (events : Array GameEvent) (spell : ObjectId) : Bool :=
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ true _ _) => s.id == some spell
+    | .rules (.cast (.spellCast s _ (.graveyard _))) => s.id == some spell
+    | .rules (.cast (.proposed obj _ (.graveyard _) _)) => obj == spell
     | _ => false
 
-/-- A gift was promised as `spell` was cast. -/
+/-- A gift was promised as `spell` was cast (or copied, CR 707.10). -/
 def giftPromised (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let root := rootCopiedSpellId events spell
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ _ _ true) => s.id == some spell
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      (obj == spell || obj == root) &&
+        costs.any (fun | .gift _ => true | _ => false)
     | _ => false
 
-/-- `spell` was cast using teamwork. -/
+/-- `spell` was cast using teamwork (or copied from a teamwork spell, CR 707.10). -/
 def teamwork (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let root := rootCopiedSpellId events spell
   events.any fun e =>
     match e.change with
-    | .rules (.cast _ s _ _ _ _ true _) => s.id == some spell
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      (obj == spell || obj == root) &&
+        costs.any (fun | .teamwork _ => true | _ => false)
     | _ => false
 
 /-- `id` entered from a spell cast for its impending cost (CR 702.176,

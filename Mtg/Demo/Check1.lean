@@ -129,7 +129,7 @@ open Mtg.Demo.Render
   let bears := Tests.namedPermanent g "Grizzly Bears"
   match applyAttack g ⟨0⟩ [toString bears.id, "at", "opponent"] with
   | .ok g' =>
-    (Tests.namedPermanent g' "Grizzly Bears").status.attackingWhom == some ⟨1⟩ &&
+    (Tests.namedPermanent g' "Grizzly Bears").status.attackingTarget == some (.player ⟨1⟩) &&
     !(Tests.namedPermanent g' "Gray Ogre").status.attacking
   | .error _ => false
 
@@ -137,7 +137,7 @@ open Mtg.Demo.Render
 #guard
   match applyAttack Tests.threeReadyToAttack ⟨0⟩ ["Liliana"] with
   | .ok g' =>
-    (Tests.namedPermanent g' "Gray Ogre").status.attackingWhom == some ⟨2⟩ &&
+    (Tests.namedPermanent g' "Gray Ogre").status.attackingTarget == some (.player ⟨2⟩) &&
       g'.defendingPlayer == ⟨2⟩
   | .error _ => false
 

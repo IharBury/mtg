@@ -17,6 +17,13 @@ clear them (CR 514.3).
 
 namespace Mtg.Engine
 
+/-- What an attacking creature is attacking (CR 508.1b / 506.3). -/
+inductive AttackTarget where
+  | player (p : PlayerId)
+  | planeswalker (pw : ObjectId)
+  | battle (b : ObjectId)            -- non-goal today (508.1b)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Permanent status (CR 110.5). Extra fields track combat and EOT pumps. -/
 structure Status where
   tapped : Bool := false
@@ -25,12 +32,9 @@ structure Status where
   /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
   pump : Int × Int := (0, 0)
   attacking : Bool := false
-  /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
-  attackingWhom : Option PlayerId := none
-  /-- The planeswalker this creature is attacking, if it attacks one rather
-  than a player (CR 506.3). `attackingWhom` is that planeswalker's
-  controller. -/
-  attackingPlaneswalker : Option ObjectId := none
+  /-- Player, planeswalker, or battle this creature is attacking (CR 508.1b / 506.3).
+  Set with `attacking`. -/
+  attackingTarget : Option AttackTarget := none
   /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
   blocking : Array ObjectId := #[]
   /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
@@ -379,6 +383,18 @@ def clearsAtCleanup (s : Status) : Bool :=
   s.ironFistTapGrants != 0 || s.losesAbilitiesUntilEot ||
   !s.grantedTriggersUntilEot.isEmpty || s.cardsInHandPowerUntilEot ||
   s.firstStrikeOnYourTurn || s.combatDamageCreatesTreasure
+
+/-- The planeswalker `s` is attacking, if any (CR 506.3 / 508.1b). -/
+def attackingPlaneswalker? (s : Status) : Option ObjectId :=
+  match s.attackingTarget with
+  | some (.planeswalker pw) => some pw
+  | _ => none
+
+/-- The player `s` is directly attacking, if any (CR 508.1b). -/
+def attackingPlayer? (s : Status) : Option PlayerId :=
+  match s.attackingTarget with
+  | some (.player p) => some p
+  | _ => none
 
 end Status
 

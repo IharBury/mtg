@@ -256,9 +256,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       | some src =>
         let fromHost :=
           match src.attachedTo.bind g.findObject? with
-          | some host => host.status.attackingWhom
+          | some host => if host.status.attacking then some (g.defendingPlayerOf host) else none
           | none => none
-        let fromSelf := if src.status.attacking then src.status.attackingWhom else none
+        let fromSelf := if src.status.attacking then some (g.defendingPlayerOf src) else none
         (fromHost.orElse (fun _ => fromSelf)).getD g.defendingPlayer
       | none => g.defendingPlayer
     g.legalCreatureTargets caster (fun o => o.controlledBy defender)

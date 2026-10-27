@@ -436,10 +436,7 @@ def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
 declaration (CR 509.1b). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
-  let defender :=
-    match attacker.status.attackingWhom with
-    | some pid => pid
-    | none => g.defendingPlayer
+  let defender := g.defendingPlayerOf attacker
   let islandwalkUnblockable :=
     g.hasIslandwalk attacker &&
       (g.permanentsOf defender).any (fun o => g.hasSubtype o .island)

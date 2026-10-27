@@ -57,35 +57,17 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copyTs := g.timestamp + 1
-    let copyObj : GameObject := {
-      id := copyId
-      printed := src.printed
+    let copySnap : EventObject := {
+      (g.snapshot src) with
+      id := some copyId
       owner := controller
       controller := some controller
       zone := .stack
-      timestamp := copyTs
-      kicked := src.kicked
-      giftPromisedTo := src.giftPromisedTo
-      teamworkPaid := src.teamworkPaid
-      sneakPaid := src.sneakPaid
-      sneakAttackWhom := src.sneakAttackWhom
-      chosenX := src.chosenX
       isCopy := true
-      adventurerCard := src.adventurerCard
+      wasCast := false
     }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.putStackEntry controller copyId
-    let g :=
-      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copyId) with
-      | some orig, some i =>
-        g.changes #[
-          .stackEntry i (.targets orig.targets),
-          .stackEntry i (.dividedDamage orig.dividedDamage),
-          .stackEntry i (.chosenMode orig.chosenMode),
-          .stackEntry i (.extraModes orig.extraModes),
-          .stackEntry i (.targetsAnnounced true)]
-      | _, _ => g
+    let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
+      (cause := g.resolvingOneShotCause controller (some src.id)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Announce the modes and targets of a spell cast while an ability resolves
@@ -149,6 +131,9 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
           g.createEffect (.exileInstantSorceryInstead newId)
         else g
       let g := g.putStackEntry p newId
+      let way : CastWay :=
+        if withoutManaCost then .alternative "withoutManaCost" else .normal
+      let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
         if withoutManaCost then ManaCost.empty else g.playManaCost original original.printed
@@ -761,29 +746,209 @@ def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :
   g.exileTopForPlay fromPlayer caster n fun owner card =>
     s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
 
+/-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
+def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Bool :=
+  mods.any (· == .loseAllAbilities) &&
+    mods.any (fun m =>
+      match m with
+      | .keywords k => k.haste
+      | _ => false)
+
+/-- Extra enters-with counters specified by `mods`. -/
+def enterModsExtraCounters (mods : List TriggeredAbility.TriggerEnterWith) : CounterBag :=
+  mods.foldl (fun acc m =>
+    match m with
+    | .counter .finality n _ => acc.add .finality n
+    | .counter kind n true => acc.add kind n
+    | _ => acc) #[]
+
+/-- Legal attack targets specified by `mods` as the permanent enters under
+`enteringController`'s control (CR 508.4), or `#[]` when `.attacking` is not
+in `mods`. -/
+def enterModsAttackOptions (g : Game) (enteringController : PlayerId)
+    (mods : List TriggeredAbility.TriggerEnterWith) : Array AttackTarget :=
+  if mods.any (· == .attacking) then
+    g.legalEnteringAttackTargets enteringController
+  else #[]
+
+/-- Apply one enters-with change to the permanent `id`. -/
+def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
+    (mod : TriggeredAbility.TriggerEnterWith)
+    (cause : Option EventCause := none) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    match mod with
+    | .loseAllAbilities =>
+      g.createEffect (.copy id { o.printed with
+        keywords := Keywords.none
+        triggeredAbilities := #[]
+        activatedAbilities := #[]
+        staticAbilities := #[] } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
+    | .keywords k =>
+      let o := g.object! id
+      g.createEffect (.copy id { o.printed with
+        keywords := Keywords.merge o.printed.keywords k } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+        (cause := cause)
+    | .additionalSubtype subtype =>
+      let o := g.object! id
+      if o.printed.hasSubtype subtype then g
+      else
+        g.createEffect (.copy id { o.printed with
+          subtypes := o.printed.subtypes.push subtype.englishName } o.copyRestore o.copyUntilEot o.copyUntilNextTurn o.copyUntilSourceLeaves)
+          (cause := cause)
+    | .counter kind n asEnters =>
+      let o := g.object! id
+      match kind, asEnters with
+      | .plusOnePlusOne, true =>
+        g.addPlusOnePlusOneTo o n (entersWith := true) (cause := cause)
+      | .plusOnePlusOne, false =>
+        g.addPlusOnePlusOneTo o n (byPlayer := some controller) (cause := cause)
+      | .finality, _ =>
+        g.addFinalityTo o n (byPlayer := some controller) (entersWith := true) (cause := cause)
+      | kind, asEnters =>
+        g.addCounters o kind n (entersWith := asEnters) (byPlayer := some controller) (cause := cause)
+    | .attacking => g
+
+/-- Display name for an `EnteringAttackItem` in choice logs. -/
+def enteringAttackItemName (g : Game) : EnteringAttackItem → String
+  | .token _ kind _ _ => (tokenPrinted kind).name
+  | .card cardId .. =>
+    match g.findObject? cardId with
+    | some o => o.name
+    | none => "the creature"
+
+/-- Advance `remaining` past any items whose attack target is already fixed
+(`options.size <= 1`), appending `(item, item.options[0]?)` to `chosen`. -/
+def advanceFixedEnteringAttackItems
+    (remaining : Array EnteringAttackItem)
+    (chosen : Array (EnteringAttackItem × Option AttackTarget)) :
+    Array EnteringAttackItem × Array (EnteringAttackItem × Option AttackTarget) := Id.run do
+  let mut idx := 0
+  let mut acc := chosen
+  while idx < remaining.size && remaining[idx]!.options.size <= 1 do
+    let item := remaining[idx]!
+    acc := acc.push (item, item.options[0]?)
+    idx := idx + 1
+  return (remaining.extract idx remaining.size, acc)
+
+/-- Create the tokens or put the cards in `chosen` onto the battlefield with
+their chosen `AttackTarget`s in a single batch, then run their enters-with
+modifications and enters triggers (CR 508.4 / ruling 181). -/
+def commitEnteringAttackItems (g : Game)
+    (chosen : Array (EnteringAttackItem × Option AttackTarget))
+    (cause : Option EventCause := none) : Game :=
+  let hasTokens := chosen.any (fun | (.token .., _) => true | _ => false)
+  if hasTokens then
+    match chosen[0]? with
+    | some (EnteringAttackItem.token controller _ _ _, _) =>
+      if (g.player controller).lost then
+        let g := g.change (.recentTokenIds #[])
+        g.logMsg "no token is created (CR 800.4b)"
+      else
+        let g :=
+          g.withBatch cause fun g => Id.run do
+            let mut g := g
+            let mut ids : Array ObjectId := #[]
+            for (item, atkTgt) in chosen do
+              if let .token ctrl kind tapped _ := item then
+                let rawPrinted := tokenPrinted kind
+                let proposed := GameEvent.created g.turnNumber ctrl {
+                  controller := some ctrl, owner := ctrl, token := true
+                  types := rawPrinted.types
+                  subtypes := CardSubtype.ofSubtypes rawPrinted.subtypes
+                  changeling := rawPrinted.keywords.changeling }
+                let printed :=
+                  if proposed.watches .wouldCreateToken then
+                    g.replaceArtifactTokenWithDragon ctrl rawPrinted
+                  else rawPrinted
+                let extraTreasure :=
+                  if proposed.watches .wouldCreateToken &&
+                      match proposed.change with
+                      | .rules (.zone (.created object _)) => object.hasSubtype .food
+                      | _ => false then
+                    g.foodTreasureReplacements ctrl
+                  else 0
+                let (g', obj) := g.createOneToken ctrl printed (tapped := tapped)
+                  (attacking := atkTgt.isSome) (attackingTarget := atkTgt) (cause := cause)
+                g := g'
+                ids := ids.push obj.id
+                for _ in [0:extraTreasure] do
+                  let (g', _) := g.createOneToken ctrl
+                    (g.replaceArtifactTokenWithDragon ctrl treasureToken) (tapped := tapped)
+                    (cause := cause)
+                  g := g'
+            return g.change (.recentTokenIds ids)
+        g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+    | _ => g
+  else
+    g.withBatch cause fun g =>
+      chosen.foldl (fun g (item, atkTgt) =>
+        match item with
+        | .token .. => g
+        | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
+          match g.findObject? cardId with
+          | none => g
+          | some o =>
+            let (g, newId) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+              (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+              (returnedAsArtifact := returnedAsArtifact)
+              (extraEntersWith := extraEntersWith)
+              (cause := cause)
+            let g := mods.foldl (fun g m => g.applyEnterMod effectController newId m (cause := cause)) g
+            match logKind with
+            | .putOntoBattlefield =>
+              let g := g.logMsg s!"{o.name} is put onto the battlefield"
+              g.afterPermanentEnters (g.object! newId)
+            | .grimReaper =>
+              let entered := g.object! newId
+              let g := g.logMsg s!"{entered.name} gets a finality counter"
+              g.afterPermanentEnters entered |>.logMsg s!"{entered.name} enters tapped and attacking"
+            | .ownerGraveyard loses =>
+              let g := g.afterPermanentEnters (g.object! newId)
+              if loses then
+                g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+              else g) g
+
+/-- Have each item's controller choose what it enters attacking when multiple
+legal attack targets exist (`options.size > 1`), then create the tokens or put
+the cards onto the battlefield already attacking their chosen targets (CR 508.4
+/ ruling 181). When no item requires a choice, commits immediately. -/
+def promptEnteringAttackItems (g : Game) (items : Array EnteringAttackItem)
+    (cause : Option EventCause := none) : Game :=
+  if items.isEmpty then g
+  else
+    let (rest, chosen) := advanceFixedEnteringAttackItems items #[]
+    match rest[0]? with
+    | some first =>
+      let ctrl := first.controller
+      let nm := g.enteringAttackItemName first
+      (g.change (.pending (.fraChoice ctrl (.chooseEnteringAttackTarget rest chosen cause)))).logMsg
+        s!"{(g.player ctrl).name} chooses what {nm} enters attacking"
+    | none =>
+      g.commitEnteringAttackItems chosen cause
+
 /-- Return a graveyard creature tapped and attacking with a finality
 counter (Grim Reaper). -/
 def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
-    (cardId : ObjectId) (attackingWhom : Option PlayerId := none) : Game :=
+    (cardId : ObjectId) (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none) : Game :=
   match g.findObject? cardId with
   | none => g.logMsg "The target is no longer in the graveyard"
   | some o =>
     if !(o.printed.isCreature && o.zone == .graveyard controller) then
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
-      let whom :=
-        match attackingWhom with
-        | some pid => some pid
-        | none =>
-          match (g.livingOpponents controller)[0]? with
-          | some pl => some pl.id
-          | none => none
-      let (g, newId) := g.putOntoBattlefield o.id controller (tapped := true)
-        (attacking := true) (attackingWhom := whom)
-        (extraEntersWith := #[(.finality, 1)])
-      let o := g.object! newId
-      let g := g.logMsg s!"{o.name} gets a finality counter"
-      g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
+      let explicitTgt := attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)
+      let options :=
+        match explicitTgt with
+        | some tgt => #[tgt]
+        | none => g.legalEnteringAttackTargets controller
+      let (g, c) := g.allocDelayedCause (some controller)
+      let item := EnteringAttackItem.card o.id controller controller true false
+        #[(.finality, 1)] [] .grimReaper options
+      g.promptEnteringAttackItems #[item] (cause := some c)
 
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
 that is no longer legal is skipped (MSH 125). -/
@@ -949,35 +1114,17 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copyTs := g.timestamp + 1
-    let copyObj : GameObject := {
-      id := copyId
-      printed := src.printed
+    let copySnap : EventObject := {
+      (g.snapshot src) with
+      id := some copyId
       owner := controller
       controller := some controller
       zone := .stack
-      timestamp := copyTs
-      abilityEffect := src.abilityEffect
-      triggeredAbility := src.triggeredAbility
-      sourceId := src.sourceId
-      lastKnownPower := src.lastKnownPower
-      lastKnownToughness := src.lastKnownToughness
-      chosenX := src.chosenX
       isCopy := true
-      teamworkPaid := src.teamworkPaid
+      wasCast := false
     }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.putStackEntry controller copyId
-    let g :=
-      match g.stack.findIdx? (fun e => e.objectId == src.id) with
-      | some i =>
-        let orig := g.stack[i]!
-        let last := g.stack.size - 1
-        g.changes #[
-          .stackEntry last (.targets orig.targets),
-          .stackEntry last (.dividedDamage orig.dividedDamage),
-          .stackEntry last (.chosenMode orig.chosenMode)]
-      | none => g
+    let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
+      (cause := g.resolvingOneShotCause controller (some src.id)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
