@@ -261,10 +261,8 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         match eff with
         | .copyNextInstantSorceryThisTurn p _ => if p == caster then some eid else none
         | _ => none)
-      let copyCause : EventCause :=
-        match cryoEid? with
-        | some eid => g.effectCreatedCause eid none caster
-        | none => .oneShotEffect (some ⟨g.nextEffectId⟩) none (some caster)
+      let copyCause : Option EventCause :=
+        cryoEid?.map (fun eid => g.effectCreatedCause eid none caster)
       let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
         (cause := some (.gameRule .spellCast))
       let copyId : ObjectId := ⟨g.nextObjectId⟩
@@ -278,7 +276,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         wasCast := false
       }
       let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
-        (cause := some copyCause))
+        (cause := copyCause))
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is

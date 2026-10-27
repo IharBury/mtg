@@ -240,6 +240,42 @@ inductive CardChoice where
   | amassArmy (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+deriving instance DecidableEq for Keywords
+deriving instance DecidableEq for TriggeredAbility.TriggerEnterWith
+
+/-- How to log a permanent after it enters the battlefield via `EnteringAttackItem.card`. -/
+inductive EnteringAttackLog where
+  | putOntoBattlefield
+  | grimReaper
+  | ownerGraveyard (losesAbilitiesAndHaste : Bool)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A card or token waiting for its controller to choose what it enters
+attacking (CR 508.4 / ruling 181). -/
+inductive EnteringAttackItem where
+  | token (controller : PlayerId) (kind : TokenKind) (tapped : Bool)
+      (options : Array AttackTarget)
+  | card (cardId : ObjectId) (enteringController : PlayerId)
+      (effectController : PlayerId) (tapped : Bool) (returnedAsArtifact : Bool)
+      (extraEntersWith : CounterBag)
+      (mods : List TriggeredAbility.TriggerEnterWith)
+      (logKind : EnteringAttackLog) (options : Array AttackTarget)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace EnteringAttackItem
+
+/-- The player who chooses what this permanent is attacking as it enters (CR 508.4). -/
+def controller : EnteringAttackItem → PlayerId
+  | .token c .. => c
+  | .card _ c .. => c
+
+/-- The legal attack targets to choose from (`options.size > 1` requires a player choice). -/
+def options : EnteringAttackItem → Array AttackTarget
+  | .token _ _ _ opts => opts
+  | .card _ _ _ _ _ _ _ _ opts => opts
+
+end EnteringAttackItem
+
 /-- A choice made while a Reality Fracture effect resolves. The player answers
 with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
@@ -524,11 +560,14 @@ inductive FraChoice where
   /-- You may begin the game with the first of these cards on the battlefield
   (Quicksilver). The rest are asked next. -/
   | mayBeginOnBattlefield (ids : Array ObjectId)
-  /-- Choose which player, planeswalker, or battle the first of `ids` is
+  /-- Choose which player, planeswalker, or battle the first of `remaining` is
   attacking as it enters the battlefield, then the rest (CR 508.4; ruling 181).
   Answered with `Action.chooseMode` (index into `options`) or
   `Action.choosePermanents` (a planeswalker or battle id in `options`). -/
-  | chooseEnteringAttackTarget (ids : Array ObjectId) (options : Array AttackTarget)
+  | chooseEnteringAttackTarget
+      (remaining : Array EnteringAttackItem)
+      (chosen : Array (EnteringAttackItem × Option AttackTarget))
+      (cause : Option EventCause := none)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

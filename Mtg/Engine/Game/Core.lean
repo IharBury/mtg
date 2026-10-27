@@ -2978,7 +2978,7 @@ def resolvingOneShotCause (g : Game) (p : PlayerId)
     some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
 
 /-- Look up the `EventCause` recorded when `eid` was created in `g.events`,
-falling back to `.oneShotEffect (some eid) fallbackSrc (some fallbackCtrl)`. -/
+falling back to `.unclassified` when no creation event exists. -/
 def effectCreatedCause (g : Game) (eid : EffectId)
     (fallbackSrc : Option ObjectId := none) (fallbackCtrl : PlayerId) : EventCause :=
   let fromEvents? :=
@@ -2991,14 +2991,13 @@ def effectCreatedCause (g : Game) (eid : EffectId)
             | .pendingLokiCopy _ s _ => s.orElse (fun _ => fallbackSrc)
             | _ => fallbackSrc
           match ev.cause with
-          | .unclassified => none
           | .oneShotEffect oid src ctrl =>
             some (.oneShotEffect oid (src.orElse (fun _ => effSrc))
               (ctrl.orElse (fun _ => some fallbackCtrl)))
           | c => some c
         else none
       | _ => none
-  fromEvents?.getD (.oneShotEffect (some eid) fallbackSrc (some fallbackCtrl))
+  fromEvents?.getD .unclassified
 
 /-- Resolving one-shot cause for a batch when a spell or ability is actively
 resolving, or `none` when called outside a resolving context (CR 608.2c / 610.1). -/
@@ -3911,28 +3910,6 @@ def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array Attack
         some (.battle o.id)
       else none
   playerTargets ++ permanentTargets
-
-/-- Have `controller` choose what each permanent in `ids` is attacking as it
-enters the battlefield (CR 508.4 / ruling 181). When only one legal target
-exists in `options`, `becameAttacking` is recorded immediately; when multiple
-options exist, a `.chooseEnteringAttackTarget` choice is opened and asked once
-per permanent. -/
-def promptEnteringAttackTargets (g : Game) (controller : PlayerId)
-    (ids : Array ObjectId) (options : Array AttackTarget)
-    (cause : Option EventCause := none) : Game :=
-  let liveIds := ids.filter (fun id => (g.findObject? id).any (·.isOnBattlefield))
-  if liveIds.isEmpty || options.isEmpty then g
-  else if options.size == 1 then
-    let tgt := options[0]!
-    liveIds.foldl (fun g id =>
-      match g.findObject? id with
-      | some o => g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))
-      | none => g) g
-  else
-    let g := liveIds.foldl (fun g id => g.change (.setLinkedExileCause id cause)) g
-    let firstObj := g.object! liveIds[0]!
-    (g.change (.pending (.fraChoice controller (.chooseEnteringAttackTarget liveIds options)))).logMsg
-      s!"{(g.player controller).name} chooses what {firstObj.nameWithToken} is attacking"
 
 end Game
 end Mtg.Engine

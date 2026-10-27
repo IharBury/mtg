@@ -2684,26 +2684,20 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           let (g, c) := g.allocDelayedCause (some controller) sourceId
           (g, some c)
     let tapped := how == .tapped
-    g.withBatch cause? fun g =>
-      ids.foldl (fun g id =>
-        match g.findObject? id with
-        | none => g
-        | some o =>
-          let owner :=
-            match how with
-            | .underOwner => o.owner
-            | _ => controller
-          let (atk, atkTgt, atkOptions) := g.enterModsAttacking owner note.enterMods
-          let (g, newId) := g.putOntoBattlefield id owner (tapped := tapped)
-            (attacking := atk) (attackingTarget := atkTgt)
-            (returnedAsArtifact := how == .asArtifact)
-            (extraEntersWith := enterModsExtraCounters note.enterMods)
-            (cause := cause?)
-          let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := cause?)) g
-          let g := g.logMsg s!"{o.name} is put onto the battlefield"
-          let g := g.afterPermanentEnters (g.object! newId)
-          if atkOptions.isEmpty then g
-          else g.promptEnteringAttackTargets owner #[newId] atkOptions (cause := cause?)) g
+    let returnedAsArtifact := how == .asArtifact
+    let extra := enterModsExtraCounters note.enterMods
+    let items := ids.filterMap fun id =>
+      match g.findObject? id with
+      | none => none
+      | some o =>
+        let owner :=
+          match how with
+          | .underOwner => o.owner
+          | _ => controller
+        let options := g.enterModsAttackOptions owner note.enterMods
+        some (EnteringAttackItem.card id owner controller tapped returnedAsArtifact
+          extra note.enterMods .putOntoBattlefield options)
+    g.promptEnteringAttackItems items (cause := cause?)
   | .randomCreature, _, _ =>
     let ids := g.revealedIdsThisWay
     if ids.isEmpty then g
@@ -2774,30 +2768,17 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     else
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let tapped := how == .tapped
-      let (g, pendingAtk) :=
-        g.withBatchReturn (some cause) fun g =>
-          cards.foldl (fun (acc : Game × Array (PlayerId × ObjectId × Array AttackTarget)) o =>
-            let (g, pend) := acc
-            let owner :=
-              match how with
-              | .underOwner => o.owner
-              | _ => controller
-            let (atk, atkTgt, atkOptions) := g.enterModsAttacking owner note.enterMods
-            let (g, newId) := g.putOntoBattlefield o.id owner (tapped := tapped)
-              (attacking := atk) (attackingTarget := atkTgt)
-              (returnedAsArtifact := how == .asArtifact)
-              (extraEntersWith := enterModsExtraCounters note.enterMods)
-              (cause := some cause)
-            let g := note.enterMods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
-            let g := g.logMsg s!"{o.name} is put onto the battlefield"
-            let g := g.afterPermanentEnters (g.object! newId)
-            let pend := if atkOptions.isEmpty then pend else pend.push (owner, newId, atkOptions)
-            (g, pend)) (g, #[])
-      match pendingAtk[0]? with
-      | none => g
-      | some (owner, _, atkOptions) =>
-        let ids := pendingAtk.filterMap (fun (p, id, _) => if p == owner then some id else none)
-        g.promptEnteringAttackTargets owner ids atkOptions (cause := some cause)
+      let returnedAsArtifact := how == .asArtifact
+      let extra := enterModsExtraCounters note.enterMods
+      let items := cards.map fun o =>
+        let owner :=
+          match how with
+          | .underOwner => o.owner
+          | _ => controller
+        let options := g.enterModsAttackOptions owner note.enterMods
+        EnteringAttackItem.card o.id owner controller tapped returnedAsArtifact
+          extra note.enterMods .putOntoBattlefield options
+      g.promptEnteringAttackItems items (cause := some cause)
 
 /-- Resolve `TriggerResolution.grant`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -3896,25 +3877,31 @@ where
 `holds` is true, have them enter attacking (CR 508.4 / ruling 181). When there
 is a single legal attack target, the tokens enter attacking that target
 immediately; when multiple players, planeswalkers, or battles are legal attack
-targets, `controller` chooses once per token. -/
+targets, `controller` chooses once per token before the tokens enter. -/
 def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     (kind : TokenKind) (n : Nat) (tapped holds : Bool)
     (sourceId : Option ObjectId := none) : Game :=
-  let cause := g.resolvingOneShotCause controller sourceId
+  let (g, c) := g.allocDelayedCause (some controller) sourceId
+  let cause := some c
   if !holds then
     g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
+  else if (g.player controller).lost then
+    let g := g.change (.recentTokenIds #[])
+    if n == 0 then g
+    else g.logMsg "no token is created (CR 800.4b)"
   else
+    let rawPrinted := tokenPrinted kind
+    let proposed := GameEvent.created g.turnNumber controller {
+      controller := some controller, owner := controller, token := true
+      types := rawPrinted.types
+      subtypes := CardSubtype.ofSubtypes rawPrinted.subtypes
+      changeling := rawPrinted.keywords.changeling }
+    let copies :=
+      if proposed.watches .wouldCreateToken then g.tokenCreateMultiplier controller else 1
+    let total := n * copies
     let options := g.legalEnteringAttackTargets controller
-    if options.size <= 1 then
-      let atkTgt := some (options[0]?.getD (.player g.defendingPlayer))
-      let g := g.createKindTokens controller kind n (tapped := tapped)
-        (attacking := true) (attackingTarget := atkTgt) (cause := cause)
-      g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-    else
-      let g := g.createKindTokens controller kind n (tapped := tapped)
-        (attacking := false) (cause := cause)
-      let g := g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
-      g.promptEnteringAttackTargets controller g.recentTokenIds options (cause := cause)
+    let items := Array.replicate total (EnteringAttackItem.token controller kind tapped options)
+    g.promptEnteringAttackItems items (cause := cause)
 
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -4805,7 +4792,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .markRecentTokensAttacking =>
     let cause := g.resolvingOneShotCause controller sourceId
     let options := g.legalEnteringAttackTargets controller
-    g.promptEnteringAttackTargets controller g.recentTokenIds options (cause := cause)
+    let tgt := options[0]?.getD (.player g.defendingPlayer)
+    g.recentTokenIds.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))
+      | none => g) g
   | .addMana types (.fixed 1) =>
     g.addManaLogged controller types
   | .discard (.cards n) => g.beginDiscardCards #[controller] n

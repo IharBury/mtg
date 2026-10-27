@@ -2757,17 +2757,26 @@ attacks" triggers (CR 508.3a). -/
     (cause := some (.oneShotEffect (some ⟨82⟩) none (some me)))
   let tokPw? := gTokPw.battlefield.find? (·.printed.isToken)
   -- Andúril (ruling 181): when multiple legal attack targets exist (opp and pwOpp),
-  -- each Spirit token is asked separately and may attack a different target.
+  -- each Spirit token is asked separately before entering and may attack a different target.
   let gAnduril0 := (quiet g0).createAndMarkTokensAttacking me .spirit 2 true true (some hMe.id)
-  let gAnduril2 :=
+  let gAnduril1 :=
     match gAnduril0.apply me (.chooseMode 1) with
-    | .ok g1 =>
-      match g1.apply me (.chooseMode 0) with
-      | .ok g2 => g2
-      | .error _ => g1
+    | .ok g1 => g1
     | .error _ => gAnduril0
+  let gAnduril2 :=
+    match gAnduril1.apply me (.chooseMode 0) with
+    | .ok g2 => g2
+    | .error _ => gAnduril1
   let andurilSpirits := gAnduril2.battlefield.filter (·.printed.isToken)
-  -- Grim Reaper / returnFromGyTappedAttackingFinality (CR 508.4): asks when multiple targets exist
+  let andurilCreatedTargets := gAnduril2.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.zone (.created obj _)) => some (obj.attacking, obj.attackingTarget, e.batch)
+    | _ => none)
+  let andurilBecameTargets := gAnduril2.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.combat (.becameAttacking _ tgt)) => some (tgt, e.batch)
+    | _ => none)
+  -- Grim Reaper / returnFromGyTappedAttackingFinality (CR 508.4): asks before entering when multiple targets exist
   let gReaper0 := insertObject (quiet g0) bear me (.graveyard me) none {} (fun id _ =>
     #[.pushGraveyard id])
   let reaperGyId := (gReaper0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
@@ -2778,6 +2787,10 @@ attacks" triggers (CR 508.3a). -/
     | .error _ => gReaper1
   let reaperBear? := gReaper2.battlefield.find? (fun o =>
     o.name == bear.name && o.controlledBy me && o.id != bMe.id)
+  let reaperMovedTarget := gReaper2.events.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ after _ .battlefield ..)) => after.attackingTarget
+    | _ => none)
   hAfterBecame.status.attacking &&
     hAfterBecame.status.attackingTarget == some (AttackTarget.planeswalker pwOpp.id) &&
     !hAfterBecame.status.declaredAsAttackerThisTurn &&
@@ -2805,10 +2818,23 @@ attacks" triggers (CR 508.3a). -/
     enteredDefBecameTarget == some (AttackTarget.player gEnterDefault.defendingPlayer) &&
     (sneakEntered?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
     (tokPw?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
+    !(gAnduril0.battlefield.any (·.printed.isToken)) &&
+    !(gAnduril1.battlefield.any (·.printed.isToken)) &&
     andurilSpirits.size == 2 &&
     andurilSpirits[0]!.status.attackingTarget == some (AttackTarget.planeswalker pwOpp.id) &&
     andurilSpirits[1]!.status.attackingTarget == some (AttackTarget.player opp) &&
+    andurilCreatedTargets.size == 2 &&
+    andurilBecameTargets.size == 2 &&
+    andurilCreatedTargets[0]!.1 &&
+    andurilCreatedTargets[0]!.2.1 == some (AttackTarget.planeswalker pwOpp.id) &&
+    andurilCreatedTargets[1]!.1 &&
+    andurilCreatedTargets[1]!.2.1 == some (AttackTarget.player opp) &&
+    andurilCreatedTargets[0]!.2.2 == andurilBecameTargets[0]!.2 &&
+    andurilCreatedTargets[0]!.2.2 == andurilCreatedTargets[1]!.2.2 &&
+    andurilCreatedTargets[0]!.2.2 == andurilBecameTargets[1]!.2 &&
+    (gReaper1.object! reaperGyId).zone == .graveyard me &&
     (reaperBear?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
+    reaperMovedTarget == some (AttackTarget.planeswalker pwOpp.id) &&
     noUnclassifiedRulesEvents gBecame &&
     noUnclassifiedRulesEvents gAtk &&
     noUnclassifiedRulesEvents gBlk &&
