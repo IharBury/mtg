@@ -4604,6 +4604,27 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           isCopy := eo.isCopy
           lastKnownPower := eo.power.orElse (fun _ => eo.lastKnownPower)
           lastKnownToughness := eo.toughness.orElse (fun _ => eo.lastKnownToughness) }
+    -- Pre-sum damage dealt to each permanent across the entire batch so
+    -- `.sourceDealtDamage` queues once per `(source, ability)` per batch with
+    -- the summed damage before `queueAb` replicates `extraTriggerCopies`.
+    let mut batchDamageByPerm : Array (ObjectId × Nat) := #[]
+    for e in batch do
+      match e.change with
+      | .rules (.damage (.dealt pkts)) =>
+        for pkt in pkts do
+          if pkt.amount > 0 then
+            match pkt.recipient with
+            | .permanent recSnap =>
+              let recObj := findEventObj post recSnap
+              match batchDamageByPerm.findIdx? (fun (id, _) => id == recObj.id) with
+              | some idx =>
+                let (id, amt) := batchDamageByPerm[idx]!
+                batchDamageByPerm := batchDamageByPerm.set! idx (id, amt + pkt.amount)
+              | none =>
+                batchDamageByPerm := batchDamageByPerm.push (recObj.id, pkt.amount)
+            | _ => pure ()
+      | _ => pure ()
+    let mut firedSourceDealtDamage : Array ObjectId := #[]
     for e in batch do
       -- Saga chapter and Nth-plan-counter triggers on counters put in this event
       let isZoneArrival :=
@@ -5284,10 +5305,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               GameEvent.damaged e.turn { owner := recObj.owner } recObj.asEvent totalAmt (noncombatAmt == 0)
             match recObj.controller with
             | some c =>
-              if pktEv.matchesTrigger c recObj.id .sourceDealtDamage then
+              if !firedSourceDealtDamage.contains recObj.id &&
+                  pktEv.matchesTrigger c recObj.id .sourceDealtDamage then
+                firedSourceDealtDamage := firedSourceDealtDamage.push recObj.id
+                let batchTotal :=
+                  (batchDamageByPerm.find? (fun (id, _) => id == recObj.id)).map Prod.snd |>.getD totalAmt
                 let (w, fs) :=
                   queueSrc post c recObj .sourceDealtDamage
-                    (lastKnownPower := some (Int.ofNat totalAmt))
+                    (lastKnownPower := some (Int.ofNat batchTotal))
                     (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
               if recObj.isCreature && pktEv.matchesTrigger c recObj.id .creatureYouControlDealtDamage then
@@ -5905,26 +5930,46 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
     let wts := matchTriggers pre g batchEvents
     if wts.isEmpty then g
     else
-      let (g, toEnqueue) := wts.foldl (fun (acc, q) wt =>
-        if wt.event == .sourceDealtDamage &&
-            (acc.waitingTriggers.any (fun t => t.source.id == wt.source.id && t.event == .sourceDealtDamage) ||
-              q.any (fun (t : WaitingTrigger) => t.source.id == wt.source.id && t.event == .sourceDealtDamage)) then
-          let amt := wt.lastKnownPower.getD 0
-          let wt' := acc.waitingTriggers.map (fun t =>
-            if t.source.id == wt.source.id && t.event == .sourceDealtDamage then
-              { t with lastKnownPower := some (t.lastKnownPower.getD 0 + amt) }
-            else t)
-          let q' := q.map (fun (t : WaitingTrigger) =>
-            if t.source.id == wt.source.id && t.event == .sourceDealtDamage then
-              { t with lastKnownPower := some (t.lastKnownPower.getD 0 + amt) }
-            else t)
-          ({ acc with waitingTriggers := wt' }, q')
-        else
-          let ev :=
-            { (GameEvent.triggered acc.turnNumber (acc.snapshot wt.source) wt.controller wt.ability
-                batchId) with
-              batch := batchId }
-          ({ acc with events := acc.events.push ev }, q.push wt)) (g, #[])
+      let preWaiting := g.waitingTriggers
+      let (g, toEnqueue, _, _) := wts.foldl
+        (fun (acc, q, coalesced, hulkAdded) wt =>
+          let key := (wt.source.id, wt.ability)
+          let alreadyInPre :=
+            wt.event == .sourceDealtDamage &&
+              preWaiting.any (fun t =>
+                t.source.id == wt.source.id && t.ability == wt.ability &&
+                  t.event == .sourceDealtDamage)
+          if alreadyInPre then
+            if coalesced.contains key then
+              (acc, q, coalesced, hulkAdded)
+            else
+              let amt := wt.lastKnownPower.getD 0
+              let wt' := acc.waitingTriggers.map (fun t =>
+                if t.source.id == wt.source.id && t.ability == wt.ability &&
+                    t.event == .sourceDealtDamage then
+                  { t with lastKnownPower := some (t.lastKnownPower.getD 0 + amt) }
+                else t)
+              ({ acc with waitingTriggers := wt' }, q, coalesced.push key, hulkAdded)
+          else
+            let ev :=
+              { (GameEvent.triggered acc.turnNumber (acc.snapshot wt.source) wt.controller wt.ability
+                  batchId) with
+                batch := batchId }
+            let acc := { acc with events := acc.events.push ev }
+            let isHulkEnrage :=
+              wt.event == .sourceDealtDamage &&
+                wt.ability.shared == .watch .hulk &&
+                wt.source.status.attacking
+            let (acc, hulkAdded) :=
+              if isHulkEnrage && !hulkAdded.contains wt.source.id then
+                let eng :=
+                  GameEvent.engine acc.turnNumber
+                    (.enrageGrantsAdditionalCombat (acc.enrageGrantsAdditionalCombat + 1))
+                (({ acc with events := acc.events.push eng }).applyChange eng.change,
+                  hulkAdded.push wt.source.id)
+              else (acc, hulkAdded)
+            (acc, q.push wt, coalesced, hulkAdded))
+        (g, #[], (#[] : Array (ObjectId × TriggeredAbility)), (#[] : Array ObjectId))
       if toEnqueue.isEmpty then g else g.enqueueWaitingTriggers toEnqueue
 
 /-- Resolve `cause` within an active batch `batchCause?`, sharing the batch's

@@ -123,18 +123,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         g.record (GameEvent.counters g.turnNumber none o.asEvent .loyalty n.toNat true (cause := cause))
       else g
     g.logMsg msg
-  if n > 0 then
-    let already := g.waitingTriggers.any (fun t =>
-      t.source.id == o.id && t.event == .sourceDealtDamage)
-    let hasEnrage :=
-      o.printed.triggeredAbilities.any (fun ab =>
-        match ab.shared with
-        | .watch .hulk => true
-        | _ => false)
-    if hasEnrage && o.status.attacking && !already then
-      g.change (.enrageGrantsAdditionalCombat (g.enrageGrantsAdditionalCombat + 1))
-    else g
-  else g
+  g
 
 /-- Extra noncombat damage from Hawkeye, Young Avenger. X is his power at
 the time the damage would be dealt (MSH 305). -/

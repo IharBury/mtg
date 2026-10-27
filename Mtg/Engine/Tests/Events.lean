@@ -3134,13 +3134,79 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gOnce1.waitingTriggers.size == 1 &&
     gOnce2.waitingTriggers.size == 1 &&
     gOnceNextTurn.waitingTriggers.size == 2
+  -- 5. Simultaneous batch damage to an attacking Hulk increments
+  --    `enrageGrantsAdditionalCombat` once per batch, and `sourceDealtDamage`
+  --    sums damage across packets/events in the batch before replicating
+  --    `extraTriggerCopies` across distinct abilities.
+  let hulkEnrageAb : TriggeredAbility :=
+    .triggered .sourceDealtDamage (Effect.ofTrigger (.watch .hulk)) {}
+  let hulkDef : CardDef :=
+    { bear with
+      name := "Test Hulk"
+      power := some 6
+      toughness := some 6
+      triggeredAbilities := #[hulkEnrageAb] }
+  let gHulk0 := addPermanent (quiet afterDraw) hulkDef me me
+  let hulk0 := (gHulk0.battlefield.filter (·.name == "Test Hulk"))[0]!
+  let gHulk0 := gHulk0.changeStatus hulk0.id (.attacking true)
+  let hulkCause : EventCause := .oneShotEffect (some ⟨95⟩) none (some me)
+  let gHulkBatch :=
+    gHulk0.withBatch (some hulkCause) fun g =>
+      let h := g.object! hulk0.id
+      let g := g.dealDamageToPermanent h 1 (source := some h.asEvent) (cause := some hulkCause)
+      let h := g.object! hulk0.id
+      g.dealDamageToPermanent h 2 (source := some h.asEvent) (cause := some hulkCause)
+  let hulkBatchOk :=
+    gHulkBatch.enrageGrantsAdditionalCombat == 1 &&
+    gHulkBatch.waitingTriggers.size == 1 &&
+    gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
+  let dmgAb1 : TriggeredAbility :=
+    .triggered .sourceDealtDamage
+      { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
+      {}
+  let dmgAb2 : TriggeredAbility :=
+    .triggered .sourceDealtDamage
+      { resolution := .scry 1, phrase := "Scry 1" }
+      {}
+  let dmgWatcherDef : CardDef :=
+    { bear with
+      name := "Dual Damage Watcher"
+      triggeredAbilities := #[dmgAb1, dmgAb2] }
+  let doublerDef : CardDef :=
+    { bear with
+      name := "Trigger Doubler"
+      staticAbilities := #[.extraTriggerAnotherYouControl #[] #[.creature]] }
+  let gDmg0 :=
+    addPermanent (addPermanent (quiet afterDraw) dmgWatcherDef me me) doublerDef me me
+  let dmgWatcher := (gDmg0.battlefield.filter (·.name == "Dual Damage Watcher"))[0]!
+  let dmgCause : EventCause := .oneShotEffect (some ⟨96⟩) none (some me)
+  let gDmgBatch :=
+    gDmg0.withBatch (some dmgCause) fun g =>
+      let w := g.object! dmgWatcher.id
+      let g := g.dealDamageToPermanent w 1 (source := some w.asEvent) (cause := some dmgCause)
+      let w := g.object! dmgWatcher.id
+      g.dealDamageToPermanent w 1 (source := some w.asEvent) (cause := some dmgCause)
+  let dmgTrigEvents := gDmgBatch.events.filter (fun e =>
+    match e.change with
+    | .rules (.triggerQueue (.triggered ..)) => true
+    | _ => false)
+  let dmgBatchCopiesOk :=
+    gDmgBatch.waitingTriggers.size == 4 &&
+    (gDmgBatch.waitingTriggers.filter (·.ability == dmgAb1)).size == 2 &&
+    (gDmgBatch.waitingTriggers.filter (·.ability == dmgAb2)).size == 2 &&
+    gDmgBatch.waitingTriggers.all (·.lastKnownPower == some 2) &&
+    dmgTrigEvents.size == 4
   lookBackFlagsOk &&
     simDeathsOk &&
     phaseOutNoLeaveOk &&
     phaseLookBackOk &&
     onceEachTurnOk &&
+    hulkBatchOk &&
+    dmgBatchCopiesOk &&
     noUnclassifiedRulesEvents gSim1 &&
     noUnclassifiedRulesEvents gPhaseOnly &&
-    noUnclassifiedRulesEvents gPhaseAndDie
+    noUnclassifiedRulesEvents gPhaseAndDie &&
+    noUnclassifiedRulesEvents gHulkBatch &&
+    noUnclassifiedRulesEvents gDmgBatch
 
 end Mtg.Engine.EventTests
