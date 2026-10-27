@@ -811,15 +811,23 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   events to that batch cause, and `none` upgrades `.unclassified` to a fresh
   `.oneShotEffect` only when `currentResolvingContext?` is `some`). `resolvingBatchCause`
   returns `currentResolvingContext?.map (.oneShotEffect none ..)` for callers
-  opening a batch (replacing the manual `allocDelayedCause` pre-allocation
-  across `markDamageOn`, `dealDamageToPermanent`, `dealDamageToPlayer`,
-  `dealDamageFrom`, `dealDamageToEachOpponent`, `fightCreatures`,
-  `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and `drawThenLoseLife` in
-  `Damage.lean`), while `resolvingOneShotCause` and `createEffect` /
-  `createEffects` (when `cause := none`) reuse the enclosing batch's `EffectId`
-  once `currentBatch` already holds `some (_, some (.oneShotEffect (some bid) ..))`
-  (and otherwise pre-stamp `some ⟨g.nextEffectId⟩` or fall back to
-  `allocDelayedCause`).
+  opening a batch in `TriggeredAbilities.lean`, `FraResolve.lean`,
+  `FrcResolve.lean`, and `ResolutionEffects.lean` (while `markDamageOn`,
+  `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
+  `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
+  `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean` build their
+  `defaultCause` inline from `cause.orElse (currentResolvingContext?.map ..)` with
+  their own source/controller fallbacks—or `none` when no damage/life loss is
+  dealt—and pass it to `withBatch`, replacing the manual `allocDelayedCause`
+  pre-allocation). When `currentBatch` already holds
+  `some (_, some (.oneShotEffect (some bid) ..))`, both `resolvingOneShotCause`
+  and `createEffect` / `createEffects` (with `cause := none`) reuse that `bid`;
+  otherwise `resolvingOneShotCause` returns
+  `some (.oneShotEffect (some ⟨g.nextEffectId⟩) ..)` without advancing
+  `nextEffectId`, whereas `createEffect` / `createEffects` with `cause := none`
+  call `allocDelayedCause` when `currentResolvingContext?` is `some` (including
+  when `currentBatch` still holds `.oneShotEffect none ..`) and leave `cause` as
+  `none` when nothing is resolving.
   Meanwhile, each pass of `checkSBACounted` (`StateBasedActions.lean`) runs
   inside `withBatchReturn none` so heterogeneous `.stateBased` causes
   (`.lifeZeroOrLess`, `.drewFromEmpty`, `.tenPoison`, `.counterAnnihilation`,
@@ -1227,11 +1235,15 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    events to a `.turnBased` or `.stateBased` batch cause when `currentBatch` holds
    one, and upgrading `.unclassified` under `none` to a fresh `.oneShotEffect` only
    when `currentResolvingContext?` is `some`; `resolvingBatchCause` maps
-   `currentResolvingContext?` to `.oneShotEffect none ..`, replacing the
-   `allocDelayedCause` pre-allocation across `markDamageOn`,
-   `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
-   `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
-   `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean`), while
+   `currentResolvingContext?` to `.oneShotEffect none ..` for batch callers in
+   `TriggeredAbilities.lean`, `FraResolve.lean`, `FrcResolve.lean`, and
+   `ResolutionEffects.lean`, while `markDamageOn`, `dealDamageToPermanent`,
+   `dealDamageToPlayer`, `dealDamageFrom`, `dealDamageToEachOpponent`,
+   `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
+   `drawThenLoseLife` in `Damage.lean` inline `cause.orElse (currentResolvingContext?.map ..)`
+   with their own source/controller fallbacks—or `none` when no damage/life loss
+   is dealt—and pass it to `withBatch`, replacing the `allocDelayedCause`
+   pre-allocation), while
    each SBA pass in `checkSBACounted` (`StateBasedActions.lean`) runs inside
    `withBatchReturn none` to keep per-event `.stateBased` causes under one
    `BatchId` per pass and standalone `.rules` events in `applyEvent` form a
@@ -1300,9 +1312,11 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    `youPutCountersOnGoblinOrcArmy` (on a Goblin, Orc, or Army controlled by `p`,
    including enters-with counters via `countersPutInEvent`),
    `.fra .youPutLoyaltyCounters` (via `GameEvent.matchesTrigger` on
-   `entersWith.count .loyalty > 0` in `ZoneEvent.moved` / `ZoneEvent.created` and
-   on `PermanentEvent.counters` loyalty puts, leaving `enterWithLoyalty` to only
-   log the entry message), and all `.youPutPlusOne`
+   `entersWith.count .loyalty > 0 && after.planeswalker` in `ZoneEvent.moved`,
+   `object.counters.count .loyalty > 0 && object.planeswalker` in
+   `ZoneEvent.created`, and loyalty `.put n` (`n > 0`) on `object.planeswalker`
+   in `PermanentEvent.counters`, leaving `enterWithLoyalty` to only log the entry
+   message), and all `.youPutPlusOne`
    abilities (`plusOneOnHeroesCreateWall` for another controlled Hero,
    `plusOneOnThisOnce` for another creature, and `plusOneCreateInsectOnce` for a
    creature, unified over `countersPutInEvent`, removing the duplicate loops from
@@ -1444,8 +1458,9 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    [`Choices.lean`](Mtg/Engine/Game/Choices.lean),
    [`Decisions.lean`](Mtg/Engine/Game/Decisions.lean),
    [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean),
-   [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean), and
-   [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean).
+   [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean),
+   [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean), and
+   [`ResolutionHelpers.lean`](Mtg/Engine/Game/ResolutionHelpers.lean).
 
 Tests (Hobbit, Reality Fracture, Reality Fracture Commander, and Marvel triggers):
 `Death.lean`, `Leaving.lean`, `Damage.lean`, `Watch.lean`, `Elves.lean`,
