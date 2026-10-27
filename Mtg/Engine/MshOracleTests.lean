@@ -1254,7 +1254,7 @@ def returnedIsNewObjectOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let old := namedPermanent g "Grizzly Bears"
   let oldId := old.id
-  let g := g.changeStatuses old.id #[.plusOnePlusOne 2, .attacking true]
+  let g := (g.recordPutCounters old.id .plusOnePlusOne 2).changeStatus old.id (.attacking true)
   let (g, _) := g.move oldId .exile none
   let gy :=
     match g.objects.find? (fun o => o.name == "Grizzly Bears") with
@@ -1584,7 +1584,7 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let gPro := addPermanent afterDraw docSamsonSuperPsychiatrist ⟨0⟩ ⟨0⟩
   let gPro := addPermanent gPro grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent gPro "Grizzly Bears"
-  let gPro := gPro.changeStatuses bear.id #[.plusOnePlusOne 1, .stun 2]
+  let gPro := (gPro.recordPutCounters bear.id .plusOnePlusOne 1).changeStatus bear.id (.stun 2)
   let gPro := gPro.proliferateTarget ⟨0⟩ #[Target.permanent bear.id]
   let grown := gPro.object! bear.id
   let proliferateOk := grown.status.plusOnePlusOne == 3 && grown.status.stun == 4
@@ -3358,7 +3358,7 @@ def ironLadRevealOk : Bool :=
 def powerfulBrokerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatuses bear.id #[.plusOnePlusOne 1, .stun 2]
+  let g := (g.recordPutCounters bear.id .plusOnePlusOne 1).changeStatus bear.id (.stun 2)
   let g := g.proliferateTarget ⟨0⟩ #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let bear := namedPermanent g "Grizzly Bears"
   bear.status.plusOnePlusOne == 2 && bear.status.stun == 3 &&

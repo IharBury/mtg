@@ -99,7 +99,7 @@ def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
   let n := g.hopeCountersOnEnter o asOf
   if n == 0 then g
   else
-    let g := g.changeStatus o.id (.addPlusOnePlusOne n)
+    let g := g.recordPutCounters o.id .plusOnePlusOne n (byPlayer := o.controller)
     g.logMsg s!"{o.nameWithToken} enters with {n} additional +1/+1 counter(s)"
 
 /-- Counters placed on `entering` as it enters the battlefield from replacement
@@ -248,7 +248,7 @@ def replaceArtifactTokenWithDragon (g : Game) (controller : PlayerId)
 /-- Create a token under `controller`, applying token-doubling and
 Food-and-Treasure replacement effects. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
-    (tapped := false) (batch := false) (attacking := false)
+    (tapped := false) (_batch := false) (attacking := false)
     (attackingWhom : Option PlayerId := none)
     (extraCounters : CounterBag := #[])
     (cause : Option EventCause := none) : Game × GameObject :=
@@ -257,7 +257,6 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
       (attacking := attacking) (attackingWhom := attackingWhom)
       (extraCounters := extraCounters) (cause := cause)
   else
-    let original := printed
     let proposed := GameEvent.created g.turnNumber controller {
       controller := some controller, owner := controller, token := true
       types := printed.types
@@ -275,7 +274,7 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
           | _ => false then
         g.foodTreasureReplacements controller
       else 0
-    Id.run do
+    g.withBatchReturn cause fun g => Id.run do
       let mut g := g
       let mut last : Option GameObject := none
       for _ in [0:copies] do
@@ -289,8 +288,6 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
           (g.replaceArtifactTokenWithDragon controller treasureToken) (tapped := tapped)
           (cause := cause)
         g := g'
-      if !batch && (printed.isCreature || original.isCreature) then
-        g := g.noteCreatureTokenEvent controller
       match last with
       | some obj => (g, g.object! obj.id)
       | none => (g, g.object! ⟨0⟩)
@@ -301,12 +298,12 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
   if (g.player controller).lost then
     if n == 0 then g else g.logMsg "no token is created (CR 800.4b)"
   else
-  Id.run do
-    let mut g := g
-    for _ in [0:n] do
-      let (g', _) := g.createToken controller treasureToken (tapped := tapped) (cause := cause)
-      g := g'
-    return g
+    g.withBatch cause fun g => Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        let (g', _) := g.createToken controller treasureToken (tapped := tapped) (cause := cause)
+        g := g'
+      return g
 
 /-- A 0/0 black Army creature token of the given subtype (amass). -/
 def armyToken (subtype : CardSubtype) : CardDef := {
@@ -539,14 +536,6 @@ def jacePlaneswalkerTokens (g : Game) (controller : PlayerId) : Array GameObject
   (g.permanentsOf controller).filter (fun o =>
     o.printed.isPlaneswalker && o.hasSubtype .jace && o.printed.isToken)
 
-/-- Queue “whenever you put one or more loyalty counters on a planeswalker”
-for `p` (Inspired Tethermage). Entering with loyalty counters counts
-(CR 122.6). -/
-def queueLoyaltyPutTriggers (g : Game) (p : PlayerId) : Game :=
-  let wts := (g.permanentsOf p).foldl (fun acc o =>
-    acc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
-  g.change (.enqueueWaitingTriggers wts)
-
 /-- Empower Jace `n` (Reality Fracture, ruling 732). If you don't control a
 Jace planeswalker token, create one with 0 loyalty. Then put `n` loyalty
 counters on a Jace planeswalker token you control. You can't create a new
@@ -574,8 +563,7 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
     let k := g.countersYouPut o n (putter := some controller)
     let g :=
       if k > 0 then
-        (g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)).queueLoyaltyPutTriggers
-          controller
+        g.record (GameEvent.counters g.turnNumber (some controller) o.asEvent .loyalty k)
       else g
     g.logMsg s!"Empower Jace {n}: {k} loyalty counter(s) are put on {o.name}"
 
@@ -632,22 +620,17 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-  Id.run do
-    let mut g := g
-    let mut ids : Array ObjectId := #[]
-    let dest := if attacking then some g.defendingPlayer else none
-    let printed := tokenPrinted kind
-    let creature :=
-      printed.isCreature || (g.replaceArtifactTokenWithDragon controller printed).isCreature
-    for _ in [0:n] do
-      let (g', obj) := g.createToken controller printed (tapped := tapped) (batch := true)
-        (attacking := attacking) (attackingWhom := dest) (cause := cause)
-      g := g'
-      ids := ids.push obj.id
-    g := g.change (.recentTokenIds ids)
-    if n > 0 && creature then
-      g := g.noteCreatureTokenEvent controller
-    return g
+    g.withBatch cause fun g => Id.run do
+      let mut g := g
+      let mut ids : Array ObjectId := #[]
+      let dest := if attacking then some g.defendingPlayer else none
+      let printed := tokenPrinted kind
+      for _ in [0:n] do
+        let (g', obj) := g.createToken controller printed (tapped := tapped)
+          (attacking := attacking) (attackingWhom := dest) (cause := cause)
+        g := g'
+        ids := ids.push obj.id
+      return g.change (.recentTokenIds ids)
 
 end Game
 end Mtg.Engine

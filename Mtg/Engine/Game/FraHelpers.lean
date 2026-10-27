@@ -39,21 +39,16 @@ def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
 def drainOpponents (g : Game) (controller : PlayerId) (n : Nat)
     (source : Option GameObject := none)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if n == 0 then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause
-            (ctrl.orElse (fun _ => some controller))
-            (src.orElse (fun _ => source.map (·.id)))
-          (g, some c)
-        | none => (g, none)
-  let g := g.dealDamageToEachOpponent controller n (source := source) (cause := cause)
-  g.gainLife controller n (cause := cause)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if n == 0 then none
+      else g.currentResolvingContext?.map fun (src, ctrl) =>
+        .oneShotEffect none
+          (src.orElse (fun _ => source.map (·.id)))
+          (ctrl.orElse (fun _ => some controller)))
+  g.withBatch defaultCause fun g =>
+    let g := g.dealDamageToEachOpponent controller n (source := source) (cause := cause)
+    g.gainLife controller n (cause := cause)
 
 /-- Grant `k` to `o` until end of turn, logged. -/
 def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Keywords) : Game :=
@@ -136,19 +131,21 @@ then +1/+1, then other kinds) or hurt their own (stun, then minus-one counters).
 def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (n : Nat) : Game :=
   let take (have_ left : Nat) : Nat × Nat := (Nat.min have_ left, left - Nat.min have_ left)
   let s := o.status
-  let changes : Array StatusChange :=
+  let removals : Array (CounterKind × Nat) :=
     if o.controlledBy controller then
       let (a, left) := take s.stun n
       let (b, _) := take s.minusOneMinusOne left
-      #[.removeCounters .stun a, .removeCounters .minusOneMinusOne b]
+      #[(.stun, a), (.minusOneMinusOne, b)]
     else
       let (a, left) := take s.loyaltyCounters n
       let (b, left) := take s.plusOnePlusOne left
       let (c, left) := take s.shield left
       let (d, _) := take s.indestructibleCounters left
-      #[.removeCounters .loyalty a, .removeCounters .plusOnePlusOne b,
-        .removeCounters .shield c, .removeCounters .indestructible d]
-  (g.changeStatuses o.id changes).logMsg s!"Counters are removed from {o.name}"
+      #[(.loyalty, a), (.plusOnePlusOne, b), (.shield, c), (.indestructible, d)]
+  let g := g.withBatch none fun g =>
+    removals.foldl (fun g (k, amt) =>
+      g.recordRemoveCounters o.id k amt (byPlayer := some controller)) g
+  g.logMsg s!"Counters are removed from {o.name}"
 
 /-- The resolving activated or triggered ability's stack object. -/
 def resolvingAbilityObject? (g : Game) : Option GameObject :=
@@ -171,18 +168,19 @@ def perOpponentKind (g : Game) (controller : PlayerId) (f : TargetFilter) : Effe
 
 /-- Put `n` +1/+1 counters on each creature `p` controls. -/
 def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
-  (g.creaturesControlledBy p).foldl (fun g o => g.addPlusOnePlusOneTo (g.object! o.id) n) g
+  g.withBatch none fun g =>
+    (g.creaturesControlledBy p).foldl (fun g o => g.addPlusOnePlusOneTo (g.object! o.id) n) g
 
 /-- Put a loyalty counter on each planeswalker `p` controls. -/
 def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
   let pws := (g.permanentsOf p).filter (·.printed.isPlaneswalker)
   if pws.isEmpty then g
   else
-    let g := pws.foldl (fun g o =>
-      let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
-      (g.changeStatus o.id (.addCounters .loyalty n)).logMsg
-        s!"A loyalty counter is put on {o.name}") g
-    g.queueLoyaltyPutTriggers p
+    g.withBatch none fun g =>
+      pws.foldl (fun g o =>
+        let n := g.countersYouPut (g.object! o.id) 1 (putter := some p)
+        (g.recordPutCounters o.id .loyalty n (byPlayer := some p)).logMsg
+          s!"A loyalty counter is put on {o.name}") g
 
 end Game
 end Mtg.Engine

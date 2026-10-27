@@ -4,7 +4,7 @@ import Mtg.Engine.Game.Activation
 # Sacrifice and discard prompts (CR 701.21 / 701.9)
 
 Multi-player sacrifice and discard flows resolved in APNAP order,
-connive (CR 701.58), and sacrifices paid for activations.
+connive (CR 701.50), and sacrifices paid for activations.
 -/
 
 namespace Mtg.Engine
@@ -34,7 +34,7 @@ def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
 
 /-- Sacrifice the chosen creatures simultaneously, then give priority. -/
 def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
-  Id.run do
+  let g := g.withBatch none fun g => Id.run do
     let mut g := g.change (.pending .none)
     for id in chosen do
       match g.findObject? id with
@@ -44,7 +44,8 @@ def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
           g := g.sacrificeToGraveyard o
             s!"{(g.player who).name} sacrifices {o.name}"
       | none => pure ()
-    return g.receivePriority g.activePlayer
+    return g
+  g.receivePriority g.activePlayer
 
 /-- Log `msg` for each player in `ps`. -/
 def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) : Game :=
@@ -96,7 +97,7 @@ def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
 
 /-- Draw, then discard. If a nonland is discarded and the source is still on
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
-has left (MSH / CR 701.47). -/
+has left (MSH / CR 701.50). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
   let leaders :=
     ((g.permanentsOf controller).filter (fun o =>

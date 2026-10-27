@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Damage
 # Pumps, grants, and counters (CR 613.4c / 122)
 
 Until-end-of-turn pumps and keyword grants, +1/+1 counters and amass
-(CR 701.47), finality counters, hand-size effects, improvise
+(CR 701.43), finality counters, hand-size effects, improvise
 (CR 702.126).
 -/
 
@@ -128,10 +128,35 @@ def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
     (!face.isCreature &&
       (g.permanentsOf caster).any (fun o => o.printed.grantsImproviseToNoncreature))
 
+/-- Open a simultaneous rules-event batch on `g` for use across an `Except`
+`do` block, returning the updated `Game` and a `closeBatch` continuation that
+restores `currentBatch` and evaluates batch-level triggers once (CR 603.2c). -/
+def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game → Game) :=
+  match g.currentBatch with
+  | some (batchId, prevCause?) =>
+    let mergedCause? := prevCause?.orElse (fun _ => cause)
+    ({ g with currentBatch := some (batchId, mergedCause?) }, id)
+  | none =>
+    let batchId : BatchId := ⟨g.nextBatchId⟩
+    let preBattlefield := g.battlefield
+    let startIdx := g.events.size
+    ({ g with currentBatch := some (batchId, cause) },
+     fun g1 =>
+       let g2 := { g1 with currentBatch := none }
+       let slice := g2.events.extract (min startIdx g2.events.size) g2.events.size
+       let batchEvents := slice.filter (fun ev =>
+         match ev.change with
+         | .rules _ => ev.batch == batchId
+         | .engine _ => false)
+       if batchEvents.isEmpty then g2
+       else g2.evaluateBatchTriggers preBattlefield batchEvents)
+
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     Except String Game := do
-  let mut g := g
+  let cause := some (EventCause.costPayment .tap p (g.proposedSpell.map (·.spellId)))
+  let (g0, closeBatch) := g.openBatch cause
+  let mut g := g0
   let mut seen : Array ObjectId := #[]
   for id in ids do
     if seen.contains id then
@@ -142,8 +167,8 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw s!"{o.name} is not an artifact you control"
     if o.status.tapped then
       throw s!"{o.name} is already tapped"
-    g := g.becomeTapped o
-      (cause := some (.costPayment .tap p (g.proposedSpell.map (·.spellId))))
+    g := g.becomeTapped o (cause := cause)
+  g := closeBatch g
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
 /-- Equip worthy may attach only to a legendary non-Villain red or white
@@ -167,15 +192,6 @@ def newestArmy? (g : Game) (controller : PlayerId) : Option GameObject :=
     | none => some o
     | some b => if o.timestamp ≥ b.timestamp then some o else some b) none
 
-/-- Put-counter triggers for Goblin, Orc, and Army permanents (CR 122.1). -/
-def queueGoblinOrcArmyCounterTriggers (g : Game) (o : GameObject) : Game :=
-  match o.controller with
-  | some p =>
-    if g.hasSubtype o .goblin || g.hasSubtype o .orc || g.hasSubtype o .army then
-      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
-    else g
-  | none => g
-
 /-- Put an indestructible counter on `o`. -/
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) : Game :=
@@ -184,8 +200,7 @@ def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
   let g :=
     if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .indestructible n)
     else g
-  let g := g.logMsg s!"{o.name} gets an indestructible counter"
-  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+  g.logMsg s!"{o.name} gets an indestructible counter"
 
 /-- Put a lifelink counter on `o`. -/
 def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -195,8 +210,7 @@ def addLifelinkCounter (g : Game) (o : GameObject) (n : Nat := 1)
   let g :=
     if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .lifelink n)
     else g
-  let g := g.logMsg s!"{o.name} gets a lifelink counter"
-  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+  g.logMsg s!"{o.name} gets a lifelink counter"
 
 /-- Put a burden counter on `o`. The log includes the new total. -/
 def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -208,8 +222,7 @@ def addBurdenCounter (g : Game) (o : GameObject) (n : Nat := 1)
     if n > 0 then g.record (GameEvent.counters g.turnNumber putter o.asEvent .burden n (cause := cause))
     else g
   let total := (g.object! o.id).status.burden
-  let g := g.logMsg s!"{o.name} gets a burden counter ({total})"
-  if n > 0 then g.queueGoblinOrcArmyCounterTriggers o else g
+  g.logMsg s!"{o.name} gets a burden counter ({total})"
 
 /-- Put `n` counters of `kind` on `o`. +1/+1 counters go through
 `addPlusOnePlusOneTo` so their enters-with bonus and “you put a +1/+1
@@ -227,10 +240,7 @@ def addCounters (g : Game) (o : GameObject) (kind : CounterKind) (n : Nat := 1)
     else
       let putter := byPlayer.orElse (fun _ => o.controller)
       let happened := GameEvent.counters g.turnNumber putter o.asEvent kind n (cause := cause)
-      let g := (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
-      if happened.matchesTrigger (putter.getD o.owner) o.id .youPutCountersOnGoblinOrcArmy then
-        g.queueGoblinOrcArmyCounterTriggers o
-      else g
+      (if entersWith then g else g.record happened).logMsg s!"{o.name} gets {kind.countersPhrase n}"
 
 /-- Put the amass counters and subtype on `armyId`. -/
 def finishAmassOn (g : Game) (controller : PlayerId) (armyId : ObjectId)

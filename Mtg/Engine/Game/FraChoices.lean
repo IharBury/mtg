@@ -131,7 +131,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g :=
       if answer == .accept then
         let hand := (g.player p).hand
-        let g := hand.foldl (fun g id => g.discardFromHand p id) g
+        let g := g.withBatch none fun g =>
+          hand.foldl (fun g id => g.discardFromHand p id) g
         g.draw p n
       else g.logMsg s!"{(g.player p).name} keeps their hand"
     match rest.toList with
@@ -171,9 +172,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let approaches := g.sphinxsApproachesInGraveyard p
     if approaches.size < 5 then
       return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishFraChoice
-    let g := (approaches.extract 0 5).foldl (fun g id =>
-      let (g, _) := g.move id .exile none
-      g) g
+    let g := g.withBatch none fun g =>
+      (approaches.extract 0 5).foldl (fun g id =>
+        let (g, _) := g.move id .exile none
+        g) g
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g := g.resolveSearchLibrary p (fun c => c.isCreature && c.hasSubtype .sphinx) false
       "Sphinx creature card"
@@ -242,7 +244,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         ids.toList.eraseDups.length != ids.size then
       throw s!"Choose {need} different cards from your hand"
     let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
-    let g := ids.foldl (fun g id => g.discardFromHand p id) g
+    let g := g.withBatch none fun g =>
+      ids.foldl (fun g id => g.discardFromHand p id) g
     let g := g.change (.pending .none)
     let g :=
       if nonland == 0 then g
@@ -265,10 +268,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     match g.findObject? sourceId with
     | some o =>
       if o.isOnBattlefield && o.status.plusOnePlusOne > 0 then
-        let g := (g.changeStatus o.id (.plusOnePlusOne (o.status.plusOnePlusOne - 1))).logMsg
-          s!"A +1/+1 counter is removed from {o.name}"
-        let g := (g.creaturesControlledBy p).foldl (fun g c =>
-          if c.id == o.id then g else g.addPlusOnePlusOneTo (g.object! c.id) 1) g
+        let g := g.withBatch none fun g =>
+          let g := (g.recordRemoveCounters o.id .plusOnePlusOne 1 (byPlayer := some p)).logMsg
+            s!"A +1/+1 counter is removed from {o.name}"
+          (g.creaturesControlledBy p).foldl (fun g c =>
+            if c.id == o.id then g else g.addPlusOnePlusOneTo (g.object! c.id) 1) g
         return g.finishFraChoice
       else return g.finishFraChoice
     | none => return g.finishFraChoice
@@ -282,10 +286,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.logMsg s!"{(g.player p).name} exiles {name} from {(g.player victim).name}'s hand").finishFraChoice
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
-    let g := ids.foldl (fun g id =>
-      if (g.findObject? id).any (·.zone == .exile) then
-        g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))
-      else g) g
+    let g := g.withBatch none fun g =>
+      ids.foldl (fun g id =>
+        if (g.findObject? id).any (·.zone == .exile) then
+          g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))
+        else g) g
     return (g.change (.pendingFreeCopies none)).finishFraChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
@@ -348,7 +353,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
     let nonland := (ids.filter (fun id => !(g.object! id).printed.isLand)).size
-    let g := ids.foldl (fun g id => g.discardFromHand p id) g
+    let g := g.withBatch none fun g =>
+      ids.foldl (fun g id => g.discardFromHand p id) g
     return (g.continueDiscardTwo controller rest (if nonland < 2 then draws + 1 else draws)).finishFraChoice
   | .discardTwo .., _ => throw "Choose two cards to discard"
   | .mayMoveAllCounters fromId toId, .accept =>
@@ -356,14 +362,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some src, some dst =>
       if !src.isOnBattlefield || !dst.isOnBattlefield then return g.finishFraChoice
       else
-        let moved := src.status
-        let g := g.changeStatus src.id .withoutCounters
-        let dst := g.object! toId
-        let g := g.changeStatus dst.id (.addCountersExceptPlusOne moved)
-        let g :=
-          if moved.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! toId) moved.plusOnePlusOne
-          else g
-        return (g.logMsg s!"All counters move from {src.name} onto {dst.name}").finishFraChoice
+        let g := g.withBatch none fun g =>
+          let moved := src.status
+          let g := g.removeAllCountersFrom src.id (byPlayer := some p)
+          let dst := g.object! toId
+          let g := g.putCountersExceptPlusOne dst.id moved (byPlayer := some p)
+          let g :=
+            if moved.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo (g.object! toId) moved.plusOnePlusOne
+            else g
+          g.logMsg s!"All counters move from {src.name} onto {dst.name}"
+        return g.finishFraChoice
     | _, _ => return g.finishFraChoice
   | .mayMoveAllCounters .., .decline => return g.finishFraChoice
   | .mayMoveAllCounters .., _ => throw "Answer accept or decline"
@@ -386,8 +394,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
     if total < n then throw s!"Total power {total} is less than {n}"
-    let g := crew.foldl (fun g c =>
-      g.becomeTapped (g.object! c.id) (cause := some (.costPayment .tap p (some abilityId)))) g
+    let cause := some (EventCause.costPayment .tap p (some abilityId))
+    let g := g.withBatch cause fun g =>
+      crew.foldl (fun g c =>
+        g.becomeTapped (g.object! c.id) (cause := cause)) g
     let g := g.logMsg s!"{(g.player p).name} crews {vehicle.name}"
     return (g.becomeActivated p vehicle.name (some vehicleId)).finishFraChoice
   | .crew abilityId _ _, .decline =>
@@ -452,12 +462,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
         !chosen.all (ids.contains ·) then
       throw s!"Choose {n} to sacrifice, or decline"
-    let mut g := g
+    let (g0, closeBatch) := g.openBatch none
+    let mut g := g0
     for id in chosen do
       let some o := g.findObject? id | throw "no such object"
       if !o.isOnBattlefield || !o.controlledBy p then
         throw s!"Can't sacrifice {o.name}"
       g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+    g := closeBatch g
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
@@ -469,12 +481,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
         !chosen.all (ids.contains ·) then
       throw s!"Choose {n} to discard, or decline"
-    let mut g := g
+    let (g0, closeBatch) := g.openBatch none
+    let mut g := g0
     for id in chosen do
       let some o := g.findObject? id | throw "no such object"
       if o.owner != p || o.zone != .hand p then
         throw s!"Can't discard {o.name}"
       g := g.discardFromHand p id
+    g := closeBatch g
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else

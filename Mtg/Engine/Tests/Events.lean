@@ -588,11 +588,11 @@ step (CR 702.176, ruling 970). -/
       match created.find? (fun (_, e) => e == .notACreature permId) with
       | none => false
       | some (eid1, _) =>
-        let g3 := g2.changeStatus permId .withoutCounters
-        let g4 := g3.changeStatus permId (.addCountersExceptPlusOne { time := 2 })
+        let g3 := g2.removeAllCountersFrom permId
+        let g4 := g3.putCountersExceptPlusOne permId { time := 2 }
         let created4 := (GameEvent.createdEffectsWithId g4.events).filter (fun (id, e) =>
           id != eid1 && e == .notACreature permId)
-        let g5 := (g4.changeStatus copyId (.addCountersExceptPlusOne { time := 2 })).beginStep .end
+        let g5 := (g4.putCountersExceptPlusOne copyId { time := 2 }).beginStep .end
         (GameEvent.createdEffectsWithId g1.events).isEmpty &&
           (g1.object! spellId).isCreature &&
           !(g2.object! permId).kicked &&
@@ -1051,7 +1051,7 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
     | .ok g => g
     | .error _ => gScryOne
   let gProlif0 :=
-    ((quiet g0).changeStatus b.id (.addCounters .stun 1)).change
+    ((quiet g0).recordPutCounters b.id .stun 1).change
       (.pending (.chooseProliferate me 1))
   let gProlifDone :=
     match gProlif0.finishProliferate me #[.permanent b.id] with
@@ -1229,9 +1229,11 @@ cause rather than `.gameRule .leavingZone` (CR 702.26b). -/
       triggeredAbilities :=
         #[TriggeredAbility.fra (.fra .opponentActivatesLoyaltyAbility) "" (.draw 1)] }
   let gPw0 :=
-    let g := addPermanent (addPermanent (addPermanent afterDraw pwWithMana me me) myWatcher me me) oppWatcher opp opp
+    let g := addPermanent afterDraw pwWithMana me me
     let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
-    quiet (g.changeStatus pw.id (.addCounters .loyalty 3))
+    let g := g.recordPutCounters pw.id .loyalty 3
+    let g := addPermanent (addPermanent g myWatcher me me) oppWatcher opp opp
+    quiet g
   let pw := (gPw0.battlefield.filter (·.name == "Test Planeswalker"))[0]!
   let gPwProposed :=
     match gPw0.activateAbility me pw.id 0 with
@@ -1487,13 +1489,13 @@ cause across all effects in the batch; `.exileThenReturnNextEnd` and
 (and their returns); `.syntheticDestiny` / `.sunfall` exile all affected
 creatures under the single instruction cause (sharing the delayed reveal cause
 for `.syntheticDestiny`, CR 603.7 / 610.3), while `.sunfall` incubates with
-enters-with +1/+1 counters on `ZoneEvent.created`, fires `.youPutPlusOne`
-triggers, and creates an Incubator token with `otherFace` that transforms into a
-0/0 Phyrexian via `PermanentEvent.transformed`; `.massPolymorph` uses one shared
-`exileCause` for battlefield exiles and one distinct shared `revealCause` across
-`revealUntil`, `putHits`, and `restBottom`; and `.venserPerm` shares one cause
-across both token creations, both haste continuous effects, and both delayed
-end-step sacrifices. -/
+enters-with +1/+1 counters on `ZoneEvent.created` (without firing creature-only
+`.youPutPlusOne` triggers on the noncreature Incubator token) and creates an
+Incubator token with `otherFace` that transforms into a 0/0 Phyrexian via
+`PermanentEvent.transformed`; `.massPolymorph` uses one shared `exileCause` for
+battlefield exiles and one distinct shared `revealCause` across `revealUntil`,
+`putHits`, and `restBottom`; and `.venserPerm` shares one cause across both token
+creations, both haste continuous effects, and both delayed end-step sacrifices. -/
 #guard
   let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
@@ -1534,8 +1536,9 @@ end-step sacrifices. -/
       | .rules (.zone (.moved ..)) => some e.cause
       | _ => none)
   -- 3. .syntheticDestiny and .sunfall share one cause across all exiled creatures,
-  --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created, triggers
-  --    .youPutPlusOne, and transforms via otherFace without EngineChange.object (.printed _)
+  --    and .sunfall records enters-with +1/+1 counters on ZoneEvent.created without
+  --    firing creature-only .youPutPlusOne on the noncreature Incubator, and
+  --    transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
     (quiet gWithSrc).applyFrc me default .syntheticDestiny #[] (some s.id)
   let synthStoredCause := gSynth.delayedSynthetic[0]!.2.2
@@ -1656,7 +1659,7 @@ end-step sacrifices. -/
            | .rules (.permanent (.counters ..)) => true
            | _ => false)
      | none => false) &&
-    gSunfall.waitingTriggers.size == 1 &&
+    gSunfall.waitingTriggers.isEmpty &&
     sunfallIncAfter.status.transformed &&
     sunfallIncAfter.name == "Phyrexian" &&
     sunfallIncAfter.printed.power == some 0 &&
@@ -2318,5 +2321,275 @@ fresh `EffectId` when recorded. -/
     | .rules _ => causeHasUnclassified e.cause
     | .engine _ => false
   g.over && !g.events.any hasUnclassifiedRules
+
+/- Phase 4: `commitBatch` shares one `BatchId` and one minted `EffectId` across
+all events in the batch, `commitBatchWithCauses` shares one `BatchId` while
+preserving per-event causes, and sequential `record` / `applyEvent` calls
+outside `withBatch` allocate distinct, strictly increasing `BatchId`s
+(CR 603.2c / 608.2c / 704.3). -/
+#guard
+  let g0 := quiet afterDraw
+  let b0 := g0.nextBatchId
+  let e0 := g0.nextEffectId
+  let g1 := g0.commitBatch (.oneShotEffect none none (some me)) #[
+    .life (.gained me 2),
+    .life (.lost opp 2 false)]
+  let rules1 := g1.events.filter (fun e => match e.change with | .rules _ => true | _ => false)
+  let g2 := (quiet g1).commitBatchWithCauses #[
+    (.stateBased .lethalDamage, .life (.lost me 1 false)),
+    (.stateBased .zeroOrLessToughness, .life (.lost opp 1 false))]
+  let rules2 := g2.events.filter (fun e => match e.change with | .rules _ => true | _ => false)
+  let g3 :=
+    ((quiet g2).record (GameEvent.life g2.turnNumber me 1 true)).record
+      (GameEvent.life g2.turnNumber me 1 true)
+  let rules3 := g3.events.filter (fun e => match e.change with | .rules _ => true | _ => false)
+  rules1.size == 2 &&
+    rules1[0]!.batch == ⟨b0⟩ &&
+    rules1[1]!.batch == ⟨b0⟩ &&
+    rules1[0]!.cause == .oneShotEffect (some ⟨e0⟩) none (some me) &&
+    rules1[1]!.cause == .oneShotEffect (some ⟨e0⟩) none (some me) &&
+    g1.nextBatchId == b0 + 1 &&
+    g1.nextEffectId == e0 + 1 &&
+    rules2.size == 2 &&
+    rules2[0]!.batch == ⟨b0 + 1⟩ &&
+    rules2[1]!.batch == ⟨b0 + 1⟩ &&
+    rules2[0]!.cause == .stateBased .lethalDamage &&
+    rules2[1]!.cause == .stateBased .zeroOrLessToughness &&
+    g2.nextBatchId == b0 + 2 &&
+    rules3.size == 2 &&
+    rules3[0]!.batch == ⟨b0 + 2⟩ &&
+    rules3[1]!.batch == ⟨b0 + 3⟩ &&
+    g3.nextBatchId == b0 + 4
+
+/- Phase 4: first-strike and regular combat damage steps commit two distinct
+`BatchId`s (CR 510.4 / 702.7b), and each SBA pass commits all simultaneous
+state-based actions under one `BatchId` per pass (CR 704.3). -/
+#guard
+  let fsKnight : CardDef :=
+    { (creature "First Striker" ManaCost.empty #["Knight"] 2 2) with
+      keywords := Keyword.firstStrike }
+  let gCombat0 :=
+    addPermanent (addPermanent afterDraw fsKnight me me) bear me me
+  let fk := (gCombat0.battlefield.filter (·.name == "First Striker"))[0]!
+  let br := (gCombat0.battlefield.filter (·.name == bear.name))[0]!
+  let gCombat1 :=
+    quiet (gCombat0.changeStatuses fk.id #[.attacking true, .attackingWhom (some opp)]
+      |>.changeStatuses br.id #[.attacking true, .attackingWhom (some opp)])
+  let gFs := gCombat1.combatDamage
+  let gReg := gFs.combatDamage
+  let fsEvents := gReg.events.filter (fun e =>
+    match e.change with
+    | .rules _ => e.cause == .turnBased (.dealCombatDamage true)
+    | _ => false)
+  let regEvents := gReg.events.filter (fun e =>
+    match e.change with
+    | .rules _ => e.cause == .turnBased (.dealCombatDamage false)
+    | _ => false)
+  let lordDef : CardDef :=
+    { (creature "Bear Lord" ManaCost.empty #["Bear"] 2 2) with
+      staticAbilities := #[.otherCreaturesGet #[.bear] 1 1] }
+  let gSba0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw lordDef me me) bear me me) hero me me
+    let ld := (g.battlefield.filter (·.name == "Bear Lord"))[0]!
+    let b := (g.battlefield.filter (·.name == bear.name))[0]!
+    let h := (g.battlefield.filter (·.name == hero.name))[0]!
+    let g := ((g.changeStatus ld.id (.damage 2)).changeStatus h.id (.damage 3)).changeStatus b.id (.damage 2)
+    quiet g
+  let ldId := (gSba0.battlefield.filter (·.name == "Bear Lord"))[0]!.id
+  let hId := (gSba0.battlefield.filter (·.name == hero.name))[0]!.id
+  let bId := (gSba0.battlefield.filter (·.name == bear.name))[0]!.id
+  let gSbaDone := gSba0.checkSBA
+  let batchOfMoved? (oid : ObjectId) : Option BatchId :=
+    gSbaDone.events.findSome? (fun e =>
+      match e.change with
+      | .rules (.zone (.moved before ..)) =>
+        if before.id == some oid && e.cause == .stateBased .lethalDamage then some e.batch else none
+      | _ => none)
+  !fsEvents.isEmpty &&
+    !regEvents.isEmpty &&
+    fsEvents.all (·.batch == fsEvents[0]!.batch) &&
+    regEvents.all (·.batch == regEvents[0]!.batch) &&
+    fsEvents[0]!.batch != regEvents[0]!.batch &&
+    (match batchOfMoved? ldId, batchOfMoved? hId, batchOfMoved? bId with
+     | some bLd, some bH, some bB => bLd == bH && bLd != bB
+     | _, _, _ => false)
+
+/- Phase 4: batch multiplicity for "one or more" triggers vs. per-object
+triggers (CR 603.2c). Simultaneous events in a single batch fire "one or more"
+triggers once, while sequential batches fire them once per batch. -/
+#guard
+  let deathWatcher : CardDef :=
+    { name := "Death Watcher"
+      types := #[.enchantment]
+      triggeredAbilities := #[
+        TriggeredAbility.fra .oneOrMoreOtherCreaturesDie "" (.draw 1),
+        TriggeredAbility.fra .nontokenYouControlDies "" (.gainLife (.fixed 1)),
+        TriggeredAbility.fra .creatureCardsPutIntoYourGy "" (.draw 1),
+        TriggeredAbility.fra (.fra .youCreateCreatureTokens) "" (.draw 1),
+        TriggeredAbility.fra .creaturesYouControlBecomeTapped "" (.draw 1)] }
+  let gBase :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw deathWatcher me me) bear me me) hero me me
+    let g := addPermanent g bear me me
+    let g := (g.move g.battlefield.back!.id (.library me) none (libraryPosition := some .top)).1
+    let g := addPermanent g hero me me
+    let g := (g.move g.battlefield.back!.id (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let b := (gBase.battlefield.filter (·.name == bear.name))[0]!
+  let h := (gBase.battlefield.filter (·.name == hero.name))[0]!
+  -- 1. Simultaneous vs. sequential creature deaths
+  let gSimulDie := gBase.withBatch none (fun g =>
+    (g.destroyPermanent (g.object! b.id)).destroyPermanent (g.object! h.id))
+  let simulOneOrMore := gSimulDie.waitingTriggers.filter (·.event == .oneOrMoreOtherCreaturesDie)
+  let simulEach := gSimulDie.waitingTriggers.filter (·.event == .nontokenYouControlDies)
+  let gSeqDie := (gBase.destroyPermanent (gBase.object! b.id)).destroyPermanent (gBase.object! h.id)
+  let seqOneOrMore := gSeqDie.waitingTriggers.filter (·.event == .oneOrMoreOtherCreaturesDie)
+  -- 2. Simultaneous vs. sequential mill of creature cards into your graveyard
+  let gSimulMill := gBase.mill me 2
+  let simulMillTrig := gSimulMill.waitingTriggers.filter (·.event == .creatureCardsPutIntoYourGy)
+  let gSeqMill := (gBase.mill me 1).mill me 1
+  let seqMillTrig := gSeqMill.waitingTriggers.filter (·.event == .creatureCardsPutIntoYourGy)
+  -- 3. Simultaneous vs. sequential creature token creation
+  let gSimulTok := gBase.createKindTokens me .humanSoldier 2
+  let simulTokTrig := gSimulTok.waitingTriggers.filter (·.event == .fra .youCreateCreatureTokens)
+  let gSeqTok := (gBase.createKindTokens me .humanSoldier 1).createKindTokens me .humanSoldier 1
+  let seqTokTrig := gSeqTok.waitingTriggers.filter (·.event == .fra .youCreateCreatureTokens)
+  -- 4. Simultaneous vs. sequential tapping of creatures you control
+  let gSimulTap := gBase.withBatch none (fun g =>
+    (g.becomeTapped (g.object! b.id)).becomeTapped (g.object! h.id))
+  let simulTapTrig := gSimulTap.waitingTriggers.filter (·.event == .creaturesYouControlBecomeTapped)
+  let gSeqTap := (gBase.becomeTapped (gBase.object! b.id)).becomeTapped (gBase.object! h.id)
+  let seqTapTrig := gSeqTap.waitingTriggers.filter (·.event == .creaturesYouControlBecomeTapped)
+  simulOneOrMore.size == 1 &&
+    simulEach.size == 2 &&
+    seqOneOrMore.size == 2 &&
+    simulMillTrig.size == 1 &&
+    seqMillTrig.size == 2 &&
+    simulTokTrig.size == 1 &&
+    seqTokTrig.size == 2 &&
+    simulTapTrig.size == 1 &&
+    seqTapTrig.size == 2
+
+/- Phase 4:
+1. `discardEntireHand` commits one batch per player hand discard (queueing
+   `.fra .playerDiscards` once for a multi-card hand), and a batch in which two
+   players discard queues `.fra .playerDiscards` once per discarding player.
+2. Unified `.youPutPlusOne` evaluation fires both `onceEachTurn` abilities
+   (`plusOneCreateInsectOnce`, `plusOneOnThisOnce`) and Invisible Woman on
+   printed enters-with +1/+1 counters and `.explore` (which also applies
+   `countersYouPut` / Doc Samson), while setting `firedOnceEachTurn` so a second
+   +1/+1 counter event in the same turn does not re-trigger them.
+3. `eventSuppressedByKarn` suppresses enters triggers (`tokenYouControlEnters`)
+   without suppressing counter-put triggers (`youPutCountersOnGoblinOrcArmy`,
+   `.fra .youPutLoyaltyCounters`, `.youPutPlusOne`) on entering permanents
+   (CR 122.6). -/
+#guard
+  -- 1. discardEntireHand batching and per-player .playerDiscards
+  let discardWatcher : CardDef :=
+    { name := "Discard Watcher"
+      types := #[.enchantment]
+      triggeredAbilities := #[TriggeredAbility.fra (.fra .playerDiscards) "" (.draw 1)] }
+  let gDisc0 := quiet (addPermanent afterDraw discardWatcher me me)
+  let gDisc1 := gDisc0.discardEntireHand me
+  let discEvents1 := gDisc1.events.filter (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
+    | _ => false)
+  let discTrig1 := gDisc1.waitingTriggers.filter (·.event == .fra .playerDiscards)
+  let gDiscBoth := gDisc0.withBatch none (fun g =>
+    (g.discardEntireHand me).discardEntireHand opp)
+  let discTrigBoth := gDiscBoth.waitingTriggers.filter (·.event == .fra .playerDiscards)
+  -- 2. Unified .youPutPlusOne on printed entersWithPlusOneCounters and .explore + Doc Samson
+  let insectWatcher : CardDef :=
+    { (creature "Insect Watcher" ManaCost.empty #["Hero"] 1 1) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneCreateInsectOnce {}] }
+  let selfOnceWatcher : CardDef :=
+    { (creature "Self Once Watcher" ManaCost.empty #["Hero"] 2 2) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnThisOnce {}] }
+  let wallWatcher : CardDef :=
+    { (creature "Wall Watcher" ManaCost.empty #["Hero"] 1 4) with
+      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+  let entersHero : CardDef :=
+    { (creature "Enters Hero" ManaCost.empty #["Hero", "Goblin"] 1 1) with
+      entersWithPlusOneCounters := 2 }
+  let docSamsonDef : CardDef :=
+    { (creature "Doc Samson Test" ManaCost.empty #["Hero"] 3 3) with
+      staticAbilities := #[.extraCounterOnPermanents] }
+  let gPlus0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) selfOnceWatcher me me) wallWatcher me me
+    let g := addPermanent g { name := "Noncreature Artifact", types := #[.artifact] } me me
+    let g := addPermanent g entersHero me me
+    let ehId := g.battlefield.back!.id
+    let g := (g.move ehId (.hand me) none).1
+    quiet g
+  let noncreatureArt := (gPlus0.battlefield.filter (·.name == "Noncreature Artifact"))[0]!
+  let gPlusArt := gPlus0.addPlusOnePlusOneTo noncreatureArt 1
+  let ehHandId := (gPlusArt.player me).hand.back!
+  let (gPlusEntered, ehBfId) := gPlusArt.putOntoBattlefield ehHandId me
+  let plusTrigs1 := gPlusEntered.waitingTriggers.filter (·.event == .youPutPlusOne)
+  let gPlusSecond := gPlusEntered.addPlusOnePlusOneTo (gPlusEntered.object! ehBfId) 1
+  let plusTrigs2 := gPlusSecond.waitingTriggers.filter (·.event == .youPutPlusOne)
+  -- Explore with Doc Samson and nonland top card
+  let gExp0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) docSamsonDef me me) bear me me
+    let g := addPermanent g bear me me
+    let topId := g.battlefield.back!.id
+    let g := (g.move topId (.library me) none (libraryPosition := some .top)).1
+    quiet g
+  let explorer := (gExp0.battlefield.filter (·.name == bear.name))[0]!
+  let gExp1 := gExp0.applyFrc me default .explore #[] (some explorer.id)
+  let explorerAfter := gExp1.object! explorer.id
+  let expTrigs := gExp1.waitingTriggers.filter (·.event == .youPutPlusOne)
+  -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents,
+  --    and youPutCountersOnGoblinOrcArmy only triggers on a Goblin/Orc/Army you control
+  let karnDef : CardDef :=
+    { name := "Karn Test"
+      types := #[.planeswalker]
+      loyalty := some 5
+      staticAbilities := #[.enteringArtifactsCreaturesDontTrigger] }
+  let counterAndTokenWatcher : CardDef :=
+    { name := "Counter And Token Watcher"
+      types := #[.enchantment]
+      triggeredAbilities := #[
+        .triggered .fromEffect (Effect.ofTrigger (.watch .tokensEnterMayDraw)) {},
+        TriggeredAbility.fra .youPutCountersOnGoblinOrcArmy "" (.draw 1),
+        TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1),
+        .triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+  let artifactWalker : CardDef :=
+    { name := "Artifact Walker"
+      types := #[.artifact, .planeswalker]
+      loyalty := some 3 }
+  let oppGoblinDef : CardDef :=
+    creature "Opp Goblin" ManaCost.empty #["Goblin"] 1 1
+  let gKarn0 :=
+    let g := addPermanent (addPermanent (addPermanent afterDraw karnDef me me) counterAndTokenWatcher me me) oppGoblinDef opp opp
+    let g := addPermanent g entersHero me me
+    let ehId := g.battlefield.back!.id
+    let g := (g.move ehId (.hand me) none).1
+    let g := addPermanent g artifactWalker me me
+    let awId := g.battlefield.back!.id
+    let g := (g.move awId (.hand me) none).1
+    quiet g
+  let oppGoblin := (gKarn0.battlefield.filter (·.name == "Opp Goblin"))[0]!
+  let gKarnOppGob := gKarn0.addPlusOnePlusOneTo oppGoblin 1 (byPlayer := some me)
+  let karnHand := (gKarnOppGob.player me).hand
+  let awHandId := karnHand.back!
+  let ehKarnHandId := karnHand[karnHand.size - 2]!
+  let (gKarn1, _) := gKarnOppGob.putOntoBattlefield ehKarnHandId me
+  let (gKarn2, _) := gKarn1.putOntoBattlefield awHandId me
+  let (gKarn3, _) := gKarn2.createToken me bear
+  discEvents1.size >= 2 &&
+    discEvents1.all (·.batch == discEvents1[0]!.batch) &&
+    discTrig1.size == 1 &&
+    discTrigBoth.size == 2 &&
+    gPlusArt.waitingTriggers.isEmpty &&
+    plusTrigs1.size == 3 &&
+    plusTrigs2.size == 4 &&
+    explorerAfter.status.plusOnePlusOne == 2 &&
+    expTrigs.size == 1 &&
+    (gKarnOppGob.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).isEmpty &&
+    (gKarn3.waitingTriggers.filter (·.event == .tokenYouControlEnters)).isEmpty &&
+    (gKarn3.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1
 
 end Mtg.Engine.EventTests

@@ -89,8 +89,9 @@ def beeScrying : Game := passBoth beeOtherDied
   let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
-  let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
-  let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none
+  let g := g.withBatch none fun g =>
+    let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
+    (g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none).1
   let g := g.receivePriority ⟨0⟩
   g.stack.size == 1
 

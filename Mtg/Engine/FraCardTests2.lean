@@ -36,7 +36,9 @@ def tapped (g : Game) (name : String) : Game :=
   g.changeStatus (namedPermanent g name).id (.tapped true)
 
 def plusOnes (g : Game) (name : String) (n : Nat) : Game :=
-  g.changeStatus (namedPermanent g name).id (.plusOnePlusOne n)
+  let o := namedPermanent g name
+  let g := g.recordRemoveCounters o.id .plusOnePlusOne o.status.plusOnePlusOne
+  g.recordPutCounters o.id .plusOnePlusOne n
 
 def mine (g : Game) (name : String) : GameObject :=
   ((g.permanentsOf me).find? (·.name == name)).get!

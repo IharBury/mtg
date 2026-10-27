@@ -159,7 +159,7 @@ def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := no
           let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
           (g, some c)
         | none => (g, none)
-  let g :=
+  let g := g.withBatch cause? fun g =>
     ids.foldl (fun acc id =>
       match acc.findObject? id with
       | none => acc
@@ -356,11 +356,12 @@ def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
       g.logMsg "The face-down pile is put into hand without being revealed"
     else
       g.logMsg "The face-up pile is put into hand"
-  let g :=
+  let g := g.withBatch none fun g =>
     toHand.foldl (fun acc id =>
       (acc.move id (.hand p) none).1) g
-  toGy.foldl (fun acc id =>
-    (acc.move id (.graveyard p) none).1) g
+  g.withBatch none fun g =>
+    toGy.foldl (fun acc id =>
+      (acc.move id (.graveyard p) none).1) g
 
 /-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
 The face-down pile is not revealed when it is the one that goes to hand. -/
@@ -379,11 +380,12 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
         match acc.findObject? id with
         | some o => acc.logMsg s!"{(acc.player p).name} reveals {o.name}"
         | none => acc) g
-  let g :=
+  let g := g.withBatch none fun g =>
     toHand.foldl (fun acc id =>
       (acc.move id (.hand p) none).1) g
-  toGy.foldl (fun acc id =>
-    (acc.move id (.graveyard p) none).1) g
+  g.withBatch none fun g =>
+    toGy.foldl (fun acc id =>
+      (acc.move id (.graveyard p) none).1) g
 
 /-- Linked activated abilities last only while the copier still has them. -/
 def linkedAbilitiesStillLinked (stillHasThoseAbilities : Bool) : Bool :=

@@ -342,7 +342,7 @@ def pathmakerPumped : Game :=
 
 def pathmakerWithCounter : Game :=
   let o := namedPermanent pathmakerWithLands "Mirkwood Pathmaker"
-  pathmakerWithLands.changeStatus o.id (.plusOnePlusOne 1)
+  pathmakerWithLands.recordPutCounters o.id .plusOnePlusOne 1
 
 #guard pathmakerWithCounter.power
   (namedPermanent pathmakerWithCounter "Mirkwood Pathmaker") == 3

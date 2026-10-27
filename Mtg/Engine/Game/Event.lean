@@ -271,12 +271,7 @@ inductive StatusChange where
   | set (s : Status)
   | reset
   | addDamage (n : Int) (deathtouch : Bool := false)
-  | withoutCounters
-  | addCountersExceptPlusOne («from» : Status) (extra : Nat := 0)
   | addPump (p t : Int)
-  | addPlusOnePlusOne (n : Nat := 1)
-  | addCounters (kind : CounterKind) (n : Nat)
-  | removeCounters (kind : CounterKind) (n : Nat := 1)
   | grantUntilEot (k : Keywords)
   | clearedAtCleanup
   | clearCombat
@@ -317,7 +312,6 @@ inductive StatusChange where
   | blocked (v : Bool)
   | activationsThisTurn (v : Nat)
   | abilitiesActivatedThisTurn (v : Array Nat)
-  | plusOnePlusOne (v : Nat)
   | minusOneMinusOne (v : Nat)
   | loyaltyCounters (v : Nat)
   | loyaltyActivatedThisTurn (v : Bool)
@@ -340,7 +334,6 @@ inductive StatusChange where
   | optionalOnceUsed (v : Bool)
   | additionalArtifactUntilEot (v : Bool)
   | hone (v : Nat)
-  | shadow (v : Nat)
   | phasedOut (v : Bool)
   | phasedWith (v : Option ObjectId)
   | ringBearer (v : Bool)
@@ -956,6 +949,7 @@ inductive EngineChange where
   | pending (v : Pending)
   | nextObjectId (v : Nat)
   | nextEffectId (v : Nat)
+  | nextBatchId (v : Nat)
   | activeEffects (v : Array (EffectId × ContinuousEffect))
   | timestamp (v : Nat)
   | afterRandom (v : AfterRandom)
@@ -1059,8 +1053,6 @@ inductive EngineChange where
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
   | lockedDeathReplacements (v : Option (Array GameObject))
-  | suppressOthersDie (v : Bool)
-  | suppressCreatureCardsToGy (v : Bool)
   | castingFromTop (v : Bool)
   | delayedEndStepReturns (v : Array (ObjectId × EventCause))
   | pushDelayedEndStepReturn (id : ObjectId) (cause : EventCause)
@@ -1099,8 +1091,6 @@ inductive EngineChange where
   | linkedExileCauses (v : Array (ObjectId × EventCause))
   | setLinkedExileCause (id : ObjectId) (cause : Option EventCause)
   | untapSearchedIfLands (v : Option Nat)
-  | pendingCreatureTokenCreators (v : Array PlayerId)
-  | pushPendingCreatureTokenCreator (p : PlayerId)
   | ancestryLandsTapped (v : Array ObjectId)
   | pushAncestryLandTapped (id : ObjectId)
   | removeAncestryLandTapped (id : ObjectId)
@@ -1611,6 +1601,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player _ | .battle _ => true | _ => false)
     | .damage (.dealt pkts), .combatDamageToYou =>
       pkts.any (fun pkt => pkt.combat && match pkt.recipient with | .player p => you p | _ => false)
+    | .damage (.dealt pkts), .opponentsDealtCombatDamageYourTurn =>
+      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
+    | .damage (.dealt pkts), .fra .opponentsDealtNoncombatDamage =>
+      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => !you p | _ => false)
     | .damage (.dealt pkts), .heroesDealDamageToPlayer =>
       pkts.any (fun pkt =>
         match pkt.recipient with
@@ -1690,10 +1684,19 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       (this after || this before) && entersWith.count .plan > 0
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutPlusOne =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.count .plusOnePlusOne > 0
+      p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
+    | .zone (.created object controller), .youPutPlusOne =>
+      you controller && object.counters.count .plusOnePlusOne > 0 && object.creature
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
+      p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
+    | .zone (.created object controller), .youPutCountersOnGoblinOrcArmy =>
+      you controller && yours object && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
+    | .zone (.moved _ after _ .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
+      let p := actor.orElse (fun _ => after.controller)
+      p.any you && entersWith.count .loyalty > 0 && after.planeswalker
+    | .zone (.created object controller), .fra .youPutLoyaltyCounters =>
+      you controller && object.counters.count .loyalty > 0 && object.planeswalker
     | .cast p spell _ _ _ _ _ _, .youCastInstantOrSorcery =>
       you p && spell.instantOrSorcery
     | .cast p spell _ _ _ _ _ _, .youCastNoncreature =>
@@ -1732,10 +1735,12 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
     | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
     | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
-    | .permanent (.counters (.object _) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
-      you p && n > 0
+    | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
+      you p && n > 0 && object.creature
     | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
-      you p && n > 0 && object.goblinOrcArmy
+      you p && yours object && n > 0 && object.goblinOrcArmy
+    | .permanent (.counters (.object object) .loyalty (.put n) (some p)), .fra .youPutLoyaltyCounters =>
+      you p && n > 0 && object.planeswalker
     | .permanent (.counters (.object object) .plan (.put n) _), .nthPlanCounter _ =>
       this object && n > 0
     | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>

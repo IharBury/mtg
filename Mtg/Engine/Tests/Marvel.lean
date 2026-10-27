@@ -328,7 +328,7 @@ def staturePumpedInCombat : Game :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Stature, Size Shifter"
-  let g := g.changeStatus o.id (.plusOnePlusOne 3)
+  let g := g.recordPutCounters o.id .plusOnePlusOne 3
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
     (.declareAttackers #[(namedPermanent g "Stature, Size Shifter").id])

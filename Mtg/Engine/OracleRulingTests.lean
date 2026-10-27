@@ -1009,7 +1009,7 @@ the creature can attack. -/
 def phasedIn : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus o.id (.plusOnePlusOne 2)
+  let g := g.recordPutCounters o.id .plusOnePlusOne 2
   let g := g.phaseOut (namedObject g "Grizzly Bears")
   g.phaseIn (namedObject g "Grizzly Bears")
 
@@ -1438,7 +1438,7 @@ def exileReturnNewObjectOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let oldId := bears.id
-  let g := g.changeStatuses bears.id #[.attacking true, .plusOnePlusOne 2]
+  let g := (g.recordPutCounters bears.id .plusOnePlusOne 2).changeStatus bears.id (.attacking true)
   let hunter := namedPermanent g "Fiend Hunter"
   let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
   let hunter := namedPermanent g "Fiend Hunter"
@@ -1483,7 +1483,7 @@ def exileAuraAndEquip : Game :=
   let g := g.attachSourceTo (namedPermanent g "Dúnedain Blade")
     (namedPermanent g "Grizzly Bears")
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bears.id (.plusOnePlusOne 1)
+  let g := g.recordPutCounters bears.id .plusOnePlusOne 1
   let hunter := namedPermanent g "Fiend Hunter"
   let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
   g.checkSBA
@@ -3479,7 +3479,7 @@ def spiderResolvesBeforeSpellOk : Bool :=
 def phaseInKeepsCountersOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.changeStatus bear.id (.plusOnePlusOne 2)
+  let g := g.recordPutCounters bear.id .plusOnePlusOne 2
   let g := g.phaseOut (namedPermanent g "Grizzly Bears")
   let g := g.phaseIn (namedObject g "Grizzly Bears")
   let bear := namedPermanent g "Grizzly Bears"

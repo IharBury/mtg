@@ -24,7 +24,8 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     Except String Game := do
   if g.pending != .declareAttackers || g.priorityInstead g.activePlayer != p then
     throw "Not time to declare attackers"
-  let mut g := g
+  let (g0, closeBatch) := g.openBatch (some (.turnBased .declareAttackers))
+  let mut g := g0
   for i in [0:ids.size] do
     let id := ids[i]!
     let o := g.object! id
@@ -70,6 +71,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       (match pw? with
        | some pw => s!"{g.player p |>.name} attacks {pw.name} with {o.name}"
        | none => s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}")
+  g := closeBatch g
   -- Tomik, Orzhov Lawmage (ruling 834): checked on the whole declaration.
   for pw in g.battlefield do
     if pw.printed.isPlaneswalker && g.planeswalkerAttackedByOneAtMost pw then
@@ -275,7 +277,9 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
 
 /-- Apply assigned combat damage simultaneously (CR 510.2). -/
 def dealAssignedCombatDamage (g : Game) : Game :=
-  Id.run do
+  let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
+  let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
+  let g := g.withBatch combatCause fun g => Id.run do
     let mut g := g
     for asgn in g.assignedCombatDamage do
       let src := g.object! asgn.source
@@ -294,8 +298,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         g := g.logMsg
           s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
       let srcEvent := g.snapshot src
-      let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
-      let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
       if g.sourceDamagePrevented src then
         g := g.logMsg s!"combat damage from {src.name} is prevented"
       else
@@ -375,8 +377,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
                 (lastKnownToughness := some (Int.ofNat defn.idx))
             else g
-          if happened.matchesTrigger pid src.id .heroesDealDamageToPlayer then
-            g := g.putControlledTriggersOncePerBatch pid .heroesDealDamageToPlayer
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
           if src.isCreature then
             for o in g.permanentsOf pid do
@@ -400,10 +400,6 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               | none => pure ()
           if src.status.combatDamageCreatesTreasure || g.equippedCreatesCombatTreasures src then
             g := g.createTreasureTokens pid dealtToPlayer.toNat (cause := combatCause)
-          g := g.putControlledTriggers defn .combatDamageToYou (cause := some src)
-          if pid == g.activePlayer &&
-              !g.waitingTriggers.any (fun w => w.event == .opponentsDealtCombatDamageYourTurn) then
-            g := g.putControlledTriggers pid .opponentsDealtCombatDamageYourTurn
           if !(g.player defn).protectionFromEverything &&
               !(g.player defn).lifeLocked && !(g.player defn).lifeCantChange then
             g := g.afterLifeLost defn dealtToPlayer.toNat
@@ -414,13 +410,13 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if pendingRegular then
         g.firstStrikeAssignedThisCombat ++ g.assignedCombatDamage.map (·.source)
       else g.firstStrikeAssignedThisCombat
-    g := g.changes #[
+    g.changes #[
       .assignedCombatDamage #[],
       .pending .none,
       .firstStrikeDamageDone (g.firstStrikeDamageDone || g.combatHasFirstStrike),
       .pendingRegularCombatDamage pendingRegular,
       .firstStrikeAssignedThisCombat assignedFs ]
-    return g.receivePriority g.activePlayer
+  g.receivePriority g.activePlayer
 
 /-- Record a legal assignment batch and append it for later dealing. -/
 def storeCombatAssignments (g : Game) (forAttackers : Bool)

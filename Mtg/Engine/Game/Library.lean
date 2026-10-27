@@ -94,11 +94,15 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
           firstOfTheirDrawStep then
         (g, none)
       else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
-          (g, some c)
-        | none => (g, none)
+        match g.currentBatch with
+        | some (_, some (.oneShotEffect (some bid) bsrc bctrl)) =>
+          (g, some (.oneShotEffect (some bid) bsrc (bctrl.orElse (fun _ => some p))))
+        | _ =>
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+            (g, some c)
+          | none => (g, none)
   Id.run do
     let mut g := g0
     for _ in [0:n] do
@@ -139,7 +143,7 @@ def pendingRandom? (g : Game) : Option RandomRequest :=
   | .resolveRandom req => some req
   | _ => none
 
-/-- Shuffle `p`'s library (CR 103.3 / 701.19). A library of two or more cards
+/-- Shuffle `p`'s library (CR 103.3 / 701.20). A library of two or more cards
 becomes `Pending.resolveRandom` unless a choice is already pending. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
@@ -158,17 +162,11 @@ def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Ga
 the new bottom of that group. -/
 def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone)
     (cause : Option EventCause := none) : Game :=
-  let (g, cause) : Game × Option EventCause :=
-    match cause with
-    | some c => (g, some c)
-    | none =>
-      if ids.isEmpty then (g, none)
-      else
-        match g.currentResolvingContext? with
-        | some (src, ctrl) =>
-          let (g, c) := g.allocDelayedCause ctrl src
-          (g, some c)
-        | none => (g, none)
+  let defaultCause :=
+    cause.orElse (fun _ =>
+      if ids.isEmpty then none
+      else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
+  g.withBatch defaultCause fun g =>
   match dest with
   | .library p =>
     Id.run do

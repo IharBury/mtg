@@ -326,7 +326,8 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
 counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
-`extraEntersWith` (CR 614.1c), so only the log and put-counter triggers run. -/
+`extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
+triggers are evaluated from the recorded event batch in `evaluateBatchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
@@ -342,32 +343,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
   let phrase :=
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  let g := g.logMsg phrase
-  -- “Whenever you put … counters”: “you” is whoever puts them.
-  let putter :=
-    byPlayer.orElse (fun _ => g.counterPutter o.controller)
-  let g :=
-    match putter with
-    | some q =>
-      if n > 0 && happened.matchesTrigger q o.id .youPutPlusOne then
-        g.foldControlledPermanents q none fun g src =>
-          -- Invisible Woman: one or more counters at once trigger once.
-          let oncePerBatch := src.printed.triggeredAbilities.any (fun ab =>
-            match ab.shared with
-            | .resource .plusOneOnHeroesCreateWall => true
-            | _ => false)
-          if oncePerBatch && g.waitingTriggers.any (fun w =>
-              w.source.id == src.id && w.event == .youPutPlusOne) then g
-          else g.putMatchingSourceTriggers q src .youPutPlusOne (cause := some (g.object! o.id))
-      else g
-    | none => g
-  match putter with
-  | none => g
-  | some p =>
-    if n > 0 &&
-        (g.hasSubtype o .goblin || g.hasSubtype o .orc || g.hasSubtype o .army) then
-      g.putControlledTriggers p .youPutCountersOnGoblinOrcArmy
-    else g
+  g.logMsg phrase
 
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger. Checked with the permanent as it exists on the
@@ -388,9 +364,6 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
     | true, some n =>
       if n > 0 && o.status.loyaltyCounters > 0 then
         let k := o.status.loyaltyCounters
-        let g := match o.controller with
-          | some p => g.queueLoyaltyPutTriggers p
-          | none => g
         g.logMsg s!"{o.name} enters with {k} loyalty counter(s)"
       else g
     | _, _ => g
@@ -517,16 +490,11 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     let g :=
       if entered.printed.isToken then
         -- “Whenever one or more tokens you control enter” triggers once per
-        -- batch (Mister Fantastic); Belladonna Took triggers per token.
+        -- batch via `evaluateBatchTriggers` (Mister Fantastic); Belladonna Took
+        -- triggers per token.
         g.foldControlledPermanents p none fun g src =>
-          let onceForBatch :=
-            src.printed.triggeredAbilities.any (fun ab =>
-              match ab.shared with
-              | .watch .tokensEnterMayDraw => true
-              | _ => false)
-          if onceForBatch && g.waitingTriggers.any (fun w =>
-              w.source.id == src.id && w.event == .tokenYouControlEnters) then g
-          else g.putMatchingSourceTriggers p src .tokenYouControlEnters
+          g.putMatchingSourceTriggers p src .tokenYouControlEnters
+            (keep := fun ab => ab.shared != .watch .tokensEnterMayDraw)
       else g
     let g :=
       if entered.printed.isArtifact then

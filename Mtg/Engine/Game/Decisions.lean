@@ -105,26 +105,28 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
     g.checkLookedPiles p q count top graveyard "surveil" "CR 701.25"
     let looked := g.scryLookedIds p count
     let cause := g.resolvingOneShotCause p
-    let mut g := g.logPutOnTop p looked top
-    let happened :=
-      GameEvent.looked g.turnNumber p count true asked
-        (top := top) (rest := graveyard) (cause := cause)
-    g := g.record happened
-    for id in graveyard do
-      let card := g.object! id
-      let (g', newId) := g.move id (.graveyard p) none (cause := cause)
-      g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
-      match g.surveilReturnMvAtMost with
-      | some n =>
-        if g.objectManaValue card ≤ n then
-          let (g', _) := g.move newId (.hand p) none (cause := cause)
-          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-      | none =>
-        if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
-            !card.printed.isLand then
-          let (g', _) := g.move newId (.hand p) none (cause := cause)
-          g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-    g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
+    let g := (g.logPutOnTop p looked top).withBatch cause fun g => Id.run do
+      let mut g := g
+      let happened :=
+        GameEvent.looked g.turnNumber p count true asked
+          (top := top) (rest := graveyard) (cause := cause)
+      g := g.record happened
+      for id in graveyard do
+        let card := g.object! id
+        let (g', newId) := g.move id (.graveyard p) none (cause := cause)
+        g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their graveyard (surveil)"
+        match g.surveilReturnMvAtMost with
+        | some n =>
+          if g.objectManaValue card ≤ n then
+            let (g', _) := g.move newId (.hand p) none (cause := cause)
+            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+        | none =>
+          if g.surveilReturnNoncreatureNonland && !card.printed.isCreature &&
+              !card.printed.isLand then
+            let (g', _) := g.move newId (.hand p) none (cause := cause)
+            g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
+      g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
+      return g
     return g.finishLibraryLook
   | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
   | _ => throw "Not time to surveil (CR 701.25)"
@@ -171,7 +173,8 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
     let hasImprovise := prop.kind == .spell && g.spellHasImprovise spell.printed p
     if !hasConvoke && !hasImprovise then
       throw s!"{spell.name} doesn't have convoke or improvise (CR 702.51 / 702.126)"
-    let mut g := g
+    let (g0, closeBatch) := g.openBatch none
+    let mut g := g0
     let mut cost := prop.cost
     let mut tapped := prop.tapped
     for id in ids do
@@ -195,6 +198,7 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
       else
         throw s!"{o.name} can't help pay for {spell.name}"
       tapped := tapped.push id
+    g := closeBatch g
     return g.changeProposals #[.cost cost, .tapped tapped]
   | _, _ => throw "No spell is being paid for (CR 601.2h)"
 
@@ -212,8 +216,8 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
     if chosen.toList.eraseDups.length != chosen.size then
       throw "Choose each permanent or player at most once"
     let cause := g.resolvingOneShotCause p
-    let mut g := g
-    let mut loyaltyPut := false
+    let (g0, closeBatch) := g.openBatch cause
+    let mut g := g0
     let mut permIds : Array ObjectId := #[]
     let mut playerIds : Array PlayerId := #[]
     for t in chosen do
@@ -224,7 +228,6 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
           throw s!"{o.name} is not a permanent on the battlefield (CR 701.34a)"
         if !o.status.hasCounters then
           throw s!"{o.name} has no counters"
-        let hadLoyalty := o.status.loyaltyCounters > 0
         let bag := o.status.toCounterBag
         for (kind, _) in bag do
           if kind != .plusOnePlusOne then
@@ -234,7 +237,6 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         g := g.syncImpendingNotACreature id (cause := cause)
         let o := g.object! id
         g := if o.status.plusOnePlusOne > 0 then g.addPlusOnePlusOneTo o 1 (cause := cause) else g
-        if hadLoyalty && o.printed.isPlaneswalker then loyaltyPut := true
         permIds := permIds.push id
         g := g.logMsg s!"{(g.player p).name} proliferates {o.name}"
       | .player pid =>
@@ -247,8 +249,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
     g := g.record (GameEvent.proliferated g.turnNumber p
       (permanents := permIds) (players := playerIds) (cause := cause))
-    if loyaltyPut then
-      g := g.queueLoyaltyPutTriggers p
+    g := closeBatch g
     if chosen.isEmpty then
       g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
     -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
@@ -524,7 +525,8 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw s!"Only {(g.player q).name} may tap Humans"
     if !uniqueObjectIds ids then
       throw "Duplicate card"
-    let mut g := g
+    let (g0, closeBatch) := g.openBatch none
+    let mut g := g0
     let mut n : Nat := 0
     for id in ids do
       let some o := g.findObject? id | throw "no such object"
@@ -533,6 +535,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         throw s!"{o.name} is not an untapped Human you control"
       g := g.applyPermanentAction o .tap
       n := n + 1
+    g := closeBatch g
     g := g.changes #[.pending .none, .humansTappedThisWay n]
     g := g.resumeTriggerSequence
     if g.pending != .none then return g
@@ -776,20 +779,23 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
     let some kept := g.findObject? id | throw "no such object"
     if !kept.isOnBattlefield then
       throw s!"{kept.name} is not on the battlefield"
-    let mut g := g.logMsg
-      s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)"
-    for other in ids do
-      if other != id then
-        match g.findObject? other with
-        | some o =>
-          if o.isOnBattlefield then
-            g := g.logMsg
-              s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
-            let (g', _) := g.move o.id (.graveyard o.owner) none
-              (cause := some (.stateBased .legendRule))
-            g := g'
-        | none => pure ()
-    g := g.change (.pending .none)
+    let g := (g.logMsg
+      s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)").withBatch
+      (some (.stateBased .legendRule)) fun g => Id.run do
+        let mut g := g
+        for other in ids do
+          if other != id then
+            match g.findObject? other with
+            | some o =>
+              if o.isOnBattlefield then
+                g := g.logMsg
+                  s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
+                let (g', _) := g.move o.id (.graveyard o.owner) none
+                  (cause := some (.stateBased .legendRule))
+                g := g'
+            | none => pure ()
+        return g
+    let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to apply the legend rule (CR 704.5j)"
 
@@ -853,15 +859,18 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
         throw "no such object"
       if !pl.hand.contains id then
         throw "That card is not in your hand"
+    let (g, newBottom) := g.withBatchReturn (some (.gameRule .mulligan)) fun g => Id.run do
+      let mut g := g
+      let mut newBottom : Array ObjectId := #[]
+      for id in ids do
+        let card := g.object! id
+        let ownerName := (g.player p).name
+        let (g', newId) := g.move id (.library p) (cause := some (.gameRule .mulligan))
+        g := g'
+        newBottom := newBottom.push newId
+        g := g.logMsg s!"{ownerName} puts {card.name} on the bottom of their library"
+      return (g, newBottom)
     let mut g := g
-    let mut newBottom : Array ObjectId := #[]
-    for id in ids do
-      let card := g.object! id
-      let ownerName := (g.player p).name
-      let (g', newId) := g.move id (.library p) (cause := some (.gameRule .mulligan))
-      g := g'
-      newBottom := newBottom.push newId
-      g := g.logMsg s!"{ownerName} puts {card.name} on the bottom of their library"
     let plNow := g.player p
     let without := newBottom.foldl (fun lib id => stripId lib id) plNow.library
     g := g.changePlayer p (.library (newBottom ++ without))
