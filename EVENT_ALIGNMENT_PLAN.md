@@ -197,8 +197,8 @@ why it happened:
   loops in `ResolutionEffects.commitEnteringAttackItems` in
   [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean) and
   `TriggeredAbilities.createAndMarkTokensAttacking` in
-  [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean) added in
-  Phase 6), `addPlusOnePlusOneTo`
+  [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean)),
+  `addPlusOnePlusOneTo`
   ([`Entering.lean`](Mtg/Engine/Game/Entering.lean)), `beginStep .untap`
   (stun, 122.1d), and [`Keywords.lean`](Mtg/Engine/Game/Keywords.lean) (with
   `Game.entersTapped` and `Game.sourceDamagePrevented` moved into
@@ -1072,16 +1072,23 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   `.stack` with `verb == .counter` for 603.10e), while `matchTriggers` selects
   `pre` vs `post` directly per branch without calling `isLookBack`: on `pre`, it
   evaluates leaves-the-battlefield (`fromZone == .battlefield && toZone != .battlefield`,
-  including dies and nonland battlefield-to-hand `.anotherNonlandReturned`),
-  sacrifice on a battlefield leave when `verb == .sacrifice`
-  (`.youSacrificeToken`, and `.bolgSacrificedForReflexive` while `pre.pending` is
-  `.maySacrificeAnotherBolg`), and a creature card leaving a graveyard
-  (`.creatureCardLeavesYourGy`); a general non-battlefield sacrifice, a
-  noncreature card leaving a graveyard, 603.10a(4) moves into a library or from
-  exile/stack/command/graveyard into a hand, and the 603.10b–f events
-  (`.permanent (.phasedOut ..)`, `.unattached`, `.controlChanged`,
-  `ZoneEvent.moved` from `.stack` with `verb == .counter`, and
-  `.player (.lost ..)`) have no modeled triggers and are unmatched in
+  including dies, `.leaving`, and nonland battlefield-to-hand
+  `.anotherNonlandReturned`), the extra sacrifice triggers inside that
+  battlefield-leave arm when `verb == .sacrifice` (`.youSacrificeToken`, and
+  `.bolgSacrificedForReflexive` while `pre.pending` is
+  `.maySacrificeAnotherBolg`; any other battlefield sacrifice still queues the
+  leaves-the-battlefield triggers on `pre`), and a creature card leaving a
+  graveyard (`.creatureCardLeavesYourGy`). A 603.10a(4) move matches when it
+  hits one of those arms (battlefield → library runs leaves-the-battlefield on
+  `pre`, a creature card moving from a graveyard to a hand or library runs
+  `.creatureCardLeavesYourGy` on `pre`, and nonland battlefield → hand also runs
+  `.anotherNonlandReturned` on `pre`), and a noncreature card moving from a
+  graveyard to `.battlefield` still runs the enters-the-battlefield arm on
+  `post`; the moves with no trigger arm are exile, stack, or command → hand or
+  library and a noncreature card leaving a graveyard for a zone other than
+  `.battlefield`, while the 603.10b–f events (`.permanent (.phasedOut ..)`,
+  `.unattached`, `.controlChanged`, `ZoneEvent.moved` from `.stack` with
+  `verb == .counter`, and `.player (.lost ..)`) are unmatched no-ops in
   `matchTriggers`.
 - All other matched triggers read `post` (603.10), including enters-the-battlefield
   (603.6a) and **discard / cycling**: 603.10a does not include cards leaving a
