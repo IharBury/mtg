@@ -226,9 +226,6 @@ def beginSurveil (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let happened :=
       GameEvent.looked g.turnNumber p 0 true n (cause := g.resolvingOneShotCause p)
     let g := g.record happened
-    let g :=
-      if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g
-      else g.queueScryOrSurveilTriggers p
     g.logMsg s!"{pl.name} surveils {n} (no cards to look at)"
   else
     (g.change (.pending (.surveil p count n))).logMsg

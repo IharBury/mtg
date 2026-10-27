@@ -444,12 +444,17 @@ def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
 so his last ability triggers (ruling 74). -/
 def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
   let g := g.logMsg "The final chapter ability is removed from the stack"
+  let sagaSnap : EventObject :=
+    { controller := some controller
+      owner := controller
+      zone := .stack
+      subtypes := #[.saga] }
+  let g := g.record (GameEvent.resolved g.turnNumber controller 0 (obj := some sagaSnap)
+    (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
     o.printed.hexproofIndestructibleIfLore.isSome) with
   | none => g
-  | some tom =>
-    g.putMatchingSourceTriggers controller tom .finalSagaChapterResolves
-        |>.logMsg s!"{tom.name}'s last ability triggers"
+  | some tom => g.logMsg s!"{tom.name}'s last ability triggers"
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)

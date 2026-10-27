@@ -34,36 +34,9 @@ def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : 
       else if firstOfTheirDrawStep then
         some (.turnBased .drawStepDraw)
       else none)
-    let (g, newId) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
+    let (g, _) := g.move top (.hand p) none (verb := verb) (actor := some p) (cause := cause)
     let pl := g.player p
-    let g := g.logMsg s!"{pl.name} draws {cardName}"
-    if !pl.keptOpeningHand then g
-    else
-      let happened := GameEvent.drew g.turnNumber p newId nth firstOfTheirDrawStep
-      Id.run do
-        let mut g := g
-        for o in g.permanentsOf p do
-          if happened.matchesTrigger p o.id .youDraw then
-            g := g.change (.enqueueWaitingTriggers
-              (o.waitingTriggersFor p .youDraw))
-          if happened.matchesTrigger p o.id .youDrawSecondCard then
-            g := g.change (.enqueueWaitingTriggers
-              (o.waitingTriggersFor p .youDrawSecondCard))
-        if happened.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
-          for q in g.livingPlayers do
-            for o in g.permanentsOf q.id do
-              if happened.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
-                g := g.change (.enqueueWaitingTriggers
-                  (o.waitingTriggersFor q.id .anyPlayerDrawsSecond))
-        for opp in g.livingOpponents p do
-          for o in g.permanentsOf opp.id do
-            if happened.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
-              g := g.change (.enqueueWaitingTriggers
-                (o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep))
-            if happened.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
-              g := g.change (.enqueueWaitingTriggers
-                (o.waitingTriggersFor opp.id .opponentDrawsSecondCard))
-        return g
+    g.logMsg s!"{pl.name} draws {cardName}"
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
 card of your draw step). The replacement matches the draw that would happen. -/

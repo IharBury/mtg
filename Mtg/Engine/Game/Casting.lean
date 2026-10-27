@@ -570,16 +570,6 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
       (g.createEffect (.uncounterableThisCast spell.id)).logMsg
         s!"{spell.name} can't be countered"
     else g
-  let g :=
-    match g.stackEntry? spell.id with
-    | some e =>
-      let g := g.queueBecomesTargetTriggers p e.targets
-      g.foldPermanentTargets e.targets (fun g o =>
-        match o.controller with
-        | some c => g.putMatchingSourceTriggers c o .spellTargetsSource
-          (cause := some spell)
-        | none => g)
-    | none => g
   let g := g.putCastTriggersOnStack p spell
   let g :=
     match g.stackEntry? spell.id with
@@ -681,39 +671,9 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
       g.record (GameEvent.counters g.turnNumber (some p) o.asEvent .loyalty k.natAbs (k < 0)
         (cause := some (.costPayment .loyalty p forObject)))
     else g
-  let happened := GameEvent.activated g.turnNumber p o.asEvent true
-  -- Gideon, the Oathless: an opponent activating a loyalty ability.
-  let g :=
-    (g.livingOpponents p).foldl (fun g opp =>
-      g.foldControlledPermanents opp.id none fun g src =>
-        if happened.matchesTrigger opp.id o.id (.fra .opponentActivatesLoyaltyAbility) then
-          g.putMatchingSourceTriggers opp.id src (.fra .opponentActivatesLoyaltyAbility)
-            (cause := some o)
-        else g) g
   if k > 0 then g.logMsg s!"{k} loyalty counter(s) are put on {o.name}"
   else if k < 0 then g.logMsg s!"{-k} loyalty counter(s) are removed from {o.name}"
   else g
-
-/-- Queue “whenever you activate a loyalty ability” triggers. They go on the
-stack above the loyalty ability, so they resolve first (rulings 847 / 853).
-Way of the Mind Sculptor triggers only if two or more loyalty counters were
-removed (intervening “if”). -/
-def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbol) : Game :=
-  let removed := match sym.counters with
-    | some k => if k < 0 then (-k).toNat else 0
-    | none => 0
-  let happened := GameEvent.activated g.turnNumber p
-    { controller := some p, owner := p } true
-  if !happened.matchesTrigger p ⟨0⟩ .youActivateLoyaltyAbility then g
-  else
-  g.foldControlledPermanents p none fun g o =>
-    let waiting :=
-      ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
-        wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
-        if wt.ability.shared == .drawIfRemovedTwoLoyalty then
-          { wt with lastKnownPower := some (Int.ofNat removed) }
-        else wt)
-    g.enqueueWaitingTriggers waiting
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) (activation : Option ActivatedAbility := none)
@@ -726,11 +686,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     match activation.bind (·.cost.loyalty) with
     | some sym =>
       let actualSym := if sym == LoyaltySymbol.minusX then LoyaltySymbol.minus chosenX else sym
-      let g :=
-        match sourceId.bind g.findObject? with
-        | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
-        | none => g
-      g.queueLoyaltyActivationTriggers p actualSym
+      match sourceId.bind g.findObject? with
+      | some src => g.payLoyaltyCost p src actualSym (forObject := abilityId)
+      | none => g
     | none => g
   let isEquip := activation.any (·.isEquip)
   let source : EventObject :=
@@ -754,8 +712,6 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | none => none
   let isPowerUp := activation.any (·.powerUp)
   let isBoast := activation == some ActivatedAbility.zemoBoastAbility
-  let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
-    (.nonMana loyaltyDelta isEquip isPowerUp isBoast))
   let g :=
     match sourceId with
     | none => g
@@ -773,20 +729,16 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           .powerUpUsed (src.status.powerUpUsed || powerUp),
           .powerUpActivations (src.status.powerUpActivations + (if powerUp then 1 else 0))
         ]
-        let g := g.changeStatuses src.id (
+        g.changeStatuses src.id (
           match idx with
           | some i => base.push (.pushAbilitiesActivated i)
           | none => base)
-        let src := g.object! sid
-        if src.isCreature then
-          g.putControlledTriggers p .youActivateCreatureAbility
-        else g
       | none => g
+  let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
+    (.nonMana loyaltyDelta isEquip isPowerUp isBoast))
   let g :=
     match g.stack.back? with
-    | some e =>
-      let g := g.queueBecomesTargetTriggers p e.targets
-      g.beginWardsForTargets p e.objectId e.targets
+    | some e => g.beginWardsForTargets p e.objectId e.targets
     | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 

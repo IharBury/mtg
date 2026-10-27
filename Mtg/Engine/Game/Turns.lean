@@ -101,7 +101,7 @@ def clearTurnActivations (g : Game) : Game :=
           | .typeSpellCostLessThisTurn p _ _ | .supertypeSpellCostLessThisTurn p _ _ => p == pl.id
           | _ => false) (cause := cause)
     for o in g.battlefield do
-      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
+      if o.status.activationsThisTurn != 0 ||
           o.status.optionalOnceUsed ||
           !o.status.allianceModesChosen.isEmpty ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
@@ -113,7 +113,6 @@ def clearTurnActivations (g : Game) : Game :=
           .activationsThisTurn 0,
           .abilitiesActivatedThisTurn #[],
           .loyaltyActivatedThisTurn false,
-          .firedOnceEachTurn false,
           .optionalOnceUsed false,
           .allianceModesChosen #[],
           .declaredAsAttackerThisTurn false,
@@ -247,13 +246,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         (cause := some (.gameRule .stepAdvance)))
     else g
   let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
-  -- A skipped step does not happen (CR 614.10), so it is not recorded.
-  let g := if st == .draw && g.skipsFirstDraw then g else g.record stepEvent
+  let g := if st == .draw && g.skipsFirstDraw then g else { g with step := st }
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
     Id.run do
-      let mut g := g
+      let mut g := g.record stepEvent
       let ap := g.activePlayer
       let apName := (g.player ap).name
       g := g.expireGoadedFor ap
@@ -305,12 +303,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     else
       -- The turn-based draw happens before triggers (ruling 770).
       let g := g.draw g.activePlayer 1 (cause := some (.turnBased .drawStepDraw))
-      let g := (g.livingOpponents g.activePlayer).foldl (fun acc pl =>
-        acc.putControlledTriggers pl.id .eachOpponentDrawStep) g
+      let g := g.record stepEvent
       g.receivePriority g.activePlayer
   | .declareAttackers =>
-    g.change (.pending .declareAttackers)
+    (g.record stepEvent).change (.pending .declareAttackers)
   | .declareBlockers =>
+    let g := g.record stepEvent
     if (g.battlefield.filter (·.status.attacking)).isEmpty then
       g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
     else
@@ -319,7 +317,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         if ps.isEmpty then #[g.opponent g.activePlayer] else ps
       g.changes #[.pending .declareBlockers, .blockersQueue queue]
   | .combatDamage =>
-      g.beginCombatDamageAssignment
+      (g.record stepEvent).beginCombatDamageAssignment
   | .upkeep =>
     let ap := g.activePlayer
     let g := Id.run do
@@ -336,47 +334,11 @@ partial def beginStep (g : Game) (st : Step) : Game :=
           g := g.logMsg
             s!"{(g.player pid).name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
       return g
-    let g :=
-      if stepEvent.matchesTrigger ap ⟨0⟩ .yourUpkeep then
-        g.putControlledTriggers ap .yourUpkeep
-      else g
-    let g :=
-      g.livingPlayers.foldl (fun acc pl =>
-        if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachUpkeep then
-          acc.putControlledTriggers pl.id .eachUpkeep
-        else acc) g
-    -- Abilities that trigger from a graveyard (Command the Stage).
-    let g :=
-      g.livingPlayers.foldl (fun g pl =>
-        (g.player pl.id).graveyard.foldl (fun g id =>
-          match g.findObject? id with
-          | some card => g.putMatchingSourceTriggers pl.id card (.fra .eachUpkeepFromGraveyard)
-          | none => g) g) g
-    -- Auras with “at the beginning of the upkeep of enchanted creature's controller”.
-    let g := g.battlefield.foldl (fun g aura =>
-      match aura.attachedTo.bind g.findObject?, aura.controller with
-      | some host, some c =>
-        if host.controlledBy ap then g.putMatchingSourceTriggers c aura .enchantedControllerUpkeep
-        else g
-      | _, _ => g) g
+    let g := g.record stepEvent
     g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
-    let g := g.livingPlayers.foldl (fun g pl =>
-      if pl.id == ap then g
-      else g.putFraEventTriggers pl.id .opponentBeginCombat) g
-    let g :=
-      if stepEvent.matchesTrigger ap ⟨0⟩ .yourBeginCombat then
-        g.putControlledTriggers ap .yourBeginCombat
-      else g
-    let g := g.livingPlayers.foldl (fun g pl =>
-      if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachBeginCombat then
-        g.putControlledTriggers pl.id .eachBeginCombat
-      else g) g
-    let g := (g.player ap).graveyard.foldl (fun g id =>
-      match g.findObject? id with
-      | some card => g.putMatchingSourceTriggers ap card (.fra .yourBeginCombatFromGraveyard)
-      | none => g) g
+    let g := g.record stepEvent
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer
@@ -443,17 +405,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g := g'.logMsg s!"{o.name} is exiled (beginning of end step)"
           | none => pure ()
         return g
-    let g :=
-      g.livingPlayers.foldl (fun acc pl =>
-        if stepEvent.matchesTrigger pl.id ⟨0⟩ .eachEndStep then
-          acc.putControlledTriggers pl.id .eachEndStep
-        else acc) g
-    let g :=
-      if stepEvent.matchesTrigger ap ⟨0⟩ .yourEndStep then
-        g.putControlledTriggers ap .yourEndStep
-      else g
+    let g := g.record stepEvent
     g.receivePriority ap
   | .cleanup =>
+    let g := g.record stepEvent
     -- CR 514.1–514.3.
     let g := g.discardToMaxHandSize
     let g := g.clearEOT
@@ -477,10 +432,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   | .precombatMain =>
     let ap := g.activePlayer
     let g := g.addLoreAfterDrawStep
-    let g := g.putControlledTriggers ap .yourFirstMain
+    let g := g.record stepEvent
     g.receivePriority ap
   | _ =>
-    g.receivePriority g.activePlayer
+    (g.record stepEvent).receivePriority g.activePlayer
 
 def beginTurn (g : Game) : Game :=
   let p := g.activePlayer

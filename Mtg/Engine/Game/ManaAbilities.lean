@@ -409,7 +409,6 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   g := g.changePlayer p (.manaPool (addRestrictedMana (g.player p).manaPool mana d.restriction))
   if d.damageYou > 0 then
     let pl := g.player p
-    let before := pl.life
     g :=
       if pl.lifeLocked || pl.lifeCantChange then
         g.logMsg s!"{pl.name}'s life total can't change"
@@ -417,8 +416,6 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
         (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
           (cause := if g.currentResolvingContext?.isSome then g.resolvingOneShotCause p (some id) else none))).logMsg
           s!"{o.name} deals {d.damageYou} damage to {pl.name}"
-    let lost := (before - (g.player p).life).toNat
-    g := g.afterLifeLost p lost
   -- Molten Tide: a triggered mana ability that resolves immediately (CR 605.4a).
   let extraRed :=
     if g.hasSubtype o .mountain && d.tap && !mana.isEmpty then
@@ -446,8 +443,6 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
           g.change (.pushAncestryLandTapped id)
         else g
       | none => g
-  if o.isCreature then
-    g := g.putControlledTriggers p .youActivateCreatureAbility
   return g.change (.consecutivePasses 0)
 
 /-- Index of the first mana ability of `o` that can add `mana` by tapping

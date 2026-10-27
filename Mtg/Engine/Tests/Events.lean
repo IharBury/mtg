@@ -3008,4 +3008,205 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     noUnclassifiedRulesEvents gTrig3 &&
     noUnclassifiedRulesEvents gFizzle2
 
+/- Phase 6: `matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent)`
+evaluates all triggers at outermost batch close, covers CR 603.10a–f look-back
+via `pre` and `GameEvent.isLookBack`, records `TriggerQueueEvent.triggered`
+with `cause := .gameRule .triggeredAbility`, and queries once-each-turn
+triggers from the event log instead of `Status.firedOnceEachTurn`. -/
+#guard
+  -- 1. CR 603.10a–f look-back classification on `GameEvent.isLookBack`
+  let snapA : EventObject := { id := some ⟨1⟩, owner := me, controller := some me, types := #[.creature] }
+  let evLtb := GameEvent.moved 1 snapA .battlefield (.graveyard me)
+  let evSac := GameEvent.moved 1 snapA .battlefield (.graveyard me) (verb := some .sacrifice)
+  let evLeaveGy := GameEvent.moved 1 snapA (.graveyard me) .exile
+  let evBounce := GameEvent.moved 1 snapA .battlefield (.hand me)
+  let evTuck := GameEvent.moved 1 snapA .exile (.library me)
+  let evPhaseOut := GameEvent.phasedOut 1 snapA false
+  let evPhaseIn := GameEvent.phasedIn 1 snapA false
+  let evUnattach := GameEvent.unattached 1 snapA ⟨2⟩
+  let evControl := GameEvent.control 1 ⟨1⟩ me opp
+  let evCounter := GameEvent.moved 1 snapA .stack (.graveyard me) (verb := some .counter)
+  let evPlayerLost := GameEvent.playerLost 1 opp
+  let evEtb := GameEvent.moved 1 snapA (.hand me) .battlefield
+  let evDiscard := GameEvent.moved 1 snapA (.hand me) (.graveyard me) (discarded := true)
+  let lookBackFlagsOk :=
+    evLtb.isLookBack &&
+    evSac.isLookBack &&
+    evLeaveGy.isLookBack &&
+    evBounce.isLookBack &&
+    evTuck.isLookBack &&
+    evPhaseOut.isLookBack &&
+    !evPhaseIn.isLookBack &&
+    evUnattach.isLookBack &&
+    evControl.isLookBack &&
+    evCounter.isLookBack &&
+    evPlayerLost.isLookBack &&
+    !evEtb.isLookBack &&
+    !evDiscard.isLookBack
+  -- 2. Simultaneous deaths (CR 603.10a): two creatures with "whenever another
+  --    creature you control dies" dying in the same batch both see each other
+  --    on `pre` and both trigger.
+  let deathWatcherAb : TriggeredAbility :=
+    .triggered .creatureYouControlDies
+      { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
+      {}
+  let deathWatcherDef : CardDef :=
+    { bear with
+      name := "Simultaneous Watcher"
+      triggeredAbilities := #[deathWatcherAb] }
+  let gSim0 :=
+    addPermanent (addPermanent (quiet afterDraw) deathWatcherDef me me) deathWatcherDef me me
+  let watchers := gSim0.battlefield.filter (·.name == "Simultaneous Watcher")
+  let w1 := watchers[0]!
+  let w2 := watchers[1]!
+  let simCause : EventCause := .oneShotEffect (some ⟨90⟩) none (some me)
+  let gSim1 :=
+    gSim0.withBatch (some simCause) fun g =>
+      let g := g.moveToOwnerGraveyard w1 "w1 dies" (verb := some .destroy) (cause := some simCause)
+      g.moveToOwnerGraveyard w2 "w2 dies" (verb := some .destroy) (cause := some simCause)
+  let simTrigSources := gSim1.waitingTriggers.map (·.source.id)
+  let simTrigEvents := gSim1.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.triggerQueue (.triggered src ctrl ab origin)) =>
+      some (src.id, ctrl, ab, origin, e.cause, e.batch)
+    | _ => none)
+  let simDeathsOk :=
+    simTrigSources.size == 2 &&
+    simTrigSources.contains w1.id &&
+    simTrigSources.contains w2.id &&
+    simTrigEvents.size == 2 &&
+    simTrigEvents.all (fun (_, ctrl, ab, origin, cause, bid) =>
+      ctrl == me && ab == deathWatcherAb && origin == bid &&
+        cause == .gameRule .triggeredAbility)
+  -- 3. Phasing out (CR 603.10b / 702.26b / 702.26d): phasing out emits a
+  --    look-back `phasedOut` event, does not fire `.leaving` triggers, and a
+  --    watcher that phases out in the same simultaneous batch as a dying
+  --    creature still sees the death in `pre`.
+  let leaveWatcherAb : TriggeredAbility :=
+    .triggered .leaving
+      { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" }
+      {}
+  let phaserDef : CardDef :=
+    { bear with
+      name := "Phasing Watcher"
+      triggeredAbilities := #[leaveWatcherAb, deathWatcherAb] }
+  let gPhase0 :=
+    addPermanent (addPermanent (quiet afterDraw) phaserDef me me) bear me me
+  let phaser := (gPhase0.battlefield.filter (·.name == "Phasing Watcher"))[0]!
+  let victim := (gPhase0.battlefield.filter (·.name == bear.name))[0]!
+  let phaseCause : EventCause := .oneShotEffect (some ⟨91⟩) none (some me)
+  let gPhaseOnly := gPhase0.phaseOut phaser (cause := some phaseCause)
+  let phaseOutNoLeaveOk :=
+    gPhaseOnly.waitingTriggers.isEmpty &&
+    gPhaseOnly.events.any (fun e =>
+      match e.change with
+      | .rules (.permanent (.phasedOut snap false)) =>
+        snap.id == some phaser.id && e.isLookBack
+      | _ => false)
+  let gPhaseAndDie :=
+    gPhase0.withBatch (some (.oneShotEffect (some ⟨91⟩) none (some me))) fun g =>
+      let g := g.phaseOut phaser
+      g.moveToOwnerGraveyard victim "Bear dies" (verb := some .destroy)
+        (cause := some (.oneShotEffect (some ⟨91⟩) none (some me)))
+  let phaseLookBackOk :=
+    gPhaseAndDie.waitingTriggers.size == 1 &&
+    gPhaseAndDie.waitingTriggers[0]!.source.id == phaser.id &&
+    gPhaseAndDie.waitingTriggers[0]!.ability == deathWatcherAb
+  -- 4. Once-each-turn triggers are tracked via `TriggerQueueEvent.triggered`
+  --    in `g.events` (`g.loggedTriggeredThisTurn`) rather than `Status`.
+  let onceAb : TriggeredAbility :=
+    .triggered .youGainLife
+      { resolution := .scry 1, phrase := "Scry 1" }
+      { onceEachTurn := true }
+  let onceDef : CardDef :=
+    { bear with
+      name := "Once Life Watcher"
+      triggeredAbilities := #[onceAb] }
+  let gOnce0 := addPermanent (quiet afterDraw) onceDef me me
+  let onceObj := (gOnce0.battlefield.filter (·.name == "Once Life Watcher"))[0]!
+  let gOnce1 := gOnce0.gainLife me 1 (cause := some (.oneShotEffect (some ⟨92⟩) none (some me)))
+  let gOnce2 := gOnce1.gainLife me 1 (cause := some (.oneShotEffect (some ⟨93⟩) none (some me)))
+  let gOnceNextTurn :=
+    (gOnce2.change (.turnNumber (gOnce2.turnNumber + 1))).gainLife me 1
+      (cause := some (.oneShotEffect (some ⟨94⟩) none (some me)))
+  let onceEachTurnOk :=
+    gOnce1.loggedTriggeredThisTurn onceObj.id onceAb &&
+    gOnce1.waitingTriggers.size == 1 &&
+    gOnce2.waitingTriggers.size == 1 &&
+    gOnceNextTurn.waitingTriggers.size == 2
+  -- 5. Simultaneous batch damage to an attacking Hulk increments
+  --    `enrageGrantsAdditionalCombat` once per batch, and `sourceDealtDamage`
+  --    sums damage across packets/events in the batch before replicating
+  --    `extraTriggerCopies` across distinct abilities.
+  let hulkEnrageAb : TriggeredAbility :=
+    .triggered .sourceDealtDamage (Effect.ofTrigger (.watch .hulk)) {}
+  let hulkDef : CardDef :=
+    { bear with
+      name := "Test Hulk"
+      power := some 6
+      toughness := some 6
+      triggeredAbilities := #[hulkEnrageAb] }
+  let gHulk0 := addPermanent (quiet afterDraw) hulkDef me me
+  let hulk0 := (gHulk0.battlefield.filter (·.name == "Test Hulk"))[0]!
+  let gHulk0 := gHulk0.changeStatus hulk0.id (.attacking true)
+  let hulkCause : EventCause := .oneShotEffect (some ⟨95⟩) none (some me)
+  let gHulkBatch :=
+    gHulk0.withBatch (some hulkCause) fun g =>
+      let h := g.object! hulk0.id
+      let g := g.dealDamageToPermanent h 1 (source := some h.asEvent) (cause := some hulkCause)
+      let h := g.object! hulk0.id
+      g.dealDamageToPermanent h 2 (source := some h.asEvent) (cause := some hulkCause)
+  let hulkBatchOk :=
+    gHulkBatch.enrageGrantsAdditionalCombat == 1 &&
+    gHulkBatch.waitingTriggers.size == 1 &&
+    gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
+  let dmgAb1 : TriggeredAbility :=
+    .triggered .sourceDealtDamage
+      { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
+      {}
+  let dmgAb2 : TriggeredAbility :=
+    .triggered .sourceDealtDamage
+      { resolution := .scry 1, phrase := "Scry 1" }
+      {}
+  let dmgWatcherDef : CardDef :=
+    { bear with
+      name := "Dual Damage Watcher"
+      triggeredAbilities := #[dmgAb1, dmgAb2] }
+  let doublerDef : CardDef :=
+    { bear with
+      name := "Trigger Doubler"
+      staticAbilities := #[.extraTriggerAnotherYouControl #[] #[.creature]] }
+  let gDmg0 :=
+    addPermanent (addPermanent (quiet afterDraw) dmgWatcherDef me me) doublerDef me me
+  let dmgWatcher := (gDmg0.battlefield.filter (·.name == "Dual Damage Watcher"))[0]!
+  let dmgCause : EventCause := .oneShotEffect (some ⟨96⟩) none (some me)
+  let gDmgBatch :=
+    gDmg0.withBatch (some dmgCause) fun g =>
+      let w := g.object! dmgWatcher.id
+      let g := g.dealDamageToPermanent w 1 (source := some w.asEvent) (cause := some dmgCause)
+      let w := g.object! dmgWatcher.id
+      g.dealDamageToPermanent w 1 (source := some w.asEvent) (cause := some dmgCause)
+  let dmgTrigEvents := gDmgBatch.events.filter (fun e =>
+    match e.change with
+    | .rules (.triggerQueue (.triggered ..)) => true
+    | _ => false)
+  let dmgBatchCopiesOk :=
+    gDmgBatch.waitingTriggers.size == 4 &&
+    (gDmgBatch.waitingTriggers.filter (·.ability == dmgAb1)).size == 2 &&
+    (gDmgBatch.waitingTriggers.filter (·.ability == dmgAb2)).size == 2 &&
+    gDmgBatch.waitingTriggers.all (·.lastKnownPower == some 2) &&
+    dmgTrigEvents.size == 4
+  lookBackFlagsOk &&
+    simDeathsOk &&
+    phaseOutNoLeaveOk &&
+    phaseLookBackOk &&
+    onceEachTurnOk &&
+    hulkBatchOk &&
+    dmgBatchCopiesOk &&
+    noUnclassifiedRulesEvents gSim1 &&
+    noUnclassifiedRulesEvents gPhaseOnly &&
+    noUnclassifiedRulesEvents gPhaseAndDie &&
+    noUnclassifiedRulesEvents gHulkBatch &&
+    noUnclassifiedRulesEvents gDmgBatch
+
 end Mtg.Engine.EventTests

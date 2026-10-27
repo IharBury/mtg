@@ -11,31 +11,6 @@ permanent or land enters the battlefield.
 namespace Mtg.Engine
 namespace Game
 
-/-- “Whenever this or another [subtype] you control enters” and its nontoken
-and “another [subtype] or Equipment” variants (Balin, Fíli, Kíli, Thorin). -/
-def putSubtypeEnterTriggers (g : Game) (entered : GameObject) : Game :=
-  match entered.controller with
-  | none => g
-  | some p =>
-    let g := g.foldControlledPermanents p none fun g src =>
-      (src.printed.triggeredAbilities ++ src.status.grantedTriggeredAbilities).foldl (fun g ab =>
-        let o := ab.opts
-        let self := src.id == entered.id
-        let fire (e : TriggerEvent) (cond : Bool) : Game → Game := fun g =>
-          if ab.firesOn e && cond then g.queueTrigger p src ab e (cause := some entered) else g
-        let g := match o.thisOrNontokenSubtype with
-          | some s => fire .thisOrNontokenSubtypeYouControlEnters
-              (self || (!entered.printed.isToken && g.hasSubtype entered s)) g
-          | none => g
-        let g := match o.thisOrAnotherSubtype with
-          | some s => fire .thisOrAnotherSubtypeYouControlEnters (self || g.hasSubtype entered s) g
-          | none => g
-        match o.anotherSubtypeOrEquipment with
-        | some s => fire .anotherSubtypeOrEquipmentYouControlEnters
-            (!self && (g.hasSubtype entered s || entered.printed.isEquipment)) g
-        | none => g) g
-    g.promptTriggerTargetsIfNeeded
-
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
@@ -68,13 +43,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if !extraAnnounced.isEmpty then
       g.record (GameEvent.announced g.turnNumber spell.id (costs := extraAnnounced))
     else g
-  let happened :=
-    GameEvent.spellCast g.turnNumber caster
-      { (g.snapshot spell) with manaValue := g.objectManaValue spell }
-      fromZone
-  let g := g.record happened
-  let spells := g.loggedSpellsCast caster
-  let nonc := g.loggedNoncreatureSpells caster
   let g :=
     Id.run do
       let mut g := g
@@ -93,91 +61,12 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
                              phrase := "When you cast this spell, copy it X times. You may choose new targets for the copies" } {})
         "cast trigger"
     else g
-  let g :=
-    if happened.matchesTrigger caster spell.id .youCastInstantOrSorcery then
-      g.putControlledTriggers caster .youCastInstantOrSorcery
-    else g
-  -- Reality Fracture cast triggers.
-  let g :=
-    if happened.matchesTrigger caster spell.id (.fra .castThis) then
-      g.putMatchingSourceTriggers caster spell (.fra .castThis)
-    else g
-  let mvCast := g.objectManaValue spell
-  let g := (g.livingOpponents caster).foldl (fun g pl =>
-    g.putFraEventTriggersWhere pl.id (fun
-      | .opponentCastsSpellMvAtMost n => mvCast ≤ n
-      | _ => false) (cause := some spell)) g
-  let g := if spell.isPreparedSpell then
-      g.putFraEventTriggers caster .youCastPreparedSpell (cause := some spell)
-    else g
-  let g := if spell.printed.isCreature || spell.printed.isArtifact then
-      g.putFraEventTriggers caster .youCastArtifactOrCreature (cause := some spell)
-    else g
-  let targetsOwnCreature : Bool :=
-    match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e =>
-      e.targets.any (fun t =>
-        match t with
-        | Target.permanent id =>
-          (g.findObject? id).any (fun o => o.isCreature && o.controlledBy caster)
-        | _ => false)
-    | none => false
-  let g := if spell.printed.isEquipment || targetsOwnCreature then
-      g.putFraEventTriggers caster .youCastEquipmentOrTargetingCreatureYouControl
-        (cause := some spell)
-    else g
-  let g :=
-    if spell.printed.isCreature then
-      g.foldControlledPermanents caster none fun g o =>
-        g.putMatchingSourceTriggers caster o .youCastCreature
-          (some (Int.ofNat (g.objectManaValue spell)))
-    else
-      g.foldControlledPermanents caster none fun g o =>
-        g.putMatchingSourceTriggers caster o .youCastNoncreature (cause := some spell)
-  let g :=
-    (g.livingOpponents caster).foldl (fun acc pl =>
-      acc.putControlledTriggers pl.id .opponentCastsSpell) g
-  let g :=
-    if spells == 2 then
-      g.putControlledTriggers caster .youCastSecondSpell (cause := some spell)
-    else g
-  let colors := spell.printed.colors
-  let g :=
-    Color.all.foldl (fun acc c =>
-      if colors.contains c then
-        let acc := acc.putControlledTriggers caster (.youCastColor c)
-        if spell.castFromHand then acc.putControlledTriggers caster (.youCastColorFromHand c)
-        else acc
-      else acc) g
-  let g := if colors.contains .green then g.putControlledTriggers caster .youCastGreen else g
-  let g := if spell.treasureManaSpent then g.putControlledTriggers caster .youCastWithTreasure else g
+  let happened :=
+    GameEvent.spellCast g.turnNumber caster
+      { (g.snapshot spell) with manaValue := g.objectManaValue spell }
+      fromZone
+  let g := g.record happened
   let mv := g.objectManaValue spell
-  let g :=
-    (g.livingOpponents caster).foldl (fun acc pl =>
-      acc.foldControlledPermanents pl.id none fun acc o =>
-        match o.status.chosenOdd with
-        | none => acc
-        | some odd =>
-          let parityOk := if odd then mv % 2 == 1 else mv % 2 == 0
-          if parityOk then
-            acc.putMatchingSourceTriggers pl.id o .opponentCastsMatchingParity
-          else acc) g
-  let g :=
-    if spells == 2 then
-      g.livingPlayers.foldl (fun acc pl =>
-        acc.putControlledTriggers pl.id .anyPlayerCastsSecondSpell) g
-    else g
-  let g :=
-    g.putControlledTriggers caster .youCastSpell
-  -- Extort (CR 702.101a): each instance triggers separately.
-  let g :=
-    (g.permanentsOf caster).foldl (fun g o =>
-      if o.staticAbilities.any (fun | .extort => true | _ => false) then
-        g.queueTrigger caster o
-          (.triggered .enter { resolution := .extort
-                               phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" } {})
-          .youCastSpell
-      else g) g
   let g :=
     match g.pendingFreeRGCreature with
     | some p =>
@@ -188,70 +77,6 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
           |>.logMsg s!"World War Hulk's free-cast permission is used on {spell.name}"
       else g
     | none => g
-  let g :=
-    if spell.printed.hasSubtype .villain then
-      g.putControlledTriggers caster .youCastVillain
-    else g
-  let targetsCreatureYouControl : Bool :=
-    match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e =>
-      e.targets.any (fun t =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o => o.isCreature && o.controlledBy caster
-          | none => false
-        | _ => false)
-    | none => false
-  let g :=
-    if targetsCreatureYouControl then
-      g.putControlledTriggers caster .youCastTargetingCreatureYouControl
-    else g
-  let targetedPermanents : Array GameObject :=
-    match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e => e.targets.filterMap (fun t =>
-        match t with
-        | Target.permanent id => (g.findObject? id).filter (·.isOnBattlefield)
-        | _ => none)
-    | none => #[]
-  let g :=
-    if targetedPermanents.any (·.isCreature) then
-      g.foldControlledPermanents caster none fun g o =>
-        g.putMatchingSourceTriggers caster o .youCastTargetingCreature (cause := some spell)
-    else g
-  let g :=
-    if spell.printed.isInstantOrSorcery &&
-        targetedPermanents.any (fun o => o.types.contains .artifact || o.types.contains .land) then
-      g.foldControlledPermanents caster none fun g o =>
-        g.putMatchingSourceTriggers caster o .youCastInstantSorceryTargetingArtifactOrLand
-          (cause := some spell)
-    else g
-  -- Danitha: once per spell, however many targets it has (ruling 849).
-  let targetsOpponentOrTheirCreature : Bool :=
-    match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e =>
-      e.targets.any (fun t =>
-        match t with
-        | Target.player q => q != caster
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o => o.isCreature && o.controller.isSome && !o.controlledBy caster
-          | none => false
-        | _ => false)
-    | none => false
-  let g :=
-    if targetsOpponentOrTheirCreature then
-      g.putControlledTriggers caster .youCastTargetingOpponentOrTheirCreature
-    else g
-  let g :=
-    if !spell.printed.isCreature && nonc == 1 then
-      g.putControlledTriggers caster .youCastFirstNoncreature
-    else g
-  let g :=
-    if !spell.printed.isCreature && nonc == 1 then
-      (g.livingOpponents caster).foldl (fun acc pl =>
-        acc.putControlledTriggers pl.id .opponentCastsFirstNoncreature) g
-    else g
   -- Way of the Cryomancer: copy the next instant or sorcery this turn. The
   -- copy has the original's targets, mode, X, and paid-cost effects, but
   -- no costs are paid for it (rulings 843–846).
@@ -316,33 +141,20 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       let g := g.expireEffectById eid (cause := some (.gameRule .spellCast))
       g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 
-/-- Put “whenever another Elf you control enters” triggers onto the stack
-(CR 603.6a). The entering permanent itself does not trigger. -/
-def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
-  if !g.hasSubtype entering .elf then g
-  else
-    match entering.controller with
-    | none => g
-    | some p =>
-      g.putControlledTriggersWithPrompt p .anotherElfYouControlEnters
-        (excludeId := some entering.id)
-
-/-- Put “whenever another creature you control enters” triggers (CR 603.6a). -/
-def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
-  if !entering.isCreature then g
-  else
-    match entering.controller with
-    | none => g
-    | some p =>
-      g.foldControlledPermanents p (excludeId := some entering.id) (fun g o =>
-        g.putMatchingSourceTriggers p o .anotherCreatureYouControlEnters
-          (cause := some entering))
-      |>.promptTriggerTargetsIfNeeded
+/-- Karn, Argent Defender: an artifact or creature entering doesn't cause
+abilities to trigger. Checked with the permanent as it exists on the
+battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
+def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
+  (o.isCreature || o.types.contains .artifact) &&
+    g.battlefield.any (fun src =>
+      src.staticAbilities.any (fun
+        | .enteringArtifactsCreaturesDontTrigger => true
+        | _ => false))
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). When `entersWith` is true, the
 counters have already been placed in `o`'s arrival `ZoneEvent.moved` via
 `extraEntersWith` or `ZoneEvent.created` (CR 614.1c); `.youPutPlusOne`
-triggers are evaluated from the recorded event batch in `evaluateBatchTriggers`. -/
+triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
@@ -359,16 +171,6 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
     else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
   g.logMsg phrase
-
-/-- Karn, Argent Defender: an artifact or creature entering doesn't cause
-abilities to trigger. Checked with the permanent as it exists on the
-battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -/
-def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
-  (o.isCreature || o.types.contains .artifact) &&
-    g.battlefield.any (fun src =>
-      src.staticAbilities.any (fun
-        | .enteringArtifactsCreaturesDontTrigger => true
-        | _ => false))
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
 printed loyalty (placed in `entersWith` during the zone change). -/
@@ -446,8 +248,24 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g := match g.findObject? o.id with
     | some x => g.changeObject x.id (.enterProcessed true)
     | none => g
-  -- Storied is granted as the permanent enters, before SBA (legend rule /
-  -- 0 toughness) and before enters triggers use the stack.
+  let g :=
+    if g.loggedEntered o.id then g
+    else
+      let o := g.object! o.id
+      let bag :=
+        if o.status.toCounterBag.isEmpty then
+          g.computeEntersWithCounters o (asOf := o.timestamp)
+        else o.status.toCounterBag
+      let snap := g.snapshot o
+      if o.printed.isToken then
+        g.record (GameEvent.created g.turnNumber (o.controller.getD o.owner)
+          { snap with counters := bag })
+      else
+        g.record (GameEvent.moved g.turnNumber
+          { snap with zone := .command }
+          .command .battlefield
+          (after := some { snap with zone := .battlefield, counters := bag })
+          (entersWith := bag))
   let g := g.refreshEnduringStory
   let g := g.refreshCitysBlessing
   let g := g.applyEntersWith (g.object! o.id)
@@ -495,113 +313,20 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   if g.enteringCausesNoTriggers o then
     g.logMsg s!"{o.name} entering doesn't cause abilities to trigger"
   else
-  let g := g.putEnterTriggersOnStack o
-  let g := g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
-  let g := g.putAnotherCreatureYouControlEntersTriggers (g.object! o.id)
-  let g := g.putSubtypeEnterTriggers (g.object! o.id)
-  match (g.object! o.id).controller with
-  | some p =>
-    let entered := g.object! o.id
-    let g :=
-      if entered.printed.isToken then
-        -- “Whenever one or more tokens you control enter” triggers once per
-        -- batch via `evaluateBatchTriggers` (Mister Fantastic); Belladonna Took
-        -- triggers per token.
-        g.foldControlledPermanents p none fun g src =>
-          g.putMatchingSourceTriggers p src .tokenYouControlEnters
-            (keep := fun ab => ab.shared != .watch .tokensEnterMayDraw)
-      else g
-    let g :=
-      if entered.printed.isArtifact then
-        g.putControlledTriggersWithPrompt p .artifactYouControlEnters
-      else g
-    let g :=
-      if entered.isCreature then
-        g.putControlledTriggers p .creatureYouControlEnters
-      else g
-    let g :=
-      entered.subtypes.foldl (fun acc sub =>
-        acc.putControlledTriggers p (.subtypeYouControlEnters sub)) g
-    let g :=
-      if entered.printed.isEquipment then
-        g.putControlledTriggers p .equipmentYouControlEnters
-      else g
-    let g :=
-      if g.hasSubtype entered .villain || entered.printed.isArtifact then
-        g.putControlledTriggers p .anotherVillainOrArtifactEnters
-          (excludeId := some entered.id)
-      else g
-    let g :=
-      if g.hasSubtype entered .villain then
-        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
-          g.putMatchingSourceTriggers p o .anotherVillainEnters
-            (cause := some entered))
-      else g
-    let g :=
-      if entered.types.contains .artifact then
-        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
-          g.putMatchingSourceTriggers p o .anotherArtifactEnters (cause := some entered))
-      else g
-    let g :=
-      if !entered.printed.isToken && g.hasSubtype entered .hero then
-        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
-          g.putMatchingSourceTriggers p o .anotherNontokenHeroEnters (cause := some entered))
-      else g
-    let g :=
-      if !entered.printed.isToken && entered.types.contains .artifact then
-        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
-          g.putMatchingSourceTriggers p o .anotherNontokenArtifactEnters (cause := some entered))
-      else g
-    -- Reality Fracture “enters” triggers.
-    let isCreature := entered.isCreature
-    let g :=
-      if isCreature || entered.printed.isPlaneswalker then
-        g.putFraEventTriggers p .anotherCreatureOrPlaneswalkerYouControlEnters
-          (cause := some entered) (excludeId := some entered.id)
-      else g
-    let g :=
-      if isCreature then
-        g.putFraEventTriggers p .thisOrAnotherCreatureYouControlEnters (cause := some entered)
-      else g
-    let g :=
-      if isCreature && !entered.printed.isToken then
-        g.putFraEventTriggers p .anotherNontokenCreatureYouControlEnters
-          (cause := some entered) (excludeId := some entered.id)
-      else g
-    let g :=
-      if isCreature then
-        (g.livingOpponents p).foldl (fun g opp =>
-          g.putFraEventTriggers opp.id .creatureOpponentControlsEnters (cause := some entered)) g
-      else g
-    let power := g.power entered
-    let g :=
-      if isCreature then
-        g.putFraEventTriggersWhere p (fun
-          | .creatureYouControlPowerAtLeastEnters n => power ≥ n
-          | _ => false) (cause := some entered)
-      else g
     g.promptTriggerTargetsIfNeeded
-  | none => g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
-  let g := g.afterPermanentEnters land
-  let land := g.object! land.id
-  if g.enteringCausesNoTriggers land then g
-  else g.putLandYouControlEntersTriggers land
+  g.afterPermanentEnters land
 
-/-- Process entering for tokens created since the last check, queueing
-their enters triggers (CR 603.6a). -/
-def flushTokenEnters (g : Game) : Game :=
-  let ids := g.pendingTokenEnters
-  let g := g.change (.pendingTokenEnters #[])
-  ids.foldl (fun g id =>
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield && !o.enterProcessed then
-        if o.printed.isLand then g.afterLandEnters o else g.afterPermanentEnters o
-      else g
-    | none => g) g
+/-- Put “whenever a land you control enters” triggers (CR 603.6a). -/
+def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
+  g.afterPermanentEnters land
+
+/-- Put “whenever another Elf you control enters” triggers onto the stack
+(CR 603.6a). The entering permanent itself does not trigger. -/
+def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
+  g.afterPermanentEnters entering
 
 /-- Nick Fury power-up: put a Hero, Equipment, or Vehicle onto the battlefield.
 A daybound front face enters back-face-up at night and cannot transform

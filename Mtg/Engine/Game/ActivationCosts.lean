@@ -41,7 +41,7 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat)
       (g.record (GameEvent.life g.turnNumber p n false false false
         (cause := cause))).logMsg
         s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
-  return g.afterLifeLost p (pl.life - (g.player p).life).toNat
+  return g
 
 /-- Default order for paying a cost with permanents: tokens first, then the
 lowest mana value. -/
@@ -161,16 +161,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let g ← g.payLifeCost p payLife
     let src := g.object! sourceId
     let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
-    let (g, newId) := g.move sourceId (.graveyard src.owner) none
+    let (g, _) := g.move sourceId (.graveyard src.owner) none
       (cause := some (.costPayment .discard p forObject))
-    let g :=
-      if src.printed.cycling.isSome then
-        match g.findObject? newId, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
-        | some card, spell? =>
-          let x := spell?.bind (·.chosenX)
-          g.putMatchingSourceTriggers p card (.fra .youCycle) (lastKnownPower := x.map Int.ofNat)
-        | _, _ => g
-      else g
     return g
   let fromGraveyard :=
     src.zone == .graveyard src.owner && src.owner == p &&

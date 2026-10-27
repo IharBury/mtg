@@ -474,8 +474,6 @@ def incrementPlanThen (g : Game) (controller : PlayerId) (sourceId : Option Obje
               match g.findObject? o.id with
               | some cur =>
                 g := g.record (GameEvent.counters g.turnNumber (some controller) cur.asEvent .plan 1)
-                let cur := g.object! cur.id
-                g := g.putMatchingSourceTriggers controller cur (.nthPlanCounter cur.status.plan)
               | none => pure ()
             return g
     k g (g.object! o.id)

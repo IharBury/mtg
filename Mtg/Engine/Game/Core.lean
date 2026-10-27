@@ -276,8 +276,6 @@ structure Game where
   /-- Damage assigned to each target of the resolving divided-damage ability
 (CR 601.2d). -/
   resolvingDivision : Array Nat := #[]
-  /-- Tokens created since enters triggers were last processed. -/
-  pendingTokenEnters : Array ObjectId := #[]
   /-- Player-controlling effect: (you, the player you control). Last created
   wins (MSH 259). -/
   playerControl : Option (PlayerId × PlayerId) := none
@@ -335,6 +333,9 @@ structure Game where
   recorded (CR 614.6). -/
   events : Array GameEvent := #[]
 deriving Repr, Inhabited
+
+/-- Pre-batch game state snapshot for CR 603.10 look-back trigger evaluation. -/
+abbrev GameSnapshot := Game
 
 namespace Status
 
@@ -1715,7 +1716,22 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         let fresh := materialize printed none
         let objs :=
           match g.objects.findIdx? (fun o => o.id == newId) with
-          | some i => g.objects.set! i fresh
+          | some i =>
+            let prev := g.objects[i]!
+            if before.id == after.id && prev.zone == toZone then
+              let st :=
+                if mergedCounters.isEmpty then prev.status
+                else prev.status.withCounterBag (prev.status.toCounterBag.merge mergedCounters)
+              let st :=
+                { st with
+                  prepared := st.prepared || (!st.faceDown && printed.entersPrepared)
+                  chosenCardType := st.chosenCardType.orElse (fun _ =>
+                    if !st.faceDown && printed.asEntersChooseCardType then some .creature else none)
+                  windcragMardu := st.windcragMardu || (!st.faceDown && printed.asEntersChooseMarduOrJeskai)
+                  gotPlusOneThisTurn := st.gotPlusOneThisTurn || mergedCounters.count .plusOnePlusOne > 0 }
+              g.objects.set! i { prev with status := st }
+            else
+              g.objects.set! i fresh
           | none => g.objects.push fresh
         let g :=
           { g with
@@ -1768,7 +1784,15 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
         chosenX := object.chosenX }
     let objs :=
       match g.objects.findIdx? (fun o => o.id == newId) with
-      | some i => g.objects.set! i fresh
+      | some i =>
+        let prev := g.objects[i]!
+        if prev.zone == object.zone then
+          let st :=
+            if object.counters.isEmpty then prev.status
+            else prev.status.withCounterBag (prev.status.toCounterBag.merge object.counters)
+          g.objects.set! i { prev with status := st }
+        else
+          g.objects.set! i fresh
       | none => g.objects.push fresh
     let g :=
       { g with
@@ -1827,7 +1851,7 @@ def applyPlayerEvent (g : Game) (e : PlayerEvent) : Game :=
       let pl := g.players[p.idx]
       { g with players := g.players.set! p.idx { pl with lost := true, leftTheGame := true } }
     else g
-  | .proliferated .. | .sheHulkDealtDamage .. => g
+  | .proliferated .. | .sheHulkDealtDamage .. | .ringTempted .. => g
 
 /-- Apply a `TurnEvent` to `g` (CR 500). -/
 def applyTurnEvent (g : Game) (e : TurnEvent) : Game :=
@@ -2354,8 +2378,6 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
   | .additionalCombatPhases v => { g with additionalCombatPhases := v }
   | .enrageGrantsAdditionalCombat v => { g with enrageGrantsAdditionalCombat := v }
   | .resolvingDivision v => { g with resolvingDivision := v }
-  | .pendingTokenEnters v => { g with pendingTokenEnters := v }
-  | .pushPendingTokenEnter id => { g with pendingTokenEnters := g.pendingTokenEnters.push id }
   | .playerControl v => { g with playerControl := v }
   | .controlOnNextTakenTurn v => { g with controlOnNextTakenTurn := v }
   | .pendingLokiCopy v => { g with pendingLokiCopy := v }
@@ -2538,10 +2560,1589 @@ def hasSubtype (g : Game) (o : GameObject) (s : CardSubtype) : Bool :=
     (!fogged && (o.printedOrUntilEot.changeling || g.hasAllCreatureTypes o) &&
       !s.isNoncreature)
 
+/-- The stack entry for `objectId`, if that object is on the stack. -/
+def stackEntry? (g : Game) (objectId : ObjectId) : Option StackEntry :=
+  g.stack.find? (fun e => e.objectId == objectId)
+
+/-- Whether `p` currently has an enduring story. -/
+def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).enduringStory
+
+/-- A permanent counts once toward Storied even if it is legendary, an
+artifact, and a Saga. -/
+def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype .saga)
+
+/-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
+def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (g.countsTowardStoried) |>.size
+
+/-- Whether `p` controls a permanent with storied. -/
+def controlsStoried (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.storied)
+
+/-- Whether `p` currently has the city's blessing. -/
+def hasCitysBlessing (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).citysBlessing
+
+/-- Number of permanents `p` currently controls (phased-out objects do not
+count). -/
+def permanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).size
+
+/-- Whether `p` controls a permanent with ascend, or a resolving spell with
+ascend on the stack. -/
+def controlsAscend (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.ascend) ||
+    g.stack.any (fun e =>
+      match g.findObject? e.objectId with
+      | some o =>
+        o.controller == some p && o.printed.keywords.ascend &&
+          o.triggeredAbility.isNone && o.abilityEffect.isNone
+      | none => false)
+
+/-- All battlefield permanents attached to `id` (Equipment, Auras, etc.),
+including phased-out attachments. -/
+def attachmentsOfId (g : Game) (id : ObjectId) : Array GameObject :=
+  g.objects.filter (fun o => o.zone == .battlefield && o.attachedTo == some id)
+
+/-- All battlefield permanents attached to `o` (Equipment, Auras, etc.),
+including phased-out attachments. -/
+def attachmentsOf (g : Game) (o : GameObject) : Array GameObject :=
+  g.attachmentsOfId o.id
+
+/-- Cards `p` has drawn this turn. Opening hands are not recorded. -/
+def loggedDraws (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.draws g.events g.turnNumber p
+
+/-- Life `p` has gained this turn. -/
+def loggedLifeGained (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.lifeGained g.events g.turnNumber p
+
+/-- Creatures that have died this turn. -/
+def loggedCreatureDeaths (g : Game) : Nat :=
+  GameEvent.creatureDeaths g.events g.turnNumber
+
+/-- Spells `p` has cast this turn. -/
+def loggedSpellsCast (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.spellsCast g.events g.turnNumber p
+
+/-- Creature spells `p` has cast this turn. -/
+def loggedCreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.creatureSpells g.events g.turnNumber p
+
+/-- Noncreature spells `p` has cast this turn. -/
+def loggedNoncreatureSpells (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.noncreatureSpells g.events g.turnNumber p
+
+/-- Creatures `p` has attacked with this turn. -/
+def loggedAttacks (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.attacks g.events g.turnNumber p
+
+/-- Cards milled from `p`'s library this turn. -/
+def loggedMilled (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.milled g.events g.turnNumber p
+
+/-- `p` has scried at least one card this turn. Scry 0 does not count. -/
+def loggedScried (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.scried g.events g.turnNumber p
+
+/-- `p` has surveilled this turn. Surveil 0 does not count. -/
+def loggedSurveilled (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.surveilled g.events g.turnNumber p
+
+/-- An artifact has entered under `p`'s control this turn. -/
+def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.artifactEntered g.events g.turnNumber p
+
+/-- `p` has attacked with a permanent of `subtype` this turn. -/
+def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
+  GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
+
+/-- A permanent of `subtype` has entered under `p`'s control this turn. -/
+def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
+  GameEvent.subtypeEntered g.events g.turnNumber p subtype
+
+/-- `p` has activated a loyalty ability this turn. -/
+def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.activatedLoyalty g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage this turn. -/
+def loggedNoncombatDamage (g : Game) (p : PlayerId) : Bool :=
+  GameEvent.dealtNoncombat g.events g.turnNumber p
+
+/-- `p` was dealt noncombat damage last turn. -/
+def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
+  g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p
+
+/-- `id` entered the battlefield this turn. -/
+def loggedEntered (g : Game) (id : ObjectId) : Bool :=
+  GameEvent.objectEntered g.events g.turnNumber id
+
+/-- Equip abilities `p` has completed this turn. -/
+def loggedEquipActivations (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.equipActivations g.events g.turnNumber p
+
+/-- Mana values of spells `p` has cast this turn, oldest first. -/
+def loggedCastManaValues (g : Game) (p : PlayerId) : Array Nat :=
+  GameEvent.castManaValues g.events g.turnNumber p
+
+/-- Cards `p` has discarded this turn. -/
+def loggedDiscards (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.discards g.events g.turnNumber p
+
+/-- Life `p` has lost this turn. -/
+def loggedLifeLost (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.lifeLost g.events g.turnNumber p
+
+/-- Resolutions `p`'s counting ability has recorded this turn. -/
+def loggedResolutions (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.resolutions g.events g.turnNumber p
+
+/-- `ab` on `sourceId` has triggered this turn (CR 603.2h). -/
+def loggedTriggeredThisTurn (g : Game) (sourceId : ObjectId) (ab : TriggeredAbility) : Bool :=
+  GameEvent.abilityTriggeredThisTurn g.events g.turnNumber sourceId ab
+
+/-- An ability on `sourceId` has triggered this turn (CR 603.2h). -/
+def loggedSourceTriggeredThisTurn (g : Game) (sourceId : ObjectId) : Bool :=
+  GameEvent.sourceTriggeredThisTurn g.events g.turnNumber sourceId
+
+/-- Lands `p` has played this turn. -/
+def loggedLandsPlayed (g : Game) (p : PlayerId) : Nat :=
+  GameEvent.landsPlayed g.events g.turnNumber p
+
+/-- Graveyard ids of creatures that died this turn. -/
+def loggedCreaturesToGraveyard (g : Game) : Array ObjectId :=
+  GameEvent.creaturesToGraveyard g.events g.turnNumber
+
+/-- Graveyard id of the most recent attacking creature that died. -/
+def loggedLastDiedAttacker (g : Game) : Option ObjectId :=
+  GameEvent.lastDiedAttacker g.events
+
+/-- Permanent that most recently became tapped. -/
+def loggedLastBecameTapped (g : Game) : Option ObjectId :=
+  GameEvent.lastBecameTapped g.events
+
+/-- Player most recently dealt combat damage. -/
+def loggedLastCombatDamagePlayer (g : Game) : Option PlayerId :=
+  GameEvent.lastCombatDamagePlayer g.events
+
+/-- The Sensational She-Hulk has dealt damage this turn. -/
+def loggedSheHulkDealtDamage (g : Game) : Bool :=
+  GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
+
+/-- True when `id` has been dealt a positive amount of damage by a source with
+deathtouch since the last time state-based actions were checked (CR 704.5h). -/
+def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
+  g.events.foldl (fun dealt e =>
+    match e.change with
+    | .engine .sbaChecked => false
+    | .rules (.damage (.dealt pkts)) =>
+      dealt || pkts.any (fun pkt =>
+        pkt.amount > 0 && pkt.source.keywords.deathtouch &&
+          match pkt.recipient with
+          | .permanent c => c.id == some id
+          | _ => false)
+    | _ => dealt) false
+
+/-- Apply `f` to each living opponent of `controller`. -/
+def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId → Game) :
+    Game :=
+  g.livingOpponents controller |>.foldl (fun g pl => f g pl.id) g
+
+/-- Player targets for every member of `ps` who does not have protection
+from everything. -/
+def playerTargets (ps : Array Player) : Array Target :=
+  ps.filter (fun pl => !pl.protectionFromEverything) |>.map (fun pl =>
+    Target.player pl.id)
+
+/-- Living players in turn order from `start` who satisfy `eligible`. -/
+def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
+    Array PlayerId :=
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(start.idx + k) % n⟩
+      if eligible (g.player q) then
+        acc := acc.push q
+    return acc
+
+def opponent (g : Game) (p : PlayerId) : PlayerId :=
+  let living := g.livingPlayers
+  if living.size == 2 then
+    if living[0]!.id == p then living[1]!.id else living[0]!.id
+  else
+    PlayerId.mk ((p.idx + 1) % g.players.size)
+
+/-- Last-known `before` snapshot of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownBefore? (g : Game) (id : ObjectId) : Option EventObject :=
+  g.events.reverse.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) =>
+      if before.id == some id then some before else none
+    | _ => none)
+
+/-- Defending player of an attacking status `s`: the player directly attacked,
+or the controller of the planeswalker/battle being attacked (CR 506.2 / 506.4c). -/
+def defendingPlayerOfStatus (g : Game) (s : Status) : Option PlayerId :=
+  match s.attackingTarget with
+  | some (.player p) => some p
+  | some (.planeswalker pw) | some (.battle pw) =>
+    match g.findObject? pw with
+    | some o => some (o.controller.getD o.owner)
+    | none =>
+      match g.lastKnownBefore? pw with
+      | some o => some (o.controller.getD o.owner)
+      | none => none
+  | none => none
+
+/-- Player being attacked this combat (CR 508.1). Taken from an attacking
+creature's `attackingTarget`, or the next opponent if none is recorded. -/
+def defendingPlayer (g : Game) : PlayerId :=
+  match g.blockersQueue[0]? with
+  | some p => p
+  | none =>
+    match g.objects.findSome? (fun o =>
+      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none) with
+    | some p => p
+    | none => g.opponent g.activePlayer
+
+/-- Defending player of an attacking object `o` (CR 506.2 / 506.4c), falling
+back to `g.defendingPlayer`. -/
+def defendingPlayerOf (g : Game) (o : GameObject) : PlayerId :=
+  (g.defendingPlayerOfStatus o.status).getD g.defendingPlayer
+
+/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4). -/
+def defendingPlayers (g : Game) : Array PlayerId :=
+  let attacked :=
+    g.objects.filterMap (fun o =>
+      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none)
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+      if q != g.activePlayer && !(g.player q).lost && attacked.contains q then
+        acc := acc.push q
+    return acc
+
+/-- Player who must declare blockers now. -/
+def currentBlockersPlayer (g : Game) : PlayerId :=
+  g.defendingPlayer
+
+/-- Legal attack destination: a living opponent of `p` (CR 508.1). Omitted
+means the next opponent in turn order. -/
+def resolveAttackDestination (g : Game) (p : PlayerId) (defender : Option PlayerId) :
+    Except String PlayerId :=
+  match defender with
+  | none => .ok (g.opponent p)
+  | some d =>
+    if d == p then throw "cannot attack yourself"
+    else if (g.player d).lost then throw s!"{(g.player d).name} has already lost"
+    else if !(g.livingOpponents p).any (fun pl => pl.id == d) then
+      throw s!"{(g.player d).name} is not an opponent"
+    else .ok d
+
+def nextLiving (g : Game) (p : PlayerId) : PlayerId :=
+  let n := g.players.size
+  Id.run do
+    for k in [1:n+1] do
+      let q : PlayerId := ⟨(p.idx + k) % n⟩
+      if !(g.player q).lost then
+        return q
+    return p
+
+/-- Player who receives priority in place of `p` when `p` has left (CR 800.4j). -/
+def priorityInstead (g : Game) (p : PlayerId) : PlayerId :=
+  if (g.player p).lost then g.nextLiving p else p
+
+/-- How many creatures `p` currently controls. -/
+def countCreaturesControlledBy (g : Game) (p : PlayerId) : Nat :=
+  (g.creaturesControlledBy p).size
+
+/-- How many artifacts `p` currently controls. -/
+def countArtifactsControlledBy (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (fun o => o.printed.isArtifact) |>.size
+
+/-- Artifacts on the battlefield not controlled by `controller`. -/
+def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
+  g.battlefield.filter (fun o =>
+    o.printed.isArtifact && !o.controlledBy controller) |>.size
+
+/-- Equipment attached to `o` (Whiplash last-known X). -/
+def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
+  g.battlefield.filter (fun eq =>
+    eq.printed.isEquipment && eq.attachedTo == some o.id) |>.size
+
+/-- Whether `you` currently control `them`. In Two-Headed Giant, controlling
+a player also controls their teammate (MSH 236). -/
+def controlsPlayer (g : Game) (you them : PlayerId) : Bool :=
+  match g.playerControl with
+  | some (a, b) =>
+    a == you && (b == them || (g.player b).teammate == some them)
+  | none => false
+
+/-- Resources used to pay `actingAs`'s costs: always that player's, even if
+another player is making the choices (MSH 346). -/
+def resourcesFor (g : Game) (actingAs : PlayerId) : PlayerId :=
+  let _ := g
+  actingAs
+
+/-- You still make your own choices while controlling another player
+(MSH 334) and you make all of that player's choices (MSH 336). -/
+def decidesFor (g : Game) (actor whose : PlayerId) : Bool :=
+  match g.playerControl with
+  | some (you, them) =>
+    if whose == them then actor == you else actor == whose
+  | none => actor == whose
+
+/-- You can see everything the controlled player can see (MSH 335). -/
+def canSeeAs (g : Game) (viewer whose : PlayerId) : Bool :=
+  viewer == whose || g.controlsPlayer viewer whose
+
+/-- Cards in `whose` hand that `viewer` may look at. -/
+def visibleHand (g : Game) (viewer whose : PlayerId) : Array GameObject :=
+  if g.canSeeAs viewer whose then
+    (g.player whose).hand.filterMap (fun id => g.findObject? id)
+  else #[]
+
+/-- Controlling a player does not let you look at their sideboard
+(MSH 349). -/
+def canLookAtSideboard (_g : Game) (viewer whose : PlayerId) : Bool :=
+  viewer == whose
+
+/-- You cannot have a player you're controlling choose a card from
+outside the game (MSH 349). -/
+def canChooseOutsideGame (g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose && !g.controlsPlayer actor whose
+
+/-- Tournament-rule decisions stay with the actual player (MSH 350). -/
+def canMakeTournamentDecision (g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose && !g.controlsPlayer actor whose
+
+/-- You cannot make illegal choices for a player you control (MSH 351). -/
+def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
+  false
+
+/-- The controlling player cannot concede for the controlled player
+(MSH 352). That player may still concede. -/
+def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose
+
+/-- Last-known `CounterBag` of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownCounters (g : Game) (id : ObjectId) : CounterBag :=
+  match g.lastKnownBefore? id with
+  | some before => before.counters
+  | none => #[]
+
+/-- Last-known counter `Status` of `id` when it left the battlefield, read from
+`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
+def lastKnownCounterStatus? (g : Game) (id : ObjectId) : Option Status :=
+  (g.lastKnownBefore? id).map (fun before => ({} : Status).withCounterBag before.counters)
+
+/-- Player putting counters: the resolving spell or ability's controller,
+or `fallback` when none is resolving. -/
+def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
+  ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
+    (·.controller) |>.orElse (fun _ => fallback)
+
+/-- Extra counters from each Doc Samson `putter` controls, when that player
+also controls the permanent (`host`) (MSH 517 / 590). -/
+def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
+  match putter, host with
+  | some p, some c =>
+    if p != c then 0
+    else
+      ((g.permanentsOf p).filter (fun o =>
+        o.printed.staticAbilities.any (fun
+          | .extraCounterOnPermanents => true
+          | _ => false))).size
+  | _, _ => 0
+
+/-- `n`, plus one of that kind per Doc Samson, when `putter` puts counters
+on a permanent controlled by `host`. Zero stays zero. `host` defaults to
+`putter`. -/
+def extraCountersOn (g : Game) (putter : Option PlayerId) (n : Nat)
+    (host : Option PlayerId := putter) : Nat :=
+  if n == 0 then 0 else n + g.docSamsonBonus putter host
+
+/-- Counters of one kind actually put on `o`. An enters-with replacement is
+put by the permanent's controller (ruling 517). Otherwise the explicit
+`putter`, the resolving spell or ability, or `o`'s controller. -/
+def countersYouPut (g : Game) (o : GameObject) (n : Nat)
+    (putter : Option PlayerId := none) (entersWith := false) : Nat :=
+  let who :=
+    if entersWith then o.controller
+    else putter.orElse (fun _ => g.counterPutter o.controller)
+  g.extraCountersOn who n (host := o.controller)
+
+/-- Legal players, planeswalkers, and battles that a creature put onto the
+battlefield attacking under `controller`'s control may be chosen to attack
+(CR 508.4). -/
+def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
+  let opps := g.livingOpponents controller
+  let playerTargets : Array AttackTarget :=
+    if opps.isEmpty then #[.player g.defendingPlayer]
+    else opps.map (fun pl => .player pl.id)
+  let noJace := (g.player controller).cantAttackJaces
+  let permanentTargets : Array AttackTarget :=
+    g.battlefield.filterMap fun o =>
+      if !opps.any (fun pl => o.controlledBy pl.id) then none
+      else if o.printed.isPlaneswalker then
+        if noJace && (o.name.startsWith "Jace" || g.hasSubtype o .jace) then none
+        else some (.planeswalker o.id)
+      else if o.hasType .battle then
+        some (.battle o.id)
+      else none
+  playerTargets ++ permanentTargets
+
+/-- Mana value of other spells `p` has cast this turn. Copies that were not
+cast are not recorded. -/
+def otherCastManaValueThisTurn (g : Game) (p : PlayerId) : Nat :=
+  (g.loggedCastManaValues p).foldl (· + ·) 0
+
+/-- Lands `p` currently controls (CR 305.1). -/
+def landsYouControl (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (·.printed.isLand) |>.size
+
+/-- Whether `o` currently has a “P/T equal to lands you control” ability.
+This characteristic-defining ability functions in all zones (CR 208.2a / 604.3). -/
+def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
+  o.staticAbilities.any StaticAbility.isLandsYouControlPT
+
+/-- Power or toughness from a lands-you-control CDA (CR 208.2a / 604.3). -/
+def landsYouControlPT (g : Game) (o : GameObject) : Int :=
+  Int.ofNat (g.landsYouControl o.you)
+
+/-- Characteristic power or toughness before pumps, counters, and attached
+bonuses: an until-EOT layer-7b set on the battlefield, else lands you control
+when that CDA applies (in all zones), else the printed value
+(CR 208.2a / 604.3 / 613.3). -/
+def characteristicBase (g : Game) (o : GameObject) (printed setBase : Option Int) : Int :=
+  let fromCdaOrPrinted :=
+    if g.hasLandsYouControlPT o then g.landsYouControlPT o else printed.getD 0
+  if o.isOnBattlefield then setBase.getD fromCdaOrPrinted else fromCdaOrPrinted
+
+/-- Layer-7b “power becomes the number of cards in your hand” (Ms. Marvel).
+This overwrites an earlier effect that set power (ruling 640). -/
+def hasHandSizeSetPower (o : GameObject) : Bool :=
+  o.status.cardsInHandPowerUntilEot ||
+    o.status.grantedStaticAbilities.any StaticAbility.isCardsInHandPower
+
+/-- Printed layer-7a “power equal to the number of cards in your hand”
+(Minas Tirith Garrison). A layer-7b set overwrites it. -/
+def hasPrintedCardsInHandPower (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any StaticAbility.isCardsInHandPower
+
+/-- Characteristic power and toughness before pumps, counters, and attached
+bonuses: an until-EOT layer-7b set on the battlefield, else lands you control
+when that CDA applies (in all zones), else the printed values
+(CR 208.2a / 604.3 / 613.3). -/
+def hasCreaturesYouControlPower (_g : Game) (o : GameObject) : Bool :=
+  o.staticAbilities.any StaticAbility.isCreaturesYouControlPower
+
+/-- Subtype whose count defines this creature's power, if any. -/
+def powerEqualSubtype? (o : GameObject) : Option CardSubtype :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match acc, ab with
+    | none, .powerEqualSubtypeYouControl s => some s
+    | acc, _ => acc) none
+
+/-- True when `o` is Super-Adaptoid's characteristic-defining power (MSH 290). -/
+def hasSuperAdaptoidPowerCda (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .powerEqualLegendaryCreaturesYouControl => true
+    | _ => false)
+
+/-- Number of card types among cards in all graveyards (Tarmogoyf). Card
+types, not cards, are counted, and supertypes are not card types (rulings
+797 / 800). -/
+def graveyardCardTypeCount (g : Game) : Nat :=
+  let types := g.objects.foldl (fun acc o =>
+    match o.zone with
+    | .graveyard _ => o.printed.types.foldl (fun acc t =>
+        if acc.contains t then acc else acc.push t) acc
+    | _ => acc) (#[] : Array CardType)
+  types.size
+
+/-- True when `o` has Tarmogoyf's characteristic-defining ability. It works
+in every zone, including the graveyard (ruling 799). -/
+def hasGraveyardCardTypesPT (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .ptEqualGraveyardCardTypes => true
+    | _ => false)
+
+/-- Basic land types among lands `p` controls (domain; CR 305.6). -/
+def basicLandTypesAmong (g : Game) (p : PlayerId) : Nat :=
+  (#[CardSubtype.plains, .island, .swamp, .mountain, .forest].filter (fun t =>
+    (g.permanentsOf p).any (fun o => o.printed.isLand && o.hasSubtype t))).size
+
+def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
+  if o.status.faceDown then (2, 2)
+  else if o.isOnBattlefield && o.status.animatedConstruct55 then
+    (o.status.setBasePower.getD 5, o.status.setBaseToughness.getD 5)
+  else if o.staticAbilities.any (· == StaticAbility.fra .powerEqualsBasicLandTypes) then
+    let cda : Int := Int.ofNat (g.basicLandTypesAmong o.you)
+    let power := if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    (power, g.characteristicBase o o.printed.toughness o.status.setBaseToughness)
+  else if hasGraveyardCardTypesPT o then
+    let n : Int := Int.ofNat g.graveyardCardTypeCount
+    -- Ruling 776: a layer-7b set (Multiply by Zero) overrides this CDA.
+    if o.isOnBattlefield then
+      (o.status.setBasePower.getD n, o.status.setBaseToughness.getD (n + 1))
+    else (n, n + 1)
+  else
+  let power :=
+    if hasHandSizeSetPower o then
+      -- Ms. Marvel (ruling 640): this layer-7b set overwrites earlier sets.
+      Int.ofNat (g.player o.you).hand.size
+    else if hasPrintedCardsInHandPower o then
+      let cda : Int := Int.ofNat (g.player o.you).hand.size
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    else if let some subtype := powerEqualSubtype? o then
+      let cda : Int :=
+        Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.hasSubtype subtype) |>.size)
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    else if hasSuperAdaptoidPowerCda o then
+      let cda : Int :=
+        Int.ofNat ((g.permanentsOf o.you).filter (fun p =>
+          p.isCreature && p.isLegendary) |>.size)
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    else if g.hasCreaturesYouControlPower o then
+      let fromTeam : Int :=
+        Int.ofNat (g.countCreaturesControlledBy o.you)
+      if o.isOnBattlefield then o.status.setBasePower.getD fromTeam else fromTeam
+    else
+      g.characteristicBase o o.printed.power o.status.setBasePower
+  (power, g.characteristicBase o o.printed.toughness o.status.setBaseToughness)
+
+/-- Characteristic power before pumps, counters, and attached bonuses. -/
+def characteristicBasePower (g : Game) (o : GameObject) : Int :=
+  (g.characteristicBasePT o).1
+
+/-- Characteristic toughness before pumps, counters, and attached bonuses. -/
+def characteristicBaseToughness (g : Game) (o : GameObject) : Int :=
+  (g.characteristicBasePT o).2
+
+/-- Componentwise sum of two power/toughness bonuses. -/
+def addStats (a b : Int × Int) : Int × Int :=
+  (a.1 + b.1, a.2 + b.2)
+
+/-- True when `src` is a lord that can grant an ability to `target` (CR 604.2). -/
+def isLordOf (src target : GameObject) : Bool :=
+  src.id != target.id &&
+  src.isOnBattlefield &&
+  target.isOnBattlefield &&
+  src.controller == target.controller &&
+  src.controller.isSome &&
+  target.isCreature
+
+/-- Printed legendary, or an Aura that adds the legendary supertype. -/
+def treatedAsLegendary (g : Game) (o : GameObject) : Bool :=
+  o.isLegendary ||
+    g.battlefield.any (fun a => a.attachedTo == some o.id && a.staticAbilities.any fun | .enchantedCreatureGetsHasAndTypes _ _ _ _ => true | _ => false)
+
+/-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
+def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
+  src.staticAbilities.foldl
+    (fun acc ab =>
+      let sameController :=
+        src.isOnBattlefield && target.isOnBattlefield &&
+          src.controller == target.controller && src.controller.isSome &&
+          target.isCreature
+      match ab with
+      | .otherSubtypeGetPowerPerArtifactToken subtype =>
+        if sameController && src.id != target.id && g.hasSubtype target subtype then
+          let n : Int :=
+            match src.controller with
+            | none => 0
+            | some p =>
+              Int.ofNat ((g.permanentsOf p).filter (fun o =>
+                o.printed.isToken && o.printed.isArtifact) |>.size)
+          addStats acc (n, 0)
+        else acc
+      | .opponentsCreaturesGet p t =>
+        if src.isOnBattlefield && target.isOnBattlefield && target.isCreature &&
+            src.controller.isSome && target.controller.isSome &&
+            src.controller != target.controller then
+          addStats acc (p, t)
+        else acc
+      | .chosenTypeCreaturesGet p t =>
+        match src.status.chosenCreatureType with
+        | some ty =>
+          if sameController && g.hasSubtype target ty then addStats acc (p, t) else acc
+        | none => acc
+      | _ =>
+        match ab.lordPump? with
+        | none => acc
+        | some (subtypes, p, t) =>
+          let otherOk := src.id != target.id || ab.lordIncludesSelf
+          let supertypeOk :=
+            ab.lordSupertype?.all target.hasSupertype &&
+            ab.lordNonSupertype?.all (fun s => !target.hasSupertype s)
+          let subtypeOk :=
+            match src.status.chosenCreatureType with
+            | some t => g.hasSubtype target t
+            | none => subtypes.isEmpty || subtypes.any (fun s => g.hasSubtype target s)
+          if sameController && otherOk && supertypeOk && subtypeOk then
+            addStats acc (p, t)
+          else acc)
+    (0, 0)
+
+/-- Continuous +P/+T granted to `o` by other permanents you control (CR 613.3c). -/
+def lordStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc src => addStats acc (g.grantsStatBonusTo src o))
+      (0, 0)
+
+/-- Continuous +P/+T this Aura or Equipment currently grants its host (CR 613.3c). -/
+def auraStatBonus (aura : GameObject) : Int × Int :=
+  aura.staticAbilities.foldl
+    (fun acc ab => addStats acc ab.hostStatBonus)
+    (0, 0)
+
+/-- Instant and sorcery cards in `p`'s graveyard (Glamdring). -/
+def instantSorceryInGraveyard (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).graveyard.filter (fun id =>
+    match g.findObject? id with
+    | some c => c.printed.isInstant || c.printed.isSorcery
+    | none => false) |>.size
+
+/-- Static power/toughness from Auras and Equipment attached to `o`. -/
+def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc aura =>
+        if aura.attachedTo == some o.id then
+          let glam : Int × Int :=
+            if aura.staticAbilities.any (fun
+              | .equippedFirstStrikePlusPerInstantSorcery => true
+              | _ => false) then
+              match aura.controller with
+              | some p => (Int.ofNat (g.instantSorceryInGraveyard p), 0)
+              | none => (0, 0)
+            else (0, 0)
+          addStats acc
+            (addStats (addStats (auraStatBonus aura) glam) ((aura.status.hone : Int), 0))
+        else acc)
+      (0, 0)
+
+/-- Self +P/+T from “as long as you have an enduring story”. -/
+def enduringStorySelfBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (pw, tw, _) => addStats acc (pw, tw)
+            | none => acc)
+          (0, 0)
+
+/-- Team +P/+T from “as long as you have an enduring story, creatures you
+control get …”. -/
+def enduringStoryTeamBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield || !o.isCreature then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        (g.permanentsOf p).foldl
+          (fun acc src =>
+            src.staticAbilities.foldl
+              (fun acc ab =>
+                match ab.teamIfEnduringStory? with
+                | some (pw, tw) => addStats acc (pw, tw)
+                | none => acc)
+              acc)
+          (0, 0)
+
+/-- Keywords granted while the controller has an enduring story. -/
+def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if !g.hasEnduringStory p then Keywords.none
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (_, _, k) => Keywords.merge acc k
+            | none => acc)
+          Keywords.none
+
+/-- +P/+0 from `powerPerMountain` (e.g. Desert Were-Worm). -/
+def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
+  if o.printed.powerPerMountain == 0 then 0
+  else
+    let n :=
+      (g.permanentsOf o.you).filter (fun p => g.hasSubtype p .mountain) |>.size
+    Int.ofNat (o.printed.powerPerMountain * n)
+
+/-- Threshold: +P/+T while seven or more cards are in your graveyard. -/
+def thresholdBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if (g.player p).graveyard.size < 7 then (0, 0)
+      else
+        o.staticAbilities.foldl (fun acc ab =>
+          match ab.thresholdGets? with
+          | some (pw, tw) => addStats acc (pw, tw)
+          | none => acc) (0, 0)
+
+/-- +P/+0 from graveyards with seven or more cards (Master's Councillors). -/
+def fatGraveyardPowerBonus (g : Game) (o : GameObject) : Int :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match ab with
+    | .powerPerFatGraveyard p =>
+      let n := g.players.filter (fun pl => pl.graveyard.size >= 7) |>.size
+      acc + p * (n : Int)
+    | _ => acc) 0
+
+/-- Self +P/+T from leftover-lifted statics (other artifacts, attached
+Equipment, creature cards in graveyard). -/
+def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .getsPowerPerOtherArtifact p =>
+        let n : Int :=
+          Int.ofNat ((g.permanentsOf o.you).filter (fun x =>
+            x.id != o.id && x.printed.isArtifact) |>.size)
+        addStats acc (p * n, 0)
+      | .getsPowerPerAttachedEquipment p =>
+        let n : Int := Int.ofNat (g.attachedEquipmentCount o)
+        addStats acc (p * n, 0)
+      | .getsIfGyCreatureCards min pw tw
+      | .getsAndAllTypesIfGyCreatureCards min pw tw =>
+        let gy :=
+          (g.player o.you).graveyard.filter (fun id =>
+            (g.object! id).printed.isCreature) |>.size
+        if gy >= min then addStats acc (pw, tw) else acc
+      | _ => acc) (0, 0)
+
+/-- +1/+1 for each artifact you control (Iron Man Armor until EOT). -/
+def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
+  if !o.status.pumpPerArtifactUntilEot || !o.isOnBattlefield then (0, 0)
+  else
+    let n : Int :=
+      Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.printed.isArtifact ||
+        p.status.additionalArtifactUntilEot) |>.size)
+    (n, n)
+
+/-- +P/+T from Reality Fracture static abilities: the creature's own
+graveyard-count bonuses, grants from its controller's permanents and
+emblems, attached Auras and Equipment, and effects lasting until a player's
+next turn. -/
+def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    let untilTurn := o.status.untilTurnOfPump.foldl (fun acc (_, p, t) => addStats acc (p, t)) (0, 0)
+    match o.controller with
+    | none => untilTurn
+    | some p =>
+      let gyIds := (g.player p).graveyard
+      let gy := gyIds.size
+      let self := o.staticAbilities.foldl (fun acc ab =>
+        match ab with
+        | .fra .powerPerSevenInGraveyard => addStats acc (2 * Int.ofNat (gy / 7), 0)
+        | .fra .powerAndFlyingIfSevenInGraveyard => if gy ≥ 7 then addStats acc (1, 0) else acc
+        | .fra .powerPerCreatureAndPlaneswalkerCard =>
+          let n := (gyIds.filter (fun id =>
+            (g.findObject? id).any (fun c => c.printed.isCreature || c.printed.isPlaneswalker))).size
+          addStats acc (Int.ofNat n, 0)
+        | _ => acc) (0, 0)
+      let fromSources (srcs : Array GameObject) : Int × Int :=
+        srcs.foldl (fun acc src =>
+          src.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .creatureTokensGetOneAndVigilance =>
+              if o.isCreature && o.printed.isToken then addStats acc (1, 0) else acc
+            | .fra .emblemCreaturesGetTwoTwo => if o.isCreature then addStats acc (2, 2) else acc
+            | _ => acc) acc) (0, 0)
+      let team := fromSources (g.permanentsOf p)
+      let emblems := fromSources (g.objects.filter (fun e => e.zone == .command && e.controlledBy p))
+      let attached := g.battlefield.foldl (fun acc a =>
+        if a.attachedTo != some o.id then acc
+        else
+          a.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .equippedHuntersAxe => addStats acc (2, 0)
+            | .fra .equippedMedicsKitesail => addStats acc (1, 0)
+            | .fra .enchantedGetsOneAndDeathtouch => addStats acc (1, 0)
+            | _ => acc) acc) (0, 0)
+      let flyingEmblem :=
+        if o.isCreature &&
+            (g.objects.filter (fun e => e.zone == .command && e.controlledBy p)).any
+              (·.printed.grantTeamPlusTwoFlying) then
+          (2, 2)
+        else (0, 0)
+      let unspent :=
+        if o.printed.powerPerUnspentMana then
+          let n : Int := Int.ofNat (g.player p).manaPool.total
+          (n, n)
+        else (0, 0)
+      #[untilTurn, self, team, emblems, attached, flyingEmblem, unspent].foldl addStats (0, 0)
+
+def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
+  let n : Int := (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
+  #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
+      g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
+      (g.mountainPowerBonus o, (0 : Int)),
+      (g.fatGraveyardPowerBonus o, (0 : Int)),
+      g.artifactCountPump o, g.leftoverSelfBonus o, g.fraStatBonus o,
+      g.thresholdBonus o].foldl
+    addStats (0, 0)
+
+/-- Power of `o` as last known information (CR 113.7a / 208.2). -/
+def snapshotPower (g : Game) (o : GameObject) : Int :=
+  (g.snapshotPT o).1
+
+/-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
+def snapshotToughness (g : Game) (o : GameObject) : Int :=
+  (g.snapshotPT o).2
+
+/-- True when an Aura attached to `o` makes it only a listed subtype and
+unable to attack or block (e.g. Fog on the Barrow-Downs). -/
+def enchantedCantAttackOrBlock (g : Game) (o : GameObject) : Bool :=
+  g.battlefield.any (fun a =>
+    a.attachedTo == some o.id &&
+      a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
+
+/-- Whether `p` controls a Jace planeswalker. -/
+def controlsJacePlaneswalker (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun x => x.printed.isPlaneswalker && g.hasSubtype x .jace)
+
+/-- Keywords Reality Fracture static abilities grant `o`: its own conditional
+keywords, grants from permanents its controller controls, and grants from
+attached Auras and Equipment. -/
+def fraGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      let gy := (g.player p).graveyard.size
+      let self := o.staticAbilities.foldl (fun acc ab =>
+        match ab with
+        | .fra .firstStrikeDuringYourTurn =>
+          if g.activePlayer == p then Keywords.merge acc Keyword.firstStrike else acc
+        | .fra .vigilanceIfJace =>
+          if g.controlsJacePlaneswalker p then Keywords.merge acc Keyword.vigilance else acc
+        | .fra .powerAndFlyingIfSevenInGraveyard =>
+          if gy ≥ 7 then Keywords.merge acc Keyword.flying else acc
+        | .fra .flyingHasteIfOpponentDealtNoncombat =>
+          if (g.livingOpponents p).any (fun opp => g.loggedNoncombatDamage opp.id) then
+            Keywords.merge acc (Keyword.flying.merge Keyword.haste)
+          else acc
+        | .fra .hexproofUntilCombatDamage =>
+          if o.status.dealtCombatDamage then acc else Keywords.merge acc Keyword.hexproof
+        | _ => acc) Keywords.none
+      let team := (g.permanentsOf p).foldl (fun acc src =>
+        let other := src.id != o.id
+        src.staticAbilities.foldl (fun acc ab =>
+          let grant (cond : Bool) (k : Keywords) := if cond then Keywords.merge acc k else acc
+          match ab with
+          | .fra .creaturesYouControlHaveTrample => grant o.isCreature Keyword.trample
+          | .fra .plusOneCreaturesHaveVigilance =>
+            grant (o.isCreature && o.status.plusOnePlusOne > 0) Keyword.vigilance
+          | .fra .creatureTokensGetOneAndVigilance =>
+            grant (o.isCreature && o.printed.isToken) Keyword.vigilance
+          | .fra .otherPlusOneCreaturesHaveHaste =>
+            grant (other && o.isCreature && o.status.plusOnePlusOne > 0) Keyword.haste
+          | .fra .creaturesYouControlHaveHaste => grant o.isCreature Keyword.haste
+          | .fra .otherCreaturesHaveTrample => grant (other && o.isCreature) Keyword.trample
+          | .fra .landsHaveHexproof => grant o.printed.isLand Keyword.hexproof
+          | .fra .thoptersHaveHaste => grant (g.hasSubtype o .thopter) Keyword.haste
+          | .fra .artifactCreaturesHaveVigilance =>
+            grant (o.isCreature && o.printed.isArtifact) Keyword.vigilance
+          | _ => acc) acc) Keywords.none
+      let attached := g.battlefield.foldl (fun acc a =>
+        if a.attachedTo != some o.id then acc
+        else
+          a.staticAbilities.foldl (fun acc ab =>
+            match ab with
+            | .fra .equippedMedicsKitesail => Keywords.merge acc Keyword.flying
+            | .fra .enchantedGetsOneAndDeathtouch => Keywords.merge acc Keyword.deathtouch
+            | _ => acc) acc) Keywords.none
+      Keywords.mergeAll #[self, team, attached]
+
+/-- Whether `o` may attack as though it didn't have defender (Surveillance
+Phantasm; Ghalta the Immovable). -/
+def mayAttackDespiteDefender (g : Game) (o : GameObject) : Bool :=
+  match o.controller with
+  | none => false
+  | some p =>
+    (o.staticAbilities.any (· == StaticAbility.fra .attackDespiteDefenderIfScried) &&
+      (g.loggedScried p || g.loggedSurveilled p)) ||
+    (g.permanentsOf p).any (·.staticAbilities.any (· == StaticAbility.fra .creaturesAttackDespiteDefender))
+
+/-- Whether `p` currently controls a permanent with any of these subtypes. -/
+def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array CardSubtype) : Bool :=
+  (g.permanentsOf p).any (fun o => subtypes.any (g.hasSubtype o))
+
+/-- Whether `p` currently controls a legendary creature. -/
+def controlsLegendaryCreature (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o =>
+    o.isCreature && o.printed.hasSupertype .legendary)
+
+/-- Whether `p` currently controls an Equipment. -/
+def controlsEquipment (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.isEquipment)
+
+/-- Whether this face should enter tapped given the controller's board. It is
+checked before the permanent enters, so lands or planeswalkers entering at
+the same time are not counted (rulings 808 / 809). -/
+def entersTapped (g : Game) (p : PlayerId) (card : CardDef) : Bool :=
+  let proposed := GameEvent.moved g.turnNumber
+    { controller := some p, owner := p, types := card.types
+      subtypes := CardSubtype.ofSubtypes card.subtypes } .stack .battlefield
+  if !proposed.watches .wouldEnterBattlefield then false
+  else
+  card.entersTapped || card.staticAbilities.any (· == StaticAbility.fra .entersTappedChooseColor) ||
+    (card.entersTappedUnlessLegendary && !g.controlsLegendaryCreature p) ||
+    (card.entersTappedUnlessEquipment && !g.controlsEquipment p) ||
+    (card.entersTappedUnlessPlaneswalker &&
+      !(g.permanentsOf p).any (·.printed.isPlaneswalker)) ||
+    (card.entersTappedUnlessTwoOtherLands &&
+      ((g.permanentsOf p).filter (·.printed.isLand)).size < 2) ||
+    (!card.entersTappedUnlessAnySubtype.isEmpty &&
+      !g.controlsAnySubtype p card.entersTappedUnlessAnySubtype) ||
+    (match card.entersTappedUnlessNBasics with
+     | some n =>
+       ((g.permanentsOf p).filter (fun o => isBasicLandCard o.printed)).size < n
+     | none => false) ||
+    (match card.entersTappedUnlessOppLands with
+     | some n =>
+       let nOpp := (g.livingOpponents p).foldl (fun acc pl =>
+         acc + ((g.permanentsOf pl.id).filter (·.printed.isLand)).size) 0
+       nOpp < n
+     | none => false)
+
+/-- Whether `blocker`'s static abilities currently allow it to be declared as
+a blocker (CR 509.1b). Checked only when declaring blockers. -/
+def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
+  blocker.staticAbilities.all (fun ab =>
+    match ab.cantBlockUnless? with
+    | some subtypes =>
+      match blocker.controller with
+      | none => false
+      | some p => g.controlsAnySubtype p subtypes
+    | none => true)
+
+/-- Keywords an attached Aura or Equipment currently grants `o`. -/
+def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    g.battlefield.foldl (fun acc aura =>
+      if aura.attachedTo == some o.id then
+        Keywords.merge acc
+          (aura.staticAbilities.foldl (fun k ab =>
+            Keywords.merge k ab.hostKeywords) Keywords.none)
+      else acc) Keywords.none
+
+/-- True when an attached Aura makes `o` lose all abilities (Enchanted
+River's Grasp; Frozen in Ice). -/
+def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
+  g.battlefield.any (fun aura =>
+    aura.attachedTo == some o.id &&
+      aura.staticAbilities.any (fun
+        | .enchantedLosesAbilitiesDoesntUntap => true
+        | .enchantedLosesAbilitiesCantUntap => true
+        | _ => false))
+
+/-- Printed abilities still apply unless The Wondrous Wasp (or similar)
+is making the permanent lose them (MSH 145 / 190), or an Aura strips them. -/
+def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
+  !o.status.faceDown &&
+  !g.attachedLosesAbilities o && !o.status.losesAbilitiesUntilEot &&
+  !o.status.losesAbilitiesGrantedBy.any (fun id =>
+    match g.findObject? id with
+    | some src => src.isOnBattlefield
+    | none => false)
+
+/-- During your turn, creatures you control that are equipped gain these
+keywords (Long-Lost Lances). -/
+def equippedDuringYourTurnKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield || !o.isCreature || g.attachedEquipmentCount o == 0 then
+    Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if g.activePlayer != p then Keywords.none
+      else
+        (g.permanentsOf p).foldl (fun acc src =>
+          src.staticAbilities.foldl (fun acc ab =>
+            Keywords.merge acc (ab.equippedTeamKeywordsDuringYourTurn)) acc)
+          Keywords.none
+
+def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
+  let self :=
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .flyingIfPlusOneThisTurn =>
+        if o.status.gotPlusOneThisTurn then Keywords.merge acc Keyword.flying else acc
+      | _ => acc) Keywords.none
+  let fromTeam :=
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      (g.permanentsOf p).foldl (fun acc src =>
+        src.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .creaturesWithPlusOneHave k =>
+            if o.isCreature && o.status.plusOnePlusOne > 0 then
+              Keywords.merge acc k
+            else acc
+          | .attackingTokensHave k =>
+            if o.isOnBattlefield && o.status.attacking && o.printed.isToken then
+              Keywords.merge acc k
+            else acc
+          | _ => acc) acc) Keywords.none
+  Keywords.merge (Keywords.merge self fromTeam) (g.fraGrantedKeywords o)
+
+def currentKeywords (g : Game) (o : GameObject) : Keywords :=
+  let printedKw :=
+    if g.retainsPrintedAbilities o then o.printed.keywords else Keywords.none
+  let base :=
+    Keywords.merge
+      (Keywords.merge
+        (Keywords.merge
+          (Keywords.merge
+            (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+              (g.attachedGrantedKeywords o))
+            (g.enduringStoryKeywords o))
+          (g.leftoverGrantedKeywords o))
+        (g.equippedDuringYourTurnKeywords o))
+      o.status.keywordCounters.toKeywords
+  let base := if o.status.shadow > 0 then { base with shadow := true } else base
+  let base :=
+    if o.status.firstStrikeOnYourTurn && o.controller == some g.activePlayer then
+      { base with firstStrike := true }
+    else base
+  let base :=
+    match o.controller with
+    | some p =>
+      let flying :=
+        o.isCreature &&
+          (g.objects.filter (fun e => e.zone == .command && e.controlledBy p)).any
+            (·.printed.grantTeamPlusTwoFlying)
+      let toxicLink :=
+        o.printed.toxic > 0 &&
+          (g.permanentsOf p).any (·.printed.corruptedToxicLifelink) &&
+          (g.livingOpponents p).any (fun opp => opp.poison >= 3)
+      let base := if flying then { base with flying := true } else base
+      if toxicLink then { base with lifelink := true } else base
+    | none => base
+  base
+
+/-- Haste from printed text, attachments, enduring story, counters, or
+“haste as long as you control another …”. Lost abilities are omitted. -/
+def hasHaste (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).haste ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.hasteIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+
+def canAttack (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.isCreature &&
+  o.controlledBy g.activePlayer &&
+  !o.status.tapped && (!(g.currentKeywords o).defender || g.mayAttackDespiteDefender o) &&
+  !(o.status.summoningSick && !g.hasHaste o) &&
+  !g.enchantedCantAttackOrBlock o &&
+  o.staticAbilities.all (fun ab =>
+    match ab.cantAttackUnlessNOther? with
+    | none => true
+    | some (n, subtype) =>
+      match o.controller with
+      | none => false
+      | some p =>
+        let others :=
+          (g.permanentsOf p).filter (fun x =>
+            x.id != o.id && g.hasSubtype x subtype) |>.size
+        others >= n)
+
+/-- Whether `o` currently has shadow (printed, granted, or from a counter).
+Multiple instances are redundant. -/
+def hasShadow (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).shadow
+
+/-- Printed or until-end-of-turn keyword selected by `sel`. -/
+def hasPrintedOrEot (o : GameObject) (sel : Keywords → Bool) : Bool :=
+  sel o.printedOrUntilEot
+
+/-- Current keyword including attached grants. -/
+def hasKeyword (g : Game) (o : GameObject) (sel : Keywords → Bool) : Bool :=
+  sel (g.currentKeywords o)
+
+/-- Whether `o` has vigilance (CR 702.20). Attacking does not cause it to tap. -/
+def hasVigilance (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.vigilance)
+
+/-- Whether `o` has flying, printed or granted (CR 702.9). -/
+def hasFlying (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.flying)
+
+/-- Okoye: attacking creature tokens you control have first strike. -/
+def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.status.attacking && o.printed.isToken &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any (fun
+          | .attackingTokensHave k => k.firstStrike
+          | _ => false))
+
+/-- Whether `o` has first strike, printed or granted (CR 702.7). -/
+def hasFirstStrike (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike) ||
+    g.okoyeGrantsFirstStrike o
+
+/-- Whether `o` has double strike (CR 702.4). -/
+def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.doubleStrike)
+
+/-- Whether `o` has islandwalk, printed or granted (CR 702.14). -/
+def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.islandwalk)
+
+/-- During the Equipment's controller's turn, the equipped creature has
+hexproof and can't be blocked (Bilbo's Ring). -/
+def equippedHexproofUnblockableThisTurn (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any (fun
+          | .equippedHexproofUnblockableDuringYourTurn => true
+          | _ => false) &&
+        match eq.controller with
+        | some p => g.activePlayer == p
+        | none => false)
+
+/-- Equipment that grants "can't be blocked" to its host (My Precious). -/
+def equippedCantBeBlockedNow (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any StaticAbility.equippedCantBeBlocked)
+
+/-- Whether `o` can't be blocked, printed or granted until end of turn
+(CR 509.1b / 611.2a), or while its power is at most a listed value. -/
+def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.cantBeBlocked) ||
+  g.equippedHexproofUnblockableThisTurn o ||
+  g.equippedCantBeBlockedNow o ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.cantBeBlockedIfPowerAtMost? with
+      | some n => g.snapshotPower o <= n
+      | none => false)) ||
+  (o.isOnBattlefield && o.isCreature &&
+    (g.snapshotPower o <= 1 || g.snapshotToughness o <= 1) &&
+    match o.controller with
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any (fun
+          | .smallCreaturesYouControlUnblockable => true
+          | _ => false))
+    | none => false)
+
+/-- Whether `o` has lifelink, printed, granted until end of turn, or from a
+lifelink counter (CR 702.15). -/
+def hasLifelink (g : Game) (o : GameObject) : Bool :=
+  o.status.lifelinkCounters > 0 ||
+  g.hasKeyword o (·.lifelink) ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.lifelinkIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+
+/-- Whether `o` has menace, printed or granted until end of turn (CR 702.111).
+Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
+declaration as a whole (CR 509.1c). -/
+def hasMenace (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).menace ||
+  (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any StaticAbility.creaturesWithPlusOneHaveMenace))
+
+/-- Minimum number of creatures required to block `o`, or `0` if unrestricted.
+Menace is 2; Troll of Khazad-dûm is 3. -/
+def minBlockersRequired (g : Game) (o : GameObject) : Nat :=
+  let fromStatic :=
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab.cantBeBlockedExcept? with
+      | some n => max acc n
+      | none => acc) 0
+  max fromStatic (if g.hasMenace o then 2 else 0)
+
+/-- Maximum number of creatures that may block `o`, if a static caps it. -/
+def maxBlockersAllowed (_g : Game) (o : GameObject) : Option Nat :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match ab.cantBeBlockedByMoreThan? with
+    | some n =>
+      some (match acc with
+        | some m => min m n
+        | none => n)
+    | none => acc) none
+
+/-- True when `n` blockers is a legal number for `attacker` (CR 702.111b).
+Zero is always legal (the attacker is unblocked). -/
+def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
+  let need := g.minBlockersRequired attacker
+  let underMax :=
+    match g.maxBlockersAllowed attacker with
+    | none => true
+    | some m => n ≤ m
+  (n == 0 || need <= 1 || n >= need) && underMax
+
+/-- Creatures with flying can't attack this player or block their creatures. -/
+def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o =>
+    o.staticAbilities.any (fun
+      | .flyingCantAttackYouOrBlockYours => true
+      | _ => false))
+
+/-- Whether `blocker` may be assigned to `attacker` as one creature in a
+declaration (CR 509.1b). Menace is not a pairwise restriction. -/
+def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
+  let defender := g.defendingPlayerOf attacker
+  let islandwalkUnblockable :=
+    g.hasIslandwalk attacker &&
+      (g.permanentsOf defender).any (fun o => g.hasSubtype o .island)
+  blocker.isOnBattlefield && blocker.isCreature &&
+  blocker.controlledBy defender && !blocker.status.tapped &&
+  blocker.status.blocking.isEmpty && !blocker.status.cantBlockUntilEot &&
+  !blocker.printed.cantBlock &&
+  g.mayDeclareAsBlocker blocker &&
+  !g.enchantedCantAttackOrBlock blocker &&
+  (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
+  attacker.status.attacking &&
+  !g.hasCantBeBlocked attacker &&
+  !islandwalkUnblockable &&
+  !(attacker.staticAbilities.any StaticAbility.blocksTokens &&
+    blocker.printed.isToken) &&
+  !(attacker.staticAbilities.any (fun ab =>
+      match ab.cantBeBlockedByPowerAtMost? with
+      | some n => g.snapshotPower blocker <= n
+      | none => false)) &&
+  !(attacker.staticAbilities.any (fun ab =>
+      match ab.cantBeBlockedByPowerAtLeast? with
+      | some n => g.snapshotPower blocker >= n
+      | none => false)) &&
+  (!g.hasFlying attacker ||
+    g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
+  !(g.hasFlying blocker &&
+    match attacker.controller with
+    | some p => g.leftoverFlyingRestriction p
+    | none => false) &&
+  (!(g.hasShadow attacker) || g.hasShadow blocker) &&
+  (!(g.hasShadow blocker) || g.hasShadow attacker) &&
+  !(match attacker.status.cantBeBlockedByPlayer with
+    | some pid => blocker.controlledBy pid
+    | none => false) &&
+  !(attacker.status.cantBeBlockedExceptByHasteUntilEot && !g.hasHaste blocker)
+
+/-- Whether `src` currently grants trample to `target` (CR 604.2). -/
+def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
+  isLordOf src target &&
+  src.staticAbilities.any (fun ab =>
+    match ab.trampleSubtypes? with
+    | some subtypes => subtypes.any (fun s => g.hasSubtype target s)
+    | none => false)
+
+/-- Lore counters among Sagas `p` controls. -/
+def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.saga.isSome then acc + o.status.lore else acc) 0
+
+/-- True when `id` is the source of a chapter ability waiting or on the stack
+(CR 714.4). -/
+def sagaChapterPending (g : Game) (id : ObjectId) : Bool :=
+  let waiting :=
+    g.waitingTriggers.any (fun wt =>
+      wt.source.id == id &&
+        match wt.ability.shared with
+        | .chapter .. => true
+        | _ => false)
+  let stacked :=
+    g.stack.any (fun e =>
+      match g.findObject? e.objectId with
+      | some o =>
+        o.sourceId == some id &&
+          match o.triggeredAbility with
+          | some t =>
+            match t.shared with
+            | .chapter .. => true
+            | _ => false
+          | none => false
+      | none => false)
+  waiting || stacked
+
+/-- Whether `o` currently has hexproof and indestructible from Tom Bombadil's
+lore-threshold static. -/
+def loreThresholdProtection (g : Game) (o : GameObject) : Bool :=
+  match o.printed.hexproofIndestructibleIfLore, o.controller with
+  | some n, some p => g.loreAmongSagas p ≥ n
+  | _, _ => false
+
+/-- True when a grantor of hexproof or damage prevention is still on the
+battlefield. -/
+def grantorStillInPlay (g : Game) (id : ObjectId) : Bool :=
+  match g.findObject? id with
+  | some o => o.isOnBattlefield
+  | none => false
+
+def hasHexproof (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.hexproof) || g.loreThresholdProtection o ||
+    o.status.hexproofGrantedBy.any g.grantorStillInPlay ||
+    g.equippedHexproofUnblockableThisTurn o ||
+    (match o.controller with
+     | none => false
+     | some p =>
+       (o.isCreature && o.status.gotPlusOneThisTurn &&
+         (g.permanentsOf p).any (fun src =>
+           src.printed.staticAbilities.any (fun
+             | .hexproofIfPlusOneThisTurn => true
+             | _ => false))) ||
+       (g.permanentsOf p).any (fun src =>
+         src.status.shield > 0 &&
+           src.staticAbilities.any (fun
+             | .youAndOtherSubtypeHaveHexproofIfShield subtype =>
+               src.id != o.id && g.hasSubtype o subtype
+             | _ => false)))
+
+/-- The player has hexproof from opponents (Captain America, Super-Soldier). -/
+def playerHasHexproof (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun src =>
+    src.status.shield > 0 &&
+      src.staticAbilities.any (fun
+        | .youAndOtherSubtypeHaveHexproofIfShield _ => true
+        | _ => false))
+
+/-- Protection from the source's colors or from its card type. -/
+def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
+  let colorBlock := o.printed.protectionFromColors.any (src.printed.colors.contains ·)
+  let typeMatch (em : GameObject) :=
+    em.printed.protectionFromChosenCardType &&
+      match em.status.chosenCardType with
+      | some t => src.printed.hasType t
+      | none => false
+  colorBlock || typeMatch o ||
+    match o.controller with
+    | some p => (g.permanentsOf p).any typeMatch
+    | none => false
+
+/-- Hexproof stops an opponent from targeting that player (CR 702.11c). -/
+def playerCanBeTargetedBy (g : Game) (caster target : PlayerId) : Bool :=
+  let typeBlock :=
+    match (g.resolvingSpell.orElse (fun _ => g.proposedSpell.map (·.spellId))).bind g.findObject? with
+    | none => false
+    | some src =>
+      (g.permanentsOf target).any (fun em =>
+        em.printed.protectionFromChosenCardType &&
+          match em.status.chosenCardType with
+          | some t => src.printed.hasType t
+          | none => false)
+  (caster == target || !g.playerHasHexproof target) &&
+    !(g.player target).protectionFromEverything && !typeBlock
+
+/-- True when damage that would be dealt by `src` is prevented (Old Fat
+Spider chapter II). -/
+def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
+  src.status.preventDamageGrantedBy.any g.grantorStillInPlay
+
+/-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
+def hasDeathtouch (g : Game) (o : GameObject) : Bool :=
+  hasPrintedOrEot o (·.deathtouch) || o.status.keywordCounters.deathtouch > 0 ||
+    (g.fraGrantedKeywords o).deathtouch
+
+/-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
+make it lose the keyword. -/
+def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    o.staticAbilities.any (fun
+      | .indestructibleIfArtifactCreatureOrPlan => true
+      | _ => false) &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun x =>
+        (x.isCreature && x.printed.isArtifact) || g.hasSubtype x .plan)
+
+def hasIndestructible (g : Game) (o : GameObject) : Bool :=
+  ((g.currentKeywords o).indestructible ||
+    o.status.indestructibleCounters > 0 ||
+    g.loreThresholdProtection o ||
+    g.leftoverIndestructible o) &&
+  !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
+
+/-- Mana value of `o` (CR 202.3). `{X}` is the chosen value while the object
+is on the stack and 0 otherwise (rulings 178 / 185 / 186). -/
+def objectManaValue (_g : Game) (o : GameObject) : Nat :=
+  let printed := o.printed.manaValue
+  if o.zone != .stack then printed
+  else printed + o.chosenX.getD 0
+
+/-- The Reaver Cleaver: combat damage to a player or planeswalker makes Treasures. -/
+def equippedCreatesCombatTreasures (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any (fun
+          | .equippedGetsTrampleAndCombatTreasures _ _ => true
+          | _ => false))
+
+/-- Whether `o` has trample, printed, granted, or from a lord (CR 702.19). -/
+def hasTrample (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).trample ||
+  o.status.trampleCounters > 0 ||
+  (o.isOnBattlefield && g.battlefield.any (fun src => g.grantsTrampleTo src o)) ||
+  g.equippedCreatesCombatTreasures o
+
+/-- Keywords including those granted by static abilities and until-EOT effects.
+Only trample (lords) and indestructible (until-EOT loss) differ from
+`printedOrUntilEot`; overlaying the other keywords would restate identity. -/
+def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
+  { Keywords.merge o.printedOrUntilEot (g.fraGrantedKeywords o) with
+    indestructible := g.hasIndestructible o
+    trample := g.hasTrample o }
+
+/-- Characteristic power before pumps, counters, and attached bonuses. -/
+def basePower (g : Game) (o : GameObject) : Int :=
+  g.characteristicBasePower o
+
+/-- Characteristic toughness before pumps, counters, and attached bonuses. -/
+def baseToughness (g : Game) (o : GameObject) : Int :=
+  g.characteristicBaseToughness o
+
+/-- Current power, including until-end-of-turn pumps, counters, land-count and
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
+def power (g : Game) (o : GameObject) : Int :=
+  g.snapshotPower o
+
+/-- Current toughness, including until-end-of-turn pumps, counters, land-count and
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
+def toughness (g : Game) (o : GameObject) : Int :=
+  g.snapshotToughness o
+
+/-- Greatest power among creatures `p` controls; `0` if they control none. -/
+def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
+  let creatures := g.creaturesControlledBy p
+  if creatures.isEmpty then 0
+  else creatures.foldl (fun acc o => max acc (g.power o)) (g.power creatures[0]!)
+
+/-- Greatest power among attacking creatures `p` controls; `0` if none. -/
+def greatestPowerAmongAttacking (g : Game) (p : PlayerId) : Int :=
+  let attackers :=
+    (g.permanentsOf p).filter (fun o => o.isCreature && o.status.attacking)
+  if attackers.isEmpty then 0
+  else attackers.foldl (fun acc o => max acc (g.power o)) (g.power attackers[0]!)
+
+/-- Creatures currently blocking `attackerId`. -/
+def blockersOf (g : Game) (attackerId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun b => b.status.blocking.contains attackerId)
+
+/-- Attacking creatures `blocker` is still blocking (CR 510.1d). -/
+def creaturesBlockedBy (g : Game) (blocker : GameObject) : Array GameObject :=
+  blocker.status.blocking.filterMap (fun id =>
+    match g.findObject? id with
+    | some a =>
+      if a.isOnBattlefield && a.status.attacking then some a else none
+    | none => none)
+
+/-- Snapshot `o` as an `EventObject` (CR 113.7a).
+Note: `colors`, `manaValue`, `types`, `subtypes`, `power`, `toughness`,
+`keywords`, and `staticAbilities` are provisional until the Layer 1–7 pipeline
+in Phase 8 (CR 613.1). -/
+def snapshot (g : Game) (o : GameObject) : EventObject :=
+  let base := o.asEvent
+  let extraSubtypes : Array CardSubtype :=
+    #[.hero, .villain, .goblin, .orc, .army, .elf, .merfolk].foldl
+      (fun acc s => if g.hasSubtype o s && !acc.contains s then acc.push s else acc)
+      base.subtypes
+  let pw : Option Int :=
+    if o.zone == .battlefield then
+      if o.isCreature || o.printed.power.isSome then some (g.snapshotPower o) else none
+    else
+      o.lastKnownPower.orElse (fun _ =>
+        if o.isCreature || o.printed.power.isSome then some (g.snapshotPower o) else none)
+  let tg : Option Int :=
+    if o.zone == .battlefield then
+      if o.isCreature || o.printed.toughness.isSome then some (g.snapshotToughness o) else none
+    else
+      o.lastKnownToughness.orElse (fun _ =>
+        if o.isCreature || o.printed.toughness.isSome then some (g.snapshotToughness o) else none)
+  let curKw := g.currentKeywords o
+  { base with
+    subtypes := extraSubtypes
+    power := pw
+    toughness := tg
+    keywords := { curKw with
+      haste := g.hasHaste o
+      vigilance := g.hasVigilance o
+      flying := g.hasFlying o
+      menace := g.hasMenace o
+      hexproof := g.hasHexproof o
+      indestructible := g.hasIndestructible o
+      reach := curKw.reach
+      trample := g.hasTrample o
+      deathtouch := g.hasDeathtouch o
+      defender := curKw.defender
+      lifelink := g.hasLifelink o
+      firstStrike := g.hasFirstStrike o
+      doubleStrike := g.hasDoubleStrike o
+      shadow := g.hasShadow o } }
+
+/-- Total power among creatures `p` controls. -/
+def totalPowerOfCreatures (g : Game) (p : PlayerId) : Int :=
+  (g.creaturesControlledBy p).foldl (fun sum o => sum + max 0 (g.power o)) 0
+
+/-- Number of creatures `p` controls with power ≥ `minPower` (Ferocious). -/
+def countCreaturesWithPowerAtLeast (g : Game) (p : PlayerId) (minPower : Int) : Nat :=
+  (g.creaturesControlledBy p).filter (fun o => g.power o >= minPower) |>.size
+
 /-- Extra times a trigger of `source` fires from Bifur / Chief / Wizard's Staff
 statics. Each such ability adds one additional instance; they stack. -/
 def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) : Nat :=
-  let story := (g.player controller).enduringStory
+  let story :=
+    (g.player controller).enduringStory ||
+      (g.controlsStoried controller && g.storiedPermanentCount controller >= 3)
   (g.permanentsOf controller).foldl (fun acc o =>
     o.staticAbilities.foldl (fun acc ab =>
       match ab with
@@ -2564,56 +4165,6 @@ def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
     let e := GameEvent.engine g.turnNumber (.enqueueWaitingTriggers wts)
     ({ g with events := g.events.push e }).applyEngineChange (.enqueueWaitingTriggers wts)
 
-/-- Queue one instance (plus `extraTriggerCopies`) of `ab` on `source` for
-`event` at batch-evaluation time, respecting `onceEachTurn` and
-`optionalOnceEachTurn` (CR 603.2c / 603.2h / 603.3). -/
-def queueBatchSourceAbility (g : Game) (controller : PlayerId) (source : GameObject)
-    (ab : TriggeredAbility) (event : TriggerEvent)
-    (cause : Option GameObject := none) : Game :=
-  if (g.player controller).lost then g
-  else
-    let fired :=
-      ((g.findObject? source.id).map (·.status.firedOnceEachTurn)).getD
-        source.status.firedOnceEachTurn
-    let optUsed :=
-      ((g.findObject? source.id).map (·.status.optionalOnceUsed)).getD
-        source.status.optionalOnceUsed
-    if ab.onceEachTurn && fired then g
-    else if ab.optionalOnceEachTurn && optUsed then g
-    else
-      let g :=
-        if ab.onceEachTurn && (g.findObject? source.id).isSome then
-          let ec : EngineChange := .object source.id (.status (.firedOnceEachTurn true))
-          let e := GameEvent.engine g.turnNumber ec
-          ({ g with events := g.events.push e }).applyEngineChange ec
-        else g
-      let curSource := (g.findObject? source.id).getD source
-      let copies := g.extraTriggerCopies controller curSource + 1
-      let wt : WaitingTrigger :=
-        { controller, source := curSource, ability := ab, event,
-          causeId := cause.map (·.id), cause, checked := true }
-      g.enqueueWaitingTriggers (Array.replicate copies wt)
-
-/-- Queue one instance (plus `extraTriggerCopies`) of each matching ability on
-`source` for `event` at batch-evaluation time (CR 603.2c / 603.2h / 603.3). -/
-def queueBatchSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
-    (event : TriggerEvent) (cause : Option GameObject := none)
-    (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
-  if (g.player controller).lost then g
-  else
-    ((source.matchingTriggers event).filter keep).foldl (fun acc ab =>
-      acc.queueBatchSourceAbility controller source ab event (cause := cause)) g
-
-/-- Queue batch-level triggers for `event` on permanents and command-zone
-objects controlled by `p` (CR 603.2c / 114.4). -/
-def queueBatchControlledTriggers (g : Game) (p : PlayerId) (event : TriggerEvent)
-    (cause : Option GameObject := none)
-    (keep : TriggeredAbility → Bool := fun _ => true) : Game :=
-  let g := (g.permanentsOf p).foldl (fun acc o =>
-    acc.queueBatchSourceTriggers p o event (cause := cause) (keep := keep)) g
-  (g.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl (fun acc o =>
-    acc.queueBatchSourceTriggers p o event (cause := cause) (keep := keep)) g
-
 /-- Karn, Argent Defender: an artifact or creature entering doesn't cause
 abilities to trigger (rulings 891–893). -/
 def eventSuppressedByKarn (g : Game) (e : GameEvent) : Bool :=
@@ -2630,57 +4181,296 @@ def eventSuppressedByKarn (g : Game) (e : GameEvent) : Bool :=
       obj.zone == .battlefield && (obj.creature || obj.artifact)
     | _ => false
 
-/-- Evaluate batch-level (“one or more”) triggered abilities once over a
-committed batch of simultaneous rules events (CR 603.2c / 603.10 / 603.10a). -/
-def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
-    (batchEvents : Array GameEvent) : Game :=
-  if batchEvents.isEmpty then g
+/-- A Reality Fracture intervening “if” clause on the trigger's options. -/
+def fraConditionHolds (g : Game) (controller : PlayerId) (cond : FraCondition)
+    (source : Option GameObject) (causeStatus : Option Status := none) : Bool :=
+  match cond with
+  | .none => true
+  | .sourceNotToken => !(source.any (·.printed.isToken))
+  | .twoCreaturesDiedThisTurn => g.loggedCreatureDeaths ≥ 2
+  | .opponentDealtNoncombatDamageLastTurn =>
+    (g.livingOpponents controller).any (fun opp => g.loggedNoncombatDamageLastTurn opp.id)
+  | .drewThreeThisTurn => g.loggedDraws controller ≥ 3
+  | .castNoSpellThisTurn => g.loggedSpellsCast controller == 0
+  | .activatedLoyaltyThisTurn => g.loggedActivatedLoyalty controller
+  | .sourceWasCast => source.any (·.wasCast)
+  | .causeHadCounters => causeStatus.any (·.hasCounters)
+  | .sourceHasCounters =>
+    source.any (fun o => ((g.findObject? o.id).getD o).status.hasCounters)
+
+/-- Reality Fracture intervening “if” clauses, checked when the ability would
+trigger and again as it resolves (rulings 743 / 889). -/
+def fraInterveningHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (source : Option GameObject) (cause : Option GameObject := none) : Bool :=
+  match ab.shared with
+  | .pumpIfFiveOtherForests =>
+    ((g.permanentsOf controller).filter (fun o =>
+      g.hasSubtype o .forest && some o.id != cause.map (·.id))).size ≥ 5
+  | .destroyOppPermanentIfSixLands =>
+    ((g.permanentsOf controller).filter (·.printed.isLand)).size ≥ 6
+  | .prepareSource .ifNotPrepared =>
+    match source.map (fun o => (g.findObject? o.id).getD o) with
+    | some o => !o.status.prepared
+    | none => true
+  | .prepareSource .ifThreeCreaturesDied => g.loggedCreaturesToGraveyard.size ≥ 3
+  | .sacrificeSourceIfNoPlaneswalker =>
+    !(g.permanentsOf controller).any (·.printed.isPlaneswalker)
+  | .surveilReturnIfGainedLife => g.loggedLifeGained controller > 0
+  | _ => true
+
+/-- True when any intervening trigger condition holds (e.g. Ferocious). -/
+def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (cause : Option GameObject := none) (source : Option GameObject := none) : Bool :=
+  let powerOk :=
+    match ab.youControlCreatureWithPower? with
+    | none => true
+    | some n => g.greatestPowerAmongCreatures controller ≥ n
+  let otherOk :=
+    match ab.anotherCreaturePowerAtMost? with
+    | none => true
+    | some n =>
+      match cause with
+      | some o => g.power o ≤ n
+      | none => true
+  let lifeOk :=
+    match ab.timing.gainedLifeAtLeast with
+    | none => true
+    | some n => g.loggedLifeGained controller ≥ n
+  let hulklingOk :=
+    match ab.shared, cause, source with
+    | .watch .hulklingCompare, some entered, some hulkling =>
+      g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
+    | .watch .hulklingCompare, _, _ => false
+    | _, _, _ => true
+  -- “Whenever another [legendary] Wolf you control enters”.
+  let causeOk :=
+    match cause with
+    | some o =>
+      (ab.opts.thisOrAnotherSubtype.all (g.hasSubtype o ·)) &&
+        ab.opts.anotherSupertype.all o.hasSupertype
+    | none => true
+  -- Intervening “if” clauses checked as the ability triggers (CR 603.4);
+  -- they are checked again on resolution.
+  let interveningOk :=
+    match ab.shared with
+    | .beginCombatIfDrawnTwoPump => g.loggedDraws controller ≥ 2
+    | .thisAttack .equippedDrain =>
+      source.any (fun s => g.battlefield.any (fun e => e.attachedTo == some s.id && e.printed.isEquipment))
+    | .thisAttack .ifArtifactEnteredDraw =>
+      g.loggedArtifactEntered controller
+    | .resource .drawIfAnotherHeroDamage =>
+      (g.permanentsOf controller).any (fun o => g.hasSubtype o .hero && some o.id != source.map (·.id))
+    | .step .drawToTen => (g.player controller).hand.size < 10
+    | .step .harnessedFlicker => source.any (·.status.harnessed)
+    | .protectionEverything => source.any (·.wasCast)
+    | .death .deathtouchOppSac => cause.any (g.hasDeathtouch ·)
+    | .resource .plusOneCreateInsectOnce => cause.any (·.isCreature)
+    | .resource .plusOneOnThisOnce =>
+      cause.any (fun c => c.isCreature && some c.id != source.map (·.id))
+    | .resource .plusOneOnHeroesCreateWall =>
+      cause.any (fun c => some c.id != source.map (·.id) && c.controlledBy controller &&
+        g.hasSubtype c .hero)
+    | .watch .sheHulkRedirectOnce => !g.loggedSheHulkDealtDamage
+    | _ => true
+  powerOk && otherOk && lifeOk && hulklingOk && causeOk && interveningOk &&
+    g.fraInterveningHolds controller ab source cause &&
+    g.fraConditionHolds controller ab.opts.fraCondition source (cause.map (·.status))
+
+/-- Triggered abilities an attached Equipment grants `o` (Hunter's Axe,
+Medic's Kitesail). -/
+def attachedGrantedTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
   else
-    -- 1. “Whenever one or more other creatures die” (look-back on preBattlefield, CR 603.10a).
-    let g :=
-      let wts := preBattlefield.foldl (fun acc o =>
-        match o.controller with
-        | some p =>
-          if !(g.player p).lost && batchEvents.any (·.matchesTrigger p o.id .oneOrMoreOtherCreaturesDie) then
-            acc ++ o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie
-          else acc
-        | none => acc) #[]
-      g.enqueueWaitingTriggers wts
-    -- 2. “Whenever one or more creature cards are put into your graveyard from anywhere”
-    --    (post-batch state trigger on g.battlefield, CR 603.10 / ruling 491).
-    let g :=
-      let wts := g.battlefield.foldl (fun acc o =>
-        match o.controller with
-        | some p =>
-          if !(g.player p).lost && batchEvents.any (·.matchesTrigger p o.id .creatureCardsPutIntoYourGy) then
-            acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
-          else acc
-        | none => acc) #[]
-      g.enqueueWaitingTriggers wts
-    -- 3. “Whenever a player discards one or more cards” (post-batch on g.battlefield,
-    --    once per player who discarded at least one card in the batch).
-    let g :=
-      g.players.foldl (fun acc pl =>
-        if batchEvents.any (·.matchesTrigger pl.id ⟨0⟩ .youDiscard) then
-          let wts := acc.battlefield.foldl (fun wacc o =>
-            match o.controller with
-            | some c =>
-              if !(acc.player c).lost then wacc ++ o.waitingTriggersFor c (.fra .playerDiscards)
-              else wacc
-            | none => wacc) #[]
-          acc.enqueueWaitingTriggers wts
-        else acc) g
+    g.battlefield.foldl (fun acc eq =>
+      if eq.attachedTo != some o.id then acc
+      else
+        eq.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .fra .equippedHuntersAxe =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
+              (.chooseKeyword [0, 3]))
+          | .fra .equippedMedicsKitesail =>
+            acc.push (TriggeredAbility.fra .attack
+              "Whenever this creature attacks, you gain 1 life." (.gainLife 1))
+          | _ => acc) acc) #[]
+
+/-- Prowess triggers of `o`, one for each instance (CR 702.108). -/
+def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if !o.isOnBattlefield then #[]
+  else
+    let printed := if g.retainsPrintedAbilities o then o.printed.prowessInstances else 0
+    let granted :=
+      (g.attachedGrantedKeywords o).prowess || o.grantedUntilEot.prowess ||
+        (g.enduringStoryKeywords o).prowess || (g.leftoverGrantedKeywords o).prowess
+    let n := printed + (if granted then 1 else 0)
+    Array.replicate n (TriggeredAbility.fra .youCastNoncreature
+      "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
+      (.onSource (.pump 1 1)))
+
+/-- Match all triggered abilities over a committed batch of simultaneous rules
+events (CR 603.2 / 603.2c / 603.10 / 603.10a–f). Look-back events (`e.isLookBack`,
+covering CR 603.10a–f) consult `pre`; all other events consult `post` (CR 603.10). -/
+def matchTriggers (pre : GameSnapshot) (post : Game)
+    (batch : Array GameEvent) : Array WaitingTrigger :=
+  if batch.isEmpty then #[]
+  else Id.run do
+    let mut waiting : Array WaitingTrigger := #[]
+    let mut firedSources : Array (ObjectId × TriggeredAbility) := #[]
+    let mut tappedInBatch : Array ObjectId := #[]
+    let queueAb (board : Game) (controller : PlayerId) (source : GameObject)
+        (ab : TriggeredAbility) (event : TriggerEvent)
+        (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
+        (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+        (eventCause : Option EventCause := none)
+        (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+      if (post.player controller).lost then (w, fs)
+      else if !board.triggerConditionHolds controller ab cause (some source) then (w, fs)
+      else if ab.onceEachTurn &&
+          (post.loggedTriggeredThisTurn source.id ab ||
+            fs.any (fun (sid, a) => sid == source.id && a == ab)) then (w, fs)
+      else if ab.optionalOnceEachTurn &&
+          (((post.findObject? source.id).map (·.status.optionalOnceUsed)).getD
+            source.status.optionalOnceUsed) then (w, fs)
+      else
+        let fs := if ab.onceEachTurn then fs.push (source.id, ab) else fs
+        let attackEvent :=
+          match event with
+          | .attacking => true
+          | .fra fe =>
+            match fe with
+            | .creatureYouControlAttacks | .creatureYouControlAttacksPlayerAlone
+            | .zombieTokenAttacks | .sphinxesAttack => true
+            | _ => false
+          | _ => false
+        let mardu :=
+          if attackEvent && (board.permanentsOf controller).any (fun o =>
+              o.printed.asEntersChooseMarduOrJeskai && o.status.windcragMardu) then 1 else 0
+        let curSource :=
+          if board.findObject? source.id == some source then source
+          else (post.findObject? source.id).getD source
+        let copies := board.extraTriggerCopies controller source + 1 + mardu
+        let wt : WaitingTrigger :=
+          { controller, source := curSource, ability := ab, event,
+            lastKnownPower, lastKnownToughness,
+            causeId := cause.map (·.id), cause, causeController,
+            checked := true, eventCause }
+        (w ++ Array.replicate copies wt, fs)
+    let queueSrc (board : Game) (controller : PlayerId) (source : GameObject)
+        (event : TriggerEvent)
+        (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
+        (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+        (eventCause : Option EventCause := none)
+        (keep : TriggeredAbility → Bool := fun _ => true)
+        (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+      if (post.player controller).lost then (w, fs)
+      else
+        let abs :=
+          (source.matchingTriggers event ++
+            (board.attachedGrantedTriggers source ++ board.prowessTriggers source).filter (·.firesOn event)).filter keep
+        abs.foldl (fun (w, fs) ab =>
+          queueAb board controller source ab event lastKnownPower lastKnownToughness
+            cause causeController eventCause w fs) (w, fs)
+    let queueCtrl (board : Game) (p : PlayerId) (event : TriggerEvent)
+        (excludeId : Option ObjectId := none)
+        (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
+        (cause : Option GameObject := none) (causeController : Option PlayerId := none)
+        (eventCause : Option EventCause := none)
+        (keep : TriggeredAbility → Bool := fun _ => true)
+        (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+      let (w, fs) := (board.permanentsOf p).foldl (fun (w, fs) o =>
+        if excludeId == some o.id then (w, fs)
+        else
+          queueSrc board p o event lastKnownPower lastKnownToughness
+            cause causeController eventCause keep w fs) (w, fs)
+      (board.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
+        (fun (w, fs) o =>
+          if excludeId == some o.id then (w, fs)
+          else
+            queueSrc board p o event lastKnownPower lastKnownToughness
+              cause causeController eventCause keep w fs) (w, fs)
+    let queueFraWhere (board : Game) (p : PlayerId) (pred : FraEvent → Bool)
+        (cause : Option GameObject := none) (excludeId : Option ObjectId := none)
+        (lastKnownPower : Option Int := none) (causeController : Option PlayerId := none)
+        (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+      let fireObj (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility))
+          (o : GameObject) : Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+        if excludeId == some o.id then (w, fs)
+        else
+          (o.printed.triggeredAbilities ++ o.status.grantedTriggeredAbilities ++
+              o.status.grantedTriggersUntilEot).foldl (fun (w, fs) ab =>
+            match ab.timing.events.find? (fun ev =>
+                match ev with
+                | .fra fe => pred fe
+                | _ => false) with
+            | some ev =>
+              queueAb board p o ab ev lastKnownPower none cause causeController none w fs
+            | none => (w, fs)) (w, fs)
+      let (w, fs) := (board.permanentsOf p).foldl (fun (w, fs) o => fireObj w fs o) (w, fs)
+      (board.objects.filter (fun o => o.zone == .command && o.controlledBy p)).foldl
+        (fun (w, fs) o => fireObj w fs o) (w, fs)
+    let queueFra (board : Game) (p : PlayerId) (fe : FraEvent)
+        (cause : Option GameObject := none) (excludeId : Option ObjectId := none)
+        (lastKnownPower : Option Int := none) (causeController : Option PlayerId := none)
+        (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
+      queueFraWhere board p (· == fe) cause excludeId lastKnownPower causeController w fs
+    let uniquePermTargets (board : Game) (targets : Array Target) : Array GameObject :=
+      Id.run do
+        let mut seen : Array ObjectId := #[]
+        let mut out : Array GameObject := #[]
+        for t in targets do
+          match t with
+          | .permanent id =>
+            if !seen.contains id then
+              seen := seen.push id
+              match board.findObject? id with
+              | some o => if o.isOnBattlefield then out := out.push o
+              | none => pure ()
+          | _ => pure ()
+        return out
+    -- Batch-level (“one or more”) triggers (1–13)
+    -- 1. “Whenever one or more other creatures die” (look-back on pre, CR 603.10a(1)).
+    for o in pre.battlefield do
+      match o.controller with
+      | some p =>
+        if !(post.player p).lost && batch.any (·.matchesTrigger p o.id .oneOrMoreOtherCreaturesDie) then
+          let (w, fs) := queueSrc pre p o .oneOrMoreOtherCreaturesDie (w := waiting) (fs := firedSources)
+          waiting := w; firedSources := fs
+      | none => pure ()
+    -- 2. “Whenever one or more creature cards are put into your graveyard from anywhere” (post-batch, CR 603.10).
+    for o in post.battlefield do
+      match o.controller with
+      | some p =>
+        if !(post.player p).lost && batch.any (·.matchesTrigger p o.id .creatureCardsPutIntoYourGy) then
+          let (w, fs) := queueSrc post p o .creatureCardsPutIntoYourGy (w := waiting) (fs := firedSources)
+          waiting := w; firedSources := fs
+      | none => pure ()
+    -- 3. “Whenever a player discards one or more cards” (post-batch, once per discarding player).
+    for pl in post.players do
+      if batch.any (·.matchesTrigger pl.id ⟨0⟩ .youDiscard) then
+        for o in post.battlefield do
+          match o.controller with
+          | some c =>
+            if !(post.player c).lost then
+              let (w, fs) := queueSrc post c o (.fra .playerDiscards) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          | none => pure ()
     -- 4. “Whenever you create one or more creature tokens” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let p := pl.id
-      if batchEvents.any (·.matchesTrigger p ⟨0⟩ (.fra .youCreateCreatureTokens)) then
-        acc.queueBatchControlledTriggers p (.fra .youCreateCreatureTokens)
-      else acc) g
+      if batch.any (·.matchesTrigger p ⟨0⟩ (.fra .youCreateCreatureTokens)) then
+        let (w, fs) := queueCtrl post p (.fra .youCreateCreatureTokens) (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 5. “Whenever one or more tokens you control enter” (Mister Fantastic, post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let p := pl.id
-      let tokenEntered := batchEvents.any (fun e =>
-        if acc.eventSuppressedByKarn e then false
+      let tokenEntered := batch.any (fun e =>
+        if post.eventSuppressedByKarn e then false
         else
           match e.change with
           | .rules (.zone (.created obj ctrl)) =>
@@ -2689,101 +4479,1498 @@ def evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject)
             after.controller == some p && after.token
           | _ => false)
       if tokenEntered then
-        acc.queueBatchControlledTriggers p .tokenYouControlEnters
-          (keep := fun ab => ab.shared == .watch .tokensEnterMayDraw)
-      else acc) g
+        let (w, fs) :=
+          queueCtrl post p .tokenYouControlEnters
+            (keep := fun ab => ab.shared == .watch .tokensEnterMayDraw)
+            (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 6. “Whenever one or more creatures you control become tapped” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let p := pl.id
-      if batchEvents.any (·.matchesTrigger p ⟨0⟩ .creaturesYouControlBecomeTapped) then
-        acc.queueBatchControlledTriggers p .creaturesYouControlBecomeTapped
-      else acc) g
+      if batch.any (·.matchesTrigger p ⟨0⟩ .creaturesYouControlBecomeTapped) then
+        let (w, fs) := queueCtrl post p .creaturesYouControlBecomeTapped (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 7. “Whenever one or more creatures deal combat damage to you” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let defn := pl.id
-      if batchEvents.any (·.matchesTrigger defn ⟨0⟩ .combatDamageToYou) then
+      if batch.any (·.matchesTrigger defn ⟨0⟩ .combatDamageToYou) then
         let firstDamager : Option GameObject :=
-          batchEvents.findSome? (fun e =>
+          batch.findSome? (fun e =>
             match e.change with
             | .rules (.damage (.dealt pkts)) =>
               pkts.findSome? (fun pkt =>
                 if pkt.combat && pkt.recipient == .player defn then
-                  pkt.source.id.bind acc.findObject?
+                  (pkt.source.id.bind post.findObject?).orElse (fun _ => pkt.source.id.bind pre.findObject?)
                 else none)
             | _ => none)
-        acc.queueBatchControlledTriggers defn .combatDamageToYou (cause := firstDamager)
-      else acc) g
+        let (w, fs) := queueCtrl post defn .combatDamageToYou (cause := firstDamager) (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 8. “Whenever one or more opponents are dealt combat damage during your turn” (post-batch).
-    let g :=
-      let pid := g.activePlayer
-      if pid.idx < g.players.size && !(g.player pid).lost &&
-          batchEvents.any (·.matchesTrigger pid ⟨0⟩ .opponentsDealtCombatDamageYourTurn) then
-        g.queueBatchControlledTriggers pid .opponentsDealtCombatDamageYourTurn
-      else g
+    let pid := post.activePlayer
+    if pid.idx < post.players.size && !(post.player pid).lost &&
+        batch.any (·.matchesTrigger pid ⟨0⟩ .opponentsDealtCombatDamageYourTurn) then
+      let (w, fs) := queueCtrl post pid .opponentsDealtCombatDamageYourTurn (w := waiting) (fs := firedSources)
+      waiting := w; firedSources := fs
     -- 9. “Whenever one or more opponents are dealt noncombat damage” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let q := pl.id
-      if batchEvents.any (·.matchesTrigger q ⟨0⟩ (.fra .opponentsDealtNoncombatDamage)) then
-        acc.queueBatchControlledTriggers q (.fra .opponentsDealtNoncombatDamage)
-      else acc) g
+      if batch.any (·.matchesTrigger q ⟨0⟩ (.fra .opponentsDealtNoncombatDamage)) then
+        let (w, fs) := queueCtrl post q (.fra .opponentsDealtNoncombatDamage) (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 10. “Whenever one or more Heroes you control deal damage to a player” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let q := pl.id
-      if batchEvents.any (fun e =>
+      if batch.any (fun e =>
           match e.change with
           | .rules (.damage (.dealt pkts)) =>
             pkts.any (fun pkt => pkt.amount > 0) && e.matchesTrigger q ⟨0⟩ .heroesDealDamageToPlayer
           | _ => false) then
-        acc.queueBatchControlledTriggers q .heroesDealDamageToPlayer
-      else acc) g
+        let (w, fs) := queueCtrl post q .heroesDealDamageToPlayer (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
     -- 11. “Whenever you put one or more counters on a Goblin, Orc, or Army you control” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
+    for pl in post.livingPlayers do
       let p := pl.id
-      let matched := batchEvents.any (fun e =>
+      let matched := batch.any (fun e =>
         e.matchesTrigger p ⟨0⟩ .youPutCountersOnGoblinOrcArmy ||
           e.countersPutInEvent.any (fun (eo, _, n, actor?) =>
             actor? == some p && n > 0 &&
-              (eo.id.bind acc.findObject?).any (fun obj =>
+              (eo.id.bind post.findObject?).any (fun obj =>
                 obj.controlledBy p &&
-                  (acc.hasSubtype obj .goblin || acc.hasSubtype obj .orc || acc.hasSubtype obj .army))))
-      if matched then acc.queueBatchControlledTriggers p .youPutCountersOnGoblinOrcArmy
-      else acc) g
-    -- 12. “Whenever you put one or more loyalty counters on a planeswalker” (post-batch).
-    let g := g.livingPlayers.foldl (fun acc pl =>
-      let p := pl.id
-      let matched := batchEvents.any (·.matchesTrigger p ⟨0⟩ (.fra .youPutLoyaltyCounters))
+                  (post.hasSubtype obj .goblin || post.hasSubtype obj .orc || post.hasSubtype obj .army))))
       if matched then
-        let wts := (acc.permanentsOf p).foldl (fun wacc o =>
-          wacc ++ o.waitingTriggersFor p (.fra .youPutLoyaltyCounters)) #[]
-        acc.enqueueWaitingTriggers wts
-      else acc) g
-    -- 13. “Whenever you put one or more +1/+1 counters on …” (post-batch,
-    --     including enters-with +1/+1 counters per CR 122.6).
-    g.livingPlayers.foldl (fun acc pl =>
+        let (w, fs) := queueCtrl post p .youPutCountersOnGoblinOrcArmy (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
+    -- 12. “Whenever you put one or more loyalty counters on a planeswalker” (post-batch).
+    for pl in post.livingPlayers do
+      let p := pl.id
+      if batch.any (·.matchesTrigger p ⟨0⟩ (.fra .youPutLoyaltyCounters)) then
+        let (w, fs) := queueCtrl post p (.fra .youPutLoyaltyCounters) (w := waiting) (fs := firedSources)
+        waiting := w; firedSources := fs
+    -- 13. “Whenever you put one or more +1/+1 counters on …” (post-batch, including enters-with per CR 122.6).
+    for pl in post.livingPlayers do
       let q := pl.id
       let putObjs : Array GameObject :=
-        batchEvents.foldl (fun objs e =>
+        batch.foldl (fun objs e =>
           e.countersPutInEvent.foldl (fun objs (eo, kind, n, actor?) =>
             if kind == .plusOnePlusOne && n > 0 && actor? == some q then
-              match eo.id.bind acc.findObject? with
+              match eo.id.bind post.findObject? with
               | some obj => objs.push obj
               | none => objs
             else objs) objs) #[]
-      if putObjs.isEmpty then acc
-      else
-        (acc.permanentsOf q).foldl (fun acc src =>
-          (src.matchingTriggers .youPutPlusOne).foldl (fun acc ab =>
+      if !putObjs.isEmpty then
+        for src in post.permanentsOf q do
+          for ab in src.matchingTriggers .youPutPlusOne do
             let matchesAb (obj : GameObject) : Bool :=
               match ab.shared with
               | .resource .plusOneOnHeroesCreateWall =>
-                obj.id != src.id && obj.controlledBy q && acc.hasSubtype obj .hero
+                obj.id != src.id && obj.controlledBy q && post.hasSubtype obj .hero
               | .resource .plusOneOnThisOnce =>
                 obj.isCreature && obj.id != src.id
               | _ => obj.isCreature
             match putObjs.find? matchesAb with
             | some causeObj =>
-              acc.queueBatchSourceAbility q src ab .youPutPlusOne (cause := some causeObj)
-            | none => acc) acc) acc) g
+              let (w, fs) :=
+                queueAb post q src ab .youPutPlusOne (cause := some causeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            | none => pure ()
+    -- Per-event triggers across the batch
+    let findEventObj (board : Game) (eo : EventObject) : GameObject :=
+      match eo.id.bind board.findObject? with
+      | some o => o
+      | none =>
+        let id := eo.id.getD ⟨0⟩
+        let printed := eo.toCardDef
+        let st := ({} : Status).withCounterBag eo.counters
+        { id
+          printed
+          owner := eo.owner
+          controller := eo.controller
+          zone := eo.zone
+          status :=
+            { st with
+              tapped := eo.tapped
+              summoningSick := eo.summoningSick
+              attacking := eo.attacking
+              attackingTarget := eo.attackingTarget
+              phasedOut := eo.phasedOut
+              faceDown := eo.faceDown
+              transformed := eo.transformed
+              returnedAsArtifact := eo.returnedAsArtifact
+              onlyFoodArtifact := eo.onlyFoodArtifact }
+          attachedTo := eo.attachedTo
+          chosenX := eo.chosenX
+          wasCast := eo.wasCast
+          isCopy := eo.isCopy
+          lastKnownPower := eo.power.orElse (fun _ => eo.lastKnownPower)
+          lastKnownToughness := eo.toughness.orElse (fun _ => eo.lastKnownToughness) }
+    -- Pre-sum damage dealt to each permanent across the entire batch so
+    -- `.sourceDealtDamage` queues once per `(source, ability)` per batch with
+    -- the summed damage before `queueAb` replicates `extraTriggerCopies`.
+    let mut batchDamageByPerm : Array (ObjectId × Nat) := #[]
+    for e in batch do
+      match e.change with
+      | .rules (.damage (.dealt pkts)) =>
+        for pkt in pkts do
+          if pkt.amount > 0 then
+            match pkt.recipient with
+            | .permanent recSnap =>
+              let recObj := findEventObj post recSnap
+              match batchDamageByPerm.findIdx? (fun (id, _) => id == recObj.id) with
+              | some idx =>
+                let (id, amt) := batchDamageByPerm[idx]!
+                batchDamageByPerm := batchDamageByPerm.set! idx (id, amt + pkt.amount)
+              | none =>
+                batchDamageByPerm := batchDamageByPerm.push (recObj.id, pkt.amount)
+            | _ => pure ()
+      | _ => pure ()
+    let mut firedSourceDealtDamage : Array ObjectId := #[]
+    for e in batch do
+      -- Saga chapter and Nth-plan-counter triggers on counters put in this event
+      let isZoneArrival :=
+        match e.change with
+        | .rules (.zone (.moved _ _ _ .battlefield ..))
+        | .rules (.zone (.created ..)) => true
+        | _ => false
+      for (eo, kind, n, _) in e.countersPutInEvent do
+        if n > 0 then
+          match eo.id.bind post.findObject? with
+          | some postObj =>
+            if postObj.isOnBattlefield && !postObj.status.faceDown then
+              if kind == .lore then
+                match postObj.controller, postObj.printed.saga with
+                | some p, some sdef =>
+                  let prevLore := if isZoneArrival then 0 else eo.counters.count .lore
+                  for i in [0:n] do
+                    let lore := prevLore + i + 1
+                    for ch in sdef.chaptersForLore lore do
+                      match ch.chapterEffect with
+                      | some ce =>
+                        let (w, fs) :=
+                          queueAb post p postObj (TriggeredAbility.sagaChapter lore ce) .sagaChapter
+                            (w := waiting) (fs := firedSources)
+                        waiting := w; firedSources := fs
+                      | none => pure ()
+                | _, _ => pure ()
+              else if kind == .plan && !isZoneArrival then
+                match postObj.controller with
+                | some p =>
+                  let prevPlan := eo.counters.count .plan
+                  for i in [0:n] do
+                    let planCnt := prevPlan + i + 1
+                    let (w, fs) :=
+                      queueSrc post p postObj (.nthPlanCounter planCnt)
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                | none => pure ()
+          | none => pure ()
+      match e.change with
+      | .engine _ => pure ()
+      | .rules r =>
+        match r with
+        | .zone (.created obj ctrl) =>
+          if obj.zone == .battlefield && !post.eventSuppressedByKarn e then
+            let entered := findEventObj post obj
+            -- Self enters triggers
+            let (w, fs) := queueSrc post ctrl entered .entering (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+            -- Another Elf you control enters
+            if post.hasSubtype entered .elf then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherElfYouControlEnters (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Another creature you control enters
+            if entered.isCreature then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherCreatureYouControlEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Subtype enter triggers (Balin, Fíli, Kíli, Thorin)
+            for src in post.permanentsOf ctrl do
+              let self := src.id == entered.id
+              for ab in src.printed.triggeredAbilities ++ src.status.grantedTriggeredAbilities do
+                let opts := ab.opts
+                let fireSub (ev : TriggerEvent) (cond : Bool)
+                    (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :=
+                  if ab.firesOn ev && cond then
+                    queueAb post ctrl src ab ev (cause := some entered) (w := w) (fs := fs)
+                  else (w, fs)
+                let (w, fs) :=
+                  match opts.thisOrNontokenSubtype with
+                  | some s =>
+                    fireSub .thisOrNontokenSubtypeYouControlEnters
+                      (self || (!entered.printed.isToken && post.hasSubtype entered s))
+                      waiting firedSources
+                  | none => (waiting, firedSources)
+                let (w, fs) :=
+                  match opts.thisOrAnotherSubtype with
+                  | some s =>
+                    fireSub .thisOrAnotherSubtypeYouControlEnters
+                      (self || post.hasSubtype entered s) w fs
+                  | none => (w, fs)
+                let (w, fs) :=
+                  match opts.anotherSubtypeOrEquipment with
+                  | some s =>
+                    fireSub .anotherSubtypeOrEquipmentYouControlEnters
+                      (!self && (post.hasSubtype entered s || entered.printed.isEquipment)) w fs
+                  | none => (w, fs)
+                waiting := w; firedSources := fs
+            -- Per-token enter triggers (Belladonna Took; Mister Fantastic is batch group 5)
+            if entered.printed.isToken then
+              let (w, fs) :=
+                queueCtrl post ctrl .tokenYouControlEnters
+                  (keep := fun ab => ab.shared != .watch .tokensEnterMayDraw)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.printed.isArtifact then
+              let (w, fs) := queueCtrl post ctrl .artifactYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.isCreature then
+              let (w, fs) := queueCtrl post ctrl .creatureYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for sub in entered.subtypes do
+              let (w, fs) := queueCtrl post ctrl (.subtypeYouControlEnters sub) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.printed.isEquipment then
+              let (w, fs) := queueCtrl post ctrl .equipmentYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if post.hasSubtype entered .villain || entered.printed.isArtifact then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherVillainOrArtifactEnters (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if post.hasSubtype entered .villain then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherVillainEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.types.contains .artifact then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherArtifactEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if !entered.printed.isToken && post.hasSubtype entered .hero then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherNontokenHeroEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if !entered.printed.isToken && entered.types.contains .artifact then
+              let (w, fs) :=
+                queueCtrl post ctrl .anotherNontokenArtifactEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            let isCreature := entered.isCreature
+            if isCreature || entered.printed.isPlaneswalker then
+              let (w, fs) :=
+                queueFra post ctrl .anotherCreatureOrPlaneswalkerYouControlEnters
+                  (cause := some entered) (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature then
+              let (w, fs) :=
+                queueFra post ctrl .thisOrAnotherCreatureYouControlEnters
+                  (cause := some entered) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature && !entered.printed.isToken then
+              let (w, fs) :=
+                queueFra post ctrl .anotherNontokenCreatureYouControlEnters
+                  (cause := some entered) (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature then
+              for opp in post.livingOpponents ctrl do
+                let (w, fs) :=
+                  queueFra post opp.id .creatureOpponentControlsEnters
+                    (cause := some entered) (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              let pw := post.power entered
+              let (w, fs) :=
+                queueFraWhere post ctrl (fun
+                  | .creatureYouControlPowerAtLeastEnters n => pw ≥ n
+                  | _ => false) (cause := some entered) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Landfall triggers
+            if entered.printed.isLand then
+              let fromGraveyard (ab : TriggeredAbility) : Bool :=
+                match ab.shared with
+                | .payReturnFromGy => true
+                | _ => false
+              let (w, fs) :=
+                queueCtrl post ctrl .landYouControlEnters
+                  (cause := some entered) (keep := (!fromGraveyard ·))
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+              if post.hasSubtype entered .mountain then
+                let (w, fs) := queueCtrl post ctrl .mountainYouControlEnters (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if post.hasSubtype entered .forest then
+                let (w, fs) :=
+                  queueCtrl post ctrl .forestYouControlEnters (cause := some entered)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              for gid in (post.player ctrl).graveyard do
+                match post.findObject? gid with
+                | some gyObj =>
+                  let (w, fs) :=
+                    queueSrc post ctrl gyObj .landYouControlEnters (keep := fromGraveyard)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+                | none => pure ()
+        | .zone (.moved before after fromZone toZone verb actor _ _) =>
+          let beforeObj := findEventObj pre before
+          let afterObj := findEventObj post after
+          let ctrl := (before.controller.orElse (fun _ => after.controller)).getD before.owner
+          -- Leaving the battlefield (CR 603.10a(1)): look-back on `pre`
+          if fromZone == .battlefield && toZone != .battlefield then
+            let lkp : Option Int := some (pre.snapshotPower beforeObj)
+            let toGy : Bool := match toZone with | .graveyard _ => true | _ => false
+            let died : Bool := toGy && before.creature
+            let pwDied : Bool := toGy && before.planeswalker
+            -- Self dies (.dying)
+            if toGy then
+              let keepDying (ab : TriggeredAbility) : Bool :=
+                beforeObj.isCreature ||
+                  match ab.shared with
+                  | .returnAsArtifact => false
+                  | _ => true
+              let (w, fs) :=
+                queueSrc pre ctrl beforeObj .dying
+                  (lastKnownPower := lkp)
+                  (keep := keepDying)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Self leaves the battlefield (.leaving)
+            let (w, fs) :=
+              queueSrc pre ctrl beforeObj .leaving
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+            -- Attached Aura triggers when enchanted creature dies (Ferocity of the Hunt)
+            if died then
+              for aura in pre.battlefield do
+                if aura.attachedTo == some beforeObj.id then
+                  match aura.controller with
+                  | some p =>
+                    let (w, fs) :=
+                      queueSrc pre p aura (.fra .enchantedDies)
+                        (cause := some beforeObj) (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+            -- Nontoken creature you control dies
+            if died && !beforeObj.printed.isToken then
+              let (w, fs) :=
+                queueSrc pre ctrl beforeObj (.fra .nontokenCreatureYouControlDies)
+                  (cause := some beforeObj) (w := waiting) (fs := firedSources)
+              let (w, fs) :=
+                queueCtrl pre ctrl (.fra .nontokenCreatureYouControlDies)
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := w) (fs := fs)
+              let (w, fs) :=
+                queueCtrl pre ctrl .nontokenYouControlDies
+                  (excludeId := some beforeObj.id)
+                  (w := w) (fs := fs)
+              waiting := w; firedSources := fs
+            -- Another creature or planeswalker you control dies
+            if died || pwDied then
+              let (w, fs) :=
+                queueCtrl pre ctrl (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- The Ozolith: a creature you control leaving with counters on it
+            if beforeObj.isCreature && (beforeObj.status.hasCounters || !before.counters.isEmpty) then
+              let (w, fs) :=
+                queueCtrl pre ctrl (.fra .creatureYouControlLeaves)
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Villain you control dies
+            if died && (pre.hasSubtype beforeObj .villain || before.villain) then
+              let (w, fs) :=
+                queueCtrl pre ctrl .villainYouControlDies
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Return-to-hand from battlefield (CR 603.10a(4)): look-back on `pre`
+            if !beforeObj.printed.isLand && (match toZone with | .hand _ => true | _ => false) then
+              let (w, fs) :=
+                queueCtrl pre ctrl .anotherNonlandReturned
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Creature you control dies / Goblin, Orc, or Army dies / Attacking creature dies
+            if died then
+              let (w, fs) :=
+                queueCtrl pre ctrl .creatureYouControlDies
+                  (excludeId := some beforeObj.id) (cause := some beforeObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+              if pre.hasSubtype beforeObj .goblin || pre.hasSubtype beforeObj .orc ||
+                  pre.hasSubtype beforeObj .army || before.goblinOrcArmy then
+                let (w, fs) :=
+                  queueCtrl pre ctrl .anotherGoblinOrcArmyDies
+                    (excludeId := some beforeObj.id)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if beforeObj.status.attacking || before.attacking then
+                let (w, fs) :=
+                  queueCtrl pre ctrl .attackingCreatureYouControlDies
+                    (excludeId := some beforeObj.id) (cause := some afterObj)
+                    (w := waiting) (fs := firedSources)
+                let (w, fs) :=
+                  queueSrc pre ctrl beforeObj .attackingCreatureYouControlDies
+                    (cause := some afterObj) (w := w) (fs := fs)
+                waiting := w; firedSources := fs
+            -- Sacrifice triggers (CR 603.10a(2)): look-back on `pre`
+            if verb == .sacrifice then
+              let sacPlayer := actor.getD ctrl
+              if e.matchesTrigger sacPlayer beforeObj.id .youSacrificeToken then
+                let (w, fs) :=
+                  queueCtrl pre sacPlayer .youSacrificeToken (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              -- Bolg reflexive sacrifice trigger (CR 603.10a(2) / 603.12): look-back on `pre`
+              match pre.pending with
+              | .maySacrificeAnotherBolg _ bolgId =>
+                match (post.findObject? bolgId).orElse (fun _ => pre.findObject? bolgId) with
+                | some bolg =>
+                  match bolg.controller with
+                  | some c =>
+                    let (w, fs) :=
+                      queueAb pre c bolg .onBolgDealSacrificedPower .bolgSacrificedForReflexive
+                        (lastKnownPower := lkp) (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+                | none => pure ()
+              | _ => pure ()
+          -- Card leaving a graveyard (CR 603.10a(3)): look-back on `pre`
+          match fromZone with
+          | .graveyard gyOwner =>
+            if (beforeObj.printed.isCreature || before.creature) &&
+                (match toZone with | .graveyard _ => false | _ => true) then
+              let (w, fs) :=
+                queueCtrl pre gyOwner .creatureCardLeavesYourGy
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          | _ => pure ()
+          -- Entering the battlefield from another zone (CR 603.6a / 603.10): post-state
+          if fromZone != .battlefield && toZone == .battlefield && !post.eventSuppressedByKarn e then
+            let entered := afterObj
+            let p := (after.controller.orElse (fun _ => entered.controller)).getD entered.owner
+            let (w, fs) := queueSrc post p entered .entering (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+            if post.hasSubtype entered .elf then
+              let (w, fs) :=
+                queueCtrl post p .anotherElfYouControlEnters (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.isCreature then
+              let (w, fs) :=
+                queueCtrl post p .anotherCreatureYouControlEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for src in post.permanentsOf p do
+              let self := src.id == entered.id
+              for ab in src.printed.triggeredAbilities ++ src.status.grantedTriggeredAbilities do
+                let opts := ab.opts
+                let fireSub (ev : TriggerEvent) (cond : Bool)
+                    (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :=
+                  if ab.firesOn ev && cond then
+                    queueAb post p src ab ev (cause := some entered) (w := w) (fs := fs)
+                  else (w, fs)
+                let (w, fs) :=
+                  match opts.thisOrNontokenSubtype with
+                  | some s =>
+                    fireSub .thisOrNontokenSubtypeYouControlEnters
+                      (self || (!entered.printed.isToken && post.hasSubtype entered s))
+                      waiting firedSources
+                  | none => (waiting, firedSources)
+                let (w, fs) :=
+                  match opts.thisOrAnotherSubtype with
+                  | some s =>
+                    fireSub .thisOrAnotherSubtypeYouControlEnters
+                      (self || post.hasSubtype entered s) w fs
+                  | none => (w, fs)
+                let (w, fs) :=
+                  match opts.anotherSubtypeOrEquipment with
+                  | some s =>
+                    fireSub .anotherSubtypeOrEquipmentYouControlEnters
+                      (!self && (post.hasSubtype entered s || entered.printed.isEquipment)) w fs
+                  | none => (w, fs)
+                waiting := w; firedSources := fs
+            if entered.printed.isToken then
+              let (w, fs) :=
+                queueCtrl post p .tokenYouControlEnters
+                  (keep := fun ab => ab.shared != .watch .tokensEnterMayDraw)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.printed.isArtifact then
+              let (w, fs) := queueCtrl post p .artifactYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.isCreature then
+              let (w, fs) := queueCtrl post p .creatureYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for sub in entered.subtypes do
+              let (w, fs) := queueCtrl post p (.subtypeYouControlEnters sub) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.printed.isEquipment then
+              let (w, fs) := queueCtrl post p .equipmentYouControlEnters (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if post.hasSubtype entered .villain || entered.printed.isArtifact then
+              let (w, fs) :=
+                queueCtrl post p .anotherVillainOrArtifactEnters (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if post.hasSubtype entered .villain then
+              let (w, fs) :=
+                queueCtrl post p .anotherVillainEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if entered.types.contains .artifact then
+              let (w, fs) :=
+                queueCtrl post p .anotherArtifactEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if !entered.printed.isToken && post.hasSubtype entered .hero then
+              let (w, fs) :=
+                queueCtrl post p .anotherNontokenHeroEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if !entered.printed.isToken && entered.types.contains .artifact then
+              let (w, fs) :=
+                queueCtrl post p .anotherNontokenArtifactEnters
+                  (excludeId := some entered.id) (cause := some entered)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            let isCreature := entered.isCreature
+            if isCreature || entered.printed.isPlaneswalker then
+              let (w, fs) :=
+                queueFra post p .anotherCreatureOrPlaneswalkerYouControlEnters
+                  (cause := some entered) (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature then
+              let (w, fs) :=
+                queueFra post p .thisOrAnotherCreatureYouControlEnters
+                  (cause := some entered) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature && !entered.printed.isToken then
+              let (w, fs) :=
+                queueFra post p .anotherNontokenCreatureYouControlEnters
+                  (cause := some entered) (excludeId := some entered.id)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            if isCreature then
+              for opp in post.livingOpponents p do
+                let (w, fs) :=
+                  queueFra post opp.id .creatureOpponentControlsEnters
+                    (cause := some entered) (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              let pw := post.power entered
+              let (w, fs) :=
+                queueFraWhere post p (fun
+                  | .creatureYouControlPowerAtLeastEnters n => pw ≥ n
+                  | _ => false) (cause := some entered) (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Landfall triggers
+            if entered.printed.isLand then
+              let fromGraveyard (ab : TriggeredAbility) : Bool :=
+                match ab.shared with
+                | .payReturnFromGy => true
+                | _ => false
+              let (w, fs) :=
+                queueCtrl post p .landYouControlEnters
+                  (cause := some entered) (keep := (!fromGraveyard ·))
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+              if post.hasSubtype entered .mountain then
+                let (w, fs) := queueCtrl post p .mountainYouControlEnters (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if post.hasSubtype entered .forest then
+                let (w, fs) :=
+                  queueCtrl post p .forestYouControlEnters (cause := some entered)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              for gid in (post.player p).graveyard do
+                match post.findObject? gid with
+                | some gyObj =>
+                  let (w, fs) :=
+                    queueSrc post p gyObj .landYouControlEnters (keep := fromGraveyard)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+                | none => pure ()
+          -- Draw triggers (post-state, CR 603.10)
+          match fromZone, toZone, verb with
+          | .library libP, .hand handP, .draw _ _ =>
+            if libP == handP && (post.player handP).keptOpeningHand then
+              let p := handP
+              for o in post.permanentsOf p do
+                if e.matchesTrigger p o.id .youDraw then
+                  let (w, fs) := queueSrc post p o .youDraw (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+                if e.matchesTrigger p o.id .youDrawSecondCard then
+                  let (w, fs) := queueSrc post p o .youDrawSecondCard (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              if e.matchesTrigger p ⟨0⟩ .anyPlayerDrawsSecond then
+                for q in post.livingPlayers do
+                  for o in post.permanentsOf q.id do
+                    if e.matchesTrigger q.id o.id .anyPlayerDrawsSecond then
+                      let (w, fs) :=
+                        queueSrc post q.id o .anyPlayerDrawsSecond (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+              for opp in post.livingOpponents p do
+                for o in post.permanentsOf opp.id do
+                  if e.matchesTrigger opp.id o.id .opponentDrawsExceptFirstDrawStep then
+                    let (w, fs) :=
+                      queueSrc post opp.id o .opponentDrawsExceptFirstDrawStep
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  if e.matchesTrigger opp.id o.id .opponentDrawsSecondCard then
+                    let (w, fs) :=
+                      queueSrc post opp.id o .opponentDrawsSecondCard
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+          | _, _, _ => pure ()
+          -- Discard / cycle triggers (post-state, CR 603.10 / 701.9 / 702.29a)
+          match fromZone, toZone with
+          | .hand handP, .graveyard _ =>
+            if e.matchesTrigger handP beforeObj.id .youDiscard then
+              let (w, fs) :=
+                queueSrc post handP afterObj (.fra .youDiscardThis) (w := waiting) (fs := firedSources)
+              let (w, fs) :=
+                queueCtrl post handP .youDiscard
+                  (lastKnownPower := some (Int.ofNat afterObj.id.raw))
+                  (w := w) (fs := fs)
+              let (w, fs) :=
+                queueCtrl post handP (.fra .youDiscardOne)
+                  (cause := some afterObj) (w := w) (fs := fs)
+              waiting := w; firedSources := fs
+            if afterObj.printed.cycling.isSome && e.matchesTrigger handP beforeObj.id (.fra .youCycle) then
+              let x :=
+                (post.proposedSpell.bind (fun prop =>
+                  (post.findObject? prop.spellId).bind (·.chosenX))).orElse
+                  (fun _ => afterObj.chosenX)
+              let (w, fs) :=
+                queueSrc post handP afterObj (.fra .youCycle)
+                  (lastKnownPower := x.map Int.ofNat)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          | _, _ => pure ()
+        | .zone (.ceasedToExist _) => pure ()
+        | .permanent (.tapped obj _) =>
+          let tObj := findEventObj post obj
+          match tObj.controller.orElse (fun _ => obj.controller) with
+          | some p =>
+            if e.matchesTrigger p tObj.id .sourceBecomesTapped then
+              let (w, fs) := queueSrc post p tObj .sourceBecomesTapped (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for eq in post.attachmentsOf tObj do
+              if eq.printed.isEquipment && e.matchesTrigger p eq.id .equippedBecomesTapped then
+                let (w, fs) := queueSrc post p eq .equippedBecomesTapped (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            let wasAlreadyTapped :=
+              (pre.findObject? tObj.id).any (·.status.becameTappedThisTurn) ||
+                tappedInBatch.contains tObj.id
+            tappedInBatch := tappedInBatch.push tObj.id
+            if !wasAlreadyTapped && e.matchesTrigger p tObj.id .creatureYouControlTapped then
+              let (w, fs) :=
+                queueCtrl post p .creatureYouControlTapped (cause := some tObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            match e.cause with
+            | .costPayment .teamwork actor _ =>
+              if e.matchesTrigger actor tObj.id .tappedForTeamwork then
+                let (w, fs) :=
+                  queueSrc post actor tObj .tappedForTeamwork (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            | _ => pure ()
+          | none => pure ()
+        | .permanent (.untapped _)
+        | .permanent (.phasedOut _ _)
+        | .permanent (.phasedIn _ _)
+        | .permanent (.transformed _ _)
+        | .permanent (.turnedFaceUp _)
+        | .permanent (.turnedFaceDown _)
+        | .permanent (.counters _ _ _ _)
+        | .permanent (.attached _ _ _)
+        | .permanent (.unattached _ _)
+        | .permanent (.controlChanged _ _ _)
+        | .permanent (.designation _ _ _) => pure ()
+        | .damage (.dealt pkts) =>
+          let mut dealtToPerm : Array (GameObject × Nat × Nat × Bool) := #[]
+          for pkt in pkts do
+            if pkt.amount > 0 then
+              let srcObj? :=
+                (pkt.source.id.bind post.findObject?).orElse (fun _ => pkt.source.id.bind pre.findObject?)
+              let srcCtrl? :=
+                pkt.source.controller.orElse (fun _ => srcObj?.bind (·.controller))
+              match pkt.recipient with
+              | .permanent recSnap =>
+                let recObj := findEventObj post recSnap
+                let noncombatAdd := if pkt.combat then 0 else pkt.amount
+                match dealtToPerm.findIdx? (fun (ro, _, _, _) => ro.id == recObj.id) with
+                | some idx =>
+                  let (ro, amt, ncAmt, comb) := dealtToPerm[idx]!
+                  dealtToPerm := dealtToPerm.set! idx (ro, amt + pkt.amount, ncAmt + noncombatAdd, comb || pkt.combat)
+                | none =>
+                  dealtToPerm := dealtToPerm.push (recObj, pkt.amount, noncombatAdd, pkt.combat)
+              | .battle _ =>
+                match srcCtrl? with
+                | some pid =>
+                  let srcObj := srcObj?.getD (findEventObj post pkt.source)
+                  if pkt.combat then
+                    let (w, fs) :=
+                      queueSrc post pid srcObj .dealsCombatDamageToPlayerOrBattle
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                    if srcObj.isCreature then
+                      for o in post.permanentsOf pid do
+                        for ab in o.printed.triggeredAbilities do
+                          match ab with
+                          | .triggered _ _ opts =>
+                            match ab.shared, opts.watchedSubtype with
+                            | .createTokens .., some subtype =>
+                              if o.id != srcObj.id && post.hasSubtype srcObj subtype then
+                                let (w, fs) :=
+                                  queueAb post pid o ab .dealsCombatDamageToPlayerOrBattle
+                                    (w := waiting) (fs := firedSources)
+                                waiting := w; firedSources := fs
+                            | _, _ => pure ()
+                | none => pure ()
+              | .player defn =>
+                if pkt.combat then
+                  if !(post.player defn).lost then
+                    match srcCtrl? with
+                    | some pid =>
+                      let srcObj := srcObj?.getD (findEventObj post pkt.source)
+                      let pktEv :=
+                        GameEvent.damagedPlayer e.turn pkt.source defn pkt.amount true (cause := some e.cause)
+                      if pktEv.matchesTrigger pid srcObj.id .dealsCombatDamageToPlayer then
+                        let (w, fs) :=
+                          queueSrc post pid srcObj .dealsCombatDamageToPlayer
+                            (lastKnownToughness := some (Int.ofNat defn.idx))
+                            (w := waiting) (fs := firedSources)
+                        waiting := w; firedSources := fs
+                      let (w, fs) :=
+                        queueSrc post pid srcObj .dealsCombatDamageToPlayerOrBattle
+                          (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+                      if srcObj.isCreature then
+                        for o in post.permanentsOf pid do
+                          for ab in o.printed.triggeredAbilities do
+                            match ab with
+                            | .triggered _ _ opts =>
+                              match ab.shared, opts.watchedSubtype with
+                              | .createTokens .., some subtype =>
+                                if o.id != srcObj.id && post.hasSubtype srcObj subtype then
+                                  let (w, fs) :=
+                                    queueAb post pid o ab .dealsCombatDamageToPlayerOrBattle
+                                      (w := waiting) (fs := firedSources)
+                                  waiting := w; firedSources := fs
+                              | _, _ => pure ()
+                      if post.hasSubtype srcObj .army then
+                        let (w, fs) :=
+                          queueCtrl post pid .armyYouControlCombatDamage
+                            (w := waiting) (fs := firedSources)
+                        waiting := w; firedSources := fs
+                      for eq in post.battlefield do
+                        if eq.attachedTo == some srcObj.id then
+                          match eq.controller with
+                          | some c =>
+                            let (w, fs) :=
+                              queueSrc post c eq .equippedDealsCombatDamageToPlayer
+                                (lastKnownPower := some (Int.ofNat pkt.amount))
+                                (w := waiting) (fs := firedSources)
+                            waiting := w; firedSources := fs
+                          | none => pure ()
+                    | none => pure ()
+                else
+                  for q in post.livingPlayers do
+                    if q.id != defn then
+                      let (w, fs) :=
+                        queueFra post q.id .opponentDealtNoncombatDamage
+                          (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+          -- Per-permanent dealt-damage triggers
+          for (recObj, totalAmt, noncombatAmt, _) in dealtToPerm do
+            let pktEv :=
+              GameEvent.damaged e.turn { owner := recObj.owner } recObj.asEvent totalAmt (noncombatAmt == 0)
+            match recObj.controller with
+            | some c =>
+              if !firedSourceDealtDamage.contains recObj.id &&
+                  pktEv.matchesTrigger c recObj.id .sourceDealtDamage then
+                firedSourceDealtDamage := firedSourceDealtDamage.push recObj.id
+                let batchTotal :=
+                  (batchDamageByPerm.find? (fun (id, _) => id == recObj.id)).map Prod.snd |>.getD totalAmt
+                let (w, fs) :=
+                  queueSrc post c recObj .sourceDealtDamage
+                    (lastKnownPower := some (Int.ofNat batchTotal))
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if recObj.isCreature && pktEv.matchesTrigger c recObj.id .creatureYouControlDealtDamage then
+                let (w, fs) :=
+                  queueCtrl post c .creatureYouControlDealtDamage
+                    (lastKnownPower := some (Int.ofNat totalAmt))
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if noncombatAmt > 0 then
+                let ncEv :=
+                  GameEvent.damaged e.turn { owner := recObj.owner } recObj.asEvent noncombatAmt false
+                if ncEv.matchesTrigger c recObj.id .sourceDealtNoncombatDamage then
+                  let (w, fs) :=
+                    queueSrc post c recObj .sourceDealtNoncombatDamage
+                      (lastKnownPower := some (Int.ofNat noncombatAmt))
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+            | none => pure ()
+        | .damage (.marked _ _) | .damage (.markedCleared _) | .damage (.prevented _ _ _) => pure ()
+        | .life (.gained p amount) =>
+          if amount > 0 && e.matchesTrigger p ⟨0⟩ .youGainLife then
+            let (w, fs) :=
+              queueCtrl post p .youGainLife
+                (lastKnownPower := some (Int.ofNat amount))
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+        | .life (.lost p amount _ _) =>
+          if amount > 0 && e.matchesTrigger p ⟨0⟩ .playerLosesLife then
+            for pl in post.livingPlayers do
+              for o in post.permanentsOf pl.id do
+                if e.matchesTrigger pl.id o.id .playerLosesLife then
+                  let (w, fs) :=
+                    queueSrc post pl.id o .playerLosesLife
+                      (lastKnownPower := some (Int.ofNat amount))
+                      (lastKnownToughness := some (Int.ofNat p.idx))
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+        | .player (.scried p _ _ lookedAt _) =>
+          if e.matchesTrigger p ⟨0⟩ .youScry then
+            let (w, fs) :=
+              queueCtrl post p .youScry
+                (lastKnownPower := some (Int.ofNat lookedAt))
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if e.matchesTrigger p ⟨0⟩ .youScryOrSurveil then
+            let (w, fs) := queueCtrl post p .youScryOrSurveil (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+        | .player (.surveilled p _ _ _ _) =>
+          if e.matchesTrigger p ⟨0⟩ .youScryOrSurveil then
+            let (w, fs) := queueCtrl post p .youScryOrSurveil (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+        | .player (.proliferated p _ _) =>
+          let (w, fs) := queueFra post p .youProliferate (w := waiting) (fs := firedSources)
+          waiting := w; firedSources := fs
+        | .player (.ringTempted p _ _) =>
+          if e.matchesTrigger p ⟨0⟩ .theRingTemptsYou then
+            let (w, fs) := queueCtrl post p .theRingTemptsYou (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if e.matchesTrigger p ⟨0⟩ .youChooseRingBearer then
+            let (w, fs) := queueCtrl post p .youChooseRingBearer (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+        | .player (.beheld _ _)
+        | .player (.manaEmptied _ _ _)
+        | .player (.lost _)
+        | .player (.leftGame _)
+        | .player (.sheHulkDealtDamage _) => pure ()
+        | .turn (.stepBegan step ap) =>
+          match step with
+          | .upkeep =>
+            if e.matchesTrigger ap ⟨0⟩ .yourUpkeep then
+              let (w, fs) := queueCtrl post ap .yourUpkeep (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for pl in post.livingPlayers do
+              if e.matchesTrigger pl.id ⟨0⟩ .eachUpkeep then
+                let (w, fs) := queueCtrl post pl.id .eachUpkeep (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            -- Abilities that trigger from a graveyard (Command the Stage)
+            for pl in post.livingPlayers do
+              for gid in (post.player pl.id).graveyard do
+                match post.findObject? gid with
+                | some card =>
+                  let (w, fs) :=
+                    queueSrc post pl.id card (.fra .eachUpkeepFromGraveyard)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+                | none => pure ()
+            -- Auras with “at the beginning of the upkeep of enchanted creature's controller”
+            for aura in post.battlefield do
+              match aura.attachedTo.bind post.findObject?, aura.controller with
+              | some host, some c =>
+                if host.controlledBy ap then
+                  let (w, fs) :=
+                    queueSrc post c aura .enchantedControllerUpkeep
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              | _, _ => pure ()
+          | .draw =>
+            for opp in post.livingOpponents ap do
+              let (w, fs) :=
+                queueCtrl post opp.id .eachOpponentDrawStep (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          | .precombatMain =>
+            let (w, fs) := queueCtrl post ap .yourFirstMain (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          | .beginningOfCombat =>
+            for pl in post.livingPlayers do
+              if pl.id != ap then
+                let (w, fs) :=
+                  queueFra post pl.id .opponentBeginCombat (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            if e.matchesTrigger ap ⟨0⟩ .yourBeginCombat then
+              let (w, fs) := queueCtrl post ap .yourBeginCombat (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for pl in post.livingPlayers do
+              if e.matchesTrigger pl.id ⟨0⟩ .eachBeginCombat then
+                let (w, fs) := queueCtrl post pl.id .eachBeginCombat (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            for gid in (post.player ap).graveyard do
+              match post.findObject? gid with
+              | some card =>
+                let (w, fs) :=
+                  queueSrc post ap card (.fra .yourBeginCombatFromGraveyard)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              | none => pure ()
+          | .end =>
+            for pl in post.livingPlayers do
+              if e.matchesTrigger pl.id ⟨0⟩ .eachEndStep then
+                let (w, fs) := queueCtrl post pl.id .eachEndStep (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            if e.matchesTrigger ap ⟨0⟩ .yourEndStep then
+              let (w, fs) := queueCtrl post ap .yourEndStep (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          | _ => pure ()
+        | .turn (.turnBegan _ _)
+        | .turn (.phaseBegan _)
+        | .turn (.stepEnded _)
+        | .turn (.phaseEnded _)
+        | .turn (.turnEnded _)
+        | .turn (.extraStepAdded _ _)
+        | .turn (.dayNightChanged _)
+        | .turn (.extraTurnAdded _ _)
+        | .turn (.extraPhaseAdded _ _) => pure ()
+        | .combat (.attackersDeclared activePlayer decls) =>
+          let attackerIds := decls.map (fun (eo, _) => eo.id.getD ⟨0⟩)
+          let attackers := attackerIds.filterMap post.findObject?
+          if !attackers.isEmpty then
+            -- Zombie token with power >= 6 and Sphinxes count (from declareAttackers)
+            let mut sphinxes := 0
+            for a in attackers do
+              if a.printed.isToken && post.hasSubtype a .zombie && post.snapshotPower a >= 6 then
+                let (w, fs) :=
+                  queueFra post activePlayer .zombieTokenAttacks (cause := some a)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if post.hasSubtype a .sphinx then
+                sphinxes := sphinxes + 1
+            if sphinxes > 0 then
+              let (w, fs) :=
+                queueFra post activePlayer .sphinxesAttack
+                  (lastKnownPower := some (Int.ofNat sphinxes))
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Per-attacker triggers (from putAttackTriggersOnStack)
+            for a in attackers do
+              let whom := post.defendingPlayerOf a
+              if e.matchesTrigger activePlayer a.id .attacking then
+                let (w, fs) :=
+                  queueSrc post activePlayer a .attacking
+                    (lastKnownPower := some (post.snapshotPower a))
+                    (lastKnownToughness := some (post.snapshotToughness a))
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              if e.matchesTrigger activePlayer a.id (.fra .creatureYouControlAttacks) then
+                let (w, fs) :=
+                  queueFra post activePlayer .creatureYouControlAttacks (cause := some a)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              let alone :=
+                !attackers.any (fun a' =>
+                  a'.id != a.id && post.defendingPlayerOf a' == whom &&
+                    a'.status.attackingPlaneswalker?.isNone) &&
+                  a.status.attackingPlaneswalker?.isNone
+              if alone then
+                let (w, fs) :=
+                  queueFra post activePlayer .creatureYouControlAttacksPlayerAlone (cause := some a)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              for aura in post.battlefield do
+                if aura.attachedTo == some a.id then
+                  match aura.controller with
+                  | some c =>
+                    let (w, fs) :=
+                      queueSrc post c aura .enchantedAttacksOrBlocks
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+              let (w, fs) :=
+                queueFra post whom .creatureAttacksYouOrYourPlaneswalker (cause := some a)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            -- Garruk, Curse Breaker: once for each opponent attacked
+            let attackedPlayers := attackers.foldl (fun (acc : Array PlayerId) o =>
+              if o.status.attackingPlaneswalker?.isSome then acc
+              else
+                let d := post.defendingPlayerOf o
+                if acc.contains d then acc else acc.push d) #[]
+            for d in attackedPlayers do
+              match attackers.find? (fun o =>
+                  o.status.attackingPlaneswalker?.isNone &&
+                    post.defendingPlayerOf o == d) with
+              | some o =>
+                for q in post.livingPlayers do
+                  if q.id != d then
+                    let (w, fs) :=
+                      queueFra post q.id .creaturesAttackYourOpponent
+                        (cause := some o) (causeController := some d)
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+              | none => pure ()
+            if e.matchesTrigger activePlayer attackers[0]!.id .youAttackWithElves then
+              let (w, fs) :=
+                queueCtrl post activePlayer .youAttackWithElves (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            let attacksSamePlayer :=
+              attackers.any (fun o =>
+                match o.status.attackingPlayer? with
+                | none =>
+                  o.status.attackingPlaneswalker?.isNone && attackers.size >= 2
+                | some d =>
+                  (attackers.filter (fun o' => o'.status.attackingPlayer? == some d)).size >= 2)
+            if attacksSamePlayer then
+              let (w, fs) :=
+                queueCtrl post activePlayer .youAttackWithTwoOrMore (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            let merfolkDefenders :=
+              attackers.foldl (fun acc o =>
+                if !post.hasSubtype o .merfolk then acc
+                else
+                  let d := post.defendingPlayerOf o
+                  if acc.any (· == d) then acc else acc.push d)
+                (#[] : Array PlayerId)
+            for _ in merfolkDefenders do
+              let (w, fs) :=
+                queueCtrl post activePlayer .merfolkAttackPlayer (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for o in attackers do
+              if post.battlefield.any (fun eq =>
+                  eq.printed.isEquipment && eq.attachedTo == some o.id &&
+                    eq.controlledBy activePlayer) then
+                let (w, fs) :=
+                  queueCtrl post activePlayer .equippedCreatureYouControlAttacks
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            let (w, fs) := queueCtrl post activePlayer .youAttack (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+            let pumps := (post.player activePlayer).attackPumpPerPlainsThisTurn
+            if pumps > 0 then
+              let src :=
+                match (post.permanentsOf activePlayer).find? (fun o => o.printed.saga.isSome) with
+                | some o => o
+                | none =>
+                  { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment] }
+                    id := ⟨0⟩, owner := activePlayer, controller := some activePlayer, zone := .battlefield }
+              for _ in [0:pumps] do
+                let (w, fs) :=
+                  queueAb post activePlayer src .onYouAttackPumpTargetPerPlains .youAttack
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            let attackingNow :=
+              (post.permanentsOf activePlayer).filter (fun o => o.isCreature && o.status.attacking)
+            if attackingNow.size == 1 then
+              let attacker := attackingNow[0]!
+              let aid := attacker.id
+              for o in post.permanentsOf activePlayer do
+                let (w, fs) :=
+                  queueSrc post activePlayer o .creatureYouControlAttacksAlone
+                    (cause := some attacker) (w := waiting) (fs := firedSources)
+                let (w, fs) :=
+                  if o.attachedTo == some aid then
+                    queueSrc post activePlayer o .equippedAttacksAlone (w := w) (fs := fs)
+                  else (w, fs)
+                waiting := w; firedSources := fs
+            let totalPower :=
+              attackers.foldl (fun acc o => acc + post.snapshotPower o) 0
+            if totalPower >= 12 then
+              let (w, fs) :=
+                queueCtrl post activePlayer .youAttackWithTotalPower (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            for a in attackers do
+              for eq in post.battlefield do
+                if eq.attachedTo == some a.id then
+                  match eq.controller with
+                  | some c =>
+                    let (w, fs) :=
+                      queueSrc post c eq .equippedAttacks (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+        | .combat (.blockersDeclared _ decls) =>
+          let mut seenBlockers : Array ObjectId := #[]
+          for (blockerSnap, _) in decls do
+            let b := findEventObj post blockerSnap
+            if !seenBlockers.contains b.id then
+              seenBlockers := seenBlockers.push b.id
+              for aura in post.battlefield do
+                if aura.attachedTo == some b.id then
+                  match aura.controller with
+                  | some c =>
+                    let (w, fs) :=
+                      queueSrc post c aura .enchantedAttacksOrBlocks
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+                  | none => pure ()
+              if post.power b ≤ 1 || post.toughness b ≤ 1 then
+                for pl in post.livingPlayers do
+                  if some pl.id != b.controller then
+                    let (w, fs) :=
+                      queueFra post pl.id .opponentSmallCreatureBlocks (cause := some b)
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+        | .combat (.becameBlocked attackerSnap _) =>
+          let attacker := findEventObj post attackerSnap
+          match attacker.controller.orElse (fun _ => attackerSnap.controller) with
+          | some p =>
+            let (w, fs) :=
+              queueSrc post p attacker .becomesBlocked (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          | none => pure ()
+        | .combat (.remainedUnblocked _)
+        | .combat (.becameAttacking _ _)
+        | .combat (.damageAssigned _ _ _)
+        | .combat (.removedFromCombat _) => pure ()
+        | .cast (.spellCast spellSnap caster fromZone) =>
+          if spellSnap.name.isEmpty then pure ()
+          else
+          let castObj := findEventObj post spellSnap
+          let targets := ((post.stackEntry? castObj.id).map (·.targets)).getD #[]
+          let uniquePerm := uniquePermTargets post targets
+          -- Target triggers from casting a spell (CR 601.2i)
+          for o in uniquePerm do
+            match o.controller with
+            | some c =>
+              if c != caster then
+                let (w, fs) :=
+                  queueSrc post c o .becomesTarget (cause := some o)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+            | none => pure ()
+          for o in uniquePerm do
+            match o.controller with
+            | some c =>
+              let (w, fs) :=
+                queueSrc post c o .spellTargetsSource (cause := some castObj)
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            | none => pure ()
+          let spells := post.loggedSpellsCast caster
+          let nonc := post.loggedNoncreatureSpells caster
+          let mvCast := spellSnap.manaValue
+          if e.matchesTrigger caster castObj.id .youCastInstantOrSorcery then
+            let (w, fs) := queueCtrl post caster .youCastInstantOrSorcery (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if e.matchesTrigger caster castObj.id (.fra .castThis) then
+            let (w, fs) := queueSrc post caster castObj (.fra .castThis) (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          for opp in post.livingOpponents caster do
+            let (w, fs) :=
+              queueFraWhere post opp.id (fun
+                | .opponentCastsSpellMvAtMost n => mvCast ≤ n
+                | _ => false) (cause := some castObj) (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if castObj.isPreparedSpell then
+            let (w, fs) :=
+              queueFra post caster .youCastPreparedSpell (cause := some castObj)
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if castObj.printed.isCreature || castObj.printed.isArtifact then
+            let (w, fs) :=
+              queueFra post caster .youCastArtifactOrCreature (cause := some castObj)
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          let targetsOwnCreature := uniquePerm.any (fun o => o.isCreature && o.controlledBy caster)
+          if castObj.printed.isEquipment || targetsOwnCreature then
+            let (w, fs) :=
+              queueFra post caster .youCastEquipmentOrTargetingCreatureYouControl
+                (cause := some castObj) (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if castObj.printed.isCreature then
+            let (w, fs) :=
+              queueCtrl post caster .youCastCreature
+                (lastKnownPower := some (Int.ofNat mvCast))
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          else
+            let (w, fs) :=
+              queueCtrl post caster .youCastNoncreature
+                (cause := some castObj) (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          for opp in post.livingOpponents caster do
+            let (w, fs) := queueCtrl post opp.id .opponentCastsSpell (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if spells == 2 then
+            let (w, fs) :=
+              queueCtrl post caster .youCastSecondSpell (cause := some castObj)
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          let colors := castObj.printed.colors
+          let fromHand := (fromZone == .hand caster) || castObj.castFromHand
+          for c in Color.all do
+            if colors.contains c then
+              let (w, fs) := queueCtrl post caster (.youCastColor c) (w := waiting) (fs := firedSources)
+              let (w, fs) :=
+                if fromHand then queueCtrl post caster (.youCastColorFromHand c) (w := w) (fs := fs)
+                else (w, fs)
+              waiting := w; firedSources := fs
+          if colors.contains .green then
+            let (w, fs) := queueCtrl post caster .youCastGreen (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if castObj.treasureManaSpent then
+            let (w, fs) := queueCtrl post caster .youCastWithTreasure (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          for opp in post.livingOpponents caster do
+            for o in post.permanentsOf opp.id do
+              match o.status.chosenOdd with
+              | some odd =>
+                let parityOk := if odd then mvCast % 2 == 1 else mvCast % 2 == 0
+                if parityOk then
+                  let (w, fs) :=
+                    queueSrc post opp.id o .opponentCastsMatchingParity
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              | none => pure ()
+          if spells == 2 then
+            for pl in post.livingPlayers do
+              let (w, fs) :=
+                queueCtrl post pl.id .anyPlayerCastsSecondSpell (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          let (w, fs) := queueCtrl post caster .youCastSpell (w := waiting) (fs := firedSources)
+          waiting := w; firedSources := fs
+          -- Extort (CR 702.101a): each instance triggers separately.
+          for o in post.permanentsOf caster do
+            if o.staticAbilities.any (fun | .extort => true | _ => false) then
+              let extortAb : TriggeredAbility :=
+                .triggered .enter
+                  { resolution := .extort
+                    phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" }
+                  {}
+              let (w, fs) :=
+                queueAb post caster o extortAb .youCastSpell (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+          if castObj.printed.hasSubtype .villain then
+            let (w, fs) := queueCtrl post caster .youCastVillain (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if targetsOwnCreature then
+            let (w, fs) :=
+              queueCtrl post caster .youCastTargetingCreatureYouControl (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if uniquePerm.any (·.isCreature) then
+            let (w, fs) :=
+              queueCtrl post caster .youCastTargetingCreature (cause := some castObj)
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if castObj.printed.isInstantOrSorcery &&
+              uniquePerm.any (fun o => o.types.contains .artifact || o.types.contains .land) then
+            let (w, fs) :=
+              queueCtrl post caster .youCastInstantSorceryTargetingArtifactOrLand
+                (cause := some castObj) (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          let targetsOpponentOrTheirCreature :=
+            targets.any (fun t =>
+              match t with
+              | .player q => q != caster
+              | .permanent id =>
+                (post.findObject? id).any (fun o =>
+                  o.isOnBattlefield && o.isCreature && o.controller.isSome && !o.controlledBy caster)
+              | _ => false)
+          if targetsOpponentOrTheirCreature then
+            let (w, fs) :=
+              queueCtrl post caster .youCastTargetingOpponentOrTheirCreature
+                (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+          if !castObj.printed.isCreature && nonc == 1 then
+            let (w, fs) :=
+              queueCtrl post caster .youCastFirstNoncreature (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+            for opp in post.livingOpponents caster do
+              let (w, fs) :=
+                queueCtrl post opp.id .opponentCastsFirstNoncreature (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+        | .cast (.abilityActivated abilityId sourceSnap controller kind) =>
+          let srcObj? := sourceSnap.id.bind post.findObject?
+          let srcObj := srcObj?.getD (findEventObj post sourceSnap)
+          match kind with
+          | .nonMana loyaltyDelta _ _ _ =>
+            match loyaltyDelta with
+            | some k =>
+              for opp in post.livingOpponents controller do
+                for o in post.permanentsOf opp.id do
+                  if e.matchesTrigger opp.id srcObj.id (.fra .opponentActivatesLoyaltyAbility) then
+                    let (w, fs) :=
+                      queueSrc post opp.id o (.fra .opponentActivatesLoyaltyAbility)
+                        (cause := some srcObj) (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
+              let removed : Nat := if k < 0 then (-k).toNat else 0
+              if e.matchesTrigger controller ⟨0⟩ .youActivateLoyaltyAbility then
+                for o in post.permanentsOf controller do
+                  for ab in o.matchingTriggers .youActivateLoyaltyAbility do
+                    if ab.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2 then
+                      let lkp :=
+                        if ab.shared == .drawIfRemovedTwoLoyalty then some (Int.ofNat removed)
+                        else none
+                      let (w, fs) :=
+                        queueAb post controller o ab .youActivateLoyaltyAbility
+                          (lastKnownPower := lkp) (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+            | none => pure ()
+            if srcObj?.any (·.isCreature) || sourceSnap.creature then
+              let (w, fs) :=
+                queueCtrl post controller .youActivateCreatureAbility
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+            let targets :=
+              ((post.stackEntry? abilityId).orElse (fun _ => post.stack.back?)).map (·.targets)
+                |>.getD #[]
+            for o in uniquePermTargets post targets do
+              match o.controller with
+              | some c =>
+                if c != controller then
+                  let (w, fs) :=
+                    queueSrc post c o .becomesTarget (cause := some o)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              | none => pure ()
+          | .mana =>
+            if srcObj?.any (·.isCreature) || sourceSnap.creature then
+              let (w, fs) :=
+                queueCtrl post controller .youActivateCreatureAbility
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
+        | .cast (.targeted objId rawTargets _) =>
+          if post.proposedSpell.isNone && !rawTargets.isEmpty then
+            match post.findObject? objId, post.stackEntry? objId with
+            | some obj, some se =>
+              let ctrl := se.controller
+              if obj.abilityEffect.isSome || obj.triggeredAbility.isSome then
+                let targeting :=
+                  ((obj.abilityEffect.map (·.targeting)).orElse (fun _ =>
+                    obj.triggeredAbility.map (·.targeting))).getD (EffectTargeting.of .none)
+                let totalSlots := targeting.kind.spec.slots.size
+                if se.targets.size + se.skippedOptionalSlots ≥ totalSlots then
+                  let (w, fs) :=
+                    queueCtrl post ctrl .youTargetSomething (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+                  for o in uniquePermTargets post rawTargets do
+                    match o.controller with
+                    | some c =>
+                      if c != ctrl then
+                        let (w, fs) :=
+                          queueSrc post c o .becomesTarget (cause := some o)
+                            (w := waiting) (fs := firedSources)
+                        waiting := w; firedSources := fs
+                    | none => pure ()
+              else if obj.isCopy then
+                for o in uniquePermTargets post rawTargets do
+                  match o.controller with
+                  | some c =>
+                    if c != ctrl then
+                      let (w, fs) :=
+                        queueSrc post c o .becomesTarget (cause := some o)
+                          (w := waiting) (fs := firedSources)
+                      waiting := w; firedSources := fs
+                  | none => pure ()
+            | _, _ => pure ()
+        | .cast (.announced _ _ _ _)
+        | .cast (.proposed _ _ _ _) => pure ()
+        | .stackObject (.resolved obj nth) =>
+          if nth == 0 then
+            let ctrl := obj.controller.getD obj.owner
+            let (w, fs) := queueCtrl post ctrl .finalSagaChapterResolves (w := waiting) (fs := firedSources)
+            waiting := w; firedSources := fs
+        | .stackObject (.copied _ _ _) | .stackObject (.removedOnResolution _) => pure ()
+        | .triggerQueue (.triggered _ _ _ _) | .triggerQueue (.putOnStack _ _ _) => pure ()
+        | .spentMana _ _
+        | .effectCreated _ _
+        | .effectExpired _ _
+        | .effectUpdated _ _ => pure ()
+    return waiting
+
+/-- Close an outermost rules-event batch: evaluate `matchTriggers pre g batchEvents`,
+record `TriggerQueueEvent.triggered` for each triggered ability, and enqueue the
+resulting `WaitingTrigger`s (CR 603.2 / 603.2c / 603.3 / 603.10). -/
+def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
+    (batchEvents : Array GameEvent) : Game :=
+  if batchEvents.isEmpty then g
+  else
+    let anyEntered := batchEvents.any fun ev =>
+      match ev.change with
+      | .rules (.zone (.moved _ _ _ .battlefield _ _ _ _))
+      | .rules (.zone (.created _ _)) => true
+      | _ => false
+    let g :=
+      if !anyEntered then g
+      else
+        g.players.foldl (fun g pl =>
+          let p := pl.id
+          let g :=
+            if !g.hasEnduringStory p && g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
+              let g := g.modifyPlayer p (fun pl => { pl with enduringStory := true })
+              { g with log := g.log.push s!"{(g.player p).name} has an enduring story" }
+            else g
+          if !g.hasCitysBlessing p && g.controlsAscend p && g.permanentCount p ≥ 10 then
+            let g := g.modifyPlayer p (fun pl => { pl with citysBlessing := true })
+            { g with log := g.log.push s!"{(g.player p).name} has the city's blessing" }
+          else g) g
+    let wts := matchTriggers pre g batchEvents
+    if wts.isEmpty then g
+    else
+      let preWaiting := g.waitingTriggers
+      let (g, toEnqueue, _, _) := wts.foldl
+        (fun (acc, q, coalesced, hulkAdded) wt =>
+          let key := (wt.source.id, wt.ability)
+          let alreadyInPre :=
+            wt.event == .sourceDealtDamage &&
+              preWaiting.any (fun t =>
+                t.source.id == wt.source.id && t.ability == wt.ability &&
+                  t.event == .sourceDealtDamage)
+          if alreadyInPre then
+            if coalesced.contains key then
+              (acc, q, coalesced, hulkAdded)
+            else
+              let amt := wt.lastKnownPower.getD 0
+              let wt' := acc.waitingTriggers.map (fun t =>
+                if t.source.id == wt.source.id && t.ability == wt.ability &&
+                    t.event == .sourceDealtDamage then
+                  { t with lastKnownPower := some (t.lastKnownPower.getD 0 + amt) }
+                else t)
+              ({ acc with waitingTriggers := wt' }, q, coalesced.push key, hulkAdded)
+          else
+            let ev :=
+              { (GameEvent.triggered acc.turnNumber (acc.snapshot wt.source) wt.controller wt.ability
+                  batchId) with
+                batch := batchId }
+            let acc := { acc with events := acc.events.push ev }
+            let isHulkEnrage :=
+              wt.event == .sourceDealtDamage &&
+                wt.ability.shared == .watch .hulk &&
+                wt.source.status.attacking
+            let (acc, hulkAdded) :=
+              if isHulkEnrage && !hulkAdded.contains wt.source.id then
+                let eng :=
+                  GameEvent.engine acc.turnNumber
+                    (.enrageGrantsAdditionalCombat (acc.enrageGrantsAdditionalCombat + 1))
+                (({ acc with events := acc.events.push eng }).applyChange eng.change,
+                  hulkAdded.push wt.source.id)
+              else (acc, hulkAdded)
+            (acc, q.push wt, coalesced, hulkAdded))
+        (g, #[], (#[] : Array (ObjectId × TriggeredAbility)), (#[] : Array ObjectId))
+      if toEnqueue.isEmpty then g else g.enqueueWaitingTriggers toEnqueue
 
 /-- Resolve `cause` within an active batch `batchCause?`, sharing the batch's
 minted `EffectId` across all one-shot events in the batch (CR 610). -/
@@ -2867,7 +6054,7 @@ def applySingleRulesEventInBatch (g : Game) (batchId : BatchId) (e : GameEvent) 
 
 /-- Process one `GameEvent`, appending it to `g.events` and applying its
 `GameChange`. When called outside an active batch, a `.rules` event forms its
-own one-event batch and evaluates batch-level triggers immediately (CR 603.2c / 610). -/
+own one-event batch and evaluates triggers immediately (CR 603.2c / 610). -/
 def applyEvent (g : Game) (e : GameEvent) : Game :=
   match e.change with
   | .engine _ =>
@@ -2879,11 +6066,11 @@ def applyEvent (g : Game) (e : GameEvent) : Game :=
       (g.applySingleRulesEventInBatch batchId e).1
     | none =>
       let batchId : BatchId := ⟨g.nextBatchId⟩
-      let preBattlefield := g.battlefield
+      let pre : GameSnapshot := g
       let g0 := { g with currentBatch := some (batchId, none) }
       let (g1, e') := g0.applySingleRulesEventInBatch batchId e
       let g2 := { g1 with currentBatch := none }
-      g2.evaluateBatchTriggers preBattlefield #[e']
+      g2.closeBatch pre batchId #[e']
 
 /-- Record a change that happened. Replacements consult an event before
 this, and do not record a change they replace (CR 614.6). -/
@@ -2900,8 +6087,7 @@ def change (g : Game) (c : EngineChange) : Game :=
 
 /-- Run `f` inside a simultaneous rules-event batch (CR 603.2c / 608.2c / 704.3).
 If a batch is already active on `g`, `f` joins the enclosing batch; otherwise a
-new `BatchId` is opened and batch-level triggers are evaluated once when `f`
-completes. -/
+new `BatchId` is opened and triggers are evaluated once when `f` completes. -/
 def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
     (f : Game → Game × α) : Game × α :=
   match g.currentBatch with
@@ -2915,7 +6101,7 @@ def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
     (g2, res)
   | none =>
     let batchId : BatchId := ⟨g.nextBatchId⟩
-    let preBattlefield := g.battlefield
+    let pre : GameSnapshot := g
     let startIdx := g.events.size
     let (g1, res) := f { g with currentBatch := some (batchId, cause) }
     let g2 := { g1 with currentBatch := none }
@@ -2925,7 +6111,7 @@ def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
       | .rules _ => ev.batch == batchId
       | .engine _ => false)
     if batchEvents.isEmpty then (g2, res)
-    else (g2.evaluateBatchTriggers preBattlefield batchEvents, res)
+    else (g2.closeBatch pre batchId batchEvents, res)
 
 /-- Run `f` inside a simultaneous rules-event batch (CR 603.2c / 608.2c / 704.3). -/
 def withBatch (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game :=
@@ -3355,135 +6541,9 @@ def clearMay (g : Game) : Game :=
 def clearSpellOr (g : Game) : Game :=
   g.changes #[.spellOr #[], .spellOrTargets #[], .spellOrLibrary false]
 
-/-- Cards `p` has drawn this turn. Opening hands are not recorded. -/
-def loggedDraws (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.draws g.events g.turnNumber p
-
-/-- Life `p` has gained this turn. -/
-def loggedLifeGained (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.lifeGained g.events g.turnNumber p
-
-/-- Creatures that have died this turn. -/
-def loggedCreatureDeaths (g : Game) : Nat :=
-  GameEvent.creatureDeaths g.events g.turnNumber
-
-/-- Spells `p` has cast this turn. -/
-def loggedSpellsCast (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.spellsCast g.events g.turnNumber p
-
-/-- Creature spells `p` has cast this turn. -/
-def loggedCreatureSpells (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.creatureSpells g.events g.turnNumber p
-
-/-- Noncreature spells `p` has cast this turn. -/
-def loggedNoncreatureSpells (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.noncreatureSpells g.events g.turnNumber p
-
-/-- Creatures `p` has attacked with this turn. -/
-def loggedAttacks (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.attacks g.events g.turnNumber p
-
-/-- Cards milled from `p`'s library this turn. -/
-def loggedMilled (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.milled g.events g.turnNumber p
-
-/-- `p` has scried at least one card this turn. Scry 0 does not count. -/
-def loggedScried (g : Game) (p : PlayerId) : Bool :=
-  GameEvent.scried g.events g.turnNumber p
-
-/-- `p` has surveilled this turn. Surveil 0 does not count. -/
-def loggedSurveilled (g : Game) (p : PlayerId) : Bool :=
-  GameEvent.surveilled g.events g.turnNumber p
-
-/-- An artifact has entered under `p`'s control this turn. -/
-def loggedArtifactEntered (g : Game) (p : PlayerId) : Bool :=
-  GameEvent.artifactEntered g.events g.turnNumber p
-
-/-- `p` has attacked with a permanent of `subtype` this turn. -/
-def loggedAttackedWithSubtype (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
-  GameEvent.attackedWithSubtype g.events g.turnNumber p subtype
-
-/-- A permanent of `subtype` has entered under `p`'s control this turn. -/
-def loggedSubtypeEntered (g : Game) (p : PlayerId) (subtype : CardSubtype) : Bool :=
-  GameEvent.subtypeEntered g.events g.turnNumber p subtype
-
-/-- `p` has activated a loyalty ability this turn. -/
-def loggedActivatedLoyalty (g : Game) (p : PlayerId) : Bool :=
-  GameEvent.activatedLoyalty g.events g.turnNumber p
-
-/-- `p` was dealt noncombat damage this turn. -/
-def loggedNoncombatDamage (g : Game) (p : PlayerId) : Bool :=
-  GameEvent.dealtNoncombat g.events g.turnNumber p
-
-/-- `p` was dealt noncombat damage last turn. -/
-def loggedNoncombatDamageLastTurn (g : Game) (p : PlayerId) : Bool :=
-  g.turnNumber > 0 && GameEvent.dealtNoncombat g.events (g.turnNumber - 1) p
-
-/-- `id` entered the battlefield this turn. -/
-def loggedEntered (g : Game) (id : ObjectId) : Bool :=
-  GameEvent.objectEntered g.events g.turnNumber id
-
-/-- Equip abilities `p` has completed this turn. -/
-def loggedEquipActivations (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.equipActivations g.events g.turnNumber p
-
-/-- Mana values of spells `p` has cast this turn, oldest first. -/
-def loggedCastManaValues (g : Game) (p : PlayerId) : Array Nat :=
-  GameEvent.castManaValues g.events g.turnNumber p
-
-/-- Cards `p` has discarded this turn. -/
-def loggedDiscards (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.discards g.events g.turnNumber p
-
-/-- Life `p` has lost this turn. -/
-def loggedLifeLost (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.lifeLost g.events g.turnNumber p
-
-/-- Resolutions `p`'s counting ability has recorded this turn. -/
-def loggedResolutions (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.resolutions g.events g.turnNumber p
-
-/-- Lands `p` has played this turn. -/
-def loggedLandsPlayed (g : Game) (p : PlayerId) : Nat :=
-  GameEvent.landsPlayed g.events g.turnNumber p
-
-/-- Graveyard ids of creatures that died this turn. -/
-def loggedCreaturesToGraveyard (g : Game) : Array ObjectId :=
-  GameEvent.creaturesToGraveyard g.events g.turnNumber
-
-/-- Graveyard id of the most recent attacking creature that died. -/
-def loggedLastDiedAttacker (g : Game) : Option ObjectId :=
-  GameEvent.lastDiedAttacker g.events
-
-/-- Permanent that most recently became tapped. -/
-def loggedLastBecameTapped (g : Game) : Option ObjectId :=
-  GameEvent.lastBecameTapped g.events
-
-/-- Player most recently dealt combat damage. -/
-def loggedLastCombatDamagePlayer (g : Game) : Option PlayerId :=
-  GameEvent.lastCombatDamagePlayer g.events
-
-/-- The Sensational She-Hulk has dealt damage this turn. -/
-def loggedSheHulkDealtDamage (g : Game) : Bool :=
-  GameEvent.sheHulkDealtDamageThisTurn g.events g.turnNumber
-
 /-- Record that combat damage was dealt to `p`. -/
 def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject) : Game :=
   g.record (GameEvent.damagedPlayer g.turnNumber source p 1 true)
-
-/-- True when `id` has been dealt a positive amount of damage by a source with
-deathtouch since the last time state-based actions were checked (CR 704.5h). -/
-def deathtouchDealtSinceLastSba (g : Game) (id : ObjectId) : Bool :=
-  g.events.foldl (fun dealt e =>
-    match e.change with
-    | .engine .sbaChecked => false
-    | .rules (.damage (.dealt pkts)) =>
-      dealt || pkts.any (fun pkt =>
-        pkt.amount > 0 && pkt.source.keywords.deathtouch &&
-          match pkt.recipient with
-          | .permanent c => c.id == some id
-          | _ => false)
-    | _ => dealt) false
 
 /-- Set `p`'s life total by gaining or losing the difference (CR 119.5) and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
@@ -3496,132 +6556,6 @@ def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
     (g.record (GameEvent.life g.turnNumber p (pl.life - life).toNat false)).logMsg msg
   else
     g.logMsg msg
-
-/-- Apply `f` to each living opponent of `controller`. -/
-def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId → Game) :
-    Game :=
-  g.livingOpponents controller |>.foldl (fun g pl => f g pl.id) g
-
-/-- Player targets for every member of `ps` who does not have protection
-from everything. -/
-def playerTargets (ps : Array Player) : Array Target :=
-  ps.filter (fun pl => !pl.protectionFromEverything) |>.map (fun pl =>
-    Target.player pl.id)
-
-/-- Living players in turn order from `start` who satisfy `eligible`. -/
-def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
-    Array PlayerId :=
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(start.idx + k) % n⟩
-      if eligible (g.player q) then
-        acc := acc.push q
-    return acc
-
-def opponent (g : Game) (p : PlayerId) : PlayerId :=
-  let living := g.livingPlayers
-  if living.size == 2 then
-    if living[0]!.id == p then living[1]!.id else living[0]!.id
-  else
-    PlayerId.mk ((p.idx + 1) % g.players.size)
-
-/-- Last-known `before` snapshot of `id` when it left the battlefield, read from
-`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
-def lastKnownBefore? (g : Game) (id : ObjectId) : Option EventObject :=
-  g.events.reverse.findSome? (fun e =>
-    match e.change with
-    | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) =>
-      if before.id == some id then some before else none
-    | _ => none)
-
-/-- Defending player of an attacking status `s`: the player directly attacked,
-or the controller of the planeswalker/battle being attacked (CR 506.2 / 506.4c). -/
-def defendingPlayerOfStatus (g : Game) (s : Status) : Option PlayerId :=
-  match s.attackingTarget with
-  | some (.player p) => some p
-  | some (.planeswalker pw) | some (.battle pw) =>
-    match g.findObject? pw with
-    | some o => some (o.controller.getD o.owner)
-    | none =>
-      match g.lastKnownBefore? pw with
-      | some o => some (o.controller.getD o.owner)
-      | none => none
-  | none => none
-
-/-- Player being attacked this combat (CR 508.1). Taken from an attacking
-creature's `attackingTarget`, or the next opponent if none is recorded. -/
-def defendingPlayer (g : Game) : PlayerId :=
-  match g.blockersQueue[0]? with
-  | some p => p
-  | none =>
-    match g.objects.findSome? (fun o =>
-      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none) with
-    | some p => p
-    | none => g.opponent g.activePlayer
-
-/-- Defending player of an attacking object `o` (CR 506.2 / 506.4c), falling
-back to `g.defendingPlayer`. -/
-def defendingPlayerOf (g : Game) (o : GameObject) : PlayerId :=
-  (g.defendingPlayerOfStatus o.status).getD g.defendingPlayer
-
-/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4). -/
-def defendingPlayers (g : Game) : Array PlayerId :=
-  let attacked :=
-    g.objects.filterMap (fun o =>
-      if o.isOnBattlefield && o.status.attacking then g.defendingPlayerOfStatus o.status else none)
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-      if q != g.activePlayer && !(g.player q).lost && attacked.contains q then
-        acc := acc.push q
-    return acc
-
-/-- Player who must declare blockers now. -/
-def currentBlockersPlayer (g : Game) : PlayerId :=
-  g.defendingPlayer
-
-/-- Legal attack destination: a living opponent of `p` (CR 508.1). Omitted
-means the next opponent in turn order. -/
-def resolveAttackDestination (g : Game) (p : PlayerId) (defender : Option PlayerId) :
-    Except String PlayerId :=
-  match defender with
-  | none => .ok (g.opponent p)
-  | some d =>
-    if d == p then throw "cannot attack yourself"
-    else if (g.player d).lost then throw s!"{(g.player d).name} has already lost"
-    else if !(g.livingOpponents p).any (fun pl => pl.id == d) then
-      throw s!"{(g.player d).name} is not an opponent"
-    else .ok d
-
-def nextLiving (g : Game) (p : PlayerId) : PlayerId :=
-  let n := g.players.size
-  Id.run do
-    for k in [1:n+1] do
-      let q : PlayerId := ⟨(p.idx + k) % n⟩
-      if !(g.player q).lost then
-        return q
-    return p
-
-/-- Player who receives priority in place of `p` when `p` has left (CR 800.4j). -/
-def priorityInstead (g : Game) (p : PlayerId) : PlayerId :=
-  if (g.player p).lost then g.nextLiving p else p
-
-/-- How many creatures `p` currently controls. -/
-def countCreaturesControlledBy (g : Game) (p : PlayerId) : Nat :=
-  (g.creaturesControlledBy p).size
-
-/-- How many artifacts `p` currently controls. -/
-def countArtifactsControlledBy (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).filter (fun o => o.printed.isArtifact) |>.size
-
-/-- Artifacts on the battlefield not controlled by `controller`. -/
-def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
-  g.battlefield.filter (fun o =>
-    o.printed.isArtifact && !o.controlledBy controller) |>.size
 
 /-- End every active copy effect on a battlefield object selected by `sel`,
 each under its own `EffectId`, restoring the original printed card (CR 707).
@@ -3711,11 +6645,6 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     | .cantUntapWhileSource _ s | .losesAbilitiesWhileSource _ s => s == srcId
     | _ => false) (cause := cause)
 
-/-- Equipment attached to `o` (Whiplash last-known X). -/
-def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
-  g.battlefield.filter (fun eq =>
-    eq.printed.isEquipment && eq.attachedTo == some o.id) |>.size
-
 /-- Last player-controlling effect wins (MSH 259). The controlled player
 remains the active player on their turn (MSH 300) and still controls their
 permanents (MSH 358). `onNextTurn` makes the control start on the controlled
@@ -3732,109 +6661,6 @@ def setPlayerControl (g : Game) (you them : PlayerId) (onNextTurn : Bool := fals
       g.logMsg
         s!"{(g.player you).name} also controls {(g.player mate).name} (Two-Headed Giant team)"
   | none => g
-
-/-- Whether `you` currently control `them`. In Two-Headed Giant, controlling
-a player also controls their teammate (MSH 236). -/
-def controlsPlayer (g : Game) (you them : PlayerId) : Bool :=
-  match g.playerControl with
-  | some (a, b) =>
-    a == you && (b == them || (g.player b).teammate == some them)
-  | none => false
-
-/-- Resources used to pay `actingAs`'s costs: always that player's, even if
-another player is making the choices (MSH 346). -/
-def resourcesFor (g : Game) (actingAs : PlayerId) : PlayerId :=
-  let _ := g
-  actingAs
-
-/-- You still make your own choices while controlling another player
-(MSH 334) and you make all of that player's choices (MSH 336). -/
-def decidesFor (g : Game) (actor whose : PlayerId) : Bool :=
-  match g.playerControl with
-  | some (you, them) =>
-    if whose == them then actor == you else actor == whose
-  | none => actor == whose
-
-/-- You can see everything the controlled player can see (MSH 335). -/
-def canSeeAs (g : Game) (viewer whose : PlayerId) : Bool :=
-  viewer == whose || g.controlsPlayer viewer whose
-
-/-- Cards in `whose` hand that `viewer` may look at. -/
-def visibleHand (g : Game) (viewer whose : PlayerId) : Array GameObject :=
-  if g.canSeeAs viewer whose then
-    (g.player whose).hand.filterMap (fun id => g.findObject? id)
-  else #[]
-
-/-- Controlling a player does not let you look at their sideboard
-(MSH 349). -/
-def canLookAtSideboard (_g : Game) (viewer whose : PlayerId) : Bool :=
-  viewer == whose
-
-/-- You cannot have a player you're controlling choose a card from
-outside the game (MSH 349). -/
-def canChooseOutsideGame (g : Game) (actor whose : PlayerId) : Bool :=
-  actor == whose && !g.controlsPlayer actor whose
-
-/-- Tournament-rule decisions stay with the actual player (MSH 350). -/
-def canMakeTournamentDecision (g : Game) (actor whose : PlayerId) : Bool :=
-  actor == whose && !g.controlsPlayer actor whose
-
-/-- You cannot make illegal choices for a player you control (MSH 351). -/
-def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
-  false
-
-/-- The controlling player cannot concede for the controlled player
-(MSH 352). That player may still concede. -/
-def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
-  actor == whose
-
-/-- Last-known `CounterBag` of `id` when it left the battlefield, read from
-`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
-def lastKnownCounters (g : Game) (id : ObjectId) : CounterBag :=
-  match g.lastKnownBefore? id with
-  | some before => before.counters
-  | none => #[]
-
-/-- Last-known counter `Status` of `id` when it left the battlefield, read from
-`ZoneEvent.moved` in `g.events` (CR 113.7a / 608.2h). -/
-def lastKnownCounterStatus? (g : Game) (id : ObjectId) : Option Status :=
-  (g.lastKnownBefore? id).map (fun before => ({} : Status).withCounterBag before.counters)
-
-/-- Player putting counters: the resolving spell or ability's controller,
-or `fallback` when none is resolving. -/
-def counterPutter (g : Game) (fallback : Option PlayerId) : Option PlayerId :=
-  ((g.resolvingSpell.orElse (fun _ => g.resolvingAbility)).bind g.findObject?).bind
-    (·.controller) |>.orElse (fun _ => fallback)
-
-/-- Extra counters from each Doc Samson `putter` controls, when that player
-also controls the permanent (`host`) (MSH 517 / 590). -/
-def docSamsonBonus (g : Game) (putter host : Option PlayerId) : Nat :=
-  match putter, host with
-  | some p, some c =>
-    if p != c then 0
-    else
-      ((g.permanentsOf p).filter (fun o =>
-        o.printed.staticAbilities.any (fun
-          | .extraCounterOnPermanents => true
-          | _ => false))).size
-  | _, _ => 0
-
-/-- `n`, plus one of that kind per Doc Samson, when `putter` puts counters
-on a permanent controlled by `host`. Zero stays zero. `host` defaults to
-`putter`. -/
-def extraCountersOn (g : Game) (putter : Option PlayerId) (n : Nat)
-    (host : Option PlayerId := putter) : Nat :=
-  if n == 0 then 0 else n + g.docSamsonBonus putter host
-
-/-- Counters of one kind actually put on `o`. An enters-with replacement is
-put by the permanent's controller (ruling 517). Otherwise the explicit
-`putter`, the resolving spell or ability, or `o`'s controller. -/
-def countersYouPut (g : Game) (o : GameObject) (n : Nat)
-    (putter : Option PlayerId := none) (entersWith := false) : Nat :=
-  let who :=
-    if entersWith then o.controller
-    else putter.orElse (fun _ => g.counterPutter o.controller)
-  g.extraCountersOn who n (host := o.controller)
 
 /-- Record putting `n` counters of `kind` on `id` via `PermanentEvent.counters`
 (CR 122.1). Does nothing when `n == 0`. -/
@@ -3890,26 +6716,6 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
     g.withBatch cause (fun g =>
       bag.foldl (fun acc (kind, cnt) =>
         acc.recordPutCounters id kind (cnt + extra) (byPlayer := byPlayer) (cause := cause)) g)
-
-/-- Legal players, planeswalkers, and battles that a creature put onto the
-battlefield attacking under `controller`'s control may be chosen to attack
-(CR 508.4). -/
-def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
-  let opps := g.livingOpponents controller
-  let playerTargets : Array AttackTarget :=
-    if opps.isEmpty then #[.player g.defendingPlayer]
-    else opps.map (fun pl => .player pl.id)
-  let noJace := (g.player controller).cantAttackJaces
-  let permanentTargets : Array AttackTarget :=
-    g.battlefield.filterMap fun o =>
-      if !opps.any (fun pl => o.controlledBy pl.id) then none
-      else if o.printed.isPlaneswalker then
-        if noJace && (o.name.startsWith "Jace" || g.hasSubtype o .jace) then none
-        else some (.planeswalker o.id)
-      else if o.hasType .battle then
-        some (.battle o.id)
-      else none
-  playerTargets ++ permanentTargets
 
 end Game
 end Mtg.Engine

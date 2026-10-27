@@ -335,13 +335,11 @@ def queueYouTargetTriggers (g : Game) (controller : PlayerId) (obj : GameObject)
     g.putControlledTriggers controller .youTargetSomething
   else g
 
-/-- After a triggered ability's targets are announced: “becomes the target”
-and Loki triggers, and ward for each targeted opponent permanent
-(CR 702.21a), which is prompted once no other ability needs targets. -/
+/-- After a triggered ability's targets are announced: ward for each targeted
+opponent permanent (CR 702.21a), which is prompted once no other ability needs
+targets. -/
 def finishTriggerTargets (g : Game) (p : PlayerId) (obj : GameObject) : Game :=
   let targets := ((g.stackEntry? obj.id).map (·.targets)).getD #[]
-  let g := g.queueYouTargetTriggers p obj
-  let g := g.queueBecomesTargetTriggers p targets
   let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
     if o.controller != some p && o.isOnBattlefield then
       (g.wardCostsOn o).foldl (fun g cost =>

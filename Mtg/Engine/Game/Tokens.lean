@@ -182,55 +182,57 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       { id := ⟨0⟩, printed := { printed with isToken := true },
         owner := controller, zone := .command })
   else
-    let printed := { printed with isToken := true }
-    let sick := printed.isCreature && !printed.keywords.haste
-    let asOf := g.timestamp
-    let newId : ObjectId := ⟨g.nextObjectId⟩
-    let ts := g.timestamp + 1
-    let entersTapped := tapped || g.entersTapped controller printed
-    let isAttacking := attacking || attackingTarget.isSome
-    let resolvedAttackTarget : Option AttackTarget :=
-      if isAttacking then
-        some (attackingTarget.getD (.player (attackingWhom.getD g.defendingPlayer)))
-      else none
-    let baseObj : GameObject := {
-      id := newId
-      printed := printed
-      owner := controller
-      controller := some controller
-      defaultController := some controller
-      zone := .battlefield
-      status := {
-        tapped := entersTapped
-        summoningSick := sick
-        attacking := isAttacking
-        attackingTarget := resolvedAttackTarget
+    g.withBatchReturn cause fun g =>
+      let printed := { printed with isToken := true }
+      let sick := printed.isCreature && !printed.keywords.haste
+      let asOf := g.timestamp
+      let newId : ObjectId := ⟨g.nextObjectId⟩
+      let ts := g.timestamp + 1
+      let entersTapped := tapped || g.entersTapped controller printed
+      let isAttacking := attacking || attackingTarget.isSome
+      let resolvedAttackTarget : Option AttackTarget :=
+        if isAttacking then
+          some (attackingTarget.getD (.player (attackingWhom.getD g.defendingPlayer)))
+        else none
+      let baseObj : GameObject := {
+        id := newId
+        printed := printed
+        owner := controller
+        controller := some controller
+        defaultController := some controller
+        zone := .battlefield
+        status := {
+          tapped := entersTapped
+          summoningSick := sick
+          attacking := isAttacking
+          attackingTarget := resolvedAttackTarget
+        }
+        timestamp := ts
       }
-      timestamp := ts
-    }
-    let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf) (extraCounters := extraCounters)
-    let status :=
-      { (baseObj.status.withCounterBag entersWith) with
-        gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
-    let obj := { baseObj with status := status }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := cause))
-    let g : Game :=
-      match resolvedAttackTarget with
-      | some tgt =>
-        g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
-          (cause := cause))
-      | none => g
-    let g := g.createPrintedStaticEffects (g.object! newId)
-    let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
-    let g := g.change (.pushPendingTokenEnter newId)
-    let weaverBonus := g.hopeCountersOnEnter baseObj asOf
-    let g :=
-      if weaverBonus > 0 then
-        g.logMsg s!"{obj.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
-      else g
-    -- Storied is not a trigger; an artifact token can be the third permanent.
-    let g := g.refreshEnduringStory
-    (g, g.object! newId)
+      let entersWith := g.computeEntersWithCounters baseObj (asOf := asOf) (extraCounters := extraCounters)
+      let status :=
+        { (baseObj.status.withCounterBag entersWith) with
+          gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
+      let obj := { baseObj with status := status }
+      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := cause))
+      let g := g.changeObject newId (.enterProcessed true)
+      let g : Game :=
+        match resolvedAttackTarget with
+        | some tgt =>
+          g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+            (cause := cause))
+        | none => g
+      let g := g.createPrintedStaticEffects (g.object! newId)
+      let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
+      let weaverBonus := g.hopeCountersOnEnter baseObj asOf
+      let g :=
+        if weaverBonus > 0 then
+          g.logMsg s!"{obj.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+        else g
+      -- Storied is not a trigger; an artifact token can be the third permanent.
+      let g := g.refreshEnduringStory
+      let g := g.refreshCitysBlessing
+      (g, g.object! newId)
 
 /-- How many times a token-creating event is replaced (`2^n` for `n`
 token-doublers such as Bard, King of Dale). -/

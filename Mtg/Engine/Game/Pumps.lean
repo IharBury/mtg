@@ -138,7 +138,7 @@ def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game →
     ({ g with currentBatch := some (batchId, mergedCause?) }, id)
   | none =>
     let batchId : BatchId := ⟨g.nextBatchId⟩
-    let preBattlefield := g.battlefield
+    let pre : GameSnapshot := g
     let startIdx := g.events.size
     ({ g with currentBatch := some (batchId, cause) },
      fun g1 =>
@@ -148,8 +148,7 @@ def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game →
          match ev.change with
          | .rules _ => ev.batch == batchId
          | .engine _ => false)
-       if batchEvents.isEmpty then g2
-       else g2.evaluateBatchTriggers preBattlefield batchEvents)
+       g2.closeBatch pre batchId batchEvents)
 
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :

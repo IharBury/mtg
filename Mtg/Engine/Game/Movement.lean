@@ -120,22 +120,6 @@ never happens. -/
 def wouldExileInsteadOfDying (g : Game) (dying : GameObject) : Bool :=
   dying.status.untilEotExileIfDies || (g.exileInsteadSource? dying).isSome
 
-/-- “Dies” / “is put into a graveyard from the battlefield” triggers of a
-permanent leaving the battlefield for a graveyard (CR 700.4 / 603.6c). A
-replaced death never happens (CR 614.6), so this is empty when `dest` is not
-a graveyard. Tom, Bert, and William return only if they were a creature. -/
-def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
-  if old.zone == .battlefield then
-    match dest, old.controller with
-    | .graveyard _, some p =>
-      (old.waitingTriggersFor p .dying (some (g.snapshotPower old))).filter (fun w =>
-        old.isCreature ||
-          match w.ability.shared with
-          | .returnAsArtifact => false
-          | _ => true)
-    | _, _ => (#[] : Array WaitingTrigger)
-  else (#[] : Array WaitingTrigger)
-
 /-- `partial` because linked-exile returns recurse into `move` (CR 610.3). -/
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (controller : Option PlayerId := none)
@@ -293,240 +277,106 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let exileInstead := headExile || smiteExile || finalityExile || flashbackExile || bilboExile
   -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
-  let g :=
-    if finalityExile then
-      g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
-    else g
   let finalDiscarded :=
     match old.zone, dest with
     | .hand p, .graveyard q => p == q
     | _, _ => false
-  let happenedPrelim :=
-    proposed.withDestination dest finalDiscarded
-  let died :=
-    happenedPrelim.matchesTrigger (old.controller.getD old.owner) old.id .dying
-  let dying := g.dyingTriggers old dest
-  let pwDied :=
-    match happenedPrelim.change with
-    | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) => before.planeswalker
-    | _ => false
-  -- Ferocity of the Hunt: “when enchanted creature dies”, seen by the Aura
-  -- while it is still attached.
-  let fraEnchantedDie :=
-    if died then
-      g.battlefield.foldl (fun acc a =>
-        if a.attachedTo == some old.id then
-          match a.controller with
-          | some p =>
-            acc ++ a.waitingTriggersFor p (.fra .enchantedDies)
-              (causeId := some old.id) (cause := some old)
-          | none => acc
-        else acc) (#[] : Array WaitingTrigger)
-    else #[]
-  let frcNontokenDies :=
-    if died && !old.printed.isToken then
-      match old.controller with
-      | some p =>
-        old.waitingTriggersFor p (.fra .nontokenCreatureYouControlDies)
-          (causeId := some old.id) (cause := some old) ++
-          g.battlefield.foldl (fun acc o =>
-            if o.id != old.id && o.controlledBy p then
-              acc ++ o.waitingTriggersFor p (.fra .nontokenCreatureYouControlDies)
-                (causeId := some old.id) (cause := some old)
-            else acc) (#[] : Array WaitingTrigger)
-      | none => #[]
-    else #[]
-  let fraAnotherDies :=
-    if died || pwDied then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
-              (causeId := some old.id) (cause := some old)
-          else acc) (#[] : Array WaitingTrigger)
-      | none => #[]
-    else #[]
-  -- The Ozolith: a creature you control leaving with counters on it.
-  let fraCreatureLeaves :=
-    if old.zone == .battlefield && old.isCreature && old.status.hasCounters then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p (.fra .creatureYouControlLeaves)
-              (causeId := some old.id) (cause := some old)
-          else acc) (#[] : Array WaitingTrigger)
-      | none => #[]
-    else #[]
-  let villainDies :=
-    if died && g.hasSubtype old .villain then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p .villainYouControlDies
-              (causeId := some old.id) (cause := some old)
-          else acc) (#[] : Array WaitingTrigger)
-      | none => #[]
-    else #[]
-  let nonlandReturned :=
-    if old.zone == .battlefield && !old.printed.isLand &&
-        (match dest with | .hand _ => true | _ => false) then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p .anotherNonlandReturned
-              (causeId := some old.id) (cause := some old)
-          else acc) (#[] : Array WaitingTrigger)
-      | none => #[]
-    else #[]
-  let leaving :=
-    if old.zone == .battlefield then
-      match old.controller with
-      | some p => old.waitingTriggersFor p .leaving
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
-  let g :=
-    if old.zone == .battlefield then g.unattachFrom id else g
-  -- The copy of a prepare spell stays in exile only while its permanent is
-  -- on the battlefield (ruling 742).
-  let g :=
-    if old.zone == .battlefield then g.removePreparedCopy id else g
-  let asOf := g.timestamp
-  let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown) :=
-    buildArrival g dest asOf
-  let newId := fresh.id
-  let printed := fresh.printed
-  let g :=
-    if exileInstead then
-      g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
-    else g
-  let gWithFresh : Game :=
-    { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then fresh else x) }
-  let afterSnap := gWithFresh.snapshot fresh
-  let finalVerb : Option ZoneVerb :=
-    if exileInstead then some .exile else verb
-  let happened :=
-    GameEvent.moved g.turnNumber beforeSnap old.zone dest
-      (discarded := finalDiscarded)
-      (after := some afterSnap)
-      (verb := finalVerb)
-      (actor := actor)
-      (entersWith := entersWith)
-      (libraryPosition := libraryPosition)
-      (cause := cause)
-  -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
-  -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
-  let g := g.record happened
-  let happenedCause :=
-    (g.events.findSomeRev? fun e =>
-      match e.change with
-      | .rules _ => some e.cause
-      | .engine _ => none).getD .unclassified
-  let g : Game :=
-    match (if dest == .battlefield then resolvedAttackTarget else none) with
-    | some tgt =>
-      g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
-        (cause := some happenedCause))
-    | none => g
-  let gyLeave :=
-    match old.zone, old.owner with
-    | .graveyard owner, _ =>
-      if old.printed.isCreature &&
-          (match dest with | .graveyard _ => false | _ => true) then
-        (g.permanentsOf owner).foldl (fun acc o =>
-          acc ++ o.waitingTriggersFor owner .creatureCardLeavesYourGy) #[]
-      else (#[] : Array WaitingTrigger)
-    | _, _ => (#[] : Array WaitingTrigger)
-  let creatureDie :=
-    if died then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id != old.id && o.controlledBy p then
-            acc ++ o.waitingTriggersFor p .creatureYouControlDies
-              (causeId := some old.id) (cause := some old)
-          else acc) (#[] : Array WaitingTrigger)
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
-  let nontokenDie :=
-    if died && !old.printed.isToken then
-      match old.controller with
-      | some p =>
-        g.battlefield.foldl (fun acc o =>
-          if o.id == old.id then acc
-          else
-            match o.controller with
-            | some q =>
-              if q == p then
-                acc ++ o.waitingTriggersFor q .nontokenYouControlDies
-              else acc
-            | none => acc) (#[] : Array WaitingTrigger)
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
-  let goblinOrcArmyDie :=
-    if died then
-      match old.controller with
-      | some p =>
-        if g.hasSubtype old .goblin || g.hasSubtype old .orc ||
-            g.hasSubtype old .army then
-          g.battlefield.foldl (fun acc o =>
-            if o.id == old.id then acc
-            else
-              match o.controller with
-              | some q =>
-                if q == p then
-                  acc ++ o.waitingTriggersFor q .anotherGoblinOrcArmyDies
-                else acc
-              | none => acc) (#[] : Array WaitingTrigger)
-        else (#[] : Array WaitingTrigger)
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
-  let attackingDie :=
-    if died && old.status.attacking then
-      match old.controller with
-      | some p =>
-        let fromOthers :=
-          g.battlefield.foldl (fun acc o =>
-            match o.controller with
-            | some q =>
-              if q == p then
-                acc ++ o.waitingTriggersFor q .attackingCreatureYouControlDies
-                  (causeId := some newId) (cause := some fresh)
-              else acc
-            | none => acc) (#[] : Array WaitingTrigger)
-        fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
-          (causeId := some newId) (cause := some fresh)
-      | none => (#[] : Array WaitingTrigger)
-    else (#[] : Array WaitingTrigger)
-  -- CR 701.9: a card moved from a hand to its owner's graveyard is
-  -- discarded. “Whenever a player discards one or more cards” triggers once
-  -- per batch via `evaluateBatchTriggers`.
-  let discardTriggers :=
-    match old.zone, dest with
-    | .hand p, .graveyard _ =>
-      if happened.matchesTrigger p old.id .youDiscard then
-        let mine := fresh.waitingTriggersFor p (.fra .youDiscardThis) ++
-          (g.permanentsOf p).foldl (fun acc o =>
-            acc ++ o.waitingTriggersFor p .youDiscard (lastKnownPower := some (Int.ofNat newId.raw))) #[]
-        let discarded := fresh
-        let one :=
-          (g.permanentsOf p).foldl (fun acc o =>
-            acc ++ o.waitingTriggersFor p (.fra .youDiscardOne)
-              (causeId := some newId) (cause := some discarded)) (#[] : Array WaitingTrigger)
-        mine ++ one
-      else #[]
-    | _, _ => #[]
-  let allTriggers :=
-    dying ++ leaving ++ gyLeave ++
-      nontokenDie ++ creatureDie ++ goblinOrcArmyDie ++ attackingDie ++
-      fraEnchantedDie ++ fraAnotherDies ++ fraCreatureLeaves ++ villainDies ++ nonlandReturned ++
-      frcNontokenDies ++ discardTriggers
-  let g :=
-    if allTriggers.isEmpty then g
-    else g.change (.enqueueWaitingTriggers allTriggers)
+  let (g, newId) :=
+    g.withBatchReturn cause fun g =>
+      let g :=
+        if finalityExile then
+          g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
+        else g
+      let g :=
+        if old.zone == .battlefield then g.unattachFrom id else g
+      -- The copy of a prepare spell stays in exile only while its permanent is
+      -- on the battlefield (ruling 742).
+      let g :=
+        if old.zone == .battlefield then g.removePreparedCopy id else g
+      let asOf := g.timestamp
+      let (fresh, entersWith, weaverBonus, impendingNotCreature, faceDown) :=
+        buildArrival g dest asOf
+      let newId := fresh.id
+      let printed := fresh.printed
+      let g :=
+        if exileInstead then
+          g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
+        else g
+      let gWithFresh : Game :=
+        { g with objects := g.objects.map (fun (x : GameObject) => if x.id == id then fresh else x) }
+      let afterSnap := gWithFresh.snapshot fresh
+      let finalVerb : Option ZoneVerb :=
+        if exileInstead then some .exile else verb
+      let happened :=
+        GameEvent.moved g.turnNumber beforeSnap old.zone dest
+          (discarded := finalDiscarded)
+          (after := some afterSnap)
+          (verb := finalVerb)
+          (actor := actor)
+          (entersWith := entersWith)
+          (libraryPosition := libraryPosition)
+          (cause := cause)
+      -- The object that arrives has a new id (CR 400.7). `applyZoneEvent` updates
+      -- `g.objects`, zone lists, `nextObjectId`, and `timestamp`.
+      let g := g.record happened
+      let happenedCause :=
+        (g.events.findSomeRev? fun e =>
+          match e.change with
+          | .rules _ => some e.cause
+          | .engine _ => none).getD .unclassified
+      let g : Game :=
+        match (if dest == .battlefield then resolvedAttackTarget else none) with
+        | some tgt =>
+          g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+            (cause := some happenedCause))
+        | none => g
+      let g := g.expireEffectsOnLeavingObject old
+      let g :=
+        if old.zone == .battlefield then
+          g.expireWhileSourceEffects old.id
+        else g
+      let g :=
+        match g.findObject? newId with
+        | some cur =>
+          -- A permanent whose spell was cast for its impending cost enters with
+          -- its time counters and isn't a creature while it has one (CR 702.176,
+          -- rulings 967 / 970). The spell itself stays a creature spell, so the
+          -- effect is created only now, on the permanent.
+          let g : Game :=
+            if impendingNotCreature then
+              g.createEffect (.notACreature newId) (cause := some (.gameRule .impending))
+            else g
+          let g : Game :=
+            if dest == Zone.battlefield && returnedAsArtifact then
+              g.createEffect (.returnedAsArtifact newId) (cause := some happenedCause)
+            else g
+          let g : Game :=
+            if dest == Zone.battlefield && onlyFoodArtifact then
+              g.createEffect (.onlyFoodArtifact newId) (cause := some happenedCause)
+            else g
+          g.createPrintedStaticEffects cur
+        | none => g
+      -- Loki left: keep his pending copy effect under the same `EffectId`, now
+      -- with his last known power (MSH 109).
+      let g :=
+        g.activeEffects.foldl (fun g (eid, (e : ContinuousEffect)) =>
+          match e with
+          | .pendingLokiCopy p (some id) _ =>
+            if id == old.id then
+              g.record (GameEvent.effectUpdated g.turnNumber eid
+                (.pendingLokiCopy p none (old.lastKnownPower.getD old.power))
+                (cause := some happenedCause))
+            else g
+          | _ => g) g
+      let g :=
+        if dest == .battlefield && !faceDown && printed.asEntersChooseCardType then
+          g.logMsg s!"{fresh.name} chooses Creature"
+        else g
+      let g :=
+        if weaverBonus > 0 then
+          g.logMsg s!"{fresh.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
+        else g
+      (g, newId)
   let g :=
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
       Id.run do
@@ -555,29 +405,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                     s!"{name} remains in exile (can't be attached legally; CR 614.6)"
                 | some host =>
                   let hostId := host.id
-                  let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                  let (g', _) := g.move o.id .battlefield (some o.owner)
                     (attachedTo := some hostId) (cause := linkCause)
                   g := g'
                   g := g.logMsg
                     s!"{name} returns attached to {host.name} (does not target)"
-                  let returned := g.object! returnedId
-                  match returned.controller with
-                  | some p =>
-                    g := g.change (.enqueueWaitingTriggers
-                      (returned.waitingTriggersFor p .entering))
-                  | none => pure ()
               else
                 let sick := !o.printed.keywords.haste
-                let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                let (g', _) := g.move o.id .battlefield (some o.owner)
                   (summoningSick := sick) (cause := linkCause)
                 g := g'
                 g := g.logMsg s!"{name} returns to the battlefield"
-                let returned := g.object! returnedId
-                match returned.controller with
-                | some p =>
-                  g := g.change (.enqueueWaitingTriggers
-                    (returned.waitingTriggersFor p .entering))
-                | none => pure ()
           | none => pure ()
         return g
     else g
@@ -599,52 +437,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       else g
     | none => g
-  let g := g.expireEffectsOnLeavingObject old
-  let g :=
-    if old.zone == .battlefield then
-      g.expireWhileSourceEffects old.id
-    else g
-  let g :=
-    match g.findObject? newId with
-    | some cur =>
-      -- A permanent whose spell was cast for its impending cost enters with
-      -- its time counters and isn't a creature while it has one (CR 702.176,
-      -- rulings 967 / 970). The spell itself stays a creature spell, so the
-      -- effect is created only now, on the permanent.
-      let g : Game :=
-        if impendingNotCreature then
-          g.createEffect (.notACreature newId) (cause := some (.gameRule .impending))
-        else g
-      let g : Game :=
-        if dest == Zone.battlefield && returnedAsArtifact then
-          g.createEffect (.returnedAsArtifact newId) (cause := some happenedCause)
-        else g
-      let g : Game :=
-        if dest == Zone.battlefield && onlyFoodArtifact then
-          g.createEffect (.onlyFoodArtifact newId) (cause := some happenedCause)
-        else g
-      g.createPrintedStaticEffects cur
-    | none => g
-  -- Loki left: keep his pending copy effect under the same `EffectId`, now
-  -- with his last known power (MSH 109).
-  let g :=
-    g.activeEffects.foldl (fun g (eid, (e : ContinuousEffect)) =>
-      match e with
-      | .pendingLokiCopy p (some id) _ =>
-        if id == old.id then
-          g.record (GameEvent.effectUpdated g.turnNumber eid
-            (.pendingLokiCopy p none (old.lastKnownPower.getD old.power))
-            (cause := some happenedCause))
-        else g
-      | _ => g) g
-  let g :=
-    if dest == .battlefield && !faceDown && printed.asEntersChooseCardType then
-      g.logMsg s!"{fresh.name} chooses Creature"
-    else g
-  let g :=
-    if weaverBonus > 0 then
-      g.logMsg s!"{fresh.nameWithToken} enters with {weaverBonus} additional +1/+1 counter(s)"
-    else g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies

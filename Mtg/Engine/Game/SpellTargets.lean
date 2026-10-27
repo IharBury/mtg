@@ -166,10 +166,6 @@ def announcingDividedDamage (g : Game) : Bool :=
   | some o => (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome
   | none => false
 
-/-- The stack entry for `objectId`, if that object is on the stack. -/
-def stackEntry? (g : Game) (objectId : ObjectId) : Option StackEntry :=
-  g.stack.find? (fun e => e.objectId == objectId)
-
 /-- Targeting shape of the object currently being announced. -/
 def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
   let fromObj : EffectTargeting :=

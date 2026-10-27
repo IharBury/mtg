@@ -90,8 +90,6 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
       GameEvent.looked g.turnNumber p count false asked
         (top := top) (rest := bottom) (cause := cause)
     g := g.record happened
-    g := if !happened.matchesTrigger p ⟨0⟩ .youScry then g else g.queueScryTriggers p count
-    g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
     return g.finishLibraryLook
   | .surveil .. => throw "You are surveilling, not scrying; use surveil (CR 701.25)"
   | _ => throw "Not time to scry (CR 701.20)"
@@ -125,7 +123,6 @@ def finishSurveil (g : Game) (p : PlayerId) (top graveyard : Array ObjectId) :
               !card.printed.isLand then
             let (g', _) := g.move newId (.hand p) none (cause := cause)
             g := g'.logMsg s!"{(g.player p).name} puts {card.name} into their hand"
-      g := if !happened.matchesTrigger p ⟨0⟩ .youScryOrSurveil then g else g.queueScryOrSurveilTriggers p
       return g
     return g.finishLibraryLook
   | .scry .. => throw "You are scrying, not surveilling; use scry (CR 701.20)"
@@ -247,13 +244,12 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         playerIds := playerIds.push pid
         g := g.logMsg s!"{(g.player p).name} gives {pl.name} another poison counter"
       | .card _ => throw "Only permanents and players can be chosen (CR 701.34a)"
+    -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
     g := g.record (GameEvent.proliferated g.turnNumber p
       (permanents := permIds) (players := playerIds) (cause := cause))
     g := closeBatch g
     if chosen.isEmpty then
       g := g.logMsg s!"{(g.player p).name} proliferates, choosing nothing"
-    -- “Whenever you proliferate” triggers even if nothing was chosen (ruling 884).
-    g := g.putFraEventTriggers p .youProliferate
     if remaining > 1 then
       return g.change (.pending (.chooseProliferate p (remaining - 1)))
     else

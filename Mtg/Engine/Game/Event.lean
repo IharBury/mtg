@@ -845,6 +845,8 @@ inductive PlayerEvent where
   `PermanentEvent.counters` event. -/
   | proliferated (player : PlayerId) (permanents : Array ObjectId := #[])
       (players : Array PlayerId := #[])
+  /-- The Ring tempted `player` at `stage` with `bearer` (CR 701.54). -/
+  | ringTempted (player : PlayerId) (bearer : Option ObjectId) (stage : Nat)
   /-- `player` chose to have The Sensational She-Hulk deal damage. Once each turn. -/
   | sheHulkDealtDamage (player : PlayerId)
   /-- `player`'s mana pool emptied (CR 500.5 / 703.4q). `amount` is the mana
@@ -1119,8 +1121,6 @@ inductive EngineChange where
   | additionalCombatPhases (v : Nat)
   | enrageGrantsAdditionalCombat (v : Nat)
   | resolvingDivision (v : Array Nat)
-  | pendingTokenEnters (v : Array ObjectId)
-  | pushPendingTokenEnter (id : ObjectId)
   | playerControl (v : Option (PlayerId × PlayerId))
   | controlOnNextTakenTurn (v : Bool)
   | pendingLokiCopy (v : Option (PlayerId × Option ObjectId × Int))
@@ -1496,6 +1496,13 @@ def activated (turn : Nat) (player : PlayerId) (source : EventObject)
   rules turn (.cast (.abilityActivated ability source player (.nonMana loyaltyDelta equip powerUp boast)))
     (cause.getD (.gameRule .abilityActivated))
 
+/-- `ability` on `source` triggered for `controller` from batch `origin` (CR 603.2). -/
+def triggered (turn : Nat) (source : EventObject) (controller : PlayerId)
+    (ability : TriggeredAbility) (origin : BatchId)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.triggerQueue (.triggered source controller ability origin))
+    (cause.getD (.gameRule .triggeredAbility))
+
 /-- A triggered ability of `source` was put on the stack as `stackObj` (CR 603.3). -/
 def triggerPutOnStack (turn : Nat) (stackObj : ObjectId) (source : EventObject)
     (controller : PlayerId)
@@ -1588,6 +1595,13 @@ def proliferated (turn : Nat) (player : PlayerId)
     (permanents : Array ObjectId := #[]) (players : Array PlayerId := #[])
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.player (.proliferated player permanents players))
+    (cause.getD (.oneShotEffect id none (some player)))
+
+/-- The Ring tempted `player` at `stage` with `bearer` (CR 701.54). -/
+def ringTempted (turn : Nat) (player : PlayerId) (bearer : Option ObjectId)
+    (stage : Nat) (id : Option EffectId := none)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.ringTempted player bearer stage))
     (cause.getD (.oneShotEffect id none (some player)))
 
 /-- `player` chose to have The Sensational She-Hulk deal damage (CR 610.1). -/
@@ -1752,6 +1766,34 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
     | .rules (.permanent (.untapped _)) => true
     | _ => false
 
+/-- Whether `e` is a look-back event under CR 603.10a–f whose trigger matching
+consults the game state `pre` just before the batch rather than `post`:
+- 603.10a(1): an object leaving the battlefield (including dying, CR 603.6c / 700.4)
+- 603.10a(2): a player sacrificing a permanent
+- 603.10a(3): a card leaving a graveyard
+- 603.10a(4): an object that all players can see (battlefield, graveyard, exile, stack, command) being put into a hand or library
+- 603.10b: a permanent phasing out
+- 603.10c: an object becoming unattached
+- 603.10d: a player losing control of a permanent / an opponent gaining control
+- 603.10e: a spell being countered
+- 603.10f: a player losing the game -/
+def isLookBack (e : GameEvent) : Bool :=
+  match e.change with
+  | .rules (.zone (.moved _ _ .battlefield _ _ _ _ _)) => true
+  | .rules (.zone (.moved _ _ (.graveyard _) toZone _ _ _ _)) =>
+    match toZone with | .graveyard _ => false | _ => true
+  | .rules (.zone (.moved _ _ fromZone (.hand _) _ _ _ _))
+  | .rules (.zone (.moved _ _ fromZone (.library _) _ _ _ _)) =>
+    match fromZone with
+    | .battlefield | .graveyard _ | .exile | .stack | .command => true
+    | .hand _ | .library _ | .ante | .outside _ => false
+  | .rules (.zone (.moved _ _ .stack _ .counter _ _ _)) => true
+  | .rules (.permanent (.phasedOut _ _)) => true
+  | .rules (.permanent (.unattached _ _)) => true
+  | .rules (.permanent (.controlChanged _ _ _)) => true
+  | .rules (.player (.lost _)) => true
+  | _ => false
+
 /-- `listener`'s ability on `sourceId` triggers from this change.
 “This” abilities require `sourceId` to be the object that changed.
 “You” abilities require `listener` to be the player who did it.
@@ -1798,34 +1840,63 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       this before && before.creature
     | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
     | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
+    | .zone (.created object _), .entering => this object
     | .zone (.moved _ after _ .battlefield _ _ _ _), .landYouControlEnters =>
       yours after && after.land
+    | .zone (.created object controller), .landYouControlEnters =>
+      you controller && object.land
     | .zone (.moved _ after _ .battlefield _ _ _ _), .forestYouControlEnters =>
       yours after && after.forest
+    | .zone (.created object controller), .forestYouControlEnters =>
+      you controller && object.forest
     | .zone (.moved _ after _ .battlefield _ _ _ _), .mountainYouControlEnters =>
       yours after && after.mountain
+    | .zone (.created object controller), .mountainYouControlEnters =>
+      you controller && object.mountain
     | .zone (.moved _ after _ .battlefield _ _ _ _), .artifactYouControlEnters =>
       yours after && after.artifact
+    | .zone (.created object controller), .artifactYouControlEnters =>
+      you controller && object.artifact
     | .zone (.moved _ after _ .battlefield _ _ _ _), .creatureYouControlEnters =>
       yours after && after.creature
+    | .zone (.created object controller), .creatureYouControlEnters =>
+      you controller && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherCreatureYouControlEnters =>
       yours after && other after && after.creature
+    | .zone (.created object controller), .anotherCreatureYouControlEnters =>
+      you controller && other object && object.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherElfYouControlEnters =>
       yours after && other after && after.elf
+    | .zone (.created object controller), .anotherElfYouControlEnters =>
+      you controller && other object && object.elf
     | .zone (.moved _ after _ .battlefield _ _ _ _), .tokenYouControlEnters =>
       yours after && after.token
+    | .zone (.created object controller), .tokenYouControlEnters =>
+      you controller && object.token
     | .zone (.moved _ after _ .battlefield _ _ _ _), .equipmentYouControlEnters =>
       yours after && after.equipment
+    | .zone (.created object controller), .equipmentYouControlEnters =>
+      you controller && object.equipment
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherArtifactEnters =>
       yours after && other after && after.artifact
+    | .zone (.created object controller), .anotherArtifactEnters =>
+      you controller && other object && object.artifact
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainEnters =>
       yours after && other after && after.villain
+    | .zone (.created object controller), .anotherVillainEnters =>
+      you controller && other object && object.villain
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainOrArtifactEnters =>
       yours after && other after && (after.villain || after.artifact)
+    | .zone (.created object controller), .anotherVillainOrArtifactEnters =>
+      you controller && other object && (object.villain || object.artifact)
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenHeroEnters =>
       yours after && other after && !after.token && after.hero
+    | .zone (.created object controller), .anotherNontokenHeroEnters =>
+      you controller && other object && !object.token && object.hero
     | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenArtifactEnters =>
       yours after && other after && !after.token && after.artifact
+    | .zone (.created object controller), .anotherNontokenArtifactEnters =>
+      you controller && other object && !object.token && object.artifact
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .creatureYouControlDies =>
       yours before && before.creature
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .nontokenYouControlDies =>
@@ -1848,6 +1919,9 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       you p && p == q
     | .zone (.moved before after (.hand p) (.graveyard q) .discard _ _ _), .fra .youDiscardThis =>
       you p && p == q && (this before || this after)
+    | .zone (.moved before after (.hand p) (.graveyard q) .discard _ _ _), .fra .youCycle =>
+      you p && p == q && (this before || this after) &&
+        match e.cause with | .costPayment .discard _ _ => true | _ => false
     | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .youDiscardOne =>
       you p && p == q
     | .zone (.moved _ _ (.hand p) (.graveyard q) .discard _ _ _), .fra .playerDiscards =>
@@ -1862,10 +1936,16 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       yours before && other before && before.creature
     | .zone (.moved _ after _ .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
       yours after && after.hasSubtype sub
+    | .zone (.created object controller), .subtypeYouControlEnters sub =>
+      you controller && object.hasSubtype sub
     | .zone (.moved before after _ .battlefield _ _ entersWith _), .sagaChapter =>
       (this after || this before) && entersWith.count .lore > 0
+    | .zone (.created object _), .sagaChapter =>
+      this object && object.counters.count .lore > 0
     | .zone (.moved before after _ .battlefield _ _ entersWith _), .nthPlanCounter _ =>
       (this after || this before) && entersWith.count .plan > 0
+    | .zone (.created object _), .nthPlanCounter _ =>
+      this object && object.counters.count .plan > 0
     | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutPlusOne =>
       let p := actor.orElse (fun _ => after.controller)
       p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
@@ -1916,15 +1996,24 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
       you p && decls.any (fun (attacker, _) => attacker.merfolk)
     | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
       you p && decls.any (fun (attacker, _) => attacker.creature)
+    | .combat (.becameBlocked attacker _), .becomesBlocked =>
+      this attacker
     | .permanent (.tapped object _), .sourceBecomesTapped => this object
     | .permanent (.tapped object _), .creaturesYouControlBecomeTapped =>
       yours object && object.creature
     | .permanent (.tapped object _), .equippedBecomesTapped => object.creature
     | .permanent (.tapped object during), .creatureYouControlTapped =>
       yours object && object.creature && during
+    | .permanent (.tapped object _), .tappedForTeamwork =>
+      this object && match e.cause with | .costPayment .teamwork _ _ => true | _ => false
     | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
     | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
     | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
+    | .player (.proliferated p _ _), .fra .youProliferate => you p
+    | .player (.ringTempted p _ _), .theRingTemptsYou => you p
+    | .player (.ringTempted p (some _) _), .youChooseRingBearer => you p
+    | .stackObject (.resolved obj nth), .finalSagaChapterResolves =>
+      nth == 0 && yours obj && obj.hasSubtype .saga
     | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
       you p && n > 0 && object.creature
     | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
@@ -1950,11 +2039,13 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : ObjectId)
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield (.graveyard owner) .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && this before && before.token && owner == before.owner
+      you p && before.token && owner == before.owner
     | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .youActivateLoyaltyAbility => you p
-    | .cast (.abilityActivated _ source p (.nonMana none _ _ _)), .youActivateCreatureAbility =>
+    | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
     | .cast (.abilityActivated _ _ p (.nonMana (some _) _ _ _)), .fra .opponentActivatesLoyaltyAbility => !you p
+    | .cast (.targeted _ targets _), .becomesTarget =>
+      targets.any (fun t => match t with | .permanent oid => oid == sourceId | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens => you p && object.creature
     | _, _ => false
 
@@ -2183,9 +2274,29 @@ def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
     if e.turn != turn then n
     else
       match e.change with
-      | .rules (.stackObject (.resolved obj _)) =>
-        if (obj.controller.getD obj.owner) == p then n + 1 else n
+      | .rules (.stackObject (.resolved obj nth)) =>
+        if nth > 0 && (obj.controller.getD obj.owner) == p then n + 1 else n
       | _ => n) 0
+
+/-- `ab` on `sourceId` has already triggered on `turn` in `events` (CR 603.2h). -/
+def abilityTriggeredThisTurn (events : Array GameEvent) (turn : Nat)
+    (sourceId : ObjectId) (ab : TriggeredAbility) : Bool :=
+  events.any fun e =>
+    e.turn == turn &&
+      match e.change with
+      | .rules (.triggerQueue (.triggered source _ ability _)) =>
+        source.id == some sourceId && ability == ab
+      | _ => false
+
+/-- An ability on `sourceId` has triggered on `turn` in `events` (CR 603.2h). -/
+def sourceTriggeredThisTurn (events : Array GameEvent) (turn : Nat)
+    (sourceId : ObjectId) : Bool :=
+  events.any fun e =>
+    e.turn == turn &&
+      match e.change with
+      | .rules (.triggerQueue (.triggered source _ _ _)) =>
+        source.id == some sourceId
+      | _ => false
 
 /-- Lands `p` played on `turn` (CR 305.1). -/
 def landsPlayed (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
