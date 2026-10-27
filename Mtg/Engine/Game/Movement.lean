@@ -206,7 +206,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           tapped := entersTapped
           summoningSick := summoningSick
           attacking := attacking
-          attackingWhom := attackingWhom
+          attackingTarget := attackingWhom.map AttackTarget.player
           chosenCardType := chosenCardType
           windcragMardu := windcragMardu
           prepared := prepared
@@ -419,6 +419,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       match e.change with
       | .rules _ => some e.cause
       | .engine _ => none).getD .unclassified
+  let g :=
+    if dest == .battlefield && attacking then
+      let tgt := AttackTarget.player (attackingWhom.getD g.defendingPlayer)
+      g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+        (cause := some happenedCause))
+    else g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>

@@ -353,7 +353,7 @@ def onlyBearsAttack : Game :=
   | .error e => panic! e
 
 #guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attacking
-#guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attackingWhom == some ⟨1⟩
+#guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attackingTarget == some (.player ⟨1⟩)
 #guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.tapped
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.attacking
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.tapped

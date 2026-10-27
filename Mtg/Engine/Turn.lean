@@ -103,4 +103,38 @@ def next? : Step → Option Step
 
 end Step
 
+/-- The five phases of a turn (CR 500.1). -/
+inductive Phase where
+  | beginning
+  | precombatMain
+  | combat
+  | postcombatMain
+  | ending
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- The phase to which a step belongs (CR 500.1). -/
+def Step.phase : Step → Phase
+  | .untap | .upkeep | .draw => .beginning
+  | .precombatMain => .precombatMain
+  | .beginningOfCombat | .declareAttackers | .declareBlockers
+  | .combatDamage | .endOfCombat => .combat
+  | .postcombatMain => .postcombatMain
+  | .end | .cleanup => .ending
+
+/-- Reference to a turn for extra-turn insertion (CR 500.7). -/
+inductive TurnRef where
+  | current
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Reference to a phase for extra-phase insertion (CR 500.8). -/
+inductive PhaseRef where
+  | current
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Anchor where an extra step is inserted (CR 500.9). -/
+inductive StepAnchor where
+  | afterCurrent
+  | beginningOfNextUpkeep
+deriving DecidableEq, Repr, Inhabited, BEq
+
 end Mtg.Engine

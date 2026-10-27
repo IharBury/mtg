@@ -97,6 +97,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       .fraCauseStatus (cause.map (·.status)),
       .abilityEffect abilityEffect]
     let obj := g.object! obj.id
+    let g := g.record (GameEvent.triggerPutOnStack g.turnNumber obj.id source.asEvent controller)
     let g := g.logMsg s!"{source.name}'s {event} is put on the stack"
     match ab.effect.resolution with
     | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n

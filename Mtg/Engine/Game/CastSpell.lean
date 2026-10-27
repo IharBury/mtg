@@ -164,6 +164,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       g.changeObject newId (.castFromHand true)
     else g
   let g := g.putStackEntry p newId
+  let way : CastWay :=
+    if asAdventure then .alternative "adventure"
+    else if sneakAttacker.isSome then .alternative "sneak"
+    else if fromGraveyard then .alternative "flashback"
+    else if original.playPermission.isSome then .alternative "permission"
+    else .normal
+  let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.announcesAdditionalCost
@@ -259,7 +266,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       | throw "No spell or ability is waiting for X (CR 601.2b)"
     let some _obj := g.findObject? prop.spellId
       | throw "The spell or ability left the stack"
-    let g := g.changeObject prop.spellId (.chosenX (some x))
+    let g := g.record (GameEvent.announced g.turnNumber prop.spellId (x := some x))
     let g ←
       if prop.loyaltyX then
         let some src := prop.sourceId.bind g.findObject?

@@ -144,8 +144,8 @@ def parsedTwoAmountsSameSource : Bool :=
   match applyAttack g ⟨0⟩ ["Nissa"] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.attacking &&
-    (Tests.namedPermanent g' "Grizzly Bears").status.attackingWhom == some ⟨1⟩ &&
-    (Tests.namedPermanent g' "Gray Ogre").status.attackingWhom == some ⟨1⟩
+    (Tests.namedPermanent g' "Grizzly Bears").status.attackingTarget == some (.player ⟨1⟩) &&
+    (Tests.namedPermanent g' "Gray Ogre").status.attackingTarget == some (.player ⟨1⟩)
   | .error _ => false
 
 
@@ -164,9 +164,9 @@ Nissa (CR 506.3). -/
   let bears := Tests.namedPermanent g "Grizzly Bears"
   match applyAttack g ⟨0⟩ [toString ogre.id, "at", toString ajani.id, toString bears.id, "at", "Nissa"] with
   | .ok g' =>
-    (g'.object! ogre.id).status.attackingPlaneswalker == some ajani.id &&
-      (g'.object! ogre.id).status.attackingWhom == some ⟨1⟩ &&
-      (g'.object! bears.id).status.attackingPlaneswalker.isNone
+    (g'.object! ogre.id).status.attackingTarget == some (.planeswalker ajani.id) &&
+      g'.defendingPlayerOf (g'.object! ogre.id) == ⟨1⟩ &&
+      (g'.object! bears.id).status.attackingTarget == some (.player ⟨1⟩)
   | .error _ => false
 
 #guard ((helpInteractive false).splitOn "Attack that planeswalker").length > 1
@@ -181,8 +181,8 @@ Nissa (CR 506.3). -/
       [toString ogres[0]!.id, "at", "Nissa", toString ogres[1]!.id, "at", "Liliana"] with
   | .ok g' =>
     let after := g'.battlefield.filter (·.name == "Gray Ogre")
-    after[0]!.status.attackingWhom == some ⟨1⟩ &&
-      after[1]!.status.attackingWhom == some ⟨2⟩
+    after[0]!.status.attackingTarget == some (.player ⟨1⟩) &&
+      after[1]!.status.attackingTarget == some (.player ⟨2⟩)
   | .error _ => false
 
 

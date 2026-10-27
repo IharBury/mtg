@@ -130,7 +130,7 @@ open Mtg.Demo.Render
   let g := Tests.threeReadyToAttack
   let ogre := Tests.namedPermanent g "Gray Ogre"
   match applyAttack g ⟨0⟩ [toString ogre.id, "at", "Liliana"] with
-  | .ok g' => (Tests.namedPermanent g' "Gray Ogre").status.attackingWhom == some ⟨2⟩
+  | .ok g' => (Tests.namedPermanent g' "Gray Ogre").status.attackingTarget == some (.player ⟨2⟩)
   | .error _ => false
 
 

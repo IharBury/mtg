@@ -122,7 +122,7 @@ open Mtg.Demo.Render
   match applyAttack g ⟨0⟩ [toString bears.id] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.attacking &&
-    (Tests.namedPermanent g' "Grizzly Bears").status.attackingWhom == some ⟨1⟩ &&
+    (Tests.namedPermanent g' "Grizzly Bears").status.attackingTarget == some (.player ⟨1⟩) &&
     !(Tests.namedPermanent g' "Gray Ogre").status.attacking
   | .error _ => false
 
@@ -140,8 +140,8 @@ open Mtg.Demo.Render
       [toString ogres[0]!.id, "Nissa", toString ogres[1]!.id, "Liliana"] with
   | .ok g' =>
     let after := g'.battlefield.filter (·.name == "Gray Ogre")
-    after[0]!.status.attackingWhom == some ⟨1⟩ &&
-      after[1]!.status.attackingWhom == some ⟨2⟩
+    after[0]!.status.attackingTarget == some (.player ⟨1⟩) &&
+      after[1]!.status.attackingTarget == some (.player ⟨2⟩)
   | .error _ => false
 
 

@@ -26,6 +26,8 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     throw "Not time to declare attackers"
   let (g0, closeBatch) := g.openBatch (some (.turnBased .declareAttackers))
   let mut g := g0
+  let mut decls : Array (EventObject × AttackTarget) := #[]
+  let mut steps : Array (ObjectId × PlayerId × Option GameObject) := #[]
   for i in [0:ids.size] do
     let id := ids[i]!
     let o := g.object! id
@@ -60,13 +62,19 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       | none => g.resolveAttackDestination p want
     if g.hasFlying o && g.leftoverFlyingRestriction dest then
       throw s!"{o.name} can't attack {(g.player dest).name}"
-    g := g.changeStatuses o.id #[
-      .attacking true,
-      .attackingWhom (some dest),
-      .attackingPlaneswalker (pw?.map (·.id)),
-      .declaredAsAttackerThisTurn true ]
-    if !g.hasVigilance (g.object! id) then
-      g := g.becomeTapped (g.object! id) (cause := some (.turnBased .declareAttackers))
+    let target : AttackTarget :=
+      match pw? with
+      | some pw => .planeswalker pw.id
+      | none => .player dest
+    decls := decls.push ({ o.asEvent with attacking := true, attackingTarget := some target }, target)
+    steps := steps.push (id, dest, pw?)
+  if !decls.isEmpty then
+    g := g.record (GameEvent.attackersDeclared g.turnNumber p decls
+      (cause := some (.turnBased .declareAttackers)))
+  for (id, dest, pw?) in steps do
+    let o := g.object! id
+    if !g.hasVigilance o then
+      g := g.becomeTapped o (cause := some (.turnBased .declareAttackers))
     g := g.logMsg
       (match pw? with
        | some pw => s!"{g.player p |>.name} attacks {pw.name} with {o.name}"
@@ -76,16 +84,17 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
   for pw in g.battlefield do
     if pw.printed.isPlaneswalker && g.planeswalkerAttackedByOneAtMost pw then
       let n := (g.battlefield.filter (fun a =>
-        a.status.attacking && a.status.attackingPlaneswalker == some pw.id)).size
+        a.status.attacking && a.status.attackingPlaneswalker? == some pw.id)).size
       if n > 1 then
         throw s!"No more than one creature can attack {pw.name} each combat"
   for o in g.permanentsOf p do
     if g.mustAttackIfAble o && !ids.contains o.id then
       throw s!"{o.name} must attack if able"
   let tax := ids.foldl (fun acc id =>
-    match (g.object! id).status.attackingWhom with
-    | some dest => acc + g.attackTaxPerCreature dest
-    | none => acc) 0
+    let o := g.object! id
+    if o.status.attackingTarget.isSome then
+      acc + g.attackTaxPerCreature (g.defendingPlayerOf o)
+    else acc) 0
   if tax > 0 then
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
       throw s!"{(g.player p).name} must pay {tax} to attack"
@@ -115,15 +124,30 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     throw "Not time to declare blockers"
   if p != g.currentBlockersPlayer then
     throw "Only the defending player declares blockers"
-  let mut g := g
+  let (g0, closeBatch) := g.openBatch (some (.turnBased .declareBlockers))
+  let mut g := g0
+  let mut decls : Array (EventObject × ObjectId) := #[]
   for (blockerId, attackerId) in assignments do
     let b := g.object! blockerId
     let a := g.object! attackerId
     if !g.canBlock b a then
       throw s!"{b.name} cannot block {a.name}"
-    g := g.changeStatus b.id (.blocking #[attackerId])
-    g := g.changeStatus attackerId (.blocked true)
+    decls := decls.push (b.asEvent, attackerId)
+  if !decls.isEmpty then
+    g := g.record (GameEvent.blockersDeclared g.turnNumber p decls
+      (cause := some (.turnBased .declareBlockers)))
+  let mut blockedAttackers : Array ObjectId := #[]
+  for (blockerId, attackerId) in assignments do
+    let b := g.object! blockerId
+    let a := g.object! attackerId
+    if !blockedAttackers.contains attackerId then
+      blockedAttackers := blockedAttackers.push attackerId
     g := g.logMsg s!"{b.name} blocks {a.name}"
+  for attackerId in blockedAttackers do
+    let a := g.object! attackerId
+    let bs := (assignments.filter (·.2 == attackerId)).map (·.1)
+    g := g.record (GameEvent.becameBlocked g.turnNumber a.asEvent bs
+      (cause := some (.turnBased .declareBlockers)))
   -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
   -- blocked must be blocked by at least that many creatures.
   for o in g.battlefield do
@@ -134,10 +158,16 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
         if n > 0 && n < need then
           let word := if need == 2 then "two" else toString need
           throw s!"{o.name} can't be blocked except by {word} or more creatures"
+  let rest := g.blockersQueue.extract 1 g.blockersQueue.size
+  if rest.isEmpty then
+    for o in g.battlefield do
+      if o.status.attacking && !o.status.blocked then
+        g := g.record (GameEvent.remainedUnblocked g.turnNumber o.asEvent
+          (cause := some (.turnBased .declareBlockers)))
+  g := closeBatch g
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   g := g.putBlockedTriggersOnStack assignments
-  let rest := g.blockersQueue.extract 1 g.blockersQueue.size
   if rest.isEmpty then
     return g.changes #[.pending .none, .blockersQueue #[]] |>.receivePriority g.activePlayer
   else
@@ -154,7 +184,7 @@ blocker before leftover goes to the defending player. -/
 def defaultCombatAssignment (g : Game) (source : GameObject) (forAttackers : Bool)
     (already : Array CreatureCombatAssignment) : CreatureCombatAssignment :=
   let dmg := g.combatDamageAmount source
-  let defender := source.status.attackingWhom.getD g.defendingPlayer
+  let defender := g.defendingPlayerOf source
   let playerDmg := if (g.player defender).lost then 0 else dmg
   if forAttackers then
     let blockers := g.blockersOf source.id
@@ -211,7 +241,7 @@ def checkCombatAssignment (g : Game) (asgn : CreatureCombatAssignment) (forAttac
   let some src := g.findObject? asgn.source | throw "no such object"
   if !src.isOnBattlefield then
     throw s!"{src.name} is not on the battlefield"
-  let defender := src.status.attackingWhom.getD g.defendingPlayer
+  let defender := g.defendingPlayerOf src
   let dmg := g.combatDamageAmount src
   if asgn.toPlayer < 0 || asgn.toCreatures.any (fun (_, n) => n < 0) then
     throw "Combat damage amounts cannot be negative"
@@ -283,10 +313,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
     let mut g := g
     for asgn in g.assignedCombatDamage do
       let src := g.object! asgn.source
-      let defn :=
-        match src.status.attackingWhom with
-        | some pid => pid
-        | none => g.defendingPlayer
+      let defn := g.defendingPlayerOf src
       let mut totalDealt : Int := 0
       let recipients :=
         if src.status.attacking then g.blockersOf src.id else g.creaturesBlockedBy src
@@ -310,7 +337,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
               (deathtouch := g.hasDeathtouch src) (combat := true)
               (source := some srcEvent) (cause := combatCause)
             totalDealt := totalDealt + amt
-      let pwTarget? := src.status.attackingPlaneswalker
+      let pwTarget? := src.status.attackingPlaneswalker?
       let mut dealtToPlayer : Int := 0
       if !g.sourceDamagePrevented src && asgn.toPlayer > 0 && pwTarget?.isSome then
         -- CR 510.1c / 120.3c: damage to the attacked planeswalker removes loyalty.

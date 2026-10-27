@@ -70,6 +70,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     (cause := some (.gameRule .spellCast))
   let g := g.changeObject newId (.isCopy true)
   let g := g.putStackEntry p newId
+  let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let prop : ProposedSpell := {

@@ -35,7 +35,7 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
     throw s!"{attacker.name} is not attacking"
   if attacker.status.blocked then
     throw s!"{attacker.name} is blocked"
-  let whom := attacker.status.attackingWhom
+  let whom := some (g.defendingPlayerOf attacker)
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
     (cause := some (.costPayment .returnToHand p (some spellId)))

@@ -238,7 +238,7 @@ def threeOgreAttacksNissa : Game :=
   mustApply threeReadyToAttack ⟨0⟩
     (.declareAttackers #[(namedPermanent threeReadyToAttack "Gray Ogre").id])
 
-#guard (namedPermanent threeOgreAttacksNissa "Gray Ogre").status.attackingWhom == some ⟨1⟩
+#guard (namedPermanent threeOgreAttacksNissa "Gray Ogre").status.attackingTarget == some (.player ⟨1⟩)
 #guard threeOgreAttacksNissa.defendingPlayer == ⟨1⟩
 
 /-- Chandra can choose to attack Liliana instead of Nissa (CR 508.1). -/
@@ -246,7 +246,7 @@ def threeOgreAttacksLiliana : Game :=
   mustApply threeReadyToAttack ⟨0⟩
     (.declareAttackers #[(namedPermanent threeReadyToAttack "Gray Ogre").id] (some ⟨2⟩))
 
-#guard (namedPermanent threeOgreAttacksLiliana "Gray Ogre").status.attackingWhom == some ⟨2⟩
+#guard (namedPermanent threeOgreAttacksLiliana "Gray Ogre").status.attackingTarget == some (.player ⟨2⟩)
 #guard threeOgreAttacksLiliana.defendingPlayer == ⟨2⟩
 #guard threeOgreAttacksLiliana.log.any (fun s => mentions s "attacks Liliana with Gray Ogre")
 
@@ -288,8 +288,8 @@ def threeSplitAttack : Game :=
 
 #guard
   let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
-  ogres[0]!.status.attackingWhom == some ⟨1⟩ &&
-    ogres[1]!.status.attackingWhom == some ⟨2⟩
+  ogres[0]!.status.attackingTarget == some (.player ⟨1⟩) &&
+    ogres[1]!.status.attackingTarget == some (.player ⟨2⟩)
 #guard threeSplitAttack.log.any (fun s => mentions s "attacks Nissa with Gray Ogre")
 #guard threeSplitAttack.log.any (fun s => mentions s "attacks Liliana with Gray Ogre")
 

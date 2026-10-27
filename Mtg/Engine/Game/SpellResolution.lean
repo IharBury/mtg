@@ -87,6 +87,7 @@ def resolveTop (g : Game) : Game :=
           match obj.triggeredAbility with
           | some t =>
             if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+              let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
               g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
             else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
@@ -106,6 +107,7 @@ def resolveTop (g : Game) : Game :=
         let g := g.change (.resolvingAbility (some obj.id))
         let g :=
           if g.fraAbilityTargetsAllIllegal entry.controller obj t entry.targets then
+            let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
             g.logMsg s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
           else if g.fraConditionHolds entry.controller t.opts.fraCondition (obj.sourceId.bind g.findObject?)
@@ -144,6 +146,7 @@ def resolveTop (g : Game) : Game :=
               entry.targets.all (fun t => !legal.contains t)
             | none => false
         if allTargetsIllegal then
+          let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"

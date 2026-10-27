@@ -92,8 +92,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
 /-- Creatures attacking `p` directly (not a planeswalker). -/
 def creaturesAttackingPlayer (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o =>
-    o.isCreature && o.status.attacking && o.status.attackingWhom == some p &&
-      o.status.attackingPlaneswalker.isNone)
+    o.isCreature && o.status.attacking && o.status.attackingTarget == some (.player p))
 
 /-- Resolve an FRA activated or loyalty ability resolution. -/
 def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)

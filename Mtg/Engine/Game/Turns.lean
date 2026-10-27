@@ -190,6 +190,7 @@ def startNextTurn (g : Game) : Game :=
   let ending := g.activePlayer
   let g := g.expirePlayPermissions ending (cause := some (.turnBased .cleanupClear))
     |>.clearTurnActivations
+  let g := g.record (GameEvent.turnEnded g.turnNumber ending)
   Id.run do
     let mut g := g
     let extraN := g.extraTurns.size
@@ -197,19 +198,18 @@ def startNextTurn (g : Game) : Game :=
       if !g.extraTurns.isEmpty && (g.player g.extraTurns[0]!).lost then
         let q := g.extraTurns[0]!
         g := g.expireUntilNextTurnEffects q
-        g := g.changes #[
-          .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
-          .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size) ]
+        g := g.change (.extraTurns (g.extraTurns.extract 1 g.extraTurns.size))
     match g.extraTurns[0]? with
     | some q =>
-      let extraCause? := g.extraTurnCauses[0]?
-      g := g.changes #[
-        .extraTurns (g.extraTurns.extract 1 g.extraTurns.size),
-        .extraTurnCauses (g.extraTurnCauses.extract 1 g.extraTurnCauses.size),
-        .activePlayer q,
-        .turnNumber (g.turnNumber + 1),
-        .isFirstTurn false,
-        .cleanupGivesPriority false ]
+      let pendingExtraCauses := g.events.foldl (fun (stk : Array EventCause) e =>
+        match e.change with
+        | .rules (.turn (.extraTurnAdded _)) => #[e.cause] ++ stk
+        | .rules (.turn (.turnBegan _ true)) => stk.extract 1 stk.size
+        | .engine (.extraTurns _) => stk.extract 1 stk.size
+        | _ => stk) #[]
+      let extraCause? := pendingExtraCauses[0]?
+      g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := true))
+      g := g.change (.cleanupGivesPriority false)
       if !g.powerUpsForbidden then
         let cause := extraCause? <|> some (.oneShotEffect (some ⟨g.nextEffectId⟩) none (some q))
         g := g.createEffect .powerUpsForbiddenThisTurn (cause := cause)
@@ -221,28 +221,35 @@ def startNextTurn (g : Game) : Game :=
         if (g.player q).lost then
           g := g.expireUntilNextTurnEffects q
         else
-          g := g.changes #[
-            .activePlayer q,
-            .turnNumber (g.turnNumber + 1),
-            .isFirstTurn false,
-            .cleanupGivesPriority false ]
+          g := g.record (GameEvent.turnBegan (g.turnNumber + 1) q (extra := false))
+          g := g.change (.cleanupGivesPriority false)
           return g.logMsg s!"It is now {(g.player q).name}'s turn {g.turnNumber}"
       return g
+
+/-- Whether `st` is the first step of its phase (CR 500.1). -/
+private def isPhaseStartStep : Step → Bool
+  | .untap | .precombatMain | .beginningOfCombat | .postcombatMain | .end => true
+  | _ => false
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
 turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
 precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
   let g := g.changes #[
-    .step st,
     .pending .none,
     .consecutivePasses 0,
     .cleanupGivesPriority false,
     .proposedSpell none ]
-  let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
+  let g :=
+    if st == .draw && g.skipsFirstDraw then g
+    else if isPhaseStartStep st then
+      g.record (GameEvent.phaseBegan g.turnNumber st.phase
+        (cause := some (.gameRule .stepAdvance)))
+    else g
   let stepEvent := GameEvent.stepped g.turnNumber st g.activePlayer
   -- A skipped step does not happen (CR 614.10), so it is not recorded.
   let g := if st == .draw && g.skipsFirstDraw then g else g.record stepEvent
+  let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
     Id.run do
@@ -283,14 +290,18 @@ partial def beginStep (g : Game) (st : Step) : Game :=
               g := g.changeStatus o.id (.summoningSick false)
           return g
       -- No priority (CR 502.4). Immediately continue.
+      g := g.record (GameEvent.stepEnded g.turnNumber .untap
+        (cause := some (.gameRule .stepAdvance)))
       return g
   | .draw =>
     if g.skipsFirstDraw then
       -- CR 103.8a / 500.11 / 614.10: to skip a step is to proceed past it as
       -- though it didn't exist. Nothing happens during it — no turn-based
       -- draw, and no player receives priority.
-      g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
-        |>.beginStep .precombatMain
+      let g := g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
+      let g := g.record (GameEvent.phaseEnded g.turnNumber .beginning
+        (cause := some (.gameRule .stepAdvance)))
+      g.beginStep .precombatMain
     else
       -- The turn-based draw happens before triggers (ruling 770).
       let g := g.draw g.activePlayer 1 (cause := some (.turnBased .drawStepDraw))
@@ -458,6 +469,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     else
       -- The cleanup step ends (CR 500.3) and the turn ends.
       let g := g.emptyManaPools
+      let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
+        (cause := some (.gameRule .stepAdvance)))
+      let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
+        (cause := some (.gameRule .stepAdvance)))
       (g.startNextTurn).beginStep .untap |>.beginStep .upkeep
   | .precombatMain =>
     let ap := g.activePlayer
@@ -493,25 +508,43 @@ def advanceStep (g : Game) : Game :=
     -- Skip declare blockers / combat damage when no attackers.
     let attackers := g.battlefield.filter (·.status.attacking)
     if g.step == .declareAttackers && attackers.isEmpty then
+      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
+        (cause := some (.gameRule .stepAdvance)))
       g.beginStep .endOfCombat
     else if g.step == .declareBlockers && attackers.isEmpty then
+      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
+        (cause := some (.gameRule .stepAdvance)))
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
       (g.change (.pendingRegularCombatDamage false)).beginCombatDamageAssignment
     else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
+      let g := g.record (GameEvent.stepEnded g.turnNumber .endOfCombat
+        (cause := some (.gameRule .stepAdvance)))
+      let g := g.record (GameEvent.phaseEnded g.turnNumber .combat
+        (cause := some (.gameRule .stepAdvance)))
       let g := g.clearCombat
-      let g := g.change (.additionalCombatPhases (g.additionalCombatPhases - 1))
       g.logMsg "An additional combat phase begins"
         |>.beginStep .beginningOfCombat
     else
+      let g := g.record (GameEvent.stepEnded g.turnNumber g.step
+        (cause := some (.gameRule .stepAdvance)))
+      let g :=
+        if g.step.phase != st.phase then
+          g.record (GameEvent.phaseEnded g.turnNumber g.step.phase
+            (cause := some (.gameRule .stepAdvance)))
+        else g
       let g := if g.step == .endOfCombat then g.clearCombat else g
       g.beginStep st
   | none =>
     -- Leaving cleanup. If CR 514.3a granted priority this step, another
     -- cleanup step begins; otherwise the turn ends (CR 514.3 / 500.3).
+    let g := g.record (GameEvent.stepEnded g.turnNumber .cleanup
+      (cause := some (.gameRule .stepAdvance)))
     if g.cleanupGivesPriority then
       g.beginStep .cleanup
     else
+      let g := g.record (GameEvent.phaseEnded g.turnNumber .ending
+        (cause := some (.gameRule .stepAdvance)))
       g.startNextTurn |>.beginTurn
 
 end Game

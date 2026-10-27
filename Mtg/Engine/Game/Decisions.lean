@@ -373,6 +373,8 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       (cause := some (.costPayment .discard p (g.proposedSpell.map (·.spellId))))
     match g.proposedSpell with
     | some prop =>
+      let g := g.record (GameEvent.announced g.turnNumber prop.spellId (costs := #[.discard id])
+        (cause := some (.costPayment .discard p (some prop.spellId))))
       let g := g.changes #[.pending .none, .proposedSpell none, .consecutivePasses 0]
       return g.becomeCast prop.caster (g.object! prop.spellId)
     | none => throw "No spell is waiting for an additional cost"
@@ -570,6 +572,8 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
       (cause := some (.gameRule .spellCast))
     let g := g.putStackEntry p newId
+    let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone
+      (.alternative "permission"))
     let g := g.change (.pending .none)
     let g := g.logMsg s!"{(g.player p).name} casts {face.name} as the ability resolves"
     if face.requiresTarget then

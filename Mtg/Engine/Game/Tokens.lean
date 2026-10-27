@@ -198,7 +198,7 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         tapped := entersTapped
         summoningSick := sick
         attacking := attacking
-        attackingWhom := attackingWhom
+        attackingTarget := attackingWhom.map AttackTarget.player
       }
       timestamp := ts
     }
@@ -208,6 +208,12 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
         gotPlusOneThisTurn := entersWith.count .plusOnePlusOne > 0 }
     let obj := { baseObj with status := status }
     let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot obj) (cause := cause))
+    let g :=
+      if attacking then
+        let tgt := AttackTarget.player (attackingWhom.getD g.defendingPlayer)
+        g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
+          (cause := cause))
+      else g
     let g := g.createPrintedStaticEffects (g.object! newId)
     let g := g.logMsg s!"{(g.player controller).name} creates {obj.nameWithToken}"
     let g := g.change (.pushPendingTokenEnter newId)

@@ -138,7 +138,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
   | _, _, none => throw "That spell has no kicker"
   | _, _, some kicker =>
-    let g := g.changeObject spell.id (.kicked true)
+    let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.kicker]))
     let start :=
       if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
         ManaCost.empty
@@ -154,7 +154,11 @@ def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game :
   if prop.giftTo.isSome && to.isSome then
     throw "You can't pay a gift cost more than once"
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  let g := g.changeObject spell.id (.giftPromisedTo to)
+  let g :=
+    match to with
+    | some opp =>
+      g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.gift opp]))
+    | none => g.changeObject spell.id (.giftPromisedTo none)
   return g.changeProposals #[.giftTo to, .giftAnnounced true]
 
 /-- Continue the proposal window after kicker / gift announcements. -/
@@ -266,7 +270,8 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         g := g.becomeTapped o (cause := some (.costPayment .teamwork p (some prop.spellId)))
         g := g.putMatchingSourceTriggers p (g.object! id) .tappedForTeamwork
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    g := g.changeObject spell.id (.teamworkPaid true)
+    g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.teamwork ids])
+      (cause := some (.costPayment .teamwork p (some spell.id))))
     g := g.change (.pending .none)
       |>.changeProposals #[.teamworkPaid true, .teamworkAnnounced true]
     g := g.logMsg s!"{(g.player p).name} pays a teamwork cost"

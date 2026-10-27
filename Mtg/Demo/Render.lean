@@ -209,12 +209,9 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let atk :=
     if o.status.attacking then
       let dest :=
-        match o.status.attackingPlaneswalker.bind g.findObject? with
+        match o.status.attackingPlaneswalker?.bind g.findObject? with
         | some pw => objectRef g pw.id
-        | none =>
-          match o.status.attackingWhom with
-          | some pid => (g.player pid).name
-          | none => (g.player g.defendingPlayer).name
+        | none => (g.player (g.defendingPlayerOf o)).name
       if o.status.blocked then s!" *attacking {dest}, blocked*" else s!" *attacking {dest}*"
     else ""
   let blk :=
@@ -553,10 +550,7 @@ def combatDamageTargetRefs (g : Game) (source : GameObject) (forAttackers : Bool
     (g.legalCombatDamageRecipients source forAttackers).toList.map (fun o =>
       objectRef g o.id)
   if g.canAssignCombatDamageToDefendingPlayer source forAttackers then
-    let dest :=
-      match source.status.attackingWhom with
-      | some pid => pid
-      | none => g.defendingPlayer
+    let dest := g.defendingPlayerOf source
     creatures ++ [(g.player dest).name]
   else creatures
 

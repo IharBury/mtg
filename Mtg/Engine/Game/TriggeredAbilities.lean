@@ -1850,7 +1850,9 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .leastPower, .none =>
     let defn :=
       match sourceId.bind g.findObject? with
-      | some src => src.status.attackingWhom.getD (g.opponent controller)
+      | some src =>
+        if src.status.attackingTarget.isSome then g.defendingPlayerOf src
+        else g.opponent controller
       | none => g.opponent controller
     let chosen :=
       match targets[0]? with
@@ -4207,7 +4209,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
   | .additionalCombatPhase =>
-    g.change (.additionalCombatPhases (g.additionalCombatPhases + 1))
+    g.record (GameEvent.extraPhaseAdded g.turnNumber .combat
+      (cause := g.resolvingOneShotCause controller sourceId))
       |>.logMsg "Attacking creatures untap. After this phase, there is an additional combat phase"
   | .chooseModes modes how =>
     match how with
@@ -4880,23 +4883,34 @@ including “whenever you attack with one or more Elves” (once if any Elf atta
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
+    let decls : Array (EventObject × AttackTarget) :=
+      attackerIds.map fun id =>
+        let o := g.object! id
+        let tgt := o.status.attackingTarget.getD (.player (g.defendingPlayerOf o))
+        (o.asEvent, tgt)
+    let alreadyDeclared :=
+      g.events.any fun e =>
+        match e.change with
+        | .rules (.combat (.attackersDeclared p' ds)) =>
+          e.turn == g.turnNumber && p' == p && ds.map (·.1.id) == attackerIds.map some
+        | _ => false
+    if !attackerIds.isEmpty && !alreadyDeclared then
+      g := g.record (GameEvent.attackersDeclared g.turnNumber p decls)
+    let declEvent := GameEvent.attackersDeclared g.turnNumber p decls
     for id in attackerIds do
       let o := g.object! id
-      let whom := o.status.attackingWhom.getD g.defendingPlayer
-      let happened := GameEvent.attacked g.turnNumber p o.asEvent whom
-      g := g.record happened
-      if happened.matchesTrigger p o.id .attacking then
+      let whom := g.defendingPlayerOf o
+      if declEvent.matchesTrigger p o.id .attacking then
         g := g.putMatchingSourceTriggers p o .attacking
           (some (g.snapshotPower o)) (some (g.snapshotToughness o))
       -- Reality Fracture: each attacking creature, and one attacking a player
       -- alone (no other creature attacks that player; ruling 861).
-      if happened.matchesTrigger p o.id (.fra .creatureYouControlAttacks) then
+      if declEvent.matchesTrigger p o.id (.fra .creatureYouControlAttacks) then
         g := g.putFraEventTriggers p .creatureYouControlAttacks (cause := some o)
-      let whom := o.status.attackingWhom.getD g.defendingPlayer
       let alone := !attackerIds.any (fun id' =>
-        id' != id && (g.object! id').status.attackingWhom.getD g.defendingPlayer == whom &&
-          (g.object! id').status.attackingPlaneswalker.isNone) &&
-        o.status.attackingPlaneswalker.isNone
+        id' != id && g.defendingPlayerOf (g.object! id') == whom &&
+          (g.object! id').status.attackingPlaneswalker?.isNone) &&
+        o.status.attackingPlaneswalker?.isNone
       if alone then
         g := g.putFraEventTriggers p .creatureYouControlAttacksPlayerAlone (cause := some o)
       -- “Whenever enchanted creature attacks or blocks” (Super-Soldier Serum).
@@ -4912,34 +4926,33 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     -- cause records the attacked player as its controller.
     let attackedPlayers := attackerIds.foldl (fun (acc : Array PlayerId) id =>
       let o := g.object! id
-      if o.status.attackingPlaneswalker.isSome then acc
+      if o.status.attackingPlaneswalker?.isSome then acc
       else
-        let d := o.status.attackingWhom.getD g.defendingPlayer
+        let d := g.defendingPlayerOf o
         if acc.contains d then acc else acc.push d) #[]
     for d in attackedPlayers do
       match attackerIds.find? (fun id =>
           let o := g.object! id
-          o.status.attackingPlaneswalker.isNone &&
-            o.status.attackingWhom.getD g.defendingPlayer == d) with
+          o.status.attackingPlaneswalker?.isNone &&
+            g.defendingPlayerOf o == d) with
       | some id =>
         for q in g.livingPlayers do
           if q.id != d then
             g := g.putFraEventTriggers q.id .creaturesAttackYourOpponent
               (cause := some (g.object! id)) (causeController := some d)
       | none => pure ()
-    let attackedWithElves := attackerIds.any (fun id =>
-      let o := g.object! id
-      (GameEvent.attacked g.turnNumber p o.asEvent
-        (o.status.attackingWhom.getD g.defendingPlayer)).matchesTrigger p o.id .youAttackWithElves)
+    let attackedWithElves :=
+      !attackerIds.isEmpty && declEvent.matchesTrigger p attackerIds[0]! .youAttackWithElves
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
     let attacksSamePlayer :=
       attackerIds.any (fun id =>
-        match (g.object! id).status.attackingWhom with
-        | none => attackerIds.size >= 2
+        match (g.object! id).status.attackingPlayer? with
+        | none =>
+          (g.object! id).status.attackingPlaneswalker?.isNone && attackerIds.size >= 2
         | some d =>
           (attackerIds.filter (fun id' =>
-            (g.object! id').status.attackingWhom == some d)).size >= 2)
+            (g.object! id').status.attackingPlayer? == some d)).size >= 2)
     if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
@@ -4948,7 +4961,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
           let o := g.object! id
           if !g.hasSubtype o .merfolk then acc
           else
-            let d := o.status.attackingWhom.getD g.defendingPlayer
+            let d := g.defendingPlayerOf o
             if acc.any (· == d) then acc else acc.push d)
           (#[] : Array PlayerId)
       for _ in merfolkDefenders do

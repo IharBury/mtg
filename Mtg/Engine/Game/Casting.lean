@@ -734,7 +734,6 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
         | none => g
       g.queueLoyaltyActivationTriggers p actualSym
     | none => g
-  let isLoyalty := activation.any (·.cost.loyalty.isSome)
   let isEquip := activation.any (·.isEquip)
   let source : EventObject :=
     match (sourceId.bind g.findObject?).map GameObject.asEvent <|> sourceSnapshot <|>
@@ -746,7 +745,19 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           types := #[.artifact], subtypes := #[.equipment] }
       else
         { id := sourceId, name := sourceName, controller := some p, owner := p }
-  let g := g.record (GameEvent.activated g.turnNumber p source isLoyalty isEquip)
+  let abilityObjId := abilityId.getD (sourceId.getD ⟨0⟩)
+  let loyaltyDelta : Option Int :=
+    match activation.bind (·.cost.loyalty) with
+    | some (.plus n) => some (n : Int)
+    | some .plusX => some (chosenX : Int)
+    | some (.minus n) => some (-(n : Int))
+    | some .zero => some 0
+    | some .minusX => some (-(chosenX : Int))
+    | none => none
+  let isPowerUp := activation.any (·.powerUp)
+  let isBoast := activation == some ActivatedAbility.zemoBoastAbility
+  let g := g.record (GameEvent.abilityActivated g.turnNumber abilityObjId source p
+    (.nonMana loyaltyDelta isEquip isPowerUp isBoast))
   let g :=
     match sourceId with
     | none => g
@@ -895,9 +906,7 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
     (dividedDamage : Array Nat := #[]) : Game :=
-  let g := g.changeStackEntryById objectId (.targets targets)
-  let g := g.changeStackEntryById objectId (.dividedDamage dividedDamage)
-  g.changeStackEntryById objectId (.targetsAnnounced true)
+  g.record (GameEvent.targeted g.turnNumber objectId targets (division := dividedDamage))
 
 /-- Write `targets` onto the stack entry for the proposed spell. -/
 def setProposedTargets (g : Game) (targets : Array Target) : Game :=
@@ -918,7 +927,12 @@ def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=
   match g.proposedSpell with
   | none => g
-  | some prop => g.changeStackEntryById prop.spellId (.pushExtraMode mode)
+  | some prop =>
+    let prev :=
+      match g.stackEntry? prop.spellId with
+      | some se => se.chosenMode.toArray ++ se.extraModes
+      | none => #[]
+    g.record (GameEvent.announced g.turnNumber prop.spellId (modes := prev.push mode))
 
 /-- After the modes are chosen: additional costs, kicker, gift, and teamwork,
 then targets (CR 601.2b–c). -/
@@ -944,7 +958,8 @@ def afterModesChosen (g : Game) (p : PlayerId) : Game :=
 def setProposedMode (g : Game) (mode : Nat) : Game :=
   match g.proposedSpell with
   | none => g
-  | some prop => g.changeStackEntryById prop.spellId (.chosenMode (some mode))
+  | some prop =>
+    g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
 
 
 end Game

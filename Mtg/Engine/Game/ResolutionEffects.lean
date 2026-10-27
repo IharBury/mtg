@@ -57,35 +57,17 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copyTs := g.timestamp + 1
-    let copyObj : GameObject := {
-      id := copyId
-      printed := src.printed
+    let copySnap : EventObject := {
+      (g.snapshot src) with
+      id := some copyId
       owner := controller
       controller := some controller
       zone := .stack
-      timestamp := copyTs
-      kicked := src.kicked
-      giftPromisedTo := src.giftPromisedTo
-      teamworkPaid := src.teamworkPaid
-      sneakPaid := src.sneakPaid
-      sneakAttackWhom := src.sneakAttackWhom
-      chosenX := src.chosenX
       isCopy := true
-      adventurerCard := src.adventurerCard
+      wasCast := false
     }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.putStackEntry controller copyId
-    let g :=
-      match g.stackEntry? src.id, g.stack.findIdx? (fun e => e.objectId == copyId) with
-      | some orig, some i =>
-        g.changes #[
-          .stackEntry i (.targets orig.targets),
-          .stackEntry i (.dividedDamage orig.dividedDamage),
-          .stackEntry i (.chosenMode orig.chosenMode),
-          .stackEntry i (.extraModes orig.extraModes),
-          .stackEntry i (.targetsAnnounced true)]
-      | _, _ => g
+    let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
+      (cause := g.resolvingOneShotCause controller (some src.id)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Announce the modes and targets of a spell cast while an ability resolves
@@ -149,6 +131,9 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
           g.createEffect (.exileInstantSorceryInstead newId)
         else g
       let g := g.putStackEntry p newId
+      let way : CastWay :=
+        if withoutManaCost then .alternative "withoutManaCost" else .normal
+      let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
       let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
       let cost :=
         if withoutManaCost then ManaCost.empty else g.playManaCost original original.printed
@@ -949,35 +934,17 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
     g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
   else
     let copyId : ObjectId := ⟨g.nextObjectId⟩
-    let copyTs := g.timestamp + 1
-    let copyObj : GameObject := {
-      id := copyId
-      printed := src.printed
+    let copySnap : EventObject := {
+      (g.snapshot src) with
+      id := some copyId
       owner := controller
       controller := some controller
       zone := .stack
-      timestamp := copyTs
-      abilityEffect := src.abilityEffect
-      triggeredAbility := src.triggeredAbility
-      sourceId := src.sourceId
-      lastKnownPower := src.lastKnownPower
-      lastKnownToughness := src.lastKnownToughness
-      chosenX := src.chosenX
       isCopy := true
-      teamworkPaid := src.teamworkPaid
+      wasCast := false
     }
-    let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj))
-    let g := g.putStackEntry controller copyId
-    let g :=
-      match g.stack.findIdx? (fun e => e.objectId == src.id) with
-      | some i =>
-        let orig := g.stack[i]!
-        let last := g.stack.size - 1
-        g.changes #[
-          .stackEntry last (.targets orig.targets),
-          .stackEntry last (.dividedDamage orig.dividedDamage),
-          .stackEntry last (.chosenMode orig.chosenMode)]
-      | none => g
+    let g := g.record (GameEvent.stackObjectCopied g.turnNumber src.id copySnap controller
+      (cause := g.resolvingOneShotCause controller (some src.id)))
     g.logMsg s!"A copy of {src.name} is created"
 
 /-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
