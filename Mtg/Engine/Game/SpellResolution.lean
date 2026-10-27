@@ -146,11 +146,12 @@ def resolveTop (g : Game) : Game :=
               entry.targets.all (fun t => !legal.contains t)
             | none => false
         if allTargetsIllegal then
-          let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent)
+          let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
+          let g := g.record (GameEvent.removedOnResolution g.turnNumber obj.asEvent
+            (cause := finishCause))
           let g := entry.targets.foldl (fun g t => g.illegalAbilityTarget t) g
           let g := g.logMsg
             s!"{obj.name} doesn't resolve because all its targets are illegal (CR 608.2b)"
-          let finishCause := some (EventCause.gameRule .instantOrSorceryFinishedResolving)
           if obj.isCopy then
             (g.ceaseToExist obj.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
               s!"The copy of {obj.name} ceases to exist (CR 704.5e)"
@@ -203,11 +204,16 @@ def resolveTop (g : Game) : Game :=
           let sick := !obj.printed.keywords.haste
           let sneak := obj.sneakPaid
           let sneakWhom := obj.sneakAttackWhom
+          let sneakTarget :=
+            if sneak then
+              obj.sneakAttackTarget.orElse (fun _ => sneakWhom.map AttackTarget.player)
+            else none
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
             (tapped := sneak || g.entersTapped entry.controller obj.printed)
             (summoningSick := sick)
             (attacking := sneak)
             (attackingWhom := if sneak then sneakWhom else none)
+            (attackingTarget := sneakTarget)
             (wasCast := some (!obj.isCopy))
             (verb := some .resolve)
             (actor := some entry.controller)

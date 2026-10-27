@@ -2722,6 +2722,40 @@ attacks" triggers (CR 508.3a). -/
     (cause := some (.oneShotEffect (some ⟨79⟩) none (some me)))
   let bAfterRem := gRem.object! bMe.id
   let bOppAfterRem := gRem.object! bOpp.id
+  -- 5. Entering attacking (default defendingPlayer vs planeswalker target via Sneak / tokens)
+  let gEnter0 := insertObject (quiet g0) bear me (.graveyard me) none {} (fun id _ =>
+    #[.pushGraveyard id])
+  let gyBearId := (gEnter0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
+  let (gEnterDefault, enteredDefId) := gEnter0.putOntoBattlefield gyBearId me (attacking := true)
+    (cause := some (.oneShotEffect (some ⟨80⟩) none (some me)))
+  let enteredDefMovedTarget := gEnterDefault.events.findSome? (fun e =>
+    match e.change with
+    | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) =>
+      if after.id == some enteredDefId then after.attackingTarget else none
+    | _ => none)
+  let enteredDefBecameTarget := gEnterDefault.events.findSome? (fun e =>
+    match e.change with
+    | .rules (.combat (.becameAttacking c tgt)) =>
+      if c.id == some enteredDefId then some tgt else none
+    | _ => none)
+  let gSneak0 :=
+    let g := (quiet g0).record (GameEvent.becameAttacking g0.turnNumber hMe.asEvent (.planeswalker pwOpp.id)
+      (cause := some (.oneShotEffect (some ⟨81⟩) none (some me))))
+    let g := insertObject g bear me .stack (some me) {}
+    let spId := (g.objects.filter (fun o => o.name == bear.name && o.zone == .stack))[0]!.id
+    let g := g.putStackEntry me spId
+    { g with step := .declareBlockers }
+  let sneakSpellId := gSneak0.stack.back!.objectId
+  let gSneak1 :=
+    match gSneak0.paySneak me sneakSpellId hMe.id with
+    | .ok g => g.resolveTop
+    | .error _ => gSneak0
+  let sneakEntered? := gSneak1.battlefield.find? (fun o =>
+    o.name == bear.name && o.controlledBy me && o.id != bMe.id)
+  let gTokPw := (quiet g0).createKindTokens me .spirit 1 (tapped := true)
+    (attacking := true) (attackingTarget := some (.planeswalker pwOpp.id))
+    (cause := some (.oneShotEffect (some ⟨82⟩) none (some me)))
+  let tokPw? := gTokPw.battlefield.find? (·.printed.isToken)
   hAfterBecame.status.attacking &&
     hAfterBecame.status.attackingTarget == some (AttackTarget.planeswalker pwOpp.id) &&
     !hAfterBecame.status.declaredAsAttackerThisTurn &&
@@ -2744,10 +2778,18 @@ attacks" triggers (CR 508.3a). -/
     bAfterRem.status.attackingTarget.isNone &&
     !bAfterRem.status.blocked &&
     bOppAfterRem.status.blocking.isEmpty &&
+    (gEnterDefault.object! enteredDefId).status.attackingTarget == some (AttackTarget.player gEnterDefault.defendingPlayer) &&
+    enteredDefMovedTarget == some (AttackTarget.player gEnterDefault.defendingPlayer) &&
+    enteredDefBecameTarget == some (AttackTarget.player gEnterDefault.defendingPlayer) &&
+    (sneakEntered?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
+    (tokPw?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
     noUnclassifiedRulesEvents gBecame &&
     noUnclassifiedRulesEvents gAtk &&
     noUnclassifiedRulesEvents gBlk &&
-    noUnclassifiedRulesEvents gRem
+    noUnclassifiedRulesEvents gRem &&
+    noUnclassifiedRulesEvents gEnterDefault &&
+    noUnclassifiedRulesEvents gSneak1 &&
+    noUnclassifiedRulesEvents gTokPw
 
 /- Phase 5.3 isolation: `CastEvent` (`proposed`, `announced`, `targeted`,
 `spellCast`, `abilityActivated`), `TriggerQueueEvent.putOnStack`,
@@ -2794,7 +2836,12 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     .sneakAttackWhom (some opp),
     .adventurerCard (some bear),
     .lastKnownPower (some 5),
-    .lastKnownToughness (some 6)]
+    .lastKnownToughness (some 6),
+    .castFromHand true,
+    .exileInstantSorceryInstead true,
+    .treasureManaSpent true,
+    .isPreparedSpell true,
+    .boastExiled #[⟨42⟩]]
   let gCopy1 := gCast4.copyStackSpell (gCast4.object! spId) me
   let copy1Entry := gCopy1.stack.back!
   let copy1Obj := gCopy1.object! copy1Entry.objectId
@@ -2818,14 +2865,30 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let hasTrigPutOnStack := gTrig1.events.any (fun e =>
     match e.change with
     | .rules (.triggerQueue (.putOnStack stackId _ ctrl)) =>
-      ctrl == me && gTrig1.stack.any (·.objectId == stackId)
+      ctrl == me && gTrig1.stack.any (·.objectId == stackId) &&
+        e.cause == .gameRule .triggeredAbility
     | _ => false)
   let (gTrig2, _) := (quiet gTrig1).move oppBear.id (.graveyard opp) (verb := some .destroy)
     (cause := some (.oneShotEffect (some ⟨89⟩) none (some me)))
   let gTrig3 := gTrig2.resolveTop
   let hasRemovedOnResolution := gTrig3.events.any (fun e =>
     match e.change with
-    | .rules (.stackObject (.removedOnResolution _)) => true
+    | .rules (.stackObject (.removedOnResolution _)) =>
+      e.cause == .gameRule .abilityFinishedResolving
+    | _ => false)
+  -- Spell fizzle on resolution records .instantOrSorceryFinishedResolving cause
+  let gFizzle0 := addPermanent (quiet afterDraw) bear opp opp
+  let fizzleBear := (gFizzle0.battlefield.filter (fun o => o.name == bear.name && o.controlledBy opp))[0]!
+  let gFizzle0 := insertObject gFizzle0 lightningBolt me .stack (some me) {}
+  let fizzleSpId := (gFizzle0.objects.filter (·.name == lightningBolt.name))[0]!.id
+  let gFizzle0 := (gFizzle0.putStackEntry me fizzleSpId).setStackEntryTargets fizzleSpId #[Target.permanent fizzleBear.id]
+  let (gFizzle1, _) := gFizzle0.move fizzleBear.id (.graveyard opp) (verb := some .destroy)
+    (cause := some (.oneShotEffect (some ⟨90⟩) none (some me)))
+  let gFizzle2 := (quiet gFizzle1).resolveTop
+  let hasSpellRemovedOnResolution := gFizzle2.events.any (fun e =>
+    match e.change with
+    | .rules (.stackObject (.removedOnResolution _)) =>
+      e.cause == .gameRule .instantOrSorceryFinishedResolving
     | _ => false)
   gLand1.loggedLandsPlayed me == 1 &&
     landMovedEvents.size == 1 &&
@@ -2843,12 +2906,19 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     spEntry.targetsAnnounced &&
     copy1Obj.isCopy &&
     !copy1Obj.wasCast &&
+    !copy1Obj.castFromGraveyard &&
+    !copy1Obj.castFromHand &&
+    !copy1Obj.exileInstantSorceryInstead &&
+    !copy1Obj.treasureManaSpent &&
+    !copy1Obj.isPreparedSpell &&
+    copy1Obj.boastExiled.isEmpty &&
     copy1Obj.chosenX == some 3 &&
     copy1Obj.kicked &&
     copy1Obj.giftPromisedTo == some opp &&
     copy1Obj.teamworkPaid &&
     copy1Obj.sneakPaid &&
     copy1Obj.sneakAttackWhom == some opp &&
+    copy1Obj.sneakAttackTarget == some (.player opp) &&
     copy1Obj.adventurerCard == some bear &&
     copy1Obj.lastKnownPower == some 5 &&
     copy1Obj.lastKnownToughness == some 6 &&
@@ -2861,11 +2931,13 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     copiedEvents.all (fun (orig, _, ctrl) => orig == spId && ctrl == me) &&
     hasTrigPutOnStack &&
     hasRemovedOnResolution &&
+    hasSpellRemovedOnResolution &&
     noUnclassifiedRulesEvents gLand1 &&
     noUnclassifiedRulesEvents gCast4 &&
     noUnclassifiedRulesEvents gCopy1 &&
     noUnclassifiedRulesEvents gCryoLoki &&
     noUnclassifiedRulesEvents gTrig1 &&
-    noUnclassifiedRulesEvents gTrig3
+    noUnclassifiedRulesEvents gTrig3 &&
+    noUnclassifiedRulesEvents gFizzle2
 
 end Mtg.Engine.EventTests

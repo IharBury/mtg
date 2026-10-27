@@ -711,9 +711,7 @@ def queueLoyaltyActivationTriggers (g : Game) (p : PlayerId) (sym : LoyaltySymbo
       ((o.waitingTriggersFor p .youActivateLoyaltyAbility).filter (fun wt =>
         wt.ability.shared != .drawIfRemovedTwoLoyalty || removed ≥ 2)).map (fun wt =>
         if wt.ability.shared == .drawIfRemovedTwoLoyalty then
-          WaitingTrigger.mk wt.controller wt.source wt.ability wt.event
-            (some (Int.ofNat removed)) wt.lastKnownToughness wt.causeId wt.cause
-            wt.causeController wt.checked
+          { wt with lastKnownPower := some (Int.ofNat removed) }
         else wt)
     g.enqueueWaitingTriggers waiting
 

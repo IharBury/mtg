@@ -415,7 +415,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
         g.logMsg s!"{pl.name}'s life total can't change"
       else
         (g.record (GameEvent.life g.turnNumber p d.damageYou false true false
-          (cause := g.resolvingOneShotCause p (some id)))).logMsg
+          (cause := if g.currentResolvingContext?.isSome then g.resolvingOneShotCause p (some id) else none))).logMsg
           s!"{o.name} deals {d.damageYou} damage to {pl.name}"
     let lost := (before - (g.player p).life).toNat
     g := g.afterLifeLost p lost

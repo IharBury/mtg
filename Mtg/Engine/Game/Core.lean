@@ -677,7 +677,14 @@ def applyChange (o : GameObject) (c : ObjectChange) : GameObject :=
   | .kicked v => { o with kicked := v }
   | .teamworkPaid v => { o with teamworkPaid := v }
   | .sneakPaid v => { o with sneakPaid := v }
-  | .sneakAttackWhom v => { o with sneakAttackWhom := v }
+  | .sneakAttackWhom v =>
+    { o with
+      sneakAttackWhom := v
+      sneakAttackTarget :=
+        match v with
+        | some p => some (.player p)
+        | none => o.sneakAttackTarget }
+  | .sneakAttackTarget v => { o with sneakAttackTarget := v }
   | .giftPromisedTo v => { o with giftPromisedTo := v }
   | .isCopy v => { o with isCopy := v }
   | .uncounterableThisCast v => { o with uncounterableThisCast := v }
@@ -1967,22 +1974,28 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
     let fresh : GameObject :=
       match origObj? with
       | some orig =>
-        { orig with
-          id := newId
+        -- CR 707.10: A copy of a spell or ability on the stack is not cast and
+        -- only copies choices made for it (modes, targets, X, whether it was
+        -- kicked/gifted/etc.), not cast-origin flags or linked cards.
+        { id := newId
           printed := printed
           owner := controller
           controller := some controller
-          defaultController := none
           zone := .stack
           status := {}
           timestamp := ts
           isCopy := true
-          wasCast := false
-          uncounterableThisCast := false
           kicked := orig.kicked || kickedFromEvents
           giftPromisedTo := orig.giftPromisedTo.orElse (fun _ => giftFromEvents)
           teamworkPaid := orig.teamworkPaid || teamworkFromEvents
+          sneakPaid := orig.sneakPaid
+          sneakAttackWhom := orig.sneakAttackWhom
+          sneakAttackTarget := orig.sneakAttackTarget
           chosenX := copy.chosenX.orElse (fun _ => orig.chosenX)
+          adventurerCard := orig.adventurerCard
+          abilityEffect := orig.abilityEffect
+          triggeredAbility := orig.triggeredAbility
+          sourceId := orig.sourceId
           lastKnownPower := copy.lastKnownPower.orElse (fun _ => orig.lastKnownPower)
           lastKnownToughness := copy.lastKnownToughness.orElse (fun _ => orig.lastKnownToughness) }
       | none =>

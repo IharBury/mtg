@@ -749,7 +749,8 @@ def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :
 /-- Return a graveyard creature tapped and attacking with a finality
 counter (Grim Reaper). -/
 def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
-    (cardId : ObjectId) (attackingWhom : Option PlayerId := none) : Game :=
+    (cardId : ObjectId) (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none) : Game :=
   match g.findObject? cardId with
   | none => g.logMsg "The target is no longer in the graveyard"
   | some o =>
@@ -763,8 +764,9 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
           match (g.livingOpponents controller)[0]? with
           | some pl => some pl.id
           | none => none
+      let tgt := attackingTarget.orElse (fun _ => whom.map AttackTarget.player)
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := true)
-        (attacking := true) (attackingWhom := whom)
+        (attacking := true) (attackingWhom := whom) (attackingTarget := tgt)
         (extraEntersWith := #[(.finality, 1)])
       let o := g.object! newId
       let g := g.logMsg s!"{o.name} gets a finality counter"

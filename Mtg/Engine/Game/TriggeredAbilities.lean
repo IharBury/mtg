@@ -3881,6 +3881,37 @@ where
     g.withAffected controller ab sourceId targets affected fun g o =>
       g.applyPermanentAction o (.setBasePT pw tw)
 
+/-- Resolve the attack target for tokens created tapped and attacking during a
+triggered ability's resolution (e.g. Andúril, Flame of the West): prefer an
+explicit player/planeswalker target on the ability, then the equipped/source
+creature's `status.attackingTarget`, then any attacking creature `controller`
+controls, falling back to `.player g.defendingPlayer` (CR 508.4). -/
+def triggerAttackTarget (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (targets : Array Target) : AttackTarget :=
+  let fromTargets : Option AttackTarget :=
+    match targets[0]? with
+    | some (Target.player pid) => some (.player pid)
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | some o =>
+        if o.isOnBattlefield && o.printed.isPlaneswalker then some (.planeswalker oid)
+        else o.status.attackingTarget
+      | none => none
+    | _ => none
+  let fromSource : Option AttackTarget :=
+    match sourceId.bind g.findObject? with
+    | some src =>
+      src.status.attackingTarget.orElse fun _ =>
+        match src.attachedTo.bind g.findObject? with
+        | some host => host.status.attackingTarget
+        | none => none
+    | none => none
+  let fromAnyAttacker : Option AttackTarget :=
+    (g.permanentsOf controller).findSome? fun o =>
+      if o.status.attacking then o.status.attackingTarget else none
+  ((fromTargets.orElse fun _ => fromSource).orElse fun _ => fromAnyAttacker).getD
+    (.player g.defendingPlayer)
+
 partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
@@ -3969,7 +4000,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           .«if» cond .markRecentTokensAttacking] =>
         let (g, holds) :=
           g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-        let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+        let atkTgt := if holds then some (g.triggerAttackTarget controller sourceId targets) else none
+        let g := g.createKindTokens controller kind n.toNat (tapped := tapped)
+          (attacking := holds) (attackingTarget := atkTgt)
         if holds then
           g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
         else g
@@ -4748,7 +4781,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             .«if» cond .markRecentTokensAttacking] =>
           let (g, holds) :=
             g.triggerIfHolds controller ab sourceId targets lastKnownPower cond
-          let g := g.createKindTokens controller kind n.toNat (tapped := tapped) (attacking := holds)
+          let atkTgt := if holds then some (g.triggerAttackTarget controller sourceId targets) else none
+          let g := g.createKindTokens controller kind n.toNat (tapped := tapped)
+            (attacking := holds) (attackingTarget := atkTgt)
           if holds then
             g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
           else g

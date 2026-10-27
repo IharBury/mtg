@@ -35,11 +35,14 @@ def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : Object
     throw s!"{attacker.name} is not attacking"
   if attacker.status.blocked then
     throw s!"{attacker.name} is blocked"
-  let whom := some (g.defendingPlayerOf attacker)
+  let defPlayer := g.defendingPlayerOf attacker
+  let whom := some defPlayer
+  let atkTarget := attacker.status.attackingTarget.orElse (fun _ => some (.player defPlayer))
   let some _spell := g.findObject? spellId | throw "The spell left the stack"
   let g := g.returnToHand attackerId attacker.owner
     (cause := some (.costPayment .returnToHand p (some spellId)))
-  let g := g.changeObjects spellId #[.sneakPaid true, .sneakAttackWhom whom]
+  let g := g.changeObjects spellId #[
+    .sneakPaid true, .sneakAttackWhom whom, .sneakAttackTarget atkTarget]
   return g.logMsg s!"{(g.player p).name} pays a sneak cost"
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still

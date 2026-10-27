@@ -142,6 +142,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (tapped : Bool := false) (summoningSick : Bool := true)
     (attachedTo : Option ObjectId := none) (applyHope : Bool := true)
     (attacking : Bool := false) (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none)
     (returnedAsArtifact : Bool := false) (onlyFoodArtifact : Bool := false)
     (nightBack : Bool := false) (wasCast : Option Bool := none)
     (extraEntersWith : CounterBag := #[])
@@ -149,6 +150,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (libraryPosition : Option LibraryPosition := none)
     (cause : Option EventCause := none) : Game × ObjectId :=
   let old := g.object! id
+  let isAttacking := attacking || attackingTarget.isSome
+  let resolvedAttackTarget : Option AttackTarget :=
+    if isAttacking then
+      some (attackingTarget.getD (.player (attackingWhom.getD g.defendingPlayer)))
+    else none
   -- Power and toughness as this permanent last existed on the battlefield
   -- (CR 113.7a). Captured before attachments and the zone list change.
   let lkiPower :=
@@ -205,8 +211,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         { faceDown := faceDown
           tapped := entersTapped
           summoningSick := summoningSick
-          attacking := attacking
-          attackingTarget := attackingWhom.map AttackTarget.player
+          attacking := isAttacking
+          attackingTarget := resolvedAttackTarget
           chosenCardType := chosenCardType
           windcragMardu := windcragMardu
           prepared := prepared
@@ -419,12 +425,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       match e.change with
       | .rules _ => some e.cause
       | .engine _ => none).getD .unclassified
-  let g :=
-    if dest == .battlefield && attacking then
-      let tgt := AttackTarget.player (attackingWhom.getD g.defendingPlayer)
+  let g : Game :=
+    match (if dest == .battlefield then resolvedAttackTarget else none) with
+    | some tgt =>
       g.record (GameEvent.becameAttacking g.turnNumber (g.object! newId).asEvent tgt
         (cause := some happenedCause))
-    else g
+    | none => g
   let gyLeave :=
     match old.zone, old.owner with
     | .graveyard owner, _ =>
@@ -671,6 +677,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (tapped := false) (summoningSick := true)
     (attachedTo : Option ObjectId := none) (applyHope := true)
     (attacking := false) (attackingWhom : Option PlayerId := none)
+    (attackingTarget : Option AttackTarget := none)
     (returnedAsArtifact := false) (onlyFoodArtifact := false)
     (nightBack := false) (wasCast : Option Bool := none)
     (extraEntersWith : CounterBag := #[])
@@ -684,6 +691,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (tapped := tapped) (summoningSick := summoningSick)
       (attachedTo := attachedTo) (applyHope := applyHope)
       (attacking := attacking) (attackingWhom := attackingWhom)
+      (attackingTarget := attackingTarget)
       (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
       (nightBack := nightBack) (wasCast := wasCast)
       (extraEntersWith := extraEntersWith)

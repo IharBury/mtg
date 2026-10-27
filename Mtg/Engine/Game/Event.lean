@@ -437,6 +437,7 @@ inductive ObjectChange where
   | teamworkPaid (v : Bool)
   | sneakPaid (v : Bool)
   | sneakAttackWhom (v : Option PlayerId)
+  | sneakAttackTarget (v : Option AttackTarget)
   | giftPromisedTo (v : Option PlayerId)
   | isCopy (v : Bool)
   | uncounterableThisCast (v : Bool)
@@ -1500,7 +1501,7 @@ def triggerPutOnStack (turn : Nat) (stackObj : ObjectId) (source : EventObject)
     (controller : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.triggerQueue (.putOnStack stackObj source controller))
-    (cause.getD (.gameRule .spellCast))
+    (cause.getD (.gameRule .triggeredAbility))
 
 /-- `original` on the stack was copied as `copy` under `controller`'s control (CR 707.10). -/
 def stackObjectCopied (turn : Nat) (original : ObjectId) (copy : EventObject)
