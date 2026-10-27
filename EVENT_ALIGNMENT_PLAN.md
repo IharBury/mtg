@@ -1035,13 +1035,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   `queueBatchSourceAbility` (for `causeId`, `cause := some old`, and
   last-known power/toughness, e.g. `g.snapshotPower old` for dies triggers and
   the accumulated amount for `sourceDealtDamage`), to `putFraEventTriggers` /
-  `putFraEventTriggersWhere` and `queueTrigger` (which accept `causeController`,
-  forwarded from `wt.causeController` by `putWaitingTrigger`), and for
-  `eventCause` on `waitingTriggersFor` and `queueTrigger` (forwarded from
-  `wt.eventCause` by `putWaitingTrigger`; today's trigger loops leave
-  `eventCause` at its default `none`, so `putTriggeredAbilityOnStack` defaults
-  `TriggerQueueEvent.putOnStack`'s cause to `.gameRule .triggeredAbility`). These
-  come from `moved.before` and the damage packets.
+  `putFraEventTriggersWhere` and `queueTrigger` (which accept `causeController`
+  from the queuing loop), and for `eventCause` on `waitingTriggersFor` and
+  `queueTrigger` (left at its default `none` by today's trigger loops, so
+  `putTriggeredAbilityOnStack` defaults `TriggerQueueEvent.putOnStack`'s cause to
+  `.gameRule .triggeredAbility`), while `putWaitingTrigger` later reads
+  `wt.causeController` and `wt.eventCause` from the `WaitingTrigger` and forwards
+  them into `putQueuedTrigger`. These come from `moved.before` and the damage
+  packets.
 - Each trigger that fires is recorded as `TriggerQueueEvent.triggered` (with
   `cause := .gameRule .triggeredAbility`), so
   "once each turn" is a log query (replacing `Status.firedOnceEachTurn` in
@@ -1504,11 +1505,12 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    produce the same `WaitingTrigger` fields (`causeId`, `cause`, and
    `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
    `putMatchingSourceTriggers`, and `queueBatchSourceAbility`; `causeController`
-   passed to `putFraEventTriggers` / `putFraEventTriggersWhere` and `queueTrigger`
-   and forwarded from `wt.causeController` by `putWaitingTrigger`; and
-   `eventCause` on `waitingTriggersFor` and `queueTrigger`—forwarded from
-   `wt.eventCause` by `putWaitingTrigger`—left at its default `none` by today's
-   trigger loops).
+   passed by the queuing loops to `putFraEventTriggers` /
+   `putFraEventTriggersWhere` and `queueTrigger`; and `eventCause` on
+   `waitingTriggersFor` and `queueTrigger`, left at its default `none` by today's
+   trigger loops; when a queued `WaitingTrigger` is later put on the stack,
+   `putWaitingTrigger` forwards `wt.causeController` and `wt.eventCause` into
+   `putQueuedTrigger`).
 2. Cover the whole of 603.10a–f for look-back (extending the `preBattlefield`
    look-back already used for `oneOrMoreOtherCreaturesDie` in Phase 4 to all four
    603.10a zone-change categories plus 603.10b–f).
