@@ -766,10 +766,22 @@ described in §3.3.
 
 ### 3.2 One-shot effects and simultaneous batches (603.2c, 608.2f)
 
-The commit API takes **data**, not a callback, so a nested call cannot open a
-second batch by accident:
+`Game` tracks `nextBatchId : Nat := 0` (plus `EngineChange.nextBatchId`) and
+`currentBatch : Option (BatchId × Option EventCause) := none` (`Core.lean`),
+and exposes both explicit data commits and re-entrant batch scopes so a nested
+call joins the enclosing batch instead of opening a second batch:
 
 ```lean
+/-- Run `f` inside a simultaneous rules-event batch (CR 603.2c / 608.2c / 704.3).
+If a batch is already active on `g`, `f` joins the enclosing batch; otherwise a
+new `BatchId` is opened and batch-level triggers (`evaluateBatchTriggers` in
+Phase 4; `matchTriggers pre post batch` in Phase 6, §3.5) are evaluated once
+when `f` completes. (`openBatch` in `Pumps.lean` provides the same scope for
+`Except String Game` `do` blocks.) -/
+def Game.withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
+    (f : Game → Game × α) : Game × α
+def Game.withBatch (g : Game) (cause : Option EventCause := none) (f : Game → Game) : Game
+
 /-- Apply `events` (each paired with its `EventCause`) as one simultaneous batch
 under a single `BatchId` and evaluate batch-level ("whenever one or more …")
 triggers for the batch while keeping the existing per-event queues for
@@ -784,33 +796,74 @@ once and advances `nextEffectId` for the batch before delegating to
 def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent) : Game
 ```
 
-- In Phase 4, `commitBatchWithCauses` applies its `(EventCause × RulesEvent)`
-  entries under one `BatchId` (`⟨g.nextBatchId⟩`), and `commitBatch` resolves
-  `g.resolveOneShotCause cause` (advancing `nextEffectId` once when it mints a
-  fresh `EffectId`) before delegating to `commitBatchWithCauses` so every event
-  of a one-shot instruction shares one `EffectId` and one `BatchId` (replacing
-  the manual `allocDelayedCause` pre-allocation across `markDamageOn`,
-  `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
-  `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
-  `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean`), while
-  SBA passes call `commitBatchWithCauses` so heterogeneous `.stateBased` causes
-  (`.lifeZeroOrLess`, `.zeroOrLessToughness`, `.legendRule`,
-  `.counterAnnihilation`, …) share one `BatchId` per pass (704.3) while keeping
-  their per-event `.stateBased` causes. Both run a batch-level pass for the
-  "whenever one or more …" triggers while keeping the existing per-event trigger
-  queues for individual triggers; Phase 6 replaces those individual per-event
-  queues with the unified `matchTriggers pre post batch` pass (§3.5).
+- In Phase 4, `commitBatchWithCauses` delegates to `withBatch none` to apply its
+  `(EventCause × RulesEvent)` entries under one `BatchId` (`⟨g.nextBatchId⟩`),
+  and `commitBatch` resolves `g.resolveOneShotCause cause` once (advancing
+  `nextEffectId` when it mints a fresh `EffectId`) before delegating to
+  `commitBatchWithCauses` with events already stamped with that resolved cause.
+  `withBatchReturn` / `withBatch` (`Core.lean`) and `openBatch` (`Pumps.lean`)
+  store `(batchId, cause)` on `g.currentBatch` without resolving `cause` up
+  front; as each `.rules` event is recorded, `applySingleRulesEventInBatch`
+  resolves its cause via `resolveCauseInBatch` (`Core.lean`) and writes any
+  newly minted one-shot cause back onto `currentBatch` so subsequent `.unclassified`
+  or `.oneShotEffect none ..` events in the same batch reuse that `EffectId`
+  (while a `.turnBased` or `.stateBased` batch cause rewrites `.unclassified`
+  events to that batch cause, and `none` upgrades `.unclassified` to a fresh
+  `.oneShotEffect` only when `currentResolvingContext?` is `some`). `resolvingBatchCause`
+  returns `currentResolvingContext?.map (.oneShotEffect none ..)` for callers
+  opening a batch in `TriggeredAbilities.lean`, `FraResolve.lean`,
+  `FrcResolve.lean`, and `ResolutionEffects.lean` (while in `Damage.lean`,
+  `markDamageOn`, `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`'s
+  `some src` branch—with `none` delegating to `markDamageOn`—`dealDamageToEachOpponent`,
+  `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
+  `drawThenLoseLife` replaced their manual `allocDelayedCause` pre-allocation by
+  running inside `withBatch` with an inline `defaultCause` mapped from
+  `currentResolvingContext?` to `.oneShotEffect none`: `cause.orElse` on the
+  eight helpers that take `cause` and `currentResolvingContext?.map` directly on
+  `drawThenLoseLife`, which has no `cause` parameter; `fightCreatures` and
+  `drawThenLoseLife` always pass that `defaultCause`, whereas the other seven
+  pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
+  empty-`livingOpponents` guards after any early-return prevention checks, so
+  shield-counter removal still opens a batch). When `currentBatch` already holds
+  `some (_, some (.oneShotEffect (some bid) ..))`, both `resolvingOneShotCause`
+  and `createEffect` / `createEffects` (with `cause := none`) reuse that `bid`;
+  otherwise `resolvingOneShotCause` returns
+  `some (.oneShotEffect (some ⟨g.nextEffectId⟩) ..)` without advancing
+  `nextEffectId`, whereas `createEffect` / `createEffects` with `cause := none`
+  call `allocDelayedCause` when `currentResolvingContext?` is `some` (including
+  when `currentBatch` still holds `.oneShotEffect none ..`) and leave `cause` as
+  `none` when nothing is resolving.
+  Meanwhile, each pass of `checkSBACounted` (`StateBasedActions.lean`) runs
+  inside `withBatchReturn none` so heterogeneous `.stateBased` causes
+  (`.lifeZeroOrLess`, `.drewFromEmpty`, `.tenPoison`, `.counterAnnihilation`,
+  `.zeroOrLessToughness`, `.lethalDamage`, `.deathtouchDamage`, `.zeroLoyalty`,
+  `.tokenOutsideBattlefield`, `.sagaFinalChapter`, `.illegalAura`,
+  `.illegalEquipmentOrFortification`) share one `BatchId` per pass (704.3) while
+  keeping their per-event `.stateBased` causes (the `.stateBased .legendRule`
+  moves are recorded in `Decisions.lean` under a separate
+  `withBatch (some (.stateBased .legendRule))` after `.chooseLegend`). When the
+  outermost batch closes (or when
+  `applyEvent` records a standalone `RulesEvent` with `g.currentBatch == none`),
+  `evaluateBatchTriggers preBattlefield batchEvents` (`Core.lean`) evaluates the
+  batch-level triggers while keeping the remaining per-event trigger queues for
+  individual triggers; Phase 6 replaces `evaluateBatchTriggers` and those
+  individual per-event queues with the unified `matchTriggers pre post batch`
+  pass (§3.5).
 - An instruction such as "destroy all creatures", "create N tokens",
-  "mill N", or "each player discards" builds all its events, then commits once.
+  "mill N", or "each player discards" runs inside one batch and commits under
+  one `BatchId`.
 - Combat damage is **two** commits when there is a first-strike step
-  (510.4 / 702.7b): one per combat damage step.
+  (510.4 / 702.7b): one per combat damage step (`dealAssignedCombatDamage` in
+  `Combat.lean` wrapped in `withBatch (some (.turnBased (.dealCombatDamage fs)))`).
 - SBAs (704.3) are a **loop of commits**: each pass performs every applicable
-  SBA as one batch, then checks again.
+  SBA as one batch (`checkSBACounted` wrapped in `withBatchReturn none`), then
+  checks again when `changed && !paused`.
 - "Whenever one or more …" triggers evaluate once per batch; "whenever a …"
   triggers evaluate once per matching event in the batch (603.2c). The flags
   `suppressOthersDie`, `suppressCreatureCardsToGy`, and
-  `pendingCreatureTokenCreators`, and the `waitingTriggers.any` deduplication,
-  are then deleted.
+  `pendingCreatureTokenCreators`, plus `putControlledTriggersOncePerBatch`,
+  `dedupWaitingTriggers`, and the `waitingTriggers.any` deduplication, are
+  deleted in Phase 4.
 
 ### 3.3 Continuous effects and layers (611, 613)
 
@@ -909,22 +962,28 @@ modal DFCs) and preparation cards (722).
 
 ### 3.5 Triggered abilities and look-back-in-time (603)
 
-`commitBatch` runs one matcher:
+Closing an outermost batch (`withBatchReturn` in `Core.lean`—which `withBatch`,
+`commitBatchWithCauses`, and `commitBatch` delegate to—`applyEvent` in
+`Core.lean` for standalone `.rules` events when `currentBatch` is `none`, and
+`openBatch` in `Pumps.lean`) runs one matcher, replacing Phase 4's
+`evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject) (batchEvents : Array GameEvent) : Game`:
 
 ```lean
 def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
     Array WaitingTrigger
 ```
 
-- Look-back triggers read `pre` (603.10): the four zone-change categories in
-  603.10a — (1) leaves-the-battlefield abilities (including dies, 603.6c /
-  700.4), (2) abilities that trigger when a player sacrifices a permanent,
-  (3) abilities that trigger when a card leaves a graveyard, and (4) abilities
-  that trigger when an object that all players can see is put into a hand or
-  library — plus phasing out 603.10b, becoming unattached 603.10c, losing
-  control / an opponent gaining control 603.10d, a spell being countered
-  603.10e, and a player losing the game 603.10f (planeswalking 603.10g is a
-  non-goal).
+- Look-back triggers read `pre` (603.10, upgrading Phase 4's
+  `preBattlefield : Array GameObject` snapshot to `pre : GameSnapshot`): the four
+  zone-change categories in 603.10a — (1) leaves-the-battlefield abilities
+  (including dies, 603.6c / 700.4; `oneOrMoreOtherCreaturesDie` already reads
+  `preBattlefield` in Phase 4), (2) abilities that trigger when a player
+  sacrifices a permanent, (3) abilities that trigger when a card leaves a
+  graveyard, and (4) abilities that trigger when an object that all players can
+  see is put into a hand or library — plus phasing out 603.10b, becoming
+  unattached 603.10c, losing control / an opponent gaining control 603.10d, a
+  spell being countered 603.10e, and a player losing the game 603.10f
+  (planeswalking 603.10g is a non-goal).
 - Everything else reads `post` (603.10), including enters-the-battlefield
   (603.6a) and **discard / cycling**: 603.10a does not include cards leaving a
   hand. When a card is discarded (701.9) or cycled (702.29a), it moves from a
@@ -934,12 +993,18 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   whatever zone the card winds up in after it is cycled, and per 702.29d,
   *"whenever a player cycles or discards"* triggers once when cycled).
 - The matcher must produce the same `WaitingTrigger` data the hand-written
-  loops pass to `waitingTriggersFor` today: `causeId`, the cause object
-  (`cause := some old`), and last-known power/toughness (e.g.
-  `g.snapshotPower old` for dies triggers, the accumulated amount for
-  `sourceDealtDamage`). These come from `moved.before` and the damage packets.
+  loops pass to `waitingTriggersFor`, `putMatchingSourceTriggers`, and
+  `queueBatchSourceAbility` (for `causeId`, `cause := some old`, and last-known
+  power/toughness, e.g. `g.snapshotPower old` for dies triggers and the
+  accumulated amount for `sourceDealtDamage`) and to `putFraEventTriggers` /
+  `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger` (which
+  also accept `causeController`). These come from `moved.before` and the damage
+  packets.
 - Each trigger that fires is recorded as `TriggerQueueEvent.triggered`, so
-  "once each turn" is a log query.
+  "once each turn" is a log query (replacing `Status.firedOnceEachTurn` in
+  `queueBatchSourceAbility` in `Core.lean`, `queueTrigger` /
+  `putWaitingTrigger` in `Triggers.lean`, and the `.firedOnceEachTurn false`
+  cleanup reset in `Turns.clearTurnActivations` in `Turns.lean`).
 
 ### 3.6 Turn structure, TBAs, and SBAs (500–514, 703, 704)
 
@@ -975,11 +1040,11 @@ Each field is put in exactly one category. "Log" means a query over
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
 | **Game state — stays** | `tapped : Bool`, `damage : Int`, `summoningSick : Bool`, `attacking : Bool`, `attackingWhom : Option PlayerId` + `attackingPlaneswalker : Option ObjectId` (folded into `attackingTarget : Option AttackTarget` in Phase 5), `blocking : Array ObjectId`, `blocked : Bool`, `phasedOut : Bool`, `phasedWith : Option ObjectId`, `transformed : Bool`, `faceDown : Bool`, `prepared : Bool`, `harnessed : Bool`, `isCommander : Bool`, `ringBearer : Bool` (duplicates `Player.ringBearerId`; keep one) | Written by the single event that changes it (`tapped`/`untapped`, `DamageEvent.marked`/`markedCleared`, `CombatEvent`, `phasedIn`/`phasedOut`, `transformed`, …). |
-| **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `poison`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5; player poison stays on `Player.poison`). |
+| **Counters — stay, consolidated** | `plusOnePlusOne`, `minusOneMinusOne`, `loyaltyCounters`, `shield`, `finality`, `stun`, `hope`, `charge`, `hone`, `shadow`, `plan`, `lore`, `story`, `time`, `influence`, `burden`, `quest`, `invasion`, `poison`, `indestructibleCounters`, `lifelinkCounters`, `trampleCounters` (all `Nat`), `keywordCounters : KeywordCounters` | One `CounterBag`, written by counter events and `moved.entersWith` (§2.5; player poison stays on `Player.poison`; Phase 4 rewrote `applyPermanentEvent` to update `Status` via `Status.applyCounterDelta` and deleted `.withoutCounters`, `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`, `.addCounters`, `.removeCounters`, `.shadow`, and `.plusOnePlusOne` from `StatusChange`, leaving `StatusChange.time` on proposed impending spells in `CastExtras.applyKickerToProposed` and the remaining absolute per-field counter setters—including `.hope`, `.charge`, `.stun`, `.shield`, `.lore`, and `.keywordCounters` still called in `Tests/RemoveCounters.lean`—to be migrated and deleted in Phase 8 step 4). |
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
 | **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derived in Phase 1 per creature via `Game.deathtouchDealtSinceLastSba` from `DamageEvent.dealt` packets committed since the last `EngineChange.sbaChecked` marker where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). Delete the remaining `Status.dealtDeathtouch` field and cleanup/test references in Phase 8. |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
-| | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn. It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
+| | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn (replacing the reads/writes in `queueBatchSourceAbility` in `Core.lean`, `queueTrigger` / `putWaitingTrigger` in `Triggers.lean`, and the `.firedOnceEachTurn false` cleanup reset in `Turns.clearTurnActivations` in `Turns.lean` in Phase 6). It is per object today; the query must key on the ability once an object has more than one once-each-turn ability. It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
 | | `declaredAsAttackerThisTurn : Bool` | `CombatEvent.attackersDeclared` this turn (not `becameAttacking`, 508.3a). |
 | | `becameTappedThisTurn : Bool`, `gotPlusOneThisTurn : Bool`, `dealtDamageThisTurn : Bool`, `dealtCombatDamage : Bool`, `combatDamageToPlayers : Array PlayerId` | `tapped`, `counters … plusOne (put _)` (incl. `entersWith`), and `DamageEvent.dealt` this turn. |
@@ -1015,14 +1080,14 @@ Each field is put in exactly one category. "Log" means a query over
 
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
-| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`). |
+| **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` (`max g.nextBatchId (batchId.raw + 1)`, with an `EngineChange.nextBatchId` applier in `applyEngineChange`), and `currentBatch` is transient in-memory batch state assigned directly by `withBatchReturn`, `openBatch`, and `applyEvent` and cleared to `none` when the outermost batch closes. |
 | **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingContext : Option (Option ObjectId × PlayerId)` (added in Phase 3 for active resolving source/controller across pending choices; moves into the continuation frame stack in Phase 8), `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
 | **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
 | **Queue-time note — deleted in Phase 8** | `enrageGrantsAdditionalCombat : Nat` | Queue-time counter written in `Damage.lean` for `.enrageGrantsCombat` ("If he's attacking, untap him and there is an additional combat phase after this phase"); not an intervening-if (603.4), so delete the counter and check at resolution whether the source is currently attacking on the battlefield, matching the untap instruction's live check. |
 | **Game effect mirrors → specs** | `creaturesWithoutFlyingCantBlock : Bool`, `powerUpsForbidden : Bool`, `playerControl : Option (PlayerId × PlayerId)`, `controlOnNextTakenTurn : Bool`, `pendingLokiCopy : Option (PlayerId × Option ObjectId × Int)`, `assignCombatDamageEqualToughness : Option PlayerId`, `pendingFreeRGCreature : Option PlayerId` | `ContinuousEffectSpec.gameRule` / `.playerRule`. |
 | **Game LKI / identity — deleted in Phase 2** | `lastKnownStatus : Array (ObjectId × Status)`, `movedTo : Array (ObjectId × ObjectId)` | `moved.before` / `moved.after`. |
-| **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
+| **Batch / trigger suppression — deleted in Phase 4 / 6 / 7** | `suppressOthersDie : Bool`, `suppressCreatureCardsToGy : Bool`, `pendingCreatureTokenCreators : Array PlayerId` (deleted in Phase 4); `pendingTokenEnters : Array ObjectId` (kept in Phase 4 for per-token enter triggers in `afterPermanentEnters`, while Mister Fantastic's `.watch .tokensEnterMayDraw` moved to `evaluateBatchTriggers`; deleted in Phase 6); `lockedDeathReplacements : Option (Array GameObject)` (deleted in Phase 7) | Replaced by `withBatch` / `commitBatch`, `matchTriggers pre post batch`, and the 616.1 replacement pipeline. |
 | **Continuation registers — moved to continuation stack in Phase 8** | `pendingDrawAfterScry : Option (PlayerId × Nat)`, `discardedCardThisWay : Option (PlayerId × ObjectId)`, `palantirAfterScry : Option (PlayerId × PlayerId × ObjectId)`, `recentTokenIds : Array ObjectId`, `fraAfterLook : Option (PlayerId × Option ObjectId × FraNext)`, `pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat)`, `pendingMayCastFromExile : Option (PlayerId × Array ObjectId × Nat)`, `mayPayAlsoPlusOneOn : Option ObjectId`, `humansTappedThisWay : Nat`, `permanentsDestroyedThisWay : Nat`, `removedHopeThisWay : Bool`, `permanentDealtDamageThisWay : Option ObjectId`, `returnedPermanentThisWay : Bool`, `nthResolveThisWay : Option Nat`, `skipTriggerSequenceRest : Bool`, `excessDamageThisWay : Nat`, `destroyedForAmassThisWay : Bool`, `amassControllerThisWay : Option PlayerId`, `amassAmountThisWay : Nat`, `amassYouControlledThisWay : Bool`, `milledIdsThisWay : Array ObjectId`, `revealedIdsThisWay : Array ObjectId`, `opponentsMilledThisWay : Bool`, `palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId)`, `grimaImpulseReady : Bool`, `grimaImpulseVictim : Option PlayerId`, `grimaImpulseFound : Option ObjectId`, `grimaImpulseOthers : Array ObjectId`, `planWasSacrificed : Bool`, `sourceWasSacrificed : Bool`, `exiledIdsThisWay : Array ObjectId`, `notedCopyObject : Option GameObject`, `notedHostId : Option ObjectId`, `handDiscardedThisWay : Option Nat`, `notedSourceThisWay : Option ObjectId`, `equipmentAttachedHost : Option ObjectId`, `notedCountThisWay : Nat`, `createdTokenThisWay : Option ObjectId`, `putArtifactThisWay : Option (ObjectId × ObjectId)`, `playExiledThisWay : Option ObjectId`, `armSurveilReturn : Bool`, `triggerSequenceRest : Option TriggerSequenceRest`, `mayThenDrop : Nat`, `mayThenSkip : Nat`, `mayThenConditional : Option TriggeredAbility.TriggerResolution`, `mayOnAccept : Option TriggeredAbility.TriggerResolution`, `mayOnDecline : Option TriggeredAbility.TriggerResolution`, `mayContext : Option TriggerSequenceRest`, `sacrificedPowerThisWay : Option Nat`, `mayThenResume : Bool`, `triggerOr : Option TriggerOrRest`, `chooseModesRest : Option ChooseModesRest`, `unlessPaysInstead : Option Effect`, `unlessPaysController : PlayerId`, `unlessPaysTargets : Array Target`, `unlessPaysDue : Bool`, `mayEffect : Option Effect`, `mayController : PlayerId`, `mayTargets : Array Target`, `spellOr : Array Effect`, `spellOrController : PlayerId`, `spellOrTargets : Array Target`, `spellOrLibrary : Bool`, `surveilReturnMvAtMost : Option Nat`, `surveilReturnNoncreatureNonland : Bool`, `conniveSource : Option ObjectId`, `plusOneAfterDiscards : Option ObjectId`, `plusOneAfterSearch : Option ObjectId`, `thirstDiscardsLeft : Nat`, `thirstDiscardType : CardType`, `pendingDiscardsLeft : Nat`, `untapSearchedIfLands : Option Nat` | Continuation frame stack (`EngineChange`). |
 
 ---
@@ -1158,27 +1223,54 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
 
 ### Phase 4 — Simultaneous batches
 
-1. Add `Game.commitBatchWithCauses` and `Game.commitBatch` (§3.2) plus
-   `nextBatchId`. In Phase 4, `commitBatchWithCauses` applies its
-   `(EventCause × RulesEvent)` entries under one `BatchId`, and `commitBatch`
-   resolves `g.resolveOneShotCause cause` (advancing `nextEffectId` once when a
-   fresh `EffectId` is minted) before delegating to `commitBatchWithCauses` so
-   every event in a one-shot batch shares one `EffectId` and one `BatchId`
-   (replacing the `allocDelayedCause` pre-allocation across `markDamageOn`,
-   `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
-   `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
-   `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean`), while
-   SBA passes use `commitBatchWithCauses` to keep per-event `.stateBased` causes
-   under one `BatchId` per pass; both run a batch-level pass for the "one or
-   more" triggers below while keeping the existing per-event queues for
-   individual triggers; Phase 6 replaces those per-event queues with
+1. Add `Game.nextBatchId : Nat := 0` (plus `EngineChange.nextBatchId`),
+   `Game.currentBatch : Option (BatchId × Option EventCause) := none`,
+   `Game.resolveCauseInBatch`, `Game.resolvingBatchCause`, `Game.withBatchReturn`
+   / `Game.withBatch`, `Game.commitBatchWithCauses`, and `Game.commitBatch` in
+   [`Core.lean`](Mtg/Engine/Game/Core.lean), plus `Game.openBatch` in
+   [`Pumps.lean`](Mtg/Engine/Game/Pumps.lean) (§3.2). In Phase 4,
+   `commitBatchWithCauses`, `commitBatch`, `withBatchReturn`, and `openBatch`
+   share one `BatchId` across an instruction or SBA pass: `commitBatch` resolves
+   `g.resolveOneShotCause cause` once (advancing `nextEffectId` when a fresh
+   `EffectId` is minted) before delegating to `commitBatchWithCauses` (`withBatch none`)
+   with pre-stamped events, while `withBatchReturn` / `withBatch` and `openBatch`
+   store `(batchId, cause)` on `g.currentBatch` so each `.rules` event is resolved
+   in `applySingleRulesEventInBatch` via `resolveCauseInBatch` (writing any newly
+   minted one-shot cause back onto `currentBatch` so later `.unclassified` or
+   `.oneShotEffect none ..` events reuse that `EffectId`, rewriting `.unclassified`
+   events to a `.turnBased` or `.stateBased` batch cause when `currentBatch` holds
+   one, and upgrading `.unclassified` under `none` to a fresh `.oneShotEffect` only
+   when `currentResolvingContext?` is `some`; `resolvingBatchCause` maps
+   `currentResolvingContext?` to `.oneShotEffect none ..` for batch callers in
+   `TriggeredAbilities.lean`, `FraResolve.lean`, `FrcResolve.lean`, and
+   `ResolutionEffects.lean`, while in `Damage.lean`, `markDamageOn`,
+   `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`'s `some src`
+   branch—with `none` delegating to `markDamageOn`—`dealDamageToEachOpponent`,
+   `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
+   `drawThenLoseLife` replaced their manual `allocDelayedCause` pre-allocation by
+   running inside `withBatch` with an inline `defaultCause` mapped from
+   `currentResolvingContext?` to `.oneShotEffect none`: `cause.orElse` on the
+   eight helpers that take `cause` and `currentResolvingContext?.map` directly on
+   `drawThenLoseLife`, which has no `cause` parameter; `fightCreatures` and
+   `drawThenLoseLife` always pass that `defaultCause`, whereas the other seven
+   pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
+   empty-`livingOpponents` guards after any early-return prevention checks, so
+   shield-counter removal still opens a batch), while
+   each SBA pass in `checkSBACounted` (`StateBasedActions.lean`) runs inside
+   `withBatchReturn none` to keep per-event `.stateBased` causes under one
+   `BatchId` per pass and standalone `.rules` events in `applyEvent` form a
+   one-event batch when `currentBatch` is `none`; closing an outermost batch
+   calls `evaluateBatchTriggers preBattlefield batchEvents` (`Core.lean`) for the
+   "one or more" / batch-level triggers below while keeping the existing
+   per-event queues for individual triggers; Phase 6 replaces both
+   `evaluateBatchTriggers` and those per-event queues with
    `matchTriggers pre post batch`.
-2. Rewrite `applyPermanentEvent` (`Core.lean`) to update the counter fields (and
-   `gotPlusOneThisTurn` on `.plusOnePlusOne` `.put n` when `n > 0`) on `Status`
-   directly instead of lowering `PermanentEvent.counters` to
-   `StatusChange.addCounters` / `StatusChange.removeCounters`; convert
-   multi-object instructions (including bulk counter operations
-   `.withoutCounters`—recording
+2. Rewrite `applyPermanentEvent` (`Core.lean`) via `Status.applyCounterDelta` to
+   update the counter fields (and `gotPlusOneThisTurn` on `.plusOnePlusOne`
+   `.put n` when `n > 0`) on `Status` directly instead of lowering
+   `PermanentEvent.counters` to `StatusChange.addCounters` /
+   `StatusChange.removeCounters`; convert multi-object instructions (including
+   bulk counter operations `.withoutCounters`—recording
    `PermanentEvent.counters (.object o.asEvent) kind (.removed n)` for each
    counter kind, including `keywordCounters`, whose current count `n` on
    `o.status` is `n > 0`—and `.addCountersExceptPlusOne «from» extra`—recording
@@ -1205,18 +1297,47 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    `.addCounters`, `.removeCounters`, `.shadow`, and `.plusOnePlusOne` from
    `StatusChange`; `CastExtras.lean`'s `StatusChange.time` on a proposed spell on
    the stack for impending is cast-announcement state retired with the cast
-   events and `CounterBag` consolidation), the combat damage steps (two batches
-   with first strike, per 510.4 / 702.7b in §2.10), and the SBA loop (one batch
-   per pass via `commitBatchWithCauses`).
-3. Move "one or more" triggers to per-batch evaluation:
-   `oneOrMoreOtherCreaturesDie`, `creatureCardsPutIntoYourGy`,
-   `youCreateCreatureTokens`, `creaturesYouControlBecomeTapped`,
-   `combatDamageToYou`, `opponentsDealtCombatDamageYourTurn`,
-   `.fra .opponentsDealtNoncombatDamage`, `.fra .playerDiscards`,
-   `youPutCountersOnGoblinOrcArmy`, `.fra .youPutLoyaltyCounters`, and the
-   Invisible Woman once-per-batch case in `addPlusOnePlusOneTo`.
+   events and `CounterBag` consolidation), `declareAttackers` (`openBatch` with
+   `.turnBased .declareAttackers`), the combat damage steps (`withBatch` with
+   `some (.turnBased (.dealCombatDamage fs))`—two batches with first strike, per
+   510.4 / 702.7b in §2.10), `discardToMaxHandSize` (`withBatch` with
+   `some (.turnBased .cleanupDiscard)`), `beginStep .untap` (`withBatch` with
+   `some (.turnBased .untapAll)`), `discardEntireHand`, `riddlesInTheDark` /
+   `applyRiddlesPiles`, token creation (`createToken`, `createTreasureTokens`,
+   `createKindTokens`, `spawnFace`), and the SBA loop (one batch per pass via
+   `withBatchReturn none`).
+3. Move "one or more" and batch-grouped triggers into `evaluateBatchTriggers` in
+   [`Core.lean`](Mtg/Engine/Game/Core.lean) (moving `currentSubtypes`,
+   `gyCreatureCards`, `hasAllCreatureTypes`, `auraAddedTypes`, `hasSubtype`, and
+   `extraTriggerCopies` into `Core.lean` and adding `queueBatchSourceAbility`,
+   `queueBatchSourceTriggers`, `queueBatchControlledTriggers`, and
+   `eventSuppressedByKarn`): `oneOrMoreOtherCreaturesDie` (using `preBattlefield`
+   look-back per 603.10a), `creatureCardsPutIntoYourGy`, `.fra .playerDiscards`
+   (once per player who discarded ≥ 1 card in the batch),
+   `.fra .youCreateCreatureTokens`, Mister Fantastic's
+   `.tokenYouControlEnters` (`ab.shared == .watch .tokensEnterMayDraw`, gated by
+   `eventSuppressedByKarn`, while per-token `.tokenYouControlEnters` abilities
+   remain in `afterPermanentEnters`), `creaturesYouControlBecomeTapped`,
+   `combatDamageToYou` (with `firstDamager` from the batch's combat damage
+   packets as `cause`), `opponentsDealtCombatDamageYourTurn`,
+   `.fra .opponentsDealtNoncombatDamage`, `heroesDealDamageToPlayer`,
+   `youPutCountersOnGoblinOrcArmy` (on a Goblin, Orc, or Army controlled by `p`,
+   including enters-with counters via `countersPutInEvent`),
+   `.fra .youPutLoyaltyCounters` (via `GameEvent.matchesTrigger` on
+   `entersWith.count .loyalty > 0 && after.planeswalker` in `ZoneEvent.moved`,
+   `object.counters.count .loyalty > 0 && object.planeswalker` in
+   `ZoneEvent.created`, and loyalty `.put n` (`n > 0`) on `object.planeswalker`
+   in `PermanentEvent.counters`, leaving `enterWithLoyalty` to only log the entry
+   message), and all `.youPutPlusOne`
+   abilities (`plusOneOnHeroesCreateWall` for another controlled Hero,
+   `plusOneOnThisOnce` for another creature, and `plusOneCreateInsectOnce` for a
+   creature, unified over `countersPutInEvent`, removing the duplicate loops from
+   `addPlusOnePlusOneTo` in `Entering.lean` and switching `.explore` in
+   `FrcResolve.lean` to `addPlusOnePlusOneTo`).
 4. Delete `suppressOthersDie`, `suppressCreatureCardsToGy`,
-   `pendingCreatureTokenCreators`, and the `waitingTriggers.any` deduplication.
+   `pendingCreatureTokenCreators` (and their `EngineChange` constructors),
+   `putControlledTriggersOncePerBatch`, `dedupWaitingTriggers`, and the
+   `waitingTriggers.any` deduplication.
 
 Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
 `Marvel.lean`, `RealityFracture.lean`, `Events.lean` (batch multiplicity).
@@ -1230,7 +1351,11 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `EventCause` in the `GameEvent` envelope); extra combat is an extra phase
    after a phase (500.8).
 2. Replace `.attacked` and the raw combat status writes with `CombatEvent`
-   (§2.10), moving `PermanentEvent.removedFromCombat` and
+   (§2.10), keeping the `openBatch` (`.turnBased .declareAttackers`) wrapper in
+   `declareAttackers` (`Combat.lean`, added in Phase 4) so
+   `CombatEvent.attackersDeclared` and the non-vigilance attacker
+   `PermanentEvent.tapped` events share one `BatchId`, moving
+   `PermanentEvent.removedFromCombat` and
    `DamageEvent.combatAssigned` into `CombatEvent.removedFromCombat` and
    `CombatEvent.damageAssigned (firstStrike : Bool) (forAttackers : Bool) (assignments : Array CreatureCombatAssignment)`,
    adding `becameAttacking` for both halves of 508.4 (permanents
@@ -1257,10 +1382,13 @@ Tests: `Destroy.lean`, `Death.lean`, `Combat.lean`, `Mill.lean`, `Discard.lean`,
    `actor := some p`, and `cause := .specialAction .playLand p`—so it counts a
    land drop for `p` without materializing a permanent, colliding with
    allocated `ObjectId`s, or defaulting `cause` to `.unclassified` (which
-   `resolveOneShotCause` would upgrade to `.oneShotEffect` when a spell or
-   ability is resolving); and retiring top-level
+   `resolveCauseInBatch` / `resolveOneShotCause` would upgrade to
+   `.oneShotEffect` when a spell or ability is resolving); and retiring top-level
    `RulesEvent.playedLand`), add
-   `TriggerQueueEvent`, and extend `StackObjectEvent` (introduced in Phase 3
+   `TriggerQueueEvent` (recording `TriggerQueueEvent.putOnStack` when a waiting
+   trigger is put on the stack in `putTriggeredAbilityOnStack` per 603.3, while
+   `TriggerQueueEvent.triggered` is wired up in Phase 6 step 3), and extend
+   `StackObjectEvent` (introduced in Phase 3
    with `.resolved`) with `.copied` and `.removedOnResolution` (§2.9). Migrate stack spell/ability copies (`copyStackSpell`,
    `copyStackAbility`, Way of the Cryomancer, Loki, `.copyCauseSpell`) from
    `ZoneEvent.created` to `StackObjectEvent.copied` (707.10; card copies in
@@ -1300,20 +1428,51 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
 
 ### Phase 6 — One trigger matcher
 
-1. Implement `matchTriggers pre post batch` (§3.5), producing the same
-   `WaitingTrigger` fields (`causeId`, `cause`, last-known power/toughness) the
-   current loops pass to `waitingTriggersFor`.
-2. Cover the whole of 603.10a–f for look-back.
-3. Record `TriggerQueueEvent.triggered`; replace `Status.firedOnceEachTurn`
-   reads with log queries.
-4. Delete the hand-written trigger loops in `Game.move`
-   ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)),
+1. Implement `matchTriggers pre post batch` (§3.5), replacing
+   `evaluateBatchTriggers preBattlefield batchEvents` (`Core.lean`) at the close
+   of an outermost batch in `applyEvent`, `withBatchReturn` (`Core.lean`), and
+   `openBatch` (`Pumps.lean`), upgrading `preBattlefield : Array GameObject` to
+   `pre : GameSnapshot`, and folding the 13 batch-level trigger groups from
+   `evaluateBatchTriggers` together with the remaining per-event triggers to
+   produce the same `WaitingTrigger` fields (`causeId`, `cause`, and
+   `lastKnownPower` / `lastKnownToughness` passed to `waitingTriggersFor`,
+   `putMatchingSourceTriggers`, and `queueBatchSourceAbility`, plus
+   `causeController` passed to `putFraEventTriggers` /
+   `putFraEventTriggersWhere`, `queueTrigger`, and `putWaitingTrigger`).
+2. Cover the whole of 603.10a–f for look-back (extending the `preBattlefield`
+   look-back already used for `oneOrMoreOtherCreaturesDie` in Phase 4 to all four
+   603.10a zone-change categories plus 603.10b–f).
+3. Record `TriggerQueueEvent.triggered` when abilities trigger in
+   `matchTriggers`; replace `Status.firedOnceEachTurn` reads and writes across
+   `queueBatchSourceAbility` (`Core.lean`), `queueTrigger` /
+   `putWaitingTrigger` (`Triggers.lean`), and the `.firedOnceEachTurn false`
+   cleanup reset in `Turns.clearTurnActivations` (`Turns.lean`) with log queries
+   over `TriggerQueueEvent.triggered`, and delete `queueBatchSourceAbility`,
+   `queueBatchSourceTriggers`, and `queueBatchControlledTriggers` from
+   `Core.lean`.
+4. Delete `evaluateBatchTriggers` (`Core.lean`), `pendingTokenEnters` /
+   `pushPendingTokenEnter` (`Core.lean`, `Event.lean`, `Tokens.lean`) and
+   `flushTokenEnters` (`Entering.lean`, called from `Actions.lean` and
+   `PriorityActions.lean`), and the remaining hand-written trigger loops in
+   `Game.move` ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)),
    [`Entering.lean`](Mtg/Engine/Game/Entering.lean),
-   [`Leaving.lean`](Mtg/Engine/Game/Leaving.lean),
    [`Combat.lean`](Mtg/Engine/Game/Combat.lean),
    [`Damage.lean`](Mtg/Engine/Game/Damage.lean),
-   [`Triggers.lean`](Mtg/Engine/Game/Triggers.lean), and
-   [`Library.lean`](Mtg/Engine/Game/Library.lean).
+   [`Triggers.lean`](Mtg/Engine/Game/Triggers.lean),
+   [`Library.lean`](Mtg/Engine/Game/Library.lean),
+   [`Turns.lean`](Mtg/Engine/Game/Turns.lean),
+   [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean),
+   [`Casting.lean`](Mtg/Engine/Game/Casting.lean),
+   [`CastSpell.lean`](Mtg/Engine/Game/CastSpell.lean),
+   [`CastExtras.lean`](Mtg/Engine/Game/CastExtras.lean),
+   [`ActivationCosts.lean`](Mtg/Engine/Game/ActivationCosts.lean),
+   [`ManaAbilities.lean`](Mtg/Engine/Game/ManaAbilities.lean),
+   [`Choices.lean`](Mtg/Engine/Game/Choices.lean),
+   [`Decisions.lean`](Mtg/Engine/Game/Decisions.lean),
+   [`FraChoices.lean`](Mtg/Engine/Game/FraChoices.lean),
+   [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean),
+   [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean), and
+   [`ResolutionHelpers.lean`](Mtg/Engine/Game/ResolutionHelpers.lean).
 
 Tests (Hobbit, Reality Fracture, Reality Fracture Commander, and Marvel triggers):
 `Death.lean`, `Leaving.lean`, `Damage.lean`, `Watch.lean`, `Elves.lean`,
@@ -1379,9 +1538,15 @@ non-occurrence, and the 616.1a–e order.
    counter fields on `Status` (including `Status.poison`; player poison stays on
    `Player.poison`) into `counters : CounterBag` (with computed projection
    helpers `Status.plusOnePlusOne`, `Status.loyaltyCounters`, etc.), and delete
-   their `StatusChange` / `ObjectChange` / `PlayerChange` / `GameChange`
-   constructors after their readers use the log, the layers, or the
-   delayed-trigger table.
+   their remaining `StatusChange` (`.time` in `CastExtras.applyKickerToProposed`
+   once impending cast announcement uses `CastEvent.announced`, and the remaining
+   absolute per-field counter setters—including `.hope`, `.charge`, `.stun`,
+   `.shield`, `.lore`, and `.keywordCounters` in `Tests/RemoveCounters.lean`—once
+   migrated; Phase 4 already deleted `.withoutCounters`,
+   `.addCountersExceptPlusOne`, `.addPlusOnePlusOne`, `.addCounters`,
+   `.removeCounters`, `.shadow`, and `.plusOnePlusOne`) / `ObjectChange` /
+   `PlayerChange` / `GameChange` constructors after their readers use the log,
+   the layers, or the delayed-trigger table.
 5. Move the continuation registers (including `Game.resolvingContext`) into a
    continuation frame stack.
 
