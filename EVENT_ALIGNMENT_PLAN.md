@@ -194,7 +194,9 @@ why it happened:
   `markDamageOn` / `dealDamageFrom` / `dealDamageToPlayer`
   ([`Damage.lean`](Mtg/Engine/Game/Damage.lean)), `createToken`
   ([`Tokens.lean`](Mtg/Engine/Game/Tokens.lean), plus the batched token-creation
-  loops in [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean) and
+  loops in `ResolutionEffects.commitEnteringAttackItems` in
+  [`ResolutionEffects.lean`](Mtg/Engine/Game/ResolutionEffects.lean) and
+  `TriggeredAbilities.createAndMarkTokensAttacking` in
   [`TriggeredAbilities.lean`](Mtg/Engine/Game/TriggeredAbilities.lean) added in
   Phase 6), `addPlusOnePlusOneTo`
   ([`Entering.lean`](Mtg/Engine/Game/Entering.lean)), `beginStep .untap`
@@ -581,14 +583,19 @@ added `ringTempted (player : PlayerId) (bearer : Option ObjectId) (stage : Nat)`
 (`GameEvent.ringTempted`, recorded in `CastExtras.temptWithTheRing` and matched
 by `GameEvent.matchesTrigger` / `matchTriggers` for `.theRingTemptsYou` and
 `.youChooseRingBearer`, while `applyPlayerEvent` treats `.ringTempted` as a
-no-op and `temptWithTheRing` / `Designations.chooseRingBearer` still write
-`.theRingAbilities`, `.ringBearerId`, and `.ringBearer` separately); Phase 8
+no-op and `CastExtras.temptWithTheRing` writes `.theRingAbilities` and calls
+`Designations.setRingBearer`, which writes `.ringBearerId` and
+`Status.ringBearer` separately; `CastExtras.announceRingBearer` clears
+`Pending.chooseRingBearer` and forwards the chosen bearer into
+`temptWithTheRing`); Phase 8
 step 4 adds the remaining constructors (`manaAdded`, `manaSpent` replacing
 top-level `RulesEvent.spentMana`, `lookedAt`, `revealed`, `searched`,
 `shuffled`, `becameMonarch`, `gainedDesignation`, and `gameEnded`), makes
 `applyPlayerEvent` update `theRingAbilities` and `ringBearerId` on `ringTempted`
-(alongside converting `.ringBearer` in `Designations.lean` to
-`GameEvent.designation`), replaces `manaEmptied`'s `amount : Nat` with
+(so `CastExtras.temptWithTheRing` and `Designations.setRingBearer` stop writing
+`.theRingAbilities` and `.ringBearerId` separately, alongside converting
+`.ringBearer` in `Designations.setRingBearer` to `GameEvent.designation`),
+replaces `manaEmptied`'s `amount : Nat` with
 `units : Array ManaUnit` while preserving `keptColorless : Bool := false` (so
 `Game.emptyManaPools` / `applyPlayerEvent` continues to convert unspent mana to
 colorless when `unspentManaBecomesColorless` applies instead of emptying the
@@ -670,10 +677,17 @@ under construction (`ProposedSpell`), the waiting-trigger queue
   `TriggerQueueEvent.putOnStack` with default `cause := .gameRule .triggeredAbility`.
   In Phase 6 step 3, `closeBatch` ([`Core.lean`](Mtg/Engine/Game/Core.lean))
   records `TriggerQueueEvent.triggered` (`GameEvent.triggered`, with default
-  `cause := .gameRule .triggeredAbility` and `origin := batchId`) for each new
-  `WaitingTrigger` copy produced by `matchTriggers` (and `queueTrigger` /
-  `putWaitingTrigger` in `Triggers.lean` record `GameEvent.triggered` for any
-  trigger queued or checked outside `matchTriggers`), while
+  `cause := .gameRule .triggeredAbility`, `origin := batchId`, and
+  `batch := batchId`) for each new `WaitingTrigger` copy produced by
+  `matchTriggers` (where `matchTriggers` builds every waiting trigger with
+  `checked := true` so `putWaitingTrigger` does not record a second
+  `TriggerQueueEvent.triggered` when putting it on the stack; outside
+  `matchTriggers`, `queueTrigger` in `Triggers.lean` records one
+  `GameEvent.triggered` per copy with `origin` set to the open `currentBatch`
+  id—or `⟨g.nextBatchId⟩` when there is no batch—and `batch` left at the `rules`
+  default `⟨0⟩`, while `putWaitingTrigger` records `GameEvent.triggered` only
+  when `!wt.checked` and only for the first copy, as `loggedTriggeredThisTurn`
+  skips subsequent copies), while
   `Choices.finishSagaFinalChapter` ([`Choices.lean`](Mtg/Engine/Game/Choices.lean))
   records `StackObjectEvent.resolved obj 0` (`nth := 0`, with
   `cause := .gameRule .abilityFinishedResolving`) so `matchTriggers` matches
@@ -1043,9 +1057,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
 ```
 
 - Look-back triggers read `pre` (603.10, upgrading Phase 4's
-  `preBattlefield : Array GameObject` snapshot to `pre : GameSnapshot` and
-  classifying events via `GameEvent.isLookBack` in
-  [`Event.lean`](Mtg/Engine/Game/Event.lean)): the four
+  `preBattlefield : Array GameObject` snapshot to `pre : GameSnapshot`;
+  [`Event.lean`](Mtg/Engine/Game/Event.lean) defines `GameEvent.isLookBack` for
+  the 603.10a–d / 603.10f categories, while `matchTriggers` selects `pre` vs
+  `post` per branch): the four
   zone-change categories in 603.10a — (1) leaves-the-battlefield abilities
   (including dies, 603.6c / 700.4; `oneOrMoreOtherCreaturesDie` already reads
   `preBattlefield` in Phase 4), (2) abilities that trigger when a player
@@ -1084,8 +1099,11 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   from the `WaitingTrigger` and forwards them into `putQueuedTrigger`. These
   come from `moved.before` and the damage packets (with `matchTriggers`
   pre-summing `batchDamageByPerm` across all `.damage (.dealt pkts)` events in
-  `batch` where `pkt.amount > 0` so `.sourceDealtDamage` queues once per
-  `(source, ability)` with the summed damage before `queueAb` replicates
+  `batch` for `.permanent` recipients with `pkt.amount > 0`—leaving `.player`
+  and `.battle` packets out—so `.sourceDealtDamage` is queued once per damaged
+  permanent via `firedSourceDealtDamage` and `queueSrc` with
+  `lastKnownPower := some (Int.ofNat batchTotal)` before `queueSrc` fans out to
+  that permanent's matching abilities and `queueAb` replicates
   `extraTriggerCopies`, and skipping synthetic `CastEvent.spellCast` log-seeding
   records where `spellSnap.name.isEmpty`).
 - In `closeBatch`, if `preWaiting := g.waitingTriggers` (captured before folding
@@ -1100,13 +1118,16 @@ def matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) :
   once per `wt.source.id` per batch (`hulkAdded`) when
   `wt.event == .sourceDealtDamage && wt.ability.shared == .watch .hulk && wt.source.status.attacking`
   (moved from `Damage.markDamageOn` in Phase 6), and is enqueued via
-  `enqueueWaitingTriggers`. "Once each turn" is a log query
-  (`Game.loggedTriggeredThisTurn` / `GameEvent.abilityTriggeredThisTurn` keyed on
-  `sourceId` and `ab`, and `Game.loggedSourceTriggeredThisTurn` /
-  `GameEvent.sourceTriggeredThisTurn`), replacing `Status.firedOnceEachTurn` in
-  `queueBatchSourceAbility` in `Core.lean`, `queueTrigger` /
-  `putWaitingTrigger` in `Triggers.lean`, and the `.firedOnceEachTurn false`
-  cleanup reset in `Turns.clearTurnActivations` in `Turns.lean`.
+  `enqueueWaitingTriggers`. "Once each turn" is gated by the log query
+  `Game.loggedTriggeredThisTurn` (`GameEvent.abilityTriggeredThisTurn`, keyed on
+  `sourceId` and `ab`) inside `matchTriggers`'s `queueAb` and in `queueTrigger`
+  / `putWaitingTrigger` (`Triggers.lean`)—replacing the former
+  `Status.firedOnceEachTurn` checks and writes in `queueBatchSourceAbility`
+  (deleted from `Core.lean` in Phase 6), `queueTrigger` / `putWaitingTrigger`
+  (`Triggers.lean`), and `Turns.clearTurnActivations` (`Turns.lean`, which no
+  longer writes `.firedOnceEachTurn false`)—while
+  `Game.loggedSourceTriggeredThisTurn` (`GameEvent.sourceTriggeredThisTurn`)
+  provides a per-source query used by tests.
 
 ### 3.6 Turn structure, TBAs, and SBAs (500–514, 703, 704)
 
@@ -1146,7 +1167,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **As-enters choices — stay** | `chosenOdd : Option Bool`, `chosenCreatureType : Option CardSubtype`, `chosenColor : Option Color`, `chosenName : Option String`, `chosenCardType : Option CardType`, `windcragMardu : Bool` | Set on `moved.after` (614.12). `windcragMardu` should become a general choice value. |
 | **SBA bookkeeping** | `dealtDeathtouch : Bool` | Derived in Phase 1 per creature via `Game.deathtouchDealtSinceLastSba` from `DamageEvent.dealt` packets committed since the last `EngineChange.sbaChecked` marker where `recipient` is that creature (`.permanent c`), `source.keywords.deathtouch` is true, and `amount > 0` (120.8; includes wither/infect 120.3d). 704.5h checks this predicate together with `toughness > 0` (at toughness ≤ 0, 704.5f applies instead). Delete the remaining `Status.dealtDeathtouch` field and cleanup/test references in Phase 8. |
 | **History → log** | `activationsThisTurn : Nat`, `abilitiesActivatedThisTurn : Array Nat`, `loyaltyActivatedThisTurn : Bool`, `boastUsedThisTurn : Bool`, `powerUpUsed : Bool`, `powerUpActivations : Nat`, `exhaustUsed : Bool` | `CastEvent.abilityActivated` for this source (this turn, or ever for exhaust). `abilitiesActivatedThisTurn` needs the ability index on the event. |
-| | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn (in Phase 6, `Game.loggedTriggeredThisTurn` / `GameEvent.abilityTriggeredThisTurn`—keyed on `(sourceId, ab)`—and `Game.loggedSourceTriggeredThisTurn` / `GameEvent.sourceTriggeredThisTurn` replaced all engine reads and writes in `Core.lean`, `Triggers.lean`, and `Turns.clearTurnActivations`, leaving only the unused `Status.firedOnceEachTurn` field, `clearTurnFlags` in `Core.lean`, `MshOracleTests.lean`, and `StatusChange.firedOnceEachTurn` to be deleted in Phase 8 step 4). It is not the same thing as once-each-turn *activated* abilities. |
+| | `firedOnceEachTurn : Bool` | `TriggerQueueEvent.triggered` for this source this turn (in Phase 6, `Game.loggedTriggeredThisTurn` / `GameEvent.abilityTriggeredThisTurn`—keyed on `(sourceId, ab)`—replaced all engine reads and writes in `matchTriggers`'s `queueAb`, `queueTrigger` / `putWaitingTrigger`, and `Turns.clearTurnActivations`, while `Game.loggedSourceTriggeredThisTurn` / `GameEvent.sourceTriggeredThisTurn` provides a per-source helper used by tests; what remains for Phase 8 step 4 to delete is `Status.firedOnceEachTurn`, `StatusChange.firedOnceEachTurn` and its applier, the `firedOnceEachTurn := false` reset inside `StatusChange.resetPerTurnFlags`'s applier, and the remaining field read in `MshOracleTests.lean`). It is not the same thing as once-each-turn *activated* abilities. |
 | | `optionalOnceUsed : Bool` | A rules event for "chose the optional action" of a "do this only once each turn" trigger (MSH 69), queried this turn. |
 | | `declaredAsAttackerThisTurn : Bool` | `CombatEvent.attackersDeclared` this turn (not `becameAttacking`, 508.3a; in Phase 5 `applyCombatEvent` sets this field on `.attackersDeclared`, and Phase 8 step 4 replaces the remaining reads with a log query and deletes the field). |
 | | `becameTappedThisTurn : Bool`, `gotPlusOneThisTurn : Bool`, `dealtDamageThisTurn : Bool`, `dealtCombatDamage : Bool`, `combatDamageToPlayers : Array PlayerId` | `tapped`, `counters … plusOne (put _)` (incl. `entersWith`), and `DamageEvent.dealt` this turn. |
@@ -1165,7 +1186,7 @@ Each field is put in exactly one category. "Log" means a query over
 | **Effect mirrors → layers / specs** | `copyRestore : Option CardDef`, `copyUntilEot : Bool`, `copyUntilNextTurn : Bool`, `copyUntilSourceLeaves : Option ObjectId` (layer 1); `controlChanged : Bool`, `controlUntilSourceLeaves : Option ObjectId` (layer 2); `playPermission : Option PlayPermission`, `flashbackUntilEot : Bool` (permission); `exileInstantSorceryInstead : Bool` (replacement); `uncounterableThisCast : Bool` (rule); `fraEffectUntilTurnOf : Option PlayerId` (duration of an emblem) | §3.3 |
 | **LKI → `moved.before`** | `lastKnownPower : Option Int`, `lastKnownToughness : Option Int`, `lastController : Option PlayerId` | §3.1 |
 | **Stays** | `id : ObjectId`, `printed : CardDef`, `owner : PlayerId`, `controller : Option PlayerId`, `defaultController : Option PlayerId`, `zone : Zone`, `status : Status`, `timestamp : Nat`, `attachedTo : Option ObjectId`, `adventurerCard : Option CardDef`, `isCopy : Bool`, `linkedExile : Array ObjectId`, `returnToZone : Option Zone`, `leaveTriggerExile : Array ObjectId`, `exiledBy : Option ObjectId` (linked abilities, 607), stack data (`abilityEffect : Option Effect`, `triggeredAbility : Option TriggeredAbility`, `reflexiveResolution : Option TriggeredAbility.TriggerResolution`, `sourceId : Option ObjectId`, `fraCauseId : Option ObjectId`, `fraCauseController : Option PlayerId`, `fraCausePower : Option Int`, `fraCauseStatus : Option Status`) | — |
-| **Engine bookkeeping** | `enterProcessed : Bool` | In Phase 6, `Tokens.createOneToken` sets `enterProcessed := true` after recording `ZoneEvent.created` inside `withBatchReturn`, while `Entering.afterPermanentEnters` uses `enterProcessed` to guard post-entry log messages, as-enters choices, and the fallback synthetic `ZoneEvent.created` / `ZoneEvent.moved` for pre-seated permanents (`!g.loggedEntered o.id`, plus `SacrificeDiscard.lean`); deleted with `ObjectChange.enterProcessed` in Phase 8 step 4 once test callers seat permanents via `putOntoBattlefield` / `createToken`. |
+| **Engine bookkeeping** | `enterProcessed : Bool` | In Phase 6, `Tokens.createOneToken` sets `enterProcessed := true` after recording `ZoneEvent.created` inside `withBatchReturn`, `Entering.afterPermanentEnters` uses `enterProcessed` to guard post-entry log messages, as-enters choices, and its `!g.loggedEntered o.id` fallback synthetic `ZoneEvent.created` / `ZoneEvent.moved` for pre-seated permanents, and `SacrificeDiscard.villainConniveTarget?` reads `g.loggedEntered x.id || x.enterProcessed` so a pre-seated Villain counts as already entered; deleted with `ObjectChange.enterProcessed` in Phase 8 step 4 once test callers seat permanents via `putOntoBattlefield` / `createToken`. |
 
 #### `Player` ([`Player.lean`](Mtg/Engine/Game/Player.lean))
 
@@ -1555,14 +1576,18 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
 ### Phase 6 — One trigger matcher
 
 1. Implement `closeBatch g pre batchId batchEvents` and
-   `matchTriggers pre post batchId batchEvents` (§3.5) in
+   `matchTriggers pre post batch` (`matchTriggers (pre : GameSnapshot) (post : Game) (batch : Array GameEvent) : Array WaitingTrigger`,
+   called as `matchTriggers pre g batchEvents` by `closeBatch`, §3.5) in
    [`Core.lean`](Mtg/Engine/Game/Core.lean) (with `abbrev GameSnapshot := Game`),
    replacing `evaluateBatchTriggers preBattlefield batchEvents` at the close of an
    outermost batch in `applyEvent`, `withBatchReturn` (`Core.lean`), and
-   `openBatch` (`Pumps.lean`), moving `Game.move`'s `createEffect` /
-   `createEffects` / `expireEffectsFromSource` calls inside its `withBatchReturn`
-   scope ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)) so continuous effects
-   from entering or leaving the battlefield are active in `post`, refreshing
+   `openBatch` (`Pumps.lean`), moving `Game.move`'s
+   `expireEffectsOnLeavingObject`, `expireWhileSourceEffects` (when leaving the
+   battlefield), `createEffect` (for `.notACreature`, `.returnedAsArtifact`, and
+   `.onlyFoodArtifact`), `createPrintedStaticEffects`, and `GameEvent.effectUpdated`
+   (for `.pendingLokiCopy`) calls inside its `withBatchReturn` scope
+   ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)) so continuous effects from
+   entering or leaving the battlefield are active in `post`, refreshing
    `enduringStory` and `citysBlessing` on `g` in `closeBatch` when any event in
    `batchEvents` is a `ZoneEvent.moved` to `.battlefield` or `ZoneEvent.created`
    before calling `matchTriggers`, moving the counter (`counterPutter`,
@@ -1582,35 +1607,49 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `Choices.finishSagaFinalChapter` for `.finalSagaChapterResolves`, and folding
    the 13 batch-level trigger groups from `evaluateBatchTriggers` together with
    the remaining per-event triggers to produce the same `WaitingTrigger` fields
-   (`causeId`, `cause`, `causePower`, `causeStatus`, `causeController`,
-   `lastKnownPower`, `lastKnownToughness`, `extraCopies`, and `eventCause`; in
-   `closeBatch`, `.sourceDealtDamage` `WaitingTrigger`s—whose `causePower` is
-   pre-summed across the batch in `matchTriggers` via `batchDamageByPerm`—coalesce
-   against `preWaiting` via `.waitingTriggers`, retiring all engine callers of
-   `EngineChange.addSourceDealtDamagePower`, and `enrageGrantsAdditionalCombat`
+   (`causeId`, `cause : Option GameObject`, `causeController`, `lastKnownPower`,
+   `lastKnownToughness`, `eventCause`, and `checked := true`; `causeStatus` is
+   passed directly to `fraConditionHolds` inside `matchTriggers`, extra trigger
+   copies are emitted via `Array.replicate copies wt` from `extraTriggerCopies`,
+   and in `closeBatch`, `.sourceDealtDamage` `WaitingTrigger`s—whose
+   `lastKnownPower` holds the per-permanent batch damage total pre-summed in
+   `matchTriggers` via `batchDamageByPerm`—coalesce against `preWaiting` via
+   `wt.lastKnownPower.getD 0` and `.waitingTriggers`, retiring all engine callers
+   of `EngineChange.addSourceDealtDamagePower`, while `enrageGrantsAdditionalCombat`
    is incremented once per source per batch via `hulkAdded` when a new
    `.sourceDealtDamage` trigger is created for an attacking Hulk; when a queued
    `WaitingTrigger` is later put on the stack, `putWaitingTrigger` forwards
    `wt.causeController` and `wt.eventCause` into `putQueuedTrigger`).
-2. Cover the whole of 603.10a–f for look-back via `GameEvent.isLookBack`
-   ([`Event.lean`](Mtg/Engine/Game/Event.lean)): `matchTriggers` scans
-   `pre.battlefield` (evaluating controller, subtypes, power/toughness,
-   attachments, granted triggers, and intervening-if conditions in `pre`) for
-   603.10a–d / 603.10f look-back triggers and `post.battlefield` (evaluating in
-   `post`) for non-look-back triggers, plus graveyard, hand, stack, player, and
-   emblem trigger sources (`.thisDiesOrIsDiscarded` from hand,
-   `.thisReturnedFromGyToHand`, `.whenCycled`, `.thisSpellCast`,
-   `.youCastCreature`, *Eirdu* convoke in hand, *Roads Go Ever, Ever On*
-   `attackPumpPerPlainsThisTurn`, and `.fraEffectUntilTurnOf` emblems).
+2. Add `GameEvent.isLookBack` ([`Event.lean`](Mtg/Engine/Game/Event.lean)) for
+   the 603.10a–d / 603.10f categories, and select `pre` vs `post` per branch in
+   `matchTriggers`: leaves-the-battlefield (`fromZone == .battlefield && toZone != .battlefield`,
+   including dies and battlefield-to-hand `.anotherNonlandReturned`), sacrifice
+   (`verb == .sacrifice`, including `.youSacrificeToken` and Bolg's
+   `.bolgSacrificedForReflexive`), and a creature card leaving a graveyard
+   (`.creatureCardLeavesYourGy`) evaluate on `pre`, whereas enters-the-battlefield,
+   draw, discard / cycling (`.fra .youDiscardThis` and `.fra .youCycle` on
+   `afterObj`, plus `.youDiscard` and `.fra .youDiscardOne`), tap, damage, life,
+   player, step (`stepBegan`, including `.fra .eachUpkeepFromGraveyard` and
+   `.fra .yourBeginCombatFromGraveyard`), combat (including
+   `attackPumpPerPlainsThisTurn` on `CombatEvent.attackersDeclared`), cast
+   (`.fra .castThis`, `.youCastCreature`, etc.), target, and
+   `.finalSagaChapterResolves` evaluate on `post` (while
+   `.permanent (.phasedOut ..)`, `.unattached`, `.controlChanged`, and
+   `.player (.lost ..)` are currently no-ops in `matchTriggers`).
 3. Record `TriggerQueueEvent.triggered` (with default
-   `cause := .gameRule .triggeredAbility` and `origin := batchId`) in
-   `closeBatch` (`Core.lean`) and `queueTrigger` / `putWaitingTrigger`
-   (`Triggers.lean`); replace `Status.firedOnceEachTurn` reads and writes across
-   `Core.lean`, `Triggers.lean`, and the `.firedOnceEachTurn false` cleanup reset
-   in `Turns.clearTurnActivations` (`Turns.lean`) with
-   `Game.loggedTriggeredThisTurn` (`GameEvent.abilityTriggeredThisTurn`, keyed on
-   `sourceId` and `ab`) and `Game.loggedSourceTriggeredThisTurn`
-   (`GameEvent.sourceTriggeredThisTurn`), and delete `queueBatchSourceAbility`,
+   `cause := .gameRule .triggeredAbility`, `origin := batchId`, and
+   `batch := batchId`) in `closeBatch` (`Core.lean`) for each new
+   `WaitingTrigger` copy produced by `matchTriggers` (and in `queueTrigger` /
+   `putWaitingTrigger` in `Triggers.lean`—with `origin` set to the open
+   `currentBatch` id or `⟨g.nextBatchId⟩` when there is no batch and `batch := ⟨0⟩`,
+   where `putWaitingTrigger` records `GameEvent.triggered` only when `!wt.checked`
+   and only for the first copy); replace `Status.firedOnceEachTurn` reads and
+   writes across `matchTriggers`'s `queueAb` (`Core.lean`), `queueTrigger` /
+   `putWaitingTrigger` (`Triggers.lean`), and `Turns.clearTurnActivations`
+   (`Turns.lean`) with `Game.loggedTriggeredThisTurn`
+   (`GameEvent.abilityTriggeredThisTurn`, keyed on `sourceId` and `ab`, alongside
+   `Game.loggedSourceTriggeredThisTurn` / `GameEvent.sourceTriggeredThisTurn` for
+   test assertions), and delete `queueBatchSourceAbility`,
    `queueBatchSourceTriggers`, and `queueBatchControlledTriggers` from `Core.lean`.
 4. Delete `evaluateBatchTriggers` (`Core.lean`), `pendingTokenEnters` /
    `pushPendingTokenEnter` (`Core.lean`, `Event.lean`, `Tokens.lean`) and
@@ -1618,12 +1657,16 @@ Tests: `Turns.lean`, `Step.lean`, `Combat.lean`, `AttackTriggers.lean`,
    `PriorityActions.lean`, and `FraChoices.lean`), and the remaining
    hand-written trigger loops in
    `Game.move` ([`Movement.lean`](Mtg/Engine/Game/Movement.lean)),
-   [`Entering.lean`](Mtg/Engine/Game/Entering.lean) (keeping
-   `putCastTriggersOnStack` only for delayed spell-copy effects—Way of the
-   Cryomancer and Loki—and keeping `afterPermanentEnters` for post-entry log
-   messages, as-enters choices, and fallback synthetic `ZoneEvent.created` /
-   `ZoneEvent.moved` when a test caller seats a permanent without
-   `putOntoBattlefield` or `createToken`),
+   [`Entering.lean`](Mtg/Engine/Game/Entering.lean) (where
+   `putCastTriggersOnStack`, called by `Casting.lean`, records unannounced
+   additional-cost choices via `CastEvent.announced`, puts cascade and Photon
+   Blast Barrage's self-copy trigger on the stack via `putTriggeredAbilityOnStack`,
+   records `CastEvent.spellCast` so `matchTriggers` handles general cast triggers,
+   expires `.pendingFreeRGCreatureThisTurn`, and runs the delayed spell-copy
+   effects for Way of the Cryomancer and Loki; and `afterPermanentEnters` remains
+   for post-entry log messages, as-enters choices, and the `!g.loggedEntered o.id`
+   fallback synthetic `ZoneEvent.created` / `ZoneEvent.moved` when a test caller
+   seats a permanent without `putOntoBattlefield` or `createToken`),
    [`Combat.lean`](Mtg/Engine/Game/Combat.lean),
    [`Damage.lean`](Mtg/Engine/Game/Damage.lean),
    [`Triggers.lean`](Mtg/Engine/Game/Triggers.lean),
@@ -1656,11 +1699,12 @@ plus new look-back tests for simultaneous deaths and phasing out.
    903.9b, flashback 702.34a).
 2. Implement the 616.1 loop from §3.4 with per-chain `applied` sets (614.5) and
    APNAP choice prompts.
-3. Remove the inline replacement branches listed in §1.4 (including the batched
-   `wouldCreateToken` branches in `Tokens.lean`,
-   `ResolutionEffects.commitEnteringAttackItems`, and
-   `TriggeredAbilities.createTokensForTrigger`, and `Game.entersTapped` /
-   `Game.sourceDamagePrevented` in `Core.lean`).
+3. Remove the inline replacement branches listed in §1.4 (including the
+   `wouldCreateToken` branches in `Tokens.createToken` and
+   `ResolutionEffects.commitEnteringAttackItems`—Dragon replacement,
+   `tokenCreateMultiplier`, and Food/Treasure extras—and in
+   `TriggeredAbilities.createAndMarkTokensAttacking`—`tokenCreateMultiplier`—plus
+   `Game.entersTapped` and `Game.sourceDamagePrevented` in `Core.lean`).
 
 Tests: `Exile.lean`, `Draw.lean`, `GainLife.lean`, `Damage.lean`, `PutCounters.lean`,
 `Untap.lean`, `RulingFixtures.lean`, plus new tests for 614.5 termination, 614.6
@@ -1699,20 +1743,22 @@ non-occurrence, and the 616.1a–e order.
    and `gameEnded`; `PlayerEvent.ringTempted` was added in Phase 6, and this step
    makes `applyPlayerEvent` update `theRingAbilities` and `ringBearerId` on
    `ringTempted` so `CastExtras.temptWithTheRing` and
-   `Designations.chooseRingBearer` stop writing `.theRingAbilities` and
+   `Designations.setRingBearer` stop writing `.theRingAbilities` and
    `.ringBearerId` separately), upgrade `PlayerEvent.manaEmptied` from
    `amount : Nat` to `units : Array ManaUnit` while preserving
    `keptColorless : Bool := false` (for `unspentManaBecomesColorless` in
    `Game.emptyManaPools` / `applyPlayerEvent`), add `LossReason` to
    `PlayerEvent.lost`, and convert the remaining raw designation status writes in
-   `Designations.lean` (`.ringBearer`), `Casting.lean` / `CastSpell.lean` /
+   `Designations.setRingBearer` (`.ringBearer`), `Casting.lean` / `CastSpell.lean` /
    `Movement.lean` (`.prepared`), and `EffectResolution.lean` (`.harnessed`) to
    `GameEvent.designation` (`PermanentEvent.designation` and
    `applyPermanentEvent` already support `.ringBearer`, `.commander`, `.prepared`,
    and `.harnessed`); delete every field in §3.8 marked as a mirror, history
    (including `Status.firedOnceEachTurn`, whose engine reads and writes were
-   replaced by `Game.loggedTriggeredThisTurn` / `Game.loggedSourceTriggeredThisTurn`
-   in Phase 6), cast metadata (400.7d on `GameObject`: `castFromGraveyard`,
+   replaced by `Game.loggedTriggeredThisTurn` in Phase 6, along with the
+   `firedOnceEachTurn := false` reset in `StatusChange.resetPerTurnFlags`'s
+   applier and the remaining field read in `MshOracleTests.lean`), cast metadata
+   (400.7d on `GameObject`: `castFromGraveyard`,
    `castFromHand`, `wasCast`, `kicked`, `teamworkPaid`, `sneakPaid`,
    `sneakAttackWhom`, `sneakAttackTarget`, `giftPromisedTo`, `isPreparedSpell`,
    `treasureManaSpent`, `boastExiled`, and off-stack `chosenX` reads), LKI
@@ -1722,8 +1768,9 @@ non-occurrence, and the 616.1a–e order.
    (`Game.enrageGrantsAdditionalCombat`), or engine bookkeeping
    (`GameObject.enterProcessed`, once test callers seat permanents via
    `putOntoBattlefield` / `createToken` instead of relying on
-   `Entering.afterPermanentEnters` / `SacrificeDiscard.lean` fallback synthetic
-   events, alongside the remaining transitional mirror, 400.7d cast-metadata, and
+   `Entering.afterPermanentEnters`'s `!g.loggedEntered o.id` fallback synthetic
+   events or `SacrificeDiscard.villainConniveTarget?`'s `enterProcessed` check,
+   alongside the remaining transitional mirror, 400.7d cast-metadata, and
    LKI fields on `EventObject`: `returnedAsArtifact`, `onlyFoodArtifact`,
    `wasCast`, `lastKnownPower`, and `lastKnownToughness`), consolidate the 23
    stored counter fields on `Status` (including `Status.poison`; player poison
