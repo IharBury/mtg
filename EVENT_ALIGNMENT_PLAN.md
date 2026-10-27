@@ -812,14 +812,19 @@ def Game.commitBatch (g : Game) (cause : EventCause) (events : Array RulesEvent)
   `.oneShotEffect` only when `currentResolvingContext?` is `some`). `resolvingBatchCause`
   returns `currentResolvingContext?.map (.oneShotEffect none ..)` for callers
   opening a batch in `TriggeredAbilities.lean`, `FraResolve.lean`,
-  `FrcResolve.lean`, and `ResolutionEffects.lean` (while `markDamageOn`,
-  `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`,
-  `dealDamageToEachOpponent`, `fightCreatures`, `loseLifeEachOpponent`,
-  `eachOpponentLosesYouGain`, and `drawThenLoseLife` in `Damage.lean` build their
-  `defaultCause` inline from `cause.orElse (currentResolvingContext?.map ..)` with
-  their own source/controller fallbacks—or `none` when no damage/life loss is
-  dealt—and pass it to `withBatch`, replacing the manual `allocDelayedCause`
-  pre-allocation). When `currentBatch` already holds
+  `FrcResolve.lean`, and `ResolutionEffects.lean` (while in `Damage.lean`,
+  `markDamageOn`, `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`'s
+  `some src` branch—with `none` delegating to `markDamageOn`—`dealDamageToEachOpponent`,
+  `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
+  `drawThenLoseLife` replaced their manual `allocDelayedCause` pre-allocation by
+  running inside `withBatch` with an inline `defaultCause` mapped from
+  `currentResolvingContext?` to `.oneShotEffect none`: `cause.orElse` on the
+  eight helpers that take `cause` and `currentResolvingContext?.map` directly on
+  `drawThenLoseLife`, which has no `cause` parameter; `fightCreatures` and
+  `drawThenLoseLife` always pass that `defaultCause`, whereas the other seven
+  pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
+  empty-`livingOpponents` guards after any early-return prevention checks, so
+  shield-counter removal still opens a batch). When `currentBatch` already holds
   `some (_, some (.oneShotEffect (some bid) ..))`, both `resolvingOneShotCause`
   and `createEffect` / `createEffects` (with `cause := none`) reuse that `bid`;
   otherwise `resolvingOneShotCause` returns
@@ -957,9 +962,10 @@ modal DFCs) and preparation cards (722).
 
 ### 3.5 Triggered abilities and look-back-in-time (603)
 
-Closing an outermost batch (`applyEvent` and `withBatchReturn` in `Core.lean`,
-and `openBatch` in `Pumps.lean`, which `commitBatch` and `commitBatchWithCauses`
-delegate to) runs one matcher, replacing Phase 4's
+Closing an outermost batch (`withBatchReturn` in `Core.lean`—which `withBatch`,
+`commitBatchWithCauses`, and `commitBatch` delegate to—`applyEvent` in
+`Core.lean` for standalone `.rules` events when `currentBatch` is `none`, and
+`openBatch` in `Pumps.lean`) runs one matcher, replacing Phase 4's
 `evaluateBatchTriggers (g : Game) (preBattlefield : Array GameObject) (batchEvents : Array GameEvent) : Game`:
 
 ```lean
@@ -1237,13 +1243,19 @@ game has `.unclassified`, migrated `.looked` (folded into `PlayerEvent.scried` /
    when `currentResolvingContext?` is `some`; `resolvingBatchCause` maps
    `currentResolvingContext?` to `.oneShotEffect none ..` for batch callers in
    `TriggeredAbilities.lean`, `FraResolve.lean`, `FrcResolve.lean`, and
-   `ResolutionEffects.lean`, while `markDamageOn`, `dealDamageToPermanent`,
-   `dealDamageToPlayer`, `dealDamageFrom`, `dealDamageToEachOpponent`,
+   `ResolutionEffects.lean`, while in `Damage.lean`, `markDamageOn`,
+   `dealDamageToPermanent`, `dealDamageToPlayer`, `dealDamageFrom`'s `some src`
+   branch—with `none` delegating to `markDamageOn`—`dealDamageToEachOpponent`,
    `fightCreatures`, `loseLifeEachOpponent`, `eachOpponentLosesYouGain`, and
-   `drawThenLoseLife` in `Damage.lean` inline `cause.orElse (currentResolvingContext?.map ..)`
-   with their own source/controller fallbacks—or `none` when no damage/life loss
-   is dealt—and pass it to `withBatch`, replacing the `allocDelayedCause`
-   pre-allocation), while
+   `drawThenLoseLife` replaced their manual `allocDelayedCause` pre-allocation by
+   running inside `withBatch` with an inline `defaultCause` mapped from
+   `currentResolvingContext?` to `.oneShotEffect none`: `cause.orElse` on the
+   eight helpers that take `cause` and `currentResolvingContext?.map` directly on
+   `drawThenLoseLife`, which has no `cause` parameter; `fightCreatures` and
+   `drawThenLoseLife` always pass that `defaultCause`, whereas the other seven
+   pass `none` under their helper-specific zero-amount / `preventsAllDamageTo` /
+   empty-`livingOpponents` guards after any early-return prevention checks, so
+   shield-counter removal still opens a batch), while
    each SBA pass in `checkSBACounted` (`StateBasedActions.lean`) runs inside
    `withBatchReturn none` to keep per-event `.stateBased` causes under one
    `BatchId` per pass and standalone `.rules` events in `applyEvent` form a
