@@ -524,6 +524,11 @@ inductive FraChoice where
   /-- You may begin the game with the first of these cards on the battlefield
   (Quicksilver). The rest are asked next. -/
   | mayBeginOnBattlefield (ids : Array ObjectId)
+  /-- Choose which player, planeswalker, or battle the first of `ids` is
+  attacking as it enters the battlefield, then the rest (CR 508.4; ruling 181).
+  Answered with `Action.chooseMode` (index into `options`) or
+  `Action.choosePermanents` (a planeswalker or battle id in `options`). -/
+  | chooseEnteringAttackTarget (ids : Array ObjectId) (options : Array AttackTarget)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

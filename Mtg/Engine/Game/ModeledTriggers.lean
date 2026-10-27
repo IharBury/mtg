@@ -378,16 +378,22 @@ def enterModsExtraCounters (mods : List TriggeredAbility.TriggerEnterWith) : Cou
     | .counter kind n true => acc.add kind n
     | _ => acc) #[]
 
-/-- Attacking status specified by `mods` as the permanent enters. -/
-def enterModsAttacking (g : Game) (controller : PlayerId)
-    (mods : List TriggeredAbility.TriggerEnterWith) : Bool × Option PlayerId :=
+/-- Attacking status and target options specified by `mods` as the permanent
+enters under `enteringController`'s control (CR 508.4). Returns `(true, some tgt, #[])`
+when there is a single legal attack target, `(false, none, options)` when the
+controller must choose among multiple legal targets (`options.size > 1`), and
+`(false, none, #[])` when `.attacking` is not in `mods`. -/
+def enterModsAttacking (g : Game) (enteringController : PlayerId)
+    (mods : List TriggeredAbility.TriggerEnterWith) :
+    Bool × Option AttackTarget × Array AttackTarget :=
   if mods.any (· == .attacking) then
-    let whom :=
-      match (g.livingOpponents controller)[0]? with
-      | some pl => some pl.id
-      | none => none
-    (true, whom)
-  else (false, none)
+    let options := g.legalEnteringAttackTargets enteringController
+    if options.size <= 1 then
+      let tgt := options[0]?.getD (.player g.defendingPlayer)
+      (true, some tgt, #[])
+    else
+      (false, none, options)
+  else (false, none, #[])
 
 /-- Apply one enters-with change to the permanent `id`. -/
 def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
@@ -434,17 +440,22 @@ def applyEnterMod (g : Game) (controller : PlayerId) (id : ObjectId)
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
     (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
-  let (atk, whom) := g.enterModsAttacking controller mods
-  g.withBatch (some cause) fun g =>
-    let (g, newId) := g.putOntoBattlefield o.id o.owner
-      (attacking := atk) (attackingWhom := whom)
-      (extraEntersWith := enterModsExtraCounters mods)
-      (cause := some cause)
-    let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
-    let g := g.afterPermanentEnters (g.object! newId)
-    if losesAbilitiesAndHaste mods then
-      g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
-    else g
+  let (atk, atkTgt, atkOptions) := g.enterModsAttacking o.owner mods
+  let (g, newId) :=
+    g.withBatchReturn (some cause) fun g =>
+      let (g, newId) := g.putOntoBattlefield o.id o.owner
+        (attacking := atk) (attackingTarget := atkTgt)
+        (extraEntersWith := enterModsExtraCounters mods)
+        (cause := some cause)
+      let g := mods.foldl (fun g m => g.applyEnterMod controller newId m (cause := some cause)) g
+      let g := g.afterPermanentEnters (g.object! newId)
+      let g :=
+        if losesAbilitiesAndHaste mods then
+          g.logMsg s!"{(g.object! newId).name} returns, loses all abilities, and gains haste"
+        else g
+      (g, newId)
+  if atkOptions.isEmpty then g
+  else g.promptEnteringAttackTargets o.owner #[newId] atkOptions (cause := some cause)
 
 /-- Return the source from its owner's graveyard under its owner's control.
 Hellcat's return reports her by name when she has already left. -/

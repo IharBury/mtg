@@ -932,6 +932,14 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
             s!"may put a creature card ({creatures.size}): choose <id>, or decline"
         | .entersCreatureType _ => "choose a creature type as it enters: name <type>"
         | .entersOddEven _ => "choose even (0) or odd (1) as it enters"
+        | .chooseEnteringAttackTarget ids options =>
+          let names := (List.range options.size).map (fun i =>
+            match options[i]! with
+            | AttackTarget.player pid => s!"{i} {(g.player pid).name}"
+            | AttackTarget.planeswalker oid | AttackTarget.battle oid =>
+              let nm := ((g.findObject? oid).map GameObject.name).getD s!"#{oid.raw}"
+              s!"{i} {nm} (#{oid.raw})")
+          s!"choose what it enters attacking ({ids.size} left): {String.intercalate ", " names}"
         | .mayBeginOnBattlefield ids =>
           s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
       s!" [{what} ({g.player p |>.name})]"

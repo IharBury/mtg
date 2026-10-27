@@ -257,6 +257,14 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   -- no costs are paid for it (rulings 843–846).
   let g :=
     if spell.printed.isInstantOrSorcery && (g.player caster).copyNextInstantSorceryThisTurn > 0 then
+      let cryoEid? := g.activeEffects.findSome? (fun (eid, eff) =>
+        match eff with
+        | .copyNextInstantSorceryThisTurn p _ => if p == caster then some eid else none
+        | _ => none)
+      let copyCause : EventCause :=
+        match cryoEid? with
+        | some eid => g.effectCreatedCause eid none caster
+        | none => .oneShotEffect (some ⟨g.nextEffectId⟩) none (some caster)
       let g := g.expireEffect (.copyNextInstantSorceryThisTurn caster 1)
         (cause := some (.gameRule .spellCast))
       let copyId : ObjectId := ⟨g.nextObjectId⟩
@@ -270,7 +278,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         wasCast := false
       }
       let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
-        (cause := g.resolvingOneShotCause caster (some spell.id)))
+        (cause := some copyCause))
       g.logMsg s!"A copy of {spell.name} is created (Way of the Cryomancer)"
     else g
   -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
@@ -291,9 +299,10 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
               | some o => if o.isOnBattlefield then g.power o else fallback
               | none => fallback
             | none => fallback
-          if Int.ofNat mv <= pw then some eid else none
+          if Int.ofNat mv <= pw then some (eid, src) else none
       | _ => none)
-    matching.foldl (fun g eid =>
+    matching.foldl (fun g (eid, src) =>
+      let copyCause := g.effectCreatedCause eid src caster
       let copyId : ObjectId := ⟨g.nextObjectId⟩
       let copySnap : EventObject := {
         (g.snapshot spell) with
@@ -305,7 +314,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         wasCast := false
       }
       let g := g.record (GameEvent.stackObjectCopied g.turnNumber spell.id copySnap caster
-        (cause := g.resolvingOneShotCause caster (some spell.id)))
+        (cause := some copyCause))
       let g := g.expireEffectById eid (cause := some (.gameRule .spellCast))
       g.logMsg s!"A copy of {spell.name} is created (Loki)") g
 

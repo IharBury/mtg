@@ -1995,7 +1995,12 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
           adventurerCard := orig.adventurerCard
           abilityEffect := orig.abilityEffect
           triggeredAbility := orig.triggeredAbility
+          reflexiveResolution := orig.reflexiveResolution
           sourceId := orig.sourceId
+          fraCauseId := orig.fraCauseId
+          fraCauseController := orig.fraCauseController
+          fraCausePower := orig.fraCausePower
+          fraCauseStatus := orig.fraCauseStatus
           lastKnownPower := copy.lastKnownPower.orElse (fun _ => orig.lastKnownPower)
           lastKnownToughness := copy.lastKnownToughness.orElse (fun _ => orig.lastKnownToughness) }
       | none =>
@@ -2964,13 +2969,36 @@ def resolvingOneShotCause (g : Game) (p : PlayerId)
     (source : Option ObjectId := none) : Option EventCause :=
   match g.currentBatch with
   | some (_, some (.oneShotEffect (some bid) bsrc bctrl)) =>
-    some (.oneShotEffect (some bid) (source.orElse (fun _ => bsrc)) (bctrl.orElse (fun _ => some p)))
+    some (.oneShotEffect (some bid) (bsrc.orElse (fun _ => source)) (bctrl.orElse (fun _ => some p)))
   | _ =>
     let (src, ctrl) :=
       match g.currentResolvingContext? with
       | some (s, c) => (source.orElse (fun _ => s), c.orElse (fun _ => some p))
       | none => (source, some p)
     some (.oneShotEffect (some ⟨g.nextEffectId⟩) src ctrl)
+
+/-- Look up the `EventCause` recorded when `eid` was created in `g.events`,
+falling back to `.oneShotEffect (some eid) fallbackSrc (some fallbackCtrl)`. -/
+def effectCreatedCause (g : Game) (eid : EffectId)
+    (fallbackSrc : Option ObjectId := none) (fallbackCtrl : PlayerId) : EventCause :=
+  let fromEvents? :=
+    g.events.findSomeRev? fun ev =>
+      match ev.change with
+      | .rules (.effectCreated id eff) =>
+        if id == eid then
+          let effSrc :=
+            match eff with
+            | .pendingLokiCopy _ s _ => s.orElse (fun _ => fallbackSrc)
+            | _ => fallbackSrc
+          match ev.cause with
+          | .unclassified => none
+          | .oneShotEffect oid src ctrl =>
+            some (.oneShotEffect oid (src.orElse (fun _ => effSrc))
+              (ctrl.orElse (fun _ => some fallbackCtrl)))
+          | c => some c
+        else none
+      | _ => none
+  fromEvents?.getD (.oneShotEffect (some eid) fallbackSrc (some fallbackCtrl))
 
 /-- Resolving one-shot cause for a batch when a spell or ability is actively
 resolving, or `none` when called outside a resolving context (CR 608.2c / 610.1). -/
@@ -3863,6 +3891,48 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
     g.withBatch cause (fun g =>
       bag.foldl (fun acc (kind, cnt) =>
         acc.recordPutCounters id kind (cnt + extra) (byPlayer := byPlayer) (cause := cause)) g)
+
+/-- Legal players, planeswalkers, and battles that a creature put onto the
+battlefield attacking under `controller`'s control may be chosen to attack
+(CR 508.4). -/
+def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
+  let opps := g.livingOpponents controller
+  let playerTargets : Array AttackTarget :=
+    if opps.isEmpty then #[.player g.defendingPlayer]
+    else opps.map (fun pl => .player pl.id)
+  let noJace := (g.player controller).cantAttackJaces
+  let permanentTargets : Array AttackTarget :=
+    g.battlefield.filterMap fun o =>
+      if !opps.any (fun pl => o.controlledBy pl.id) then none
+      else if o.printed.isPlaneswalker then
+        if noJace && (o.name.startsWith "Jace" || g.hasSubtype o .jace) then none
+        else some (.planeswalker o.id)
+      else if o.hasType .battle then
+        some (.battle o.id)
+      else none
+  playerTargets ++ permanentTargets
+
+/-- Have `controller` choose what each permanent in `ids` is attacking as it
+enters the battlefield (CR 508.4 / ruling 181). When only one legal target
+exists in `options`, `becameAttacking` is recorded immediately; when multiple
+options exist, a `.chooseEnteringAttackTarget` choice is opened and asked once
+per permanent. -/
+def promptEnteringAttackTargets (g : Game) (controller : PlayerId)
+    (ids : Array ObjectId) (options : Array AttackTarget)
+    (cause : Option EventCause := none) : Game :=
+  let liveIds := ids.filter (fun id => (g.findObject? id).any (·.isOnBattlefield))
+  if liveIds.isEmpty || options.isEmpty then g
+  else if options.size == 1 then
+    let tgt := options[0]!
+    liveIds.foldl (fun g id =>
+      match g.findObject? id with
+      | some o => g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))
+      | none => g) g
+  else
+    let g := liveIds.foldl (fun g id => g.change (.setLinkedExileCause id cause)) g
+    let firstObj := g.object! liveIds[0]!
+    (g.change (.pending (.fraChoice controller (.chooseEnteringAttackTarget liveIds options)))).logMsg
+      s!"{(g.player controller).name} chooses what {firstObj.nameWithToken} is attacking"
 
 end Game
 end Mtg.Engine

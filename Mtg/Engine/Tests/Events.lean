@@ -2756,6 +2756,28 @@ attacks" triggers (CR 508.3a). -/
     (attacking := true) (attackingTarget := some (.planeswalker pwOpp.id))
     (cause := some (.oneShotEffect (some ⟨82⟩) none (some me)))
   let tokPw? := gTokPw.battlefield.find? (·.printed.isToken)
+  -- Andúril (ruling 181): when multiple legal attack targets exist (opp and pwOpp),
+  -- each Spirit token is asked separately and may attack a different target.
+  let gAnduril0 := (quiet g0).createAndMarkTokensAttacking me .spirit 2 true true (some hMe.id)
+  let gAnduril2 :=
+    match gAnduril0.apply me (.chooseMode 1) with
+    | .ok g1 =>
+      match g1.apply me (.chooseMode 0) with
+      | .ok g2 => g2
+      | .error _ => g1
+    | .error _ => gAnduril0
+  let andurilSpirits := gAnduril2.battlefield.filter (·.printed.isToken)
+  -- Grim Reaper / returnFromGyTappedAttackingFinality (CR 508.4): asks when multiple targets exist
+  let gReaper0 := insertObject (quiet g0) bear me (.graveyard me) none {} (fun id _ =>
+    #[.pushGraveyard id])
+  let reaperGyId := (gReaper0.objects.filter (fun o => o.name == bear.name && o.zone == .graveyard me))[0]!.id
+  let gReaper1 := gReaper0.returnFromGyTappedAttackingFinality me reaperGyId
+  let gReaper2 :=
+    match gReaper1.apply me (.chooseMode 1) with
+    | .ok g => g
+    | .error _ => gReaper1
+  let reaperBear? := gReaper2.battlefield.find? (fun o =>
+    o.name == bear.name && o.controlledBy me && o.id != bMe.id)
   hAfterBecame.status.attacking &&
     hAfterBecame.status.attackingTarget == some (AttackTarget.planeswalker pwOpp.id) &&
     !hAfterBecame.status.declaredAsAttackerThisTurn &&
@@ -2783,13 +2805,19 @@ attacks" triggers (CR 508.3a). -/
     enteredDefBecameTarget == some (AttackTarget.player gEnterDefault.defendingPlayer) &&
     (sneakEntered?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
     (tokPw?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
+    andurilSpirits.size == 2 &&
+    andurilSpirits[0]!.status.attackingTarget == some (AttackTarget.planeswalker pwOpp.id) &&
+    andurilSpirits[1]!.status.attackingTarget == some (AttackTarget.player opp) &&
+    (reaperBear?.map (·.status.attackingTarget)) == some (some (AttackTarget.planeswalker pwOpp.id)) &&
     noUnclassifiedRulesEvents gBecame &&
     noUnclassifiedRulesEvents gAtk &&
     noUnclassifiedRulesEvents gBlk &&
     noUnclassifiedRulesEvents gRem &&
     noUnclassifiedRulesEvents gEnterDefault &&
     noUnclassifiedRulesEvents gSneak1 &&
-    noUnclassifiedRulesEvents gTokPw
+    noUnclassifiedRulesEvents gTokPw &&
+    noUnclassifiedRulesEvents gAnduril2 &&
+    noUnclassifiedRulesEvents gReaper2
 
 /- Phase 5.3 isolation: `CastEvent` (`proposed`, `announced`, `targeted`,
 `spellCast`, `abilityActivated`), `TriggerQueueEvent.putOnStack`,
@@ -2835,6 +2863,11 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     .sneakPaid true,
     .sneakAttackWhom (some opp),
     .adventurerCard (some bear),
+    .reflexiveResolution (some (.draw (.fixed 2) .you)),
+    .fraCauseId (some ⟨71⟩),
+    .fraCauseController (some opp),
+    .fraCausePower (some 4),
+    .fraCauseStatus (some { plusOnePlusOne := 2 }),
     .lastKnownPower (some 5),
     .lastKnownToughness (some 6),
     .castFromHand true,
@@ -2846,15 +2879,17 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let copy1Entry := gCopy1.stack.back!
   let copy1Obj := gCopy1.object! copy1Entry.objectId
   -- Also test Loki and Way of the Cryomancer in becomeCast
+  let cryoCause : EventCause := .oneShotEffect (some ⟨87⟩) none (some me)
+  let lokiCause : EventCause := .oneShotEffect (some ⟨88⟩) (some ⟨70⟩) (some me)
   let gCryoLoki0 :=
-    let g := gCast4.changePlayer me (.copyNextInstantSorceryThisTurn 1)
-    let g := g.createEffect (.pendingLokiCopy me none 10)
-      (cause := some (.oneShotEffect (some ⟨88⟩) none (some me)))
-    quiet g
+    let g := gCast4.createEffect (.copyNextInstantSorceryThisTurn me 1)
+      (cause := some cryoCause)
+    g.createEffect (.pendingLokiCopy me (some ⟨70⟩) 10)
+      (cause := some lokiCause)
   let gCryoLoki := gCryoLoki0.becomeCast me (gCryoLoki0.object! spId)
   let copiedEvents := gCryoLoki.events.filterMap (fun e =>
     match e.change with
-    | .rules (.stackObject (.copied orig copy ctrl)) => some (orig, copy, ctrl)
+    | .rules (.stackObject (.copied orig copy ctrl)) => some (orig, copy, ctrl, e.cause)
     | _ => none)
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
@@ -2920,6 +2955,11 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     copy1Obj.sneakAttackWhom == some opp &&
     copy1Obj.sneakAttackTarget == some (.player opp) &&
     copy1Obj.adventurerCard == some bear &&
+    copy1Obj.reflexiveResolution == some (.draw (.fixed 2) .you) &&
+    copy1Obj.fraCauseId == some ⟨71⟩ &&
+    copy1Obj.fraCauseController == some opp &&
+    copy1Obj.fraCausePower == some 4 &&
+    copy1Obj.fraCauseStatus == some { plusOnePlusOne := 2 } &&
     copy1Obj.lastKnownPower == some 5 &&
     copy1Obj.lastKnownToughness == some 6 &&
     copy1Entry.chosenMode == some 0 &&
@@ -2928,7 +2968,9 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     copy1Entry.dividedDamage == #[2] &&
     copy1Entry.targetsAnnounced &&
     copiedEvents.size == 2 &&
-    copiedEvents.all (fun (orig, _, ctrl) => orig == spId && ctrl == me) &&
+    copiedEvents.all (fun (orig, _, ctrl, _) => orig == spId && ctrl == me) &&
+    copiedEvents[0]!.2.2.2 == cryoCause &&
+    copiedEvents[1]!.2.2.2 == lokiCause &&
     hasTrigPutOnStack &&
     hasRemovedOnResolution &&
     hasSpellRemovedOnResolution &&

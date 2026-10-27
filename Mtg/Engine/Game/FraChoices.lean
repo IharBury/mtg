@@ -1153,6 +1153,36 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .entersOddEven id, .mode 1 =>
     return (g.chooseGollumParity id true).finishFraChoice
   | .entersOddEven _, _ => throw "Choose even (0) or odd (1)"
+  | .chooseEnteringAttackTarget ids options, ans =>
+    let some cid := ids[0]? | return g.finishFraChoice
+    let chosen? : Option AttackTarget :=
+      match ans with
+      | .mode idx => options[idx]?
+      | .objects #[oid] =>
+        options.find? fun
+          | .planeswalker pid | .battle pid => pid == oid
+          | .player _ => false
+      | _ => none
+    let some tgt := chosen?
+      | throw "Choose a player, planeswalker, or battle to attack (CR 508.4)"
+    let cause := g.linkedExileCause? cid
+    let g := if cause.isSome then g.change (.setLinkedExileCause cid none) else g
+    let g : Game :=
+      match g.findObject? cid with
+      | some o =>
+        if o.isOnBattlefield then
+          let who :=
+            match tgt with
+            | .player pid => (g.player pid).name
+            | .planeswalker oid | .battle oid =>
+              ((g.findObject? oid).map GameObject.name).getD "that permanent"
+          (g.record (GameEvent.becameAttacking g.turnNumber o.asEvent tgt (cause := cause))).logMsg
+            s!"{o.nameWithToken} enters attacking {who}"
+        else g
+      | none => g
+    let rest := ids.extract 1 ids.size
+    if rest.isEmpty then return g.finishFraChoice
+    return g.change (.pending (.fraChoice p (.chooseEnteringAttackTarget rest options)))
   | .mayBeginOnBattlefield ids, .accept =>
     let g ←
       match ids[0]? with
@@ -1377,6 +1407,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
     .chooseName (yours[0]?.getD CardSubtype.human).englishName
   | .entersOddEven _ => .chooseMode 0
+  | .chooseEnteringAttackTarget _ _ => .chooseMode 0
   | .mayBeginOnBattlefield _ => .decline
 
 end Game

@@ -757,20 +757,24 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
     if !(o.printed.isCreature && o.zone == .graveyard controller) then
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
-      let whom :=
-        match attackingWhom with
-        | some pid => some pid
-        | none =>
-          match (g.livingOpponents controller)[0]? with
-          | some pl => some pl.id
-          | none => none
-      let tgt := attackingTarget.orElse (fun _ => whom.map AttackTarget.player)
+      let explicitTgt := attackingTarget.orElse (fun _ => attackingWhom.map AttackTarget.player)
+      let options :=
+        match explicitTgt with
+        | some tgt => #[tgt]
+        | none => g.legalEnteringAttackTargets controller
+      let immediateTgt :=
+        if options.size <= 1 then some (options[0]?.getD (.player g.defendingPlayer))
+        else none
+      let cause := g.resolvingOneShotCause controller
       let (g, newId) := g.putOntoBattlefield o.id controller (tapped := true)
-        (attacking := true) (attackingWhom := whom) (attackingTarget := tgt)
+        (attacking := immediateTgt.isSome) (attackingTarget := immediateTgt)
         (extraEntersWith := #[(.finality, 1)])
+        (cause := cause)
       let o := g.object! newId
       let g := g.logMsg s!"{o.name} gets a finality counter"
-      g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
+      let g := g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
+      if options.size <= 1 then g
+      else g.promptEnteringAttackTargets controller #[newId] options (cause := cause)
 
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
 that is no longer legal is skipped (MSH 125). -/
