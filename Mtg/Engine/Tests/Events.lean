@@ -3692,6 +3692,118 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gEntAtkDone.object! strikerId).enterProcessed &&
     (gEntAtkDone.object! strikerId).status.plusOnePlusOne == 4 &&
     (gEntAtkDone.object! strikerId).status.shield == 1
+  -- Draw-step sub-draw pause: a `replaceDraw me 2 false` draws the first card of the draw step,
+  -- then the second sub-draw pauses on competing `exceptFirst := true` replacements without restarting the first draw.
+  let idDrwAll : ReplacementId := ⟨7701⟩
+  let idDrwEx2 : ReplacementId := ⟨7702⟩
+  let idDrwEx3 : ReplacementId := ⟨7703⟩
+  let drwSubCause : EventCause := .oneShotEffect (some ⟨719⟩) none (some me)
+  let gDrwSub0 :=
+    ((((quiet started).change (.step .draw)).change (.activePlayer me)).createEffect
+      (.replacement {
+        id := idDrwAll, source := none, controller := some me,
+        affectedPlayer := me, kind := .replaceDraw me 2 false } true)
+      (cause := some drwSubCause)).createEffect
+      (.replacement {
+        id := idDrwEx2, source := none, controller := some me,
+        affectedPlayer := me, kind := .replaceDraw me 2 true } true)
+      (cause := some drwSubCause)
+    |>.createEffect
+      (.replacement {
+        id := idDrwEx3, source := none, controller := some me,
+        affectedPlayer := me, kind := .replaceDraw me 3 true } true)
+      (cause := some drwSubCause)
+  let handBeforeDrwSub := (gDrwSub0.player me).hand.size
+  let gDrwSubPaused := (quiet gDrwSub0).draw me 1
+  let gDrwSubDone :=
+    (gDrwSubPaused.apply me (.chooseReplacement idDrwEx2)).toOption.getD gDrwSubPaused
+  let drwSubResumeOk :=
+    gDrwSubPaused.pending == .chooseReplacement me #[idDrwEx2, idDrwEx3] &&
+    (gDrwSubPaused.player me).hand.size - handBeforeDrwSub == 1 &&
+    gDrwSubDone.pending == .none &&
+    (gDrwSubDone.player me).hand.size - handBeforeDrwSub == 7
+  -- `commitEnteringAttackItems` pauses on an as-enters `.fraChoice` (`asEntersChooseOddEven`) before putting the second card onto the battlefield, keeping both in one batch.
+  let oddEvenDef1 : CardDef := { bear with name := "Parity Striker 1", asEntersChooseOddEven := true }
+  let oddEvenDef2 : CardDef := { bear with name := "Parity Striker 2", asEntersChooseOddEven := true }
+  let gFraEnt0 :=
+    insertObject
+      (insertObject gOrd0 oddEvenDef1 me (.hand me) none {} (fun id _ => #[.pushHand id]))
+      oddEvenDef2 me (.hand me) none {} (fun id _ => #[.pushHand id])
+  let pCard1 := ((gFraEnt0.player me).hand.filter (fun id => (gFraEnt0.object! id).name == "Parity Striker 1"))[0]!
+  let pCard2 := ((gFraEnt0.player me).hand.filter (fun id => (gFraEnt0.object! id).name == "Parity Striker 2"))[0]!
+  let item1 : EnteringAttackItem :=
+    .card pCard1 me me true false #[] [] .putOntoBattlefield #[.player opp]
+  let item2 : EnteringAttackItem :=
+    .card pCard2 me me true false #[] [] .putOntoBattlefield #[.player opp]
+  let gFraEntPaused1 :=
+    (quiet gFraEnt0).commitEnteringAttackItems #[(item1, some (.player opp)), (item2, some (.player opp))]
+      (cause := some arwCause)
+  let entered1Id := ((gFraEntPaused1.battlefield.filter (·.name == "Parity Striker 1"))[0]!).id
+  let gFraEntPaused2 :=
+    (gFraEntPaused1.apply me (.chooseMode 0)).toOption.getD gFraEntPaused1
+  let entered2Id := ((gFraEntPaused2.battlefield.filter (·.name == "Parity Striker 2"))[0]!).id
+  let gFraEntDone :=
+    (gFraEntPaused2.apply me (.chooseMode 1)).toOption.getD gFraEntPaused2
+  let entAtkFraBatches := gFraEntDone.events.filterMap (fun e =>
+    match e.change with
+    | .rules (.zone (.moved ..)) => some e.batch
+    | _ => none)
+  let entAtkFraOk :=
+    gFraEntPaused1.pending == .fraChoice me (.entersOddEven entered1Id) &&
+    !gFraEntPaused1.battlefield.any (·.name == "Parity Striker 2") &&
+    gFraEntPaused2.pending == .fraChoice me (.entersOddEven entered2Id) &&
+    (gFraEntPaused2.object! entered1Id).status.chosenOdd == some false &&
+    gFraEntDone.pending == .none &&
+    (gFraEntDone.object! entered2Id).status.chosenOdd == some true &&
+    entAtkFraBatches.size == 2 && entAtkFraBatches[0]! == entAtkFraBatches[1]!
+  -- `dealAssignedCombatDamage` preserves `replacementOrder` across a mid-step lifelink `.chooseReplacement` pause and consumes `allApplied` once at the end.
+  let cbtLifelinkDef : CardDef :=
+    { bear with name := "Lifelink Striker", keywords := { lifelink := true } }
+  let idCbtMul : ReplacementId := ⟨7801⟩
+  let idCbtLifeAdd : ReplacementId := ⟨7802⟩
+  let idCbtLifeMul : ReplacementId := ⟨7803⟩
+  let gCbt0 :=
+    addPermanent
+      (addPermanent
+        (addPermanent (quiet afterDraw) cbtLifelinkDef me me)
+        { bear with name := "Second Striker" } me me)
+      { bear with name := "Shield Blocker" } opp opp
+  let cbtAtk1 := (gCbt0.battlefield.filter (·.name == "Lifelink Striker"))[0]!
+  let cbtAtk2 := (gCbt0.battlefield.filter (·.name == "Second Striker"))[0]!
+  let cbtBlk := (gCbt0.battlefield.filter (·.name == "Shield Blocker"))[0]!
+  let gCbt1 :=
+    ((((gCbt0.recordPutCounters cbtBlk.id .shield 1 (some opp)
+        (cause := some (.oneShotEffect (some ⟨720⟩) none (some opp)))).createEffect
+      (.replacement {
+        id := idCbtMul, source := none, controller := some me,
+        affectedPlayer := opp, kind := .multiplyDamage ⟨0⟩ 2 } true)
+      (cause := some drwSubCause)).createEffect
+      (.replacement {
+        id := idCbtLifeAdd, source := none, controller := some me,
+        affectedPlayer := me, kind := .modifyLifeGain me 2 1 } true)
+      (cause := some drwSubCause)).createEffect
+      (.replacement {
+        id := idCbtLifeMul, source := none, controller := some me,
+        affectedPlayer := me, kind := .modifyLifeGain me 0 2 } true)
+      (cause := some drwSubCause)).changes #[
+      .replacementOrder #[idCbtMul],
+      .assignedCombatDamage #[
+        { source := cbtAtk1.id, toCreatures := #[], toPlayer := 2 },
+        { source := cbtAtk2.id, toCreatures := #[(cbtBlk.id, 2)], toPlayer := 0 }
+      ]
+    ]
+  let gCbtPaused := (quiet gCbt1).dealAssignedCombatDamage
+  let gCbtDone :=
+    (gCbtPaused.apply me (.chooseReplacement idCbtLifeAdd)).toOption.getD gCbtPaused
+  let cbtLifelinkOrderOk :=
+    gCbtPaused.pending == .chooseReplacement me #[idCbtLifeAdd, idCbtLifeMul] &&
+    gCbtPaused.replacementOrder == #[idCbtMul] &&
+    gCbtDone.pending == .none &&
+    gCbtDone.replacementOrder.isEmpty &&
+    (gCbt1.player opp).life - (gCbtDone.player opp).life == 4 &&
+    (gCbtDone.player me).life - (gCbt1.player me).life == 12 &&
+    (gCbtDone.object! cbtBlk.id).status.shield == 0 &&
+    (gCbtDone.object! cbtBlk.id).status.damage == 0
   outOfBandRejected &&
     pausedPromptOk &&
     gDmgAddFirst.pending == Pending.none &&
@@ -3710,6 +3822,9 @@ and Arwen + Doc Samson ETB counter replacement. -/
     sbaResumeOk &&
     fightResumeOk &&
     entAtkOk &&
+    drwSubResumeOk &&
+    entAtkFraOk &&
+    cbtLifelinkOrderOk &&
     (gLifeAddFirst.player me).life - (gOrd0.player me).life == 10 &&
     (gLifeMulFirst.player me).life - (gOrd0.player me).life == 8 &&
     (gActiveMe.selectNextReplacement #[candOpp, candMe] #[]).map (·.id) == some ⟨7401⟩ &&
@@ -3724,6 +3839,9 @@ and Arwen + Doc Samson ETB counter replacement. -/
     noUnclassifiedRulesEvents gSbaDone &&
     noUnclassifiedRulesEvents gFightDone &&
     noUnclassifiedRulesEvents gEntAtkDone &&
+    noUnclassifiedRulesEvents gDrwSubDone &&
+    noUnclassifiedRulesEvents gFraEntDone &&
+    noUnclassifiedRulesEvents gCbtDone &&
     noUnclassifiedRulesEvents gLifeAddFirst &&
     noUnclassifiedRulesEvents gLifeMulFirst
 

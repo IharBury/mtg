@@ -3000,7 +3000,7 @@ def replacementPairCommutes (a b : ReplacementOrPrevention) : Bool :=
     | .multiplyDamage _ _, .multiplyDamage _ _ => true
     | .modifyLifeGain _ addA multA, .modifyLifeGain _ addB multB =>
       (multA == 1 && multB == 1) || (addA == 0 && addB == 0)
-    | .replaceDraw _ _ _, .replaceDraw _ _ _ => true
+    | .replaceDraw _ fA exA, .replaceDraw _ fB exB => fA == fB && exA == exB
     | .extraDrawOnConnive _ _, .extraDrawOnConnive _ _ => true
     | .createExtraTokenWithFood _ _, .createExtraTokenWithFood _ _ => true
     | .multiplyTokenCreation _ _, .multiplyTokenCreation _ _ => true
@@ -6692,7 +6692,15 @@ def withBatchReturn {α : Type} (g : Game) (cause : Option EventCause := none)
         openBatchEffects := g.activeEffects
         openBatchPending := g.pending }
     let (g1, res) := f g0
-    if let .chooseReplacement .. := g1.pending then
+    let keepOpen :=
+      match g1.pending with
+      | .chooseReplacement ..
+      | .fraChoice _ (.chooseColor _)
+      | .fraChoice _ (.entersCreatureType _)
+      | .fraChoice _ (.entersOddEven _)
+      | .fraChoice _ (.chooseCardName _) => true
+      | _ => g1.pendingReplacement.isSome
+    if keepOpen then
       (g1.chainPendingReplacement (.closeBatch batchId startIdx), res)
     else
       (g1.finishOpenBatch batchId startIdx, res)

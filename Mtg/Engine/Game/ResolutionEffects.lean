@@ -921,36 +921,40 @@ def commitEnteringAttackItems (g : Game)
         else g.logMsg s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
     | _ => g
   else
-    g.withBatch cause fun g => Id.run do
-      let mut g := g
-      for i in [0:chosen.size] do
-        let (item, atkTgt) := chosen[i]!
-        match item with
-        | .token .. => pure ()
-        | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
-          match g.findObject? cardId with
-          | none => pure ()
-          | some o =>
-            let (g', newId) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
-              (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
-              (returnedAsArtifact := returnedAsArtifact)
-              (extraEntersWith := extraEntersWith)
-              (cause := cause)
-            g := g'
-            if let .chooseReplacement .. := g.pending then
-              g := g.chainPendingReplacement
-                (.finishEnteringAttackCard none effectController o.name mods logKind cause)
-              let rem := chosen.extract (i + 1) chosen.size
-              if !rem.isEmpty then
-                g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
-              return g
-            g := g.finishEnteringAttackCard newId effectController o.name mods logKind (cause := cause)
-            if let .chooseReplacement .. := g.pending then
-              let rem := chosen.extract (i + 1) chosen.size
-              if !rem.isEmpty then
-                g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
-              return g
-      return g
+    let g :=
+      g.withBatch cause fun g => Id.run do
+        let mut g := g
+        for i in [0:chosen.size] do
+          let (item, atkTgt) := chosen[i]!
+          match item with
+          | .token .. => pure ()
+          | .card cardId enteringController effectController tapped returnedAsArtifact extraEntersWith mods logKind _ =>
+            match g.findObject? cardId with
+            | none => pure ()
+            | some o =>
+              let (g', newId) := g.putOntoBattlefield o.id enteringController (tapped := tapped)
+                (attacking := atkTgt.isSome) (attackingTarget := atkTgt)
+                (returnedAsArtifact := returnedAsArtifact)
+                (extraEntersWith := extraEntersWith)
+                (cause := cause)
+              g := g'
+              if let .chooseReplacement .. := g.pending then
+                g := g.chainPendingReplacement
+                  (.finishEnteringAttackCard none effectController o.name mods logKind cause)
+                let rem := chosen.extract (i + 1) chosen.size
+                if !rem.isEmpty then
+                  g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+                return g
+              g := g.finishEnteringAttackCard newId effectController o.name mods logKind (cause := cause)
+              if g.pending != .none then
+                let rem := chosen.extract (i + 1) chosen.size
+                if !rem.isEmpty then
+                  g := g.chainPendingReplacement (.commitEnteringAttackItems rem cause false)
+                return g
+        return g
+    if g.currentBatch.isNone && g.pending == .none then
+      g.promptTriggerTargetsIfNeeded
+    else g
 
 /-- Have each item's controller choose what it enters attacking when multiple
 legal attack targets exist (`options.size > 1`), then create the tokens or put

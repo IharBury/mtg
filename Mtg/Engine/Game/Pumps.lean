@@ -192,7 +192,15 @@ def openBatch (g : Game) (cause : Option EventCause := none) : Game × (Game →
         openBatchEffects := g.activeEffects
         openBatchPending := g.pending },
      fun g1 =>
-       if let .chooseReplacement .. := g1.pending then
+       let keepOpen :=
+         match g1.pending with
+         | .chooseReplacement ..
+         | .fraChoice _ (.chooseColor _)
+         | .fraChoice _ (.entersCreatureType _)
+         | .fraChoice _ (.entersOddEven _)
+         | .fraChoice _ (.chooseCardName _) => true
+         | _ => g1.pendingReplacement.isSome
+       if keepOpen then
          g1.chainPendingReplacement (.closeBatch batchId startIdx)
        else
          g1.finishOpenBatch batchId startIdx)

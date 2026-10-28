@@ -1055,26 +1055,38 @@ partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
 def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
   (g.resolvePendingRandom rng).2
 
-/-- Clear a finished Reality Fracture choice and let the game continue. A trigger
-sequence that paused on the choice runs its remaining steps first. -/
-def finishFraChoice (g : Game) : Game :=
+mutual
+/-- Clear a finished Reality Fracture choice and let the game continue. Any
+pending replacement/batch continuation runs first, then a paused trigger
+sequence runs its remaining steps. -/
+partial def finishFraChoice (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement .finishFraChoice
   else if g.pending != .none then g
   else
-    let g := g.resumeTriggerSequence
+    let g :=
+      match g.pendingReplacement with
+      | some cont =>
+        let g := g.change (.pendingReplacement none)
+        g.resumePendingReplacement cont
+      | none => g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishFraChoice
     else if g.pending != .none then g
     else
-      let g := g.promptTriggerTargetsIfNeeded
-      if g.pending == .none then g.receivePriority g.activePlayer else g
+      let g := g.resumeTriggerSequence
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement .finishFraChoice
+      else if g.pending != .none then g
+      else
+        let g := g.promptTriggerTargetsIfNeeded
+        if g.pending == .none then g.receivePriority g.activePlayer else g
 
 /-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
 partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
   | .seq first rest =>
     let g := g.resumePendingReplacement first
-    if let .chooseReplacement .. := g.pending then
+    if g.pending != .none then
       g.chainPendingReplacement rest
     else
       g.resumePendingReplacement rest
@@ -1111,8 +1123,8 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
         (source := source) (sourceObj := srcObj) (unpreventable := unpreventable)
         (cause := cause)
     | none => g
-  | .dealAssignedCombatDamage =>
-    g.dealAssignedCombatDamage
+  | .dealAssignedCombatDamage applied =>
+    g.dealAssignedCombatDamage applied
   | .gainLife p n _ cause =>
     g.gainLife p n (cause := cause)
   | .addPlusOnePlusOneTo targetId n entersWith byPlayer cause =>
@@ -1184,6 +1196,11 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
     g.finishFraChoice
   | .draw p n _ cause =>
     g.draw p n (cause := cause)
+  | .drawOne p applied drawStepFirst cause =>
+    g.drawOneWithReplacements p (applied := applied)
+      (firstOfYourDrawStep? := some drawStepFirst) (cause := cause)
+  | .drawSubDraws p remaining applied cause =>
+    g.drawSubDraws p remaining applied (cause := cause)
   | .connive controller sourceId =>
     g.applyConnive controller sourceId
   | .finishSbaSweep moves preBattlefield stage =>
@@ -1198,6 +1215,7 @@ partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none then g
     else g.receivePriority p
+end
 
 /-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
 def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except String Game := do

@@ -295,7 +295,7 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
     throw "Every attacking or blocking creature must assign combat damage (CR 510.1)"
 
 /-- Apply assigned combat damage simultaneously (CR 510.2). -/
-def dealAssignedCombatDamage (g : Game) : Game :=
+def dealAssignedCombatDamage (g : Game) (appliedSoFar : Array ReplacementId := #[]) : Game :=
   let fs := g.combatHasFirstStrike && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
   let isOuterCall := g.currentBatch.isNone
@@ -341,10 +341,10 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       return none
     match choice? with
     | some (chooser, choices) =>
-      return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
+      return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage appliedSoFar)
     | none =>
     let mut g := g
-    let mut allApplied : Array ReplacementId := #[]
+    let mut allApplied : Array ReplacementId := appliedSoFar
     for i in [0:g.assignedCombatDamage.size] do
       let asgn := g.assignedCombatDamage[i]!
       let src := g.object! asgn.source
@@ -385,7 +385,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         g := g.changes #[
           .assignedCombatDamage rem,
           .firstStrikeAssignedThisCombat firstStrikeAssigned ]
-        return g.promptChooseReplacement chooser choices .dealAssignedCombatDamage
+        return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage allApplied)
       let mut totalDealt : Int := 0
       let recipients :=
         if src.status.attacking then g.blockersOf src.id else g.creaturesBlockedBy src
@@ -499,11 +499,10 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         let firstStrikeAssigned :=
           if fs then g.firstStrikeAssignedThisCombat ++ assignedSoFar
           else g.firstStrikeAssignedThisCombat
-        g := g.consumeReplacementOrder allApplied
         g := g.changes #[
           .assignedCombatDamage rem,
           .firstStrikeAssignedThisCombat firstStrikeAssigned ]
-        return g.chainPendingReplacement .dealAssignedCombatDamage
+        return g.chainPendingReplacement (.dealAssignedCombatDamage allApplied)
     g := g.consumeReplacementOrder allApplied
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone

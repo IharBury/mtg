@@ -326,8 +326,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then
     g.logMsg s!"{o.name} entering doesn't cause abilities to trigger"
-  else
+  else if g.currentBatch.isNone then
     g.promptTriggerTargetsIfNeeded
+  else g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=

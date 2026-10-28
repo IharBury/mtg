@@ -1157,7 +1157,7 @@ inductive PendingReplacement where
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
-  | dealAssignedCombatDamage
+  | dealAssignedCombatDamage (applied : Array ReplacementId := #[])
   | gainLife (p : PlayerId) (n : Nat) (msg : String) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
@@ -1201,6 +1201,10 @@ inductive PendingReplacement where
   | afterLastPermanentEnters
   | finishFraChoice
   | draw (p : PlayerId) (n : Nat) (drawStepFirst : Bool) (cause : Option EventCause)
+  | drawOne (p : PlayerId) (applied : Array ReplacementId) (drawStepFirst : Bool)
+      (cause : Option EventCause)
+  | drawSubDraws (p : PlayerId) (remaining : Nat) (applied : Array ReplacementId)
+      (cause : Option EventCause)
   | connive (controller : PlayerId) (sourceId : Option ObjectId)
   | finishSbaSweep (moves : Array SbaGraveyardMove) (preBattlefield : Array GameObject)
       (stage : Nat)
