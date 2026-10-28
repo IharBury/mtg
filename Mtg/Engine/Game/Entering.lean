@@ -158,19 +158,28 @@ triggers are evaluated from the recorded event batch in `matchTriggers`. -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1)
     (entersWith := false) (byPlayer : Option PlayerId := none)
     (cause : Option EventCause := none) : Game :=
-  let n := g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith)
   let putter0 := byPlayer.orElse (fun _ => g.counterPutter o.controller)
   let proposed :=
     GameEvent.counters g.turnNumber putter0 o.asEvent .plusOnePlusOne n (cause := cause)
-  let n :=
-    if proposed.watches .wouldPutCounter then g.extraPlusOneOnCreature o n else n
-  let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n
-    (cause := cause)
-  let g := if n > 0 && !entersWith then g.record happened else g
-  let phrase :=
-    if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n}"
-    else s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
-  g.logMsg phrase
+  let (n', applied, cause', choice?, _) :=
+    if proposed.watches .wouldPutCounter then
+      g.replaceCountersPutChoice o .plusOnePlusOne n (putter := byPlayer)
+        (entersWith := entersWith) (cause := cause)
+    else
+      (g.countersYouPut o n (putter := byPlayer) (entersWith := entersWith), #[], cause, none, #[])
+  match choice? with
+  | some (chooser, choices) =>
+    g.promptChooseReplacement chooser choices
+      (.addPlusOnePlusOneTo o.id n entersWith byPlayer cause)
+  | none =>
+    let g := g.consumeReplacementOrder applied
+    let happened := GameEvent.counters g.turnNumber putter0 (g.object! o.id).asEvent .plusOnePlusOne n'
+      (cause := cause')
+    let g := if n' > 0 && !entersWith then g.record happened else g
+    let phrase :=
+      if entersWith then s!"{o.name} enters with {plusOnePlusOneCountersPhrase n'}"
+      else s!"{o.name} gets {plusOnePlusOneCountersPhrase n'}"
+    g.logMsg phrase
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
 printed loyalty (placed in `entersWith` during the zone change). -/
@@ -193,7 +202,9 @@ def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
     let base := o.printed.entersWithPlusOneCounters
     if base == 0 || o.status.plusOnePlusOne == 0 then g
     else
-      let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o base)
+      let (n, _, _) :=
+        g.replaceCountersPut o .plusOnePlusOne base (putter := o.controller)
+          (entersWith := true) (entering := some o)
       if n == 0 then g
       else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
 
@@ -216,7 +227,9 @@ def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
   if !o.status.faceDown && o.staticAbilities.any (fun
       | .entersWithXPlusOne => true
       | _ => false) && o.status.plusOnePlusOne > 0 then
-    let n := g.extraPlusOneOnCreature o (g.extraCountersOnEntering o (o.chosenX.getD 0))
+    let (n, _, _) :=
+      g.replaceCountersPut o .plusOnePlusOne (o.chosenX.getD 0) (putter := o.controller)
+        (entersWith := true) (entering := some o)
     if n == 0 then g
     else g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
   else g
@@ -272,7 +285,8 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   -- Room of Refuge: “As it enters, choose a color.”
   let g :=
-    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone then
+    if o.staticAbilities.any (· == .fra .entersTappedChooseColor) && o.status.chosenColor.isNone &&
+        g.pending == .none then
       match o.controller with
       | some p =>
         (g.change (.pending (.fraChoice p (.chooseColor o.id)))).logMsg
@@ -312,8 +326,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   if g.enteringCausesNoTriggers o then
     g.logMsg s!"{o.name} entering doesn't cause abilities to trigger"
-  else
+  else if g.currentBatch.isNone then
     g.promptTriggerTargetsIfNeeded
+  else g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=

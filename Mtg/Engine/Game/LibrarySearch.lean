@@ -118,10 +118,14 @@ def beholdAndMaybeUntap (g : Game) (p : PlayerId) (landId : ObjectId) (subtype :
   else
     match g.findObject? landId with
     | some o =>
-      if o.isOnBattlefield && o.status.tapped && o.status.stun == 0 &&
-          !g.hostCantBecomeUntapped o then
-        let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false (cause := cause))
-        g.logMsg s!"{o.name} untaps"
+      if o.isOnBattlefield && o.status.tapped && !g.hostCantBecomeUntapped o then
+        let (stunned, cause') := g.replaceUntap o (cause := cause)
+        if stunned then
+          let g := g.record (GameEvent.counters g.turnNumber o.controller o.asEvent .stun 1 true (cause := cause'))
+          g.logMsg s!"A stun counter is removed from {o.name} instead of untapping it (CR 122.1d)"
+        else
+          let g := g.record (GameEvent.untapped g.turnNumber o.asEvent false (cause := cause))
+          g.logMsg s!"{o.name} untaps"
       else g
     | none => g
 

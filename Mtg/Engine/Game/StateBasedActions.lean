@@ -10,11 +10,6 @@ APNAP order (CR 101.4), the legend rule and its choice prompt
 namespace Mtg.Engine
 namespace Game
 
-/-- Living players in APNAP order (CR 101.4): the active player, then the
-next player in turn order, and so on. -/
-def apnapPlayers (g : Game) : Array PlayerId :=
-  g.playersInOrderFrom g.activePlayer (fun pl => !pl.lost)
-
 /-- Alias of `apnapPlayers` (CR 101.4). -/
 def apnapOrder (g : Game) : Array PlayerId :=
   g.apnapPlayers
@@ -76,6 +71,155 @@ def refreshAuraAnimation (g : Game) : Game :=
     else if animated then g.createEffect (.auraConstruct55 o.id) (cause := cause)
     else g.expireAll (.auraConstruct55 o.id) (cause := cause)) g
 
+/-- Execute the remaining permanent-removal stages of a single CR 704.3
+state-based action check inside the currently open batch (`stage` 0 = dying
+creatures, 1 = 0-loyalty planeswalkers, 2 = final-chapter Sagas, 3 = illegal
+Auras), chaining `.finishSbaSweep` if a graveyard move pauses on
+`Pending.chooseReplacement`. -/
+def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
+    (preBf : Array GameObject) (stage : Nat) (changedIn : Bool := false) :
+    Game × (Bool × Bool) := Id.run do
+  let mut g := g
+  let mut changed := changedIn
+  if stage == 0 then
+    for i in [0:moves.size] do
+      let m := moves[i]!
+      match g.findObject? m.objectId with
+      | some o =>
+        if o.isOnBattlefield && o.isCreature then
+          g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
+            (preBattlefield := some preBf)
+            (cause := some (.stateBased m.sba))
+          changed := true
+          if let .chooseReplacement _ _ := g.pending then
+            let rem := moves.extract (i + 1) moves.size
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 0), (true, true))
+      | none => pure ()
+    g := g.change .sbaChecked
+  if stage <= 1 then
+    -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
+    -- controls Sanctum Lurker (ruling 778).
+    let pwList : Array SbaGraveyardMove :=
+      if stage == 1 then moves
+      else
+        g.battlefield.filterMap (fun o =>
+          if o.printed.isPlaneswalker && o.status.loyaltyCounters == 0 &&
+              !g.planeswalkersSurviveZeroLoyalty o.controller then
+            some {
+              objectId := o.id
+              reason := s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
+              sba := .zeroLoyalty
+            }
+          else none)
+    for i in [0:pwList.size] do
+      let m := pwList[i]!
+      match g.findObject? m.objectId with
+      | some o =>
+        if o.isOnBattlefield then
+          g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
+            (preBattlefield := some preBf)
+            (cause := some (.stateBased m.sba))
+          changed := true
+          if let .chooseReplacement _ _ := g.pending then
+            let rem := pwList.extract (i + 1) pwList.size
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 1), (true, true))
+      | none => pure ()
+    -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
+    match g.firstLegendRuleChoice? with
+    | some (p, name, ids) =>
+      g := g.change (.pending (.chooseLegend p name ids))
+      g := g.logMsg
+        s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+      return (g, (true, true))
+    | none => pure ()
+    -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
+    for o in g.objects do
+      if o.printed.isToken && o.zone != .battlefield then
+        g := g.ceaseToExist o.id (cause := some (.stateBased .tokenOutsideBattlefield))
+        g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
+        changed := true
+  if stage <= 2 then
+    -- Saga with lore at or past its final chapter and no chapter on the
+    -- stack is sacrificed (CR 714.4 / 704.5s).
+    let sagaList : Array SbaGraveyardMove :=
+      if stage == 2 then moves
+      else
+        g.battlefield.filterMap (fun o =>
+          match o.printed.saga, o.controller with
+          | some sdef, some _ =>
+            if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
+                !g.sagaChapterPending o.id then
+              some {
+                objectId := o.id
+                reason := s!"{o.name} is sacrificed (CR 714.4)"
+                verb := some .sacrifice
+                actor := o.controller
+                sba := .sagaFinalChapter
+              }
+            else none
+          | _, _ => none)
+    for i in [0:sagaList.size] do
+      let m := sagaList[i]!
+      match g.findObject? m.objectId with
+      | some o =>
+        if o.isOnBattlefield then
+          g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
+            (preBattlefield := some preBf)
+            (cause := some (.stateBased m.sba))
+          changed := true
+          if let .chooseReplacement _ _ := g.pending then
+            let rem := sagaList.extract (i + 1) sagaList.size
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 2), (true, true))
+      | none => pure ()
+  if stage <= 3 then
+    -- Unattached or illegally attached Auras (CR 704.5m).
+    let auraList : Array SbaGraveyardMove :=
+      if stage == 3 then moves
+      else
+        g.battlefield.filterMap (fun o =>
+          if !o.printed.isAura then none
+          else
+            let legal :=
+              match o.attachedTo.bind g.findObject? with
+              | some host => host.auraCanEnchant o.printed
+              | none => false
+            if !legal then
+              some {
+                objectId := o.id
+                reason := s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+                sba := .illegalAura
+              }
+            else none)
+    for i in [0:auraList.size] do
+      let m := auraList[i]!
+      match g.findObject? m.objectId with
+      | some o =>
+        if o.isOnBattlefield then
+          g := g.moveToOwnerGraveyard o m.reason (verb := m.verb) (actor := m.actor)
+            (preBattlefield := some preBf)
+            (cause := some (.stateBased m.sba))
+          changed := true
+          if let .chooseReplacement _ _ := g.pending then
+            let rem := auraList.extract (i + 1) auraList.size
+            return (g.chainPendingReplacement (.finishSbaSweep rem preBf 3), (true, true))
+      | none => pure ()
+  -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
+  for o in g.battlefield do
+    if o.printed.isEquipment then
+      let legal :=
+        match o.attachedTo.bind g.findObject? with
+        | some host => host.isOnBattlefield && host.printed.isCreature
+        | none => true
+      if !legal then
+        let hostId := o.attachedTo.getD ⟨0⟩
+        g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
+          (cause := some (.stateBased .illegalEquipmentOrFortification)))
+        g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
+        changed := true
+  match g.decideGameIfFinished with
+  | some finished => return (finished, (true, true))
+  | none => return (g, (changed, false))
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). If a legend-rule
 choice is required (CR 704.5j), the check pauses: that SBA is not finished,
@@ -120,6 +264,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
       -- group is no longer two or more.
       match g.pending with
+      | .chooseReplacement _ _ =>
+        return (g, (changed, true))
       | .chooseLegend p name ids =>
         let still := ids.filter (fun id =>
           match g.findObject? id with
@@ -144,99 +290,40 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {o.name}"
           changed := true
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–h).
-      -- Snapshot exile-instead replacements first so a simultaneous death
-      -- of Head of the Hunt still exiles opposing creatures.
-      let snap := g.battlefield.filter exilesOppDeath?
-      let victims :=
+      -- Snapshot the battlefield before moving dying creatures so a
+      -- simultaneous death of Head of the Hunt still exiles opposing creatures (CR 614.6).
+      let preBf := g.battlefield
+      let victims : Array SbaGraveyardMove :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
           else
             let t := g.toughness o
             if t ≤ 0 then
-              some (o, s!"{o.name} dies (toughness {t})", ZoneVerb.put, StateBasedAction.zeroOrLessToughness)
+              some {
+                objectId := o.id
+                reason := s!"{o.name} dies (toughness {t})"
+                verb := some .put
+                sba := .zeroOrLessToughness
+              }
             else if o.status.damage ≥ t && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from lethal damage", ZoneVerb.destroy, StateBasedAction.lethalDamage)
+              some {
+                objectId := o.id
+                reason := s!"{o.name} dies from lethal damage"
+                verb := some .destroy
+                sba := .lethalDamage
+              }
             else if g.deathtouchDealtSinceLastSba o.id && !g.hasIndestructible o then
-              some (o, s!"{o.name} dies from deathtouch", ZoneVerb.destroy, StateBasedAction.deathtouchDamage)
+              some {
+                objectId := o.id
+                reason := s!"{o.name} dies from deathtouch"
+                verb := some .destroy
+                sba := .deathtouchDamage
+              }
             else none)
-      if !victims.isEmpty then
-        g := g.change (.lockedDeathReplacements (some snap))
-      for (o, reason, verb, sba) in victims do
-        match g.findObject? o.id with
-        | some o =>
-          if o.isOnBattlefield && o.isCreature then
-            g := g.moveToOwnerGraveyard o reason (verb := some verb)
-              (cause := some (.stateBased sba))
-            changed := true
-        | none => pure ()
-      g := g.changes #[
-        .lockedDeathReplacements none,
-        .sbaChecked]
-      -- Planeswalkers with 0 loyalty (CR 704.5i), unless their controller
-      -- controls Sanctum Lurker (ruling 778).
-      for o in g.battlefield do
-        if o.printed.isPlaneswalker && o.status.loyaltyCounters == 0 &&
-            !g.planeswalkersSurviveZeroLoyalty o.controller then
-          g := g.moveToOwnerGraveyard o
-            s!"{o.name} is put into its owner's graveyard (0 loyalty, CR 704.5i)"
-            (cause := some (.stateBased .zeroLoyalty))
-          changed := true
-      -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
-      match g.firstLegendRuleChoice? with
-      | some (p, name, ids) =>
-        g := g.change (.pending (.chooseLegend p name ids))
-        g := g.logMsg
-          s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
-        return (g, (true, true))
-      | none => pure ()
-      -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
-      for o in g.objects do
-        if o.printed.isToken && o.zone != .battlefield then
-          g := g.ceaseToExist o.id (cause := some (.stateBased .tokenOutsideBattlefield))
-          g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
-          changed := true
-      -- Saga with lore at or past its final chapter and no chapter on the
-      -- stack is sacrificed (CR 714.4 / 704.5s).
-      for o in g.battlefield do
-        match o.printed.saga, o.controller with
-        | some sdef, some _ =>
-          if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
-              !g.sagaChapterPending o.id then
-            g := g.moveToOwnerGraveyard o
-              s!"{o.name} is sacrificed (CR 714.4)"
-              (verb := some .sacrifice) (actor := o.controller)
-              (cause := some (.stateBased .sagaFinalChapter))
-            changed := true
-        | _, _ => pure ()
-      -- Unattached or illegally attached Auras (CR 704.5m).
-      for o in g.battlefield do
-        if o.printed.isAura then
-          let legal :=
-            match o.attachedTo.bind g.findObject? with
-            | some host => host.auraCanEnchant o.printed
-            | none => false
-          if !legal then
-            g := g.moveToOwnerGraveyard o
-              s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
-              (cause := some (.stateBased .illegalAura))
-            changed := true
-      -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
-      for o in g.battlefield do
-        if o.printed.isEquipment then
-          let legal :=
-            match o.attachedTo.bind g.findObject? with
-            | some host => host.isOnBattlefield && host.printed.isCreature
-            | none => true
-          if !legal then
-            let hostId := o.attachedTo.getD ⟨0⟩
-            g := g.record (GameEvent.unattached g.turnNumber o.asEvent hostId
-              (cause := some (.stateBased .illegalEquipmentOrFortification)))
-            g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
-            changed := true
-      match g.decideGameIfFinished with
-      | some finished => return (finished, (true, true))
-      | none => return (g, (changed, false))
-    if paused then (g, changed)
+      return g.finishSbaSweep victims preBf 0 (changedIn := changed)
+    if let .chooseReplacement .. := g.pending then
+      (g.chainPendingReplacement .checkSBA, true)
+    else if paused then (g, changed)
     else if changed then
       let (g', _) := checkSBACounted g
       (g', true)
@@ -244,10 +331,10 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
 
 def checkSBA (g : Game) : Game :=
   let g := (g.checkSBACounted).1
-  if g.over then g
+  if g.over || g.pending != .none then g
   else
     let g := g.leavePlayersWhoLost
-    if g.over then g
+    if g.over || g.pending != .none then g
     else (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3 / 603.3b,

@@ -12,7 +12,9 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Draw one card with no replacement effects (CR 121). -/
-def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
+def drawOneCard (g : Game) (p : PlayerId)
+    (firstOfTheirDrawStep? : Option Bool := none)
+    (cause : Option EventCause := none) : Game :=
   let pl := g.player p
   if pl.library.isEmpty then
     let g := g.changePlayer p (.drewFromEmpty true)
@@ -22,8 +24,9 @@ def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : 
     let cardName := (g.object! top).name
     let nth := GameEvent.draws g.events g.turnNumber p + 1
     let firstOfTheirDrawStep :=
-      g.step == .draw && g.activePlayer == p &&
-        !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
+      firstOfTheirDrawStep?.getD
+        (g.step == .draw && g.activePlayer == p &&
+          !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
     -- Opening hands are drawn before anyone keeps (CR 103.4). They are not
     -- “cards drawn this turn” once that counter is cleared for the first turn.
     let verb : Option ZoneVerb :=
@@ -38,20 +41,88 @@ def drawOneCard (g : Game) (p : PlayerId) (cause : Option EventCause := none) : 
     let pl := g.player p
     g.logMsg s!"{pl.name} draws {cardName}"
 
-/-- How many cards replace one draw (`2^n` Bard effects, except the first
-card of your draw step). The replacement matches the draw that would happen. -/
-def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
-  let firstOfYourDrawStep :=
-    g.step == .draw && g.activePlayer == p &&
-      !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p
-  let proposed :=
-    GameEvent.drew g.turnNumber p ⟨0⟩ (GameEvent.draws g.events g.turnNumber p + 1)
-      firstOfYourDrawStep
-  if !proposed.watches .wouldDraw || firstOfYourDrawStep then 1
+mutual
+/-- Run the CR 616.1 replacement loop for a single card draw by `p`
+(CR 121.2 / 614.5 / 614.6 / 616.1; ruling 193). Each selected draw replacement
+replaces the single draw with `factor` sub-draws carrying `applied.push chosen.id`
+and `cause := .replaced chosen.id origCause`. -/
+partial def drawOneWithReplacements (g : Game) (p : PlayerId)
+    (applied : Array ReplacementId := #[])
+    (firstOfYourDrawStep? : Option Bool := none)
+    (cause : Option EventCause := none) : Game :=
+  let pl := g.player p
+  if pl.drewFromEmpty then g
   else
-    let n := (g.permanentsOf p).filter (fun o =>
-      o.printed.drawTwoExceptFirstDrawStep) |>.size
-    Nat.pow 2 n
+    let firstOfYourDrawStep :=
+      firstOfYourDrawStep?.getD
+        (g.step == .draw && g.activePlayer == p &&
+          !GameEvent.drewFirstOfDrawStep g.events g.turnNumber p)
+    let cause := cause.orElse (fun _ =>
+      if !pl.keptOpeningHand then
+        some (.gameRule (if pl.mulligansTaken > 0 then .mulligan else .openingHandDraw))
+      else if firstOfYourDrawStep then
+        some (.turnBased .drawStepDraw)
+      else none)
+    let proposed :=
+      GameEvent.drew g.turnNumber p ⟨0⟩ (GameEvent.draws g.events g.turnNumber p + 1)
+        firstOfYourDrawStep
+    let specs : Array (ReplacementSpec × Nat) :=
+      if !pl.keptOpeningHand || !proposed.watches .wouldDraw then #[]
+      else Id.run do
+        let mut acc : Array (ReplacementSpec × Nat) := #[]
+        if !firstOfYourDrawStep then
+          for o in g.permanentsOf p do
+            if o.printed.drawTwoExceptFirstDrawStep then
+              acc := acc.push (
+                { id := ⟨o.id.raw * 1000 + 401⟩
+                  source := some o.id
+                  controller := some p
+                  affectedPlayer := p
+                  kind := .replaceDraw p 2 true }, 2)
+        for (_, eff) in g.activeEffects do
+          match eff with
+          | .replacement spec _ =>
+            match spec.kind with
+            | .replaceDraw who factor exceptFirst =>
+              if who == p && (!exceptFirst || !firstOfYourDrawStep) then
+                acc := acc.push (spec, factor)
+            | _ => pure ()
+          | _ => pure ()
+        return acc
+    let candidates := specs.map (fun (s, _) => (ReplacementOrPrevention.replacement s).toCandidate)
+    match g.selectNextReplacementStep candidates applied with
+    | .none =>
+      g.drawOneCard p (firstOfTheirDrawStep? := some firstOfYourDrawStep) (cause := cause)
+    | .needChoice chooser choices _ =>
+      g.promptChooseReplacement chooser choices
+        (.drawOne p applied firstOfYourDrawStep cause)
+    | .chosen chosen _ =>
+      let g := g.consumeReplacementOrder #[chosen.id]
+      match specs.find? (fun (s, _) => s.id == chosen.id) with
+      | none =>
+        g.drawOneCard p (firstOfTheirDrawStep? := some firstOfYourDrawStep) (cause := cause)
+      | some (_, factor) =>
+        let applied' := applied.push chosen.id
+        let cause' := g.wrapReplacedCause chosen.id cause (some p)
+        g.drawSubDraws p factor applied' cause'
+
+/-- Execute `remaining` replacement-expanded sub-draws for `p` carrying `applied`
+and `cause`, chaining `.drawSubDraws` if any sub-draw pauses on
+`Pending.chooseReplacement`. -/
+partial def drawSubDraws (g : Game) (p : PlayerId) (remaining : Nat)
+    (applied : Array ReplacementId) (cause : Option EventCause := none) : Game := Id.run do
+  let mut g := g
+  for i in [0:remaining] do
+    if (g.player p).drewFromEmpty then
+      return g
+    g := g.drawOneWithReplacements p (applied := applied) (cause := cause)
+    if g.pending != .none then
+      let rem := remaining - (i + 1)
+      if rem > 0 then
+        g := g.chainPendingReplacement (.drawSubDraws p rem applied cause)
+      return g
+  return g
+end
 
 def draw (g : Game) (p : PlayerId) (n : Nat := 1)
     (cause : Option EventCause := none) : Game :=
@@ -78,13 +149,16 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
           | none => (g, none)
   Id.run do
     let mut g := g0
-    for _ in [0:n] do
-      let copies := g.drawMultiplier p
-      for _ in [0:copies] do
-        let pl := g.player p
-        if pl.drewFromEmpty then
-          return g
-        g := g.drawOneCard p (cause := cause?)
+    for i in [0:n] do
+      let pl := g.player p
+      if pl.drewFromEmpty then
+        return g
+      g := g.drawOneWithReplacements p (cause := cause?)
+      if g.pending != .none then
+        let rem := n - (i + 1)
+        if rem > 0 then
+          g := g.chainPendingReplacement (.draw p rem false cause?)
+        return g
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a

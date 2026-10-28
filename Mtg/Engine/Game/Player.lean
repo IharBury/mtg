@@ -245,6 +245,8 @@ inductive Action where
   | supplyIndex (i : Nat)
   /-- Name a card (CR 201.3), e.g. for Meddling Mage. -/
   | chooseName (name : String)
+  /-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
+  | chooseReplacement (id : ReplacementId)
 deriving Repr
 
 end Mtg.Engine

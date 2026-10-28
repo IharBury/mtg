@@ -173,7 +173,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
             (remaining.filter (fun r => r != np && g.stillInGame r)))]
   | .chooseTriggerToStack q =>
     if q == p then g.change (.pending .none) else g
-  | .chooseLegend q _ _ =>
+  | .chooseLegend q _ _ | .chooseReplacement q _ =>
     if q == p then g.change (.pending .none) else g
   | .assignCombatDamage q forAttackers =>
     if q == p then

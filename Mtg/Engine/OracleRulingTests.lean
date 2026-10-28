@@ -2006,9 +2006,12 @@ def optionalSearchOk : Bool :=
 
 /-- Ruling 36: the legendary creature must already be present. -/
 def rivendellNeedsLegendOk : Bool :=
-  afterDraw.entersTapped ⟨0⟩ rivendell &&
-    !(addPermanent afterDraw arwenWeaverOfHope ⟨0⟩ ⟨0⟩).entersTapped ⟨0⟩
-      rivendell &&
+  let gNoLegend := addToHand afterDraw rivendell ⟨0⟩
+  let (gNoLegendEntered, riv1) := gNoLegend.putOntoBattlefield (gNoLegend.player ⟨0⟩).hand.back! ⟨0⟩
+  let gWithLegend := addToHand (addPermanent afterDraw arwenWeaverOfHope ⟨0⟩ ⟨0⟩) rivendell ⟨0⟩
+  let (gWithLegendEntered, riv2) := gWithLegend.putOntoBattlefield (gWithLegend.player ⟨0⟩).hand.back! ⟨0⟩
+  (gNoLegendEntered.object! riv1).status.tapped &&
+    !(gWithLegendEntered.object! riv2).status.tapped &&
     (ruling 36).comment.contains "already be on the battlefield"
 
 #guard rivendellNeedsLegendOk

@@ -779,23 +779,29 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
     let some kept := g.findObject? id | throw "no such object"
     if !kept.isOnBattlefield then
       throw s!"{kept.name} is not on the battlefield"
-    let g := (g.logMsg
+    let others := ids.filter (· != id)
+    let preBf := g.battlefield
+    let g := (g.change (.pending .none) |>.logMsg
       s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)").withBatch
       (some (.stateBased .legendRule)) fun g => Id.run do
         let mut g := g
-        for other in ids do
-          if other != id then
-            match g.findObject? other with
-            | some o =>
-              if o.isOnBattlefield then
-                g := g.logMsg
-                  s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
-                let (g', _) := g.move o.id (.graveyard o.owner) none
-                  (cause := some (.stateBased .legendRule))
-                g := g'
-            | none => pure ()
+        for i in [0:others.size] do
+          let other := others[i]!
+          match g.findObject? other with
+          | some o =>
+            if o.isOnBattlefield then
+              g := g.moveToOwnerGraveyard o
+                s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
+                (preBattlefield := some preBf)
+                (cause := some (.stateBased .legendRule))
+              if let .chooseReplacement .. := g.pending then
+                let rem := others.extract (i + 1) others.size
+                if !rem.isEmpty then
+                  g := g.chainPendingReplacement
+                    (.moveSimultaneousToGraveyard rem (some preBf) (some (.stateBased .legendRule)))
+                return g
+          | none => pure ()
         return g
-    let g := g.change (.pending .none)
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to apply the legend rule (CR 704.5j)"
 
@@ -1048,6 +1054,188 @@ partial def resolvePendingRandom (g : Game) (rng : Rng) : Rng × Game :=
 (defaulting to seed 1). -/
 def resolveRandom (g : Game) (rng : Rng := Rng.ofSeed 1) : Game :=
   (g.resolvePendingRandom rng).2
+
+mutual
+/-- Clear a finished Reality Fracture choice and let the game continue. Any
+pending replacement/batch continuation runs first, then a paused trigger
+sequence runs its remaining steps. -/
+partial def finishFraChoice (g : Game) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement .finishFraChoice
+  else if g.pending != .none then g
+  else
+    let g :=
+      match g.pendingReplacement with
+      | some cont =>
+        let g := g.change (.pendingReplacement none)
+        g.resumePendingReplacement cont
+      | none => g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement .finishFraChoice
+    else if g.pending != .none then g
+    else
+      let g := g.resumeTriggerSequence
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement .finishFraChoice
+      else if g.pending != .none then g
+      else
+        let g := g.promptTriggerTargetsIfNeeded
+        if g.pending == .none then g.receivePriority g.activePlayer else g
+
+/-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
+partial def resumePendingReplacement (g : Game) : PendingReplacement → Game
+  | .seq first rest =>
+    let g := g.resumePendingReplacement first
+    if g.pending != .none then
+      g.chainPendingReplacement rest
+    else
+      g.resumePendingReplacement rest
+  | .dealDamageToPlayer p n _ source _ unpreventable cause =>
+    let srcObj := source.bind (fun s => s.id.bind (fun id =>
+      g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))
+    g.dealDamageToPlayer p (Int.ofNat n) (preventable := !unpreventable)
+      (source := srcObj) (cause := cause)
+  | .dealDamageToPlayers players n sourceId cause =>
+    let srcObj := sourceId.bind (fun id =>
+      g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id)))
+    g.dealDamageToPlayers players (Int.ofNat n) (source := srcObj) (cause := cause)
+  | .dealDamageFrom sourceId targetId n _ _ cause =>
+    match g.findObject? sourceId, g.findObject? targetId with
+    | some src, some tgt =>
+      g.dealDamageFrom src.name tgt (Int.ofNat n) (source := some src) (cause := cause)
+    | _, _ => g
+  | .dealFightDamage sourceId targetId cause =>
+    match g.findObject? sourceId, g.findObject? targetId with
+    | some src, some dest =>
+      g.dealFightDamage src dest (cause := cause)
+    | _, _ => g
+  | .dealDamageToPermanent targetId n source _ _ cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.dealDamageToPermanent tgt (Int.ofNat n) (source := source) (cause := cause)
+    | none => g
+  | .markDamageOn targetId n msg deathtouch source combat unpreventable cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      let srcObj := source.bind (fun s => s.id.bind (fun id =>
+        g.findObject? id |>.orElse (fun _ => g.findObject? (g.followMoved id))))
+      g.markDamageOn tgt (Int.ofNat n) msg (deathtouch := deathtouch) (combat := combat)
+        (source := source) (sourceObj := srcObj) (unpreventable := unpreventable)
+        (cause := cause)
+    | none => g
+  | .dealAssignedCombatDamage applied =>
+    g.dealAssignedCombatDamage applied
+  | .gainLife p n _ cause =>
+    g.gainLife p n (cause := cause)
+  | .addPlusOnePlusOneTo targetId n entersWith byPlayer cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.addPlusOnePlusOneTo tgt n (entersWith := entersWith) (byPlayer := byPlayer)
+        (cause := cause)
+    | none => g
+  | .addCounters targetId kind n entersWith byPlayer cause =>
+    match g.findObject? targetId with
+    | some tgt =>
+      g.addCounters tgt kind n (entersWith := entersWith) (byPlayer := byPlayer)
+        (cause := cause)
+    | none => g
+  | .recordPutCounters targetId kind n byPlayer cause =>
+    g.recordPutCounters targetId kind n byPlayer (cause := cause)
+  | .move id dest controller _ _ verb actor _ tapped
+      attacking attackingTarget transformed returnedAsArtifact onlyFoodArtifact
+      extraEntersWith libraryPosition _ applyHope preBattlefield cause =>
+    (g.move id dest controller (tapped := tapped) (applyHope := applyHope)
+      (attacking := attacking) (attackingTarget := attackingTarget)
+      (returnedAsArtifact := returnedAsArtifact) (onlyFoodArtifact := onlyFoodArtifact)
+      (nightBack := transformed) (extraEntersWith := extraEntersWith)
+      (verb := verb) (actor := actor) (libraryPosition := libraryPosition)
+      (preBattlefield := preBattlefield) (cause := cause)).1
+  | .moveSimultaneousToGraveyard ids preBattlefield cause =>
+    g.moveSimultaneousToGraveyard ids (preBattlefield := preBattlefield) (cause := cause)
+  | .destroyPermanent targetId cause =>
+    match g.findObject? targetId with
+    | some tgt => g.destroyPermanent tgt (cause := cause)
+    | none => g
+  | .createToken controller card tapped attacking attackingTarget applyFoodBonus extraCounters recordRecent cause =>
+    (g.createToken controller card (tapped := tapped) (attacking := attacking)
+      (attackingTarget := attackingTarget) (applyFoodBonus := applyFoodBonus)
+      (extraCounters := extraCounters) (recordRecent := recordRecent)
+      (cause := cause)).1
+  | .createTokenBatches batches attacking attackingTarget extraCounters recordRecent cause =>
+    (g.createTokenBatches batches (attacking := attacking) (attackingTarget := attackingTarget)
+      (extraCounters := extraCounters) (recordRecent := recordRecent) (cause := cause)).1
+  | .createTreasureTokens controller n tapped cause =>
+    g.createTreasureTokens controller n (tapped := tapped) (cause := cause)
+  | .createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause =>
+    g.createKindTokens controller kind n (tapped := tapped) (attacking := attacking)
+      (attackingTarget := attackingTarget) (resetRecent := resetRecent) (cause := cause)
+  | .createAndMarkTokensAttacking controller kind n tapped holds sourceId =>
+    g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
+  | .commitEnteringAttackItems chosen cause resetRecent =>
+    g.commitEnteringAttackItems chosen (cause := cause) (resetRecent := resetRecent)
+  | .finishEnteringAttackCard newId? effectController cardName mods logKind cause =>
+    let target? :=
+      match newId? with
+      | some id => g.findObject? id
+      | none => g.objects.back?
+    match target? with
+    | some entered =>
+      if entered.isOnBattlefield then
+        g.finishEnteringAttackCard entered.id effectController cardName mods logKind (cause := cause)
+      else g
+    | none => g
+  | .afterLastPermanentEnters =>
+    match g.objects.back? with
+    | some entered =>
+      if entered.isOnBattlefield then
+        let g := g.logMsg s!"{entered.name} enters the battlefield"
+        g.afterPermanentEnters entered
+      else g
+    | none => g
+  | .finishFraChoice =>
+    g.finishFraChoice
+  | .draw p n _ cause =>
+    g.draw p n (cause := cause)
+  | .drawOne p applied drawStepFirst cause =>
+    g.drawOneWithReplacements p (applied := applied)
+      (firstOfYourDrawStep? := some drawStepFirst) (cause := cause)
+  | .drawSubDraws p remaining applied cause =>
+    g.drawSubDraws p remaining applied (cause := cause)
+  | .connive controller sourceId =>
+    g.applyConnive controller sourceId
+  | .finishSbaSweep moves preBattlefield stage =>
+    (g.finishSbaSweep moves preBattlefield stage).1
+  | .closeBatch batchId startIdx =>
+    g.finishOpenBatch batchId startIdx
+  | .checkSBA =>
+    g.checkSBA
+  | .receivePriority p =>
+    let g := if g.pending == .none then g.resumeTriggerSequence else g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.receivePriority p)
+    else if g.pending != .none then g
+    else g.receivePriority p
+end
+
+/-- Choose which applicable replacement or prevention effect to apply next (CR 616.1). -/
+def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except String Game := do
+  match g.pending with
+  | .chooseReplacement q choices =>
+    if !g.decidesFor p q then
+      throw s!"Only {(g.player q).name} may choose a replacement effect"
+    if !choices.contains id then
+      throw "Replacement effect is not among the applicable choices"
+    let order := (g.replacementOrder.filter (· != id)).push id
+    let cont? := g.pendingReplacement
+    let g := g.changes #[.replacementOrder order, .pending .none, .pendingReplacement none]
+    let g :=
+      match cont? with
+      | some cont => g.resumePendingReplacement cont
+      | none => g
+    let g := if g.pending == .none then g.resumeTriggerSequence else g
+    return g
+  | _ =>
+    throw "No replacement effect choice is pending"
 
 end Game
 end Mtg.Engine

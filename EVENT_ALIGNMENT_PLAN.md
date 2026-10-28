@@ -1224,7 +1224,7 @@ Each field is put in exactly one category. "Log" means a query over
 | Category | Fields (type) | Target |
 | :--- | :--- | :--- |
 | **Core & turn/combat state — stays** | `players : Array Player`, `objects : Array GameObject`, `stack : Array StackEntry`, `activePlayer : PlayerId`, `priority : PlayerId`, `step : Step`, `turnNumber : Nat`, `startingPlayer : PlayerId`, `isFirstTurn : Bool`, `nextObjectId : Nat`, `nextEffectId : Nat`, `activeEffects : Array (EffectId × ContinuousEffect)` (`ContinuousEffectSpec` in Phase 8), `timestamp : Nat`, `result : Option GameResult`, `log : Array String`, `format : Format`, `brawl : Bool`, `consecutivePasses : Nat`, `cleanupGivesPriority : Bool`, `isNight : Bool`, `extraTurns : Array PlayerId` (paired with `extraTurnCauses : Array EventCause` in Phase 3; `extraTurnCauses` is replaced when `TurnEvent.extraTurnAdded` writes `extraTurns` in Phase 5), `additionalCombatPhases : Nat`, `assignedCombatDamage : Array CreatureCombatAssignment`, `firstStrikeDamageDone : Bool`, `pendingRegularCombatDamage : Bool`, `firstStrikeAssignedThisCombat : Array ObjectId`, `events : Array GameEvent` (plus `nextBatchId : Nat` and `currentBatch : Option (BatchId × Option EventCause)` in Phase 4) | Written by `RulesEvent`s (`TurnEvent`, `CombatEvent`, `ContinuousEffectEvent`, …) or `EngineChange` (`priority`, `consecutivePasses`, `cleanupGivesPriority`, `log`); `nextBatchId` is bumped directly in `applySingleRulesEventInBatch` (`max g.nextBatchId (batchId.raw + 1)`, with an `EngineChange.nextBatchId` applier in `applyEngineChange`), and `currentBatch` is transient in-memory batch state assigned directly by `withBatchReturn`, `openBatch`, and `applyEvent` and cleared to `none` when the outermost batch closes. |
-| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingContext : Option (Option ObjectId × PlayerId)` (added in Phase 3 for active resolving source/controller across pending choices; moves into the continuation frame stack in Phase 8), `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId` | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
+| **Engine prompt / queue state — stays (`EngineChange`)** | `pending : Pending`, `afterRandom : AfterRandom`, `proposedSpell : Option ProposedSpell`, `awaitingOpeningBegin : Bool`, `mulliganToDeclare : Array PlayerId`, `willMulligan : Array PlayerId`, `mulliganToBottom : Array PlayerId`, `blockersQueue : Array PlayerId`, `waitingTriggers : Array WaitingTrigger`, `wardQueue : Array WardObligation`, `castingFromTop : Bool`, `resolvingSpell : Option ObjectId`, `resolvingAbility : Option ObjectId`, `resolvingContext : Option (Option ObjectId × PlayerId)` (added in Phase 3 for active resolving source/controller across pending choices; moves into the continuation frame stack in Phase 8), `resolvingDivision : Array Nat`, `ancestryLandsTapped : Array ObjectId`, `replacementOrder : Array ReplacementId` (added in Phase 7 for player-chosen CR 616.1 ordering) | Updated by `EngineChange` while choices, casts, or abilities are in progress. |
 | **Delayed triggers → delayed-trigger table (603.7)** | `delayedEndStepReturns : Array (ObjectId × EventCause)`, `delayedEndStepExiles : Array (ObjectId × EventCause)`, `delayedEndStepSacrifices : Array (ObjectId × EventCause)`, `delayedGraveReturns : Array (ObjectId × PlayerId × EventCause)`, `delayedSynthetic : Array (PlayerId × Nat × EventCause)`, `eaglesBirdsCauses : Array (PlayerId × Nat × EventCause)` (added in Phase 3 alongside `Player.eaglesBirdsNextUpkeep : Nat`) | Delayed-trigger entries created on resolution and fired by `matchTriggers` (603.2; later put on the stack via `TriggerQueueEvent.putOnStack` per 603.3, Phase 8). |
 | **Linked-exile cause cache — deleted in Phase 8** | `linkedExileCauses : Array (ObjectId × EventCause)` | Added in Phase 3 so cards in `GameObject.linkedExile` return under their exiling `.oneShotEffect` cause (610.3); replaced in Phase 8 by reading the `cause` of the `ZoneEvent.moved` that put the card into `.exile`. |
 | **Queue-time note — deleted in Phase 8** | `enrageGrantsAdditionalCombat : Nat` | Queue-time counter written in `closeBatch` (`Core.lean`, moved from `Damage.markDamageOn` in Phase 6) for `.enrageGrantsCombat` ("If he's attacking, untap him and there is an additional combat phase after this phase"); not an intervening-if (603.4), so delete the counter and check at resolution whether the source is currently attacking on the battlefield, matching the untap instruction's live check. |
@@ -1717,23 +1717,41 @@ plus new look-back tests for simultaneous deaths and phasing out.
 
 ### Phase 7 — Replacement and prevention pipeline
 
-1. Represent each replacement/prevention as a `ReplacementSpec` (from static
-   abilities, `ContinuousEffectSpec.replacement` / `.prevention`, counters such as
-   stun 122.1d / shield 122.1c / finality 122.1h, enters-with 614.1c, commander
-   903.9b, flashback 702.34a).
-2. Implement the 616.1 loop from §3.4 with per-chain `applied` sets (614.5) and
-   APNAP choice prompts.
+1. Represent each replacement/prevention as a `ReplacementSpec` / `PreventionSpec`
+   (`ReplacementKind`, `PreventionKind`, `ReplacementOrPrevention`, and
+   `ReplacementCandidate` in [`Event.lean`](Mtg/Engine/Game/Event.lean), together
+   with `ContinuousEffect.replacement` and `ContinuousEffect.prevention`, covering
+   static abilities, continuous effects, counters such as stun 122.1d / shield
+   122.1c / finality 122.1h, enters-with and enters-tapped 614.1c / 614.12,
+   commander 903.9b, and flashback 702.34a).
+2. Implement the 616.1 loop from §3.4 (`selectNextReplacement`, `wrapReplacedCause`,
+   `replaceCountersPut`, and `applyEtbReplacements` in
+   [`Core.lean`](Mtg/Engine/Game/Core.lean), `replaceTokenCreation` in
+   [`Tokens.lean`](Mtg/Engine/Game/Tokens.lean), `replaceZoneMove` in
+   [`Movement.lean`](Mtg/Engine/Game/Movement.lean), `drawOneWithReplacements` in
+   [`Library.lean`](Mtg/Engine/Game/Library.lean), `applyConnive` in
+   [`SacrificeDiscard.lean`](Mtg/Engine/Game/SacrificeDiscard.lean),
+   `destroyPermanent`, `replaceDamage`, and `gainLife` in
+   [`Damage.lean`](Mtg/Engine/Game/Damage.lean), and `replaceUntap` in
+   [`Pumps.lean`](Mtg/Engine/Game/Pumps.lean)) with per-chain `applied : Array ReplacementId`
+   sets (614.5), `ReplacementTier` priority ordering `616.1a`–`e` (`self`, `control`,
+   `copy`, `backFaceUp`, `other`), APNAP and player-chosen ordering via
+   `Game.replacementOrder` (`EngineChange.replacementOrder`),
+   `Pending.chooseReplacement`, and `Action.chooseReplacement`, and CR 614.6
+   non-occurrence (`cause := .replaced id original`).
 3. Remove the inline replacement branches listed in §1.4 (including the
    `wouldCreateToken` branches in `Tokens.createToken`—Dragon replacement,
    `tokenCreateMultiplier`, and Food/Treasure extras—in
    `ResolutionEffects.commitEnteringAttackItems`—Dragon replacement and
    Food/Treasure extras—and in
    `TriggeredAbilities.createAndMarkTokensAttacking`—`tokenCreateMultiplier`—plus
-   `Game.entersTapped` and `Game.sourceDamagePrevented` in `Core.lean`).
+   `Game.entersTapped`, `Game.sourceDamagePrevented`, and
+   `Game.lockedDeathReplacements` / `EngineChange.lockedDeathReplacements` in
+   `Core.lean` and `Event.lean`).
 
 Tests: `Exile.lean`, `Draw.lean`, `GainLife.lean`, `Damage.lean`, `PutCounters.lean`,
-`Untap.lean`, `RulingFixtures.lean`, plus new tests for 614.5 termination, 614.6
-non-occurrence, and the 616.1a–e order.
+`Untap.lean`, `RulingFixtures.lean`, plus new tests in `Events.lean` for 614.5
+termination, 614.6 non-occurrence, and the 616.1a–e and 616.1e choice/APNAP order.
 
 ### Phase 8 — Layers, data durations, delayed triggers, field cleanup, continuations
 
